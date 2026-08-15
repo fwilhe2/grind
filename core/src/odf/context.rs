@@ -22,9 +22,9 @@
 
 use std::io::BufRead;
 
+use quick_xml::NsReader;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
-use quick_xml::NsReader;
 
 use super::names::{Name, Ns};
 use crate::{Error, Result};
@@ -54,7 +54,9 @@ impl Attrs {
     /// the same code (§9). Resolving by meaning across a small alias set beats rejecting
     /// the document.
     pub fn get_any(&self, candidates: &[(Ns, &str)]) -> Option<&str> {
-        candidates.iter().find_map(|(ns, local)| self.get(*ns, local))
+        candidates
+            .iter()
+            .find_map(|(ns, local)| self.get(*ns, local))
     }
 
     /// A count attribute, e.g. `table:number-columns-repeated`.
@@ -149,7 +151,9 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
         match event {
             Event::Start(e) => {
                 if stack.len() >= MAX_DEPTH {
-                    return Err(Error::Xml(format!("element nesting deeper than {MAX_DEPTH}")));
+                    return Err(Error::Xml(format!(
+                        "element nesting deeper than {MAX_DEPTH}"
+                    )));
                 }
                 let name = resolved_name(&reader, &e);
                 let attrs = collect_attrs(&reader, &e)?;

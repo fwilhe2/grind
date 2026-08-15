@@ -2,4 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Phase 2+ — see doc/plan.md.
+//! The OpenFormula engine (ODF 1.4 Part 4) — phase 4, see doc/plan.md.
+//!
+//! Built in the order the plan fixes: [`value`] first, because the parser, the dependency
+//! graph and all 110 Small Group functions inherit their correctness from it.
+
+pub mod value;

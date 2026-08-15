@@ -107,7 +107,10 @@ fn a_new_edit_discards_the_redo_branch() {
     assert!(app.can_redo());
 
     app.set_cell(0, p(0, 0), 9.0).unwrap();
-    assert!(!app.can_redo(), "editing after undo must drop the redo branch");
+    assert!(
+        !app.can_redo(),
+        "editing after undo must drop the redo branch"
+    );
 }
 
 /// The exit criterion from doc/plan.md: undo/redo round-trips an arbitrary action

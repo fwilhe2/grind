@@ -328,7 +328,11 @@ mod tests {
         c.set(50, "hole".into());
         assert_eq!(block_count(&c), 3);
         c.set(50, 7.0.into());
-        assert_eq!(block_count(&c), 1, "the three blocks must merge back into one");
+        assert_eq!(
+            block_count(&c),
+            1,
+            "the three blocks must merge back into one"
+        );
         assert_eq!(c.get(50), CellValue::Number(7.0));
         check(&c);
     }

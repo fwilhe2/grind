@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use sheet_core::{read_bytes, CellValue, Pos};
+use sheet_core::{CellValue, Pos, read_bytes};
 
 /// Wrap a `table:table` body in the smallest valid flat document.
 fn doc(body: &str) -> sheet_core::Document {
@@ -44,15 +44,13 @@ fn text(s: &str) -> CellValue {
 #[test]
 fn a_float_cell_reads_its_value_not_its_display_text() {
     // The display text is deliberately a lie: `office:value` is the value.
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="float" office:value="1.5">
                  <text:p>1,50 €</text:p>
                </table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(1.5));
 }
 
@@ -71,15 +69,13 @@ fn sheet_names_come_from_the_file() {
 /// optimisation. Ignore it and every cell after it lands in the wrong column.
 #[test]
 fn repeated_columns_move_later_cells_along() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="string"><text:p>a</text:p></table:table-cell>
                <table:table-cell table:number-columns-repeated="8"/>
                <table:table-cell office:value-type="string"><text:p>j</text:p></table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("a"));
     for col in 1..9 {
         assert_eq!(cell(&d, 0, col), CellValue::Empty, "col {col}");
@@ -89,14 +85,12 @@ fn repeated_columns_move_later_cells_along() {
 
 #[test]
 fn a_repeated_cell_with_content_is_written_to_every_column() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell table:number-columns-repeated="3" office:value-type="float" office:value="7"/>
                <table:table-cell office:value-type="float" office:value="9"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(7.0));
     assert_eq!(cell(&d, 0, 1), num(7.0));
     assert_eq!(cell(&d, 0, 2), num(7.0));
@@ -105,8 +99,7 @@ fn a_repeated_cell_with_content_is_written_to_every_column() {
 
 #[test]
 fn repeated_rows_move_later_rows_along_and_replay_content() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row table:number-rows-repeated="2">
                <table:table-cell office:value-type="float" office:value="1"/>
              </table:table-row>
@@ -116,8 +109,7 @@ fn repeated_rows_move_later_rows_along_and_replay_content() {
              <table:table-row>
                <table:table-cell office:value-type="float" office:value="2"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(1.0), "repeated row replays its content");
     assert_eq!(cell(&d, 1, 0), num(1.0));
     for row in 2..7 {
@@ -131,16 +123,14 @@ fn repeated_rows_move_later_rows_along_and_replay_content() {
 #[test]
 fn a_huge_trailing_empty_repeat_is_cheap_and_changes_nothing() {
     let started = std::time::Instant::now();
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="float" office:value="1"/>
              </table:table-row>
              <table:table-row table:number-rows-repeated="1048575">
                <table:table-cell table:number-columns-repeated="16384"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(1.0));
     let sheet = d.sheet(0).unwrap();
     assert_eq!(
@@ -158,13 +148,11 @@ fn a_huge_trailing_empty_repeat_is_cheap_and_changes_nothing() {
 #[test]
 fn an_absurd_repeat_count_is_clamped_rather_than_allocated() {
     let started = std::time::Instant::now();
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row table:number-rows-repeated="4000000000">
                <table:table-cell table:number-columns-repeated="4000000000" office:value-type="float" office:value="1"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     let sheet = d.sheet(0).unwrap();
     assert!(sheet.used_rows() <= 1_048_576);
     assert!(sheet.used_cols() <= 16_384);
@@ -176,8 +164,7 @@ fn an_absurd_repeat_count_is_clamped_rather_than_allocated() {
 
 #[test]
 fn value_types_map_to_the_right_rust_values() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="float" office:value="-2.25"/>
                <table:table-cell office:value-type="percentage" office:value="0.5"/>
@@ -186,8 +173,7 @@ fn value_types_map_to_the_right_rust_values() {
                <table:table-cell office:value-type="boolean" office:boolean-value="false"/>
                <table:table-cell office:value-type="string" office:string-value="explicit"><text:p>display</text:p></table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(-2.25));
     assert_eq!(cell(&d, 0, 1), num(0.5), "percentage stores the fraction");
     assert_eq!(cell(&d, 0, 2), num(9.99));
@@ -202,29 +188,25 @@ fn value_types_map_to_the_right_rust_values() {
 
 #[test]
 fn display_text_is_the_value_when_no_explicit_one_is_given() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="string"><text:p>from text</text:p></table:table-cell>
                <table:table-cell><text:p>untyped but present</text:p></table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("from text"));
     assert_eq!(cell(&d, 0, 1), text("untyped but present"));
 }
 
 #[test]
 fn several_paragraphs_become_several_lines() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="string">
                  <text:p>one</text:p><text:p>two</text:p>
                </table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("one\ntwo"));
 }
 
@@ -233,8 +215,7 @@ fn an_empty_paragraph_is_still_a_line() {
     // Counting paragraphs, not testing whether the accumulated text is empty: a blank
     // first or middle line contributes no characters, and testing emptiness silently eats
     // it. This is what a cell holding "a\n\nb" round-trips as, which is how it surfaced.
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="string">
                  <text:p/><text:p>after</text:p>
@@ -243,8 +224,7 @@ fn an_empty_paragraph_is_still_a_line() {
                  <text:p>a</text:p><text:p/><text:p>b</text:p>
                </table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("\nafter"));
     assert_eq!(cell(&d, 0, 1), text("a\n\nb"));
 }
@@ -254,8 +234,7 @@ fn text_s_carries_a_count_of_spaces() {
     // ODF collapses runs of whitespace inside `text:p`, so LibreOffice writes "a    b" as
     // one literal space plus `<text:s text:c="3"/>`. Ignoring the count turns every
     // multi-space string into a single-space one — silently, and in real documents.
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="string">
                  <text:p>a <text:s text:c="3"/>b</text:p>
@@ -264,8 +243,7 @@ fn text_s_carries_a_count_of_spaces() {
                  <text:p><text:s/>x</text:p>
                </table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("a    b"));
     // An absent count means one, per the schema default.
     assert_eq!(cell(&d, 0, 1), text(" x"));
@@ -312,15 +290,13 @@ fn what_we_write_is_what_we_read() {
 
 #[test]
 fn styled_runs_and_entities_inside_a_paragraph_survive() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="string">
                  <text:p>a <text:span>bold</text:span> word &amp; more</text:p>
                </table:table-cell>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("a bold word & more"));
 }
 
@@ -328,14 +304,12 @@ fn styled_runs_and_entities_inside_a_paragraph_survive() {
 /// out of the default no-op `text` callback rather than a whitespace-skipping pass.
 #[test]
 fn pretty_printing_whitespace_is_not_cell_content() {
-    let d = doc(
-        "<table:table table:name=\"S\">\n\n   \
+    let d = doc("<table:table table:name=\"S\">\n\n   \
            <table:table-row>\n      \
              <table:table-cell/>\n      \
              <table:table-cell office:value-type=\"float\" office:value=\"1\"/>\n   \
            </table:table-row>\n\n\
-         </table:table>",
-    );
+         </table:table>");
     assert_eq!(cell(&d, 0, 0), CellValue::Empty);
     assert_eq!(cell(&d, 0, 1), num(1.0));
     assert_eq!(d.sheet(0).unwrap().used_cols(), 2);
@@ -371,13 +345,11 @@ fn prefixes_are_irrelevant_only_the_namespace_uri_matters() {
 /// §9: `calcext:value-type` is an accepted alias for `office:value-type`.
 #[test]
 fn the_calcext_value_type_alias_is_honoured() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell calcext:value-type="float" office:value="42"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(42.0));
 }
 
@@ -424,8 +396,7 @@ fn foreign_content_is_ignored_without_disturbing_the_document() {
 /// §9: a malformed value degrades to a safe default, scoped to its own cell.
 #[test]
 fn malformed_values_degrade_without_losing_the_document() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell office:value-type="float" office:value="not-a-number"/>
                <table:table-cell office:value-type="float"/>
@@ -433,8 +404,7 @@ fn malformed_values_degrade_without_losing_the_document() {
                <table:table-cell office:value-type="rumpelstiltskin"><text:p>kept</text:p></table:table-cell>
                <table:table-cell office:value-type="float" office:value="5"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(0.0));
     assert_eq!(cell(&d, 0, 1), num(0.0));
     assert_eq!(cell(&d, 0, 2), num(0.0), "NaN is not finite; degrade to 0");
@@ -448,14 +418,12 @@ fn malformed_values_degrade_without_losing_the_document() {
 
 #[test]
 fn formula_text_is_kept_verbatim_beside_the_cached_value() {
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell table:formula="of:=SUM([.A2:.A10])" office:value-type="float" office:value="55"/>
                <table:table-cell table:formula="of:=COM.MICROSOFT.UNIQUE([.B1])" office:value-type="float" office:value="0"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     let sheet = d.sheet(0).unwrap();
     assert_eq!(cell(&d, 0, 0), num(55.0), "the cached value is used as-is");
     assert_eq!(sheet.formula(Pos::new(0, 0)), Some("of:=SUM([.A2:.A10])"));
@@ -469,16 +437,14 @@ fn formula_text_is_kept_verbatim_beside_the_cached_value() {
 #[test]
 fn covered_cells_hold_their_grid_position() {
     // A 2-wide merge: the covered cell is written out, not omitted (§3.4).
-    let d = doc(
-        r#"<table:table table:name="S">
+    let d = doc(r#"<table:table table:name="S">
              <table:table-row>
                <table:table-cell table:number-columns-spanned="2" table:number-rows-spanned="1"
                                  office:value-type="string"><text:p>merged</text:p></table:table-cell>
                <table:covered-table-cell/>
                <table:table-cell office:value-type="float" office:value="3"/>
              </table:table-row>
-           </table:table>"#,
-    );
+           </table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("merged"));
     assert_eq!(cell(&d, 0, 1), CellValue::Empty);
     assert_eq!(cell(&d, 0, 2), num(3.0), "the covered cell took column 1");
@@ -493,11 +459,9 @@ fn a_document_with_no_sheets_is_empty_not_an_error() {
 // --- against a real LibreOffice-authored file ---
 
 fn corpus() -> Option<PathBuf> {
-    let root = PathBuf::from(
-        std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| {
-            "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data".to_owned()
-        }),
-    );
+    let root = PathBuf::from(std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| {
+        "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data".to_owned()
+    }));
     root.is_dir().then_some(root)
 }
 
@@ -519,10 +483,7 @@ fn a_real_libreoffice_file_lands_its_cells_where_the_xml_says() {
         .find(|s| s.name == "Data")
         .expect("a sheet named Data");
 
-    assert_eq!(
-        data.get(Pos::new(0, 0)),
-        text("Equal orientation vertical")
-    );
+    assert_eq!(data.get(Pos::new(0, 0)), text("Equal orientation vertical"));
     for col in 1..9 {
         assert_eq!(data.get(Pos::new(0, col)), CellValue::Empty, "col {col}");
     }
@@ -552,8 +513,9 @@ fn a_real_formula_file_keeps_both_halves() {
     let total: usize = d.sheets.iter().map(sheet_core::Sheet::formula_count).sum();
     assert!(total > 10, "expected many formulas, found {total}");
 
-    let has_cached_value = d.sheets.iter().any(|s| {
-        (0..40).any(|r| (0..10).any(|c| !s.get(Pos::new(r, c)).is_empty()))
-    });
+    let has_cached_value = d
+        .sheets
+        .iter()
+        .any(|s| (0..40).any(|r| (0..10).any(|c| !s.get(Pos::new(r, c)).is_empty())));
     assert!(has_cached_value, "cached values must be imported too");
 }

@@ -187,7 +187,10 @@ fn cell(out: &mut String, value: &CellValue, formula: Option<&str>, repeat: u32)
             // itself writes and — the load-bearing reason — is the only form that survives
             // a newline. XML normalises a literal newline in an attribute value to a space,
             // so a multi-line string in `office:string-value` comes back mangled.
-            let _ = write!(out, "<table:table-cell{attrs} office:value-type=\"string\">");
+            let _ = write!(
+                out,
+                "<table:table-cell{attrs} office:value-type=\"string\">"
+            );
             for line in s.split('\n') {
                 if line.is_empty() {
                     out.push_str("<text:p/>");
@@ -264,14 +267,15 @@ fn package(doc: &Document) -> Result<Vec<u8>> {
 
     // `mimetype` must be first, stored uncompressed, raw bytes, no trailing newline —
     // readers sniff it at a fixed offset before parsing any XML (§1.1).
-    let stored = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored);
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     w.start_file("mimetype", stored).map_err(zip)?;
     w.write_all(MIMETYPE.as_bytes())?;
 
     let deflated = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
-    w.start_file("META-INF/manifest.xml", deflated).map_err(zip)?;
+    w.start_file("META-INF/manifest.xml", deflated)
+        .map_err(zip)?;
     w.write_all(manifest().as_bytes())?;
 
     w.start_file("content.xml", deflated).map_err(zip)?;
@@ -341,7 +345,10 @@ mod tests {
         // Row 1 stops after its one cell rather than padding out to the sheet's width;
         // unmentioned is the same as empty (§3.3).
         let xml = flat(&doc);
-        let row1 = xml.lines().find(|l| l.contains("office:value=\"2\"")).unwrap();
+        let row1 = xml
+            .lines()
+            .find(|l| l.contains("office:value=\"2\""))
+            .unwrap();
         assert_eq!(row1.matches("<table:table-cell").count(), 1, "{row1}");
     }
 
@@ -354,7 +361,10 @@ mod tests {
 
         let xml = flat(&doc);
         // Both, always: an omitted cached value renders blank until recalculation (§4).
-        assert!(xml.contains("table:formula=\"of:=SUM([.B1:.C1])\""), "{xml}");
+        assert!(
+            xml.contains("table:formula=\"of:=SUM([.B1:.C1])\""),
+            "{xml}"
+        );
         assert!(xml.contains("office:value=\"30\""), "{xml}");
     }
 
@@ -386,8 +396,16 @@ mod tests {
         // header is 30 bytes, then the name, then the raw media type. Compression method
         // (offset 8) must be 0 = stored, and the extra-field length (offset 28) zero.
         assert_eq!(&bytes[..4], b"PK\x03\x04");
-        assert_eq!(&bytes[8..10], &[0, 0], "mimetype must be stored, not deflated");
-        assert_eq!(&bytes[28..30], &[0, 0], "mimetype entry must carry no extra field");
+        assert_eq!(
+            &bytes[8..10],
+            &[0, 0],
+            "mimetype must be stored, not deflated"
+        );
+        assert_eq!(
+            &bytes[28..30],
+            &[0, 0],
+            "mimetype entry must carry no extra field"
+        );
         assert_eq!(&bytes[30..38], b"mimetype");
         assert_eq!(&bytes[38..38 + MIMETYPE.len()], MIMETYPE.as_bytes());
     }

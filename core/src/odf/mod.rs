@@ -16,8 +16,8 @@ pub mod write;
 
 pub use write::Form;
 
-use crate::model::Document;
 use crate::Result;
+use crate::model::Document;
 
 /// Read an ODF spreadsheet from bytes, in either the package (`.ods`) or flat (`.fods`)
 /// form — sniffed from the content, not from a file name.

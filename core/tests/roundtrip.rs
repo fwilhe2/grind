@@ -151,7 +151,10 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
     }
     for (i, (w, g)) in want.sheets.iter().zip(&got.sheets).enumerate() {
         if w.name != g.name {
-            out.push(format!("{label}: sheet {i} named {:?}, back as {:?}", w.name, g.name));
+            out.push(format!(
+                "{label}: sheet {i} named {:?}, back as {:?}",
+                w.name, g.name
+            ));
         }
         let rows = w.used_rows().max(g.used_rows());
         let cols = w.used_cols().max(g.used_cols());
@@ -240,17 +243,32 @@ fn cases() -> Vec<(String, Document)> {
                 (2, 1, t("")),
             ],
         ),
-        case("booleans", &[(0, 0, CellValue::Bool(true)), (0, 1, CellValue::Bool(false))]),
+        case(
+            "booleans",
+            &[
+                (0, 0, CellValue::Bool(true)),
+                (0, 1, CellValue::Bool(false)),
+            ],
+        ),
         // Sparse: gaps are written as repeats, and a repeat that is off by one moves every
         // later cell silently.
         case(
             "sparse",
-            &[(0, 0, n(1.0)), (0, 7, n(2.0)), (40, 0, n(3.0)), (40, 7, n(4.0))],
+            &[
+                (0, 0, n(1.0)),
+                (0, 7, n(2.0)),
+                (40, 0, n(3.0)),
+                (40, 7, n(4.0)),
+            ],
         ),
     ];
 
     let mut many = Document {
-        sheets: vec![Sheet::new("First"), Sheet::new("Second"), Sheet::new("Third")],
+        sheets: vec![
+            Sheet::new("First"),
+            Sheet::new("Second"),
+            Sheet::new("Third"),
+        ],
     };
     many.sheet_mut(0).unwrap().set(Pos::new(0, 0), n(1.0));
     many.sheet_mut(2).unwrap().set(Pos::new(2, 2), t("third"));
@@ -294,7 +312,11 @@ fn documents_we_write_survive_libreoffice() {
     for f in &failures {
         eprintln!("  {f}");
     }
-    assert!(failures.is_empty(), "loop C (out): {} differences", failures.len());
+    assert!(
+        failures.is_empty(),
+        "loop C (out): {} differences",
+        failures.len()
+    );
 }
 
 // --- direction "back": LibreOffice -> ours -> LibreOffice -> ours ------------------------
@@ -326,7 +348,10 @@ fn sample(root: &Path) -> Vec<PathBuf> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if matches!(path.extension().and_then(|e| e.to_str()), Some("ods" | "fods")) {
+            if matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("ods" | "fods")
+            ) {
                 files.push(path);
             }
         }
@@ -365,12 +390,19 @@ fn libreoffice_documents_survive_our_writer() {
         std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
     );
     if !root.is_dir() {
-        eprintln!("skipping loop C (back): no LibreOffice corpus at {}", root.display());
+        eprintln!(
+            "skipping loop C (back): no LibreOffice corpus at {}",
+            root.display()
+        );
         return;
     }
 
     let files = sample(&root);
-    assert!(!files.is_empty(), "no value-only documents found in {}", root.display());
+    assert!(
+        !files.is_empty(),
+        "no value-only documents found in {}",
+        root.display()
+    );
 
     let lab = Lab::new("back");
     let staged: Vec<_> = files
@@ -393,7 +425,10 @@ fn libreoffice_documents_survive_our_writer() {
         "loop C (back): {} value-only documents, {cells} cells",
         files.len()
     );
-    assert!(cells > 5_000, "sample holds only {cells} cells; it is not testing the writer");
+    assert!(
+        cells > 5_000,
+        "sample holds only {cells} cells; it is not testing the writer"
+    );
 
     let out = lab.convert(&staged.iter().map(|(_, _, p)| p.clone()).collect::<Vec<_>>());
 
@@ -406,5 +441,9 @@ fn libreoffice_documents_survive_our_writer() {
     for f in failures.iter().take(30) {
         eprintln!("  {f}");
     }
-    assert!(failures.is_empty(), "loop C (back): {} differences", failures.len());
+    assert!(
+        failures.is_empty(),
+        "loop C (back): {} differences",
+        failures.len()
+    );
 }

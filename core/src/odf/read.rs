@@ -154,10 +154,7 @@ impl Context<Builder> for Spreadsheet {
         if !name.is(Ns::Table, "table") {
             return None;
         }
-        let sheet_name = attrs
-            .get(Ns::Table, "name")
-            .unwrap_or("Sheet")
-            .to_owned();
+        let sheet_name = attrs.get(Ns::Table, "name").unwrap_or("Sheet").to_owned();
         b.start_sheet(sheet_name);
         Some(Box::new(Table))
     }
@@ -282,11 +279,9 @@ impl Cell {
                 .time_value
                 .clone()
                 .map_or(CellValue::Text(text.to_owned()), CellValue::Text),
-            Some("string" | "error") => CellValue::Text(
-                self.string_value
-                    .clone()
-                    .unwrap_or_else(|| text.to_owned()),
-            ),
+            Some("string" | "error") => {
+                CellValue::Text(self.string_value.clone().unwrap_or_else(|| text.to_owned()))
+            }
             // An unknown value-type is not a reason to lose the cell: keep what is visible.
             Some(_) | None => {
                 if let Some(s) = &self.string_value {

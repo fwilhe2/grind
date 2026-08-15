@@ -26,8 +26,7 @@ pub enum Ns {
 pub const OFFICE: &str = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
 pub const TABLE: &str = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
 pub const TEXT: &str = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
-pub const CALCEXT: &str =
-    "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
+pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
 
 impl Ns {
     pub fn from_uri(uri: &[u8]) -> Ns {
