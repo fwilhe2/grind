@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: ci
+on: [push, pull_request]
+
+jobs:
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v5
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --workspace
+      # The corpus tests need a LibreOffice checkout and skip without one, so this
+      # is a build-and-unit-test gate only. Loop A/B/C run locally against
+      # SHEET_LO_CORPUS until there is something for them to pass.
+      - run: cargo test --workspace
