@@ -79,8 +79,8 @@ labels, and formulas the corpus contains that §5.2's `Expression` production do
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
 
-Loop B's evaluate half reports **11280 of 52213 formula cells matching LibreOffice**, with
-39880 needing a function that does not exist yet and 1053 disagreeing. `FLOOR` in the test
+Loop B's evaluate half reports **12069 of 52213 formula cells matching LibreOffice**, with
+38921 needing a function that does not exist yet and 1223 disagreeing. `FLOOR` in the test
 is the ratchet — raise it, never lower it — and the printed scoreboard is the work list:
 per category, and then the fixtures with the most disagreements. To look at one row of it:
 
@@ -236,6 +236,16 @@ that spec is the source of truth and a rule without a citation is a guess.
 - Two functions deliberately break the house rules, each because its spec section says to:
   `COUNT` does not propagate errors (§6.13.6 in as many words), and the `IS*` family reads an
   error rather than converting it.
+- **`criterion.rs` is where empty cells stop behaving.** §4.11.8 spells out that `"=0"` does
+  *not* match an empty cell even though an empty cell converts to 0 everywhere else, that
+  `"<>7"` does, and that a criterion which is a *reference* to an empty cell means the number
+  0 rather than "blank". Each of those is one line, and each was a loop B disagreement first.
+- **The lookups' default is the sorted search**, not the exact one — `VLOOKUP` without its
+  fourth argument takes the largest value ≤ the key, and the **last** of a run of equals.
+  A sorted search that lands on another type is `#N/A` (§6.14.9), which is what stops a text
+  key from "finding" the last number in a column.
+- **`funcs::implemented()` is checked against `doc/small-group.md` by a test.** A function
+  outside the 110 fails the build, which is the anti-bloat rule made mechanical.
 
 ## Conventions
 
@@ -284,12 +294,14 @@ than a getter.
 OpenFormula Small Group evaluator, and the phase that decides whether the project is real.
 `doc/plan.md` has the ordering within it. Done: `value.rs` (the value model, error set and
 §6.3 conversions), the front end (`lex.rs`, `parse.rs`, `serialize.rs`) with loop B's parse
-half green across the whole corpus, and `eval.rs` plus ~70 of the Small Group's 110
-functions with loop B's evaluate half standing at 11280.
+half green across the whole corpus, `eval.rs`, **77 of the Small Group's 110 functions**,
+and named expressions (§5.11) read, resolved and written — loop C gates that last one, so a
+named range survives a LibreOffice round-trip.
 
-Next, in loop B's order: `COUNTIF`/`SUMIF`/`AVERAGEIF` and the five lookups (both need
-§4.11.8 Criterion matching), then date and time — which is where the deferred
-`table:null-date` finally gets decided — then the financial and database groups. Two things
-phase 4 unlocks that are deferred *in code* right now:
+The 33 left are exactly three groups: **date and time** (11 — and the one that unblocks the
+deferred `table:null-date`), **database** (12) and **financial** (10). Loop B also names two
+known gaps inside what is implemented: criteria have no wildcards or regular expressions
+(`criterion.rs` says when to add them), and array/matrix formulas are read as ordinary ones.
+Two things phase 4 unlocks that are deferred *in code* right now:
 dates and times stop being ISO strings once `table:null-date` exists, and loop C's `back`
 direction stops skipping formula-bearing documents.

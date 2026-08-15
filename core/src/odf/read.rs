@@ -53,7 +53,10 @@ impl Builder {
         Self {
             // Sheets come from the file. A document that declares none stays empty rather
             // than inheriting the default "Sheet1" a new document gets.
-            doc: Document { sheets: Vec::new() },
+            doc: Document {
+                sheets: Vec::new(),
+                names: Default::default(),
+            },
             sheet: 0,
             row: 0,
             col: 0,
@@ -151,12 +154,43 @@ struct Spreadsheet;
 
 impl Context<Builder> for Spreadsheet {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Table, "named-expressions") {
+            return Some(Box::new(NamedExpressions));
+        }
         if !name.is(Ns::Table, "table") {
             return None;
         }
         let sheet_name = attrs.get(Ns::Table, "name").unwrap_or("Sheet").to_owned();
         b.start_sheet(sheet_name);
         Some(Box::new(Table))
+    }
+}
+
+/// `table:named-expressions` (§5.11), which appears both here and inside a `table:table`
+/// for sheet-local names. Both land in the same map — see [`Document::names`].
+struct NamedExpressions;
+
+impl Context<Builder> for NamedExpressions {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let Some(key) = attrs.get(Ns::Table, "name") else {
+            return Some(Box::new(super::context::Ignore));
+        };
+        // A named *range* carries a bare cell-range address; a named *expression* carries a
+        // formula. Storing the range as the reference it stands for — brackets and all —
+        // means the evaluator has one kind of thing to parse rather than two.
+        let expression = if name.is(Ns::Table, "named-range") {
+            attrs
+                .get(Ns::Table, "cell-range-address")
+                .map(|address| format!("[{address}]"))
+        } else if name.is(Ns::Table, "named-expression") {
+            attrs.get(Ns::Table, "expression").map(str::to_owned)
+        } else {
+            None
+        };
+        if let Some(expression) = expression {
+            b.doc.names.insert(key.to_lowercase(), expression);
+        }
+        Some(Box::new(super::context::Ignore))
     }
 }
 
@@ -176,6 +210,8 @@ impl Context<Builder> for Table {
             (Ns::Table, "table-row-group" | "table-header-rows" | "table-rows") => {
                 Some(Box::new(Table))
             }
+            // Sheet-local names (§5.11).
+            (Ns::Table, "named-expressions") => Some(Box::new(NamedExpressions)),
             _ => None,
         }
     }

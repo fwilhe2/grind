@@ -24,8 +24,10 @@ use super::eval::{Address, Area, Engine, Operand};
 use super::parse::Expr;
 use super::value::{FormulaError, Value};
 
+mod criterion;
 mod info;
 mod logical;
+mod lookup;
 mod math;
 mod stat;
 mod text;
@@ -40,6 +42,7 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
         info::call,
         stat::call,
         text::call,
+        lookup::call,
     ] {
         if let Some(answer) = category(&name, &mut args) {
             return answer.unwrap_or_else(Value::Error);
@@ -89,6 +92,7 @@ const NAMES: &[&str] = &[
     "SIN",
     "SQRT",
     "SUM",
+    "SUMIF",
     "TAN",
     "TRUNC",
     // information (§6.13)
@@ -96,6 +100,7 @@ const NAMES: &[&str] = &[
     "COUNT",
     "COUNTA",
     "COUNTBLANK",
+    "COUNTIF",
     "ISBLANK",
     "ISERR",
     "ISERROR",
@@ -110,6 +115,7 @@ const NAMES: &[&str] = &[
     "VALUE",
     // statistical (§6.18)
     "AVERAGE",
+    "AVERAGEIF",
     "MAX",
     "MIN",
     "STDEV",
@@ -131,6 +137,12 @@ const NAMES: &[&str] = &[
     "T",
     "TRIM",
     "UPPER",
+    // lookup (§6.14)
+    "CHOOSE",
+    "HLOOKUP",
+    "INDEX",
+    "MATCH",
+    "VLOOKUP",
 ];
 
 /// A call's arguments, plus the engine needed to evaluate them.
@@ -281,6 +293,12 @@ impl Args<'_, '_> {
     pub fn scalar(&mut self, operand: Operand) -> Value {
         self.engine.scalar(operand, self.at)
     }
+
+    /// One cell, by address — for the functions that compute *which* cell they want
+    /// (§6.14's lookups, §6.16.62's parallel sum range) rather than reading a whole area.
+    pub fn value_at(&mut self, address: Address) -> Value {
+        self.engine.value(address)
+    }
 }
 
 #[cfg(test)]
@@ -300,6 +318,7 @@ mod tests {
         sheet.set(Pos::new(0, 1), CellValue::Bool(true));
         Document {
             sheets: vec![sheet],
+            ..Default::default()
         }
     }
 
@@ -441,6 +460,34 @@ mod tests {
         );
         assert_eq!(eval("=PI(1)"), Value::Error(FormulaError::Value));
         assert_eq!(eval("=ABS()"), Value::Error(FormulaError::Value));
+    }
+
+    /// The feature line, checked by a machine rather than by discipline (CLAUDE.md).
+    ///
+    /// `doc/small-group.md` is the 110 functions §2.3.2 E) enumerates, and it is the whole
+    /// scope of the evaluator. A function outside it is bloat by definition — so adding one
+    /// fails here, and moving the line means editing the list on purpose.
+    #[test]
+    fn nothing_outside_the_small_group_gets_implemented() {
+        let small_group = include_str!("../../../../doc/small-group.md");
+        let listed: Vec<&str> = small_group
+            .lines()
+            .filter_map(|line| line.strip_prefix("- `"))
+            .filter_map(|line| line.split('`').next())
+            .collect();
+        assert_eq!(
+            listed.len(),
+            110,
+            "the Small Group is 110 functions (§2.3.2 E)"
+        );
+        for name in super::implemented() {
+            assert!(listed.contains(&name), "{name} is not in the Small Group");
+        }
+        eprintln!(
+            "small group: {} of {} implemented",
+            super::implemented().len(),
+            listed.len()
+        );
     }
 
     #[test]

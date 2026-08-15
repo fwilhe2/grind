@@ -17,6 +17,7 @@ type Answer = Result<Value, FormulaError>;
 pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
     Some(match name {
         "AVERAGE" => average(args),
+        "AVERAGEIF" => super::criterion::conditional(args, super::criterion::Mode::Average),
         "MAX" => extreme(args, true),
         "MIN" => extreme(args, false),
         // §6.18.82/§6.18.84: the sample forms divide by n-1, the population forms by n.

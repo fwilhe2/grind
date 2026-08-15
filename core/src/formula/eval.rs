@@ -160,9 +160,7 @@ impl<'a> Engine<'a> {
                 Some(area) => Operand::Area(area),
                 None => FormulaError::Ref.into(),
             },
-            // Named expressions are `table:named-expressions`, which the reader does not
-            // keep yet. #NAME? is exactly what an unrecognised name means (§5.12).
-            Expr::Name(_) => FormulaError::Name.into(),
+            Expr::Name(name) => self.named(name, at),
             Expr::Call { name, args } => funcs::call(self, name, args, at).into(),
             Expr::Prefix(op, operand) => self.prefix(*op, operand, at).into(),
             Expr::Postfix(_, operand) => {
@@ -175,6 +173,29 @@ impl<'a> Engine<'a> {
             }
             Expr::Binary(op, lhs, rhs) => self.binary(*op, lhs, rhs, at),
         }
+    }
+
+    /// §5.11: a named expression stands for whatever it was defined as, evaluated *here* —
+    /// relative references in it are relative to the cell that used the name.
+    ///
+    /// The depth counter is what stops `X` defined as `X+1`: names resolve inside one
+    /// cell's evaluation, so the `visiting` set — which is keyed by cell — never sees the
+    /// loop.
+    fn named(&mut self, name: &str, at: Address) -> Operand {
+        let Some(expression) = self.doc.name(name).map(str::to_owned) else {
+            // §5.12: an unrecognised name is exactly what #NAME? reports.
+            return FormulaError::Name.into();
+        };
+        if self.depth >= MAX_DEPTH {
+            return FormulaError::Num.into();
+        }
+        let Ok(expr) = parse(&expression) else {
+            return FormulaError::Name.into();
+        };
+        self.depth += 1;
+        let operand = self.operand(&expr, at);
+        self.depth -= 1;
+        operand
     }
 
     fn prefix(&mut self, op: Op, operand: &Expr, at: Address) -> Value {
@@ -406,13 +427,7 @@ fn scalar_binary(op: Op, left: Value, right: Value) -> Value {
 /// cell, as they are everywhere else.
 fn compare(op: Op, left: &Value, right: &Value) -> Value {
     use std::cmp::Ordering;
-    let ordering = match (coerce_empty(left, right), coerce_empty(right, left)) {
-        (Value::Number(a), Value::Number(b)) => a.partial_cmp(&b),
-        (Value::Text(a), Value::Text(b)) => Some(compare_text(&a, &b)),
-        (Value::Bool(a), Value::Bool(b)) => Some(a.cmp(&b)),
-        (a, b) => Some(rank(&a).cmp(&rank(&b))),
-    };
-    let Some(ordering) = ordering else {
+    let Some(ordering) = order(left, right) else {
         // A NaN cannot reach a cell (`Value::number`), so this is unreachable in practice.
         return Value::Error(FormulaError::Num);
     };
@@ -424,6 +439,18 @@ fn compare(op: Op, left: &Value, right: &Value) -> Value {
         Op::Gt => ordering == Ordering::Greater,
         _ => ordering != Ordering::Less,
     })
+}
+
+/// How two values sort, by the rules `compare` documents. Shared with the lookup functions
+/// (§6.14), which sort by exactly the same order — "Numbers before Text, Text before
+/// Logicals" is §6.14.9's wording for what `rank` encodes.
+pub fn order(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
+    match (coerce_empty(left, right), coerce_empty(right, left)) {
+        (Value::Number(a), Value::Number(b)) => a.partial_cmp(&b),
+        (Value::Text(a), Value::Text(b)) => Some(compare_text(&a, &b)),
+        (Value::Bool(a), Value::Bool(b)) => Some(a.cmp(&b)),
+        (a, b) => Some(rank(&a).cmp(&rank(&b))),
+    }
 }
 
 /// An empty cell takes the type of what it is compared against.
@@ -470,6 +497,7 @@ mod tests {
         }
         Document {
             sheets: vec![sheet],
+            ..Default::default()
         }
     }
 

@@ -149,6 +149,13 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
         ));
         return out;
     }
+    // §5.11 names, which are document-level rather than per-sheet.
+    if want.names != got.names {
+        out.push(format!(
+            "{label}: names {:?}, back as {:?}",
+            want.names, got.names
+        ));
+    }
     for (i, (w, g)) in want.sheets.iter().zip(&got.sheets).enumerate() {
         if w.name != g.name {
             out.push(format!(
@@ -191,6 +198,7 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
 fn case(name: &str, cells: &[(u32, u32, CellValue)]) -> (String, Document) {
     let mut doc = Document {
         sheets: vec![Sheet::new("Data")],
+        ..Default::default()
     };
     let sheet = doc.sheet_mut(0).unwrap();
     for (row, col, value) in cells {
@@ -203,10 +211,26 @@ fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
 
+    let mut named = case(
+        "named-expressions",
+        &[(0, 0, n(1.0)), (1, 0, n(2.0)), (2, 0, n(3.0))],
+    );
+    // A named range and a named expression, which ODF spells differently and we store the
+    // same way (§5.11, `Document::names`). LO has to give both back recognisably.
+    named
+        .1
+        .names
+        .insert("data_range".into(), "[$Data.$A$1:.$A$3]".into());
+    named
+        .1
+        .names
+        .insert("total".into(), "of:=SUM([$Data.$A$1:.$A$3])".into());
+
     let mut all = vec![
         // The degenerate document: one sheet, nothing in it. Legal, and the shape most
         // likely to be written as something LO rejects outright (§3.2).
         ("empty".to_owned(), Document::default()),
+        named,
         case(
             "numbers",
             &[
@@ -269,6 +293,7 @@ fn cases() -> Vec<(String, Document)> {
             Sheet::new("Second"),
             Sheet::new("Third"),
         ],
+        ..Default::default()
     };
     many.sheet_mut(0).unwrap().set(Pos::new(0, 0), n(1.0));
     many.sheet_mut(2).unwrap().set(Pos::new(2, 2), t("third"));

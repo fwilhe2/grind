@@ -65,6 +65,21 @@ fn content(doc: &Document, form: Form) -> String {
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
     }
     out.push_str(">\n <office:body>\n  <office:spreadsheet>\n");
+    // §5.11. Before the tables, which is where the schema puts them — and every name is
+    // written as `table:named-expression`, since the reader stores a named range as the
+    // reference it stands for and the two forms are interchangeable on the way out.
+    if !doc.names.is_empty() {
+        out.push_str("   <table:named-expressions>\n");
+        for (name, expression) in &doc.names {
+            let _ = writeln!(
+                out,
+                "    <table:named-expression table:name=\"{}\" table:expression=\"{}\"/>",
+                esc(name),
+                esc(expression)
+            );
+        }
+        out.push_str("   </table:named-expressions>\n");
+    }
     for sheet in &doc.sheets {
         table(&mut out, sheet);
     }

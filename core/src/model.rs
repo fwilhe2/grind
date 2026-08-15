@@ -143,17 +143,36 @@ impl Sheet {
 #[derive(Debug, Clone)]
 pub struct Document {
     pub sheets: Vec<Sheet>,
+    /// `table:named-expressions` — a name to the formula text it stands for (§5.11).
+    ///
+    /// Keyed lower-case because §5.11 makes names case-*consistent*: they match
+    /// case-insensitively and may not differ only in case. The value is always a formula
+    /// expression, so a named **range** is stored as the reference it is — `[$Sheet1.$A$1]`
+    /// rather than the bare address ODF writes — and one lookup path serves both forms.
+    ///
+    /// ponytail: one flat map, so a sheet-local name is visible document-wide. §5.11 only
+    /// *requires* global names, and a document with two sheet-local names that collide is
+    /// the case this gets wrong. Split the map by sheet when one turns up.
+    pub names: BTreeMap<String, String>,
 }
 
+/// One empty sheet — what a *user* gets. A reader builds its sheets from the file instead,
+/// and a document that declares none stays empty.
 impl Default for Document {
     fn default() -> Self {
         Self {
             sheets: vec![Sheet::new("Sheet1")],
+            names: BTreeMap::new(),
         }
     }
 }
 
 impl Document {
+    /// Resolve a named expression (§5.11), case-insensitively.
+    pub fn name(&self, name: &str) -> Option<&str> {
+        self.names.get(&name.to_lowercase()).map(String::as_str)
+    }
+
     pub fn sheet(&self, i: usize) -> Option<&Sheet> {
         self.sheets.get(i)
     }
