@@ -28,6 +28,7 @@ pub mod odf;
 
 pub use action::Action;
 pub use model::{CellValue, Document, Pos, Sheet};
+pub use odf::Form;
 
 #[derive(Debug)]
 pub enum Error {
@@ -214,6 +215,38 @@ impl App {
         !self.state.read().unwrap().redo.is_empty()
     }
 
+    // --- documents ---
+
+    /// Replace the document. History is dropped: an undo across a file boundary would
+    /// apply an action addressed to a document that no longer exists.
+    pub fn open_bytes(&self, name: &str, bytes: &[u8]) -> Result<()> {
+        let doc = read_bytes(name, bytes)?;
+        self.mutate(|state| {
+            state.doc = doc;
+            state.undo.clear();
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    pub fn open_file(&self, path: &Path) -> Result<()> {
+        self.open_bytes(
+            &path.display().to_string(),
+            &std::fs::read(path).map_err(Error::Io)?,
+        )
+    }
+
+    /// Serialise the current document. Paired with [`App::save_file`] because the browser
+    /// has no filesystem (doc/plan.md, rule 5), and this is the whole reason the core
+    /// never exposes its `Document`: saving is an operation, not a getter.
+    pub fn save_bytes(&self, form: Form) -> Result<Vec<u8>> {
+        write_bytes(&self.state.read().unwrap().doc, form)
+    }
+
+    pub fn save_file(&self, path: &Path) -> Result<()> {
+        write_file(&self.state.read().unwrap().doc, path)
+    }
+
     // --- reading ---
 
     pub fn get(&self, sheet: usize, pos: Pos) -> Result<CellValue> {
@@ -281,4 +314,23 @@ pub fn read_file(path: &Path) -> Result<Document> {
 /// a label for diagnostics.
 pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
     odf::read(bytes)
+}
+
+/// Serialise a document. See [`Form`].
+pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
+    odf::write(doc, form)
+}
+
+/// Write a document, choosing the form from the extension — `.fods` flat, anything else
+/// the package form.
+///
+/// The only place in the codebase where a file extension decides anything: reading sniffs
+/// the form from the bytes, but writing has to pick one, and the name the user typed is
+/// the only statement of intent available.
+pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
+    let form = match path.extension().and_then(|e| e.to_str()) {
+        Some(e) if e.eq_ignore_ascii_case("fods") || e.eq_ignore_ascii_case("xml") => Form::Flat,
+        _ => Form::Package,
+    };
+    std::fs::write(path, write_bytes(doc, form)?).map_err(Error::Io)
 }

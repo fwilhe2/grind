@@ -229,6 +229,88 @@ fn several_paragraphs_become_several_lines() {
 }
 
 #[test]
+fn an_empty_paragraph_is_still_a_line() {
+    // Counting paragraphs, not testing whether the accumulated text is empty: a blank
+    // first or middle line contributes no characters, and testing emptiness silently eats
+    // it. This is what a cell holding "a\n\nb" round-trips as, which is how it surfaced.
+    let d = doc(
+        r#"<table:table table:name="S">
+             <table:table-row>
+               <table:table-cell office:value-type="string">
+                 <text:p/><text:p>after</text:p>
+               </table:table-cell>
+               <table:table-cell office:value-type="string">
+                 <text:p>a</text:p><text:p/><text:p>b</text:p>
+               </table:table-cell>
+             </table:table-row>
+           </table:table>"#,
+    );
+    assert_eq!(cell(&d, 0, 0), text("\nafter"));
+    assert_eq!(cell(&d, 0, 1), text("a\n\nb"));
+}
+
+#[test]
+fn text_s_carries_a_count_of_spaces() {
+    // ODF collapses runs of whitespace inside `text:p`, so LibreOffice writes "a    b" as
+    // one literal space plus `<text:s text:c="3"/>`. Ignoring the count turns every
+    // multi-space string into a single-space one — silently, and in real documents.
+    let d = doc(
+        r#"<table:table table:name="S">
+             <table:table-row>
+               <table:table-cell office:value-type="string">
+                 <text:p>a <text:s text:c="3"/>b</text:p>
+               </table:table-cell>
+               <table:table-cell office:value-type="string">
+                 <text:p><text:s/>x</text:p>
+               </table:table-cell>
+             </table:table-row>
+           </table:table>"#,
+    );
+    assert_eq!(cell(&d, 0, 0), text("a    b"));
+    // An absent count means one, per the schema default.
+    assert_eq!(cell(&d, 0, 1), text(" x"));
+}
+
+#[test]
+fn what_we_write_is_what_we_read() {
+    // The half of loop C that needs no LibreOffice, and so runs everywhere: our own writer
+    // and reader must agree on every value the model can hold. Catches a writer that
+    // mangles whitespace, newlines or XML metacharacters on a machine with no `soffice`.
+    let mut d = sheet_core::Document::default();
+    let sheet = d.sheet_mut(0).unwrap();
+    for (row, value) in [
+        text("plain"),
+        text("  leading and trailing  "),
+        text("inner    spaces"),
+        text("tab\there"),
+        text("line\n\nbreaks\n"),
+        text("<xml> & \"quotes\""),
+        text(""),
+        num(-0.5),
+        num(1e300),
+        CellValue::Bool(true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sheet.set(Pos::new(row as u32, 0), value);
+    }
+    sheet.set_formula(Pos::new(0, 0), "of:=1+1".into());
+
+    for form in [sheet_core::Form::Flat, sheet_core::Form::Package] {
+        let bytes = sheet_core::write_bytes(&d, form).unwrap();
+        let back = read_bytes("round-trip", &bytes).unwrap();
+        let (a, b) = (d.sheet(0).unwrap(), back.sheet(0).unwrap());
+        assert_eq!(a.used_rows(), b.used_rows(), "{form:?}");
+        for row in 0..a.used_rows() {
+            let pos = Pos::new(row, 0);
+            assert_eq!(a.get(pos), b.get(pos), "{form:?} row {row}");
+            assert_eq!(a.formula(pos), b.formula(pos), "{form:?} row {row}");
+        }
+    }
+}
+
+#[test]
 fn styled_runs_and_entities_inside_a_paragraph_survive() {
     let d = doc(
         r#"<table:table table:name="S">

@@ -209,6 +209,21 @@ Attributes (interleaved, all optional except where a value-type forces one):
 | `string` | optional `office:string-value` | if omitted, the display text (`text:p` children) *is* the value |
 | `error` | optional `office:string-value` | formula error cells |
 
+**`office:value` is xsd:double, but LibreOffice writes it at 15 significant digits.** A
+double needs up to 17 to round-trip, so a value LO has saved is not necessarily the value
+that was in memory: `1/3` comes back as `0.333333333333333`. This is not a Calc decision but
+a platform-wide one — every ODF double goes through `sax::Converter::convertDouble`
+(`sax/source/tools/converter.cxx:779`), which asks `rtl::math::doubleToUStringBuffer` for
+`rtl_math_StringFormat_Automatic`. LO's own reader carries a special case for the fallout:
+`sal/rtl/math.cxx:364-366` recognises `1.79769313486232e+308` as the `DBL_MAX` it
+"wrote everywhere", because at 15 digits the largest double no longer parses back.
+
+Consequences for a writer, both worth having:
+- Emitting full precision ourselves is correct and safe — LO reads all 17 digits fine; it
+  simply will not write them back.
+- Any round-trip check through LO must compare doubles at 15 significant digits. Insisting
+  on exact equality is not a stricter test, it is a test of LibreOffice's serialiser.
+
 - span/merge attributes (`table-table-cell-attlist-extra`): `table:number-columns-spanned`,
   `table:number-rows-spanned` (merged cell — only on the top-left cell; the covered cells
   underneath must each be written as `<table:covered-table-cell/>`, not omitted and not

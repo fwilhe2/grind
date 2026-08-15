@@ -8,8 +8,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
 
-**Phase 0 of 7.** The harness exists; the code does not. `cargo test` currently reports 361
-failures, which is the intended state — see [`doc/plan.md`](doc/plan.md).
+**Phase 3 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and flat
+(`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the three it
+declines are password-protected — and documents written here survive a round trip through
+LibreOffice unchanged, checked in CI. There is no formula evaluator yet (phase 4), no styles
+(phase 5) and no usable CLI (phase 6). See [`doc/plan.md`](doc/plan.md).
 
 ## Why
 

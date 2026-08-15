@@ -67,15 +67,24 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 |---|---|---|---|
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `core/tests/corpus_read.rs` | 361 files in `ods/` + `fods/` |
 | **B** — formula conformance | recalculating each fixture matches the cached value already in the file | phase 4 | 509 per-function `.fods` in `functions/**/fods/` |
-| **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | phase 3 | — |
+| **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
 
 Loop A currently reports **358 read, 3 password-protected, 0 failed**. Encrypted documents are
 its *one* accepted non-success outcome, named explicitly in the test rather than filtered away
 — every other error still fails the loop.
 
-Loop C is also the enforcement mechanism for the anti-bloat rule: a feature that does not
-survive a LibreOffice round-trip fails CI, so the feature line is defended by a machine
-instead of by discipline.
+Loop C runs both directions and is green. Its `out` direction needs only the `soffice`
+binary, so **CI runs it** — which is what makes the anti-bloat rule a gate: a feature that
+does not survive a LibreOffice round-trip fails CI, and the feature line is defended by a
+machine instead of by discipline. Its `back` direction additionally wants the corpus.
+
+Each loop has exactly one documented loosening, and both are named in the test rather than
+buried in a constant: loop A accepts `Error::Encrypted`, and loop C compares doubles at 15
+significant digits **because that is all LibreOffice writes** (`sal/rtl/math.cxx:364-366`;
+see `doc/ods-format.md` §3.4). Comparing exactly there tests LO's serialiser, not ours.
+Loop C's `back` direction also skips formula-bearing documents — LO recalculates on load, so
+their values are a claim about an evaluator that does not exist until phase 4. If you find
+yourself adding a *third* exception, that is a bug in the code, not in the loop.
 
 ## Architecture
 
@@ -146,6 +155,26 @@ Non-obvious things a change here can break:
 - Every value-parse failure degrades to a safe default **scoped to its own cell**, never to a
   rejected document.
 
+### `core/src/odf/write.rs` — the writer
+
+One content writer for both forms; they differ only in the root element name and whether
+`office:mimetype` sits on it (§7.3). Minimal by intent (§1.4): no `styles.xml`, no
+`meta.xml`, no automatic styles, because there is nothing yet to put in them.
+
+Whitespace is the trap here, and it is not symmetric with reading. **A conforming reader
+collapses runs of whitespace inside `text:p`**, so a literal `"a    b"` comes back as
+`"a b"` and a leading or trailing space vanishes — which is why `text:s`/`text:tab` exist
+and why `paragraph()` emits them. Our own reader does not collapse, so this bug is invisible
+until a document meets LibreOffice. Reading has the mirror-image rule: `text:s` carries a
+**count**, and ignoring it flattens every multi-space string.
+
+Structural invariants worth not breaking: a table needs at least one `table:table-column`
+and one `table:table-row` even when empty (§3.2); a formula always travels with its cached
+value, since an omitted one renders blank until recalculation (§4); and in the package form
+`mimetype` must be the first entry, stored uncompressed, with no extra field — readers sniff
+it at a fixed byte offset before unzipping anything, which is what the byte-level assertions
+in the writer's tests are pinning.
+
 ## Conventions
 
 - **Positions are 0-based in the core.** Only the CLI is 1-based, and it converts in exactly
@@ -184,8 +213,14 @@ tampering.
 
 ## Where the work is
 
-Phases 0–2 are done: specs and harness, the column store and undo/redo, and the reader with
-loop A green. **Phase 3 is next** — the writer plus loop C. Phase 4 (the formula engine, whose
-exit criterion is a conforming OpenFormula Small Group evaluator) is the phase that decides
-whether the project is real; `doc/plan.md` has the ordering within it, and `value.rs` first is
-not negotiable since every function inherits its correctness.
+Phases 0–3 are done: specs and harness, the column store and undo/redo, the reader with loop
+A green, and the writer with loop C green in both directions. Documents open and save through
+`App` — never by handing out the `Document`, which is why saving is `App::save_bytes` rather
+than a getter.
+
+**Phase 4 is next** — the formula engine, whose exit criterion is a conforming OpenFormula
+Small Group evaluator, and the phase that decides whether the project is real. `doc/plan.md`
+has the ordering within it, and `value.rs` first is not negotiable since every function
+inherits its correctness. Two things phase 4 unlocks that are deferred *in code* right now:
+dates and times stop being ISO strings once `table:null-date` exists, and loop C's `back`
+direction stops skipping formula-bearing documents.

@@ -17,7 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cargo build --workspace
-      # The corpus tests need a LibreOffice checkout and skip without one, so this
-      # is a build-and-unit-test gate only. Loop A/B/C run locally against
-      # SHEET_LO_CORPUS until there is something for them to pass.
+      # Loops A and B need a LibreOffice *checkout* for its corpus and skip without
+      # one, so this job is the unit tests plus whatever else runs everywhere.
       - run: cargo test --workspace
+
+  roundtrip:
+    # Loop C's "out" direction needs only the `soffice` binary — no corpus — so the
+    # rule that every feature must survive a LibreOffice round trip (doc/plan.md,
+    # rule 7) is enforced here by a machine rather than by remembering to run it.
+    # Its "back" direction still skips: that one wants the checkout.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: cargo test --test roundtrip -- --nocapture

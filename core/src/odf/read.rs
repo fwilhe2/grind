@@ -219,6 +219,7 @@ impl Context<Builder> for Row {
             date_value: attrs.get(Ns::Office, "date-value").map(str::to_owned),
             time_value: attrs.get(Ns::Office, "time-value").map(str::to_owned),
             formula: attrs.get(Ns::Table, "formula").map(str::to_owned),
+            saw_paragraph: false,
         }))
     }
 
@@ -237,6 +238,12 @@ struct Cell {
     date_value: Option<String>,
     time_value: Option<String>,
     formula: Option<String>,
+    /// Whether a `text:p` has already been seen, so the *second* one starts a new line.
+    ///
+    /// Counting paragraphs rather than testing whether the accumulated text is empty:
+    /// otherwise `<text:p/><text:p/>` — a cell holding one blank line — collapses to the
+    /// empty string, and every leading or doubled newline is silently eaten.
+    saw_paragraph: bool,
 }
 
 impl Cell {
@@ -301,9 +308,10 @@ impl Context<Builder> for Cell {
         }
         // A cell may hold several paragraphs; they are separate lines, not one run-on
         // string.
-        if !b.text.is_empty() {
+        if self.saw_paragraph {
             b.text.push('\n');
         }
+        self.saw_paragraph = true;
         Some(Box::new(Paragraph))
     }
 
@@ -332,12 +340,19 @@ impl Context<Builder> for Cell {
 struct Paragraph;
 
 impl Context<Builder> for Paragraph {
-    fn start_child(&mut self, name: &Name, _a: &Attrs, b: &mut Builder) -> Option<Ctx> {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
             // A span is styled text; its characters still belong to the cell.
             (Ns::Text, "span" | "a") => Some(Box::new(Paragraph)),
+            // `text:s` carries a *count*: ODF collapses runs of whitespace in `text:p`, so
+            // "a    b" is written as one literal space plus `<text:s text:c="3"/>`.
+            // Ignoring the count silently turns every multi-space string into a
+            // single-space one.
             (Ns::Text, "s") => {
-                b.text.push(' ');
+                let n = attrs.count(Ns::Text, "c", MAX_COLS);
+                for _ in 0..n {
+                    b.text.push(' ');
+                }
                 Some(Box::new(super::context::Ignore))
             }
             (Ns::Text, "tab") => {

@@ -12,6 +12,9 @@ pub mod context;
 pub mod names;
 pub mod package;
 pub mod read;
+pub mod write;
+
+pub use write::Form;
 
 use crate::model::Document;
 use crate::Result;
@@ -27,4 +30,9 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
         &mut builder,
     )?;
     Ok(builder.doc)
+}
+
+/// Serialise a document in the requested physical form.
+pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
+    write::write(doc, form)
 }

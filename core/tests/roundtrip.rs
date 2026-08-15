@@ -1,0 +1,410 @@
+// SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! Loop C — round-trip differential against LibreOffice.
+//!
+//! The strictest of the three loops, and the only one that checks the *writer*. Reading
+//! the spec tells you what is legal; only LibreOffice tells you what it does with it, and
+//! the gap between those two is where a writer's bugs live.
+//!
+//! Both directions:
+//!
+//! * **out** — build a document, write it, have LO convert it, read LO's output back, and
+//!   assert we get the same document. Catches everything we emit that LO drops, collapses
+//!   or reinterprets.
+//! * **back** — take an LO-authored file, read it, write it, convert *that*, read it back,
+//!   and assert it still matches what we first read. Catches the writer losing something
+//!   the reader understood.
+//!
+//! This is also the enforcement mechanism for the anti-bloat rule (doc/plan.md, rule 7): a
+//! feature that does not survive this fails CI, so the feature line is defended by a
+//! machine rather than by discipline.
+//!
+//! Needs `soffice` on `PATH`; skips with a notice without one.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use sheet_core::{CellValue, Document, Form, Pos, Sheet};
+
+const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
+
+/// How many corpus documents the "back" direction takes. Each soffice conversion is
+/// seconds, so this is a sample rather than the whole corpus — loop A already reads all
+/// 361, and what is under test here is the writer, which does not vary per file.
+const SAMPLE: usize = 20;
+
+/// Skip corpus documents bigger than this, measured as rows × columns. A cell-by-cell
+/// comparison over a sheet the size of a whole grid is not a better test, only a slower one.
+const MAX_COMPARED_CELLS: u64 = 200_000;
+
+// --- driving LibreOffice ---------------------------------------------------------------
+
+/// A scratch directory that cleans itself up.
+struct Lab {
+    dir: PathBuf,
+}
+
+impl Lab {
+    fn new(name: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("sheet-loop-c-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("in")).unwrap();
+        std::fs::create_dir_all(dir.join("out")).unwrap();
+        Self { dir }
+    }
+
+    fn input(&self, name: &str, bytes: &[u8]) -> PathBuf {
+        let path = self.dir.join("in").join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    /// Convert every staged input to flat XML in **one** soffice invocation.
+    ///
+    /// One invocation because startup dominates: a couple of seconds each time, against
+    /// milliseconds per document once it is up. The private `UserInstallation` profile is
+    /// not optional — without it this fights the developer's own running LibreOffice for
+    /// the profile lock and either blocks or silently does nothing.
+    fn convert(&self, inputs: &[PathBuf]) -> PathBuf {
+        let out = self.dir.join("out");
+        let status = Command::new("soffice")
+            .arg("--headless")
+            .arg(format!(
+                "-env:UserInstallation=file://{}",
+                self.dir.join("profile").display()
+            ))
+            .args(["--convert-to", "fods", "--outdir"])
+            .arg(&out)
+            .args(inputs)
+            .status()
+            .expect("soffice failed to start");
+        assert!(status.success(), "soffice exited with {status}");
+        out
+    }
+}
+
+impl Drop for Lab {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn have_soffice() -> bool {
+    Command::new("soffice")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Read back what LO produced for one staged input, by name.
+fn converted(out: &Path, input: &Path) -> Document {
+    let name = input.file_stem().unwrap().to_str().unwrap();
+    let path = out.join(format!("{name}.fods"));
+    assert!(
+        path.exists(),
+        "LibreOffice produced no output for {}: it could not open what we wrote",
+        input.display()
+    );
+    sheet_core::read_file(&path).unwrap_or_else(|e| panic!("re-reading {}: {e}", path.display()))
+}
+
+// --- comparison ------------------------------------------------------------------------
+
+/// Are these the same value, to the precision LibreOffice is capable of preserving?
+///
+/// The one loosening in this loop, named here rather than hidden in a tolerance constant.
+/// LO writes every ODF double at 15 significant digits, where a double needs 17 to
+/// round-trip (doc/ods-format.md §3.4, citing `sal/rtl/math.cxx:364-366` — LO's own reader
+/// special-cases the `DBL_MAX` its writer mangles). Comparing exactly here would not be a
+/// stricter test of our writer; it would be a test of LibreOffice's, and one it fails on
+/// `1/3`. Everything else compares exactly.
+///
+/// The tolerance follows from the 15 digits: rounding there costs up to half an ulp at
+/// that precision, which is a relative 5e-15 when the leading digit is 1. `1e-14` is that
+/// with one factor of two in hand — still four orders of magnitude tighter than any real
+/// writer bug, which loses a digit or a decimal point rather than a fifteenth place.
+fn same(a: &CellValue, b: &CellValue) -> bool {
+    match (a, b) {
+        (CellValue::Number(x), CellValue::Number(y)) => {
+            x == y || (x - y).abs() <= 1e-14 * x.abs().max(y.abs())
+        }
+        _ => a == b,
+    }
+}
+
+/// Every way two documents differ, as sentences. Not `assert_eq!` on the whole document:
+/// the interesting output is *which cell* moved, and a `Debug` dump of two sheets is not
+/// something anyone reads.
+fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
+    let mut out = Vec::new();
+    if want.sheets.len() != got.sheets.len() {
+        out.push(format!(
+            "{label}: {} sheets in, {} out",
+            want.sheets.len(),
+            got.sheets.len()
+        ));
+        return out;
+    }
+    for (i, (w, g)) in want.sheets.iter().zip(&got.sheets).enumerate() {
+        if w.name != g.name {
+            out.push(format!("{label}: sheet {i} named {:?}, back as {:?}", w.name, g.name));
+        }
+        let rows = w.used_rows().max(g.used_rows());
+        let cols = w.used_cols().max(g.used_cols());
+        for row in 0..rows {
+            for col in 0..cols {
+                let pos = Pos::new(row, col);
+                if !same(&w.get(pos), &g.get(pos)) {
+                    out.push(format!(
+                        "{label}: sheet {i} r{row}c{col} was {:?}, back as {:?}",
+                        w.get(pos),
+                        g.get(pos)
+                    ));
+                }
+                if w.formula(pos) != g.formula(pos) {
+                    out.push(format!(
+                        "{label}: sheet {i} r{row}c{col} formula was {:?}, back as {:?}",
+                        w.formula(pos),
+                        g.formula(pos)
+                    ));
+                }
+                if out.len() > 20 {
+                    out.push(format!("{label}: ... and more"));
+                    return out;
+                }
+            }
+        }
+    }
+    out
+}
+
+// --- direction "out": ours -> LibreOffice -> ours ---------------------------------------
+
+/// One named document to push through LO, built cell by cell.
+fn case(name: &str, cells: &[(u32, u32, CellValue)]) -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    for (row, col, value) in cells {
+        sheet.set(Pos::new(*row, *col), value.clone());
+    }
+    (name.to_owned(), doc)
+}
+
+fn cases() -> Vec<(String, Document)> {
+    let n = |x: f64| CellValue::Number(x);
+    let t = |s: &str| CellValue::Text(s.to_owned());
+
+    let mut all = vec![
+        // The degenerate document: one sheet, nothing in it. Legal, and the shape most
+        // likely to be written as something LO rejects outright (§3.2).
+        ("empty".to_owned(), Document::default()),
+        case(
+            "numbers",
+            &[
+                (0, 0, n(0.0)),
+                (0, 1, n(-1.5)),
+                (0, 2, n(1e15)),
+                (0, 3, n(0.1)),
+                // Precision is the point: a double that needs all 17 significant digits
+                // to survive is where a writer that formats with `{:.6}` gets caught.
+                (0, 4, n(0.123_456_789_012_345_67)),
+                (1, 0, n(1.0 / 3.0)),
+            ],
+        ),
+        case(
+            "text",
+            &[
+                (0, 0, t("plain")),
+                // XML metacharacters, in an attribute and in text.
+                (0, 1, t("<tag> & \"quoted\" 'single'")),
+                (0, 2, t("Grüße — ünïcodé ✓")),
+                // Whitespace: readers collapse runs inside text:p, so all three of these
+                // come back wrong unless text:s is written.
+                (0, 3, t("  leading")),
+                (0, 4, t("trailing  ")),
+                (1, 0, t("inner    spaces")),
+                (1, 1, t("tab\there")),
+                // Multi-line, including a blank line, which is the case that dies if
+                // paragraphs are joined by testing whether the buffer is empty.
+                (1, 2, t("line1\nline2")),
+                (1, 3, t("\nleading blank")),
+                (1, 4, t("a\n\nb")),
+                // Text that looks like a number must stay text.
+                (2, 0, t("42")),
+                (2, 1, t("")),
+            ],
+        ),
+        case("booleans", &[(0, 0, CellValue::Bool(true)), (0, 1, CellValue::Bool(false))]),
+        // Sparse: gaps are written as repeats, and a repeat that is off by one moves every
+        // later cell silently.
+        case(
+            "sparse",
+            &[(0, 0, n(1.0)), (0, 7, n(2.0)), (40, 0, n(3.0)), (40, 7, n(4.0))],
+        ),
+    ];
+
+    let mut many = Document {
+        sheets: vec![Sheet::new("First"), Sheet::new("Second"), Sheet::new("Third")],
+    };
+    many.sheet_mut(0).unwrap().set(Pos::new(0, 0), n(1.0));
+    many.sheet_mut(2).unwrap().set(Pos::new(2, 2), t("third"));
+    all.push(("sheets".to_owned(), many));
+
+    all
+}
+
+#[test]
+fn documents_we_write_survive_libreoffice() {
+    if !have_soffice() {
+        eprintln!("skipping loop C: no soffice on PATH");
+        return;
+    }
+
+    let lab = Lab::new("out");
+    let cases = cases();
+    // Both physical forms, every case. They share a content writer but not a container,
+    // and the container is where §1.1's byte-level rules live.
+    let staged: Vec<_> = cases
+        .iter()
+        .flat_map(|(name, doc)| {
+            [(Form::Flat, "fods"), (Form::Package, "ods")].map(|(form, ext)| {
+                let bytes = sheet_core::write_bytes(doc, form).unwrap();
+                // Distinct stems: LO names its output after the input's stem, so
+                // `x.ods` and `x.fods` would both convert onto `x.fods`.
+                let path = lab.input(&format!("{name}-{ext}.{ext}"), &bytes);
+                (name.clone(), doc, path)
+            })
+        })
+        .collect();
+
+    let out = lab.convert(&staged.iter().map(|(_, _, p)| p.clone()).collect::<Vec<_>>());
+
+    let mut failures = Vec::new();
+    for (_, doc, path) in &staged {
+        let label = path.file_name().unwrap().to_str().unwrap();
+        failures.extend(differences(label, doc, &converted(&out, path)));
+    }
+
+    for f in &failures {
+        eprintln!("  {f}");
+    }
+    assert!(failures.is_empty(), "loop C (out): {} differences", failures.len());
+}
+
+// --- direction "back": LibreOffice -> ours -> LibreOffice -> ours ------------------------
+
+/// How many cells in this document actually hold something.
+fn values(doc: &Document) -> usize {
+    doc.sheets
+        .iter()
+        .map(|s| {
+            (0..s.used_rows())
+                .flat_map(|r| (0..s.used_cols()).map(move |c| Pos::new(r, c)))
+                .filter(|p| !s.get(*p).is_empty())
+                .count()
+        })
+        .sum()
+}
+
+/// Corpus documents to push back out through the writer.
+///
+/// Formula-bearing documents are excluded, and this is the phase-3 exit criterion talking
+/// (doc/plan.md: "loop C green for value-only documents"), not a convenience: LO
+/// recalculates on load, so a formula cell's value after a round trip is a statement about
+/// an evaluator that does not exist until phase 4. Phase 4 lifts this filter.
+fn sample(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for dir in ["ods", "fods"] {
+        let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if matches!(path.extension().and_then(|e| e.to_str()), Some("ods" | "fods")) {
+                files.push(path);
+            }
+        }
+    }
+    let mut eligible: Vec<_> = files
+        .iter()
+        .filter_map(|path| {
+            // Unreadable or encrypted: loop A owns that verdict, not this one.
+            let doc = sheet_core::read_file(path).ok()?;
+            let biggest = doc
+                .sheets
+                .iter()
+                .map(|s| u64::from(s.used_rows()) * u64::from(s.used_cols()))
+                .max()?;
+            let formula_free = doc.sheets.iter().all(|s| s.formula_count() == 0);
+            (formula_free && biggest < MAX_COMPARED_CELLS).then(|| (values(&doc), path.clone()))
+        })
+        .collect();
+
+    // Densest first. Taking the alphabetically first twenty instead gives a sample of
+    // regression fixtures — single-cell documents that reproduce one import bug each — and
+    // three hundred cells to check the whole writer against.
+    eligible.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    eligible.truncate(SAMPLE);
+    eligible.sort_by(|a, b| a.1.cmp(&b.1));
+    eligible.into_iter().map(|(_, path)| path).collect()
+}
+
+#[test]
+fn libreoffice_documents_survive_our_writer() {
+    if !have_soffice() {
+        eprintln!("skipping loop C: no soffice on PATH");
+        return;
+    }
+    let root = PathBuf::from(
+        std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
+    );
+    if !root.is_dir() {
+        eprintln!("skipping loop C (back): no LibreOffice corpus at {}", root.display());
+        return;
+    }
+
+    let files = sample(&root);
+    assert!(!files.is_empty(), "no value-only documents found in {}", root.display());
+
+    let lab = Lab::new("back");
+    let staged: Vec<_> = files
+        .iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let doc = sheet_core::read_file(path).unwrap();
+            let bytes = sheet_core::write_bytes(&doc, Form::Package).unwrap();
+            // Numbered: corpus stems are not unique across `ods/` and `fods/`.
+            let staged = lab.input(&format!("{i:03}.ods"), &bytes);
+            (path.clone(), doc, staged)
+        })
+        .collect();
+
+    // A comparison finds nothing in a document that holds nothing, so the sample has to be
+    // shown to have substance — otherwise a drifting filter turns this into twenty empty
+    // documents agreeing with twenty empty documents, which passes forever.
+    let cells: usize = staged.iter().map(|(_, doc, _)| values(doc)).sum();
+    eprintln!(
+        "loop C (back): {} value-only documents, {cells} cells",
+        files.len()
+    );
+    assert!(cells > 5_000, "sample holds only {cells} cells; it is not testing the writer");
+
+    let out = lab.convert(&staged.iter().map(|(_, _, p)| p.clone()).collect::<Vec<_>>());
+
+    let mut failures = Vec::new();
+    for (original, doc, path) in &staged {
+        let label = original.file_name().unwrap().to_str().unwrap();
+        failures.extend(differences(label, doc, &converted(&out, path)));
+    }
+
+    for f in failures.iter().take(30) {
+        eprintln!("  {f}");
+    }
+    assert!(failures.is_empty(), "loop C (back): {} differences", failures.len());
+}
