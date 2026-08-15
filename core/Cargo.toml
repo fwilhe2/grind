@@ -10,3 +10,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# Streaming, namespace-aware XML. Resolves to (uri, local-name) and keeps a scope stack —
+# exactly what doc/ods-format.md §8.1 requires. Never match on prefixes.
+quick-xml = "0.37"
+# The ODF package is a plain zip. deflate only; ODF uses nothing exotic.
+zip = { version = "2", default-features = false, features = ["deflate"] }

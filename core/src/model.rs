@@ -7,6 +7,8 @@
 //! Positions are **0-based** everywhere in the core. Only the CLI is 1-based, and
 //! it converts in exactly one place (doc/plan.md, phase 6).
 
+use std::collections::BTreeMap;
+
 use crate::grid::Column;
 
 /// A cell's value.
@@ -70,6 +72,13 @@ impl Pos {
 pub struct Sheet {
     pub name: String,
     cols: Vec<Column>,
+    /// Formula source text, kept verbatim beside the cached value.
+    ///
+    /// A side table rather than a cell variant, because a formula's *value* is an ordinary
+    /// [`CellValue`] and only its source is extra. Phase 4 replaces the string with a
+    /// parsed AST; until then carrying it means a re-save does not silently drop every
+    /// formula in the document.
+    formulas: BTreeMap<Pos, String>,
 }
 
 impl Sheet {
@@ -77,7 +86,20 @@ impl Sheet {
         Self {
             name: name.into(),
             cols: Vec::new(),
+            formulas: BTreeMap::new(),
         }
+    }
+
+    pub fn formula(&self, pos: Pos) -> Option<&str> {
+        self.formulas.get(&pos).map(String::as_str)
+    }
+
+    pub fn set_formula(&mut self, pos: Pos, formula: String) {
+        self.formulas.insert(pos, formula);
+    }
+
+    pub fn formula_count(&self) -> usize {
+        self.formulas.len()
     }
 
     pub fn get(&self, pos: Pos) -> CellValue {

@@ -62,10 +62,29 @@ fn every_corpus_document_loads() {
     files.sort();
     assert!(!files.is_empty(), "corpus at {} is empty", root.display());
 
+    // The one accepted outcome other than success. A password-protected document is well
+    // formed and simply not ours to open; reporting that is correct behaviour, not a
+    // tolerance failure. Named here rather than filtered away silently, and deliberately
+    // narrow — every other error still fails the loop.
+    let mut encrypted = 0usize;
     let failures: Vec<_> = files
         .iter()
-        .filter_map(|path| sheet_core::read_file(path).err().map(|e| (path, e)))
+        .filter_map(|path| match sheet_core::read_file(path) {
+            Ok(_) => None,
+            Err(sheet_core::Error::Encrypted) => {
+                encrypted += 1;
+                None
+            }
+            Err(e) => Some((path, e)),
+        })
         .collect();
+    eprintln!(
+        "loop A: {} documents, {} read, {} password-protected, {} failed",
+        files.len(),
+        files.len() - failures.len() - encrypted,
+        encrypted,
+        failures.len(),
+    );
 
     for (path, err) in failures.iter().take(10) {
         eprintln!("  {}: {err}", path.display());

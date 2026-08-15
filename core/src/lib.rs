@@ -34,6 +34,14 @@ pub enum Error {
     /// Not built yet. Carries the phase that removes it.
     Unimplemented(&'static str),
     NoSuchSheet(usize),
+    /// The XML would not parse at all. Per doc/ods-format.md §8.2 this is the *structural*
+    /// failure case — unrecognised content never reaches here, it is ignored instead.
+    Xml(String),
+    /// The zip container would not open, or holds no `content.xml`.
+    Package(String),
+    /// Password-protected. The document is fine; we have no key. Distinct from
+    /// [`Error::Xml`] so callers can tell "cannot open" from "will not parse".
+    Encrypted,
     Io(std::io::Error),
 }
 
@@ -42,6 +50,9 @@ impl fmt::Display for Error {
         match self {
             Error::Unimplemented(what) => write!(f, "unimplemented: {what}"),
             Error::NoSuchSheet(i) => write!(f, "no such sheet: {i}"),
+            Error::Xml(e) => write!(f, "xml: {e}"),
+            Error::Package(e) => write!(f, "package: {e}"),
+            Error::Encrypted => write!(f, "password-protected document"),
             Error::Io(e) => write!(f, "io: {e}"),
         }
     }
@@ -256,12 +267,18 @@ impl App {
 }
 
 /// Read an `.ods` (package) or `.fods` (flat) document.
-pub fn read_file(_path: &Path) -> Result<Document> {
-    Err(Error::Unimplemented("odf read — phase 2"))
+pub fn read_file(path: &Path) -> Result<Document> {
+    read_bytes(
+        &path.display().to_string(),
+        &std::fs::read(path).map_err(Error::Io)?,
+    )
 }
 
 /// Read a document from bytes. Paired with [`read_file`] from the start because the
 /// browser has no filesystem, and this is not retrofittable later (doc/plan.md, rule 5).
-pub fn read_bytes(_name: &str, _bytes: &[u8]) -> Result<Document> {
-    Err(Error::Unimplemented("odf read — phase 2"))
+///
+/// The form — zip package or flat XML — is sniffed from the bytes, so `name` is only ever
+/// a label for diagnostics.
+pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
+    odf::read(bytes)
 }
