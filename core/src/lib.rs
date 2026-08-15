@@ -174,6 +174,109 @@ impl App {
         })
     }
 
+    /// Set a formula and its cached value together (doc/ods-format.md §4).
+    ///
+    /// The value is computed here rather than left to a later `recalc`, because a formula
+    /// saved without one renders blank in LibreOffice. Evaluating against the document as it
+    /// stands is also what a spreadsheet does when you press Enter.
+    pub fn set_formula(&self, sheet: usize, pos: Pos, formula: &str) -> Result<()> {
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let value = formula::eval::to_cell(
+                formula::eval::Engine::new(&state.doc)
+                    .eval(formula, formula::eval::Address::new(sheet, pos)),
+            );
+            let inverse = state
+                .doc
+                .apply(Action::SetFormula {
+                    sheet,
+                    pos,
+                    formula: Some(formula.to_owned()),
+                    value,
+                })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Drop a cell's formula, keeping the value it last computed.
+    pub fn clear_formula(&self, sheet: usize, pos: Pos) -> Result<()> {
+        self.mutate(|state| {
+            let value = state
+                .doc
+                .sheet(sheet)
+                .ok_or(Error::NoSuchSheet(sheet))?
+                .get(pos);
+            let inverse = state
+                .doc
+                .apply(Action::SetFormula {
+                    sheet,
+                    pos,
+                    formula: None,
+                    value,
+                })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Recalculate every formula in the document, storing the results.
+    ///
+    /// Only cells whose value actually changed go into the undo entry, so recalculating an
+    /// already-current document is a no-op that leaves the history alone — and the whole
+    /// recalculation is one [`Action::Batch`], so undoing it is one step.
+    ///
+    /// [`Recalc::spoiled`] is the number that matters to a caller. This engine implements a
+    /// subset of OpenFormula, so recalculating a document that uses a function it does not
+    /// have replaces a perfectly good cached value with `#NAME?`. That is the honest result
+    /// of *this* recalculation, but it is also data loss, and a shell has to be able to say
+    /// so rather than quietly writing the file back.
+    pub fn recalc(&self) -> Result<Recalc> {
+        self.mutate(|state| {
+            let mut updates = Vec::new();
+            let mut spoiled = 0;
+            {
+                // The engine borrows the document immutably and memoises per cell, so this
+                // is one pass whatever the dependency order.
+                let mut engine = formula::eval::Engine::new(&state.doc);
+                for (index, sheet) in state.doc.sheets.iter().enumerate() {
+                    for (pos, _) in sheet.formulas() {
+                        let at = formula::eval::Address::new(index, pos);
+                        let value = formula::eval::to_cell(engine.value(at));
+                        let previous = sheet.get(pos);
+                        if value == previous {
+                            continue;
+                        }
+                        if is_error(&value) && !is_error(&previous) && !previous.is_empty() {
+                            spoiled += 1;
+                        }
+                        updates.push(Action::SetCell {
+                            sheet: index,
+                            pos,
+                            value,
+                        });
+                    }
+                }
+            }
+            let changed = updates.len();
+            if changed > 0 {
+                let inverse = state
+                    .doc
+                    .apply(Action::Batch(updates))
+                    .expect("every sheet index came from the document itself");
+                state.undo.push(inverse);
+                state.redo.clear();
+            }
+            Ok(Recalc { changed, spoiled })
+        })
+    }
+
     /// Undo the last change. `false` if there was nothing to undo.
     pub fn undo(&self) -> bool {
         self.mutate(|state| {
@@ -297,6 +400,90 @@ impl App {
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok((s.used_rows(), s.used_cols()))
     }
+
+    /// A cell's formula source, or `None` if it holds a plain value.
+    pub fn formula(&self, sheet: usize, pos: Pos) -> Result<Option<String>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.formula(pos).map(str::to_owned))
+    }
+
+    pub fn formula_count(&self, sheet: usize) -> Result<usize> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.formula_count())
+    }
+
+    /// Every named expression, name and expression alike (§5.11).
+    pub fn names(&self) -> Vec<(String, String)> {
+        self.state
+            .read()
+            .unwrap()
+            .doc
+            .names
+            .iter()
+            .map(|(name, expr)| (name.clone(), expr.clone()))
+            .collect()
+    }
+
+    // --- history across processes ---
+
+    /// The undo and redo stacks, for a shell that cannot stay running.
+    pub fn session(&self) -> Session {
+        let state = self.state.read().unwrap();
+        Session {
+            undo: state.undo.clone(),
+            redo: state.redo.clone(),
+        }
+    }
+
+    /// Restore stacks taken from [`App::session`].
+    ///
+    /// Safe against a document loaded separately because an inverse carries the value it
+    /// restores — an action never has to consult the document it was recorded against. An
+    /// entry naming a sheet that no longer exists simply fails to apply, which
+    /// [`App::undo`] already reports as `false`.
+    pub fn restore_session(&self, session: Session) {
+        self.mutate(|state| {
+            state.undo = session.undo;
+            state.redo = session.redo;
+        });
+    }
+}
+
+/// What one [`App::recalc`] did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Recalc {
+    /// Cells whose stored value the recalculation replaced.
+    pub changed: usize,
+    /// Of those, how many held a real value and now hold an error — almost always a
+    /// function this build does not implement (`sheet functions` lists the ones it does).
+    /// Undoing the recalculation is one step, which is the way back.
+    pub spoiled: usize,
+}
+
+/// Whether a cell holds one of §4.6's error names. Errors live in a cell as their name in
+/// text, because that is the only shape [`CellValue`] has for one — see
+/// [`formula::eval::to_cell`].
+fn is_error(value: &CellValue) -> bool {
+    match value {
+        CellValue::Text(s) => formula::value::FormulaError::from_name(s).is_some(),
+        _ => false,
+    }
+}
+
+/// Undo history, serialised so it can outlive the process that built it.
+///
+/// The document is *not* part of it: a stateless shell re-reads the file each time, and the
+/// stacks are the only thing that would otherwise be lost.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct Session {
+    /// `#[serde(default)]` on both, so a session file written by an older build still loads
+    /// rather than failing a user's next command.
+    #[serde(default)]
+    pub undo: Vec<Action>,
+    #[serde(default)]
+    pub redo: Vec<Action>,
 }
 
 /// Read an `.ods` (package) or `.fods` (flat) document.

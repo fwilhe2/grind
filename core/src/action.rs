@@ -8,23 +8,32 @@
 //! is a stack of inverses, redo is the same trick run the other way, and no shell ever
 //! implements history of its own (doc/plan.md, rule 2).
 
+use serde::{Deserialize, Serialize};
+
 use crate::model::{CellValue, Document, Pos};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     SetCell {
         sheet: usize,
         pos: Pos,
         value: CellValue,
     },
-}
-
-impl Action {
-    pub fn sheet(&self) -> usize {
-        match self {
-            Action::SetCell { sheet, .. } => *sheet,
-        }
-    }
+    /// A formula and its cached value, which move together — doc/ods-format.md §4: a formula
+    /// written without a cached value renders blank in LibreOffice until something
+    /// recalculates it, so the two are never set apart.
+    ///
+    /// `formula: None` clears the formula and leaves an ordinary value cell behind, which is
+    /// what the inverse of "set a formula on an empty cell" has to be.
+    SetFormula {
+        sheet: usize,
+        pos: Pos,
+        formula: Option<String>,
+        value: CellValue,
+    },
+    /// Many changes, one undo step. Recalculation is why this exists: a user who types
+    /// `recalc` and then `undo` means the whole recalculation, not its last cell.
+    Batch(Vec<Action>),
 }
 
 impl Document {
@@ -45,6 +54,103 @@ impl Document {
                     value: previous,
                 })
             }
+            Action::SetFormula {
+                sheet,
+                pos,
+                formula,
+                value,
+            } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = Action::SetFormula {
+                    sheet,
+                    pos,
+                    formula: s.formula(pos).map(str::to_owned),
+                    value: s.get(pos),
+                };
+                match formula {
+                    Some(f) => s.set_formula(pos, f),
+                    None => s.clear_formula(pos),
+                }
+                s.set(pos, value);
+                Some(previous)
+            }
+            // Applied in order, undone in the opposite order — two cells written in
+            // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
+            Action::Batch(actions) => {
+                // Checked before anything is written: bailing out halfway would leave the
+                // document mutated *and* return no inverse, so there would be no way back.
+                // A session file restored against a document with fewer sheets is the path
+                // that gets here.
+                if !actions.iter().all(|a| self.addressable(a)) {
+                    return None;
+                }
+                let mut inverses = Vec::with_capacity(actions.len());
+                for action in actions {
+                    inverses.push(self.apply(action)?);
+                }
+                inverses.reverse();
+                Some(Action::Batch(inverses))
+            }
         }
+    }
+
+    /// Whether every sheet `action` names exists, so applying it cannot fail partway.
+    fn addressable(&self, action: &Action) -> bool {
+        match action {
+            Action::SetCell { sheet, .. } | Action::SetFormula { sheet, .. } => {
+                self.sheet(*sheet).is_some()
+            }
+            Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn set(row: u32, value: f64) -> Action {
+        Action::SetCell {
+            sheet: 0,
+            pos: Pos::new(row, 0),
+            value: CellValue::Number(value),
+        }
+    }
+
+    /// Two writes to the *same* cell in one batch: the inverse only restores the original if
+    /// it undoes them in the opposite order. Writing them to different cells would pass
+    /// whether or not the reversal is there, which is why they overlap.
+    #[test]
+    fn a_batch_undoes_in_the_opposite_order() {
+        let mut doc = Document::default();
+        let inverse = doc
+            .apply(Action::Batch(vec![set(0, 1.0), set(0, 2.0), set(1, 9.0)]))
+            .unwrap();
+        assert_eq!(
+            doc.sheet(0).unwrap().get(Pos::new(0, 0)),
+            CellValue::Number(2.0)
+        );
+
+        assert!(doc.apply(inverse).is_some());
+        assert_eq!(doc.sheet(0).unwrap().get(Pos::new(0, 0)), CellValue::Empty);
+        assert_eq!(doc.sheet(0).unwrap().get(Pos::new(1, 0)), CellValue::Empty);
+    }
+
+    /// A batch that cannot be applied in full must not be applied at all — a half-applied
+    /// batch returns no inverse, so there would be no way back.
+    #[test]
+    fn a_batch_naming_a_missing_sheet_writes_nothing() {
+        let mut doc = Document::default();
+        let bad = Action::SetCell {
+            sheet: 7,
+            pos: Pos::new(0, 0),
+            value: CellValue::Number(1.0),
+        };
+        assert!(doc.apply(Action::Batch(vec![set(0, 1.0), bad])).is_none());
+        assert_eq!(
+            doc.sheet(0).unwrap().get(Pos::new(0, 0)),
+            CellValue::Empty,
+            "the first action must not have landed"
+        );
     }
 }

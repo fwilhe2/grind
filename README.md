@@ -8,11 +8,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
 
-**Phase 3 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and flat
-(`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the three it
-declines are password-protected — and documents written here survive a round trip through
-LibreOffice unchanged, checked in CI. There is no formula evaluator yet (phase 4), no styles
-(phase 5) and no usable CLI (phase 6). See [`doc/plan.md`](doc/plan.md).
+**Phases 0–4 and 6 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`)
+and flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
+three it declines are password-protected — and documents written here survive a round trip
+through LibreOffice unchanged, checked in CI. It evaluates **77 of OpenFormula's 110
+Small Group functions**, and the `sheet` CLI drives all of it. No styles or number formats
+yet (phase 5). See [`doc/plan.md`](doc/plan.md).
+
+```sh
+sheet new book.ods
+sheet set book.ods A1 1
+sheet set book.ods A2 2
+sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
+sheet recalc book.ods
+sheet view book.ods A1:A3                 # tab-separated, pipes into anything
+```
+
+Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`,
+`Data.B2`, `'Q3 Actuals'.A1:.C9`. `--format json` makes every command machine-readable, and
+`--session` carries undo across invocations. Whatever the core can do, the CLI can do:
+[`doc/cli-parity.md`](doc/cli-parity.md) lists every public method against the command that
+reaches it, and a test fails the build when one is missing.
 
 ## Why
 

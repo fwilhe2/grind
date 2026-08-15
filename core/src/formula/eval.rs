@@ -380,6 +380,23 @@ pub fn from_cell(cell: CellValue) -> Value {
     }
 }
 
+/// A computed value on its way back into a cell — the inverse of [`from_cell`], and what a
+/// recalculation stores.
+///
+/// An error becomes its name as text because that is the only shape [`CellValue`] has for
+/// one, and it is also what LibreOffice writes: an error cell carries an empty
+/// `office:string-value` and the error name in `text:p` (doc/ods-format.md §6). Our reader
+/// already takes that display text as the value, so this round-trips.
+pub fn to_cell(value: Value) -> CellValue {
+    match value {
+        Value::Empty => CellValue::Empty,
+        Value::Number(n) => CellValue::Number(n),
+        Value::Text(s) => CellValue::Text(s),
+        Value::Bool(b) => CellValue::Bool(b),
+        Value::Error(e) => CellValue::Text(e.name().to_owned()),
+    }
+}
+
 /// The arithmetic, comparison and concatenation operators (§6.4.2–§6.4.10).
 fn scalar_binary(op: Op, left: Value, right: Value) -> Value {
     // §4.6: an operator given an error returns that error. Left first, arbitrarily but

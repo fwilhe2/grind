@@ -9,6 +9,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::grid::Column;
 
 /// A cell's value.
@@ -17,7 +19,7 @@ use crate::grid::Column;
 /// formula text is a separate concern that arrives with the reader in phase 2. No
 /// error variant yet either — the OpenFormula error set is normative and belongs
 /// with the evaluator in phase 4 (doc/small-group.md), not invented here.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CellValue {
     #[default]
     Empty,
@@ -51,7 +53,7 @@ impl From<bool> for CellValue {
 }
 
 /// A cell address within one sheet, 0-based.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Pos {
     pub row: u32,
     pub col: u32,
@@ -96,6 +98,11 @@ impl Sheet {
 
     pub fn set_formula(&mut self, pos: Pos, formula: String) {
         self.formulas.insert(pos, formula);
+    }
+
+    /// Leave the cached value, drop the formula — the cell becomes an ordinary value cell.
+    pub fn clear_formula(&mut self, pos: Pos) {
+        self.formulas.remove(&pos);
     }
 
     pub fn formula_count(&self) -> usize {

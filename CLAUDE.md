@@ -35,6 +35,7 @@ syntax translator leaks all of it through. The normative specs are the source of
 | `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 **Part 4** — OpenFormula: per-function semantics, implicit conversions, error model |
 | `doc/small-group.md` | The 110-function scope line, *extracted* from Part 4 §2.3.2, not estimated |
 | `doc/ods-format.md` | Clean-room notes on what LibreOffice actually does where the specs leave room |
+| `doc/cli-parity.md` | Every public `App` method and the CLI command reaching it — checked by a test |
 
 The laziness ladder still applies to format-neutral plumbing (quick-xml, zip, petgraph,
 chrono) — just never to semantics.
@@ -47,6 +48,18 @@ cargo test --test read_values    # one test file
 cargo test -- repeated_columns   # one test by name substring
 cargo clippy --workspace --all-targets   # must be clean; CI does not gate on it yet
 reuse lint                       # must stay compliant; CI DOES gate on this
+```
+
+The binary is `sheet`. Every core capability is reachable from it, and `cli/tests/parity.rs`
+fails the build when one is not:
+
+```sh
+cargo run -p sheet-cli -- new book.ods
+cargo run -p sheet-cli -- set book.ods A1 1
+cargo run -p sheet-cli -- set book.ods A2 '=[.A1]*2'   # ODF syntax, verbatim
+cargo run -p sheet-cli -- recalc book.ods
+cargo run -p sheet-cli -- view book.ods A1:A2
+cargo run -p sheet-cli -- --format json info book.ods
 ```
 
 The corpus tests need a LibreOffice checkout and **skip with a notice** without one, so
@@ -247,10 +260,42 @@ that spec is the source of truth and a rule without a citation is a guess.
 - **`funcs::implemented()` is checked against `doc/small-group.md` by a test.** A function
   outside the 110 fails the build, which is the anti-bloat rule made mechanical.
 
+### `cli/` — the `sheet` binary, and the parity ratchet
+
+Three files: `main.rs` (clap structs, one `match` arm per subcommand), `report.rs` (what gets
+printed), `a1.rs` (addressing). A subcommand is a few lines that drive `App`; anything longer
+belongs in the core. Conventions come from
+[fwilhe2/editor](https://github.com/fwilhe2/editor)'s CLI: file as a positional, long flags
+only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics on stderr,
+**errors are never JSON**.
+
+- **`doc/cli-parity.md` + `cli/tests/parity.rs` are phase 6's exit criterion**, and the same
+  mechanism `doc/small-group.md` uses: every public `App` method is listed with the command
+  that reaches it or a *reason* it does not, and the test reads `core/src/lib.rs` to check
+  both directions. Adding a core capability without exposing it fails CI; so does a stale
+  row. The test also asserts it found ≥12 methods — a scanner matching nothing would pass
+  vacuously and quietly retire the ratchet.
+- **Addresses are ODF reference syntax minus the brackets** — `A1`, `$B$7`, `Data.B2`,
+  `'Q3 Actuals'.A1:.C9`. `a1.rs` does not parse them: it wraps them in `[…]` and calls
+  `lex::lex`, so the CLI and a formula cannot disagree about what an address means, and
+  whole-column forms work because §5.8 already describes them. The one liberty taken is
+  case: §5.8 spells a column `[A-Z]+`, so the *cell* half is upper-cased before lexing while
+  the sheet name is left exactly as typed.
+- **The 1-based/0-based conversion is `a1::format`, and it is the only index arithmetic in
+  `cli/`.** There is no inbound `-1` at all — `lex::Axis` is already 0-based, so that half
+  lives in the lexer, shared with the evaluator.
+- **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
+  CLI translates addresses but never formulas; a syntax translator is the thing this project
+  exists not to have.
+- **`recalc` reports `spoiled`** — cells that held a real value and now hold an error. This
+  build implements 77 of 110 functions, so recalculating a document that uses the rest is
+  data loss, and the CLI warns on stderr rather than writing it back quietly. The whole
+  recalculation is one `Action::Batch`, so one `undo` is the way back.
+
 ## Conventions
 
 - **Positions are 0-based in the core.** Only the CLI is 1-based, and it converts in exactly
-  one place.
+  one place — `cli/src/a1.rs`.
 - **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and their upgrade
   path (e.g. text and bool sharing one block; linear block lookup). They are a tracked ledger,
   not apologies — do not silently "fix" one without reading the reason.
@@ -305,3 +350,15 @@ known gaps inside what is implemented: criteria have no wildcards or regular exp
 Two things phase 4 unlocks that are deferred *in code* right now:
 dates and times stop being ISO strings once `table:null-date` exists, and loop C's `back`
 direction stops skipping formula-bearing documents.
+
+**Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
+stub and because phase 4's 77 functions were reachable only from `cargo test`. It brought the
+core operations the CLI needed and nothing else: `Action::SetFormula`, `Action::Batch`,
+`App::{set_formula, clear_formula, formula, formula_count, names, recalc, session,
+restore_session}`. `App::recalc` writing computed values back is also what loop C's `back`
+direction needs, so phase 4's last deferral now has its machinery.
+
+Deliberately still absent, and *not* parity gaps — nothing can do them at all, so no shell is
+hiding a capability: adding, renaming and deleting sheets; editing named expressions; CSV.
+Phase 5 (styles and number formats) is the next one in the plan's order, and it is what makes
+`view` able to print a date as a date.

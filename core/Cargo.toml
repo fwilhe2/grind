@@ -15,3 +15,10 @@ repository.workspace = true
 quick-xml = "0.37"
 # The ODF package is a plain zip. deflate only; ODF uses nothing exotic.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# For `Session` only — so an undo stack can outlive the process that built it and a CLI can
+# offer undo across stateless invocations. The document format is ODF and owes serde nothing.
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# Only to prove `Session` survives a round trip through a file; the core never writes JSON.
+serde_json = "1"

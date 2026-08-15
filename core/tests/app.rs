@@ -166,6 +166,169 @@ fn undo_redo_round_trips_an_arbitrary_sequence() {
     assert!(!app.can_redo());
 }
 
+#[test]
+fn a_formula_carries_its_cached_value_and_undoes_as_one() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    app.set_cell(0, p(1, 0), 2.0).unwrap();
+    app.set_formula(0, p(2, 0), "=SUM([.A1:.A2])").unwrap();
+
+    // The value is computed on the way in — a formula stored without one renders blank in
+    // LibreOffice (doc/ods-format.md §4).
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(3.0));
+    assert_eq!(
+        app.formula(0, p(2, 0)).unwrap().as_deref(),
+        Some("=SUM([.A1:.A2])")
+    );
+    assert_eq!(app.formula_count(0).unwrap(), 1);
+
+    assert!(app.undo());
+    assert_eq!(
+        app.formula(0, p(2, 0)).unwrap(),
+        None,
+        "formula and value undo together"
+    );
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Empty);
+
+    assert!(app.redo());
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(3.0));
+}
+
+#[test]
+fn clearing_a_formula_keeps_the_value_it_computed() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 4.0).unwrap();
+    app.set_formula(0, p(1, 0), "=[.A1]*2").unwrap();
+    app.clear_formula(0, p(1, 0)).unwrap();
+
+    assert_eq!(app.formula(0, p(1, 0)).unwrap(), None);
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(8.0));
+
+    assert!(app.undo());
+    assert_eq!(
+        app.formula(0, p(1, 0)).unwrap().as_deref(),
+        Some("=[.A1]*2")
+    );
+}
+
+#[test]
+fn recalc_is_one_undo_step_and_a_no_op_when_nothing_changed() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    app.set_formula(0, p(1, 0), "=[.A1]+10").unwrap();
+    app.set_formula(0, p(2, 0), "=[.A2]+100").unwrap();
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(111.0));
+
+    // Change the input the two formulas depend on, without touching them.
+    app.set_cell(0, p(0, 0), 2.0).unwrap();
+    assert_eq!(
+        app.get(0, p(1, 0)).unwrap(),
+        CellValue::Number(11.0),
+        "stale until a recalculation"
+    );
+
+    assert_eq!(app.recalc().unwrap().changed, 2, "both dependents changed");
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(12.0));
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(112.0));
+
+    assert_eq!(app.recalc().unwrap().changed, 0, "already current");
+
+    // One step back undoes the whole recalculation, not its last cell.
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(11.0));
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(111.0));
+}
+
+/// This engine implements a subset of OpenFormula, so recalculating a document that uses
+/// anything outside it turns a good cached value into `#NAME?`. That is honest, and it is
+/// also data loss — `spoiled` is what lets a shell say so instead of writing the file back
+/// quietly. Found against a real document: `table.fods` uses `SUBTOTAL`.
+#[test]
+fn recalc_counts_the_values_it_spoiled() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 5.0).unwrap();
+    app.set_formula(0, p(1, 0), "=[.A1]*2").unwrap();
+
+    // A cached value from elsewhere, for a function this build does not have.
+    let doc = app.save_bytes(sheet_core::Form::Flat).unwrap();
+    let app = App::new();
+    app.open_bytes("book.fods", &doc).unwrap();
+    app.set_formula(0, p(2, 0), "=SUBTOTAL(9;[.A1:.A2])")
+        .unwrap();
+    app.set_cell(0, p(2, 0), 169.625).unwrap();
+
+    let recalc = app.recalc().unwrap();
+    assert_eq!(recalc.changed, 1);
+    assert_eq!(recalc.spoiled, 1, "a real value became an error");
+    assert_eq!(
+        app.get(0, p(2, 0)).unwrap(),
+        CellValue::Text("#NAME?".into())
+    );
+
+    // One step back, because the whole recalculation is one action.
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(169.625));
+}
+
+#[test]
+fn recalculating_an_empty_cell_into_an_error_is_not_spoilage() {
+    let app = App::new();
+    app.set_formula(0, p(0, 0), "=NOSUCHFUNC()").unwrap();
+    // The formula never had a good value to lose, so this must not raise the alarm.
+    assert_eq!(app.recalc().unwrap().spoiled, 0);
+}
+
+#[test]
+fn a_recalculated_error_is_stored_as_its_name() {
+    let app = App::new();
+    app.set_formula(0, p(0, 0), "=1/0").unwrap();
+    // The only shape CellValue has for an error, and what LibreOffice writes into text:p
+    // (doc/ods-format.md §6) — so it round-trips through our own reader.
+    assert_eq!(
+        app.get(0, p(0, 0)).unwrap(),
+        CellValue::Text("#DIV/0!".into())
+    );
+}
+
+/// The point of `--session`: an undo stack outliving the process that built it. An inverse
+/// carries the value it restores, so it never has to consult the document it was recorded
+/// against — which is what makes re-reading the file from disk safe.
+#[test]
+fn a_session_carries_history_between_apps() {
+    let first = App::new();
+    first.set_cell(0, p(0, 0), 1.0).unwrap();
+    first.set_cell(0, p(0, 0), 2.0).unwrap();
+    let bytes = first.save_bytes(sheet_core::Form::Flat).unwrap();
+    let session = serde_json::to_string(&first.session()).unwrap();
+
+    let second = App::new();
+    second.open_bytes("book.fods", &bytes).unwrap();
+    assert!(!second.can_undo(), "opening a document drops history");
+    second.restore_session(serde_json::from_str(&session).unwrap());
+
+    assert!(second.can_undo());
+    assert!(second.undo());
+    assert_eq!(second.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert!(second.undo());
+    assert_eq!(second.get(0, p(0, 0)).unwrap(), CellValue::Empty);
+    assert!(!second.undo());
+}
+
+#[test]
+fn a_session_naming_a_missing_sheet_fails_to_undo_rather_than_panicking() {
+    let app = App::new();
+    let stale: sheet_core::Session = serde_json::from_str(
+        r#"{"undo":[{"SetCell":{"sheet":9,"pos":{"row":0,"col":0},"value":"Empty"}}]}"#,
+    )
+    .unwrap();
+    app.restore_session(stale);
+    assert!(app.can_undo());
+    assert!(
+        !app.undo(),
+        "an action for a sheet that is gone simply does not apply"
+    );
+}
+
 struct Counter(AtomicUsize);
 
 impl Observer for Counter {
