@@ -66,7 +66,7 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 | Loop | Asserts | Where | Corpus |
 |---|---|---|---|
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `core/tests/corpus_read.rs` | 361 files in `ods/` + `fods/` |
-| **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file (phase 4, unbuilt) | `core/tests/corpus_parse.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
+| **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file | `core/tests/corpus_parse.rs`, `core/tests/corpus_eval.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
 | **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
 
 Loop A currently reports **358 read, 3 password-protected, 0 failed**. Encrypted documents are
@@ -78,6 +78,21 @@ exclusions are four *syntactic* classes named in `excused()` — inline arrays, 
 labels, and formulas the corpus contains that §5.2's `Expression` production does not
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
+
+Loop B's evaluate half reports **11280 of 52213 formula cells matching LibreOffice**, with
+39880 needing a function that does not exist yet and 1053 disagreeing. `FLOOR` in the test
+is the ratchet — raise it, never lower it — and the printed scoreboard is the work list:
+per category, and then the fixtures with the most disagreements. To look at one row of it:
+
+```sh
+SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture
+```
+
+Read the columns honestly. `missing` is a function we have not written (the whole `addin`
+category is outside the Small Group and always will be); `wrong` is a function we claim to
+have and get wrong, and is the only number that means something is broken. Much of `wrong`
+is *cascade* — a fixture's summary row is `AND(<every check>)`, so one missing function
+turns a column of otherwise-correct cells red.
 
 Loop C runs both directions and is green. Its `out` direction needs only the `soffice`
 binary, so **CI runs it** — which is what makes the anti-bloat rule a gate: a feature that
@@ -207,6 +222,20 @@ that spec is the source of truth and a rule without a citation is a guess.
 - Deliberately unparsed: inline arrays (§5.13), quoted labels and automatic intersection
   (§5.10), and `~` is parsed but out of scope for evaluation. §2.3.2 excludes all of them from
   the Small Group.
+- **`eval.rs`: recursion is the dependency graph.** A formula reading a formula evaluates it
+  first, memoised per cell, so the topological order is arrived at by asking rather than by
+  sorting — and a cell already being visited is a cycle, which is `#NUM!`. The plan's
+  `graph.rs` with dirty propagation earns its place when *incremental* recalculation exists;
+  nothing needs it yet, and the `ponytail:` note in the module says so.
+- **Functions get their arguments unevaluated**, which is what lets `IF` short-circuit
+  (§6.15.4) so that `IF([.A1]=0;0;1/[.A1])` is a working guard. Conversions live in `Args`,
+  not in each function.
+- **A whole-column reference is bounded by the sheet's used extent**, not by 1048576. Cells
+  past it are empty and contribute nothing to any Small Group function, so the answer is the
+  same and the reads are not.
+- Two functions deliberately break the house rules, each because its spec section says to:
+  `COUNT` does not propagate errors (§6.13.6 in as many words), and the `IS*` family reads an
+  error rather than converting it.
 
 ## Conventions
 
@@ -254,9 +283,13 @@ than a getter.
 **Phase 4 is under way** — the formula engine, whose exit criterion is a conforming
 OpenFormula Small Group evaluator, and the phase that decides whether the project is real.
 `doc/plan.md` has the ordering within it. Done: `value.rs` (the value model, error set and
-§6.3 conversions) and the front end (`lex.rs`, `parse.rs`, `serialize.rs`), with loop B's
-parse half green across the whole corpus. Next: `graph.rs` — the dependency graph, dirty
-propagation and topological recalc — then `funcs/`, in the order loop B's evaluate half
-prioritises. Two things phase 4 unlocks that are deferred *in code* right now:
+§6.3 conversions), the front end (`lex.rs`, `parse.rs`, `serialize.rs`) with loop B's parse
+half green across the whole corpus, and `eval.rs` plus ~70 of the Small Group's 110
+functions with loop B's evaluate half standing at 11280.
+
+Next, in loop B's order: `COUNTIF`/`SUMIF`/`AVERAGEIF` and the five lookups (both need
+§4.11.8 Criterion matching), then date and time — which is where the deferred
+`table:null-date` finally gets decided — then the financial and database groups. Two things
+phase 4 unlocks that are deferred *in code* right now:
 dates and times stop being ISO strings once `table:null-date` exists, and loop C's `back`
 direction stops skipping formula-bearing documents.

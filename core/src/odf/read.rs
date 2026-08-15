@@ -216,6 +216,7 @@ impl Context<Builder> for Row {
             date_value: attrs.get(Ns::Office, "date-value").map(str::to_owned),
             time_value: attrs.get(Ns::Office, "time-value").map(str::to_owned),
             formula: attrs.get(Ns::Table, "formula").map(str::to_owned),
+            cached_error: attrs.get(Ns::Calcext, "value-type") == Some("error"),
             saw_paragraph: false,
         }))
     }
@@ -235,6 +236,8 @@ struct Cell {
     date_value: Option<String>,
     time_value: Option<String>,
     formula: Option<String>,
+    /// `calcext:value-type="error"` — the formula's cached result is an error.
+    cached_error: bool,
     /// Whether a `text:p` has already been seen, so the *second* one starts a new line.
     ///
     /// Counting paragraphs rather than testing whether the accumulated text is empty:
@@ -280,6 +283,14 @@ impl Cell {
                 .clone()
                 .map_or(CellValue::Text(text.to_owned()), CellValue::Text),
             Some("string" | "error") => {
+                // Part 4 §4.6 stores an error result as a string — but LO writes the *empty*
+                // string into `office:string-value` and leaves the error name in the display
+                // text, flagging the cell with `calcext:value-type="error"`
+                // (doc/ods-format.md §6). Trusting the attribute there turns every cached
+                // error into an empty cell, so for those the paragraph is the value.
+                if self.cached_error {
+                    return CellValue::Text(text.to_owned());
+                }
                 CellValue::Text(self.string_value.clone().unwrap_or_else(|| text.to_owned()))
             }
             // An unknown value-type is not a reason to lose the cell: keep what is visible.

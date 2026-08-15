@@ -387,6 +387,24 @@ breaks ODF validity — LO simply falls back to standard behavior/recomputation.
   LO-specific extension block; same guidance — inspect the exporter before implementing,
   treat as a post-baseline feature.
 
+- `calcext:value-type="error"` on a `table:table-cell` — how LO marks a cell whose formula
+  evaluated to an error. Part 4 §4.6 says an error result "shall be stored as if it was a
+  string", in `office:string-value`; **LO stores the empty string there and puts the error
+  name only in the display `text:p`**:
+
+  ```xml
+  <table:table-cell table:formula="of:=NA()" office:value-type="string"
+                    office:string-value="" calcext:value-type="error">
+   <text:p>#N/A</text:p>
+  </table:table-cell>
+  ```
+
+  (observed in `sc/qa/unit/data/functions/fods/reference_operators.fods`, and in every
+  fixture with a cached error). A reader that trusts `office:string-value` therefore loses
+  *which* error it was, and cannot tell a failed formula from one that returned `""`. The
+  rule that recovers it: when `calcext:value-type` is `error`, the display text is the
+  value. Loop B depends on this — an error fixture is unverifiable without it.
+
 Practical rule: **use the OASIS-standard element/attribute for anything ODF already covers
 (values, formulas, borders, number formats, merges) — reach for `loext`/`calcext` only for
 the handful of features ODF genuinely has no vocabulary for.**
