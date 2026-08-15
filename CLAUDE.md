@@ -66,12 +66,18 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 | Loop | Asserts | Where | Corpus |
 |---|---|---|---|
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `core/tests/corpus_read.rs` | 361 files in `ods/` + `fods/` |
-| **B** — formula conformance | recalculating each fixture matches the cached value already in the file | phase 4 | 509 per-function `.fods` in `functions/**/fods/` |
+| **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file (phase 4, unbuilt) | `core/tests/corpus_parse.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
 | **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
 
 Loop A currently reports **358 read, 3 password-protected, 0 failed**. Encrypted documents are
 its *one* accepted non-success outcome, named explicitly in the test rather than filtered away
 — every other error still fails the loop.
+
+Loop B's parse half reports **75845 of 77061 formulas parsed, 1216 excluded, 0 failed**. The
+exclusions are four *syntactic* classes named in `excused()` — inline arrays, `~`, quoted
+labels, and formulas the corpus contains that §5.2's `Expression` production does not
+describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
+allow). Never excuse a file; excuse a construct, or fix the parser.
 
 Loop C runs both directions and is green. Its `out` direction needs only the `soffice`
 binary, so **CI runs it** — which is what makes the anti-bloat rule a gate: a feature that
@@ -175,6 +181,33 @@ value, since an omitted one renders blank until recalculation (§4); and in the 
 it at a fixed byte offset before unzipping anything, which is what the byte-level assertions
 in the writer's tests are pinning.
 
+### `core/src/formula/` — the OpenFormula engine
+
+Built in the plan's order: `value.rs`, then `lex.rs` + `parse.rs` + `serialize.rs`, then the
+dependency graph and the functions. Everything cites ODF 1.4 **Part 4** by section, because
+that spec is the source of truth and a rule without a citation is a guess.
+
+- **`value.rs` is the single point of failure** (doc/plan.md's own words): the value model,
+  the seven-name error set, and §6.3's implicit conversions. Its three
+  "implementation-defined" points are named as choices in the module docs, not left as
+  accidents — text→number and text→logical are strict, and `Value::number` turns a non-finite
+  result into `#NUM!` at the one place every operator returns through.
+- **Referenced cells and scalar arguments convert differently.** §6.3.7's sequence conversion
+  keeps only numbers, so `SUM(A1:A3)` skips a cell holding `"7"` while `SUM("7")` converts it.
+  That asymmetry is the semantics, not an optimisation.
+- **`§5.5` Table 1 has two traps**, both encoded in `parse.rs`'s binding powers and both the
+  opposite of most languages: prefix `-` binds tighter than `^` (`-2^2` is `4`), and `^` is
+  left-associative (`2^3^2` is `64`).
+- **References are lexed, not parsed.** `[` … `]` is a terminating rule (§5.14); the parser
+  never looks at a character. The second end of a range inherits the first's sheet (§5.8), and
+  getting that wrong reads the wrong sheet silently rather than failing.
+- **Serialisation parenthesises by precedence rather than by memory**, so an AST that nobody
+  parsed — one the CLI or a reference rewrite built — still prints as itself. Explicit
+  `Expr::Paren` nodes are kept on top of that, because §5.5 Note 3 asks for it.
+- Deliberately unparsed: inline arrays (§5.13), quoted labels and automatic intersection
+  (§5.10), and `~` is parsed but out of scope for evaluation. §2.3.2 excludes all of them from
+  the Small Group.
+
 ## Conventions
 
 - **Positions are 0-based in the core.** Only the CLI is 1-based, and it converts in exactly
@@ -218,9 +251,12 @@ A green, and the writer with loop C green in both directions. Documents open and
 `App` — never by handing out the `Document`, which is why saving is `App::save_bytes` rather
 than a getter.
 
-**Phase 4 is next** — the formula engine, whose exit criterion is a conforming OpenFormula
-Small Group evaluator, and the phase that decides whether the project is real. `doc/plan.md`
-has the ordering within it, and `value.rs` first is not negotiable since every function
-inherits its correctness. Two things phase 4 unlocks that are deferred *in code* right now:
+**Phase 4 is under way** — the formula engine, whose exit criterion is a conforming
+OpenFormula Small Group evaluator, and the phase that decides whether the project is real.
+`doc/plan.md` has the ordering within it. Done: `value.rs` (the value model, error set and
+§6.3 conversions) and the front end (`lex.rs`, `parse.rs`, `serialize.rs`), with loop B's
+parse half green across the whole corpus. Next: `graph.rs` — the dependency graph, dirty
+propagation and topological recalc — then `funcs/`, in the order loop B's evaluate half
+prioritises. Two things phase 4 unlocks that are deferred *in code* right now:
 dates and times stop being ISO strings once `table:null-date` exists, and loop C's `back`
 direction stops skipping formula-bearing documents.

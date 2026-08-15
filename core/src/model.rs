@@ -102,6 +102,11 @@ impl Sheet {
         self.formulas.len()
     }
 
+    /// Every formula in the sheet, in address order — what a full recalculation walks.
+    pub fn formulas(&self) -> impl Iterator<Item = (Pos, &str)> {
+        self.formulas.iter().map(|(pos, f)| (*pos, f.as_str()))
+    }
+
     pub fn get(&self, pos: Pos) -> CellValue {
         self.cols
             .get(pos.col as usize)
