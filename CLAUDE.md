@@ -92,8 +92,8 @@ labels, and formulas the corpus contains that §5.2's `Expression` production do
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
 
-Loop B's evaluate half reports **13197 of 52213 formula cells matching LibreOffice**, with
-37706 needing a function that does not exist yet, 1271 disagreeing and 39 reading the clock.
+Loop B's evaluate half reports **13201 of 52213 formula cells matching LibreOffice**, with
+37706 needing a function that does not exist yet, 1267 disagreeing and 39 reading the clock.
 `FLOOR` in the test is the ratchet — raise it, never lower it — and the printed scoreboard is
 the work list: per category, and then the fixtures with the most disagreements. To look at
 one row of it:
@@ -111,7 +111,7 @@ is broken. Much of `wrong` is *cascade* — a fixture's summary row is `AND(<eve
 so one missing function turns a column of otherwise-correct cells red.
 
 `wrong` is also not all ours. Three classes in it are known and named where they live: the
-criteria language has no wildcards or regular expressions yet (`criterion.rs`), text→number
+criteria language has wildcards but no regular expressions (`wildcard.rs`), text→number
 conversion is ISO-only where LO reads a locale's `0,005` (`date.rs`, and phase 5 owns it),
 and a handful of `PV` cells disagree because **LibreOffice is the less accurate one** — its
 `PV(0.075/12;24;250)` is `−5555.60584593376` where the exact value rounds to
@@ -388,8 +388,8 @@ functions** — the last two groups in are database (§6.9, `db.rs`) and financi
 Loop C gates the last two, so a named range and a date both survive a LibreOffice round-trip.
 
 What is left in phase 4 is conformance, not coverage, and loop B names each piece: criteria
-have no wildcards or regular expressions (`criterion.rs` says when to add them — that time is
-now, it is the largest remaining block of disagreements), array/matrix formulas are read as
+and unsorted lookups take wildcards (`wildcard.rs`) but regular expressions are off, which
+is LibreOffice's own either/or, array/matrix formulas are read as
 ordinary ones, and `table:database-range` names are not read, so a formula naming one gets
 `#NAME?`. Still deferred *in code*: loop C's `back` direction skips formula-bearing
 documents.

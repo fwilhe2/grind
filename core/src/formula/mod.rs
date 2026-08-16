@@ -14,3 +14,4 @@ pub mod lex;
 pub mod parse;
 pub mod serialize;
 pub mod value;
+pub mod wildcard;

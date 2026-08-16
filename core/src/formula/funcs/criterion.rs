@@ -16,10 +16,9 @@
 //! | `"=0"` | **no**, stated outright, even though an empty cell converts to 0 elsewhere |
 //! | `"<>7"` | yes — "any cell content except the value, including empty cells" |
 //!
-//! ponytail: no wildcards or regular expressions. §4.11.8 makes both host-defined
-//! (`HOST-USE-WILDCARDS`, `HOST-USE-REGULAR-EXPRESSIONS`), so a plain comparison is a
-//! conforming choice — but LibreOffice enables wildcards by default, so loop B will show
-//! the gap as `COUNTIF` fixtures that disagree. Add `*`/`?`/`~` matching then, not before.
+//! A text criterion under `=` or `<>` is a **pattern**, not a literal — see [`wildcard`]
+//! for which of §3.4's host properties that settles and why. Regular expressions remain
+//! off; LibreOffice makes the two mutually exclusive and wildcards are its default.
 
 use std::cmp::Ordering;
 
@@ -28,6 +27,7 @@ use crate::model::Pos;
 use super::super::eval::{Address, Operand, order};
 use super::super::lex::Op;
 use super::super::value::{FormulaError, Value};
+use super::super::wildcard;
 use super::Args;
 
 /// What the three conditional functions do with the cells that matched.
@@ -158,6 +158,15 @@ impl Criterion {
             // §4.11.8: "=0" does not match empty cells, and neither does any ordered
             // comparison — but "<>7" does.
             return self.op == Op::Ne;
+        }
+        // Only `=` and `<>` take a pattern (§3.4 item 6 says "comparisons and searching";
+        // an ordered comparison against a pattern has no meaning to give).
+        if let (Value::Text(pattern), Value::Text(text)) = (&self.operand, cell)
+            && matches!(self.op, Op::Eq | Op::Ne)
+            && wildcard::is_pattern(pattern)
+        {
+            let hit = wildcard::matches(pattern, text);
+            return if self.op == Op::Eq { hit } else { !hit };
         }
         // A criterion compares within one type. `">1"` counts numbers above 1, not every
         // text cell — even though §6.4.9's cross-type order puts all text above all numbers,
