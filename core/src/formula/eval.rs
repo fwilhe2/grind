@@ -110,6 +110,17 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// The document's epoch (§3.4 `HOST-NULL-DATE`). A setting rather than a cell, so it is
+    /// read through here instead of handing `funcs` the whole document.
+    pub fn null_date(&self) -> i64 {
+        self.doc.null_date
+    }
+
+    /// `HOST-NULL-YEAR` (§3.4 item 7), the two-digit-year break point.
+    pub fn null_year(&self) -> i64 {
+        self.doc.null_year
+    }
+
     /// The value of a cell: its formula recalculated, or its stored value if it has none.
     pub fn value(&mut self, at: Address) -> Value {
         if let Some(cached) = self.cache.get(&at) {

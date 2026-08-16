@@ -92,20 +92,23 @@ labels, and formulas the corpus contains that §5.2's `Expression` production do
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
 
-Loop B's evaluate half reports **12069 of 52213 formula cells matching LibreOffice**, with
-38921 needing a function that does not exist yet and 1223 disagreeing. `FLOOR` in the test
-is the ratchet — raise it, never lower it — and the printed scoreboard is the work list:
-per category, and then the fixtures with the most disagreements. To look at one row of it:
+Loop B's evaluate half reports **12378 of 52213 formula cells matching LibreOffice**, with
+38708 needing a function that does not exist yet, 1088 disagreeing and 39 reading the clock.
+`FLOOR` in the test is the ratchet — raise it, never lower it — and the printed scoreboard is
+the work list: per category, and then the fixtures with the most disagreements. To look at
+one row of it:
 
 ```sh
 SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture
 ```
 
-Read the columns honestly. `missing` is a function we have not written (the whole `addin`
-category is outside the Small Group and always will be); `wrong` is a function we claim to
-have and get wrong, and is the only number that means something is broken. Much of `wrong`
-is *cascade* — a fixture's summary row is `AND(<every check>)`, so one missing function
-turns a column of otherwise-correct cells red.
+Read the columns honestly. `volatile` is `NOW`/`TODAY`: a fixture's cached value for one is
+the instant LO last recalculated it, so those cells *cannot* agree and counting them as
+`wrong` would make the one meaningful column lie. `missing` is a function we have not
+written (the whole `addin` category is outside the Small Group and always will be); `wrong`
+is a function we claim to have and get wrong, and is the only number that means something
+is broken. Much of `wrong` is *cascade* — a fixture's summary row is `AND(<every check>)`,
+so one missing function turns a column of otherwise-correct cells red.
 
 Loop C runs both directions and is green. Its `out` direction needs only the `soffice`
 binary, so **CI runs it** — which is what makes the anti-bloat rule a gate: a feature that
@@ -187,7 +190,12 @@ Non-obvious things a change here can break:
   billion writes. `MAX_MATERIALISED_CELLS` bounds the work itself. Truncation must never shift
   addresses — the cursor still advances by the full repeat.
 - Every value-parse failure degrades to a safe default **scoped to its own cell**, never to a
-  rejected document.
+  rejected document. A `date` cell whose `office:date-value` will not parse keeps the text and
+  loses only its type; the document still loads.
+- **A `date` or `time` cell becomes a `CellValue::Number`** — Part 4 §4.3.3 says "Date is a
+  subtype of Number", so the serial *is* the value and `[.A1]+1` is the next day. Which
+  spelling it had rides in `Sheet::kind` (a side table, like `formulas`) purely so the writer
+  can put it back as a date; loop C's `dates` case fails if that is dropped.
 
 ### `core/src/odf/write.rs` — the writer
 
@@ -249,6 +257,19 @@ that spec is the source of truth and a rule without a citation is a guess.
 - Two functions deliberately break the house rules, each because its spec section says to:
   `COUNT` does not propagate errors (§6.13.6 in as many words), and the `IS*` family reads an
   error rather than converting it.
+- **`date.rs` holds every calendar rule, and the reader and writer share it.** A serial date
+  is days from `HOST-NULL-DATE` (§3.4 item 8), whose default is **1899-12-30** — §4.3.3
+  Note 3's own recommendation, and the reason 1900 is correctly not a leap year here. Text
+  parsing is **ISO 8601 only** on purpose: `DATEVALUE` is locale-dependent (`HOST-LOCALE`),
+  and a locale belongs to phase 5's number formats, not to a guess. Both `table:null-date`
+  and `table:null-year` are read from the document — a corpus file really does set the
+  latter to 1919.
+- **`DATE` has two rules that are not in §6.10.2's prose**, both from the corpus: a
+  two-digit year expands through `HOST-NULL-YEAR` *before* the month/day roll-over, and a
+  year before §7.4's 1583 is `#VALUE!` rather than a proleptic guess.
+- **`NOW` and `TODAY` are the only two functions that are not a pure function of the
+  document.** Loop B counts them in its own `volatile` column, and `date::now` carries a
+  `ponytail:` for reading UTC rather than the host's locale.
 - **`criterion.rs` is where empty cells stop behaving.** §4.11.8 spells out that `"=0"` does
   *not* match an empty cell even though an empty cell converts to 0 everywhere else, that
   `"<>7"` does, and that a criterion which is a *reference* to an empty cell means the number
@@ -288,7 +309,7 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
   CLI translates addresses but never formulas; a syntax translator is the thing this project
   exists not to have.
 - **`recalc` reports `spoiled`** — cells that held a real value and now hold an error. This
-  build implements 77 of 110 functions, so recalculating a document that uses the rest is
+  build implements 88 of 110 functions, so recalculating a document that uses the rest is
   data loss, and the CLI warns on stderr rather than writing it back quietly. The whole
   recalculation is one `Action::Batch`, so one `undo` is the way back.
 
@@ -299,10 +320,9 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
 - **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and their upgrade
   path (e.g. text and bool sharing one block; linear block lookup). They are a tracked ledger,
   not apologies — do not silently "fix" one without reading the reason.
-- Deferred on purpose, and documented where it lives: dates/times keep their ISO strings until
-  `table:null-date` exists in phase 4, because guessing an epoch now bakes in exactly the
-  Excel-shaped assumption this project exists to avoid. Corrupt-zip recovery is unbuilt
+- Deferred on purpose, and documented where it lives: corrupt-zip recovery is unbuilt
   because no corpus file needs it and it belongs with the spec's explicit repair mode.
+  (Dates were the other entry here; phase 4's `date.rs` closed it — see below.)
 
 ## REUSE / licensing
 
@@ -339,20 +359,18 @@ than a getter.
 OpenFormula Small Group evaluator, and the phase that decides whether the project is real.
 `doc/plan.md` has the ordering within it. Done: `value.rs` (the value model, error set and
 §6.3 conversions), the front end (`lex.rs`, `parse.rs`, `serialize.rs`) with loop B's parse
-half green across the whole corpus, `eval.rs`, **77 of the Small Group's 110 functions**,
-and named expressions (§5.11) read, resolved and written — loop C gates that last one, so a
-named range survives a LibreOffice round-trip.
+half green across the whole corpus, `eval.rs`, **88 of the Small Group's 110 functions**,
+named expressions (§5.11) read, resolved and written, and **dates and times** — loop C gates
+the last two, so a named range and a date both survive a LibreOffice round-trip.
 
-The 33 left are exactly three groups: **date and time** (11 — and the one that unblocks the
-deferred `table:null-date`), **database** (12) and **financial** (10). Loop B also names two
-known gaps inside what is implemented: criteria have no wildcards or regular expressions
-(`criterion.rs` says when to add them), and array/matrix formulas are read as ordinary ones.
-Two things phase 4 unlocks that are deferred *in code* right now:
-dates and times stop being ISO strings once `table:null-date` exists, and loop C's `back`
-direction stops skipping formula-bearing documents.
+The 22 left are exactly two groups: **database** (12) and **financial** (10). Loop B also
+names two known gaps inside what is implemented: criteria have no wildcards or regular
+expressions (`criterion.rs` says when to add them), and array/matrix formulas are read as
+ordinary ones. Still deferred *in code*: loop C's `back` direction skips formula-bearing
+documents.
 
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
-stub and because phase 4's 77 functions were reachable only from `cargo test`. It brought the
+stub and because phase 4's functions were reachable only from `cargo test`. It brought the
 core operations the CLI needed and nothing else: `Action::SetFormula`, `Action::Batch`,
 `App::{set_formula, clear_formula, formula, formula_count, names, recalc, session,
 restore_session}`. `App::recalc` writing computed values back is also what loop C's `back`

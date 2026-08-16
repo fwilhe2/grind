@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 
+use sheet_core::model::NumberKind;
 use sheet_core::{CellValue, Pos, read_bytes};
 
 /// Wrap a `table:table` body in the smallest valid flat document.
@@ -518,4 +519,77 @@ fn a_real_formula_file_keeps_both_halves() {
         .iter()
         .any(|s| (0..40).any(|r| (0..10).any(|c| !s.get(Pos::new(r, c)).is_empty())));
     assert!(has_cached_value, "cached values must be imported too");
+}
+
+#[test]
+fn date_and_time_cells_become_serial_numbers() {
+    // Part 4 §4.3.3: "Date is a subtype of Number", counted from the epoch — so a date
+    // cell arrives as an `f64` and arithmetic on it works, rather than as ISO text that
+    // every function would then have to re-parse.
+    let d = doc(r#"<table:table table:name="S">
+             <table:table-row>
+               <table:table-cell office:value-type="date" office:date-value="1899-12-30">
+                 <text:p>30.12.1899</text:p></table:table-cell>
+               <table:table-cell office:value-type="date" office:date-value="1900-01-01">
+                 <text:p>01.01.1900</text:p></table:table-cell>
+               <table:table-cell office:value-type="date"
+                                 office:date-value="1899-12-26T12:00:00">
+                 <text:p>26.12.1899 12:00</text:p></table:table-cell>
+               <table:table-cell office:value-type="time" office:time-value="PT12H00M00S">
+                 <text:p>12:00:00</text:p></table:table-cell>
+               <table:table-cell office:value-type="time" office:time-value="PT33H45M00S">
+                 <text:p>33:45:00</text:p></table:table-cell>
+             </table:table-row>
+           </table:table>"#);
+    // Serial 0 is the default epoch, 1899-12-30 (§4.3.3 Note 3).
+    assert_eq!(cell(&d, 0, 0), num(0.0));
+    assert_eq!(cell(&d, 0, 1), num(2.0));
+    assert_eq!(cell(&d, 0, 2), num(-3.5));
+    assert_eq!(cell(&d, 0, 3), num(0.5));
+    // A duration is not a clock face and keeps its whole days.
+    assert_eq!(cell(&d, 0, 4), num(1.40625));
+
+    // The kind rides alongside so the writer can spell the cell back out as a date.
+    let s = d.sheet(0).expect("one sheet");
+    assert_eq!(s.kind(Pos::new(0, 0)), Some(NumberKind::Date));
+    assert_eq!(s.kind(Pos::new(0, 3)), Some(NumberKind::Time));
+}
+
+#[test]
+fn the_epoch_comes_from_the_document_when_it_declares_one() {
+    // §3.4 item 8 `HOST-NULL-DATE`. The same cell means a different number under a
+    // different epoch, which is exactly why guessing one was worth deferring.
+    let d = doc(
+        r#"<table:calculation-settings table:null-year="1919">
+             <table:null-date table:value-type="date" table:date-value="1904-01-01"/>
+           </table:calculation-settings>
+           <table:table table:name="S"><table:table-row>
+             <table:table-cell office:value-type="date" office:date-value="1904-01-02"/>
+           </table:table-row></table:table>"#,
+    );
+    assert_eq!(cell(&d, 0, 0), num(1.0));
+    assert_eq!(d.null_year, 1919);
+
+    // With no declaration the ODF default stands, and the same cell is a much larger number.
+    let d = doc(
+        r#"<table:table table:name="S"><table:table-row>
+             <table:table-cell office:value-type="date" office:date-value="1904-01-02"/>
+           </table:table-row></table:table>"#,
+    );
+    assert_eq!(cell(&d, 0, 0), num(1463.0));
+    assert_eq!(d.null_year, 1930);
+}
+
+#[test]
+fn a_date_we_cannot_parse_keeps_its_text_rather_than_losing_the_cell() {
+    // §9 tolerance, unchanged by dates becoming numbers: the failure is scoped to the cell.
+    let d = doc(
+        r#"<table:table table:name="S"><table:table-row>
+             <table:table-cell office:value-type="date" office:date-value="not-a-date"/>
+             <table:table-cell office:value-type="float" office:value="7"/>
+           </table:table-row></table:table>"#,
+    );
+    assert_eq!(cell(&d, 0, 0), text("not-a-date"));
+    assert_eq!(cell(&d, 0, 1), num(7.0));
+    assert_eq!(d.sheet(0).unwrap().kind(Pos::new(0, 0)), None);
 }

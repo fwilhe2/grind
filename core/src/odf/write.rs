@@ -17,7 +17,8 @@ use std::fmt::Write as _;
 use std::io::{Cursor, Write as _};
 
 use super::names::{OFFICE, TABLE, TEXT};
-use crate::model::{CellValue, Document, Pos, Sheet};
+use crate::formula::date;
+use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::{Error, Result};
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
@@ -65,6 +66,21 @@ fn content(doc: &Document, form: Form) -> String {
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
     }
     out.push_str(">\n <office:body>\n  <office:spreadsheet>\n");
+    // The epoch, and only when it is not the default — writing the default would be
+    // correct but LibreOffice omits it, and matching that keeps our output diffable
+    // against a file it wrote. First in the element, which is where the schema puts it.
+    if doc.null_date != date::DEFAULT_NULL_DATE || doc.null_year != date::DEFAULT_NULL_YEAR {
+        let year = match doc.null_year != date::DEFAULT_NULL_YEAR {
+            true => format!(" table:null-year=\"{}\"", doc.null_year),
+            false => String::new(),
+        };
+        let _ = writeln!(
+            out,
+            "   <table:calculation-settings{year}><table:null-date table:value-type=\"date\" \
+             table:date-value=\"{}\"/></table:calculation-settings>",
+            date::format_date(0.0, doc.null_date)
+        );
+    }
     // §5.11. Before the tables, which is where the schema puts them — and every name is
     // written as `table:named-expression`, since the reader stores a named range as the
     // reference it stands for and the two forms are interchangeable on the way out.
@@ -81,13 +97,13 @@ fn content(doc: &Document, form: Form) -> String {
         out.push_str("   </table:named-expressions>\n");
     }
     for sheet in &doc.sheets {
-        table(&mut out, sheet);
+        table(&mut out, sheet, doc.null_date);
     }
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     out
 }
 
-fn table(out: &mut String, sheet: &Sheet) {
+fn table(out: &mut String, sheet: &Sheet, null_date: i64) {
     let cols = sheet.used_cols().max(1);
     let rows = sheet.used_rows();
 
@@ -117,7 +133,7 @@ fn table(out: &mut String, sheet: &Sheet) {
             row += blank;
             continue;
         }
-        write_row(out, sheet, row, cols);
+        write_row(out, sheet, row, cols, null_date);
         row += 1;
     }
 
@@ -131,7 +147,7 @@ fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
     })
 }
 
-fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32) {
+fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32, null_date: i64) {
     out.push_str("    <table:table-row>");
     // Trailing empty cells are simply not written: unmentioned is the same as empty
     // (§3.3), and the row is known non-blank so at least one cell survives.
@@ -160,13 +176,20 @@ fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32) {
         } else {
             1
         };
-        cell(out, &value, formula, repeat);
+        cell(out, &value, formula, sheet.kind(pos), null_date, repeat);
         col += repeat;
     }
     out.push_str("</table:table-row>\n");
 }
 
-fn cell(out: &mut String, value: &CellValue, formula: Option<&str>, repeat: u32) {
+fn cell(
+    out: &mut String,
+    value: &CellValue,
+    formula: Option<&str>,
+    kind: Option<NumberKind>,
+    null_date: i64,
+    repeat: u32,
+) {
     let mut attrs = count(repeat, "columns");
     if let Some(f) = formula {
         let _ = write!(attrs, " table:formula=\"{}\"", esc(f));
@@ -185,10 +208,35 @@ fn cell(out: &mut String, value: &CellValue, formula: Option<&str>, repeat: u32)
             // `INF`/`NaN` spellings are not worth the interop risk for a value no ODF
             // document should be carrying in the first place.
             let n = if n.is_finite() { *n } else { 0.0 };
-            let _ = write!(
-                out,
-                "<table:table-cell{attrs} office:value-type=\"float\" office:value=\"{n}\"/>"
-            );
+            // A date and a time are Numbers (§4.3.3, §4.3.2) that were *written* as a
+            // calendar date or a clock, and go back out the way they came in. The kind is
+            // consulted only here, so a cell whose date was overwritten with text or a
+            // boolean cannot carry a stale one out — no side table to keep in step.
+            match kind {
+                Some(NumberKind::Date) => {
+                    let _ = write!(
+                        out,
+                        "<table:table-cell{attrs} office:value-type=\"date\" \
+                         office:date-value=\"{}\"/>",
+                        date::format_date(n, null_date)
+                    );
+                }
+                Some(NumberKind::Time) => {
+                    let _ = write!(
+                        out,
+                        "<table:table-cell{attrs} office:value-type=\"time\" \
+                         office:time-value=\"{}\"/>",
+                        date::format_time(n)
+                    );
+                }
+                None => {
+                    let _ = write!(
+                        out,
+                        "<table:table-cell{attrs} office:value-type=\"float\" \
+                         office:value=\"{n}\"/>"
+                    );
+                }
+            }
         }
         CellValue::Bool(b) => {
             let _ = write!(

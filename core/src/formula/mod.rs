@@ -7,6 +7,7 @@
 //! Built in the order the plan fixes: [`value`] first, because the parser, the dependency
 //! graph and all 110 Small Group functions inherit their correctness from it.
 
+pub mod date;
 pub mod eval;
 pub mod funcs;
 pub mod lex;

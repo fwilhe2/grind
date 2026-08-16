@@ -26,6 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sheet_core::model::NumberKind;
 use sheet_core::{CellValue, Document, Form, Pos, Sheet};
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
@@ -156,6 +157,15 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
             want.names, got.names
         ));
     }
+    // The epoch (§3.4 `HOST-NULL-DATE`), which changes what every serial number *means* —
+    // a document that came back with a different one has silently moved all its dates.
+    if (want.null_date, want.null_year) != (got.null_date, got.null_year) {
+        out.push(format!(
+            "{label}: epoch {:?}, back as {:?}",
+            (want.null_date, want.null_year),
+            (got.null_date, got.null_year)
+        ));
+    }
     for (i, (w, g)) in want.sheets.iter().zip(&got.sheets).enumerate() {
         if w.name != g.name {
             out.push(format!(
@@ -182,6 +192,16 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                         g.formula(pos)
                     ));
                 }
+                // §4.3.2/§4.3.3: a date and a time are Numbers, so a lost `NumberKind` is
+                // invisible to `same` above — and is exactly how a date document comes back
+                // as a column of five-digit integers.
+                if w.kind(pos) != g.kind(pos) {
+                    out.push(format!(
+                        "{label}: sheet {i} r{row}c{col} kind was {:?}, back as {:?}",
+                        w.kind(pos),
+                        g.kind(pos)
+                    ));
+                }
                 if out.len() > 20 {
                     out.push(format!("{label}: ... and more"));
                     return out;
@@ -205,6 +225,46 @@ fn case(name: &str, cells: &[(u32, u32, CellValue)]) -> (String, Document) {
         sheet.set(Pos::new(*row, *col), value.clone());
     }
     (name.to_owned(), doc)
+}
+
+/// Dates and times — §4.3.2, §4.3.3, and the reason [`Sheet::kind`] exists.
+///
+/// A date is stored as a Number, so every one of these cells would survive `same()` as a
+/// bare float. The check that matters is the `NumberKind` beside it: if LibreOffice gets a
+/// serial number where the document meant a date, the user sees 30347 instead of a date and
+/// the feature is not real.
+fn dates() -> (String, Document) {
+    let e = sheet_core::formula::date::DEFAULT_NULL_DATE;
+    let day = |y, m, d| sheet_core::formula::date::serial(y, m, d, e);
+
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    for (row, col, value, kind) in [
+        (0, 0, day(1983, 1, 31), NumberKind::Date),
+        // The epoch itself, and the day either side of it — where an off-by-one lands.
+        (0, 1, day(1899, 12, 30), NumberKind::Date),
+        (0, 2, day(1899, 12, 31), NumberKind::Date),
+        // Before the epoch: a negative serial, which §4.3.3 says evaluators *may* support
+        // and which the corpus contains.
+        (0, 3, day(1899, 1, 1), NumberKind::Date),
+        // 1900 is not a leap year here; a reader that thinks it is lands a day out.
+        (0, 4, day(1900, 3, 1), NumberKind::Date),
+        // A date carrying a time is a DateTime (§4.3.4) and takes the combined spelling.
+        (1, 0, day(2026, 8, 16) + 0.5, NumberKind::Date),
+        (2, 0, 0.5, NumberKind::Time),
+        (2, 1, 0.0, NumberKind::Time),
+        // Sub-second precision, and a duration longer than a day — both real corpus cells
+        // and both things a naive formatter quietly rounds away.
+        (2, 2, (5.0 * 3600.0 + 35.0 * 60.0 + 31.2) / 86_400.0, NumberKind::Time),
+        (2, 3, 1.40625, NumberKind::Time),
+    ] {
+        sheet.set(Pos::new(row, col), CellValue::Number(value));
+        sheet.set_kind(Pos::new(row, col), kind);
+    }
+    ("dates".to_owned(), doc)
 }
 
 fn cases() -> Vec<(String, Document)> {
@@ -274,6 +334,7 @@ fn cases() -> Vec<(String, Document)> {
                 (0, 1, CellValue::Bool(false)),
             ],
         ),
+        dates(),
         // Sparse: gaps are written as repeats, and a repeat that is off by one moves every
         // later cell silently.
         case(

@@ -25,6 +25,7 @@ use super::parse::Expr;
 use super::value::{FormulaError, Value};
 
 mod criterion;
+mod datetime;
 mod info;
 mod logical;
 mod lookup;
@@ -43,6 +44,7 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
         stat::call,
         text::call,
         lookup::call,
+        datetime::call,
     ] {
         if let Some(answer) = category(&name, &mut args) {
             return answer.unwrap_or_else(Value::Error);
@@ -137,6 +139,18 @@ const NAMES: &[&str] = &[
     "T",
     "TRIM",
     "UPPER",
+    // date and time (§6.10)
+    "DATE",
+    "DAY",
+    "HOUR",
+    "MINUTE",
+    "MONTH",
+    "NOW",
+    "SECOND",
+    "TIME",
+    "TODAY",
+    "WEEKDAY",
+    "YEAR",
     // lookup (§6.14)
     "CHOOSE",
     "HLOOKUP",
@@ -200,6 +214,34 @@ impl Args<'_, '_> {
     /// counts, where truncation is the only reading that cannot overshoot.
     pub fn integer(&mut self, i: usize) -> Result<i64, FormulaError> {
         Ok(self.number(i)?.trunc() as i64)
+    }
+
+    /// The document's epoch (§3.4 `HOST-NULL-DATE`) — what makes a serial number a date.
+    pub fn null_date(&self) -> i64 {
+        self.engine.null_date()
+    }
+
+    /// `HOST-NULL-YEAR` (§3.4 item 7) — how `DATE` reads a two-digit year.
+    pub fn null_year(&self) -> i64 {
+        self.engine.null_year()
+    }
+
+    /// §6.3.15 Conversion to DateParam and §6.3.16 Conversion to TimeParam.
+    ///
+    /// One method for both, because both pseudotypes produce the same thing: a serial
+    /// number. §4.3.4 is why — a DateTime "is a Date plus Time", so the two differ only in
+    /// which half the *function* then reads, never in how the argument converts.
+    ///
+    /// Text goes to the ISO parsers first and falls back to §6.3.5's ordinary number
+    /// conversion, which is the "may attempt to convert to a Number in other ways" both
+    /// sections leave open — and is what makes `YEAR("2")` agree with `YEAR(2)`.
+    pub fn serial(&mut self, i: usize) -> Result<f64, FormulaError> {
+        match self.value(i) {
+            Value::Text(s) => super::date::parse_date(&s, self.null_date())
+                .or_else(|| super::date::parse_time(&s))
+                .map_or_else(|| Value::Text(s).to_number(), Ok),
+            other => other.to_number(),
+        }
     }
 
     /// §6.3.14 Conversion to Text.

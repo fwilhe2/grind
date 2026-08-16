@@ -11,7 +11,8 @@
 //! and all mutation flows through the shared [`Builder`] — so there is no child-to-parent
 //! channel to get wrong, and no downcasting.
 
-use crate::model::{CellValue, Document, Pos, Sheet};
+use crate::formula::date;
+use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 
 use super::context::{Attrs, Context};
 use super::names::{Name, Ns};
@@ -41,7 +42,7 @@ pub struct Builder {
     col: u32,
     /// Cells of the row being read, held back until the row ends because
     /// `table:number-rows-repeated` may ask for the whole row again.
-    row_cells: Vec<(u32, CellValue, Option<String>)>,
+    row_cells: Vec<(u32, CellValue, Option<String>, Option<NumberKind>)>,
     /// Text accumulated by the paragraph contexts under the current cell.
     text: String,
     /// Cells left in the materialisation budget. See [`MAX_MATERIALISED_CELLS`].
@@ -56,6 +57,8 @@ impl Builder {
             doc: Document {
                 sheets: Vec::new(),
                 names: Default::default(),
+                null_date: date::DEFAULT_NULL_DATE,
+                null_year: date::DEFAULT_NULL_YEAR,
             },
             sheet: 0,
             row: 0,
@@ -100,13 +103,16 @@ impl Builder {
             if row >= MAX_ROWS {
                 break;
             }
-            for (col, value, formula) in &self.row_cells {
+            for (col, value, formula, kind) in &self.row_cells {
                 let pos = Pos::new(row, *col);
                 if !value.is_empty() {
                     sheet.set(pos, value.clone());
                 }
                 if let Some(f) = formula {
                     sheet.set_formula(pos, f.clone());
+                }
+                if let Some(k) = kind {
+                    sheet.set_kind(pos, *k);
                 }
             }
             self.budget = self.budget.saturating_sub(per_row);
@@ -157,6 +163,15 @@ impl Context<Builder> for Spreadsheet {
         if name.is(Ns::Table, "named-expressions") {
             return Some(Box::new(NamedExpressions));
         }
+        if name.is(Ns::Table, "calculation-settings") {
+            // `table:null-year` is an attribute here; `table:null-date` is a child element.
+            if let Some(year) = attrs.get(Ns::Table, "null-year")
+                && let Ok(year) = year.trim().parse::<i64>()
+            {
+                b.doc.null_year = year;
+            }
+            return Some(Box::new(CalculationSettings));
+        }
         if !name.is(Ns::Table, "table") {
             return None;
         }
@@ -189,6 +204,28 @@ impl Context<Builder> for NamedExpressions {
         };
         if let Some(expression) = expression {
             b.doc.names.insert(key.to_lowercase(), expression);
+        }
+        Some(Box::new(super::context::Ignore))
+    }
+}
+
+/// `table:calculation-settings`, for the one setting that changes what a stored number
+/// *means*: `table:null-date`, the epoch (Part 4 §3.4 item 8).
+///
+/// The schema puts this element before the tables, so the epoch is always known by the
+/// time a cell needs it. Everything else in here — iteration, case sensitivity, wildcards —
+/// is left to `Ignore` until something depends on it.
+struct CalculationSettings;
+
+impl Context<Builder> for CalculationSettings {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Table, "null-date")
+            && let Some(value) = attrs.get(Ns::Table, "date-value")
+            // Parsed against 1970-01-01 rather than against the epoch being defined, which
+            // would be circular. An unparseable date leaves the default in place (§9).
+            && let Some(days) = date::parse_date(value, 0)
+        {
+            b.doc.null_date = days as i64;
         }
         Some(Box::new(super::context::Ignore))
     }
@@ -290,7 +327,10 @@ impl Cell {
     /// a numeric type falls back to the paragraph text; and a cell with no value-type at
     /// all but some text is a string, which is the ODF rule that display text *is* the
     /// value when no explicit one is given.
-    fn resolve(&self, text: &str) -> CellValue {
+    ///
+    /// The second half of the answer is the cell's [`NumberKind`], which is `Some` exactly
+    /// when a date or a time was successfully converted — see the `date`/`time` arms.
+    fn resolve(&self, text: &str, null_date: i64) -> (CellValue, Option<NumberKind>) {
         let number = |raw: &Option<String>| -> CellValue {
             raw.as_deref()
                 .or(Some(text))
@@ -299,25 +339,39 @@ impl Cell {
                 .map_or(CellValue::Number(0.0), CellValue::Number)
         };
 
-        match self.value_type.as_deref() {
+        let value = match self.value_type.as_deref() {
             Some("float" | "percentage" | "currency") => number(&self.value),
             Some("boolean") => {
                 let raw = self.boolean_value.as_deref().unwrap_or(text).trim();
                 CellValue::Bool(raw.eq_ignore_ascii_case("true") || raw == "1")
             }
-            // ponytail: dates and times are kept as their ISO text. Converting to a serial
-            // number needs `table:calculation-settings/table:null-date`, which arrives with
-            // the evaluator in phase 4 — converting now against an assumed epoch would bake
-            // in exactly the Excel-shaped guess this project exists to avoid. The original
-            // string is preserved meanwhile, so nothing is lost.
-            Some("date") => self
-                .date_value
-                .clone()
-                .map_or(CellValue::Text(text.to_owned()), CellValue::Text),
-            Some("time") => self
-                .time_value
-                .clone()
-                .map_or(CellValue::Text(text.to_owned()), CellValue::Text),
+            // A date and a time *are* Numbers — Part 4 §4.3.3 and §4.3.2 — counted from
+            // `null_date`, so this is a conversion into the model's one numeric type and
+            // not a second one. The kind rides alongside purely so the writer can spell the
+            // cell back out as the date it was.
+            //
+            // Unparseable keeps the ISO text, which is the §9 rule: a value we cannot read
+            // costs its cell a type, never the document. A `date` cell whose serial we do
+            // have is never text again, so date arithmetic works on real files.
+            Some("date") => {
+                let parsed = self
+                    .date_value
+                    .as_deref()
+                    .and_then(|s| date::parse_date(s, null_date));
+                match parsed {
+                    Some(serial) => return (CellValue::Number(serial), Some(NumberKind::Date)),
+                    None => CellValue::Text(self.date_value.as_deref().unwrap_or(text).to_owned()),
+                }
+            }
+            Some("time") => {
+                let parsed = self.time_value.as_deref().and_then(date::parse_time);
+                match parsed {
+                    Some(fraction) => {
+                        return (CellValue::Number(fraction), Some(NumberKind::Time));
+                    }
+                    None => CellValue::Text(self.time_value.as_deref().unwrap_or(text).to_owned()),
+                }
+            }
             Some("string" | "error") => {
                 // Part 4 §4.6 stores an error result as a string — but LO writes the *empty*
                 // string into `office:string-value` and leaves the error name in the display
@@ -325,7 +379,7 @@ impl Cell {
                 // (doc/ods-format.md §6). Trusting the attribute there turns every cached
                 // error into an empty cell, so for those the paragraph is the value.
                 if self.cached_error {
-                    return CellValue::Text(text.to_owned());
+                    return (CellValue::Text(text.to_owned()), None);
                 }
                 CellValue::Text(self.string_value.clone().unwrap_or_else(|| text.to_owned()))
             }
@@ -339,7 +393,8 @@ impl Cell {
                     CellValue::Text(text.to_owned())
                 }
             }
-        }
+        };
+        (value, None)
     }
 }
 
@@ -359,7 +414,7 @@ impl Context<Builder> for Cell {
 
     fn end(&mut self, b: &mut Builder) {
         let text = std::mem::take(&mut b.text);
-        let value = self.resolve(&text);
+        let (value, kind) = self.resolve(&text, b.doc.null_date);
 
         // Phase 4 parses this. Until then it is carried verbatim so a re-save does not
         // silently drop every formula in the document (§9).
@@ -373,7 +428,7 @@ impl Context<Builder> for Cell {
             if col >= MAX_COLS {
                 break;
             }
-            b.row_cells.push((col, value.clone(), formula.clone()));
+            b.row_cells.push((col, value.clone(), formula.clone(), kind));
         }
     }
 }

@@ -52,6 +52,22 @@ impl From<bool> for CellValue {
     }
 }
 
+/// The Number subtype a cell was written as — §4.3.2 Time and §4.3.3 Date.
+///
+/// Both are Numbers and live in the grid as one, which is what makes date arithmetic work
+/// at all. This records only how the cell *spelled* that number, so the writer can put it
+/// back the way it found it instead of turning every date in a document into a bare serial.
+///
+/// ponytail: two variants and no format string, so a date cell survives a round trip but
+/// its `MM/DD/YY` versus `DD.MM.YYYY` styling does not — nothing carries styles yet.
+/// Phase 5's `numfmt` is the upgrade: once a cell has a real number format, the value type
+/// is derived from it the way LibreOffice derives it, and this table goes away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NumberKind {
+    Date,
+    Time,
+}
+
 /// A cell address within one sheet, 0-based.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Pos {
@@ -81,6 +97,10 @@ pub struct Sheet {
     /// parsed AST; until then carrying it means a re-save does not silently drop every
     /// formula in the document.
     formulas: BTreeMap<Pos, String>,
+    /// Which cells hold a date or a time rather than a plain number — see [`NumberKind`].
+    /// A side table for the same reason `formulas` is one: the *value* is an ordinary
+    /// [`CellValue::Number`] and only its spelling is extra.
+    kinds: BTreeMap<Pos, NumberKind>,
 }
 
 impl Sheet {
@@ -89,6 +109,7 @@ impl Sheet {
             name: name.into(),
             cols: Vec::new(),
             formulas: BTreeMap::new(),
+            kinds: BTreeMap::new(),
         }
     }
 
@@ -112,6 +133,14 @@ impl Sheet {
     /// Every formula in the sheet, in address order — what a full recalculation walks.
     pub fn formulas(&self) -> impl Iterator<Item = (Pos, &str)> {
         self.formulas.iter().map(|(pos, f)| (*pos, f.as_str()))
+    }
+
+    pub fn kind(&self, pos: Pos) -> Option<NumberKind> {
+        self.kinds.get(&pos).copied()
+    }
+
+    pub fn set_kind(&mut self, pos: Pos, kind: NumberKind) {
+        self.kinds.insert(pos, kind);
     }
 
     pub fn get(&self, pos: Pos) -> CellValue {
@@ -161,6 +190,16 @@ pub struct Document {
     /// *requires* global names, and a document with two sheet-local names that collide is
     /// the case this gets wrong. Split the map by sheet when one turns up.
     pub names: BTreeMap<String, String>,
+    /// `HOST-NULL-DATE` (Part 4 §3.4 item 8): the epoch every serial date is counted from,
+    /// as days from 1970-01-01. Set by `table:calculation-settings/table:null-date`.
+    ///
+    /// A document-wide setting rather than a per-sheet one because the spec makes it one —
+    /// two sheets of the same document cannot disagree about what the number 0 means.
+    pub null_date: i64,
+    /// `HOST-NULL-YEAR` (Part 4 §3.4 item 7): "each two-digit year value is interpreted as
+    /// a year that equals or follows this year". Set by `table:null-year`, which a document
+    /// in the corpus really does put at 1919 — hence a setting rather than a constant.
+    pub null_year: i64,
 }
 
 /// One empty sheet — what a *user* gets. A reader builds its sheets from the file instead,
@@ -170,6 +209,8 @@ impl Default for Document {
         Self {
             sheets: vec![Sheet::new("Sheet1")],
             names: BTreeMap::new(),
+            null_date: crate::formula::date::DEFAULT_NULL_DATE,
+            null_year: crate::formula::date::DEFAULT_NULL_YEAR,
         }
     }
 }

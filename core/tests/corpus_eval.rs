@@ -25,11 +25,11 @@ const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/
 
 /// Cells that must keep matching. Raise it when the scoreboard rises; never lower it.
 ///
-/// At 12069 with 85 of the Small Group's 110 functions written. The gap to 52213 is mostly
+/// At 12378 with 88 of the Small Group's 110 functions written. The gap to 52213 is mostly
 /// `missing` — fixtures for functions outside the Small Group entirely (`FOURIER`,
 /// `LINEST`, the whole `addin` category) — so the number to watch is the scoreboard's
 /// `wrong` column, not this one.
-const FLOOR: usize = 12_000;
+const FLOOR: usize = 12_300;
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(
@@ -61,6 +61,23 @@ struct Tally {
     /// Answered with `#NAME?` where the document has a value: a function we do not have.
     missing: usize,
     wrong: usize,
+    /// Reads the clock, so the cached value is a claim about the day the fixture was
+    /// saved and no evaluator can reproduce it. See [`volatile`].
+    volatile: usize,
+}
+
+/// Does this formula read the clock?
+///
+/// `NOW` and `TODAY` (§6.10.16, §6.10.20) are the Small Group's only two functions that
+/// are not a pure function of the document, so a fixture's cached value for one is the
+/// instant LibreOffice last recalculated it. Counting those as `wrong` would put cells
+/// that *cannot* agree into the one column that means something is broken.
+///
+/// Named as a construct rather than as a file, and it is the whole list — anything else
+/// that disagrees still counts against us.
+fn volatile(formula: &str) -> bool {
+    let upper = formula.to_uppercase();
+    upper.contains("TODAY(") || upper.contains("NOW(")
 }
 
 /// Is the recalculated value the one the document already carries?
@@ -143,32 +160,35 @@ fn recalculating_the_corpus_agrees_with_libreoffice() {
         category.matched += tally.matched;
         category.missing += tally.missing;
         category.wrong += tally.wrong;
+        category.volatile += tally.volatile;
         let function = by_function.entry(subject(path)).or_default();
         function.matched += tally.matched;
         function.missing += tally.missing;
         function.wrong += tally.wrong;
+        function.volatile += tally.volatile;
     }
 
     let total = |f: fn(&Tally) -> usize| by_category.values().map(f).sum::<usize>();
-    let (matched, missing, wrong) = (
+    let (matched, missing, wrong, volatile) = (
         total(|t| t.matched),
         total(|t| t.missing),
         total(|t| t.wrong),
+        total(|t| t.volatile),
     );
     eprintln!(
         "loop B (evaluate): {} formula cells in {} fixtures — {matched} match, \
-         {missing} need a function we do not have, {wrong} disagree",
-        matched + missing + wrong,
+         {missing} need a function we do not have, {wrong} disagree, {volatile} read the clock",
+        matched + missing + wrong + volatile,
         files.len(),
     );
     eprintln!(
-        "  {:<16} {:>7} {:>8} {:>7}",
-        "category", "match", "missing", "wrong"
+        "  {:<16} {:>7} {:>8} {:>7} {:>9}",
+        "category", "match", "missing", "wrong", "volatile"
     );
     for (category, tally) in &by_category {
         eprintln!(
-            "  {category:<16} {:>7} {:>8} {:>7}",
-            tally.matched, tally.missing, tally.wrong
+            "  {category:<16} {:>7} {:>8} {:>7} {:>9}",
+            tally.matched, tally.missing, tally.wrong, tally.volatile
         );
     }
 
@@ -202,6 +222,8 @@ fn check(doc: &Document, dump: bool) -> Tally {
             let computed = engine.value(Address::new(index, pos));
             if agrees(&stored, &computed) {
                 tally.matched += 1;
+            } else if volatile(&formula) {
+                tally.volatile += 1;
             } else if computed == Value::Error(FormulaError::Name) {
                 // Either a function we have not written or a name we cannot resolve. Both
                 // are "not implemented yet" rather than "computed the wrong answer" — the
