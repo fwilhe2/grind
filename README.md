@@ -61,7 +61,9 @@ find/replace · freeze panes · one chart type · CSV · print to PDF.
 xlsx *writing* · scenarios · solver · sparklines · OpenFormula Large Group.
 
 The "out" list is the product. Items move off it one at a time by explicit decision, and only
-if they survive a round-trip through LibreOffice.
+if they survive a round-trip through LibreOffice. [`doc/not-doing.md`](doc/not-doing.md) is
+the full version — what is never, what is not yet, and where every capability that exists
+stops.
 
 ## Specs
 
@@ -72,6 +74,7 @@ if they survive a round-trip through LibreOffice.
 | `doc/ods-format.md` | Clean-room notes on what LibreOffice actually does, cited `file:line` |
 | `doc/small-group.md` | The 110-function Small Group list, extracted from Part 4 §2.3.2 |
 | `doc/plan.md` | Phases, exit criteria, and the three verification loops |
+| `doc/not-doing.md` | The feature line, written down — never, not yet, and the limits of what exists |
 
 ## Building
 

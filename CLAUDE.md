@@ -36,6 +36,7 @@ syntax translator leaks all of it through. The normative specs are the source of
 | `doc/small-group.md` | The 110-function scope line, *extracted* from Part 4 §2.3.2, not estimated |
 | `doc/ods-format.md` | Clean-room notes on what LibreOffice actually does where the specs leave room |
 | `doc/cli-parity.md` | Every public `App` method and the CLI command reaching it — checked by a test |
+| `doc/not-doing.md` | The feature line as a product document — never, not yet, and where each capability stops |
 
 The laziness ladder still applies to format-neutral plumbing (quick-xml, zip, petgraph,
 chrono) — just never to semantics.
@@ -537,5 +538,10 @@ direction needs, so phase 4's last deferral now has its machinery.
 
 Deliberately still absent, and *not* parity gaps — nothing can do them at all, so no shell is
 hiding a capability: adding, renaming and deleting sheets; editing named expressions; CSV.
-The rest of phase 5 — setting a format, cell styles, `style:map`, locales — is next in the
-plan's order.
+
+**Phase 7 has its stop written down.** `doc/not-doing.md` is the product document the plan
+asks for before any GUI: what is never (macros, xlsx writing, Large Group, arrays, pivot
+tables), what is not yet and which gate owns it, and where each capability that *does* exist
+stops — each row pointing at the `ponytail:` comment or module doc that owns the limit rather
+than restating it. Adding a capability means moving a row, not just writing code. What
+remains of phase 7 is the first native shell, then the wasm shell.
