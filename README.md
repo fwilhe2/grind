@@ -26,7 +26,9 @@ sheet view book.ods A1:A3                 # tab-separated, pipes into anything
 
 Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`,
 `Data.B2`, `'Q3 Actuals'.A1:.C9`. `--format json` makes every command machine-readable, and
-`--session` carries undo across invocations. Whatever the core can do, the CLI can do:
+`--session` carries undo across invocations. [`doc/cli-recipes.md`](doc/cli-recipes.md) has
+worked scripts — CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods`.
+Whatever the core can do, the CLI can do:
 [`doc/cli-parity.md`](doc/cli-parity.md) lists every public method against the command that
 reaches it, and a test fails the build when one is missing.
 
