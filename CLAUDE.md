@@ -46,6 +46,7 @@ syntax translator leaks all of it through. The normative specs are the source of
 | `doc/small-group.md` | The 110-function scope line, *extracted* from Part 4 §2.3.2, not estimated |
 | `doc/ods-format.md` | Clean-room notes on what LibreOffice actually does where the specs leave room |
 | `doc/cli-parity.md` | Every public `App` method and the CLI command reaching it — checked by a test |
+| `doc/gtk-shell.md` | Phase 9's work plan for the GTK shell — core additions, widget design, milestones |
 | `doc/not-doing.md` | The feature line as a product document — never, not yet, and where each capability stops |
 
 The laziness ladder still applies to format-neutral plumbing (quick-xml, zip, petgraph,

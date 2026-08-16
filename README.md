@@ -91,6 +91,7 @@ stops.
 | `doc/small-group.md` | The 110-function Small Group list, extracted from Part 4 §2.3.2 |
 | `doc/plan.md` | Phases, exit criteria, and the three verification loops |
 | `doc/not-doing.md` | The feature line, written down — never, not yet, and the limits of what exists |
+| `doc/gtk-shell.md` | The GTK shell, planned — phase 9's native shell |
 
 ## Building
 
