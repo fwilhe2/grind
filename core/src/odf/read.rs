@@ -48,6 +48,13 @@ pub struct Builder {
     /// Cells of the row being read, held back until the row ends because
     /// `table:number-rows-repeated` may ask for the whole row again.
     row_cells: Vec<RowCell>,
+    /// `table:number-rows-repeated` of the row being read. One element there stands for many
+    /// rows, so none of its cells can be spliced — see [`crate::odf::source`].
+    row_repeat: u32,
+    /// Where each cell element of the row being read sits in the file (R6), in column order.
+    /// Beside `row_cells` rather than inside it because there is one entry per *element*
+    /// and `row_cells` has one per address.
+    row_spans: Vec<super::source::Cell>,
     /// Text accumulated by the paragraph contexts under the current cell.
     text: String,
     /// Cells left in the materialisation budget. See [`MAX_MATERIALISED_CELLS`].
@@ -101,11 +108,15 @@ impl Builder {
                 names: Default::default(),
                 null_date: date::DEFAULT_NULL_DATE,
                 null_year: date::DEFAULT_NULL_YEAR,
+                source: None,
+                edits: Default::default(),
             },
             sheet: 0,
             row: 0,
             col: 0,
             row_cells: Vec::new(),
+            row_repeat: 1,
+            row_spans: Vec::new(),
             text: String::new(),
             budget: MAX_MATERIALISED_CELLS,
             number_styles: HashMap::new(),
@@ -200,6 +211,17 @@ impl Builder {
     /// real files. With no cells buffered there is nothing to replay, so it costs one
     /// addition rather than a million iterations.
     fn finish_row(&mut self, repeat: u32) {
+        // R6: hand this row's cell elements to the source, but only when the row stands for
+        // itself. A repeated row's one element covers many addresses, and splitting *that*
+        // means emitting whole rows — which is no longer a small diff, which was the point.
+        let spans = std::mem::take(&mut self.row_spans);
+        if repeat == 1
+            && !spans.is_empty()
+            && let Some(source) = self.doc.source.as_mut()
+        {
+            source.rows.insert((self.sheet, self.row), spans);
+        }
+
         if self.row_cells.is_empty() {
             self.row = self.row.saturating_add(repeat).min(MAX_ROWS);
             return;
@@ -374,6 +396,7 @@ impl Context<Builder> for Table {
                     .get(Ns::Table, "default-cell-style-name")
                     .map(str::to_owned);
                 let repeat = attrs.count(Ns::Table, "number-rows-repeated", MAX_ROWS);
+                b.row_repeat = repeat;
                 Some(Box::new(Row { repeat }))
             }
             // Columns carry the default cell style for everything below them, which is how
@@ -424,9 +447,17 @@ impl Context<Builder> for Row {
             return Some(Box::new(super::context::Ignore));
         }
 
+        // R6: where this element sits, so a later save can replace it in place. Recorded for
+        // a repeated cell too — that element is split rather than skipped — but not inside a
+        // repeated row, where one element stands for many rows. `Attrs::span` is the whole
+        // element for the `<table:table-cell/>` form and the start tag for the other, which
+        // `Cell::end` finishes.
+        let span = (b.row_repeat == 1 && b.doc.source.is_some()).then(|| attrs.span());
+
         Some(Box::new(Cell {
             start,
             repeat,
+            span,
             value_type: attrs
                 .get_any(&[(Ns::Office, "value-type"), (Ns::Calcext, "value-type")])
                 .map(str::to_owned),
@@ -447,9 +478,36 @@ impl Context<Builder> for Row {
     }
 }
 
+/// Where a cell element ends, given the span of its start tag.
+///
+/// `Attrs::span` covers the whole element for `<table:table-cell/>` — the common form, and
+/// the one that arrives as a single `Event::Empty` — and only the start tag for a cell with
+/// children, because `Context::end` is told nothing about position. Rather than widen that
+/// trait for one caller, scan forward for the close tag.
+///
+/// A `table:table-cell` may legally contain a whole subtable, and therefore other cells; a
+/// naive scan would then stop at the *inner* close tag and splice a fragment. So an opening
+/// `<table:table-cell` before the close means this cell is simply not replaceable, which
+/// costs a rare document its small diff and cannot cost it correctness.
+fn cell_extent(bytes: &[u8], start_tag: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
+    const OPEN: &[u8] = b"<table:table-cell";
+    const CLOSE: &[u8] = b"</table:table-cell>";
+    if bytes.get(start_tag.end.checked_sub(2)?..start_tag.end)? == b"/>" {
+        return Some(start_tag);
+    }
+    let rest = bytes.get(start_tag.end..)?;
+    let close = rest
+        .windows(CLOSE.len())
+        .position(|w| w == CLOSE)
+        .filter(|at| !rest[..*at].windows(OPEN.len()).any(|w| w == OPEN))?;
+    Some(start_tag.start..start_tag.end + close + CLOSE.len())
+}
+
 struct Cell {
     start: u32,
     repeat: u32,
+    /// The start tag's extent, when this cell is replaceable. See [`cell_extent`].
+    span: Option<std::ops::Range<usize>>,
     value_type: Option<String>,
     value: Option<String>,
     string_value: Option<String>,
@@ -570,6 +628,25 @@ impl Context<Builder> for Cell {
         // Phase 4 parses this. Until then it is carried verbatim so a re-save does not
         // silently drop every formula in the document (§9).
         let formula = self.formula.clone();
+
+        // R6: the element's full extent, resolved here because only now is it closed. Every
+        // cell element the row has is recorded, empty ones included — writing a value into a
+        // cell the file spells `<table:table-cell/>` is the case R6 is named for.
+        if let Some((range, keep)) =
+            self.span
+                .take()
+                .zip(b.doc.source.as_ref())
+                .and_then(|(tag, source)| {
+                    let keep = super::source::kept_attributes(source.bytes.get(tag.clone())?);
+                    Some((cell_extent(&source.bytes, tag)?, keep))
+                })
+        {
+            b.row_spans.push(super::source::Cell {
+                range,
+                cols: self.start..self.start.saturating_add(self.repeat).min(MAX_COLS),
+                keep,
+            });
+        }
 
         if value.is_empty() && formula.is_none() {
             return; // Nothing to write; the columns were claimed at start.

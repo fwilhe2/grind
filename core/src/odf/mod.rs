@@ -12,6 +12,7 @@ pub mod context;
 pub mod names;
 pub mod package;
 pub mod read;
+pub mod source;
 pub mod write;
 
 pub use write::Form;
@@ -24,6 +25,15 @@ use crate::model::Document;
 pub fn read(bytes: &[u8]) -> Result<Document> {
     let content = package::content_xml(bytes)?;
     let mut builder = read::Builder::new();
+    // R6: the flat form only, and installed *before* parsing, because the cell contexts
+    // record their spans into it as they go. A package is a zip and has no diff to preserve,
+    // so it is read without one and always regenerates — see `odf::source`.
+    if !package::is_package(bytes) {
+        builder.doc.source = Some(Box::new(source::Source::new(
+            write::Form::Flat,
+            content.clone(),
+        )));
+    }
     // `styles.xml` first, so a named style defined there is already known when a cell in
     // `content.xml` references it (doc/ods-format.md §5.1). It holds no cells, so nothing
     // else about the document depends on the order. A part that will not parse costs the

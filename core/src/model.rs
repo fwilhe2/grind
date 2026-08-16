@@ -269,6 +269,46 @@ pub struct Document {
     /// a year that equals or follows this year". Set by `table:null-year`, which a document
     /// in the corpus really does put at 1919 — hence a setting rather than a constant.
     pub null_year: i64,
+    /// The bytes this document was read from, when it was read from any (doc/plan.md R6).
+    ///
+    /// `None` for a document built in memory, which is every document `sheet new` makes —
+    /// there is no file to preserve, so the writer generates one. Boxed because it is the
+    /// only large-and-usually-absent field on a `Document`, and an `Option<Box<_>>` keeps
+    /// the common case a pointer.
+    pub source: Option<Box<crate::odf::source::Source>>,
+    /// What has changed since. See [`Edits`].
+    pub edits: Edits,
+}
+
+/// What has been changed since the document was read, which is what decides whether saving
+/// can splice (doc/plan.md R6) or has to regenerate.
+///
+/// Filled in by [`Document::apply`], which is the only way a document changes — that is what
+/// makes tracking this one insert rather than a diffing pass.
+///
+/// ponytail: an undone edit stays in `cells`, so undoing a change and saving rewrites that
+/// cell in our spelling rather than restoring the file's. The result is correct and the diff
+/// is one element instead of none. Comparing against the value read would fix it and needs a
+/// snapshot of the document to compare *to*; not worth a second copy of the grid.
+#[derive(Clone, Debug)]
+pub struct Edits {
+    /// Every `(sheet, position)` written to.
+    pub cells: std::collections::BTreeSet<(usize, Pos)>,
+    /// Whether every edit so far was a value or a formula.
+    ///
+    /// A number format or a cell style needs a `style:style` that the original file does not
+    /// contain, so it cannot be spliced into it — see `odf::source`. False is sticky: once a
+    /// document has had a format changed, saving it regenerates.
+    pub only_values: bool,
+}
+
+impl Default for Edits {
+    fn default() -> Self {
+        Self {
+            cells: Default::default(),
+            only_values: true,
+        }
+    }
 }
 
 /// One empty sheet — what a *user* gets. A reader builds its sheets from the file instead,
@@ -280,6 +320,8 @@ impl Default for Document {
             names: BTreeMap::new(),
             null_date: crate::formula::date::DEFAULT_NULL_DATE,
             null_year: crate::formula::date::DEFAULT_NULL_YEAR,
+            source: None,
+            edits: Edits::default(),
         }
     }
 }

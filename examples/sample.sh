@@ -141,4 +141,16 @@ run clear "$book" B6 --formula-only
 say "convert: the same document as flat XML"
 run convert "$book" "$out/sample.fods"
 
+# --- R6: a flat document edits in place ---------------------------------------------------
+# Editing a `.fods` rewrites the one element that changed and leaves every other byte alone,
+# which is what makes these files live in git the way source files do. Shown against a copy,
+# with `diff` counting the lines rather than a claim in a comment.
+
+say "minimal diff: one cell changed, one element rewritten"
+cp "$out/sample.fods" "$out/before.fods"
+run set "$out/sample.fods" B2 4321
+printf 'changed lines: %s of %s\n' \
+  "$(diff "$out/before.fods" "$out/sample.fods" | grep -c '^[<>]')" \
+  "$(wc -l < "$out/before.fods")"
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

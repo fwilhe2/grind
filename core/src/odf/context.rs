@@ -37,9 +37,25 @@ use crate::{Error, Result};
 #[derive(Debug, Default)]
 pub struct Attrs {
     items: Vec<(Name, String)>,
+    span: std::ops::Range<usize>,
 }
 
 impl Attrs {
+    /// Where this element's start tag sits in the bytes being parsed.
+    ///
+    /// Here rather than as a `Context` parameter because [`Attrs`] is already built per
+    /// element and handed to `start_child`: adding a field costs one struct, adding an
+    /// argument would touch every context in the reader for the sake of the one that wants
+    /// it. That one is the cell (doc/plan.md R6) — knowing where a cell *was* is what lets
+    /// the writer put a new one back in its place and leave the rest of the file alone.
+    ///
+    /// For an `Event::Empty` — `<table:table-cell/>`, by far the most common cell — this is
+    /// the whole element. For an `Event::Start` it is the start tag only, so a caller that
+    /// needs the element's full extent has to close it itself.
+    pub fn span(&self) -> std::ops::Range<usize> {
+        self.span.clone()
+    }
+
     pub fn get(&self, ns: Ns, local: &str) -> Option<&str> {
         self.items
             .iter()
@@ -101,7 +117,11 @@ impl<S> Context<S> for Ignore {}
 /// a crafted file nesting until the box allocations exhaust memory.
 const MAX_DEPTH: usize = 256;
 
-fn collect_attrs<R: BufRead>(reader: &NsReader<R>, e: &BytesStart) -> Result<Attrs> {
+fn collect_attrs<R: BufRead>(
+    reader: &NsReader<R>,
+    e: &BytesStart,
+    span: std::ops::Range<usize>,
+) -> Result<Attrs> {
     let mut items = Vec::new();
     for attr in e.attributes() {
         // A malformed attribute is not worth failing a document over; skip it.
@@ -120,7 +140,7 @@ fn collect_attrs<R: BufRead>(reader: &NsReader<R>, e: &BytesStart) -> Result<Att
             value.into_owned(),
         ));
     }
-    Ok(Attrs { items })
+    Ok(Attrs { items, span })
 }
 
 fn resolved_name<R: BufRead>(reader: &NsReader<R>, e: &BytesStart) -> Name {
@@ -144,9 +164,15 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
     let mut buf = Vec::new();
 
     loop {
+        // Where this event begins, for [`Attrs::span`]. `buffer_position` after a read points
+        // just past the event, so the previous one's end is this one's start — and because
+        // `trim_text` is off, the whitespace between two elements arrives as its own `Text`
+        // event rather than being folded into the next element's span.
+        let from = reader.buffer_position() as usize;
         let event = reader
             .read_event_into(&mut buf)
             .map_err(|e| Error::Xml(e.to_string()))?;
+        let span = from..reader.buffer_position() as usize;
 
         match event {
             Event::Start(e) => {
@@ -156,7 +182,7 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
                     )));
                 }
                 let name = resolved_name(&reader, &e);
-                let attrs = collect_attrs(&reader, &e)?;
+                let attrs = collect_attrs(&reader, &e, span)?;
                 let child = stack
                     .last_mut()
                     .expect("stack never empties")
@@ -168,7 +194,7 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
             // common element in a sheet.
             Event::Empty(e) => {
                 let name = resolved_name(&reader, &e);
-                let attrs = collect_attrs(&reader, &e)?;
+                let attrs = collect_attrs(&reader, &e, span)?;
                 if let Some(mut child) = stack
                     .last_mut()
                     .expect("stack never empties")

@@ -107,11 +107,28 @@ fn digest(doc: &Document) -> Vec<String> {
     out
 }
 
+/// A document read from a file, with the bytes it came from deliberately forgotten.
+///
+/// R6's splicing writer (`odf::source`) returns a document's own file back when nothing has
+/// been edited, which is the right answer and makes a write→read test tautological. Dropping
+/// `source` is how a test asks for the *regenerating* writer, and it is the path every
+/// document built in memory takes anyway.
+fn regenerating(dir: &str, name: &str) -> Document {
+    let mut doc = sheet_core::read_file(&data(dir, name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    doc.source = None;
+    doc
+}
+
 #[test]
 fn every_required_document_reads_and_round_trips() {
     for (dir, name) in required() {
         let path = data(dir, name);
-        let doc = sheet_core::read_file(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let doc = regenerating(dir, name);
+        assert_eq!(
+            digest(&sheet_core::read_file(&path).unwrap()),
+            digest(&doc),
+            "{name}: forgetting the source changed the document"
+        );
 
         // Both forms, because the requirement is about ODF and not about flat XML. A
         // package is the same content model in a zip (§7.3).
@@ -184,7 +201,7 @@ fn everything_we_write_is_valid_odf() {
 
     let mut failures = Vec::new();
     for (from, name) in required() {
-        let doc = sheet_core::read_file(&data(from, name)).unwrap();
+        let doc = regenerating(from, name);
         let path = dir.join(name);
         sheet_core::write_file(&doc, &path).unwrap();
 
@@ -232,7 +249,7 @@ fn a_written_document_carries_no_boilerplate() {
         ("kb", "minimal-with-styles.fods", 40),
         ("samples", "table.fods", 40),
     ] {
-        let doc = sheet_core::read_file(&data(dir, name)).unwrap();
+        let doc = regenerating(dir, name);
         let xml = String::from_utf8(sheet_core::write_bytes(&doc, Form::Flat).unwrap()).unwrap();
         let preamble = xml
             .split_once("<table:table-cell")
@@ -247,22 +264,22 @@ fn a_written_document_carries_no_boilerplate() {
     }
 }
 
-/// R6's evidence, printed rather than asserted.
+/// What the *regenerating* writer still drops, printed rather than asserted.
 ///
 /// These six are LibreOffice's output: charts, a pivot table, conditional formatting,
-/// `office:settings`, a font catalogue. The writer regenerates from the model, so all of it
-/// goes, and the *whole file* is the diff. This prints how much, per document, so phase 8
-/// has a before number to beat — and so nobody has to re-derive the size of the problem.
+/// `office:settings`, a font catalogue. Regenerating from the model loses all of it, and
+/// that path is still what a document built in memory, or converted between forms, or edited
+/// in a way splicing cannot express, takes. So the number stays on the record — R6 is
+/// satisfied by *not going through here*, not by this shrinking.
 ///
-/// It asserts only the thing that must not regress meanwhile: the output is smaller, never
-/// larger. A regenerated document growing past LibreOffice's own would mean R3 broke.
+/// It asserts only what must not regress: the output is smaller, never larger. A regenerated
+/// document growing past LibreOffice's own would mean R3 broke.
 #[test]
 fn the_samples_measure_what_regenerating_still_loses() {
-    eprintln!("R6 — what a regenerating writer drops (phase 8 beats these):");
+    eprintln!("what regenerating from the model drops (the path R6 avoids):");
     for name in SAMPLES {
-        let path = data("samples", name);
-        let before = std::fs::metadata(&path).unwrap().len();
-        let doc = sheet_core::read_file(&path).unwrap();
+        let before = std::fs::metadata(data("samples", name)).unwrap().len();
+        let doc = regenerating("samples", name);
         let after = sheet_core::write_bytes(&doc, Form::Flat).unwrap().len() as u64;
         eprintln!(
             "  {name:32} {before:>7} -> {after:>7} bytes  ({}% kept)",
@@ -273,4 +290,179 @@ fn the_samples_measure_what_regenerating_still_loses() {
             "{name}: regenerating grew the document, {before} -> {after}"
         );
     }
+}
+
+// --- R6: writing changes as little of the XML as it can ----------------------------------
+
+/// Setting one number changes **one element**, in every R7 document that has a cell to set.
+///
+/// The requirement in its own words: editing one number must not produce the hundred-line
+/// diff LibreOffice's own save does, and a flat file must stay easy to `git diff`. So the
+/// assertion is a diff, counted in changed lines against the original file — and the ceiling
+/// is low enough that regenerating (which changes every line of all fourteen) cannot pass by
+/// accident.
+///
+/// The ceiling is on *lines*, not on elements, because that is what a reader of a diff sees
+/// — but it is a **constant**, which is the property that matters: one element goes out
+/// however large the document is. Removals get more headroom than additions because a file
+/// is free to spell one cell across several lines (`Quarterly Sales Report` puts every
+/// attribute on its own), while the replacement is always a single line. Regenerating
+/// changes every line of all fourteen, so nothing here can pass by falling back.
+#[test]
+fn setting_one_number_changes_one_element() {
+    for (dir, name) in required() {
+        let before = std::fs::read_to_string(data(dir, name)).unwrap();
+        let app = sheet_core::App::new();
+        app.open_file(&data(dir, name)).unwrap();
+
+        // The first cell that holds a value. Not a fixed address: A1 is inside a repeated
+        // *row* in `conditional-formatting.fods` and absent altogether from `fizzbuzz.fods`,
+        // and both of those fall back by design. A cell with a value is one the file spelled.
+        let at = first_value(&sheet_core::read_file(&data(dir, name)).unwrap());
+        app.set_cell(0, at, 42.0).unwrap();
+        let after = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+
+        let (removed, added) = changed_lines(&before, &after);
+        assert!(
+            removed <= 10 && added <= 2,
+            "{name}: setting one cell changed {removed} lines and added {added}; \
+             the document is {} lines",
+            before.lines().count()
+        );
+        assert!(
+            after.contains("office:value=\"42\""),
+            "{name}: the new value is not in the output"
+        );
+
+        // And it still reads back as the document it now is.
+        let back = sheet_core::read_bytes(name, after.as_bytes()).unwrap();
+        assert_eq!(
+            back.sheet(0).unwrap().get(at),
+            sheet_core::CellValue::Number(42.0),
+            "{name}: the spliced cell did not read back"
+        );
+    }
+}
+
+/// Writing into a `table:number-columns-repeated` run splits **that element** and no more.
+///
+/// The case R6 would otherwise be true only in name for: LibreOffice writes a row of empty
+/// cells as one element, so if a repeated element could not be split, every "put a number in
+/// an empty cell" — the ordinary edit — would regenerate the file. `custom-colors.fods` row
+/// 3 is `<table:table-cell table:number-columns-repeated="5"/>` and nothing else, which
+/// makes the before and after readable in one line each.
+#[test]
+fn a_value_written_into_a_repeated_run_splits_only_that_element() {
+    let name = "custom-colors.fods";
+    let before = std::fs::read_to_string(data("samples", name)).unwrap();
+    assert!(
+        before.contains("<table:table-cell table:number-columns-repeated=\"5\"/>"),
+        "the fixture no longer has the run this test is about"
+    );
+
+    let app = sheet_core::App::new();
+    app.open_file(&data("samples", name)).unwrap();
+    app.set_cell(0, Pos::new(2, 1), 99.0).unwrap(); // B3, the middle of a run of five
+    let after = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+
+    assert!(
+        after.contains(
+            "<table:table-cell/>\
+             <table:table-cell office:value-type=\"float\" office:value=\"99\"/>\
+             <table:table-cell table:number-columns-repeated=\"3\"/>"
+        ),
+        "the run did not split into before / cell / after"
+    );
+    let (removed, added) = changed_lines(&before, &after);
+    assert_eq!((removed, added), (1, 1), "one line out, one line in");
+
+    // The run re-forms when the value goes away again, so an edit and its undo leave the
+    // document as it was rather than as five separate elements.
+    app.undo();
+    let undone = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    assert_eq!(undone, before, "undo did not restore the file");
+}
+
+/// Saving a document nobody edited returns its bytes untouched — the limit case of R6, and
+/// the one a `.fods` in version control cares about most: opening a file to look at it must
+/// not show up as a commit.
+#[test]
+fn saving_an_unedited_document_changes_nothing_at_all() {
+    for (dir, name) in required() {
+        let before = std::fs::read(data(dir, name)).unwrap();
+        let doc = sheet_core::read_file(&data(dir, name)).unwrap();
+        assert_eq!(
+            sheet_core::write_bytes(&doc, Form::Flat).unwrap(),
+            before,
+            "{name}: an untouched document did not come back byte for byte"
+        );
+    }
+}
+
+/// Splicing refuses rather than guesses, and the refusal is the whole writer falling back.
+///
+/// Named cases rather than an inferred one: a fallback that fires silently would make R6
+/// untestable, and each of these is a boundary `odf::source` documents.
+#[test]
+fn what_cannot_be_spliced_regenerates() {
+    let doc = |edit: &dyn Fn(&sheet_core::App)| {
+        let app = sheet_core::App::new();
+        app.open_file(&data("kb", "minimal-libreoffice.fods")).unwrap();
+        edit(&app);
+        String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap()
+    };
+    let regenerated = |xml: &str| !xml.contains("office:settings");
+
+    // A cell in a row the file does not spell at all.
+    assert!(regenerated(&doc(&|app| {
+        app.set_cell(0, Pos::new(500, 0), 1.0).unwrap();
+    })));
+    // A number format, which needs a `style:style` the source file does not contain.
+    assert!(regenerated(&doc(&|app| {
+        app.set_format(0, Pos::new(0, 0), Pos::new(0, 0), Some(sheet_core::numfmt::preset(
+            sheet_core::numfmt::Kind::Percentage,
+            1,
+            false,
+            "",
+        )))
+        .unwrap();
+    })));
+    // And the case that does splice, so the three above are not passing for a shared reason.
+    assert!(!regenerated(&doc(&|app| {
+        app.set_cell(0, Pos::new(0, 0), 7.0).unwrap();
+    })));
+}
+
+/// The first cell of sheet 0 holding a value or a formula, in row-major order.
+/// `fizzbuzz.fods` is why formulas count: it has eighteen and not one cached value.
+fn first_value(doc: &Document) -> Pos {
+    let sheet = doc.sheet(0).expect("a sheet");
+    for row in 0..sheet.used_rows() {
+        for col in 0..sheet.used_cols() {
+            let pos = Pos::new(row, col);
+            if !sheet.get(pos).is_empty() || sheet.formula(pos).is_some() {
+                return pos;
+            }
+        }
+    }
+    // `used_rows` is the extent of *values*, so a document of formulas with no cached
+    // values — `fizzbuzz.fods` — has none at all to walk.
+    sheet.formulas().next().map(|(pos, _)| pos).expect("a cell")
+}
+
+/// Lines removed and added between two texts, by the shortest honest route: a line that
+/// appears in both, the same number of times, did not change.
+fn changed_lines(before: &str, after: &str) -> (usize, usize) {
+    use std::collections::HashMap;
+    let mut counts: HashMap<&str, i64> = HashMap::new();
+    for line in before.lines() {
+        *counts.entry(line).or_default() += 1;
+    }
+    for line in after.lines() {
+        *counts.entry(line).or_default() -= 1;
+    }
+    (
+        counts.values().filter(|n| **n > 0).map(|n| *n as usize).sum(),
+        counts.values().filter(|n| **n < 0).map(|n| -*n as usize).sum(),
+    )
 }

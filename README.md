@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
 
-**Phases 0–7 of 9.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and
+**Phases 0–8 of 9.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and
 flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
 three it declines are password-protected — and documents written here survive a round trip
 through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
@@ -47,10 +47,11 @@ only the boilerplate the document uses, so a new file is thirteen lines rather t
 hundred. Everything LibreOffice writes **reads**, unknown elements and attributes included:
 strictness on the way out, tolerance on the way in.
 
-One requirement is **not met yet**: writing should change as little XML as possible, so that
-editing one number in a flat file is a one-line `git diff` rather than LibreOffice's hundred.
-Today the writer regenerates the document from its model. That is phase 8, and it lands
-before any GUI.
+And writing **changes as little XML as it can**. Setting one cell in a 482-line LibreOffice
+file changes one element and leaves every other byte alone, indentation included — so a
+`.fods` lives in git the way a source file does, and opening a document to look at it is not
+a commit. What a spliced save cannot express (a new row, a changed number format) falls back
+to regenerating the file, and the fallbacks are named and tested rather than inferred.
 
 ## Why
 

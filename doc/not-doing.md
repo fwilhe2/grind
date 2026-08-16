@@ -84,7 +84,9 @@ CLI parity gaps.
 | **Freeze panes** | Phase 9 shells | Purely a view concern, and there is no view. |
 | **One chart type** | Phase 9 shells | Must round-trip through LibreOffice like everything else. |
 | **Print to PDF** | Phase 9 shells | Via the platform, so it needs a platform. |
-| **Preserving what the model does not carry** | Phase 8 | R6. `office:meta`, `office:settings`, unreferenced styles and other vendors' extensions are dropped on write today, because the writer regenerates from the model. Retain-and-splice fixes both this and the diff size. |
+| **Preserving what the model does not carry, on a *regenerating* save** | No gate | R6 is met by not regenerating: an opened document is edited in place, so `office:meta`, `office:settings`, unreferenced styles and other vendors' extensions are never touched. They are still lost when the writer *does* regenerate — a new row, a changed format, a conversion between forms — and closing that would mean modelling all of ODF, which is the trade this project exists not to make. |
+| **Splicing a `.ods`** | No gate | A zip has no diff to preserve, so the package form always regenerates. |
+| **Splicing a format or style change** | When a shell makes it the common edit | A new `style:style` has to be merged into the file's own `office:automatic-styles` — a second splice site and a pool. `sheet format` and `sheet style` regenerate. |
 | **`calcext:` on the way out** | No gate; R4 allows it, R2 outranks it | `calcext:value-type` is not valid against the ODF schema, so an item earns its place only with a measured LibreOffice behaviour that cannot be had any other way. Read and ignored today. |
 | **Incremental recalculation** | When a UI makes whole-document recalc feel slow | `eval.rs:16`. `graph.rs` is in the plan and unbuilt on purpose; recursion-with-memoisation is the topological order today. |
 | **Reading `.xlsx`** | Never scheduled, always allowed | Read-only, via `calamine`, if a real week of use demands it. |

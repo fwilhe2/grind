@@ -45,7 +45,7 @@ a requirement nothing checks is a preference.
 | **R3** | Output **MUST carry minimal boilerplate** while staying compliant — nothing written that the document does not use. | the writer's own tests; a new document is 13 lines |
 | **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — nothing yet, because nothing needs it |
 | **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `core/tests/kb.rs`'s three LibreOffice-authored files |
-| **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | **unmet** — phase 8 |
+| **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | `core/tests/kb.rs`'s `setting_one_number_changes_one_element`, over all fourteen R7 documents |
 | **R7** | Two named corpora **MUST work**, and are vendored so the requirement cannot skip. Hand-written against the spec (`data/kb/`): `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`. LibreOffice-authored, `odslint-clean`-normalised (`data/samples/`): `Quarterly Sales Report` · `Sales Dashboard` · `conditional-formatting` · `custom-colors` · `spreadsheet` · `table`. All `.fods`. | `core/tests/kb.rs` |
 
 Three consequences worth stating rather than discovering:
@@ -73,10 +73,13 @@ were dropped for adding *zero* new elements or attributes; a corpus file that wi
 is only slower. They are also R6's evidence: regenerating them keeps 9–61% of the bytes, and
 `kb.rs` prints the number per document so phase 8 has a figure to beat.
 
-**R6 is the one that is not met today.** The writer regenerates a document from the model, so
-opening a 482-line LibreOffice file and setting one cell writes 13 lines: correct ODF,
-correct values, and everything the model does not carry silently gone. That is both a diff
-problem and a fidelity problem, and phase 8 is where it is fixed.
+**R2 is about what this build *generates*, and R6 is why that distinction has to be made.**
+A spliced document keeps the bytes of the file it came from, and those bytes may not be
+valid — most of R7's are not. Re-deriving them to fix that is exactly what R6 forbids, so the
+two requirements would contradict each other under any other reading. The rule is therefore:
+**every element this build writes is schema-valid, and a document it merely edits is as
+conformant as the file it came from — no more and no less.** `core/tests/kb.rs` validates the
+*regenerating* writer for that reason, and drops `Document::source` to reach it.
 
 ### One reframing, then I'll stop
 
@@ -467,10 +470,26 @@ built to avoid. Instead:
 4. The package form is the same operation against `content.xml`, rewriting the zip with every
    other entry passed through untouched.
 
-**Exit:** opening each of R7's eight documents, setting one cell, and writing it back
-produces a diff of a **single element** against the original, and the file still validates
-(R2) and still round-trips through LibreOffice (loop C). The fallback path is asserted
-directly rather than left to be inferred.
+**Exit:** opening each of R7's fourteen documents, setting one cell, and writing it back
+produces a diff of a **single element** against the original, and it still round-trips
+through LibreOffice (loop C). The fallback path is asserted directly rather than left to be
+inferred. **Done** — `core/tests/kb.rs`, and three things the plan above did not anticipate:
+
+- **A repeated cell is split, not skipped.** The first draft treated `number-columns-repeated`
+  like `number-rows-repeated` and refused both. But LibreOffice writes a row of five empty
+  cells as one element, so refusing would have left R6 true only for cells that already held
+  a value — the ordinary edit is putting a number in an empty one. Writing into a run
+  re-emits that element as *before / cell / after*, still one line. A repeated **row** really
+  is refused: splitting one means emitting whole rows, and the diff stops being small.
+- **The unmanaged attributes are kept verbatim, not just the style name.** Re-deriving a
+  cell's start tag from the model dropped `table:number-columns-spanned` — silently
+  un-merging a merged cell, which is a worse bug than a large diff. So everything the writer
+  does not itself produce is sliced out of the original tag and put back; only the value, its
+  type, the formula, the repeat count, `office:currency` and the `calcext:` value-type mirror
+  are re-derived, because those are what the edit changed.
+- **Saving an unedited document returns its bytes exactly.** That falls out of the design
+  rather than being built, and it is the property a `.fods` in version control cares about
+  most: opening a file to look at it must not show up as a commit.
 
 ### Phase 9 — Shells
 

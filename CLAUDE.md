@@ -325,6 +325,51 @@ Non-obvious things a change here can break:
   spelling it had rides in `Sheet::kind` (a side table, like `formulas`) purely so the writer
   can put it back as a date; loop C's `dates` case fails if that is dropped.
 
+### `core/src/odf/source.rs` — retain and splice (R6)
+
+The file a document came from, kept so that saving can **edit** it rather than replace it.
+Regenerating is right for a document this program authored and wrong for one it opened.
+
+- **The model is not made fuller.** A shadow tree of every unknown element would grow the
+  model to the size of ODF, which is the trade this project exists not to make. Instead the
+  reader keeps the bytes and remembers where each cell element sat; the writer drops new
+  cells into those exact ranges. Everything it does not understand it never touches, so
+  fidelity comes from *not looking* rather than from modelling.
+- **`Attrs::span` carries the position, not the `Context` trait.** Widening `start_child`
+  and `end` would touch every context in the reader for the sake of the one that wants it.
+  `Attrs` is already built per element and handed over, so it is one struct field.
+  `Context::end` still gets nothing, which is why `read.rs`'s `cell_extent` scans forward
+  for the close tag — and refuses when it meets another `<table:table-cell` first, because a
+  cell may legally contain a subtable.
+- **A repeated *cell* is split; a repeated *row* is not.** LibreOffice writes a row of five
+  empty cells as one element, so refusing to split one would leave R6 true only for cells
+  that already held a value. Writing into a run re-emits the element as before/cell/after.
+  A row's element stands for many rows, and splitting that means emitting whole rows, which
+  is no longer a small diff. `Source::rows` is keyed per `(sheet, row)` rather than per cell
+  for the same reason a repeat exists: one trailing `repeated="16384"` would otherwise be
+  sixteen thousand map entries.
+- **`Cell::keep` is the unmanaged attributes, sliced out verbatim.** Not just the style name:
+  re-deriving a start tag from the model dropped `table:number-columns-spanned` and silently
+  un-merged a merged cell. Only what the writer produces itself is re-derived — the value,
+  its type, the formula, the repeat count — plus `office:currency` and `calcext:value-type`,
+  which *describe* a value that just changed. Verbatim by slicing rather than by
+  re-serialising, because `Attrs` has already resolved prefixes to namespaces and rebuilding
+  would respell the document's attributes in our prefixes.
+- **`Document::edits` decides, and it is filled by `Action::apply`.** Every mutation goes
+  through one function, so tracking what changed is one insert rather than a diffing pass.
+  `only_values` goes false on a format or style change, because those need a `style:style`
+  the source file does not contain — a second splice site and a pool to merge, which is not
+  built.
+- **Every refusal falls back to regenerating**, which is always correct and is what the
+  writer did before any of this existed. Refusals are: no source, a changed form, a package
+  (a zip has no diff to preserve), a format or style edit, a cell in a row the file does not
+  spell, and a repeated row. `what_cannot_be_spliced_regenerates` asserts them by name.
+- **R2 means what this build *generates*.** A spliced document keeps bytes that may not be
+  schema-valid — most of R7's are not — and re-deriving them to fix that is exactly what R6
+  forbids. `kb.rs` validates the regenerating writer, reaching it by setting
+  `Document::source` to `None`. That same trick is why a write→read test is not vacuous:
+  saving an unedited document returns its bytes byte for byte.
+
 ### `core/src/odf/write.rs` — the writer
 
 One content writer for both forms; they differ only in the root element name and whether
@@ -581,14 +626,9 @@ pivot tables), what is not yet and which gate owns it, and where each capability
 exist stops — each row pointing at the `ponytail:` comment or module doc that owns the limit
 rather than restating it. Adding a capability means moving a row, not just writing code.
 
-**Phase 8 is next, and it is R6: the diffable writer.** Today `write_bytes` regenerates a
-document from the model, so opening a 482-line LibreOffice file and setting one cell writes
-13 lines — correct ODF, correct values, and every unmodelled thing (`office:meta`,
-`office:settings`, unreferenced styles, another vendor's extension) gone. The approach is
-**retain-and-splice**, not a fuller model: the reader keeps the source bytes and each
-`table:table-cell`'s byte span, the writer splices changed cells back into those spans, and
-it falls back to full regeneration by one named, asserted rule — no source, a changed form, a
-cell that did not exist, or a target inside a `number-*-repeated` element. A shadow tree of
-every unknown element would grow the model to the size of ODF, which is the trade this
-project exists not to make. Phase 9 is the shells, and comes after, because a shell saves on
-every keystroke.
+**Phase 8 is done — R6, the diffable writer** (`core/src/odf/source.rs`). Setting one cell in
+a 482-line LibreOffice file now changes one element and leaves every other byte alone,
+indentation included. Phase 9 is the shells.
+
+**Phase 9 is next: the shells.** One native shell following `editor` §3's order of work, then
+the wasm shell, which is the honest test of rule 5.

@@ -15,7 +15,7 @@
 //! exactly the formats in use: §5.3's pooling rule is not an optimisation here, it is the
 //! only construct ODF has for saying a cell looks a certain way.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::io::{Cursor, Write as _};
 use std::sync::LazyLock;
@@ -47,10 +47,108 @@ pub enum Form {
 }
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
+    // R6 first: a document that came from a file and has only had cells edited goes back as
+    // that file with those cells replaced. Everything else regenerates, which is always
+    // correct and is what this did before splicing existed.
+    if let Some(spliced) = splice(doc, form) {
+        return Ok(spliced);
+    }
     match form {
         Form::Flat => Ok(content(doc, form).into_bytes()),
         Form::Package => package(doc),
     }
+}
+
+/// The file this document was read from, with the edited cells put back in place.
+///
+/// `None` means "not applicable, regenerate" — never "failed". Every condition below is a
+/// documented boundary of the trick rather than an error, and `odf::source` says why each
+/// one is where it is.
+fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
+    let source = doc.source.as_deref()?;
+    // Saving as the other form is a conversion, not an edit.
+    if source.form != form || !doc.edits.only_values {
+        return None;
+    }
+
+    // Which elements have to be rewritten. Every edited cell must sit in one the file
+    // actually spelled — one that does not means regenerating, because a document half in
+    // its original bytes and half not would lose the other half silently.
+    //
+    // Keyed by element rather than by cell: several edited cells can share one repeated
+    // element, and rewriting it once from the sheet covers all of them.
+    let mut targets: BTreeMap<usize, (usize, u32, &super::source::Cell)> = BTreeMap::new();
+    for (i, pos) in &doc.edits.cells {
+        let at = source.covering(*i, pos.row, pos.col)?;
+        doc.sheet(*i)?;
+        targets.insert(at.range.start, (*i, pos.row, at));
+    }
+
+    // In file order, so the untouched stretches between are copied without seeking back.
+    // Elements do not overlap by construction — they are siblings — but a corrupted span
+    // would produce tangled bytes rather than an error, so refuse instead of trusting it.
+    let mut patches = Vec::with_capacity(targets.len());
+    for (i, row, at) in targets.into_values() {
+        let sheet = doc.sheet(i)?;
+        patches.push((at.range.clone(), rewrite(sheet, row, at, doc.null_date)));
+    }
+    if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(source.bytes.len());
+    let mut at = 0usize;
+    for (range, text) in patches {
+        out.extend_from_slice(source.bytes.get(at..range.start)?);
+        out.extend_from_slice(text.as_bytes());
+        at = range.end;
+    }
+    out.extend_from_slice(source.bytes.get(at..)?);
+    Some(out)
+}
+
+/// One source element, re-emitted from the sheet's current contents.
+///
+/// Usually one cell in and one cell out. The interesting case is the repeated element: a
+/// `table:number-columns-repeated="5"` covering five empty cells, with a value now written
+/// into the middle one, comes back as *three* elements — the run before, the changed cell,
+/// the run after — which is still a one-line diff, and is what keeps R6 true for the
+/// overwhelmingly common case of writing into a cell that had no value.
+///
+/// Runs are re-formed by looking at the sheet, so a value written into a repeated run and
+/// then cleared again collapses the run back. A formula never joins a run: it is
+/// position-dependent, and repeating one would move it.
+fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) -> String {
+    let mut out = String::new();
+    let mut col = at.cols.start;
+    while col < at.cols.end {
+        let pos = Pos::new(row, col);
+        let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
+        let repeat = match formula.is_some() {
+            true => 1,
+            false => (col..at.cols.end)
+                .take_while(|c| {
+                    let p = Pos::new(row, *c);
+                    sheet.get(p) == value && sheet.formula(p).is_none() && sheet.kind(p) == kind
+                })
+                .count() as u32,
+        };
+        cell(
+            &mut out,
+            &value,
+            formula,
+            kind,
+            (effective(sheet, pos), sheet.style(pos)),
+            null_date,
+            repeat,
+            // The element's own unmanaged attributes, verbatim — its style name, its merge
+            // spans. They applied to every column it covered, so every piece it splits into
+            // keeps them.
+            &at.keep,
+        );
+        col += repeat.max(1);
+    }
+    out
 }
 
 /// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3).
@@ -516,7 +614,7 @@ fn write_row(
             look,
             null_date,
             repeat,
-            pool,
+            &pool.attr(look),
         );
         col += repeat;
     }
@@ -532,11 +630,11 @@ fn cell(
     look: Look,
     null_date: i64,
     repeat: u32,
-    pool: &Pool,
+    style_attr: &str,
 ) {
     let format = look.0;
     let mut attrs = count(repeat, "columns");
-    attrs.push_str(&pool.attr(look));
+    attrs.push_str(style_attr);
     if let Some(f) = formula {
         let _ = write!(attrs, " table:formula=\"{}\"", esc(f));
     }

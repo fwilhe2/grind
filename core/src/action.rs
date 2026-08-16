@@ -60,6 +60,7 @@ impl Document {
     /// a shell is an error rather than a panic.
     #[must_use]
     pub fn apply(&mut self, action: Action) -> Option<Action> {
+        self.note(&action);
         match action {
             Action::SetCell { sheet, pos, value } => {
                 let s = self.sheet_mut(sheet)?;
@@ -134,6 +135,28 @@ impl Document {
                 inverses.reverse();
                 Some(Action::Batch(inverses))
             }
+        }
+    }
+
+    /// Record what this action touches, for R6's splicing writer (`odf::source`).
+    ///
+    /// Here rather than in each arm because every action carries the address it writes to,
+    /// and because this must run whether or not the action turns out to be addressable — a
+    /// batch that is rejected has changed nothing, and a batch that is applied has recorded
+    /// everything before the first write.
+    fn note(&mut self, action: &Action) {
+        match action {
+            Action::SetCell { sheet, pos, .. } | Action::SetFormula { sheet, pos, .. } => {
+                self.edits.cells.insert((*sheet, *pos));
+            }
+            // A format or a style is a `style:style` the source file does not have, so it
+            // cannot be spliced into one. Sticky, and it still records the cell so a
+            // document that later regenerates is not depending on which flag was set first.
+            Action::SetFormat { sheet, pos, .. } | Action::SetStyle { sheet, pos, .. } => {
+                self.edits.cells.insert((*sheet, *pos));
+                self.edits.only_values = false;
+            }
+            Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
 
