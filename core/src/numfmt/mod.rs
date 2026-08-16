@@ -20,15 +20,16 @@
 //!
 //! Two things are deliberately not modelled, each named where it would go:
 //!
-//! * The locale. `number:language`/`number:country` are read as text and month and weekday
-//!   names are English, because the document's locale is `HOST-LOCALE` (Part 4 §3.4 item 9)
-//!   and nothing in the core has one yet.
+//! * **Month and weekday names are English**, whatever the format's locale says. The
+//!   separators a locale decides live in `locale.rs`; a name table is a different order of
+//!   thing and wants CLDR, which is a dependency for two characters' worth of benefit.
 //! * `number:truncate-on-overflow="false"` — a duration longer than a day. Hours wrap at 24,
 //!   which is the attribute's default.
 
 use serde::{Deserialize, Serialize};
 
 use crate::formula::date;
+use crate::locale::{self, Locale};
 use crate::formula::value::format_number;
 use crate::model::CellValue;
 
@@ -163,6 +164,10 @@ pub fn parse_condition(condition: &str) -> Option<(Op, String)> {
 pub struct Format {
     pub kind: Kind,
     pub parts: Vec<Part>,
+    /// `number:language` / `number:country` — which decides the decimal and grouping
+    /// characters, and nothing else here (see `locale.rs`). `None` is an unmarked format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locale: Option<Locale>,
     /// `style:map` branches, in document order — the first whose condition holds wins.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub maps: Vec<Map>,
@@ -199,8 +204,16 @@ impl Format {
         Self {
             kind,
             parts: Vec::new(),
+            locale: None,
             maps: Vec::new(),
         }
+    }
+
+    /// The same format, in a locale — `1,234.50` becomes `1.234,50` without another part.
+    #[must_use]
+    pub fn in_locale(mut self, locale: Option<Locale>) -> Self {
+        self.locale = locale;
+        self
     }
 
     pub fn push(&mut self, part: Part) {
@@ -287,6 +300,7 @@ impl Format {
                     *min_decimals,
                     *min_int,
                     *grouping,
+                    locale::separators(self.locale.as_ref()),
                 )),
                 Part::Year { long } => out.push_str(&match long {
                     true => format!("{y:04}"),
@@ -368,7 +382,14 @@ fn pad(n: i64, long: bool) -> String {
 
 /// The `number:number` piece: round to `decimals`, keep at least `min_decimals` of them,
 /// pad the integer part to `min_int`, and group it if asked.
-fn digits(n: f64, decimals: u8, min_decimals: u8, min_int: u8, grouping: bool) -> String {
+fn digits(
+    n: f64,
+    decimals: u8,
+    min_decimals: u8,
+    min_int: u8,
+    grouping: bool,
+    (decimal_point, thousands): (char, char),
+) -> String {
     let decimals = decimals.max(min_decimals);
     // Rounded before formatting, not by the formatter: Rust's `{:.2}` rounds half to *even*
     // and a spreadsheet rounds half away from zero, so 2.5 at zero decimals is 3 here and
@@ -394,18 +415,15 @@ fn digits(n: f64, decimals: u8, min_decimals: u8, min_int: u8, grouping: bool) -
         whole.insert(0, '0');
     }
     if grouping {
-        // ponytail: an ASCII comma, because grouping is `HOST-LOCALE` (Part 4 §3.4 item 9)
-        // and the core has no locale. Take the separator from the document's language when
-        // one exists.
         let mut i = whole.len();
         while i > 3 {
             i -= 3;
-            whole.insert(i, ',');
+            whole.insert(i, thousands);
         }
     }
     match fraction.is_empty() {
         true => whole,
-        false => format!("{whole}.{fraction}"),
+        false => format!("{whole}{decimal_point}{fraction}"),
     }
 }
 
@@ -471,6 +489,7 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
     Format {
         kind,
         parts,
+        locale: None,
         maps: Vec::new(),
     }
 }
@@ -579,6 +598,18 @@ mod tests {
         assert_eq!(render(&number(0, 0, true), 1000.0), "1,000");
         assert_eq!(render(&number(0, 0, true), 999.0), "999");
         assert_eq!(render(&number(2, 2, true), -1234.5), "-1,234.50");
+    }
+
+    /// §5.2: the locale is on the style, and the same parts print differently under it.
+    #[test]
+    fn the_locale_swaps_the_decimal_and_grouping_characters() {
+        let format = number(2, 2, true);
+        assert_eq!(render(&format, 1234.5), "1,234.50");
+        let german = format.clone().in_locale(Locale::parse("de-DE"));
+        assert_eq!(render(&german, 1234.5), "1.234,50");
+        assert_eq!(render(&german, -1234.5), "-1.234,50");
+        // A locale the table does not know keeps the default separators rather than failing.
+        assert_eq!(render(&format.in_locale(Locale::parse("zz")), 1234.5), "1,234.50");
     }
 
     #[test]

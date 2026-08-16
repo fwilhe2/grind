@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
+use crate::locale::Locale;
 use crate::numfmt::{self, Format, Kind, Map, Op, Part};
 use crate::style::{CellStyle, EDGES};
 
@@ -166,11 +167,13 @@ impl Builder {
             else {
                 continue; // A map naming a style the document does not define is dropped.
             };
-            owner.maps.push(Map {
-                op,
-                value,
-                format: format.clone(),
-            });
+            let mut format = format.clone();
+            // A branch that names no locale of its own follows the style that points at it,
+            // or a mapped negative would print with different separators from the positive.
+            if format.locale.is_none() {
+                format.locale.clone_from(&owner.locale);
+            }
+            owner.maps.push(Map { op, value, format });
         }
     }
 
@@ -640,9 +643,18 @@ impl Context<Builder> for Styles {
             _ => return None,
         };
         b.parts.clear();
+        // §5.2: the locale sits on the style, and decides the decimal and grouping
+        // characters every `number:number` beneath it prints with.
+        let locale = attrs.get(Ns::Number, "language").map(|language| {
+            Locale::new(
+                language,
+                attrs.get(Ns::Number, "country").unwrap_or_default(),
+            )
+        });
         Some(Box::new(NumberStyle {
             name: attrs.get(Ns::Style, "name").unwrap_or_default().to_owned(),
             kind,
+            locale,
         }))
     }
 }
@@ -715,6 +727,7 @@ impl Context<Builder> for CellStyleProps {
 struct NumberStyle {
     name: String,
     kind: Kind,
+    locale: Option<Locale>,
 }
 
 impl Context<Builder> for NumberStyle {
@@ -773,6 +786,7 @@ impl Context<Builder> for NumberStyle {
         let format = Format {
             kind: self.kind,
             parts: std::mem::take(&mut b.parts),
+            locale: self.locale.take(),
             maps: Vec::new(),
         };
         // The name is *not* taken: a `style:map` collected under this style refers to it by

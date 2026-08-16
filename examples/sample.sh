@@ -84,6 +84,7 @@ run format "$book" B13 time
 run format "$book" D2:D4 boolean
 run format "$book" B5 number --decimals 2 --grouping
 run format "$book" B6 general                              # back to the plain value
+run format "$book" B11 number --decimals 2 --locale de-DE  # 2.155,01 rather than 2,155.01
 
 say "cell styling"
 run style "$book" A1:E1 --bold --background '#dddddd' --align center --border '0.5pt solid #000000'

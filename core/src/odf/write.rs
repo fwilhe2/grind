@@ -319,7 +319,18 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
         Kind::Boolean => "number:boolean-style",
         Kind::Text => "number:text-style",
     };
-    let mut out = format!("<{element} style:name=\"N{i}\">");
+    let locale = match &format.locale {
+        Some(locale) if locale.country.is_empty() => {
+            format!(" number:language=\"{}\"", esc(&locale.language))
+        }
+        Some(locale) => format!(
+            " number:language=\"{}\" number:country=\"{}\"",
+            esc(&locale.language),
+            esc(&locale.country)
+        ),
+        None => String::new(),
+    };
+    let mut out = format!("<{element} style:name=\"N{i}\"{locale}>");
     for part in &format.parts {
         // `number:style="long"` is the spec's spelling of "padded"; short is the default and
         // is written by omission, which is what LibreOffice does too.

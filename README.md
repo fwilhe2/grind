@@ -8,15 +8,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
 
-**Phases 0–4 and 6 of 7, and phase 5's number formats.** It reads and writes ODF
-spreadsheets, in both the package (`.ods`) and flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
+**Phases 0–6 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and
+flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
 three it declines are password-protected — and documents written here survive a round trip
 through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
 Small Group functions**, reads, sets and preserves **number formats** so a date prints as a
 date, and **cell styling** — weights, colours, borders, alignment. The `sheet` CLI drives all
 of it, and [`examples/sample.sh`](examples/sample.sh) builds a document out of every feature
-there is. No fonts yet, and formats are the ISO spellings since nothing has a locale (the
-rest of phase 5). See [`doc/plan.md`](doc/plan.md).
+there is. Formats carry their locale, so a German document's `1.234,50` stays that.
+No fonts — LibreOffice rewrites those into a reference nothing here follows. See
+[`doc/plan.md`](doc/plan.md).
 
 ```sh
 sheet new book.ods

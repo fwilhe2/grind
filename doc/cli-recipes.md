@@ -128,7 +128,11 @@ sheet format report.ods B2:B40 general >/dev/null        # back to the plain val
 
 One command over a range is one undo step, and `A:A` works — it is clamped to the rows the
 sheet actually uses. `date`, `datetime` and `time` are the ISO spellings; `number`, `percent`
-and `currency` take `--decimals`, `--grouping` and `--symbol`.
+and `currency` take `--decimals`, `--grouping`, `--symbol` and `--locale`:
+
+```sh
+sheet format report.ods B2:B40 currency --symbol '€' --grouping --locale de-DE   # 1.234,50 €
+```
 
 A date a formula computes shows as its serial until the cell says otherwise, which is the
 one place this bites:

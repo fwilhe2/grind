@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sheet_core::model::NumberKind;
+use sheet_core::locale::Locale;
 use sheet_core::numfmt::{Format, Kind, Map, Op, Part};
 use sheet_core::style::{self, CellStyle};
 use sheet_core::{CellValue, Document, Form, Pos, Sheet};
@@ -399,8 +400,13 @@ fn formats() -> (String, Document) {
     clock.push(Part::Text(" ".into()));
     clock.push(Part::AmPm);
 
+    // The same shape of format in another locale: `1.234,50` rather than `1,234.50`, from
+    // the same parts. Loop C compares what the cell *displays*, so a lost locale fails here.
+    let german = number(2, 2, true).in_locale(Locale::parse("de-DE"));
+
     let sheet = doc.sheet_mut(0).unwrap();
     let cells: Vec<(CellValue, Option<NumberKind>, Format)> = vec![
+        (CellValue::Number(1234.5), None, german),
         (CellValue::Number(1234.5), None, number(2, 2, true)),
         // The same family with different attributes: two styles, not one, and a pool that
         // conflates them shows one of the cells the wrong number of digits.
@@ -485,6 +491,7 @@ fn styles() -> (String, Document) {
             },
             Part::Text("%".into()),
         ],
+        locale: None,
         maps: Vec::new(),
     });
     sheet.set_style(

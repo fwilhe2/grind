@@ -178,6 +178,9 @@ enum Command {
         /// Currency symbol
         #[arg(long, default_value = "$")]
         symbol: String,
+        /// Locale for the decimal and grouping characters, e.g. de-DE
+        #[arg(long, value_parser = locale)]
+        locale: Option<sheet_core::locale::Locale>,
     },
 
     /// Set how a cell or range looks
@@ -364,19 +367,16 @@ fn run(cli: &Cli) -> Result<Report, String> {
             decimals,
             grouping,
             symbol,
+            locale,
         } => {
             let app = load(file, cli)?;
             let (sheet, start, end) = a1::resolve(&app, &a1::parse(address)?)?;
             let format = match style {
                 Style::General => None,
                 Style::Datetime => Some(numfmt::datetime_preset()),
-                style => Some(numfmt::preset(
-                    kind(*style),
-                    *decimals,
-                    *grouping,
-                    symbol,
-                )),
-            };
+                style => Some(numfmt::preset(kind(*style), *decimals, *grouping, symbol)),
+            }
+            .map(|format| format.in_locale(locale.clone()));
             let changed = app
                 .set_format(sheet, start, end, format)
                 .map_err(|e| e.to_string())?;
@@ -491,6 +491,12 @@ fn run(cli: &Cli) -> Result<Report, String> {
 }
 
 // --- helpers ---
+
+/// A locale tag as a person types one — `de-DE`, or a bare `de`.
+fn locale(value: &str) -> Result<sheet_core::locale::Locale, String> {
+    sheet_core::locale::Locale::parse(value)
+        .ok_or_else(|| format!("{value}: expected a language tag like de-DE"))
+}
 
 /// A colour as ODF spells one. Checked here rather than in the core: this is where a user's
 /// typing enters, and a *document's* value is whatever the document said.

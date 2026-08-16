@@ -205,6 +205,26 @@ formatted cell still sums and still round-trips as the number it is (§5.2).
   `Action::Batch`, and bounds it: a format costs an entry per cell, so `A1:ZZ100000` is an
   exhaustion request rather than an intent and is refused by size.
 
+### `core/src/locale.rs` — two characters, and where the rest of a locale is not
+
+A number format carries its own locale (§5.2), and `1234.5` displays as `1,234.50` in
+`en-US` and `1.234,50` in `de-DE` from the *same* `number:number` element. That is all this
+module decides: the decimal point and the grouping separator.
+
+- **The language and country are kept verbatim** as the document spells them, so a locale
+  this build has never heard of round-trips and merely falls back to `.`/`,`.
+- ponytail: one table, three groups, keyed on the decimal-separator convention rather than
+  on CLDR. Switzerland's apostrophe and India's lakh grouping are wrong. The upgrade is a
+  real CLDR table or `icu`, and the reason not to have one is that nothing here needs
+  collation, plurals or calendars — a dependency that size for two characters is the trade
+  this project exists not to make.
+- **Month and weekday names stay English**, whatever the locale says. Same argument, bigger
+  table.
+- **Text→number conversion stays ISO-only** and is *not* this module's gap to close. Part 4
+  §6.3.6 makes it `HOST-LOCALE`-dependent, so LO reads `"0,005"` as a number in a German
+  document and this build does not. It is a phase 4 conformance item: the locale has to
+  reach the evaluator's value model, where nothing carries a document today.
+
 ### `core/src/style.rs` — cell styling
 
 §5's other half: a number format says how a *value* is spelled, this says how the cell looks
@@ -500,9 +520,13 @@ one, but a document that has one keeps it. **Cell styling** — weights, colours
 alignment, wrapping — reads, writes and round-trips too (`core/src/style.rs`), and `sheet
 style` sets it.
 
-What is left in the phase: locales — a preset date is the ISO spelling and nothing can ask
-for `DD.MM.YYYY` yet, though the model holds one fine — and fonts, which LibreOffice rewrites
-into a `office:font-face-decls` reference (§5.4) and which nothing can draw anyway.
+A format also carries its **locale** (`core/src/locale.rs`), so a German document's
+`1.234,50` stays that, and `sheet format --locale de-DE` writes one.
+
+**Phase 5 is done.** What it deliberately does not have, each named where it lives: fonts,
+which LibreOffice rewrites into an `office:font-face-decls` reference (§5.4) and which
+nothing can draw anyway; locale-specific month and weekday names; and a preset date is the
+ISO spelling, though the model holds `DD.MM.YYYY` fine — nothing can ask for one.
 
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
 stub and because phase 4's functions were reachable only from `cargo test`. It brought the

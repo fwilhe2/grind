@@ -22,6 +22,7 @@ use std::sync::{Arc, RwLock};
 pub mod action;
 pub mod formula;
 pub mod grid;
+pub mod locale;
 pub mod model;
 pub mod numfmt;
 pub mod odf;
