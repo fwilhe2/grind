@@ -15,6 +15,16 @@ An ODF-native spreadsheet: one Rust core, native shells, and a feature list that
 `CONTRIBUTING.md` for the rules that bind contributors, and `doc/plan.md` for the phase plan
 and its exit criteria.
 
+**`doc/plan.md`'s "The requirements" is normative — R1–R7, MUST/MAY, each naming what checks
+it.** Independence and ODF-native semantics (R1); everything written validates against the
+RELAX NG schema (R2, `jing -i`); minimal boilerplate (R3); `calcext:` allowed but opt-in and
+outranked by R2, since `calcext:value-type` is not schema-valid (R4); LibreOffice's files
+read and unknown properties are inert (R5); **writing changes as little XML as possible so a
+flat file stays diffable (R6 — the one that is unmet, and phase 8)**; and eight named
+documents that must work, vendored in `core/tests/data/kb/` so the requirement cannot skip
+(R7). Strictness on the way out, tolerance on the way in: five of the eight R7 files are
+*invalid* against the 1.4 schema and must still load.
+
 ## The two constraints that govern everything
 
 **1. Clean room.** LibreOffice source may be *read* and *cited by `file:line`*, never copied —
@@ -82,6 +92,16 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `core/tests/corpus_read.rs` | 361 files in `ods/` + `fods/` |
 | **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file | `core/tests/corpus_parse.rs`, `core/tests/corpus_eval.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
 | **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
+
+`core/tests/kb.rs` is the fourth check and the only one that never skips: R7's eight
+hand-written documents, vendored (MIT, declared in `REUSE.toml`) because a requirement that
+skips is a preference. They are valuable *because* they are not LibreOffice's output — an
+`office:version` of 1.3, a table with no `table:table-column`, formulas with no cached value —
+so they hit the tolerant reader from the other side. It also validates the writer against the
+schema with `jing -i` (`-i` because the ODF RNG's own `draw:control` ID-types make jing
+reject the schema otherwise, and `xmllint --relaxng` cannot handle the grammar at all). That
+check found a real bug loop C structurally could not: `table:named-expressions` belongs in
+the spreadsheet's *epilogue*, after the tables, and LibreOffice reads it in either place.
 
 Loop C compares number formats as **the text the cell displays**, not as a `Format` struct.
 Style names are LibreOffice's to renumber, and the struct is one step too literal in the
@@ -539,9 +559,20 @@ direction needs, so phase 4's last deferral now has its machinery.
 Deliberately still absent, and *not* parity gaps — nothing can do them at all, so no shell is
 hiding a capability: adding, renaming and deleting sheets; editing named expressions; CSV.
 
-**Phase 7 has its stop written down.** `doc/not-doing.md` is the product document the plan
-asks for before any GUI: what is never (macros, xlsx writing, Large Group, arrays, pivot
-tables), what is not yet and which gate owns it, and where each capability that *does* exist
-stops — each row pointing at the `ponytail:` comment or module doc that owns the limit rather
-than restating it. Adding a capability means moving a row, not just writing code. What
-remains of phase 7 is the first native shell, then the wasm shell.
+**Phase 7 is done — the stop is written down.** `doc/not-doing.md` is the product document
+the plan asks for before any GUI: what is never (macros, xlsx writing, Large Group, arrays,
+pivot tables), what is not yet and which gate owns it, and where each capability that *does*
+exist stops — each row pointing at the `ponytail:` comment or module doc that owns the limit
+rather than restating it. Adding a capability means moving a row, not just writing code.
+
+**Phase 8 is next, and it is R6: the diffable writer.** Today `write_bytes` regenerates a
+document from the model, so opening a 482-line LibreOffice file and setting one cell writes
+13 lines — correct ODF, correct values, and every unmodelled thing (`office:meta`,
+`office:settings`, unreferenced styles, another vendor's extension) gone. The approach is
+**retain-and-splice**, not a fuller model: the reader keeps the source bytes and each
+`table:table-cell`'s byte span, the writer splices changed cells back into those spans, and
+it falls back to full regeneration by one named, asserted rule — no source, a changed form, a
+cell that did not exist, or a target inside a `number-*-repeated` element. A shadow tree of
+every unknown element would grow the model to the size of ODF, which is the trade this
+project exists not to make. Phase 9 is the shells, and comes after, because a shell saves on
+every keystroke.

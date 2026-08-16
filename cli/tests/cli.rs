@@ -250,6 +250,27 @@ fn the_sample_script_still_builds_its_document() {
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1234.5");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
+
+    // And it is valid ODF. The sample is the one document that uses every feature there
+    // is — formats, styles, dates, names — so it is the strongest thing to hold the
+    // RELAX NG schema against. `core/tests/kb.rs` explains the `jing -i`.
+    let schema = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the workspace root")
+        .join("doc/OpenDocument-v1.4-schema.rng");
+    match Command::new("jing")
+        .arg("-i")
+        .arg(&schema)
+        .arg(s(&dir.path("out/sample.fods")))
+        .output()
+    {
+        Err(_) => eprintln!("skipping: no `jing` on PATH; schema validity unchecked"),
+        Ok(out) => assert!(
+            out.status.success(),
+            "examples/sample.sh writes invalid ODF:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        ),
+    }
 }
 
 #[test]

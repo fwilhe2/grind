@@ -100,7 +100,13 @@ fn content(doc: &Document, form: Form) -> String {
             date::format_date(0.0, doc.null_date)
         );
     }
-    // §5.11. Before the tables, which is where the schema puts them — and every name is
+    for sheet in &doc.sheets {
+        table(&mut out, sheet, doc.null_date, &pool);
+    }
+    // §5.11, and *after* the tables: the schema's `office-spreadsheet-content-epilogue`
+    // (line 8263) is where `table-functions` sits, and `table:named-expressions` is its
+    // first member. LibreOffice reads them in either position, so loop C cannot see this —
+    // only the RELAX NG schema can, which is what `kb.rs` validates against. Every name is
     // written as `table:named-expression`, since the reader stores a named range as the
     // reference it stands for and the two forms are interchangeable on the way out.
     if !doc.names.is_empty() {
@@ -114,9 +120,6 @@ fn content(doc: &Document, form: Form) -> String {
             );
         }
         out.push_str("   </table:named-expressions>\n");
-    }
-    for sheet in &doc.sheets {
-        table(&mut out, sheet, doc.null_date, &pool);
     }
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     out

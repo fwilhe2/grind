@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
 
-**Phases 0–6 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and
+**Phases 0–7 of 9.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and
 flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
 three it declines are password-protected — and documents written here survive a round trip
 through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
@@ -38,6 +38,19 @@ worked scripts — CSV import, a PMT model, a CI gate on error cells, git diffs 
 Whatever the core can do, the CLI can do:
 [`doc/cli-parity.md`](doc/cli-parity.md) lists every public method against the command that
 reaches it, and a test fails the build when one is missing.
+
+## What it must do
+
+[`doc/plan.md`](doc/plan.md)'s requirements are normative, and each names what checks it.
+Everything written **is valid ODF**, checked against the OASIS RELAX NG schema — and carries
+only the boilerplate the document uses, so a new file is thirteen lines rather than five
+hundred. Everything LibreOffice writes **reads**, unknown elements and attributes included:
+strictness on the way out, tolerance on the way in.
+
+One requirement is **not met yet**: writing should change as little XML as possible, so that
+editing one number in a flat file is a one-line `git diff` rather than LibreOffice's hundred.
+Today the writer regenerates the document from its model. That is phase 8, and it lands
+before any GUI.
 
 ## Why
 

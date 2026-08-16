@@ -13,6 +13,15 @@ path = "Cargo.lock"
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
+# The knowledge-base corpus: hand-written ODF documents from
+# https://github.com/fwilhe2/open-document-knowledge-base (MIT), vendored at
+# 46421e5 (2026-06-22). Declared here rather than annotated, because a header
+# inside the XML would change the documents under test.
+[[annotations]]
+path = "core/tests/data/kb/**"
+SPDX-FileCopyrightText = "2022 Florian Wilhelm"
+SPDX-License-Identifier = "MIT"
+
 # Vendored OASIS specifications. Their terms forbid modifying the documents at all,
 # so these are marked by .license sidecars rather than by headers; the entries here
 # exist so the constraint is stated in one place a reader will find.

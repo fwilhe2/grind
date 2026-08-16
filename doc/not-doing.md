@@ -54,7 +54,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Reference union `~`** | §2.3.2 excludes it from the operator set by name. Lexed and parsed so a document containing one still loads; evaluating it is `#VALUE!`. |
 | **Quoted labels and automatic intersection (§5.10)** | Excluded by §2.3.2, and the second is the feature that makes a spreadsheet's meaning depend on where a formula sits. |
 | **Regular expressions in criteria** | Wildcards are implemented (`wildcard.rs`); regexes are LibreOffice's own either/or, and picking the other branch doubles the surface of every criteria function. |
-| **Medium Group, wholesale** | Not never — but never *as a block*. It moves category by category on evidence that a real week of use needed one, which is the same gate as anything else here. |
+| **Medium Group, wholesale** | Not never — but never *as a block*. It moves category by category on evidence that a real week of use needed one, which is the same gate as anything else here. `ROW` and `COLUMN` (§6.13.29, §6.13.4) are the first candidates with evidence behind them: §2.3.2 admits `ROWS` and `COLUMNS` and not the singulars, so R7's `fizzbuzz.fods` reads, writes and round-trips but recalculates to eighteen `#NAME?`. Pinned as the scope line in `kb.rs`, and awaiting an explicit decision rather than a quiet fix. |
 
 ### Presentation
 
@@ -76,14 +76,16 @@ CLI parity gaps.
 
 | Not yet | Owner | Gate |
 |---|---|---|
-| **Adding, renaming, deleting sheets** | Phase 7 shells | The core has no action for it; the CLI is not hiding one. |
-| **Editing named expressions** | Phase 7 shells | Read, resolved and written today; not editable. |
-| **CSV import/export** | Phase 7 shells | Format-neutral, and `doc/cli-recipes.md` already drives the import half from the shell. |
-| **Sort and filter** | Phase 7 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. |
-| **Find/replace** | Phase 7 shells | Trivial over the column store; there is nothing to type into yet. |
-| **Freeze panes** | Phase 7 shells | Purely a view concern, and there is no view. |
-| **One chart type** | Phase 7 shells | Must round-trip through LibreOffice like everything else. |
-| **Print to PDF** | Phase 7 shells | Via the platform, so it needs a platform. |
+| **Adding, renaming, deleting sheets** | Phase 9 shells | The core has no action for it; the CLI is not hiding one. |
+| **Editing named expressions** | Phase 9 shells | Read, resolved and written today; not editable. |
+| **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes.md` already drives the import half from the shell. |
+| **Sort and filter** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. |
+| **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
+| **Freeze panes** | Phase 9 shells | Purely a view concern, and there is no view. |
+| **One chart type** | Phase 9 shells | Must round-trip through LibreOffice like everything else. |
+| **Print to PDF** | Phase 9 shells | Via the platform, so it needs a platform. |
+| **Preserving what the model does not carry** | Phase 8 | R6. `office:meta`, `office:settings`, unreferenced styles and other vendors' extensions are dropped on write today, because the writer regenerates from the model. Retain-and-splice fixes both this and the diff size. |
+| **`calcext:` on the way out** | No gate; R4 allows it, R2 outranks it | `calcext:value-type` is not valid against the ODF schema, so an item earns its place only with a measured LibreOffice behaviour that cannot be had any other way. Read and ignored today. |
 | **Incremental recalculation** | When a UI makes whole-document recalc feel slow | `eval.rs:16`. `graph.rs` is in the plan and unbuilt on purpose; recursion-with-memoisation is the topological order today. |
 | **Reading `.xlsx`** | Never scheduled, always allowed | Read-only, via `calamine`, if a real week of use demands it. |
 

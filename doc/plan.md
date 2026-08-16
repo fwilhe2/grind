@@ -32,6 +32,41 @@ Decisions made up front, which the rest of this assumes:
 | Shells on day one | **Core + CLI only.** No GUI until the model and formulas are solid. |
 | Formula semantics | **ODF-native throughout.** No Excel-semantics engine with a translation layer. |
 
+## The requirements
+
+The decisions above say what the project *is*. These say what it must **do**, and they are
+normative — MUST / MAY in the RFC 2119 sense. Each one names the thing that checks it, because
+a requirement nothing checks is a preference.
+
+| | Requirement | Checked by |
+|---|---|---|
+| **R1** | The implementation is **fully independent**, and implements ODF natively rather than translating another format. | `CONTRIBUTING.md`'s clean-room rule; `funcs::implemented()` against `doc/small-group.md` |
+| **R2** | Everything written **MUST be valid** against the ODF schema. | `jing -i doc/OpenDocument-v1.4-schema.rng`, in `core/tests/kb.rs` and over `examples/sample.sh`'s output in `cli/tests/cli.rs` |
+| **R3** | Output **MUST carry minimal boilerplate** while staying compliant — nothing written that the document does not use. | the writer's own tests; a new document is 13 lines |
+| **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — nothing yet, because nothing needs it |
+| **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `core/tests/kb.rs`'s three LibreOffice-authored files |
+| **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | **unmet** — phase 8 |
+| **R7** | These eight documents **MUST work**, and are vendored so the requirement cannot skip: `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`, all `.fods`. | `core/tests/kb.rs` |
+
+Three consequences worth stating rather than discovering:
+
+**R2 outranks R4.** `calcext:value-type` is *not* valid against the ODF schema — the strict
+grammar allows no such attribute on `table:table-cell`, and LibreOffice's own output fails
+validation because of it (along with `loext:opacity` and `loext:theme`). So `calcext:` is
+opt-in, never default, and an item only earns its place with a *measured* LibreOffice
+behaviour recorded in `doc/ods-format.md` that cannot be had any other way. "LO writes it"
+is not a reason; "LO gets it wrong without it" is.
+
+**R2 and R5 are not the same direction.** We validate what we *write*; we do not validate
+what we read, and must not — five of the eight R7 documents are invalid against the 1.4
+schema (an `office:version` of 1.3, a `table:table` with no `table:table-column`) and every
+one of them must still load. Strictness on the way out, tolerance on the way in.
+
+**R6 is the one that is not met today.** The writer regenerates a document from the model, so
+opening a 482-line LibreOffice file and setting one cell writes 13 lines: correct ODF,
+correct values, and everything the model does not carry silently gone. That is both a diff
+problem and a fidelity problem, and phase 8 is where it is fixed.
+
 ### One reframing, then I'll stop
 
 "Rewrite LibreOffice core in Rust" is not what this plan does. LO's core is ~226k lines in
@@ -299,7 +334,9 @@ number format parse/apply.
 
 ## Phases
 
-Each phase has an exit criterion. Don't start the next before it's met.
+Each phase has an exit criterion. Don't start the next before it's met. Phases 8 and 9 were
+one phase until the requirements above were written down; R6 turned out to be a phase of its
+own, and one that has to land before anything types into the core.
 
 ### Phase 0 — Specs in hand, harness standing (small)
 
@@ -385,13 +422,53 @@ Plus `--session` for undo across stateless invocations, as `editor` does.
 **Exit:** every core capability reachable from the CLI, verified by a test that walks the
 public API and fails on anything unexposed.
 
-### Phase 7 — Stop, then shells
+### Phase 7 — Stop
 
 Before any GUI, write down what the app does **not** do, as a product document rather than a
 backlog. That list is the reason this project exists.
 
-Then one native shell, following `editor` §3's order of work with its GTK shell as the worked
+**Exit:** `doc/not-doing.md` — never, not yet with the gate that owns it, and where each
+capability that exists stops. Done.
+
+### Phase 8 — The diffable writer (R6)
+
+The writer regenerates a document from the model, which is right for a document this program
+authored and wrong for one it opened. Everything the model does not carry — `office:meta`,
+`office:settings`, styles nothing references, an `office:font-face-decls`, a chart, another
+vendor's extension — is dropped, and the diff is the whole file. R6 says that is not
+acceptable, and R6 is also the fidelity requirement wearing different clothes: a writer that
+touches only what changed cannot lose what it never understood.
+
+**The approach is retain-and-splice, not a fuller model.** Carrying every unknown element as
+a shadow tree means the model grows to the size of ODF, which is the thing this project is
+built to avoid. Instead:
+
+1. The reader keeps the **source bytes** on the `Document`, and records the byte span of each
+   `table:table-cell` element it read. `quick-xml` already reports buffer positions, so this
+   is bookkeeping rather than a second parse.
+2. `write_bytes` with a retained source and a change set that is only cell edits **splices**
+   freshly serialised cells into the original bytes at their spans. Every other byte —
+   indentation included — is the file that came in. One number changed is one line changed.
+3. It **falls back to full regeneration**, loudly and by one named rule, when there is no
+   source, when the form changed, when a cell arrived that did not exist, or when the target
+   sits inside a `number-columns-repeated` / `number-rows-repeated` element that would have
+   to be split. A fallback that fires silently would make the requirement untestable.
+4. The package form is the same operation against `content.xml`, rewriting the zip with every
+   other entry passed through untouched.
+
+**Exit:** opening each of R7's eight documents, setting one cell, and writing it back
+produces a diff of a **single element** against the original, and the file still validates
+(R2) and still round-trips through LibreOffice (loop C). The fallback path is asserted
+directly rather than left to be inferred.
+
+### Phase 9 — Shells
+
+One native shell, following `editor` §3's order of work with its GTK shell as the worked
 example. Then the wasm shell, which is the honest test of rule 5.
+
+Phase 8 comes first on purpose: a shell is a thing that saves on every keystroke, and a
+writer that rewrites the whole file is a diff problem that only gets worse once something is
+typing into it.
 
 ---
 
