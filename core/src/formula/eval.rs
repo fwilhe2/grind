@@ -156,6 +156,14 @@ impl<'a> Engine<'a> {
         };
         self.depth -= 1;
         self.visiting.remove(&at);
+        // §4.7 keeps Empty distinct from zero *as a cell*, but a formula's result is a stored
+        // value and there is no empty value type to store it as — `office:value-type` has
+        // none. §6.3.5 says what an empty cell is worth once something asks for its value, so
+        // `=[.A1]` pointing at nothing is the number 0, and a cell reading *that* sees 0 in
+        // turn rather than a second empty cell.
+        if matches!(value, Value::Empty) {
+            return Value::Number(0.0);
+        }
         value
     }
 

@@ -189,7 +189,10 @@ mod tests {
         // §4.3.2: a whole number is midnight — 17 is seventeen *days*, not five o'clock.
         assert_eq!(eval("=HOUR(17)"), Value::Number(0.0));
         // A date carries its time with it (§4.3.4).
-        assert_eq!(eval("=HOUR(DATE(1983;1;31)+TIME(9;0;0))"), Value::Number(9.0));
+        assert_eq!(
+            eval("=HOUR(DATE(1983;1;31)+TIME(9;0;0))"),
+            Value::Number(9.0)
+        );
     }
 
     #[test]
@@ -200,7 +203,10 @@ mod tests {
         assert_eq!(eval("=YEAR(\"1983-01-31\")"), Value::Number(1983.0));
         // Text that is a plain number is still a serial (§6.3.15's fallback).
         assert_eq!(eval("=YEAR(\"2\")"), Value::Number(1900.0));
-        assert_eq!(eval("=YEAR(\"nonsense\")"), Value::Error(FormulaError::Value));
+        assert_eq!(
+            eval("=YEAR(\"nonsense\")"),
+            Value::Error(FormulaError::Value)
+        );
     }
 
     #[test]
@@ -230,7 +236,10 @@ mod tests {
             panic!("NOW is a number");
         };
         assert_eq!(today, today.floor());
-        assert!((now - today) >= 0.0 && (now - today) < 1.0, "{now} vs {today}");
+        assert!(
+            (now - today) >= 0.0 && (now - today) < 1.0,
+            "{now} vs {today}"
+        );
         assert_eq!(eval("=YEAR(TODAY())>=2026"), Value::Bool(true));
     }
 }

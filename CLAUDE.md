@@ -92,8 +92,8 @@ labels, and formulas the corpus contains that §5.2's `Expression` production do
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
 
-Loop B's evaluate half reports **12378 of 52213 formula cells matching LibreOffice**, with
-38708 needing a function that does not exist yet, 1088 disagreeing and 39 reading the clock.
+Loop B's evaluate half reports **13197 of 52213 formula cells matching LibreOffice**, with
+37706 needing a function that does not exist yet, 1271 disagreeing and 39 reading the clock.
 `FLOOR` in the test is the ratchet — raise it, never lower it — and the printed scoreboard is
 the work list: per category, and then the fixtures with the most disagreements. To look at
 one row of it:
@@ -109,6 +109,14 @@ written (the whole `addin` category is outside the Small Group and always will b
 is a function we claim to have and get wrong, and is the only number that means something
 is broken. Much of `wrong` is *cascade* — a fixture's summary row is `AND(<every check>)`,
 so one missing function turns a column of otherwise-correct cells red.
+
+`wrong` is also not all ours. Three classes in it are known and named where they live: the
+criteria language has no wildcards or regular expressions yet (`criterion.rs`), text→number
+conversion is ISO-only where LO reads a locale's `0,005` (`date.rs`, and phase 5 owns it),
+and a handful of `PV` cells disagree because **LibreOffice is the less accurate one** — its
+`PV(0.075/12;24;250)` is `−5555.60584593376` where the exact value rounds to
+`−5555.60584593369`, which is what `fin.rs`'s `growth` computes. Check a disagreement against
+the arithmetic before assuming the oracle is right.
 
 Loop C runs both directions and is green. Its `out` direction needs only the `soffice`
 binary, so **CI runs it** — which is what makes the anti-bloat rule a gate: a feature that
@@ -278,6 +286,20 @@ that spec is the source of truth and a rule without a citation is a guess.
   fourth argument takes the largest value ≤ the key, and the **last** of a run of equals.
   A sorted search that lands on another type is `#N/A` (§6.14.9), which is what stops a text
   key from "finding" the last number in a column.
+- **`db.rs` is twelve functions and one selection.** §6.9's Database/Field/Criteria triple is
+  a *shape*: the first row of the database names the fields, the criteria range's first row
+  names them again, cells within one criteria row are ANDed and the rows are ORed. Three
+  things about blankness are load-bearing and each was a loop B disagreement — a blank
+  criterion cell constrains nothing, a criteria row that is blank all the way across is not a
+  disjunct at all (it is the unfilled part of a rectangle), and a formula that returned `""`
+  counts as blank in both of those and in `criterion.rs`'s bare `"="` and `"<>"`.
+- **`fin.rs` never writes `(1 + rate).powf(nper)`.** `growth()` is `ln_1p`/`exp_m1`, because
+  forming `1 + rate` for a monthly rate throws away three digits of it before the power
+  begins, and cached values are compared at fifteen. It is also what makes `PMT` work at a
+  rate of `1e-16`. `PayType` is a flag, so any non-zero value is 1 (§6.12.36 defines 0 and 1
+  and nothing else), and `RATE`/`IRR` iterate from `Guess` first — that is which root
+  LibreOffice reports — falling back to a sign-change sweep of the whole domain only when the
+  secant lands on nothing.
 - **`funcs::implemented()` is checked against `doc/small-group.md` by a test.** A function
   outside the 110 fails the build, which is the anti-bloat rule made mechanical.
 
@@ -308,10 +330,11 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
 - **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
   CLI translates addresses but never formulas; a syntax translator is the thing this project
   exists not to have.
-- **`recalc` reports `spoiled`** — cells that held a real value and now hold an error. This
-  build implements 88 of 110 functions, so recalculating a document that uses the rest is
-  data loss, and the CLI warns on stderr rather than writing it back quietly. The whole
-  recalculation is one `Action::Batch`, so one `undo` is the way back.
+- **`recalc` reports `spoiled`** — cells that held a real value and now hold an error. The
+  Small Group is complete, but a document is free to use any of the other ~370 functions in
+  Part 4, and recalculating one that does is data loss; the CLI warns on stderr rather than
+  writing it back quietly. The whole recalculation is one `Action::Batch`, so one `undo` is
+  the way back.
 
 ## Conventions
 
@@ -355,18 +378,20 @@ A green, and the writer with loop C green in both directions. Documents open and
 `App` — never by handing out the `Document`, which is why saving is `App::save_bytes` rather
 than a getter.
 
-**Phase 4 is under way** — the formula engine, whose exit criterion is a conforming
-OpenFormula Small Group evaluator, and the phase that decides whether the project is real.
-`doc/plan.md` has the ordering within it. Done: `value.rs` (the value model, error set and
-§6.3 conversions), the front end (`lex.rs`, `parse.rs`, `serialize.rs`) with loop B's parse
-half green across the whole corpus, `eval.rs`, **88 of the Small Group's 110 functions**,
-named expressions (§5.11) read, resolved and written, and **dates and times** — loop C gates
-the last two, so a named range and a date both survive a LibreOffice round-trip.
+**Phase 4 has its function line complete** — the formula engine, whose exit criterion is a
+conforming OpenFormula Small Group evaluator, and the phase that decides whether the project
+is real. `doc/plan.md` has the ordering within it. Done: `value.rs` (the value model, error
+set and §6.3 conversions), the front end (`lex.rs`, `parse.rs`, `serialize.rs`) with loop B's
+parse half green across the whole corpus, `eval.rs`, **all 110 of the Small Group's
+functions** — the last two groups in are database (§6.9, `db.rs`) and financial (§6.12,
+`fin.rs`) — named expressions (§5.11) read, resolved and written, and **dates and times**.
+Loop C gates the last two, so a named range and a date both survive a LibreOffice round-trip.
 
-The 22 left are exactly two groups: **database** (12) and **financial** (10). Loop B also
-names two known gaps inside what is implemented: criteria have no wildcards or regular
-expressions (`criterion.rs` says when to add them), and array/matrix formulas are read as
-ordinary ones. Still deferred *in code*: loop C's `back` direction skips formula-bearing
+What is left in phase 4 is conformance, not coverage, and loop B names each piece: criteria
+have no wildcards or regular expressions (`criterion.rs` says when to add them — that time is
+now, it is the largest remaining block of disagreements), array/matrix formulas are read as
+ordinary ones, and `table:database-range` names are not read, so a formula naming one gets
+`#NAME?`. Still deferred *in code*: loop C's `back` direction skips formula-bearing
 documents.
 
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a

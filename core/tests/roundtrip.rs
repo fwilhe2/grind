@@ -258,7 +258,12 @@ fn dates() -> (String, Document) {
         (2, 1, 0.0, NumberKind::Time),
         // Sub-second precision, and a duration longer than a day — both real corpus cells
         // and both things a naive formatter quietly rounds away.
-        (2, 2, (5.0 * 3600.0 + 35.0 * 60.0 + 31.2) / 86_400.0, NumberKind::Time),
+        (
+            2,
+            2,
+            (5.0 * 3600.0 + 35.0 * 60.0 + 31.2) / 86_400.0,
+            NumberKind::Time,
+        ),
         (2, 3, 1.40625, NumberKind::Time),
     ] {
         sheet.set(Pos::new(row, col), CellValue::Number(value));

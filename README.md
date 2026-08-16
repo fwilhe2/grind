@@ -11,7 +11,7 @@ An ODF-native spreadsheet: one Rust core, native shells, and a feature list that
 **Phases 0–4 and 6 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`)
 and flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
 three it declines are password-protected — and documents written here survive a round trip
-through LibreOffice unchanged, checked in CI. It evaluates **77 of OpenFormula's 110
+through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
 Small Group functions**, and the `sheet` CLI drives all of it. No styles or number formats
 yet (phase 5). See [`doc/plan.md`](doc/plan.md).
 

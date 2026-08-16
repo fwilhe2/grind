@@ -25,11 +25,11 @@ const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/
 
 /// Cells that must keep matching. Raise it when the scoreboard rises; never lower it.
 ///
-/// At 12378 with 88 of the Small Group's 110 functions written. The gap to 52213 is mostly
-/// `missing` — fixtures for functions outside the Small Group entirely (`FOURIER`,
-/// `LINEST`, the whole `addin` category) — so the number to watch is the scoreboard's
-/// `wrong` column, not this one.
-const FLOOR: usize = 12_300;
+/// At 13197 with all 110 of the Small Group written. The gap to 52213 is mostly `missing` —
+/// fixtures for functions outside the Small Group entirely (`FOURIER`, `LINEST`, the whole
+/// `addin` category) — so the number to watch is the scoreboard's `wrong` column, not this
+/// one.
+const FLOOR: usize = 13_100;
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(

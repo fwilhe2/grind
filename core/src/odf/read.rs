@@ -428,7 +428,8 @@ impl Context<Builder> for Cell {
             if col >= MAX_COLS {
                 break;
             }
-            b.row_cells.push((col, value.clone(), formula.clone(), kind));
+            b.row_cells
+                .push((col, value.clone(), formula.clone(), kind));
         }
     }
 }

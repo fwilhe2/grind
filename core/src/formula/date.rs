@@ -400,7 +400,10 @@ mod tests {
     #[test]
     fn both_time_spellings_parse() {
         assert_eq!(parse_time("17:20:00"), Some((17.0 * 60.0 + 20.0) / 1440.0));
-        assert_eq!(parse_time("PT17H20M00S"), Some((17.0 * 60.0 + 20.0) / 1440.0));
+        assert_eq!(
+            parse_time("PT17H20M00S"),
+            Some((17.0 * 60.0 + 20.0) / 1440.0)
+        );
         assert_eq!(parse_time("12:00"), Some(0.5));
         assert_eq!(parse_time("PT00H00M08.25S"), Some(8.25 / DAY));
         assert_eq!(parse_time("-PT12H00M00S"), Some(-0.5));
@@ -444,7 +447,10 @@ mod tests {
         for fraction in [0.0, 0.5, 0.233, 1.0 / 3.0, 8.999 / DAY] {
             let text = format_time(fraction);
             let back = parse_time(&text).expect(&text);
-            assert!((back - fraction).abs() < 1e-12, "{text}: {back} vs {fraction}");
+            assert!(
+                (back - fraction).abs() < 1e-12,
+                "{text}: {back} vs {fraction}"
+            );
         }
     }
 }

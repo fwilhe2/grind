@@ -143,9 +143,15 @@ impl Criterion {
             return false;
         }
         if self.operand == Value::Empty {
+            // Blankness, not equality — and a formula that returned `""` is blank for this
+            // one test. §4.11.8's `"="` is "how you count blanks", and a cell displaying
+            // nothing because its formula said `=""` is one; §4.7's distinction between an
+            // empty cell and an empty string is about the *cell*, and no formula result is
+            // ever an empty cell (see `eval::eval`).
+            let blank = matches!(cell, Value::Empty) || *cell == Value::Text(String::new());
             return match self.op {
-                Op::Eq => *cell == Value::Empty,
-                _ => *cell != Value::Empty,
+                Op::Eq => blank,
+                _ => !blank,
             };
         }
         if *cell == Value::Empty {

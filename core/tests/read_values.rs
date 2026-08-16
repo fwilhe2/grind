@@ -559,23 +559,19 @@ fn date_and_time_cells_become_serial_numbers() {
 fn the_epoch_comes_from_the_document_when_it_declares_one() {
     // §3.4 item 8 `HOST-NULL-DATE`. The same cell means a different number under a
     // different epoch, which is exactly why guessing one was worth deferring.
-    let d = doc(
-        r#"<table:calculation-settings table:null-year="1919">
+    let d = doc(r#"<table:calculation-settings table:null-year="1919">
              <table:null-date table:value-type="date" table:date-value="1904-01-01"/>
            </table:calculation-settings>
            <table:table table:name="S"><table:table-row>
              <table:table-cell office:value-type="date" office:date-value="1904-01-02"/>
-           </table:table-row></table:table>"#,
-    );
+           </table:table-row></table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(1.0));
     assert_eq!(d.null_year, 1919);
 
     // With no declaration the ODF default stands, and the same cell is a much larger number.
-    let d = doc(
-        r#"<table:table table:name="S"><table:table-row>
+    let d = doc(r#"<table:table table:name="S"><table:table-row>
              <table:table-cell office:value-type="date" office:date-value="1904-01-02"/>
-           </table:table-row></table:table>"#,
-    );
+           </table:table-row></table:table>"#);
     assert_eq!(cell(&d, 0, 0), num(1463.0));
     assert_eq!(d.null_year, 1930);
 }
@@ -583,12 +579,10 @@ fn the_epoch_comes_from_the_document_when_it_declares_one() {
 #[test]
 fn a_date_we_cannot_parse_keeps_its_text_rather_than_losing_the_cell() {
     // §9 tolerance, unchanged by dates becoming numbers: the failure is scoped to the cell.
-    let d = doc(
-        r#"<table:table table:name="S"><table:table-row>
+    let d = doc(r#"<table:table table:name="S"><table:table-row>
              <table:table-cell office:value-type="date" office:date-value="not-a-date"/>
              <table:table-cell office:value-type="float" office:value="7"/>
-           </table:table-row></table:table>"#,
-    );
+           </table:table-row></table:table>"#);
     assert_eq!(cell(&d, 0, 0), text("not-a-date"));
     assert_eq!(cell(&d, 0, 1), num(7.0));
     assert_eq!(d.sheet(0).unwrap().kind(Pos::new(0, 0)), None);

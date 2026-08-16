@@ -14,11 +14,9 @@
 //! skipped, an argument `"7"` converts — is the specified behaviour rather than an
 //! inconsistency to iron out.
 //!
-//! Still unimplemented, and each for a reason rather than an oversight: the `*IF` family
-//! and the lookups need §4.11.8 Criterion matching, date and time need `table:null-date`
-//! (deferred until phase 4 has an epoch to be right about), and the database and financial
-//! groups are the two least-used corners of the Small Group. Loop B's scoreboard sets the
-//! order.
+//! All 110 of the Small Group are here. What is left is not a missing function but two
+//! known gaps *inside* them, both named where they live: `criterion.rs` matches no
+//! wildcards or regular expressions, and array formulas are read as ordinary ones.
 
 use super::eval::{Address, Area, Engine, Operand};
 use super::parse::Expr;
@@ -26,6 +24,8 @@ use super::value::{FormulaError, Value};
 
 mod criterion;
 mod datetime;
+mod db;
+mod fin;
 mod info;
 mod logical;
 mod lookup;
@@ -45,6 +45,8 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
         text::call,
         lookup::call,
         datetime::call,
+        db::call,
+        fin::call,
     ] {
         if let Some(answer) = category(&name, &mut args) {
             return answer.unwrap_or_else(Value::Error);
@@ -157,6 +159,30 @@ const NAMES: &[&str] = &[
     "INDEX",
     "MATCH",
     "VLOOKUP",
+    // database (§6.9)
+    "DAVERAGE",
+    "DCOUNT",
+    "DCOUNTA",
+    "DGET",
+    "DMAX",
+    "DMIN",
+    "DPRODUCT",
+    "DSTDEV",
+    "DSTDEVP",
+    "DSUM",
+    "DVAR",
+    "DVARP",
+    // financial (§6.12)
+    "DDB",
+    "FV",
+    "IRR",
+    "NPER",
+    "NPV",
+    "PMT",
+    "PV",
+    "RATE",
+    "SLN",
+    "SYD",
 ];
 
 /// A call's arguments, plus the engine needed to evaluate them.
@@ -257,8 +283,18 @@ impl Args<'_, '_> {
     /// §6.3.8 Conversion to NumberSequenceList: every argument flattened into one list of
     /// numbers, references filtered and scalars converted.
     pub fn numbers(&mut self) -> Result<Vec<f64>, FormulaError> {
+        self.numbers_range(0..self.args.len())
+    }
+
+    /// [`Args::numbers`] over some of the arguments — for the functions whose first
+    /// parameter is not part of the sequence (`NPV`'s rate) or whose sequence is one
+    /// argument (`IRR`'s values).
+    pub fn numbers_range(
+        &mut self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<f64>, FormulaError> {
         let mut out = Vec::new();
-        for i in 0..self.args.len() {
+        for i in range {
             match self.operand(i) {
                 Operand::Area(area) => self.engine.numbers_in(&area, &mut out)?,
                 // An omitted argument contributes nothing rather than a zero.
