@@ -100,6 +100,7 @@ const NAMES: &[&str] = &[
     "TAN",
     "TRUNC",
     // information (§6.13)
+    "COLUMN",
     "COLUMNS",
     "COUNT",
     "COUNTA",
@@ -115,6 +116,7 @@ const NAMES: &[&str] = &[
     "ISTEXT",
     "N",
     "NA",
+    "ROW",
     "ROWS",
     "VALUE",
     // statistical (§6.18)
@@ -545,26 +547,45 @@ mod tests {
     /// `doc/small-group.md` is the 110 functions §2.3.2 E) enumerates, and it is the whole
     /// scope of the evaluator. A function outside it is bloat by definition — so adding one
     /// fails here, and moving the line means editing the list on purpose.
+    ///
+    /// The document has a second half, after a `# Beyond the Small Group` heading, for
+    /// functions moved in by the plan's explicit one-at-a-time decision. It is split on that
+    /// heading rather than read as one list, so the §2.3.2 E) extract stays verbatim and
+    /// exactly 110 — an addition cannot be smuggled in by growing the spec's own list, and
+    /// the conformance claim keeps meaning what it says.
     #[test]
     fn nothing_outside_the_small_group_gets_implemented() {
-        let small_group = include_str!("../../../../doc/small-group.md");
-        let listed: Vec<&str> = small_group
-            .lines()
-            .filter_map(|line| line.strip_prefix("- `"))
-            .filter_map(|line| line.split('`').next())
-            .collect();
+        let doc = include_str!("../../../../doc/small-group.md");
+        let (spec, beyond) = doc
+            .split_once("\n# Beyond the Small Group")
+            .expect("small-group.md's two halves");
+        let names = |section: &'static str| -> Vec<&'static str> {
+            section
+                .lines()
+                .filter_map(|line| line.strip_prefix("- `"))
+                .filter_map(|line| line.split('`').next())
+                .collect()
+        };
+        let (listed, extra) = (names(spec), names(beyond));
         assert_eq!(
             listed.len(),
             110,
             "the Small Group is 110 functions (§2.3.2 E)"
         );
         for name in super::implemented() {
-            assert!(listed.contains(&name), "{name} is not in the Small Group");
+            assert!(
+                listed.contains(&name) || extra.contains(&name),
+                "{name} is in neither half of doc/small-group.md"
+            );
         }
         eprintln!(
-            "small group: {} of {} implemented",
+            "small group: {} implemented, {} of them beyond §2.3.2 E)'s {}",
             super::implemented().len(),
-            listed.len()
+            super::implemented()
+                .iter()
+                .filter(|n| !listed.contains(n))
+                .count(),
+            listed.len(),
         );
     }
 

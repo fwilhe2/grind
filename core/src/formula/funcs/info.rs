@@ -23,6 +23,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "COUNTBLANK" => count_blank(args),
         "ROWS" => shape(args, true),
         "COLUMNS" => shape(args, false),
+        "ROW" => where_am_i(args, true),
+        "COLUMN" => where_am_i(args, false),
         "N" => n(args),
         "VALUE" => value_of(args),
         "ISBLANK" => is(args, |v| matches!(v, Value::Empty)),
@@ -103,6 +105,31 @@ fn shape(args: &mut Args, rows: bool) -> Answer {
         area.cols.len()
     };
     Ok(Value::number(size as f64))
+}
+
+/// §6.13.29 `ROW` and §6.13.4 `COLUMN`: **where** rather than how big.
+///
+/// The two functions that are not a pure function of their arguments — with no argument at
+/// all they answer about the cell the formula is *in*, which is why [`Args`] carries `at`.
+/// Given a reference they answer about its top-left corner; §6.13.29 also defines an array
+/// form returning every row of a multi-row reference, and that is out of scope with the rest
+/// of inline arrays (§2.3.2).
+///
+/// **Not Small Group.** §2.3.2 admits `ROWS` and `COLUMNS` and not these, and they are here
+/// by the explicit decision the anti-bloat rule asks for: `fizzbuzz.fods` is an R7 document
+/// whose whole content is `IF(MOD(ROW();15)=0;…)`, so the corpus asked and the answer was
+/// eight lines. Both are 1-based, like every address a user sees and unlike every index in
+/// the core.
+fn where_am_i(args: &mut Args, rows: bool) -> Answer {
+    args.arity(0..=1)?;
+    let (row, col) = match args.is_empty() {
+        true => (args.at.pos.row, args.at.pos.col),
+        false => {
+            let area = args.area(0).ok_or(FormulaError::Value)?;
+            (area.rows.start, area.cols.start)
+        }
+    };
+    Ok(Value::number(f64::from(if rows { row } else { col }) + 1.0))
 }
 
 /// §6.13.26: a number stays itself, a logical becomes 1 or 0, and everything else — text

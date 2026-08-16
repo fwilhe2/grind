@@ -164,6 +164,30 @@ operator `~` (§2.3.2 G), and need not evaluate multi-area references (F).
 
 ---
 
+# Beyond the Small Group
+
+**Nothing below is from the spec's list.** Everything above is §2.3.2 E) verbatim and stays
+exactly 110; this section is the anti-bloat rule's escape hatch, and the plan's own gate
+applies — one item at a time, by explicit decision, with the evidence written down. A
+function here is still a Part 4 function with a normative definition; what it is not is part
+of the Small Group conformance claim, which remains "all 110 of §2.3.2 E)" and is unaffected
+by anything on this list.
+
+- `ROW` — §6.13.29
+- `COLUMN` — §6.13.4
+
+  **Evidence:** `fizzbuzz.fods` is an R7 document (`doc/plan.md`), and its entire content is
+  eighteen copies of `IF(MOD(ROW();15)=0;"fizzbuzz";…)`. It read, wrote and round-tripped
+  while recalculating to eighteen `#NAME?`. §2.3.2 E) admits `ROWS` and `COLUMNS` — the
+  shape of a reference — and not the singulars, which are the *position* of one; the two are
+  a natural pair and the omission reads as a line drawn at array-returning functions rather
+  than at these. Eight lines in `info.rs`, no new machinery: `Args` already carries the
+  address the formula sits at, because that is what a reference is resolved against.
+  Decided 2026-08-16. The array form of `ROW` over a multi-row reference stays out with the
+  rest of inline arrays.
+
+---
+
 ## Attribution
 
 The function list and section references on this page are extracted from

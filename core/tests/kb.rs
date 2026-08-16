@@ -133,10 +133,12 @@ fn every_required_document_reads_and_round_trips() {
 /// LibreOffice renders blank until it recalculates. Pinned separately because it is the one
 /// file whose *point* is that reading it correctly produces an empty grid.
 ///
-/// It also recalculates to eighteen `#NAME?`, and that is **correct today**: the formula is
-/// `IF(MOD(ROW();15)=0;…)`, and `ROW` (§6.13.29) is not in the Small Group — §2.3.2 admits
-/// `ROWS` and `COLUMNS`, not `ROW` and `COLUMN`. So this asserts the scope line rather than
-/// a bug, and it is the test to change on the day `ROW` moves in by explicit decision.
+/// It is also the reason `ROW` exists here at all: the formula is
+/// `IF(MOD(ROW();15)=0;"fizzbuzz";…)`, §2.3.2 E) admits `ROWS` and `COLUMNS` and not the
+/// singulars, and this file recalculating to eighteen `#NAME?` was the evidence that moved
+/// `ROW` and `COLUMN` in (`doc/small-group.md`, *Beyond the Small Group*). So the assertion
+/// is fizzbuzz itself — a scope decision that does not produce the right answer was not
+/// worth making.
 #[test]
 fn a_document_of_formulas_with_no_cached_values_recalculates() {
     let app = sheet_core::App::new();
@@ -146,13 +148,18 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
 
     app.recalc().unwrap();
     assert_eq!(app.used_extent(0).unwrap(), (18, 1));
-    let shown: Vec<_> = (0..18)
-        .map(|row| format!("{:?}", app.get(0, Pos::new(row, 0)).unwrap()))
+    let played: Vec<String> = (0..18)
+        .map(|row| match app.get(0, Pos::new(row, 0)).unwrap() {
+            sheet_core::CellValue::Text(t) => t,
+            sheet_core::CellValue::Number(n) => format!("{n}"),
+            other => panic!("row {} is {other:?}", row + 1),
+        })
         .collect();
-    assert!(
-        shown.iter().all(|v| v.contains("#NAME?")),
-        "expected #NAME? throughout while `ROW` is out of scope, got {shown:?}"
-    );
+    let want = [
+        "1", "2", "fizz", "4", "buzz", "fizz", "7", "8", "fizz", "buzz", "11", "fizz", "13",
+        "14", "fizzbuzz", "16", "17", "fizz",
+    ];
+    assert_eq!(played, want);
 }
 
 // --- schema validity ---------------------------------------------------------------------

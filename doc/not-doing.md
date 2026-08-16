@@ -54,7 +54,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Reference union `~`** | §2.3.2 excludes it from the operator set by name. Lexed and parsed so a document containing one still loads; evaluating it is `#VALUE!`. |
 | **Quoted labels and automatic intersection (§5.10)** | Excluded by §2.3.2, and the second is the feature that makes a spreadsheet's meaning depend on where a formula sits. |
 | **Regular expressions in criteria** | Wildcards are implemented (`wildcard.rs`); regexes are LibreOffice's own either/or, and picking the other branch doubles the surface of every criteria function. |
-| **Medium Group, wholesale** | Not never — but never *as a block*. It moves category by category on evidence that a real week of use needed one, which is the same gate as anything else here. `ROW` and `COLUMN` (§6.13.29, §6.13.4) are the first candidates with evidence behind them: §2.3.2 admits `ROWS` and `COLUMNS` and not the singulars, so R7's `fizzbuzz.fods` reads, writes and round-trips but recalculates to eighteen `#NAME?`. Pinned as the scope line in `kb.rs`, and awaiting an explicit decision rather than a quiet fix. |
+| **Medium Group, wholesale** | Not never — but never *as a block*. It moves category by category on evidence that a real week of use needed one, which is the same gate as anything else here. `ROW` and `COLUMN` (§6.13.29, §6.13.4) are the first and so far only two to have moved, on 2026-08-16: R7's `fizzbuzz.fods` is eighteen copies of `IF(MOD(ROW();15)=0;…)` and recalculated to eighteen `#NAME?`. The evidence is written down in `doc/small-group.md`'s second half, which is what the gate asks for. |
 
 ### Presentation
 

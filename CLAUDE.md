@@ -129,8 +129,8 @@ labels, and formulas the corpus contains that §5.2's `Expression` production do
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
 
-Loop B's evaluate half reports **13201 of 52213 formula cells matching LibreOffice**, with
-37706 needing a function that does not exist yet, 1267 disagreeing and 39 reading the clock.
+Loop B's evaluate half reports **13327 of 52213 formula cells matching LibreOffice**, with
+37600 needing a function that does not exist yet, 1247 disagreeing and 39 reading the clock.
 `FLOOR` in the test is the ratchet — raise it, never lower it — and the printed scoreboard is
 the work list: per category, and then the fixtures with the most disagreements. To look at
 one row of it:
@@ -434,7 +434,13 @@ that spec is the source of truth and a rule without a citation is a guess.
   LibreOffice reports — falling back to a sign-change sweep of the whole domain only when the
   secant lands on nothing.
 - **`funcs::implemented()` is checked against `doc/small-group.md` by a test.** A function
-  outside the 110 fails the build, which is the anti-bloat rule made mechanical.
+  outside it fails the build, which is the anti-bloat rule made mechanical. The document has
+  **two halves** and the test splits on the `# Beyond the Small Group` heading: above it is
+  §2.3.2 E) verbatim and asserted to be exactly 110, so the conformance claim keeps meaning
+  what it says; below it is the plan's one-at-a-time escape hatch, and each entry carries the
+  evidence that moved it. `ROW` and `COLUMN` (§6.13.29, §6.13.4) are the only two, moved in
+  because R7's `fizzbuzz.fods` is eighteen copies of `IF(MOD(ROW();15)=0;…)` — eight lines in
+  `info.rs`, no new machinery, and worth 126 loop B cells besides.
 
 ### `cli/` — the `sheet` binary, and the parity ratchet
 
