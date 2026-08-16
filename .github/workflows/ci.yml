@@ -16,10 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo build --workspace
+      # Named crates rather than --workspace: `ui_gtk` needs GTK4 and libadwaita
+      # development packages, which this job does not install and the shells' own
+      # workflow does.
+      - run: cargo build -p sheet-core -p sheet-cli
       # Loops A and B need a LibreOffice *checkout* for its corpus and skip without
       # one, so this job is the unit tests plus whatever else runs everywhere.
-      - run: cargo test --workspace
+      - run: cargo test -p sheet-core -p sheet-cli
 
   roundtrip:
     # Loop C's "out" direction needs only the `soffice` binary — no corpus — so the

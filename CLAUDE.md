@@ -664,5 +664,35 @@ rather than restating it. Adding a capability means moving a row, not just writi
 a 482-line LibreOffice file now changes one element and leaves every other byte alone,
 indentation included. Phase 9 is the shells.
 
-**Phase 9 is next: the shells.** One native shell following `editor` §3's order of work, then
-the wasm shell, which is the honest test of rule 5.
+**Phase 9 is in progress: the shells**, planned in `doc/gtk-shell.md` — normative for this
+phase the way `doc/plan.md` is for the rest, and holding the three decisions taken up
+front: A1 display-form formulas, recalculation that is automatic only when it cannot spoil
+a cached value, and column widths in scope.
+
+Done: **M0** (CI split — `ci.yml` names crates rather than `--workspace`, because `ui_gtk`
+needs system libraries that job does not install, and `gtk.yml` is the shell's own job)
+and **M1, the read-only grid** (`ui_gtk/`, crate `sheet-gtk`, binary `sheet-gtk`). It is a
+custom `gtk::Widget` implementing `gtk::Scrollable` and drawing in `snapshot()` — not
+`GtkColumnView`, which is row-oriented, wants to own a model, has no rectangular selection
+and does not virtualise 16384 columns. Four things worth knowing before changing it:
+
+- **`geom.rs` is pure and holds the arithmetic.** No GTK types, so it unit-tests with no
+  display — the only cheaply testable part of a GUI. `hit` is `cell_rect`'s inverse and
+  the two are tested against each other, because an off-by-one otherwise shows up only as
+  a grid that looks slightly wrong.
+- **The scrollbar's `upper` is the *used* extent plus a screenful, never 1048576 rows.** A
+  thumb sized against the whole sheet is a few pixels tall and one click lands in row
+  800000.
+- **Text overflows into empty neighbours; a number that will not fit becomes `###`.** The
+  asymmetry is the convention every spreadsheet user expects, and a wrong magnitude read
+  as a right one is worse than no reading at all.
+- **Colours all come from the theme** (`theme.rs`), never a literal, or the grid is white
+  in a dark session. `lookup_color` is deprecated with no replacement and is called in
+  exactly that one place.
+
+`--render-to <png>` draws one frame and exits. Not a user feature: a custom-drawn widget
+has no other output a machine can check, and it is how the grid was verified.
+
+Next is M2 — the core work the editing milestones need (`core::a1`, display-form formulas,
+`App::{enter, preview, clear_range, enter_range}`), CLI-first as rule 4 requires. Then the
+wasm shell, which is the honest test of rule 5.

@@ -419,8 +419,8 @@ lint`, the loops, parity.
 
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
-| M0 | Plan + CI prep | this document; CLAUDE.md/README rows; root `ci.yml` build job switches `--workspace` → named crates (`editor`'s system-libs trap); new `gtk.yml` (apt `libgtk-4-dev libadwaita-1-dev`, `cargo test -p sheet-gtk`, release artifact) | CI green before any shell code |
-| M1 | **Read-only grid** | `ui_gtk` skeleton, window + open (argv), grid widget, `geom.rs` + tests, ScrolledWindow, theme palette, overflow/`###`, alignment | open any corpus file; smooth scroll; layout matches LibreOffice by eye (unstyled) |
+| M0 | Plan + CI prep — *done* | this document; CLAUDE.md/README rows; root `ci.yml` build job switches `--workspace` → named crates (`editor`'s system-libs trap); new `gtk.yml` (apt `libgtk-4-dev libadwaita-1-dev`, `cargo test -p sheet-gtk`, release artifact) | CI green before any shell code |
+| M1 | **Read-only grid** — *done* | `ui_gtk` skeleton, window + open (argv), grid widget, `geom.rs` + tests, ScrolledWindow, theme palette, overflow/`###`, alignment | open any corpus file; smooth scroll; layout matches LibreOffice by eye (unstyled) |
 | M2 | Core prep A | C1 a1-into-core, C2 display form + spans (corpus round-trip test), C3 `enter`, C4 `preview` + contract test, C5 `clear_range`, C6 `enter_range` — CLI + parity + sample.sh each | corpus display round-trip green; `sheet eval`, `set --recalc`, range `clear`, `paste` in sample.sh |
 | M3 | Selection + navigation | keymap.rs Ready mode, header click/drag selection, Ctrl+arrows, status-bar aggregates | keyboard-only navigation of a corpus file feels right |
 | M4 | Editing v1 + chrome | `state.rs` Enter/Edit, overlay + formula bar (shared buffer), commit/cancel, undo/redo, auto-recalc + banners, Delete, sheet tabs (+ undo toast), name-box navigation, save/save-as/close-confirm | the whole `examples/sample.sh` document is buildable by hand in the GUI |
@@ -450,6 +450,9 @@ not-doing rows and gates.
    surface.
 4. `cargo run -p sheet-gtk -- <densest sample>.fods`: open, scroll, edit, format, resize,
    save; reopen the saved file in LibreOffice — identical display.
+   `--render-to <png>` after it draws one frame and exits, which is how a custom-drawn
+   widget gets an output a machine can keep — `editor` §5's rule that every boundary wants
+   a program exercising it where the UI cannot go. Not a user feature and not in the menus.
 5. M6's script by hand: `=SUM(` + drag + `)` + Enter; one Ctrl+Z reverts edit and ripple;
    the spoilage banner appears on a document using non-Small-Group functions and never
    otherwise.
