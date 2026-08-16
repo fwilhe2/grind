@@ -175,15 +175,25 @@ impl<'a> Pool<'a> {
                 let Some(format) = effective(sheet, pos) else {
                     continue;
                 };
-                // `insert` would *overwrite* the index of a format already pooled, quietly
-                // pointing its first cells at a later style.
-                if !pool.index.contains_key(format) {
-                    pool.index.insert(format, pool.formats.len());
-                    pool.formats.push(format);
-                }
+                pool.add(format);
             }
         }
         pool
+    }
+
+    /// Pool a format, and the target of every `style:map` it carries — a branch is a style
+    /// in its own right in the file, referenced by name from the map (§5.1).
+    fn add(&mut self, format: &'a Format) {
+        // `insert` would *overwrite* the index of a format already pooled, quietly pointing
+        // its first cells at a later style.
+        if self.index.contains_key(format) {
+            return;
+        }
+        self.index.insert(format, self.formats.len());
+        self.formats.push(format);
+        for map in &format.maps {
+            self.add(&map.format);
+        }
     }
 
     /// ` table:style-name="ce3"`, or nothing when the cell has no format.
@@ -204,7 +214,7 @@ impl<'a> Pool<'a> {
     fn write(&self, out: &mut String) {
         out.push_str(" <office:automatic-styles>\n");
         for (i, format) in self.formats.iter().enumerate() {
-            let _ = writeln!(out, "  {}", data_style(format, i));
+            let _ = writeln!(out, "  {}", data_style(format, i, self));
             let _ = writeln!(
                 out,
                 "  <style:style style:name=\"ce{i}\" style:family=\"table-cell\" \
@@ -216,7 +226,7 @@ impl<'a> Pool<'a> {
 }
 
 /// One `number:*-style` (§5.2) — the exact inverse of what `read`'s `NumberStyle` builds.
-fn data_style(format: &Format, i: usize) -> String {
+fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
     let element = match format.kind {
         Kind::Number => "number:number-style",
         Kind::Percentage => "number:percentage-style",
@@ -299,6 +309,19 @@ fn data_style(format: &Format, i: usize) -> String {
             Part::Boolean => out.push_str("<number:boolean/>"),
             Part::Content => out.push_str("<number:text-content/>"),
         }
+    }
+    // The branches last, which is where the schema puts them, and by the name the pool gave
+    // the target — a map whose target is not pooled cannot happen, since `Pool::add` walks
+    // them, but a missing one is skipped rather than written as a dangling reference.
+    for map in &format.maps {
+        let Some(target) = pool.index.get(&map.format) else {
+            continue;
+        };
+        let _ = write!(
+            out,
+            "<style:map style:condition=\"{}\" style:apply-style-name=\"N{target}\"/>",
+            esc(&format!("value(){}{}", map.op.spelling(), map.value))
+        );
     }
     let _ = write!(out, "</{element}>");
     out

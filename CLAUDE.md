@@ -187,9 +187,14 @@ formatted cell still sums and still round-trips as the number it is (§5.2).
   together rather than drifting.
 - `numfmt::general` is what a cell with *no* format displays as, and it is where "a date
   prints as a date" comes from without any style in the document: the value type is enough.
-- Three deliberate gaps, named in the module docs: `style:map` (so a negative renders with a
-  leading `-` rather than through the red-negative sub-style), the locale (month and weekday
-  names are English; `HOST-LOCALE` has no home in the core yet), and
+- **`style:map` is the sign, not the renderer.** A two-branch format (§5.1's red-negative
+  currency, and 9986 cells of the corpus) *is* how ODF spells a negative: the base style
+  carries a literal `-` and a map switches to the plain branch at zero. So the renderer
+  supplies a minus only for a format that has neither a map nor a leading `-` of its own —
+  otherwise `-19.99` renders as `--19.99`. Branches are followed one level, which is all
+  LibreOffice writes, and a map whose target the document does not define is dropped.
+- Two deliberate gaps, named in the module docs: the locale (month and weekday names are
+  English; `HOST-LOCALE` has no home in the core yet) and
   `number:truncate-on-overflow="false"`.
 - A date a *formula* computes has no format and no `NumberKind`, so `=DATE(2026;8;16)`
   displays as its serial until the cell is formatted. The subtype belongs in `formula::value`
@@ -457,10 +462,12 @@ stored value, and `--format json` carries both. `sheet format` sets one, over a 
 in one undo step; `general` clears it. The vocabulary is `numfmt::preset` in the **core**, so
 a GUI's format picker cannot invent a second one.
 
-What is left in the phase: `style:map`, locales — a preset date is the ISO spelling and
-nothing can ask for `DD.MM.YYYY` yet, though the model holds one fine — and cell styles
-beyond the data-style link (fonts, borders and backgrounds are read and dropped, as they
-always were).
+Two-branch formats (`style:map`) read, render and round-trip; `sheet format` cannot build
+one, but a document that has one keeps it.
+
+What is left in the phase: locales — a preset date is the ISO spelling and nothing can ask
+for `DD.MM.YYYY` yet, though the model holds one fine — and cell styles beyond the
+data-style link (fonts, borders and backgrounds are read and dropped, as they always were).
 
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
 stub and because phase 4's functions were reachable only from `cargo test`. It brought the

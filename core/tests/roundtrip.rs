@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sheet_core::model::NumberKind;
-use sheet_core::numfmt::{Format, Kind, Part};
+use sheet_core::numfmt::{Format, Kind, Map, Op, Part};
 use sheet_core::{CellValue, Document, Form, Pos, Sheet};
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
@@ -326,15 +326,26 @@ fn formats() -> (String, Document) {
     });
     percent.push(Part::Text("%".into()));
 
-    let mut currency = Format::new(Kind::Currency);
-    currency.push(Part::Number {
+    // §5.1's two-branch currency: the style itself is the negative case, spelling its own
+    // minus, and a `style:map` switches to the plain one at zero and above. Both cells below
+    // wear it, so the file has to carry the branch *and* apply the right one to each.
+    let mut plain = Format::new(Kind::Currency);
+    plain.push(Part::Number {
         decimals: 2,
         min_decimals: 2,
         min_int: 1,
         grouping: true,
     });
-    currency.push(Part::Text("\u{a0}".into()));
-    currency.push(Part::Currency("\u{20ac}".into()));
+    plain.push(Part::Text("\u{a0}".into()));
+    plain.push(Part::Currency("\u{20ac}".into()));
+    let mut currency = Format::new(Kind::Currency);
+    currency.push(Part::Text("-".into()));
+    currency.parts.extend(plain.parts.iter().cloned());
+    currency.maps.push(Map {
+        op: Op::Ge,
+        value: "0".into(),
+        format: plain,
+    });
 
     // A date spelled the way a European locale spells it — the case that proves the format
     // is carried rather than the value being re-derived from `office:date-value`.
@@ -359,7 +370,8 @@ fn formats() -> (String, Document) {
         // conflates them shows one of the cells the wrong number of digits.
         (CellValue::Number(1234.5), None, number(0, 0, false)),
         (CellValue::Number(0.075), None, percent),
-        (CellValue::Number(-19.99), None, currency),
+        (CellValue::Number(-19.99), None, currency.clone()),
+        (CellValue::Number(19.99), None, currency),
         (
             CellValue::Number(sheet_core::formula::date::serial(2026, 8, 16, epoch)),
             Some(NumberKind::Date),

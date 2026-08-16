@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
-use crate::numfmt::{Format, Kind, Part};
+use crate::numfmt::{self, Format, Kind, Map, Op, Part};
 
 use super::context::{Attrs, Context};
 use super::names::{Name, Ns};
@@ -62,6 +62,10 @@ pub struct Builder {
     /// element has no channel back to its parent — the parent takes these at its `end`.
     parts: Vec<Part>,
     style_text: String,
+    /// `style:map` branches whose target has only been *named* so far — the style that owns
+    /// the map, the condition, and the name it applies. A target may be declared after the
+    /// style that points at it, so resolution waits until the section ends.
+    pending_maps: Vec<(String, Op, String, String)>,
     /// `table:default-cell-style-name` per column of the current sheet, and for the current
     /// row. A cell's own `table:style-name` wins over the row's, which wins over the
     /// column's — the resolution order §5.1's indirection implies and the reason a
@@ -103,6 +107,7 @@ impl Builder {
             cell_styles: HashMap::new(),
             parts: Vec::new(),
             style_text: String::new(),
+            pending_maps: Vec::new(),
             col_styles: Vec::new(),
             row_style: None,
             col_decl: 0,
@@ -129,6 +134,27 @@ impl Builder {
             .or_else(|| self.col_styles.get(col as usize)?.as_deref())?;
         let data_style = self.cell_styles.get(style)?;
         self.number_styles.get(data_style).cloned()
+    }
+
+    /// Attach every `style:map` collected in this section to the style that declared it.
+    ///
+    /// Deferred to the end of the section because a map may name a style declared after it,
+    /// and resolved against a *snapshot* so a branch never gains branches of its own — one
+    /// level is what LibreOffice writes and all that [`Format::render`] follows.
+    fn resolve_maps(&mut self) {
+        let targets = self.number_styles.clone();
+        for (owner, op, value, target) in std::mem::take(&mut self.pending_maps) {
+            let (Some(format), Some(owner)) =
+                (targets.get(&target), self.number_styles.get_mut(&owner))
+            else {
+                continue; // A map naming a style the document does not define is dropped.
+            };
+            owner.maps.push(Map {
+                op,
+                value,
+                format: format.clone(),
+            });
+        }
     }
 
     /// Claim `repeat` columns for a `table:table-column` declaration, recording the default
@@ -554,6 +580,10 @@ impl Context<Builder> for Cell {
 struct Styles;
 
 impl Context<Builder> for Styles {
+    fn end(&mut self, b: &mut Builder) {
+        b.resolve_maps();
+    }
+
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         if name.is(Ns::Style, "style") {
             // ponytail: `style:parent-style-name` is not followed, so a cell style that
@@ -597,6 +627,19 @@ struct NumberStyle {
 
 impl Context<Builder> for NumberStyle {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        // The conditional branch of a two-branch format (§5.1), and the only `style:`
+        // element inside a data style.
+        if name.is(Ns::Style, "map") {
+            if let (Some(condition), Some(target)) = (
+                attrs.get(Ns::Style, "condition"),
+                attrs.get(Ns::Style, "apply-style-name"),
+            ) && let Some((op, value)) = numfmt::parse_condition(condition)
+            {
+                b.pending_maps
+                    .push((self.name.clone(), op, value, target.to_owned()));
+            }
+            return Some(Box::new(super::context::Ignore));
+        }
         if name.ns != Ns::Number {
             return None;
         }
@@ -638,8 +681,11 @@ impl Context<Builder> for NumberStyle {
         let format = Format {
             kind: self.kind,
             parts: std::mem::take(&mut b.parts),
+            maps: Vec::new(),
         };
-        b.number_styles.insert(std::mem::take(&mut self.name), format);
+        // The name is *not* taken: a `style:map` collected under this style refers to it by
+        // name, and resolution happens after the section ends.
+        b.number_styles.insert(self.name.clone(), format);
     }
 }
 

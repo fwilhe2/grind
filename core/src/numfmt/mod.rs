@@ -18,10 +18,8 @@
 //! No XML in this module: `odf::read` builds these from elements and `odf::write` puts
 //! them back, so the format vocabulary has exactly one consumer on each side.
 //!
-//! Three things are deliberately not modelled, each named where it would go:
+//! Two things are deliberately not modelled, each named where it would go:
 //!
-//! * `style:map` — the two-branch conditional (red negatives, §5.1). Ignored, so a negative
-//!   value renders with a leading `-` in front of whatever the base style says.
 //! * The locale. `number:language`/`number:country` are read as text and month and weekday
 //!   names are English, because the document's locale is `HOST-LOCALE` (Part 4 §3.4 item 9)
 //!   and nothing in the core has one yet.
@@ -87,11 +85,87 @@ pub enum Part {
     Content,
 }
 
+/// How a [`Map`] decides whether its branch applies — `style:condition="value()>=0"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Op {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    Ne,
+}
+
+/// One `style:map`: a condition and the format to use when it holds (§5.1).
+///
+/// This is how ODF spells a two-branch format — the red negative currency, the "show a dash
+/// for zero" — and the reason there is no sign or zero handling anywhere else in a format.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Map {
+    pub op: Op,
+    /// The value compared against, as text, so `Format` stays `Eq` and `Hash` — a bit
+    /// pattern is not a sensible map key and this is only ever parsed and printed back.
+    pub value: String,
+    pub format: Format,
+}
+
+impl Map {
+    fn holds(&self, n: f64) -> bool {
+        let Ok(against) = self.value.trim().parse::<f64>() else {
+            return false;
+        };
+        match self.op {
+            Op::Lt => n < against,
+            Op::Le => n <= against,
+            Op::Gt => n > against,
+            Op::Ge => n >= against,
+            Op::Eq => n == against,
+            Op::Ne => n != against,
+        }
+    }
+}
+
+impl Op {
+    /// The spelling in `style:condition`. Two characters before one, or `<` would swallow
+    /// `<=` and `<>`.
+    pub const SPELLINGS: [(&'static str, Op); 6] = [
+        ("<=", Op::Le),
+        (">=", Op::Ge),
+        ("<>", Op::Ne),
+        ("<", Op::Lt),
+        (">", Op::Gt),
+        ("=", Op::Eq),
+    ];
+
+    pub fn spelling(self) -> &'static str {
+        Op::SPELLINGS
+            .iter()
+            .find(|(_, op)| *op == self)
+            .map(|(text, _)| *text)
+            .expect("every operator has a spelling")
+    }
+}
+
+/// `style:condition="value()>=0"` as an operator and the text of its operand.
+///
+/// Anything else is `None` and the map is dropped: §16.3 allows conditions this does not
+/// model, and a condition we cannot evaluate must not silently become one we can.
+pub fn parse_condition(condition: &str) -> Option<(Op, String)> {
+    let rest = condition.trim().strip_prefix("value()")?.trim_start();
+    let (text, op) = Op::SPELLINGS
+        .iter()
+        .find(|(text, _)| rest.starts_with(text))?;
+    Some((*op, rest[text.len()..].trim().to_owned()))
+}
+
 /// One `number:*-style`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Format {
     pub kind: Kind,
     pub parts: Vec<Part>,
+    /// `style:map` branches, in document order — the first whose condition holds wins.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub maps: Vec<Map>,
 }
 
 const MONTHS: [&str; 12] = [
@@ -125,6 +199,7 @@ impl Format {
         Self {
             kind,
             parts: Vec::new(),
+            maps: Vec::new(),
         }
     }
 
@@ -137,10 +212,31 @@ impl Format {
         self.parts.contains(&Part::AmPm)
     }
 
+    /// The branch that applies to `n` — the first `style:map` whose condition holds, or
+    /// this format itself.
+    ///
+    /// One level deep on purpose: a branch of a branch is not something LibreOffice writes,
+    /// and following it would need a cycle guard for a case that does not exist.
+    fn branch(&self, n: f64) -> &Format {
+        self.maps
+            .iter()
+            .find(|map| map.holds(n))
+            .map_or(self, |map| &map.format)
+    }
+
     /// The display text for `value`. Never fails: a format that does not fit the value it
     /// meets falls back to the value's plain spelling, because a cell whose style says
     /// `date` and whose value is a string is a real document, not an error.
     pub fn render(&self, value: &CellValue, null_date: i64) -> String {
+        if !self.maps.is_empty()
+            && let CellValue::Number(n) = value
+        {
+            let branch = self.branch(*n);
+            // Guard against a document mapping a style to itself: one level, then stop.
+            if !std::ptr::eq(branch, self) {
+                return branch.render(value, null_date);
+            }
+        }
         match (self.kind, value) {
             (_, CellValue::Empty) => String::new(),
             (Kind::Text, _) => self.render_parts(value, null_date),
@@ -164,12 +260,13 @@ impl Format {
             Kind::Percentage => n * 100.0,
             _ => n,
         };
-        // ponytail: the sign is emitted here rather than by a negative sub-style, because
-        // `style:map` is not modelled. A document whose base style already spells the minus
-        // as a literal (§5.1's red-negative currency) therefore renders it twice. Resolving
-        // the map at read time is the upgrade.
+        // The minus is supplied here only for a format that has no branches. A style with a
+        // `style:map` spells its own sign — §5.1's red-negative currency carries a literal
+        // `-` in the negative branch — and adding one on top renders `--19.99`.
         let mut out = String::new();
-        if scaled < 0.0 && !matches!(self.kind, Kind::Date | Kind::Time | Kind::Boolean) {
+        let signed = self.maps.is_empty() && sign_carrying(&self.parts);
+        if scaled < 0.0 && signed && !matches!(self.kind, Kind::Date | Kind::Time | Kind::Boolean)
+        {
             out.push('-');
         }
 
@@ -251,6 +348,15 @@ impl Format {
         }
         out
     }
+}
+
+/// Whether a format leaves its sign to the renderer.
+///
+/// A style that already opens with a literal `-` is spelling the sign itself, which is what
+/// the negative branch of a two-branch format looks like when it is reached directly — a
+/// document may name one on a cell without any map pointing at it.
+fn sign_carrying(parts: &[Part]) -> bool {
+    !matches!(parts.first(), Some(Part::Text(text)) if text.starts_with('-'))
 }
 
 fn pad(n: i64, long: bool) -> String {
@@ -347,6 +453,7 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
         ]
     };
 
+    #[allow(clippy::items_after_statements)]
     let parts = match kind {
         Kind::Number => vec![number],
         Kind::Percentage => vec![number, Part::Text("%".into())],
@@ -361,7 +468,11 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
         Kind::Boolean => vec![Part::Boolean],
         Kind::Text => vec![Part::Content],
     };
-    Format { kind, parts }
+    Format {
+        kind,
+        parts,
+        maps: Vec::new(),
+    }
 }
 
 /// The ISO date-and-time format — [`preset`]'s `Date` with a clock after it.
@@ -538,6 +649,55 @@ mod tests {
 
     /// A cell whose value does not fit its style is a real document, not a bug: the value
     /// still has to reach the user.
+    /// §5.1's two-branch format: the base style is the *negative* one, carrying its own
+    /// literal minus, and a `style:map` switches to the plain one for everything else. The
+    /// bug this pins is `--19.99` — a renderer that also supplies the sign.
+    #[test]
+    fn a_style_map_picks_the_branch_and_the_branch_spells_its_own_sign() {
+        let plain = number(2, 2, false);
+        let mut negative = Format::new(Kind::Number);
+        negative.push(Part::Text("-".into()));
+        negative.push(Part::Number {
+            decimals: 2,
+            min_decimals: 2,
+            min_int: 1,
+            grouping: false,
+        });
+        negative.maps.push(Map {
+            op: Op::Ge,
+            value: "0".into(),
+            format: plain,
+        });
+
+        assert_eq!(render(&negative, -19.99), "-19.99");
+        assert_eq!(render(&negative, 19.99), "19.99");
+        assert_eq!(render(&negative, 0.0), "0.00");
+        // Reached directly, without a map, the negative branch still must not double its
+        // sign — a document may name it on a cell.
+        let mut bare = Format::new(Kind::Number);
+        bare.push(Part::Text("-".into()));
+        bare.push(Part::Number {
+            decimals: 0,
+            min_decimals: 0,
+            min_int: 1,
+            grouping: false,
+        });
+        assert_eq!(render(&bare, -5.0), "-5");
+    }
+
+    #[test]
+    fn a_condition_parses_only_the_shapes_it_can_evaluate() {
+        assert_eq!(
+            parse_condition("value()>=0"),
+            Some((Op::Ge, "0".to_owned()))
+        );
+        // Two-character operators must win over their first character.
+        assert_eq!(parse_condition("value()<>0"), Some((Op::Ne, "0".to_owned())));
+        assert_eq!(parse_condition("value()<-1.5"), Some((Op::Lt, "-1.5".to_owned())));
+        assert_eq!(parse_condition("cellcontent()>0"), None);
+        assert_eq!(parse_condition("value()"), None);
+    }
+
     #[test]
     fn a_value_the_style_cannot_take_falls_back_to_its_own_spelling() {
         assert_eq!(
