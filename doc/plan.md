@@ -46,7 +46,7 @@ a requirement nothing checks is a preference.
 | **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — nothing yet, because nothing needs it |
 | **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `core/tests/kb.rs`'s three LibreOffice-authored files |
 | **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | **unmet** — phase 8 |
-| **R7** | These eight documents **MUST work**, and are vendored so the requirement cannot skip: `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`, all `.fods`. | `core/tests/kb.rs` |
+| **R7** | Two named corpora **MUST work**, and are vendored so the requirement cannot skip. Hand-written against the spec (`data/kb/`): `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`. LibreOffice-authored, `odslint-clean`-normalised (`data/samples/`): `Quarterly Sales Report` · `Sales Dashboard` · `conditional-formatting` · `custom-colors` · `spreadsheet` · `table`. All `.fods`. | `core/tests/kb.rs` |
 
 Three consequences worth stating rather than discovering:
 
@@ -58,9 +58,20 @@ behaviour recorded in `doc/ods-format.md` that cannot be had any other way. "LO 
 is not a reason; "LO gets it wrong without it" is.
 
 **R2 and R5 are not the same direction.** We validate what we *write*; we do not validate
-what we read, and must not — five of the eight R7 documents are invalid against the 1.4
-schema (an `office:version` of 1.3, a `table:table` with no `table:table-column`) and every
-one of them must still load. Strictness on the way out, tolerance on the way in.
+what we read, and must not — most of R7's documents are invalid against the 1.4 schema (an
+`office:version` of 1.3, a `table:table` with no `table:table-column`, `calcext:` and
+`loext:` throughout) and every one of them must still load. Strictness on the way out,
+tolerance on the way in.
+
+**R7's two corpora pull in opposite directions, which is why there are two.** `data/kb/` is
+hand-written and sparse: a table with no columns declared, formulas with no cached value,
+self-closed empty cells — the tolerant reader tested from the thin side. `data/samples/` is
+LibreOffice's own output run through `odslint-clean`: three-sheet workbooks, 137 formulas in
+one table, charts, a pivot table, conditional formatting, several hundred elements and
+attributes this build has no model for — the thick side. Two of the eight upstream samples
+were dropped for adding *zero* new elements or attributes; a corpus file that widens nothing
+is only slower. They are also R6's evidence: regenerating them keeps 9–61% of the bytes, and
+`kb.rs` prints the number per document so phase 8 has a figure to beat.
 
 **R6 is the one that is not met today.** The writer regenerates a document from the model, so
 opening a 482-line LibreOffice file and setting one cell writes 13 lines: correct ODF,

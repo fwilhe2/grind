@@ -1,0 +1,1085 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<office:document
+ xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+ xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"
+ xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+ xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+ xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0"
+ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"
+ office:version="1.4"
+ office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:meta><meta:creation-date>2026-07-09T10:50:11.598149259</meta:creation-date></office:meta>
+ <office:font-face-decls>
+  <style:font-face
+   style:name="Liberation Sans"
+   svg:font-family="'Liberation Sans'"
+   style:font-family-generic="swiss"
+   style:font-pitch="variable"/>
+  <style:font-face
+   style:name="Noto Sans"
+   svg:font-family="'Noto Sans'"
+   style:font-family-generic="system"
+   style:font-pitch="variable"/>
+  <style:font-face
+   style:name="Noto Sans CJK SC"
+   svg:font-family="'Noto Sans CJK SC'"
+   style:font-family-generic="system"
+   style:font-pitch="variable"/>
+ </office:font-face-decls>
+ <office:styles>
+  <style:default-style style:family="table-cell">
+   <style:table-cell-properties fo:wrap-option="no-wrap"/>
+   <style:paragraph-properties style:tab-stop-distance="0.5in"/>
+   <style:text-properties
+    style:font-name="Liberation Sans"
+    fo:font-size="10pt"
+    fo:language="en"
+    fo:country="US"
+    style:font-name-asian="Noto Sans CJK SC"
+    style:font-size-asian="10pt"
+    style:language-asian="zh"
+    style:country-asian="CN"
+    style:font-name-complex="Noto Sans"
+    style:font-size-complex="10pt"
+    style:language-complex="hi"
+    style:country-complex="IN"/>
+  </style:default-style>
+  <style:default-style style:family="graphic">
+   <style:graphic-properties
+    svg:stroke-color="#3465a4"
+    draw:fill-color="#729fcf"
+    fo:wrap-option="no-wrap"
+    draw:shadow-offset-x="0.1181in"
+    draw:shadow-offset-y="0.1181in"
+    style:writing-mode="page"/>
+   <style:paragraph-properties
+    style:text-autospace="ideograph-alpha"
+    style:punctuation-wrap="simple"
+    style:line-break="strict"
+    style:font-independent-line-spacing="false">
+    <style:tab-stops/>
+   </style:paragraph-properties>
+   <style:text-properties
+    style:use-window-font-color="true"
+    loext:opacity="0%"
+    fo:font-family="'Liberation Serif'"
+    style:font-family-generic="roman"
+    style:font-pitch="variable"
+    fo:font-size="12pt"
+    fo:language="en"
+    fo:country="US"
+    style:letter-kerning="true"
+    style:font-family-asian="'DejaVu Sans'"
+    style:font-family-generic-asian="system"
+    style:font-pitch-asian="variable"
+    style:font-size-asian="12pt"
+    style:language-asian="zh"
+    style:country-asian="CN"
+    style:font-name-complex="Noto Sans"
+    style:font-size-complex="12pt"
+    style:language-complex="hi"
+    style:country-complex="IN"/>
+  </style:default-style>
+  <style:style
+   style:name="Default"
+   style:family="table-cell"/>
+  </office:styles>
+ <office:automatic-styles>
+  <style:style
+   style:name="co1"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="0.889in"/>
+  </style:style>
+  <style:style
+   style:name="ro1"
+   style:family="table-row">
+   <style:table-row-properties
+    style:row-height="0.178in"
+    fo:break-before="auto"
+    style:use-optimal-row-height="true"/>
+  </style:style>
+  <style:style
+   style:name="ta1"
+   style:family="table"
+   style:master-page-name="Default">
+   <style:table-properties
+    table:display="true"
+    style:writing-mode="lr-tb"/>
+  </style:style>
+  <style:style
+   style:name="ce1"
+   style:family="table-cell"
+   style:parent-style-name="Default"/>
+  <style:style
+   style:name="ce2"
+   style:family="table-cell"
+   style:parent-style-name="Default"/>
+  <style:style
+   style:name="ce3"
+   style:family="table-cell"
+   style:parent-style-name="Default"/>
+  <style:page-layout style:name="pm1">
+   <style:page-layout-properties style:writing-mode="lr-tb"/>
+   <style:header-style>
+    <style:header-footer-properties
+     fo:min-height="0.2953in"
+     fo:margin-left="0in"
+     fo:margin-right="0in"
+     fo:margin-bottom="0.0984in"/>
+   </style:header-style>
+   <style:footer-style>
+    <style:header-footer-properties
+     fo:min-height="0.2953in"
+     fo:margin-left="0in"
+     fo:margin-right="0in"
+     fo:margin-top="0.0984in"/>
+   </style:footer-style>
+  </style:page-layout>
+  </office:automatic-styles>
+ <office:master-styles>
+  <style:master-page
+   style:name="Default"
+   style:page-layout-name="pm1">
+   <style:header>
+    <text:p><text:sheet-name>???</text:sheet-name></text:p>
+   </style:header>
+   <style:header-left style:display="false"/>
+   <style:header-first style:display="false"/>
+   <style:footer>
+    <text:p>Page <text:page-number>1</text:page-number></text:p>
+   </style:footer>
+   <style:footer-left style:display="false"/>
+   <style:footer-first style:display="false"/>
+  </style:master-page>
+  </office:master-styles>
+ <office:body>
+  <office:spreadsheet>
+   <table:calculation-settings
+    table:automatic-find-labels="false"
+    table:use-regular-expressions="false"
+    table:use-wildcards="true"
+    table:null-year="1950"/>
+   <table:table
+    table:name="Sheet1"
+    table:style-name="ta1">
+    <table:table-column
+     table:style-name="co1"
+     table:number-columns-repeated="3"
+     table:default-cell-style-name="Default"/>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="ce1"/>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="ce2"/>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="Default"/>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="ce3"/>
+    <table:table-row
+     table:style-name="ro1"
+     table:number-rows-repeated="2">
+     <table:table-cell table:number-columns-repeated="3"/>
+     <table:table-cell
+      table:style-name="Default"
+      table:number-columns-repeated="2"/>
+     <table:table-cell/>
+     <table:table-cell table:style-name="Default"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Name</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Department</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="Default"
+      office:value-type="string">
+      <text:p>Score</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="Default"
+      office:value-type="string">
+      <text:p>Progress</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Priority</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="Default"
+      office:value-type="string">
+      <text:p>Completion</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Alice</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Sales</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="92">
+      <text:p>92</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="85">
+      <text:p>85</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="100">
+      <text:p>100</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Bob</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Marketing</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="67">
+      <text:p>67</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="54">
+      <text:p>54</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="73">
+      <text:p>73</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Charlie</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Engineering</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="45">
+      <text:p>45</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="39">
+      <text:p>39</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="41">
+      <text:p>41</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Diana</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Finance</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="88">
+      <text:p>88</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="91">
+      <text:p>91</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="95">
+      <text:p>95</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Ethan</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Support</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="23">
+      <text:p>23</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="18">
+      <text:p>18</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="20">
+      <text:p>20</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Fiona</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>HR</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="76">
+      <text:p>76</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="72">
+      <text:p>72</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="81">
+      <text:p>81</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>George</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Engineering</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="99">
+      <text:p>99</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="97">
+      <text:p>97</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="98">
+      <text:p>98</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Hannah</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Sales</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="58">
+      <text:p>58</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="61">
+      <text:p>61</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="56">
+      <text:p>56</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Ian</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Finance</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="14">
+      <text:p>14</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="22">
+      <text:p>22</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="12">
+      <text:p>12</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Julia</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Marketing</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="81">
+      <text:p>81</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="79">
+      <text:p>79</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="84">
+      <text:p>84</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Kevin</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Support</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="36">
+      <text:p>36</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="44">
+      <text:p>44</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="38">
+      <text:p>38</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Laura</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>HR</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="94">
+      <text:p>94</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="89">
+      <text:p>89</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="96">
+      <text:p>96</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Mike</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Engineering</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="52">
+      <text:p>52</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="48">
+      <text:p>48</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="50">
+      <text:p>50</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Nina</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Sales</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="70">
+      <text:p>70</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="75">
+      <text:p>75</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="78">
+      <text:p>78</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Oscar</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Finance</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="5">
+      <text:p>5</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="10">
+      <text:p>10</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="8">
+      <text:p>8</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Paula</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Marketing</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="84">
+      <text:p>84</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="80">
+      <text:p>80</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="86">
+      <text:p>86</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Quinn</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Support</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="61">
+      <text:p>61</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="59">
+      <text:p>59</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="63">
+      <text:p>63</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Rachel</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>HR</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="33">
+      <text:p>33</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="29">
+      <text:p>29</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="35">
+      <text:p>35</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Steve</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Engineering</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="90">
+      <text:p>90</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="94">
+      <text:p>94</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="92">
+      <text:p>92</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Tina</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Sales</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="49">
+      <text:p>49</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="53">
+      <text:p>53</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="47">
+      <text:p>47</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Uma</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Finance</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="77">
+      <text:p>77</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="82">
+      <text:p>82</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="79">
+      <text:p>79</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Victor</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Marketing</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="28">
+      <text:p>28</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="35">
+      <text:p>35</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="31">
+      <text:p>31</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Wendy</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Support</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="65">
+      <text:p>65</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="68">
+      <text:p>68</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="69">
+      <text:p>69</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Xavier</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Engineering</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="96">
+      <text:p>96</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="99">
+      <text:p>99</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="97">
+      <text:p>97</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Yvonne</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>HR</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="41">
+      <text:p>41</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="46">
+      <text:p>46</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="43">
+      <text:p>43</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Zach</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Sales</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="18">
+      <text:p>18</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="25">
+      <text:p>25</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="16">
+      <text:p>16</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Amber</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Finance</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="73">
+      <text:p>73</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="70">
+      <text:p>70</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="74">
+      <text:p>74</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Brian</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Marketing</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="55">
+      <text:p>55</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="60">
+      <text:p>60</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Medium</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="58">
+      <text:p>58</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Cathy</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Support</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="86">
+      <text:p>86</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="88">
+      <text:p>88</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>High</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="90">
+      <text:p>90</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Derek</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Engineering</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="9">
+      <text:p>9</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="15">
+      <text:p>15</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Low</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="11">
+      <text:p>11</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <calcext:conditional-formats>
+     <calcext:conditional-format calcext:target-range-address="Sheet1.D4:Sheet1.D33">
+      <calcext:color-scale>
+       <calcext:color-scale-entry
+        calcext:value="0"
+        calcext:type="minimum"
+        calcext:color="#f011be"/>
+       <calcext:color-scale-entry
+        calcext:value="50"
+        calcext:type="percentile"
+        calcext:color="#ffdc00"/>
+       <calcext:color-scale-entry
+        calcext:value="0"
+        calcext:type="maximum"
+        calcext:color="#2ecc40"/>
+      </calcext:color-scale>
+     </calcext:conditional-format>
+     <calcext:conditional-format calcext:target-range-address="Sheet1.E4:Sheet1.E33">
+      <calcext:data-bar
+       calcext:max-length="100"
+       calcext:negative-color="#ff0000"
+       calcext:positive-color="#2a6099"
+       calcext:axis-color="#000000">
+       <calcext:formatting-entry
+        calcext:value="0"
+        calcext:type="auto-minimum"/>
+       <calcext:formatting-entry
+        calcext:value="0"
+        calcext:type="auto-maximum"/>
+      </calcext:data-bar>
+     </calcext:conditional-format>
+     <calcext:conditional-format calcext:target-range-address="Sheet1.G4:Sheet1.G33">
+      <calcext:icon-set calcext:icon-set-type="3Arrows">
+       <calcext:formatting-entry
+        calcext:value="40"
+        calcext:greater_equal="false"
+        calcext:type="percent"/>
+       <calcext:formatting-entry
+        calcext:value="80"
+        calcext:greater_equal="false"
+        calcext:type="percent"/>
+       <calcext:formatting-entry
+        calcext:value="80"
+        calcext:type="percent"/>
+      </calcext:icon-set>
+     </calcext:conditional-format>
+    </calcext:conditional-formats>
+   </table:table>
+   <table:named-expressions/>
+  </office:spreadsheet>
+ </office:body>
+</office:document>

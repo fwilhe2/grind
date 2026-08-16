@@ -93,15 +93,25 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 | **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file | `core/tests/corpus_parse.rs`, `core/tests/corpus_eval.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
 | **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
 
-`core/tests/kb.rs` is the fourth check and the only one that never skips: R7's eight
-hand-written documents, vendored (MIT, declared in `REUSE.toml`) because a requirement that
-skips is a preference. They are valuable *because* they are not LibreOffice's output — an
-`office:version` of 1.3, a table with no `table:table-column`, formulas with no cached value —
-so they hit the tolerant reader from the other side. It also validates the writer against the
-schema with `jing -i` (`-i` because the ODF RNG's own `draw:control` ID-types make jing
-reject the schema otherwise, and `xmllint --relaxng` cannot handle the grammar at all). That
-check found a real bug loop C structurally could not: `table:named-expressions` belongs in
-the spreadsheet's *epilogue*, after the tables, and LibreOffice reads it in either place.
+`core/tests/kb.rs` is the fourth check and the only one that never skips: **R7's fourteen
+vendored documents**, because a requirement that skips is a preference. Two corpora that pull
+opposite ways — `data/kb/` is hand-written and sparse (an `office:version` of 1.3, a table
+with no `table:table-column`, formulas with no cached value), `data/samples/` is
+LibreOffice's own output normalised by `odslint-clean` and is dense (three-sheet workbooks,
+137 formulas in a table, charts, a pivot table, conditional formatting, hundreds of elements
+with no model here). Two upstream samples were dropped for adding zero new elements or
+attributes; a corpus file that widens nothing is only slower.
+
+It also validates the writer against the schema with `jing -i` (`-i` because the ODF RNG's
+own `draw:control` ID-types make jing reject the schema otherwise, and `xmllint --relaxng`
+cannot handle the grammar at all). That check found a real bug loop C structurally could
+not: `table:named-expressions` belongs in the spreadsheet's *epilogue*, after the tables, and
+LibreOffice reads it in either place. Two more tests hold the requirements that are
+*measurements* rather than behaviours: `a_written_document_carries_no_boilerplate` puts a
+ceiling on the lines before the first cell (R3 — 7 where LibreOffice spent 200, and it grows
+with the distinct formats used, never with the file), and
+`the_samples_measure_what_regenerating_still_loses` prints how much of each sample survives
+being written back (9–61%), which is R6's before-number for phase 8.
 
 Loop C compares number formats as **the text the cell displays**, not as a `Format` struct.
 Style names are LibreOffice's to renumber, and the struct is one step too literal in the

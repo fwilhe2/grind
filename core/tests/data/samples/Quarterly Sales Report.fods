@@ -1,0 +1,4617 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<office:document
+ xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+ xmlns:xlink="http://www.w3.org/1999/xlink"
+ xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"
+ xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+ xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"
+ xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+ xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
+ xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"
+ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"
+ office:version="1.4"
+ office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:font-face-decls>
+  <style:font-face
+   style:name="Liberation Sans"
+   svg:font-family="'Liberation Sans'"
+   style:font-family-generic="swiss"
+   style:font-pitch="variable"/>
+  <style:font-face
+   style:name="Lohit Devanagari"
+   svg:font-family="'Lohit Devanagari'"
+   style:font-family-generic="system"
+   style:font-pitch="variable"/>
+  <style:font-face
+   style:name="Noto Sans CJK SC"
+   svg:font-family="'Noto Sans CJK SC'"
+   style:font-family-generic="system"
+   style:font-pitch="variable"/>
+ </office:font-face-decls>
+ <office:styles>
+  <style:default-style style:family="table-cell">
+   <style:paragraph-properties style:tab-stop-distance="1.27cm"/>
+   <style:text-properties
+    style:font-name="Liberation Sans"
+    fo:font-size="10pt"
+    fo:language="en"
+    fo:country="US"
+    style:font-name-asian="Noto Sans CJK SC"
+    style:font-size-asian="10pt"
+    style:language-asian="zh"
+    style:country-asian="CN"
+    style:font-name-complex="Lohit Devanagari"
+    style:font-size-complex="10pt"
+    style:language-complex="hi"
+    style:country-complex="IN"/>
+  </style:default-style>
+  <style:default-style style:family="graphic">
+   <style:graphic-properties
+    svg:stroke-color="#3465a4"
+    draw:fill-color="#729fcf"
+    fo:wrap-option="no-wrap"
+    draw:shadow-offset-x="0.3cm"
+    draw:shadow-offset-y="0.3cm"
+    style:writing-mode="page"/>
+   <style:paragraph-properties
+    style:text-autospace="ideograph-alpha"
+    style:punctuation-wrap="simple"
+    style:line-break="strict"
+    style:writing-mode="page"
+    style:font-independent-line-spacing="false">
+    <style:tab-stops/>
+   </style:paragraph-properties>
+   <style:text-properties
+    style:use-window-font-color="true"
+    loext:opacity="0%"
+    fo:font-family="'Liberation Serif'"
+    style:font-family-generic="roman"
+    style:font-pitch="variable"
+    fo:font-size="12pt"
+    fo:language="en"
+    fo:country="US"
+    style:letter-kerning="true"
+    style:font-family-asian="'DejaVu Sans'"
+    style:font-family-generic-asian="system"
+    style:font-pitch-asian="variable"
+    style:font-size-asian="12pt"
+    style:language-asian="zh"
+    style:country-asian="CN"
+    style:font-family-complex="'Noto Sans'"
+    style:font-family-generic-complex="system"
+    style:font-pitch-complex="variable"
+    style:font-size-complex="12pt"
+    style:language-complex="hi"
+    style:country-complex="IN"/>
+  </style:default-style>
+  <style:style
+   style:name="Default"
+   style:family="graphic"/>
+  <number:number-style style:name="N0">
+   <number:number number:min-integer-digits="1"/>
+  </number:number-style>
+  <number:number-style
+   style:name="N10130P0"
+   style:volatile="true"
+   number:language="en"
+   number:country="US">
+   <number:number
+    number:decimal-places="2"
+    number:min-decimal-places="2"
+    number:min-integer-digits="1"
+    number:grouping="true"/>
+   <number:text> €</number:text>
+  </number:number-style>
+  <number:number-style
+   style:name="N10130"
+   number:language="en"
+   number:country="US">
+   <style:text-properties fo:color="#ff0000"/>
+   <number:text>-</number:text>
+   <number:number
+    number:decimal-places="2"
+    number:min-decimal-places="2"
+    number:min-integer-digits="1"
+    number:grouping="true"/>
+   <number:text> €</number:text>
+   <style:map
+    style:condition="value()&gt;=0"
+    style:apply-style-name="N10130P0"/>
+  </number:number-style>
+  <number:number-style
+   style:name="N10131"
+   number:language="en"
+   number:country="US">
+   <number:number
+    number:decimal-places="0"
+    number:min-decimal-places="0"
+    number:min-integer-digits="1"
+    number:grouping="true"/>
+   <number:text> €</number:text>
+  </number:number-style>
+  <number:percentage-style
+   style:name="N10132"
+   number:language="en"
+   number:country="US">
+   <number:number
+    number:decimal-places="1"
+    number:min-decimal-places="1"
+    number:min-integer-digits="1"/>
+   <number:text>%</number:text>
+  </number:percentage-style>
+  <style:style
+   style:name="Default"
+   style:family="table-cell"/>
+  </office:styles>
+ <office:automatic-styles>
+  <style:style
+   style:name="co1"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="3.401cm"/>
+  </style:style>
+  <style:style
+   style:name="co2"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="3.6cm"/>
+  </style:style>
+  <style:style
+   style:name="co3"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="2.799cm"/>
+  </style:style>
+  <style:style
+   style:name="co4"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="2.401cm"/>
+  </style:style>
+  <style:style
+   style:name="co5"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="2.2cm"/>
+  </style:style>
+  <style:style
+   style:name="co6"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="5.399cm"/>
+  </style:style>
+  <style:style
+   style:name="co7"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="3cm"/>
+  </style:style>
+  <style:style
+   style:name="co8"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="1.799cm"/>
+  </style:style>
+  <style:style
+   style:name="co9"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="2.6cm"/>
+  </style:style>
+  <style:style
+   style:name="co10"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="7.2cm"/>
+  </style:style>
+  <style:style
+   style:name="co11"
+   style:family="table-column">
+   <style:table-column-properties
+    fo:break-before="auto"
+    style:column-width="3.2cm"/>
+  </style:style>
+  <style:style
+   style:name="ro1"
+   style:family="table-row">
+   <style:table-row-properties
+    style:row-height="0.9cm"
+    fo:break-before="auto"
+    style:use-optimal-row-height="false"/>
+  </style:style>
+  <style:style
+   style:name="ro2"
+   style:family="table-row">
+   <style:table-row-properties
+    style:row-height="0.452cm"
+    fo:break-before="auto"
+    style:use-optimal-row-height="true"/>
+  </style:style>
+  <style:style
+   style:name="ro3"
+   style:family="table-row">
+   <style:table-row-properties
+    style:row-height="0.612cm"
+    fo:break-before="auto"
+    style:use-optimal-row-height="true"/>
+  </style:style>
+  <style:style
+   style:name="ta1"
+   style:family="table"
+   style:master-page-name="Default">
+   <style:table-properties
+    table:display="true"
+    style:writing-mode="lr-tb"/>
+  </style:style>
+  <number:number-style
+   style:name="N10003"
+   number:language="en"
+   number:country="US">
+   <number:number
+    number:decimal-places="0"
+    number:min-decimal-places="0"
+    number:min-integer-digits="1"
+    number:grouping="true"/>
+  </number:number-style>
+  <number:date-style
+   style:name="N10049"
+   number:language="en"
+   number:country="US">
+   <number:year number:style="long"/>
+   <number:text>-</number:text>
+   <number:month number:style="long"/>
+   <number:text>-</number:text>
+   <number:day number:style="long"/>
+  </number:date-style>
+  <style:style
+   style:name="ce1"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#1f4e79"
+    style:text-align-source="fix"
+    style:repeat-content="false"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#ffffff"
+    fo:font-size="18pt"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce2"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    style:text-align-source="fix"
+    style:repeat-content="false"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#666666"
+    fo:font-style="italic"/>
+  </style:style>
+  <style:style
+   style:name="ce3"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#2e75b6"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #2e75b6"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#ffffff"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce4"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties
+    fo:background-color="#eaf1f8"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #2e75b6"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#2e75b6"
+    fo:font-size="22pt"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce5"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties fo:border="0.51pt solid #2e75b6"/>
+  </style:style>
+  <style:style
+   style:name="ce6"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce7"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:text-properties
+    fo:color="#1f4e79"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce8"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:text-properties
+    fo:color="#0563c1"
+    style:text-underline-style="solid"
+    style:text-underline-width="auto"
+    style:text-underline-color="font-color"/>
+  </style:style>
+  <style:style
+   style:name="ce9"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130"/>
+  <style:style
+   style:name="ce10"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10131"/>
+  <style:style
+   style:name="ce11"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#548235"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #548235"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#ffffff"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce12"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10003">
+   <style:table-cell-properties
+    fo:background-color="#eaf1f8"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #548235"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#548235"
+    fo:font-size="22pt"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce13"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties fo:border="0.51pt solid #548235"/>
+  </style:style>
+  <style:style
+   style:name="ce14"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#bf8f00"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #bf8f00"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#ffffff"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce15"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10003">
+   <style:table-cell-properties
+    fo:background-color="#eaf1f8"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #bf8f00"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#bf8f00"
+    fo:font-size="22pt"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce16"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties fo:border="0.51pt solid #bf8f00"/>
+  </style:style>
+  <style:style
+   style:name="ce17"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#1f4e79"
+    style:text-align-source="fix"
+    style:repeat-content="false"
+    fo:border="0.51pt solid #9db2c6"/>
+   <style:paragraph-properties fo:text-align="center"/>
+   <style:text-properties
+    fo:color="#ffffff"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce18"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10049">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce19"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10049">
+   <style:table-cell-properties
+    fo:background-color="#f2f6fb"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce20"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties fo:background-color="#d6e4f0"/>
+  </style:style>
+  <style:style
+   style:name="ce21"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce22"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#f2f6fb"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce23"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#d6e4f0"
+    style:text-align-source="fix"
+    style:repeat-content="false"/>
+   <style:paragraph-properties fo:text-align="end"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce24"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10003">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce25"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10003">
+   <style:table-cell-properties
+    fo:background-color="#f2f6fb"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce26"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10003">
+   <style:table-cell-properties fo:background-color="#d6e4f0"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce27"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce28"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties
+    fo:background-color="#f2f6fb"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce29"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce30"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties
+    fo:background-color="#f2f6fb"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce31"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+   <style:map
+    style:condition="cell-content()&gt;=2000"
+    style:apply-style-name="Result_5f_Good"
+    style:base-cell-address="Dashboard.A1"/>
+   <style:map
+    style:condition="cell-content()&lt;300"
+    style:apply-style-name="Result_5f_Bad"
+    style:base-cell-address="Dashboard.A1"/>
+  </style:style>
+  <style:style
+   style:name="ce32"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties
+    fo:background-color="#f2f6fb"
+    fo:border="0.51pt solid #9db2c6"/>
+   <style:map
+    style:condition="cell-content()&gt;=2000"
+    style:apply-style-name="Result_5f_Good"
+    style:base-cell-address="Dashboard.A1"/>
+   <style:map
+    style:condition="cell-content()&lt;300"
+    style:apply-style-name="Result_5f_Bad"
+    style:base-cell-address="Dashboard.A1"/>
+  </style:style>
+  <style:style
+   style:name="ce33"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties fo:background-color="#d6e4f0"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce34"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#eaf1f8"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce35"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10130">
+   <style:table-cell-properties
+    fo:background-color="#eaf1f8"
+    fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce36"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+   <style:map
+    style:condition="cell-content()&lt;TargetMargin"
+    style:apply-style-name="Result_5f_Warn"
+    style:base-cell-address="Dashboard.A1"/>
+  </style:style>
+  <style:style
+   style:name="ce37"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties
+    fo:background-color="#eaf1f8"
+    fo:border="0.51pt solid #9db2c6"/>
+   <style:map
+    style:condition="cell-content()&lt;TargetMargin"
+    style:apply-style-name="Result_5f_Warn"
+    style:base-cell-address="Dashboard.A1"/>
+  </style:style>
+  <style:style
+   style:name="ce38"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10131">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce39"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10131">
+   <style:table-cell-properties fo:background-color="#d6e4f0"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce40"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10131">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce41"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties fo:border="0.51pt solid #9db2c6"/>
+  </style:style>
+  <style:style
+   style:name="ce42"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties fo:background-color="#d6e4f0"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce43"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:text-properties
+    fo:color="#1f4e79"
+    fo:font-size="14pt"
+    fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce44"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10132">
+   <style:table-cell-properties
+    fo:background-color="#fff2cc"
+    fo:border="0.51pt solid #9db2c6"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce45"
+   style:family="table-cell"
+   style:parent-style-name="Default"
+   style:data-style-name="N10003">
+   <style:table-cell-properties
+    fo:background-color="#fff2cc"
+    fo:border="0.51pt solid #9db2c6"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="ce46"
+   style:family="table-cell"
+   style:parent-style-name="Default">
+   <style:table-cell-properties
+    fo:background-color="#fff2cc"
+    fo:border="0.51pt solid #9db2c6"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style
+   style:name="gr1"
+   style:family="graphic"
+   style:parent-style-name="Default">
+   <style:graphic-properties
+    draw:stroke="none"
+    draw:fill="none"
+    draw:textarea-horizontal-align="center"
+    draw:textarea-vertical-align="middle"
+    draw:ole-draw-aspect="1"
+    loext:decorative="false"/>
+   <style:paragraph-properties fo:text-align="center"/>
+  </style:style>
+  <style:page-layout style:name="pm1">
+   <style:page-layout-properties style:writing-mode="lr-tb"/>
+   <style:header-style>
+    <style:header-footer-properties
+     fo:min-height="0.75cm"
+     fo:margin-left="0cm"
+     fo:margin-right="0cm"
+     fo:margin-bottom="0.25cm"/>
+   </style:header-style>
+   <style:footer-style>
+    <style:header-footer-properties
+     fo:min-height="0.75cm"
+     fo:margin-left="0cm"
+     fo:margin-right="0cm"
+     fo:margin-top="0.25cm"/>
+   </style:footer-style>
+  </style:page-layout>
+  <style:style
+   style:name="P1"
+   style:family="paragraph">
+   <loext:graphic-properties draw:fill="none"/>
+   <style:paragraph-properties fo:text-align="center"/>
+  </style:style>
+ </office:automatic-styles>
+ <office:master-styles>
+  <style:master-page
+   style:name="Default"
+   style:page-layout-name="pm1">
+   <style:header>
+    <text:p><text:sheet-name>???</text:sheet-name></text:p>
+   </style:header>
+   <style:header-left style:display="false"/>
+   <style:header-first style:display="false"/>
+   <style:footer>
+    <text:p>Page <text:page-number>1</text:page-number></text:p>
+   </style:footer>
+   <style:footer-left style:display="false"/>
+   <style:footer-first style:display="false"/>
+  </style:master-page>
+  </office:master-styles>
+ <office:body>
+  <office:spreadsheet>
+   <table:calculation-settings
+    table:automatic-find-labels="false"
+    table:use-regular-expressions="false"
+    table:use-wildcards="true"/>
+   <table:content-validations>
+    <table:content-validation
+     table:name="val1"
+     table:condition="of:cell-content-is-in-list(&quot;North&quot;;&quot;South&quot;;&quot;East&quot;;&quot;West&quot;)"
+     table:allow-empty-cell="true"
+     table:display-list="unsorted"
+     table:base-cell-address="Dashboard.A1">
+     <table:error-message
+      table:message-type="stop"
+      table:display="true"/>
+    </table:content-validation>
+    <table:content-validation
+     table:name="val2"
+     table:condition="of:cell-content-is-in-list(ProductNames)"
+     table:allow-empty-cell="true"
+     table:display-list="unsorted"
+     table:base-cell-address="Dashboard.A1">
+     <table:help-message
+      table:title="Product"
+      table:display="true">
+      <text:p>Choose a product defined on the Products sheet.</text:p>
+     </table:help-message>
+     <table:error-message
+      table:message-type="stop"
+      table:title="Invalid product"
+      table:display="true">
+      <text:p>Pick a product from the catalog list.</text:p>
+     </table:error-message>
+    </table:content-validation>
+   </table:content-validations>
+   <table:table
+    table:name="Dashboard"
+    table:style-name="ta1">
+    <table:shapes>
+     <draw:frame
+      draw:z-index="0"
+      draw:style-name="gr1"
+      draw:text-style-name="P1"
+      svg:width="8.999cm"
+      svg:height="6.499cm"
+      svg:x="0.266cm"
+      svg:y="9.985cm">
+      <draw:object draw:notify-on-update-of-ranges="Dashboard.A11:Dashboard.A14 Dashboard.B11:Dashboard.B14">
+       <loext:p/>
+       <office:document
+        xmlns:chartooo="http://openoffice.org/2010/chart"
+        office:version="1.4"
+        office:mimetype="application/vnd.oasis.opendocument.chart">
+        <office:styles/>
+        <office:automatic-styles>
+         <number:number-style style:name="N0">
+          <number:number number:min-integer-digits="1"/>
+         </number:number-style>
+         <number:number-style
+          style:name="N10131"
+          number:language="en"
+          number:country="US">
+          <number:number
+           number:decimal-places="0"
+           number:min-decimal-places="0"
+           number:min-integer-digits="1"
+           number:grouping="true"/>
+          <number:text> €</number:text>
+         </number:number-style>
+         <style:style
+          style:name="ch1"
+          style:family="chart">
+          <style:graphic-properties draw:stroke="none"/>
+         </style:style>
+         <style:style
+          style:name="ch2"
+          style:family="chart">
+          <style:chart-properties
+           chart:auto-position="true"
+           style:rotation-angle="0"/>
+          <style:text-properties
+           fo:font-size="13pt"
+           style:font-size-asian="13pt"
+           style:font-size-complex="13pt"/>
+         </style:style>
+         <style:style
+          style:name="ch3"
+          style:family="chart">
+          <style:chart-properties
+           chart:auto-position="true"
+           chart:auto-size="true"
+           chart:treat-empty-cells="leave-gap"/>
+         </style:style>
+         <style:style
+          style:name="ch4"
+          style:family="chart"
+          style:data-style-name="N0">
+          <style:chart-properties
+           chart:display-label="true"
+           chart:logarithmic="false"
+           chart:reverse-direction="false"
+           text:line-break="false"
+           loext:try-staggering-first="false"
+           chart:link-data-style-to-source="true"
+           chart:axis-position="0"/>
+          <style:graphic-properties svg:stroke-color="#b3b3b3"/>
+          <style:text-properties
+           fo:font-size="10pt"
+           style:font-size-asian="10pt"
+           style:font-size-complex="10pt"/>
+         </style:style>
+         <style:style
+          style:name="ch5"
+          style:family="chart"
+          style:data-style-name="N10131">
+          <style:chart-properties
+           chart:display-label="true"
+           chart:logarithmic="false"
+           chart:reverse-direction="false"
+           text:line-break="false"
+           loext:try-staggering-first="false"
+           chart:link-data-style-to-source="true"
+           chart:axis-position="0"/>
+          <style:graphic-properties svg:stroke-color="#b3b3b3"/>
+          <style:text-properties
+           fo:font-size="10pt"
+           style:font-size-asian="10pt"
+           style:font-size-complex="10pt"/>
+         </style:style>
+         <style:style
+          style:name="ch6"
+          style:family="chart">
+          <style:graphic-properties svg:stroke-color="#b3b3b3"/>
+         </style:style>
+         <style:style
+          style:name="ch7"
+          style:family="chart"
+          style:data-style-name="N10131">
+          <style:chart-properties chart:link-data-style-to-source="true"/>
+          <style:graphic-properties
+           draw:stroke="none"
+           draw:fill-color="#004586"/>
+          <style:text-properties
+           fo:font-size="10pt"
+           style:font-size-asian="10pt"
+           style:font-size-complex="10pt"/>
+         </style:style>
+         <style:style
+          style:name="ch8"
+          style:family="chart">
+          <style:graphic-properties
+           draw:fill="solid"
+           draw:fill-color="#d9d9d9"/>
+         </style:style>
+         <style:style
+          style:name="ch9"
+          style:family="chart">
+          <style:graphic-properties draw:fill-color="#d9d9d9"/>
+         </style:style>
+        </office:automatic-styles>
+        <office:body>
+         <office:chart>
+          <chart:chart
+           svg:width="9cm"
+           svg:height="6.5cm"
+           xlink:href=".."
+           xlink:type="simple"
+           chart:class="chart:bar"
+           chart:style-name="ch1">
+           <chart:title
+            svg:x="2.029cm"
+            svg:y="0.266cm"
+            chart:style-name="ch2">
+            <text:p>Net Revenue by Region</text:p>
+           </chart:title>
+           <chart:plot-area
+            chart:style-name="ch3"
+            svg:x="0.18cm"
+            svg:y="1.175cm"
+            svg:width="8.64cm"
+            svg:height="5.195cm">
+            <chart:coordinate-region
+             svg:x="1.77cm"
+             svg:y="1.374cm"
+             svg:width="7.05cm"
+             svg:height="4.349cm"/>
+            <chart:axis
+             chart:dimension="x"
+             chart:name="primary-x"
+             chart:style-name="ch4"
+             chartooo:axis-type="auto">
+             <chartooo:date-scale/>
+             <chart:categories table:cell-range-address="Dashboard.A11:Dashboard.A14"/>
+            </chart:axis>
+            <chart:axis
+             chart:dimension="y"
+             chart:name="primary-y"
+             chart:style-name="ch5">
+             <chart:grid
+              chart:style-name="ch6"
+              chart:class="major"/>
+            </chart:axis>
+            <chart:series
+             chart:style-name="ch7"
+             chart:values-cell-range-address="Dashboard.B11:Dashboard.B14"
+             chart:class="chart:bar">
+             <chart:data-point chart:repeated="4"/>
+            </chart:series>
+            <chart:wall chart:style-name="ch8"/>
+            <chart:floor chart:style-name="ch9"/>
+           </chart:plot-area>
+           <table:table table:name="local-table">
+            <table:table-header-columns>
+             <table:table-column/>
+            </table:table-header-columns>
+            <table:table-columns>
+             <table:table-column/>
+            </table:table-columns>
+            <table:table-header-rows>
+             <table:table-row>
+              <table:table-cell>
+               <text:p/>
+              </table:table-cell>
+              <table:table-cell office:value-type="string">
+               <text:p>Column B</text:p>
+              </table:table-cell>
+             </table:table-row>
+            </table:table-header-rows>
+            <table:table-rows>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>North</text:p>
+               <draw:g>
+                <svg:desc>Dashboard.A11:Dashboard.A14</svg:desc></draw:g>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="14177.1">
+               <text:p>14177.1</text:p>
+               <draw:g>
+                <svg:desc>Dashboard.B11:Dashboard.B14</svg:desc></draw:g>
+              </table:table-cell>
+             </table:table-row>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>South</text:p>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="11554.95">
+               <text:p>11554.95</text:p>
+              </table:table-cell>
+             </table:table-row>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>East</text:p>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="8318.2">
+               <text:p>8318.2</text:p>
+              </table:table-cell>
+             </table:table-row>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>West</text:p>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="19673.5">
+               <text:p>19673.5</text:p>
+              </table:table-cell>
+             </table:table-row>
+            </table:table-rows>
+           </table:table>
+          </chart:chart>
+         </office:chart>
+        </office:body>
+       </office:document>
+      </draw:object></draw:frame>
+     <draw:frame
+      draw:z-index="1"
+      draw:style-name="gr1"
+      draw:text-style-name="P1"
+      svg:width="8.499cm"
+      svg:height="6.499cm"
+      svg:x="10.845cm"
+      svg:y="10.008cm">
+      <draw:object draw:notify-on-update-of-ranges="Dashboard.D11:Dashboard.D13 Dashboard.E11:Dashboard.E13">
+       <loext:p/>
+       <office:document
+        xmlns:chartooo="http://openoffice.org/2010/chart"
+        office:version="1.4"
+        office:mimetype="application/vnd.oasis.opendocument.chart">
+        <office:styles/>
+        <office:automatic-styles>
+         <number:number-style style:name="N0">
+          <number:number number:min-integer-digits="1"/>
+         </number:number-style>
+         <number:number-style
+          style:name="N10131"
+          number:language="en"
+          number:country="US">
+          <number:number
+           number:decimal-places="0"
+           number:min-decimal-places="0"
+           number:min-integer-digits="1"
+           number:grouping="true"/>
+          <number:text> €</number:text>
+         </number:number-style>
+         <style:style
+          style:name="ch1"
+          style:family="chart">
+          <style:graphic-properties draw:stroke="none"/>
+         </style:style>
+         <style:style
+          style:name="ch2"
+          style:family="chart">
+          <style:chart-properties
+           chart:auto-position="true"
+           style:rotation-angle="0"/>
+          <style:text-properties
+           fo:font-size="13pt"
+           style:font-size-asian="13pt"
+           style:font-size-complex="13pt"/>
+         </style:style>
+         <style:style
+          style:name="ch3"
+          style:family="chart">
+          <style:chart-properties
+           chart:auto-position="true"
+           chart:auto-size="true"
+           chart:treat-empty-cells="leave-gap"/>
+         </style:style>
+         <style:style
+          style:name="ch4"
+          style:family="chart"
+          style:data-style-name="N0">
+          <style:chart-properties
+           chart:display-label="true"
+           chart:logarithmic="false"
+           chart:reverse-direction="false"
+           text:line-break="false"
+           loext:try-staggering-first="false"
+           chart:link-data-style-to-source="true"
+           chart:axis-position="0"/>
+          <style:graphic-properties svg:stroke-color="#b3b3b3"/>
+          <style:text-properties
+           fo:font-size="10pt"
+           style:font-size-asian="10pt"
+           style:font-size-complex="10pt"/>
+         </style:style>
+         <style:style
+          style:name="ch5"
+          style:family="chart"
+          style:data-style-name="N10131">
+          <style:chart-properties
+           chart:display-label="true"
+           chart:logarithmic="false"
+           chart:reverse-direction="false"
+           text:line-break="false"
+           loext:try-staggering-first="false"
+           chart:link-data-style-to-source="true"
+           chart:axis-position="0"/>
+          <style:graphic-properties svg:stroke-color="#b3b3b3"/>
+          <style:text-properties
+           fo:font-size="10pt"
+           style:font-size-asian="10pt"
+           style:font-size-complex="10pt"/>
+         </style:style>
+         <style:style
+          style:name="ch6"
+          style:family="chart">
+          <style:graphic-properties svg:stroke-color="#b3b3b3"/>
+         </style:style>
+         <style:style
+          style:name="ch7"
+          style:family="chart"
+          style:data-style-name="N10131">
+          <style:chart-properties chart:link-data-style-to-source="true"/>
+          <style:graphic-properties
+           draw:stroke="none"
+           draw:fill-color="#004586"/>
+          <style:text-properties
+           fo:font-size="10pt"
+           style:font-size-asian="10pt"
+           style:font-size-complex="10pt"/>
+         </style:style>
+         <style:style
+          style:name="ch8"
+          style:family="chart">
+          <style:graphic-properties
+           draw:fill="solid"
+           draw:fill-color="#d9d9d9"/>
+         </style:style>
+         <style:style
+          style:name="ch9"
+          style:family="chart">
+          <style:graphic-properties draw:fill-color="#d9d9d9"/>
+         </style:style>
+        </office:automatic-styles>
+        <office:body>
+         <office:chart>
+          <chart:chart
+           svg:width="8.5cm"
+           svg:height="6.5cm"
+           xlink:href=".."
+           xlink:type="simple"
+           chart:class="chart:bar"
+           chart:style-name="ch1">
+           <chart:title
+            svg:x="1.867cm"
+            svg:y="0.266cm"
+            chart:style-name="ch2">
+            <text:p>Net Revenue by Month</text:p>
+           </chart:title>
+           <chart:plot-area
+            chart:style-name="ch3"
+            svg:x="0.17cm"
+            svg:y="1.175cm"
+            svg:width="8.16cm"
+            svg:height="5.195cm">
+            <chart:coordinate-region
+             svg:x="1.76cm"
+             svg:y="1.374cm"
+             svg:width="6.57cm"
+             svg:height="4.349cm"/>
+            <chart:axis
+             chart:dimension="x"
+             chart:name="primary-x"
+             chart:style-name="ch4"
+             chartooo:axis-type="auto">
+             <chartooo:date-scale/>
+             <chart:categories table:cell-range-address="Dashboard.D11:Dashboard.D13"/>
+            </chart:axis>
+            <chart:axis
+             chart:dimension="y"
+             chart:name="primary-y"
+             chart:style-name="ch5">
+             <chart:grid
+              chart:style-name="ch6"
+              chart:class="major"/>
+            </chart:axis>
+            <chart:series
+             chart:style-name="ch7"
+             chart:values-cell-range-address="Dashboard.E11:Dashboard.E13"
+             chart:class="chart:bar">
+             <chart:data-point chart:repeated="3"/>
+            </chart:series>
+            <chart:wall chart:style-name="ch8"/>
+            <chart:floor chart:style-name="ch9"/>
+           </chart:plot-area>
+           <table:table table:name="local-table">
+            <table:table-header-columns>
+             <table:table-column/>
+            </table:table-header-columns>
+            <table:table-columns>
+             <table:table-column/>
+            </table:table-columns>
+            <table:table-header-rows>
+             <table:table-row>
+              <table:table-cell>
+               <text:p/>
+              </table:table-cell>
+              <table:table-cell office:value-type="string">
+               <text:p>Column E</text:p>
+              </table:table-cell>
+             </table:table-row>
+            </table:table-header-rows>
+            <table:table-rows>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>Jul</text:p>
+               <draw:g>
+                <svg:desc>Dashboard.D11:Dashboard.D13</svg:desc></draw:g>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="20967.95">
+               <text:p>20967.95</text:p>
+               <draw:g>
+                <svg:desc>Dashboard.E11:Dashboard.E13</svg:desc></draw:g>
+              </table:table-cell>
+             </table:table-row>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>Aug</text:p>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="20870.7">
+               <text:p>20870.7</text:p>
+              </table:table-cell>
+             </table:table-row>
+             <table:table-row>
+              <table:table-cell office:value-type="string">
+               <text:p>Sep</text:p>
+              </table:table-cell>
+              <table:table-cell
+               office:value-type="float"
+               office:value="11885.1">
+               <text:p>11885.1</text:p>
+              </table:table-cell>
+             </table:table-row>
+            </table:table-rows>
+           </table:table>
+          </chart:chart>
+         </office:chart>
+        </office:body>
+       </office:document>
+      </draw:object></draw:frame></table:shapes>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="Default"/>
+    <table:table-column
+     table:style-name="co2"
+     table:number-columns-repeated="4"
+     table:default-cell-style-name="Default"/>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="Default"/>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell
+      table:style-name="ce1"
+      office:value-type="string"
+      table:number-columns-spanned="6"
+      table:number-rows-spanned="1">
+      <text:p>Nordwind Coffee Trading <text:s/>— <text:s/>Q3 2026 Sales Report</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:number-columns-repeated="5"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce2"
+      office:value-type="string"
+      table:number-columns-spanned="6"
+      table:number-rows-spanned="1">
+      <text:p>Generated from the Sales ledger — figures update automatically from source sheets.</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:number-columns-repeated="5"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell table:number-columns-repeated="6"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce3"
+      office:value-type="string"
+      table:number-columns-spanned="2"
+      table:number-rows-spanned="1">
+      <text:p>Total Net Revenue</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:style-name="ce5"/>
+     <table:table-cell
+      table:style-name="ce11"
+      office:value-type="string"
+      table:number-columns-spanned="2"
+      table:number-rows-spanned="1">
+      <text:p>Units Sold</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:style-name="ce13"/>
+     <table:table-cell
+      table:style-name="ce14"
+      office:value-type="string"
+      table:number-columns-spanned="2"
+      table:number-rows-spanned="1">
+      <text:p>Orders</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:style-name="ce16"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce4"
+      table:formula="of:=[Sales.I47]"
+      office:value-type="float"
+      office:value="53723.75"
+      table:number-columns-spanned="2"
+      table:number-rows-spanned="2">
+      <text:p>53,723.75 €</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:style-name="ce5"/>
+     <table:table-cell
+      table:style-name="ce12"
+      table:formula="of:=[Sales.F47]"
+      office:value-type="float"
+      office:value="3299"
+      table:number-columns-spanned="2"
+      table:number-rows-spanned="2">
+      <text:p>3,299</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:style-name="ce13"/>
+     <table:table-cell
+      table:style-name="ce15"
+      table:formula="of:=COUNTA([Sales.B2:.B46])"
+      office:value-type="float"
+      office:value="45"
+      table:number-columns-spanned="2"
+      table:number-rows-spanned="2">
+      <text:p>45</text:p>
+     </table:table-cell>
+     <table:covered-table-cell table:style-name="ce16"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:covered-table-cell
+      table:number-columns-repeated="2"
+      table:style-name="ce5"/>
+     <table:covered-table-cell
+      table:number-columns-repeated="2"
+      table:style-name="ce13"/>
+     <table:covered-table-cell
+      table:number-columns-repeated="2"
+      table:style-name="ce16"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell table:number-columns-repeated="6"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce6"
+      office:value-type="string">
+      <text:p>Average order value</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce9"
+      table:formula="of:=[.A5]/[.E5]"
+      office:value-type="float"
+      office:value="1193.86111111111">
+      <text:p>1,193.86 €</text:p>
+     </table:table-cell>
+     <table:table-cell table:number-columns-repeated="4"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell table:number-columns-repeated="6"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce7"
+      office:value-type="string">
+      <text:p>Revenue by Region</text:p>
+     </table:table-cell>
+     <table:table-cell table:number-columns-repeated="2"/>
+     <table:table-cell
+      table:style-name="ce7"
+      office:value-type="string">
+      <text:p>Monthly Revenue</text:p>
+     </table:table-cell>
+     <table:table-cell table:number-columns-repeated="2"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=[Regions.C2]"
+      office:value-type="float"
+      office:value="14177.1">
+      <text:p>14,177 €</text:p>
+     </table:table-cell>
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Jul</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=SUMPRODUCT((MONTH([Sales.$A$2:.$A$46])=7)*[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="20967.95">
+      <text:p>20,968 €</text:p>
+     </table:table-cell>
+     <table:table-cell/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=[Regions.C3]"
+      office:value-type="float"
+      office:value="11554.95">
+      <text:p>11,555 €</text:p>
+     </table:table-cell>
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Aug</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=SUMPRODUCT((MONTH([Sales.$A$2:.$A$46])=8)*[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="20870.7">
+      <text:p>20,871 €</text:p>
+     </table:table-cell>
+     <table:table-cell/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=[Regions.C4]"
+      office:value-type="float"
+      office:value="8318.2">
+      <text:p>8,318 €</text:p>
+     </table:table-cell>
+     <table:table-cell/>
+     <table:table-cell office:value-type="string">
+      <text:p>Sep</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=SUMPRODUCT((MONTH([Sales.$A$2:.$A$46])=9)*[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="11885.1">
+      <text:p>11,885 €</text:p>
+     </table:table-cell>
+     <table:table-cell/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce10"
+      table:formula="of:=[Regions.C5]"
+      office:value-type="float"
+      office:value="19673.5">
+      <text:p>19,674 €</text:p>
+     </table:table-cell>
+     <table:table-cell table:number-columns-repeated="4"/>
+    </table:table-row>
+    <table:table-row
+     table:style-name="ro2"
+     table:number-rows-repeated="5">
+     <table:table-cell table:number-columns-repeated="6"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce8"
+      table:formula="of:=HYPERLINK(&quot;https://www.libreoffice.org&quot;;&quot;Built with LibreOffice Calc&quot;)"
+      office:value-type="string"
+      office:string-value="Built with LibreOffice Calc">
+      <text:p>Built with LibreOffice Calc</text:p>
+     </table:table-cell>
+     <table:table-cell table:number-columns-repeated="5"/>
+    </table:table-row>
+   </table:table>
+   <table:table
+    table:name="Sales"
+    table:style-name="ta1"
+    table:print-ranges="Sales.A1:Sales.I46">
+    <table:table-column
+     table:style-name="co3"
+     table:default-cell-style-name="ce18"/>
+    <table:table-column
+     table:style-name="co4"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co5"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co6"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co7"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co8"
+     table:default-cell-style-name="ce24"/>
+    <table:table-column
+     table:style-name="co9"
+     table:default-cell-style-name="ce27"/>
+    <table:table-column
+     table:style-name="co5"
+     table:default-cell-style-name="ce29"/>
+    <table:table-column
+     table:style-name="co7"
+     table:default-cell-style-name="ce31"/>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Date</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Order ID</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Region</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Product</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Rep</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Units</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Unit Price</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Discount</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Net Revenue</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-20">
+      <text:p>2026-09-20</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1001</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="20">
+      <text:p>20</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D2];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F2]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F2]*[.G2]*(1-[.H2])"
+      office:value-type="float"
+      office:value="370">
+      <text:p>370.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-29">
+      <text:p>2026-07-29</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1002</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="150">
+      <text:p>150</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D3];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F3]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F3]*[.G3]*(1-[.H3])"
+      office:value-type="float"
+      office:value="2123.25">
+      <text:p>2,123.25 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-24">
+      <text:p>2026-08-24</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1003</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="20">
+      <text:p>20</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D4];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F4]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F4]*[.G4]*(1-[.H4])"
+      office:value-type="float"
+      office:value="370">
+      <text:p>370.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-30">
+      <text:p>2026-07-30</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1004</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="200">
+      <text:p>200</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D5];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F5]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F5]*[.G5]*(1-[.H5])"
+      office:value-type="float"
+      office:value="2185">
+      <text:p>2,185.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-28">
+      <text:p>2026-09-28</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1005</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="150">
+      <text:p>150</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D6];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F6]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F6]*[.G6]*(1-[.H6])"
+      office:value-type="float"
+      office:value="1410.75">
+      <text:p>1,410.75 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-05">
+      <text:p>2026-08-05</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1006</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Decaf House 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="40">
+      <text:p>40</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D7];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="17.2">
+      <text:p>17.20 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F7]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F7]*[.G7]*(1-[.H7])"
+      office:value-type="float"
+      office:value="688">
+      <text:p>688.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-05">
+      <text:p>2026-08-05</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1007</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="10">
+      <text:p>10</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D8];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F8]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F8]*[.G8]*(1-[.H8])"
+      office:value-type="float"
+      office:value="99">
+      <text:p>99.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-12">
+      <text:p>2026-07-12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1008</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="40">
+      <text:p>40</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D9];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F9]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F9]*[.G9]*(1-[.H9])"
+      office:value-type="float"
+      office:value="596">
+      <text:p>596.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-16">
+      <text:p>2026-09-16</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1009</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="120">
+      <text:p>120</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D10];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F10]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F10]*[.G10]*(1-[.H10])"
+      office:value-type="float"
+      office:value="2109">
+      <text:p>2,109.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-16">
+      <text:p>2026-07-16</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1010</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="200">
+      <text:p>200</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D11];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F11]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F11]*[.G11]*(1-[.H11])"
+      office:value-type="float"
+      office:value="2831">
+      <text:p>2,831.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-18">
+      <text:p>2026-09-18</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1011</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Chai Masala 250g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="10">
+      <text:p>10</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D12];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="12.8">
+      <text:p>12.80 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F12]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F12]*[.G12]*(1-[.H12])"
+      office:value-type="float"
+      office:value="128">
+      <text:p>128.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-06">
+      <text:p>2026-07-06</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1012</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>French Press 1L</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="20">
+      <text:p>20</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D13];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="24.5">
+      <text:p>24.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F13]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F13]*[.G13]*(1-[.H13])"
+      office:value-type="float"
+      office:value="490">
+      <text:p>490.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-07-13">
+      <text:p>2026-07-13</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1013</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>French Press 1L</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="200">
+      <text:p>200</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D14];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="24.5">
+      <text:p>24.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F14]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F14]*[.G14]*(1-[.H14])"
+      office:value-type="float"
+      office:value="4655">
+      <text:p>4,655.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-16">
+      <text:p>2026-08-16</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1014</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Pour-Over Dripper</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="20">
+      <text:p>20</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D15];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="15">
+      <text:p>15.00 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F15]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F15]*[.G15]*(1-[.H15])"
+      office:value-type="float"
+      office:value="300">
+      <text:p>300.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-24">
+      <text:p>2026-09-24</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1015</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="120">
+      <text:p>120</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D16];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F16]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F16]*[.G16]*(1-[.H16])"
+      office:value-type="float"
+      office:value="1698.6">
+      <text:p>1,698.60 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-01">
+      <text:p>2026-08-01</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1016</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Cold Brew Kit</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="24">
+      <text:p>24</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D17];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="29.9">
+      <text:p>29.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F17]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F17]*[.G17]*(1-[.H17])"
+      office:value-type="float"
+      office:value="717.6">
+      <text:p>717.60 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-20">
+      <text:p>2026-09-20</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1017</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Pour-Over Dripper</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="20">
+      <text:p>20</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D18];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="15">
+      <text:p>15.00 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F18]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F18]*[.G18]*(1-[.H18])"
+      office:value-type="float"
+      office:value="300">
+      <text:p>300.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-05">
+      <text:p>2026-07-05</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1018</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Gift Box Deluxe</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="10">
+      <text:p>10</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D19];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="39.9">
+      <text:p>39.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F19]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F19]*[.G19]*(1-[.H19])"
+      office:value-type="float"
+      office:value="399">
+      <text:p>399.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-07-28">
+      <text:p>2026-07-28</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1019</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="60">
+      <text:p>60</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D20];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F20]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F20]*[.G20]*(1-[.H20])"
+      office:value-type="float"
+      office:value="594">
+      <text:p>594.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-09-21">
+      <text:p>2026-09-21</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1020</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Decaf House 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="12">
+      <text:p>12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D21];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="17.2">
+      <text:p>17.20 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F21]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F21]*[.G21]*(1-[.H21])"
+      office:value-type="float"
+      office:value="206.4">
+      <text:p>206.40 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-01">
+      <text:p>2026-08-01</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1021</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Chai Masala 250g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="150">
+      <text:p>150</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D22];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="12.8">
+      <text:p>12.80 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F22]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F22]*[.G22]*(1-[.H22])"
+      office:value-type="float"
+      office:value="1824">
+      <text:p>1,824.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-21">
+      <text:p>2026-08-21</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1022</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="120">
+      <text:p>120</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D23];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F23]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F23]*[.G23]*(1-[.H23])"
+      office:value-type="float"
+      office:value="1128.6">
+      <text:p>1,128.60 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-02">
+      <text:p>2026-09-02</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1023</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="12">
+      <text:p>12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D24];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F24]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F24]*[.G24]*(1-[.H24])"
+      office:value-type="float"
+      office:value="222">
+      <text:p>222.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-09-19">
+      <text:p>2026-09-19</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1024</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Gift Box Deluxe</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="60">
+      <text:p>60</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D25];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="39.9">
+      <text:p>39.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F25]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F25]*[.G25]*(1-[.H25])"
+      office:value-type="float"
+      office:value="2394">
+      <text:p>2,394.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-18">
+      <text:p>2026-08-18</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1025</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="120">
+      <text:p>120</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D26];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F26]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F26]*[.G26]*(1-[.H26])"
+      office:value-type="float"
+      office:value="1311">
+      <text:p>1,311.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-02">
+      <text:p>2026-07-02</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1026</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="200">
+      <text:p>200</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D27];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F27]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F27]*[.G27]*(1-[.H27])"
+      office:value-type="float"
+      office:value="2185">
+      <text:p>2,185.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-13">
+      <text:p>2026-08-13</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1027</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>French Press 1L</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="12">
+      <text:p>12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D28];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="24.5">
+      <text:p>24.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F28]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F28]*[.G28]*(1-[.H28])"
+      office:value-type="float"
+      office:value="294">
+      <text:p>294.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-28">
+      <text:p>2026-08-28</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1028</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>French Press 1L</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="120">
+      <text:p>120</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D29];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="24.5">
+      <text:p>24.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F29]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F29]*[.G29]*(1-[.H29])"
+      office:value-type="float"
+      office:value="2793">
+      <text:p>2,793.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-07-14">
+      <text:p>2026-07-14</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1029</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="12">
+      <text:p>12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D30];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F30]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F30]*[.G30]*(1-[.H30])"
+      office:value-type="float"
+      office:value="138">
+      <text:p>138.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-17">
+      <text:p>2026-08-17</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1030</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="150">
+      <text:p>150</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D31];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F31]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F31]*[.G31]*(1-[.H31])"
+      office:value-type="float"
+      office:value="1638.75">
+      <text:p>1,638.75 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-11">
+      <text:p>2026-08-11</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1031</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="40">
+      <text:p>40</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D32];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F32]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F32]*[.G32]*(1-[.H32])"
+      office:value-type="float"
+      office:value="740">
+      <text:p>740.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-09">
+      <text:p>2026-08-09</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1032</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="150">
+      <text:p>150</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D33];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F33]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F33]*[.G33]*(1-[.H33])"
+      office:value-type="float"
+      office:value="2636.25">
+      <text:p>2,636.25 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-07-11">
+      <text:p>2026-07-11</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1033</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Cold Brew Kit</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="120">
+      <text:p>120</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D34];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="29.9">
+      <text:p>29.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F34]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F34]*[.G34]*(1-[.H34])"
+      office:value-type="float"
+      office:value="3408.6">
+      <text:p>3,408.60 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-07-17">
+      <text:p>2026-07-17</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1034</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Cold Brew Kit</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="24">
+      <text:p>24</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D35];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="29.9">
+      <text:p>29.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F35]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F35]*[.G35]*(1-[.H35])"
+      office:value-type="float"
+      office:value="717.6">
+      <text:p>717.60 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-06">
+      <text:p>2026-09-06</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1035</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="24">
+      <text:p>24</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D36];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F36]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F36]*[.G36]*(1-[.H36])"
+      office:value-type="float"
+      office:value="237.6">
+      <text:p>237.60 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-21">
+      <text:p>2026-08-21</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1036</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Cold Brew Kit</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="10">
+      <text:p>10</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D37];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="29.9">
+      <text:p>29.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F37]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F37]*[.G37]*(1-[.H37])"
+      office:value-type="float"
+      office:value="299">
+      <text:p>299.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-08-01">
+      <text:p>2026-08-01</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1037</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>C. Meyer</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="5">
+      <text:p>5</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D38];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F38]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F38]*[.G38]*(1-[.H38])"
+      office:value-type="float"
+      office:value="74.5">
+      <text:p>74.50 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-09-14">
+      <text:p>2026-09-14</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1038</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Chai Masala 250g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="5">
+      <text:p>5</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D39];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="12.8">
+      <text:p>12.80 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F39]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F39]*[.G39]*(1-[.H39])"
+      office:value-type="float"
+      office:value="64">
+      <text:p>64.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-07-10">
+      <text:p>2026-07-10</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1039</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="5">
+      <text:p>5</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D40];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F40]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F40]*[.G40]*(1-[.H40])"
+      office:value-type="float"
+      office:value="49.5">
+      <text:p>49.50 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-12">
+      <text:p>2026-08-12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1040</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="24">
+      <text:p>24</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D41];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F41]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F41]*[.G41]*(1-[.H41])"
+      office:value-type="float"
+      office:value="276">
+      <text:p>276.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-24">
+      <text:p>2026-09-24</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1041</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>B. Novak</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="150">
+      <text:p>150</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D42];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F42]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F42]*[.G42]*(1-[.H42])"
+      office:value-type="float"
+      office:value="1410.75">
+      <text:p>1,410.75 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-09-12">
+      <text:p>2026-09-12</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1042</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="60">
+      <text:p>60</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D43];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F43]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F43]*[.G43]*(1-[.H43])"
+      office:value-type="float"
+      office:value="594">
+      <text:p>594.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-07-25">
+      <text:p>2026-07-25</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1043</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="40">
+      <text:p>40</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D44];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F44]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F44]*[.G44]*(1-[.H44])"
+      office:value-type="float"
+      office:value="596">
+      <text:p>596.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce19"
+      office:value-type="date"
+      office:date-value="2026-08-24">
+      <text:p>2026-08-24</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>SO-1044</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Cold Brew Kit</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce22"
+      office:value-type="string">
+      <text:p>A. Klein</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce25"
+      office:value-type="float"
+      office:value="200">
+      <text:p>200</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce28"
+      table:formula="of:=VLOOKUP([.D45];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="29.9">
+      <text:p>29.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce30"
+      table:formula="of:=IF([.F45]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce32"
+      table:formula="of:=[.F45]*[.G45]*(1-[.H45])"
+      office:value-type="float"
+      office:value="5681">
+      <text:p>5,681.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      office:value-type="date"
+      office:date-value="2026-09-22">
+      <text:p>2026-09-22</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>SO-1045</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val1"
+      office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:content-validation-name="val2"
+      office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>D. Ferrari</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="40">
+      <text:p>40</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=VLOOKUP([.D46];ProductTable;3;0)"
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=IF([.F46]&gt;=DiscountThreshold;DiscountRate;0)"
+      office:value-type="percentage"
+      office:value="0">
+      <text:p>0.0%</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.F46]*[.G46]*(1-[.H46])"
+      office:value-type="float"
+      office:value="740">
+      <text:p>740.00 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce20"
+      table:number-columns-repeated="4"/>
+     <table:table-cell
+      table:style-name="ce23"
+      office:value-type="string">
+      <text:p>TOTAL</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce26"
+      table:formula="of:=SUM([.F2:.F46])"
+      office:value-type="float"
+      office:value="3299">
+      <text:p>3,299</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce20"
+      table:number-columns-repeated="2"/>
+     <table:table-cell
+      table:style-name="ce33"
+      table:formula="of:=SUM([.I2:.I46])"
+      office:value-type="float"
+      office:value="53723.75">
+      <text:p>53,723.75 €</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <calcext:conditional-formats>
+     <calcext:conditional-format calcext:target-range-address="Sales.I2:Sales.I46">
+      <calcext:condition
+       calcext:apply-style-name="Result_Good"
+       calcext:value="&gt;=2000"
+       calcext:base-cell-address="Dashboard.A1"/>
+      <calcext:condition
+       calcext:apply-style-name="Result_Bad"
+       calcext:value="&lt;300"
+       calcext:base-cell-address="Dashboard.A1"/>
+     </calcext:conditional-format>
+    </calcext:conditional-formats>
+   </table:table>
+   <table:table
+    table:name="Products"
+    table:style-name="ta1">
+    <table:table-column
+     table:style-name="co6"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co1"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co9"
+     table:number-columns-repeated="2"
+     table:default-cell-style-name="ce27"/>
+    <table:table-column
+     table:style-name="co4"
+     table:default-cell-style-name="ce36"/>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Product</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Category</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Unit Price</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Unit Cost</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Margin %</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Espresso Blend 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Coffee</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="18.5">
+      <text:p>18.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="11.2">
+      <text:p>11.20 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=([.C2]-[.D2])/[.C2]"
+      office:value-type="percentage"
+      office:value="0.394594594594595">
+      <text:p>39.5%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Single Origin Ethiopia 500g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Coffee</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="14.9">
+      <text:p>14.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="8.4">
+      <text:p>8.40 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce37"
+      table:formula="of:=([.C3]-[.D3])/[.C3]"
+      office:value-type="percentage"
+      office:value="0.436241610738255">
+      <text:p>43.6%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Decaf House 1kg</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Coffee</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="17.2">
+      <text:p>17.20 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="10.8">
+      <text:p>10.80 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=([.C4]-[.D4])/[.C4]"
+      office:value-type="percentage"
+      office:value="0.372093023255814">
+      <text:p>37.2%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Ceramic Mug 350ml</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Accessories</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="9.9">
+      <text:p>9.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="4.1">
+      <text:p>4.10 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce37"
+      table:formula="of:=([.C5]-[.D5])/[.C5]"
+      office:value-type="percentage"
+      office:value="0.585858585858586">
+      <text:p>58.6%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>French Press 1L</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Accessories</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="24.5">
+      <text:p>24.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="12.3">
+      <text:p>12.30 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=([.C6]-[.D6])/[.C6]"
+      office:value-type="percentage"
+      office:value="0.497959183673469">
+      <text:p>49.8%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Pour-Over Dripper</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Accessories</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="15">
+      <text:p>15.00 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="6.8">
+      <text:p>6.80 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce37"
+      table:formula="of:=([.C7]-[.D7])/[.C7]"
+      office:value-type="percentage"
+      office:value="0.546666666666667">
+      <text:p>54.7%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Gift Box Deluxe</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Bundles</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="39.9">
+      <text:p>39.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="22.5">
+      <text:p>22.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=([.C8]-[.D8])/[.C8]"
+      office:value-type="percentage"
+      office:value="0.43609022556391">
+      <text:p>43.6%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Cold Brew Kit</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Bundles</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="29.9">
+      <text:p>29.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="16.4">
+      <text:p>16.40 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce37"
+      table:formula="of:=([.C9]-[.D9])/[.C9]"
+      office:value-type="percentage"
+      office:value="0.451505016722408">
+      <text:p>45.2%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Green Tea Sencha 250g</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string">
+      <text:p>Tea</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="11.5">
+      <text:p>11.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="5.9">
+      <text:p>5.90 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=([.C10]-[.D10])/[.C10]"
+      office:value-type="percentage"
+      office:value="0.48695652173913">
+      <text:p>48.7%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Chai Masala 250g</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce34"
+      office:value-type="string">
+      <text:p>Tea</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="12.8">
+      <text:p>12.80 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce35"
+      office:value-type="float"
+      office:value="6.5">
+      <text:p>6.50 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce37"
+      table:formula="of:=([.C11]-[.D11])/[.C11]"
+      office:value-type="percentage"
+      office:value="0.4921875">
+      <text:p>49.2%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <calcext:conditional-formats>
+     <calcext:conditional-format calcext:target-range-address="Products.E2:Products.E11">
+      <calcext:condition
+       calcext:apply-style-name="Result_Warn"
+       calcext:value="&lt;TargetMargin"
+       calcext:base-cell-address="Dashboard.A1"/>
+     </calcext:conditional-format>
+    </calcext:conditional-formats>
+   </table:table>
+   <table:table
+    table:name="Regions"
+    table:style-name="ta1">
+    <table:table-column
+     table:style-name="co7"
+     table:default-cell-style-name="ce21"/>
+    <table:table-column
+     table:style-name="co7"
+     table:default-cell-style-name="ce38"/>
+    <table:table-column
+     table:style-name="co7"
+     table:default-cell-style-name="ce40"/>
+    <table:table-column
+     table:style-name="co7"
+     table:default-cell-style-name="ce38"/>
+    <table:table-column
+     table:style-name="co3"
+     table:default-cell-style-name="ce41"/>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Region</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Target</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Actual</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Variance</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce17"
+      office:value-type="string">
+      <text:p>Attainment</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>North</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="18000">
+      <text:p>18,000 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=SUMIF([Sales.$C$2:.$C$46];[.A2];[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="14177.1">
+      <text:p>14,177 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C2]-[.B2]"
+      office:value-type="float"
+      office:value="-3822.9">
+      <text:p>-3,823 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C2]/[.B2]"
+      office:value-type="percentage"
+      office:value="0.787616666666667">
+      <text:p>78.8%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>South</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="15000">
+      <text:p>15,000 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=SUMIF([Sales.$C$2:.$C$46];[.A3];[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="11554.95">
+      <text:p>11,555 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C3]-[.B3]"
+      office:value-type="float"
+      office:value="-3445.05">
+      <text:p>-3,445 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C3]/[.B3]"
+      office:value-type="percentage"
+      office:value="0.77033">
+      <text:p>77.0%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>East</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="12000">
+      <text:p>12,000 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=SUMIF([Sales.$C$2:.$C$46];[.A4];[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="8318.2">
+      <text:p>8,318 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C4]-[.B4]"
+      office:value-type="float"
+      office:value="-3681.8">
+      <text:p>-3,682 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C4]/[.B4]"
+      office:value-type="percentage"
+      office:value="0.693183333333333">
+      <text:p>69.3%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>West</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="float"
+      office:value="16000">
+      <text:p>16,000 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=SUMIF([Sales.$C$2:.$C$46];[.A5];[Sales.$I$2:.$I$46])"
+      office:value-type="float"
+      office:value="19673.5">
+      <text:p>19,674 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C5]-[.B5]"
+      office:value-type="float"
+      office:value="3673.5">
+      <text:p>3,674 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:formula="of:=[.C5]/[.B5]"
+      office:value-type="percentage"
+      office:value="1.22959375">
+      <text:p>123.0%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell
+      table:style-name="ce23"
+      office:value-type="string">
+      <text:p>All regions</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce39"
+      table:formula="of:=SUM([.B2:.B5])"
+      office:value-type="float"
+      office:value="61000">
+      <text:p>61,000 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce39"
+      table:formula="of:=SUM([.C2:.C5])"
+      office:value-type="float"
+      office:value="53723.75">
+      <text:p>53,724 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce39"
+      table:formula="of:=SUM([.D2:.D5])"
+      office:value-type="float"
+      office:value="-7276.25">
+      <text:p>-7,276 €</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce42"
+      table:formula="of:=[.C6]/[.B6]"
+      office:value-type="percentage"
+      office:value="0.880717213114754">
+      <text:p>88.1%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <calcext:conditional-formats>
+     <calcext:conditional-format calcext:target-range-address="Regions.E2:Regions.E5">
+      <calcext:color-scale>
+       <calcext:color-scale-entry
+        calcext:value="0"
+        calcext:type="minimum"
+        calcext:color="#f8696b"/>
+       <calcext:color-scale-entry
+        calcext:value="50"
+        calcext:type="percentile"
+        calcext:color="#ffeb84"/>
+       <calcext:color-scale-entry
+        calcext:value="0"
+        calcext:type="maximum"
+        calcext:color="#63be7b"/>
+      </calcext:color-scale>
+     </calcext:conditional-format>
+     <calcext:conditional-format calcext:target-range-address="Regions.C2:Regions.C5">
+      <calcext:data-bar
+       calcext:max-length="100"
+       calcext:negative-color="#ff0000"
+       calcext:positive-color="#638ec6"
+       calcext:axis-color="#000000">
+       <calcext:formatting-entry
+        calcext:value="0"
+        calcext:type="auto-minimum"/>
+       <calcext:formatting-entry
+        calcext:value="0"
+        calcext:type="auto-maximum"/>
+      </calcext:data-bar>
+     </calcext:conditional-format>
+    </calcext:conditional-formats>
+   </table:table>
+   <table:table
+    table:name="Assumptions"
+    table:style-name="ta1">
+    <table:table-column
+     table:style-name="co10"
+     table:default-cell-style-name="Default"/>
+    <table:table-column
+     table:style-name="co11"
+     table:default-cell-style-name="ce44"/>
+    <table:table-row table:style-name="ro3">
+     <table:table-cell
+      table:style-name="ce43"
+      office:value-type="string">
+      <text:p>Business Assumptions &amp; Parameters</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="Default"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell/>
+     <table:table-cell table:style-name="Default"/>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>VAT rate</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="percentage"
+      office:value="0.19">
+      <text:p>19.0%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Volume discount threshold (units)</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce45"
+      office:value-type="float"
+      office:value="100">
+      <text:p>100</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Volume discount rate</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="percentage"
+      office:value="0.05">
+      <text:p>5.0%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Target gross margin</text:p>
+     </table:table-cell>
+     <table:table-cell
+      office:value-type="percentage"
+      office:value="0.35">
+      <text:p>35.0%</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Currency</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce46"
+      office:value-type="string">
+      <text:p>EUR</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro2">
+     <table:table-cell office:value-type="string">
+      <text:p>Reporting quarter</text:p>
+     </table:table-cell>
+     <table:table-cell
+      table:style-name="ce46"
+      office:value-type="string">
+      <text:p>Q3 2026</text:p>
+     </table:table-cell>
+    </table:table-row>
+   </table:table>
+   <table:named-expressions>
+    <table:named-range
+     table:name="DiscountRate"
+     table:base-cell-address="$Assumptions.$A$1"
+     table:cell-range-address="$Assumptions.$B$5"/>
+    <table:named-range
+     table:name="DiscountThreshold"
+     table:base-cell-address="$Assumptions.$A$1"
+     table:cell-range-address="$Assumptions.$B$4"/>
+    <table:named-range
+     table:name="ProductNames"
+     table:base-cell-address="$Products.$A$1"
+     table:cell-range-address="$Products.$A$2:.$A$11"/>
+    <table:named-range
+     table:name="ProductTable"
+     table:base-cell-address="$Products.$A$1"
+     table:cell-range-address="$Products.$A$2:.$E$11"/>
+    <table:named-range
+     table:name="TargetMargin"
+     table:base-cell-address="$Assumptions.$A$1"
+     table:cell-range-address="$Assumptions.$B$6"/>
+    <table:named-range
+     table:name="VATRate"
+     table:base-cell-address="$Assumptions.$A$1"
+     table:cell-range-address="$Assumptions.$B$3"/>
+   </table:named-expressions>
+  </office:spreadsheet>
+ </office:body>
+</office:document>

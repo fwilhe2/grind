@@ -22,6 +22,15 @@ path = "core/tests/data/kb/**"
 SPDX-FileCopyrightText = "2022 Florian Wilhelm"
 SPDX-License-Identifier = "MIT"
 
+# The sample corpus: LibreOffice-authored documents normalised by `odslint-clean`, from
+# https://github.com/fwilhe2/office-in-git, vendored at d01d7f6 (2026-07-21). Upstream
+# states no license; same author as this repository, so they carry its terms here. Declared
+# rather than annotated for the same reason as the corpus above.
+[[annotations]]
+path = "core/tests/data/samples/**"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
 # Vendored OASIS specifications. Their terms forbid modifying the documents at all,
 # so these are marked by .license sidecars rather than by headers; the entries here
 # exist so the constraint is stated in one place a reader will find.
