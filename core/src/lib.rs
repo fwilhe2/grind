@@ -35,6 +35,9 @@ pub enum Error {
     /// Not built yet. Carries the phase that removes it.
     Unimplemented(&'static str),
     NoSuchSheet(usize),
+    /// A request whose size is the problem rather than its content — see
+    /// [`MAX_FORMATTED_CELLS`].
+    TooLarge(u64),
     /// The XML would not parse at all. Per doc/ods-format.md §8.2 this is the *structural*
     /// failure case — unrecognised content never reaches here, it is ignored instead.
     Xml(String),
@@ -51,6 +54,10 @@ impl fmt::Display for Error {
         match self {
             Error::Unimplemented(what) => write!(f, "unimplemented: {what}"),
             Error::NoSuchSheet(i) => write!(f, "no such sheet: {i}"),
+            Error::TooLarge(n) => write!(
+                f,
+                "{n} cells is more than the {MAX_FORMATTED_CELLS} a format may cover at once"
+            ),
             Error::Xml(e) => write!(f, "xml: {e}"),
             Error::Package(e) => write!(f, "package: {e}"),
             Error::Encrypted => write!(f, "password-protected document"),
@@ -68,6 +75,12 @@ impl From<std::io::Error> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// How many cells one [`App::set_format`] may cover.
+///
+/// Formats are stored per cell, so this bounds the memory a single command can ask for.
+/// Well above any rectangle a person selects, well below a whole sheet.
+pub const MAX_FORMATTED_CELLS: u64 = 1 << 16;
 
 /// A rectangle of values, already resolved — what a renderer draws.
 ///
@@ -241,6 +254,61 @@ impl App {
             state.undo.push(inverse);
             state.redo.clear();
             Ok(())
+        })
+    }
+
+    /// Set — or with `None`, clear — the number format of every cell in a rectangle.
+    ///
+    /// A rectangle rather than one cell because formatting a column is the normal case, and
+    /// one [`Action::Batch`] because undoing it should be one step. Returns how many cells
+    /// were touched.
+    ///
+    /// The rectangle is bounded by [`MAX_FORMATTED_CELLS`]: a format costs an entry per
+    /// cell (see `Sheet::formats`), so `A1:Z1000000` is a memory-exhaustion request rather
+    /// than an intent, and refusing it is more useful than serving it slowly. A *whole
+    /// column* does not get here — a shell resolves `A:A` against the used extent first.
+    pub fn set_format(
+        &self,
+        sheet: usize,
+        start: Pos,
+        end: Pos,
+        format: Option<numfmt::Format>,
+    ) -> Result<usize> {
+        let rows = u64::from(end.row.saturating_sub(start.row)) + 1;
+        let cols = u64::from(end.col.saturating_sub(start.col)) + 1;
+        if rows.saturating_mul(cols) > MAX_FORMATTED_CELLS {
+            return Err(Error::TooLarge(rows.saturating_mul(cols)));
+        }
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let mut updates = Vec::new();
+            for row in start.row..=end.row {
+                for col in start.col..=end.col {
+                    let pos = Pos::new(row, col);
+                    // A no-op cell is left out of the batch, so re-applying a format a cell
+                    // already has does not push an undo entry that restores nothing.
+                    if state.doc.sheet(sheet).and_then(|s| s.format(pos)) == format.as_ref() {
+                        continue;
+                    }
+                    updates.push(Action::SetFormat {
+                        sheet,
+                        pos,
+                        format: format.clone().map(Box::new),
+                    });
+                }
+            }
+            let changed = updates.len();
+            if changed > 0 {
+                let inverse = state
+                    .doc
+                    .apply(Action::Batch(updates))
+                    .ok_or(Error::NoSuchSheet(sheet))?;
+                state.undo.push(inverse);
+                state.redo.clear();
+            }
+            Ok(changed)
         })
     }
 

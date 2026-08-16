@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::{CellValue, Document, Pos};
+use crate::numfmt::Format;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Action {
@@ -30,6 +31,14 @@ pub enum Action {
         pos: Pos,
         formula: Option<String>,
         value: CellValue,
+    },
+    /// A cell's number format, `None` being ODF's General — the absence of a data style
+    /// (doc/ods-format.md §5.2). Display only: no value moves, which is why this is its own
+    /// action rather than a field of [`Action::SetCell`].
+    SetFormat {
+        sheet: usize,
+        pos: Pos,
+        format: Option<Box<Format>>,
     },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
@@ -74,6 +83,19 @@ impl Document {
                 s.set(pos, value);
                 Some(previous)
             }
+            Action::SetFormat { sheet, pos, format } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.format(pos).cloned().map(Box::new);
+                match format {
+                    Some(f) => s.set_format(pos, *f),
+                    None => s.clear_format(pos),
+                }
+                Some(Action::SetFormat {
+                    sheet,
+                    pos,
+                    format: previous,
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -97,9 +119,9 @@ impl Document {
     /// Whether every sheet `action` names exists, so applying it cannot fail partway.
     fn addressable(&self, action: &Action) -> bool {
         match action {
-            Action::SetCell { sheet, .. } | Action::SetFormula { sheet, .. } => {
-                self.sheet(*sheet).is_some()
-            }
+            Action::SetCell { sheet, .. }
+            | Action::SetFormula { sheet, .. }
+            | Action::SetFormat { sheet, .. } => self.sheet(*sheet).is_some(),
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

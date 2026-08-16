@@ -23,7 +23,7 @@ use std::sync::LazyLock;
 use super::names::{NUMBER, OFFICE, STYLE, TABLE, TEXT};
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
-use crate::numfmt::{Format, Kind, Part};
+use crate::numfmt::{self, Format, Kind, Part};
 use crate::{Error, Result};
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
@@ -125,46 +125,16 @@ fn content(doc: &Document, form: Form) -> String {
 /// comes back with `M/D/YY` bolted on and the round trip is no longer an identity. Writing
 /// the ISO spelling instead makes the file say what it means, in the one form that reads
 /// the same in every locale (§3.4 Note 2).
-static DATE_DEFAULT: LazyLock<Format> = LazyLock::new(|| Format {
-    kind: Kind::Date,
-    parts: vec![
-        Part::Year { long: true },
-        Part::Text("-".into()),
-        Part::Month {
-            long: true,
-            textual: false,
-        },
-        Part::Text("-".into()),
-        Part::Day { long: true },
-    ],
-});
+static DATE_DEFAULT: LazyLock<Format> =
+    LazyLock::new(|| numfmt::preset(Kind::Date, 0, false, ""));
 
 /// A date that carries a time is a DateTime (§4.3.4) and needs a style that shows both,
 /// since a format cannot look at the value it is given.
-static DATETIME_DEFAULT: LazyLock<Format> = LazyLock::new(|| {
-    let mut parts = DATE_DEFAULT.parts.clone();
-    parts.push(Part::Text(" ".into()));
-    parts.extend(TIME_DEFAULT.parts.iter().cloned());
-    Format {
-        kind: Kind::Date,
-        parts,
-    }
-});
+static DATETIME_DEFAULT: LazyLock<Format> = LazyLock::new(numfmt::datetime_preset);
 
 /// The same for a time cell — a 24-hour clock, for the same reason.
-static TIME_DEFAULT: LazyLock<Format> = LazyLock::new(|| Format {
-    kind: Kind::Time,
-    parts: vec![
-        Part::Hours { long: true },
-        Part::Text(":".into()),
-        Part::Minutes { long: true },
-        Part::Text(":".into()),
-        Part::Seconds {
-            long: true,
-            decimals: 0,
-        },
-    ],
-});
+static TIME_DEFAULT: LazyLock<Format> =
+    LazyLock::new(|| numfmt::preset(Kind::Time, 0, false, ""));
 
 /// The format a cell is actually written with: its own, or the default its value type
 /// demands.

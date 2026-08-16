@@ -159,6 +159,63 @@ fn view_prints_a_tab_separated_grid() {
     );
 }
 
+/// A number format is display only: the stored value must come back untouched, and a
+/// formatted cell must still be the number a later formula reads.
+#[test]
+fn format_changes_what_a_cell_shows_and_not_what_it_holds() {
+    let dir = Sandbox::new("format");
+    let file = dir.path("book.ods");
+    ok(&["new", &s(&file)]);
+    ok(&["set", &s(&file), "A1", "1234.5"]);
+    ok(&["set", &s(&file), "A2", "0.075"]);
+    ok(&["format", &s(&file), "A1", "currency", "--symbol", "$", "--grouping"]);
+    ok(&["format", &s(&file), "A2", "percent", "--decimals", "1"]);
+
+    assert_eq!(ok(&["view", &s(&file), "A1:A2"]), "1,234.50\u{a0}$\n7.5%\n");
+    assert_eq!(ok(&["view", &s(&file), "A1:A2", "--raw"]), "1234.5\n0.075\n");
+    // The value a formula sees is the value, not the display.
+    ok(&["set", &s(&file), "B1", "=[.A1]*2"]);
+    assert_eq!(ok(&["get", &s(&file), "B1", "--raw"]).trim(), "2469");
+
+    // JSON carries both spellings, always, so a consumer picks without re-running.
+    let json = ok(&["--format", "json", "get", &s(&file), "A2"]);
+    assert_eq!(field(&json, "value"), "0.075");
+    assert_eq!(field(&json, "text"), "7.5%");
+
+    // `general` is the absence of a format, and the whole range is one undo step.
+    ok(&["format", &s(&file), "A1:A2", "general"]);
+    assert_eq!(ok(&["view", &s(&file), "A1:A2"]), "1234.5\n0.075\n");
+}
+
+/// A date is a number, and without a format it shows as one. Formatting it is what makes a
+/// spreadsheet a spreadsheet.
+#[test]
+fn a_date_shows_as_a_date_once_the_cell_says_so() {
+    let dir = Sandbox::new("format-date");
+    let file = dir.path("book.ods");
+    ok(&["new", &s(&file)]);
+    ok(&["set", &s(&file), "A1", "=DATE(2026;8;16)"]);
+    assert_eq!(ok(&["get", &s(&file), "A1"]).trim(), "46250");
+
+    ok(&["format", &s(&file), "A1", "date"]);
+    assert_eq!(ok(&["get", &s(&file), "A1"]).trim(), "2026-08-16");
+    assert_eq!(ok(&["get", &s(&file), "A1", "--raw"]).trim(), "46250");
+}
+
+/// The rectangle is bounded, because a format costs an entry per cell.
+#[test]
+fn formatting_an_absurd_rectangle_fails_instead_of_trying() {
+    let dir = Sandbox::new("format-huge");
+    let file = dir.path("book.ods");
+    ok(&["new", &s(&file)]);
+    let output = sheet(&["format", &s(&file), "A1:ZZ100000", "date"]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("more than"),
+        "{output:?}"
+    );
+}
+
 #[test]
 fn recalc_updates_a_stale_value_and_reports_it() {
     let dir = Sandbox::new("recalc");

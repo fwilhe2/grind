@@ -192,7 +192,13 @@ formatted cell still sums and still round-trips as the number it is (§5.2).
   names are English; `HOST-LOCALE` has no home in the core yet), and
   `number:truncate-on-overflow="false"`.
 - A date a *formula* computes has no format and no `NumberKind`, so `=DATE(2026;8;16)`
-  displays as its serial. The subtype belongs in `formula::value` (Part 4 §4.3.3), not here.
+  displays as its serial until the cell is formatted. The subtype belongs in `formula::value`
+  (Part 4 §4.3.3), not here.
+- **`preset` is the whole "set a format" vocabulary, and it lives in the core.** A shell that
+  built its own would make a document formatted from the CLI display differently in a GUI.
+  `App::set_format` takes a rectangle (formatting a column is the normal case) as one
+  `Action::Batch`, and bounds it: a format costs an entry per cell, so `A1:ZZ100000` is an
+  exhaustion request rather than an intent and is refused by size.
 
 ### `core/src/odf/` — the reader
 
@@ -447,10 +453,14 @@ documents.
 §5.1's indirection — cell style, row default, column default, and `styles.xml` as well as
 `content.xml` — rendered, pooled back out as automatic styles, and checked by loop C in both
 directions. `sheet view` and `sheet get` print what a cell displays, with `--raw` for the
-stored value, and `--format json` carries both. What is left in the phase: **no way to set a
-format** — nothing can, so no shell is hiding a capability — plus `style:map`, locales, and
-cell styles beyond the data-style link (fonts, borders, backgrounds are read and dropped, as
-they always were).
+stored value, and `--format json` carries both. `sheet format` sets one, over a rectangle and
+in one undo step; `general` clears it. The vocabulary is `numfmt::preset` in the **core**, so
+a GUI's format picker cannot invent a second one.
+
+What is left in the phase: `style:map`, locales — a preset date is the ISO spelling and
+nothing can ask for `DD.MM.YYYY` yet, though the model holds one fine — and cell styles
+beyond the data-style link (fonts, borders and backgrounds are read and dropped, as they
+always were).
 
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
 stub and because phase 4's functions were reachable only from `cargo test`. It brought the

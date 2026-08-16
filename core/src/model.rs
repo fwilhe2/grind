@@ -172,6 +172,12 @@ impl Sheet {
         self.formats.insert(pos, format);
     }
 
+    /// Back to the plain spelling of the value — ODF's "General", which is the absence of a
+    /// data style rather than a style of its own.
+    pub fn clear_format(&mut self, pos: Pos) {
+        self.formats.remove(&pos);
+    }
+
     /// Every formatted cell, in address order — what the writer pools into styles.
     pub fn formats(&self) -> impl Iterator<Item = (Pos, &Format)> {
         self.formats.iter().map(|(pos, f)| (*pos, f))

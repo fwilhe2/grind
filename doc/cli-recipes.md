@@ -114,6 +114,32 @@ one a script built before it reaches a cell — it exits non-zero on a syntax er
 sheet fmt '=SUM([.A1:.A2])*-2^2'     # =SUM([.A1:.A2])*-2^2
 ```
 
+## Format a column
+
+A number format is display only — the value underneath never moves, so a formatted cell
+still sums:
+
+```sh
+sheet format report.ods B2:B40 currency --symbol '€' --grouping >/dev/null
+sheet format report.ods C2:C40 percent --decimals 1 >/dev/null
+sheet format report.ods A2:A40 date >/dev/null
+sheet format report.ods B2:B40 general >/dev/null        # back to the plain value
+```
+
+One command over a range is one undo step, and `A:A` works — it is clamped to the rows the
+sheet actually uses. `date`, `datetime` and `time` are the ISO spellings; `number`, `percent`
+and `currency` take `--decimals`, `--grouping` and `--symbol`.
+
+A date a formula computes shows as its serial until the cell says otherwise, which is the
+one place this bites:
+
+```sh
+sheet set report.ods A1 '=DATE(2026;8;16)' >/dev/null
+sheet get report.ods A1                                  # 46250
+sheet format report.ods A1 date >/dev/null
+sheet get report.ods A1                                  # 2026-08-16
+```
+
 ## Gate a repository's spreadsheets in CI
 
 An error cell is text beginning with `#`. This fails the build when a committed document

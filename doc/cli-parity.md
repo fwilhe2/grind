@@ -27,6 +27,7 @@ stops ratcheting.
 - `set_cell` — `sheet set`
 - `set_formula` — `sheet set` with a value starting `=`
 - `clear_formula` — `sheet clear --formula-only`
+- `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
 - `recalc` — `sheet recalc`
 
 ## History

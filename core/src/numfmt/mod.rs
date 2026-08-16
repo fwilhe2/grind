@@ -28,6 +28,8 @@
 //! * `number:truncate-on-overflow="false"` — a duration longer than a day. Hours wrap at 24,
 //!   which is the attribute's default.
 
+use serde::{Deserialize, Serialize};
+
 use crate::formula::date;
 use crate::formula::value::format_number;
 use crate::model::CellValue;
@@ -36,7 +38,7 @@ use crate::model::CellValue;
 ///
 /// Not decoration: the family decides how the *value* reaches the parts. A percentage style
 /// renders 0.5 as `50`, and the `%` is an ordinary text part beside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Kind {
     Number,
     Percentage,
@@ -48,7 +50,7 @@ pub enum Kind {
 }
 
 /// One piece of a format, in document order.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Part {
     /// `number:text` — a literal separator, unit or currency word.
     Text(String),
@@ -86,7 +88,7 @@ pub enum Part {
 }
 
 /// One `number:*-style`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Format {
     pub kind: Kind,
     pub parts: Vec<Part>,
@@ -299,6 +301,79 @@ fn digits(n: f64, decimals: u8, min_decimals: u8, min_int: u8, grouping: bool) -
         true => whole,
         false => format!("{whole}.{fraction}"),
     }
+}
+
+/// Build one of the formats a shell can ask for by name.
+///
+/// The whole of the "set a format" vocabulary, and it lives here rather than in a shell for
+/// the usual reason: a GUI's format picker and `sheet format` must produce the same
+/// `Format`, or a document formatted from one displays differently in the other.
+///
+/// Dates and times are the **ISO** spellings, for `date.rs`'s reason: the alternative is a
+/// locale, `HOST-LOCALE` has no home in the core yet, and guessing one puts `01/02/03` in a
+/// file that means different days in different countries. A caller that wants `DD.MM.YYYY`
+/// builds the parts, which is three lines and exactly as expressive as ODF is.
+pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format {
+    // A user asking for two decimals means two, always — `min_decimals` short of `decimals`
+    // is the "up to" form, which is a different request and not one a preset can guess.
+    let number = Part::Number {
+        decimals,
+        min_decimals: decimals,
+        min_int: 1,
+        grouping,
+    };
+    let date = || {
+        vec![
+            Part::Year { long: true },
+            Part::Text("-".into()),
+            Part::Month {
+                long: true,
+                textual: false,
+            },
+            Part::Text("-".into()),
+            Part::Day { long: true },
+        ]
+    };
+    let time = || {
+        vec![
+            Part::Hours { long: true },
+            Part::Text(":".into()),
+            Part::Minutes { long: true },
+            Part::Text(":".into()),
+            Part::Seconds {
+                long: true,
+                decimals: 0,
+            },
+        ]
+    };
+
+    let parts = match kind {
+        Kind::Number => vec![number],
+        Kind::Percentage => vec![number, Part::Text("%".into())],
+        // A no-break space before the symbol, so the amount and its unit never wrap apart.
+        Kind::Currency => vec![
+            number,
+            Part::Text("\u{a0}".into()),
+            Part::Currency(symbol.to_owned()),
+        ],
+        Kind::Date => date(),
+        Kind::Time => time(),
+        Kind::Boolean => vec![Part::Boolean],
+        Kind::Text => vec![Part::Content],
+    };
+    Format { kind, parts }
+}
+
+/// The ISO date-and-time format — [`preset`]'s `Date` with a clock after it.
+///
+/// A separate call rather than an eighth `Kind`, because §4.3.4's DateTime is a Date whose
+/// value carries a fraction and not a family of its own: the *style* differs, the value type
+/// does not.
+pub fn datetime_preset() -> Format {
+    let mut format = preset(Kind::Date, 0, false, "");
+    format.push(Part::Text(" ".into()));
+    format.parts.extend(preset(Kind::Time, 0, false, "").parts);
+    format
 }
 
 /// The display text for a cell that carries no format of its own.

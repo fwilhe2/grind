@@ -18,7 +18,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use sheet_core::numfmt;
 use sheet_core::{App, CellValue, Pos, Session};
 
 use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
@@ -54,6 +55,24 @@ struct Cli {
     /// Apply the command and report the result, but write nothing to disk
     #[arg(long, global = true)]
     dry_run: bool,
+}
+
+/// The formats `sheet format` can ask the core for — [`numfmt::preset`]'s vocabulary, with
+/// `general` for "no format at all" and `datetime` for §4.3.4's date-carrying-a-time.
+///
+/// Dates and times are the ISO spellings. A locale-specific one is a `Format` the core can
+/// hold and nothing can yet ask for; see `numfmt`.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum Style {
+    General,
+    Number,
+    Percent,
+    Currency,
+    Date,
+    Datetime,
+    Time,
+    Boolean,
+    Text,
 }
 
 #[derive(Subcommand)]
@@ -119,6 +138,28 @@ enum Command {
         /// Remove only the formula, keeping the value it last computed
         #[arg(long)]
         formula_only: bool,
+    },
+
+    /// Set how a cell or range is displayed
+    ///
+    /// The value never changes — a number format is display only. `general` removes the
+    /// format, leaving the plain spelling of the value.
+    Format {
+        file: PathBuf,
+        /// Cell address or range, e.g. B2:B40 or Data.C:C
+        address: String,
+        /// How to display it
+        #[arg(value_enum)]
+        style: Style,
+        /// Digits after the decimal point, for number, percent and currency
+        #[arg(long, default_value_t = 2)]
+        decimals: u8,
+        /// Group thousands, e.g. 1,234,567
+        #[arg(long)]
+        grouping: bool,
+        /// Currency symbol
+        #[arg(long, default_value = "$")]
+        symbol: String,
     },
 
     /// Recalculate every formula in the document
@@ -262,6 +303,32 @@ fn run(cli: &Cli) -> Result<Report, String> {
             finish(&app, cli, file, true)
         }
 
+        Command::Format {
+            file,
+            address,
+            style,
+            decimals,
+            grouping,
+            symbol,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address)?)?;
+            let format = match style {
+                Style::General => None,
+                Style::Datetime => Some(numfmt::datetime_preset()),
+                style => Some(numfmt::preset(
+                    kind(*style),
+                    *decimals,
+                    *grouping,
+                    symbol,
+                )),
+            };
+            let changed = app
+                .set_format(sheet, start, end, format)
+                .map_err(|e| e.to_string())?;
+            finish(&app, cli, file, changed > 0)
+        }
+
         Command::Recalc { file } => {
             let app = load(file, cli)?;
             let recalc = app.recalc().map_err(|e| e.to_string())?;
@@ -321,6 +388,21 @@ fn run(cli: &Cli) -> Result<Report, String> {
 }
 
 // --- helpers ---
+
+/// The core's [`numfmt::Kind`] for a command-line style. `General` and `Datetime` never get
+/// here: neither is a family.
+fn kind(style: Style) -> numfmt::Kind {
+    match style {
+        Style::Number => numfmt::Kind::Number,
+        Style::Percent => numfmt::Kind::Percentage,
+        Style::Currency => numfmt::Kind::Currency,
+        Style::Date => numfmt::Kind::Date,
+        Style::Time => numfmt::Kind::Time,
+        Style::Boolean => numfmt::Kind::Boolean,
+        Style::Text => numfmt::Kind::Text,
+        Style::General | Style::Datetime => unreachable!("handled by the caller"),
+    }
+}
 
 /// Open the document and, if a session file was named, resume its history.
 fn load(file: &Path, cli: &Cli) -> Result<App, String> {
