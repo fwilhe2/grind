@@ -93,6 +93,41 @@ stops.
 | `doc/not-doing.md` | The feature line, written down — never, not yet, and the limits of what exists |
 | `doc/gtk-shell.md` | The GTK shell, planned — phase 9's native shell |
 
+## Running it
+
+Two front ends, and the rule is that the command line reaches everything the window does.
+
+**The window** (`sheet-gtk`, GTK 4 and libadwaita — `libgtk-4-dev` and `libadwaita-1-dev`
+to build):
+
+```sh
+cargo run -p sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
+```
+
+It reads and draws today — values, number formats, alignment, text that overflows into
+empty neighbours — and does not edit yet. `doc/gtk-shell.md` is the plan it is being built
+to, milestone by milestone.
+
+**The command line** (`sheet`), which is the whole feature set:
+
+```sh
+cargo run -p sheet-cli -- new book.ods
+cargo run -p sheet-cli -- set book.ods A1 1
+cargo run -p sheet-cli -- set book.ods A2 '=[.A1]*2'   # ODF syntax, verbatim
+cargo run -p sheet-cli -- view book.ods A1:A2
+cargo run -p sheet-cli -- --format json info book.ods
+```
+
+`examples/sample.sh` builds a document out of every feature this build has, through the
+CLI and nothing else — which also makes it the most interesting thing to open in the
+window:
+
+```sh
+cargo build
+SHEET=target/debug/sheet examples/sample.sh /tmp/demo
+cargo run -p sheet-gtk -- /tmp/demo/sample.fods
+```
+
 ## Building
 
 ```sh
@@ -103,6 +138,13 @@ The corpus tests want a LibreOffice checkout, and skip with a notice without one
 
 ```sh
 SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+```
+
+The GTK shell is not in `cargo test`'s default path — it is its own crate with system
+dependencies, and its own CI job:
+
+```sh
+cargo test -p sheet-gtk          # the widget-free half: geometry, and later keys
 ```
 
 ## License

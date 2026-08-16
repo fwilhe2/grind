@@ -584,7 +584,18 @@ fn run(cli: &Cli) -> Result<Report, String> {
             let names = sheet_core::formula::funcs::implemented();
             let mut lines: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
             lines.sort();
-            lines.push(format!("{} of 110 in the Small Group", names.len()));
+            let beyond = sheet_core::formula::funcs::beyond_small_group();
+            // Not "112 of 110": the Small Group is the conformance claim and the functions
+            // moved in beside it are counted apart, or the line reads as broken arithmetic.
+            let mut summary = format!(
+                "{} of the Small Group's {}",
+                names.len() - beyond.len(),
+                sheet_core::formula::funcs::SMALL_GROUP
+            );
+            if !beyond.is_empty() {
+                summary.push_str(&format!(" — plus {} beyond it: {}", beyond.len(), beyond.join(", ")));
+            }
+            lines.push(summary);
             Ok(Report::Text(TextReport { lines }))
         }
     }

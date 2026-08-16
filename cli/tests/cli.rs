@@ -619,7 +619,10 @@ fn fmt_normalises_a_formula_without_touching_a_document() {
 fn functions_lists_what_this_build_implements() {
     let out = ok(&["functions"]);
     assert!(out.contains("SUM"));
-    assert!(out.contains("of 110 in the Small Group"));
+    assert!(out.contains("of the Small Group's 110"), "{out}");
+    // The functions moved in by explicit decision are counted apart from the claim, so the
+    // summary is never the nonsense "112 of 110".
+    assert!(out.contains("beyond it: COLUMN, ROW"), "{out}");
     assert!(!out.contains("SUBTOTAL"), "not in the Small Group");
 }
 

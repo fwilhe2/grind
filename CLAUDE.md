@@ -74,6 +74,29 @@ cargo run -p sheet-cli -- view book.ods A1:A2
 cargo run -p sheet-cli -- --format json info book.ods
 ```
 
+The GUI is `sheet-gtk`, and it needs `libgtk-4-dev` + `libadwaita-1-dev` to build. It is
+**not** in `cargo build --workspace`'s path any more — the root CI job names crates for
+exactly that reason — so it is built and run on its own:
+
+```sh
+cargo run -p sheet-gtk -- book.ods                  # .ods or .fods; no file = empty document
+cargo run -p sheet-gtk -- book.fods --render-to /tmp/grid.png   # one frame, then exit
+cargo test -p sheet-gtk                             # geom.rs, and no display needed
+```
+
+`--render-to` is the machine's eyes, not a user feature: a custom-drawn widget has no
+other assertable output, so that is how a rendering change is checked, and how a refactor
+is proved to be one (the PNG comes back byte-identical or it was not a refactor). It reads
+its arguments positionally, file first.
+
+The most interesting document to open is the one `examples/sample.sh` builds, because it
+uses every feature this build has:
+
+```sh
+cargo build && SHEET=target/debug/sheet examples/sample.sh /tmp/demo
+cargo run -p sheet-gtk -- /tmp/demo/sample.fods
+```
+
 The corpus tests need a LibreOffice checkout and **skip with a notice** without one, so
 `cargo test` works on a machine that has none:
 
@@ -172,9 +195,10 @@ yourself adding a *third* exception, that is a bug in the code, not in the loop.
 ## Architecture
 
 Shared Core / Native Shell, from [fwilhe2/editor](https://github.com/fwilhe2/editor)'s
-`doc/shared-core-native-shell.md`. All state and logic in `core/`; every future shell is a
-renderer and event forwarder owning nothing. `cli/` exists so capabilities cannot hide in a
-UI.
+`doc/shared-core-native-shell.md`. All state and logic in `core/`; every shell is a renderer
+and event forwarder owning nothing. `cli/` exists so capabilities cannot hide in a UI, and
+`ui_gtk/` is the first one that does have a UI — it is held to rule 4 by `cli/tests/parity.rs`
+rather than by good intentions.
 
 Rules that are cheap now and expensive later — breaking one quietly ends the pattern:
 
@@ -488,6 +512,46 @@ that spec is the source of truth and a rule without a citation is a guess.
   because R7's `fizzbuzz.fods` is eighteen copies of `IF(MOD(ROW();15)=0;…)` — eight lines in
   `info.rs`, no new machinery, and worth 126 loop B cells besides.
 
+### `ui_gtk/` — the GNOME shell
+
+Phase 9's first shell, planned in `doc/gtk-shell.md`, which is normative for this phase the
+way `doc/plan.md` is for the rest. Crate `sheet-gtk`, binary `sheet-gtk`. It reads and draws
+today and does not edit; the milestones are in the plan.
+
+It owns no data. Every paint asks `App::get_viewport` for the cells that fit on screen and
+throws them away — which is what makes a 1048576 × 16384 sheet cost a screenful. A field
+here that is not a presentation concern (selection, scroll, an in-progress edit) means the
+core is missing something.
+
+- **A custom `gtk::Widget` implementing `gtk::Scrollable`, drawing in `snapshot()` — not
+  `GtkColumnView`.** That widget is row-oriented, wants to own a list model, has no
+  rectangular selection and does not virtualise 16384 columns; a widget that owns the
+  document is rule 1's trap in its nastiest form. The four Scrollable properties are
+  overridden by hand rather than by the `Properties` derive, whose `override_interface`
+  spelling churns between gtk4-rs releases.
+- **`geom.rs` holds the arithmetic and no GTK types**, so it unit-tests with no display,
+  no compositor, and no CI runner that has either — the only cheaply testable part of a
+  GUI, which is why everything decidable belongs there. `hit` is `cell_rect`'s inverse and
+  the two are tested *against each other*: an off-by-one otherwise shows up only as a grid
+  that looks very slightly wrong. Two coordinate spaces (content and widget) and mixing
+  them is the bug the module exists to prevent.
+- **The scrollbar's `upper` is the *used* extent plus a screenful, never 1048576 rows.** A
+  thumb sized against the whole sheet is a few pixels tall and one click lands in row
+  800000. It grows as the view moves into it.
+- **Text overflows into empty neighbours and stops at the first occupied cell; a number
+  that will not fit becomes `###`.** The asymmetry is the convention every spreadsheet user
+  expects and it carries information — a wrong magnitude read as a right one is worse than
+  no reading, and a number that reads as *text* is visibly left-aligned, which is how a
+  bad import is spotted. Columns are fetched with a margin either side so a label anchored
+  off-screen still reaches into view and "is the neighbour empty" needs no second read.
+- **Every colour comes from the theme** (`theme.rs`), never a literal, or the grid is white
+  in a dark session. `lookup_color` is deprecated with no replacement, so it is called in
+  exactly that one place, with fallbacks.
+- **GTK 4 has no partial invalidation** — no `queue_draw_area`, so any change redraws the
+  widget. That is fine because the cost is bounded by the cells on screen, and it means the
+  performance lever is text shaping (one reused `pango::Layout`, `ponytail:` noted) rather
+  than damage tracking.
+
 ### `cli/` — the `sheet` binary, and the parity ratchet
 
 Three files: `main.rs` (clap structs, one `match` arm per subcommand), `report.rs` (what gets
@@ -669,29 +733,8 @@ phase the way `doc/plan.md` is for the rest, and holding the three decisions tak
 front: A1 display-form formulas, recalculation that is automatic only when it cannot spoil
 a cached value, and column widths in scope.
 
-Done: **M0** (CI split — `ci.yml` names crates rather than `--workspace`, because `ui_gtk`
-needs system libraries that job does not install, and `gtk.yml` is the shell's own job)
-and **M1, the read-only grid** (`ui_gtk/`, crate `sheet-gtk`, binary `sheet-gtk`). It is a
-custom `gtk::Widget` implementing `gtk::Scrollable` and drawing in `snapshot()` — not
-`GtkColumnView`, which is row-oriented, wants to own a model, has no rectangular selection
-and does not virtualise 16384 columns. Four things worth knowing before changing it:
-
-- **`geom.rs` is pure and holds the arithmetic.** No GTK types, so it unit-tests with no
-  display — the only cheaply testable part of a GUI. `hit` is `cell_rect`'s inverse and
-  the two are tested against each other, because an off-by-one otherwise shows up only as
-  a grid that looks slightly wrong.
-- **The scrollbar's `upper` is the *used* extent plus a screenful, never 1048576 rows.** A
-  thumb sized against the whole sheet is a few pixels tall and one click lands in row
-  800000.
-- **Text overflows into empty neighbours; a number that will not fit becomes `###`.** The
-  asymmetry is the convention every spreadsheet user expects, and a wrong magnitude read
-  as a right one is worse than no reading at all.
-- **Colours all come from the theme** (`theme.rs`), never a literal, or the grid is white
-  in a dark session. `lookup_color` is deprecated with no replacement and is called in
-  exactly that one place.
-
-`--render-to <png>` draws one frame and exits. Not a user feature: a custom-drawn widget
-has no other output a machine can check, and it is how the grid was verified.
+Done: **M0** (the CI split) and **M1, the read-only grid** — see `ui_gtk/` under
+Architecture for what it is and what not to break.
 
 Next is M2 — the core work the editing milestones need (`core::a1`, display-form formulas,
 `App::{enter, preview, clear_range, enter_range}`), CLI-first as rule 4 requires. Then the

@@ -63,6 +63,25 @@ pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
 
+/// How many functions §2.3.2 E) enumerates. The conformance claim's denominator, and the
+/// only number a coverage report may compare against — checked against
+/// `doc/small-group.md` by `nothing_outside_the_small_group_gets_implemented`.
+pub const SMALL_GROUP: usize = 110;
+
+/// The functions implemented **beyond** the Small Group — the plan's one-at-a-time escape
+/// hatch, and the second half of `doc/small-group.md`.
+///
+/// Reported apart from [`implemented`] because "112 of 110" is not a sentence. A caller
+/// saying how much of the Small Group it covers needs the extras counted separately, or the
+/// claim reads as broken arithmetic and stops meaning anything.
+pub fn beyond_small_group() -> &'static [&'static str] {
+    BEYOND
+}
+
+/// Kept in step with `doc/small-group.md`'s second half by the same test that checks the
+/// first, so this cannot quietly grow either.
+const BEYOND: &[&str] = &["COLUMN", "ROW"];
+
 const NAMES: &[&str] = &[
     // logical (§6.15)
     "AND",
@@ -569,8 +588,20 @@ mod tests {
         let (listed, extra) = (names(spec), names(beyond));
         assert_eq!(
             listed.len(),
-            110,
-            "the Small Group is 110 functions (§2.3.2 E)"
+            super::SMALL_GROUP,
+            "the Small Group is {} functions (§2.3.2 E)",
+            super::SMALL_GROUP
+        );
+        // The escape hatch is a constant *and* a document, and a reader believes whichever
+        // it met first — so they are checked against each other rather than maintained in
+        // parallel and hoped about.
+        let mut declared = super::beyond_small_group().to_vec();
+        let mut documented = extra.clone();
+        declared.sort_unstable();
+        documented.sort_unstable();
+        assert_eq!(
+            declared, documented,
+            "funcs::beyond_small_group() and doc/small-group.md's second half disagree"
         );
         for name in super::implemented() {
             assert!(
