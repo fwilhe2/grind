@@ -352,31 +352,7 @@ impl App {
     /// so rather than quietly writing the file back.
     pub fn recalc(&self) -> Result<Recalc> {
         self.mutate(|state| {
-            let mut updates = Vec::new();
-            let mut spoiled = 0;
-            {
-                // The engine borrows the document immutably and memoises per cell, so this
-                // is one pass whatever the dependency order.
-                let mut engine = formula::eval::Engine::new(&state.doc);
-                for (index, sheet) in state.doc.sheets.iter().enumerate() {
-                    for (pos, _) in sheet.formulas() {
-                        let at = formula::eval::Address::new(index, pos);
-                        let value = formula::eval::to_cell(engine.value(at));
-                        let previous = sheet.get(pos);
-                        if value == previous {
-                            continue;
-                        }
-                        if is_error(&value) && !is_error(&previous) && !previous.is_empty() {
-                            spoiled += 1;
-                        }
-                        updates.push(Action::SetCell {
-                            sheet: index,
-                            pos,
-                            value,
-                        });
-                    }
-                }
-            }
+            let (updates, spoiled) = recalculated(&state.doc);
             let changed = updates.len();
             if changed > 0 {
                 let inverse = state
@@ -388,6 +364,34 @@ impl App {
             }
             Ok(Recalc { changed, spoiled })
         })
+    }
+
+    /// How many formula cells hold a value that recalculating would change — and, of those,
+    /// how many would *break*.
+    ///
+    /// A cached value and a formula are two claims about the same cell, and editing a cell a
+    /// formula reads makes them disagree without touching the formula's own cell. The
+    /// document is then internally inconsistent: it says `SUM(B2:B4)` and it says `1500`,
+    /// and only one of those can be right. ODF has no "dirty" bit to write, and every reader
+    /// including LibreOffice shows the cached value until something recalculates — so a
+    /// caller that has just edited a cell has to be able to *tell the user*, which is what
+    /// this is for.
+    ///
+    /// The same walk [`App::recalc`] does, without writing anything: no dependency graph, no
+    /// second implementation of what counts as stale, and no chance of the two disagreeing.
+    /// The cost is a full recalculation, which is the cost of `recalc` itself.
+    ///
+    /// `spoiled` is carried for the same reason it is on [`Recalc`]: a document is free to
+    /// use any of Part 4's other ~370 functions, and a cell that would recalculate to
+    /// `#NAME?` is a cell this build must not be trusted to fix. Stale-and-spoiled means
+    /// "this needs recalculating and I am not the one who can do it".
+    pub fn stale(&self) -> Recalc {
+        let state = self.state.read().unwrap();
+        let (updates, spoiled) = recalculated(&state.doc);
+        Recalc {
+            changed: updates.len(),
+            spoiled,
+        }
     }
 
     /// Undo the last change. `false` if there was nothing to undo.
@@ -598,6 +602,38 @@ pub struct Recalc {
     /// function this build does not implement (`sheet functions` lists the ones it does).
     /// Undoing the recalculation is one step, which is the way back.
     pub spoiled: usize,
+}
+
+/// Every formula cell whose stored value disagrees with a fresh evaluation, as the actions
+/// that would fix them, and how many of those would replace a good value with an error.
+///
+/// One walk, shared by [`App::recalc`] (which applies it) and [`App::stale`] (which counts
+/// it), so "what recalculating would do" and "what recalculating does" cannot drift apart.
+fn recalculated(doc: &Document) -> (Vec<Action>, usize) {
+    let mut updates = Vec::new();
+    let mut spoiled = 0;
+    // The engine borrows the document immutably and memoises per cell, so this is one pass
+    // whatever the dependency order.
+    let mut engine = formula::eval::Engine::new(doc);
+    for (index, sheet) in doc.sheets.iter().enumerate() {
+        for (pos, _) in sheet.formulas() {
+            let at = formula::eval::Address::new(index, pos);
+            let value = formula::eval::to_cell(engine.value(at));
+            let previous = sheet.get(pos);
+            if value == previous {
+                continue;
+            }
+            if is_error(&value) && !is_error(&previous) && !previous.is_empty() {
+                spoiled += 1;
+            }
+            updates.push(Action::SetCell {
+                sheet: index,
+                pos,
+                value,
+            });
+        }
+    }
+    (updates, spoiled)
 }
 
 /// Whether a cell holds one of §4.6's error names. Errors live in a cell as their name in

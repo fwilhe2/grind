@@ -66,10 +66,21 @@ pub struct DocumentReport {
     pub path: String,
     pub changed: bool,
     pub written: bool,
+    /// Formula cells whose cached value a recalculation would change — a document that
+    /// disagrees with itself. Editing a cell a formula reads does this without touching the
+    /// formula's own cell, and ODF has no dirty bit to write, so it has to be *reported*.
+    /// Zero for the overwhelmingly common case, and `#[serde(skip_serializing_if)]` keeps it
+    /// out of the JSON then rather than adding a field every consumer has to ignore.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub stale: usize,
     pub sheets: Vec<SheetInfo>,
     pub names: Vec<Name>,
     pub can_undo: bool,
     pub can_redo: bool,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Serialize)]

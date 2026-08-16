@@ -322,6 +322,56 @@ fn recalc_warns_on_stderr_when_it_turns_a_value_into_an_error() {
     );
 }
 
+/// Editing a cell a formula reads leaves the document disagreeing with itself, and saying so
+/// is the whole point: ODF has no dirty bit, so the file on disk claims a total that is no
+/// longer the sum of its parts, and LibreOffice will show that stale total.
+///
+/// A warning rather than an automatic recalculation, for the same reason `recalc` reports
+/// `spoiled`: this build implements the Small Group, and recalculating a document that uses
+/// anything else turns good cached values into `#NAME?`. That choice stays the user's.
+#[test]
+fn editing_a_cell_a_formula_reads_warns_that_the_document_is_stale() {
+    let dir = Sandbox::new("stale");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    ok(&["set", &s(&file), "A1", "1"]);
+    ok(&["set", &s(&file), "A2", "=[.A1]*10"]);
+    ok(&["recalc", &s(&file)]);
+    assert_eq!(ok(&["get", &s(&file), "A2"]).trim(), "10");
+
+    let output = sheet(&["set", &s(&file), "A1", "5"]);
+    assert!(output.status.success(), "staleness is a warning, not an error");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("1 formula cell(s)"), "got: {stderr}");
+    assert!(stderr.contains("sheet recalc"), "it must say what to do: {stderr}");
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("recalc"),
+        "diagnostics belong on stderr"
+    );
+    // The stale value really is still on disk — that is the thing being warned about.
+    assert_eq!(ok(&["get", &s(&file), "A2"]).trim(), "10");
+
+    // Machine-readable too, so a shell or a script does not have to scrape stderr.
+    let json = ok(&["--format", "json", "set", &s(&file), "A1", "6"]);
+    assert!(json.contains("\"stale\":1"), "got: {json}");
+
+    // And it goes away once the document agrees with itself again. The field is omitted
+    // rather than written as zero, so the common case carries no noise.
+    ok(&["recalc", &s(&file)]);
+    let json = ok(&["--format", "json", "set", &s(&file), "B9", "0"]);
+    assert!(!json.contains("\"stale\""), "got: {json}");
+}
+
+/// A document with no formulas is never stale, and must not pay for the check.
+#[test]
+fn a_document_without_formulas_is_never_reported_stale() {
+    let dir = Sandbox::new("nostale");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    let output = sheet(&["set", &s(&file), "A1", "1"]);
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
 #[test]
 fn a_sheet_qualified_address_reaches_the_right_sheet() {
     let dir = Sandbox::new("sheets");

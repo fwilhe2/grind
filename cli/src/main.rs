@@ -456,7 +456,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
 
         Command::Info { file } => {
             let app = load(file, cli)?;
-            Ok(Report::Document(document(&app, file, false, false)))
+            Ok(Report::Document(document(&app, file, false, false, 0)))
         }
 
         Command::Undo { file } => {
@@ -553,13 +553,55 @@ fn load(file: &Path, cli: &Cli) -> Result<App, String> {
 }
 
 /// Persist the document when it changed, then the session, then report.
+///
+/// Also the one place staleness is reported, because it is the one place every mutating
+/// command passes through. A cached value and a formula are two claims about the same cell,
+/// and editing a cell a formula *reads* makes them disagree without touching the formula's
+/// own cell — so `set B2 4321` leaves `B5 = SUM([.B2:.B4])` on disk next to the total it
+/// used to have. ODF has no dirty bit, and every reader including LibreOffice shows the
+/// cached value, so a document written that way is quietly wrong until someone recalculates
+/// it.
+///
+/// Warned about rather than fixed. Recalculating on every edit would be the wrong default
+/// for the same reason `sheet recalc` prints `spoiled`: this build implements the Small
+/// Group, a document is free to use any of Part 4's other ~370 functions, and recalculating
+/// one that does turns good cached values into `#NAME?`. Choosing that is the user's, which
+/// is what a separate command means.
 fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, String> {
     let written = changed && !cli.dry_run;
     if written {
         app.save_file(file).map_err(|e| e.to_string())?;
     }
     save_session(app, cli)?;
-    Ok(Report::Document(document(app, file, changed, written)))
+
+    // Only after a change, and only over a document that has formulas — `stale` costs a
+    // recalculation, and asking it of `sheet info` would make reading a document as
+    // expensive as recalculating one.
+    let stale = match changed && (0..app.sheet_count()).any(|i| app.formula_count(i).unwrap_or(0) > 0) {
+        true => app.stale(),
+        false => Default::default(),
+    };
+    if stale.changed > 0 {
+        eprintln!(
+            "sheet: {} formula cell(s) now disagree with their cached value — \
+             run `sheet recalc`{}",
+            stale.changed,
+            match stale.spoiled {
+                0 => String::new(),
+                n => format!(
+                    ", though {n} of them would become errors — a function this build \
+                     does not implement; see `sheet functions`"
+                ),
+            }
+        );
+    }
+    Ok(Report::Document(document(
+        app,
+        file,
+        changed,
+        written,
+        stale.changed,
+    )))
 }
 
 fn save_session(app: &App, cli: &Cli) -> Result<(), String> {
@@ -581,7 +623,13 @@ fn require_session(cli: &Cli, what: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn document(app: &App, file: &Path, changed: bool, written: bool) -> DocumentReport {
+fn document(
+    app: &App,
+    file: &Path,
+    changed: bool,
+    written: bool,
+    stale: usize,
+) -> DocumentReport {
     let sheets = (0..app.sheet_count())
         .map(|i| {
             let (rows, cols) = app.used_extent(i).unwrap_or((0, 0));
@@ -597,6 +645,7 @@ fn document(app: &App, file: &Path, changed: bool, written: bool) -> DocumentRep
         path: show_path(file),
         changed,
         written,
+        stale,
         sheets,
         names: app
             .names()

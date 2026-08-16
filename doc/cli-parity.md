@@ -30,6 +30,9 @@ stops ratcheting.
 - `set_style` — `sheet style` (and `sheet style <range>` with no options to clear one)
 - `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
 - `recalc` — `sheet recalc`
+- `stale` — every command that writes: the warning on stderr, and the `stale` field of its
+  JSON report. Not a command of its own, because the answer is only interesting *after* an
+  edit — asking it of an untouched document is what `sheet recalc --dry-run` is for.
 
 ## History
 

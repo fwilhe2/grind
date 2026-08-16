@@ -153,4 +153,16 @@ printf 'changed lines: %s of %s\n' \
   "$(diff "$out/before.fods" "$out/sample.fods" | grep -c '^[<>]')" \
   "$(wc -l < "$out/before.fods")"
 
+# B5 is `=SUM([.B2:.B4])`, so the edit above left the document disagreeing with itself: the
+# formula is one claim and its cached value is another, and ODF has no dirty bit to write.
+# The warning on stderr is the only thing standing between that and a file everyone —
+# LibreOffice included — displays a stale total from. Recalculating is a separate command on
+# purpose: this build implements the Small Group, and a document using anything outside it
+# would lose good cached values to #NAME?.
+
+say "stale: the edit above invalidated a total, and said so"
+"$SHEET" get "$out/sample.fods" B5 --raw
+run recalc "$out/sample.fods"
+"$SHEET" get "$out/sample.fods" B5 --raw
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

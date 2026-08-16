@@ -514,6 +514,16 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
 - **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
   CLI translates addresses but never formulas; a syntax translator is the thing this project
   exists not to have.
+- **Every command that writes reports `stale`.** A cached value and a formula are two claims
+  about the same cell, and editing a cell a formula *reads* makes them disagree without
+  touching the formula's own cell — `set B2 4321` leaves `B5 = SUM([.B2:.B4])` on disk beside
+  the total it used to have. ODF has no dirty bit and every reader including LibreOffice
+  shows the cached value, so the file is quietly wrong until someone recalculates. `App::stale`
+  is the *same walk* `recalc` does with nothing written (`recalculated()` is shared), so
+  "what recalculating would do" and "what it does" cannot drift; the CLI warns on stderr from
+  `finish`, the one place every mutating command passes through, and carries the count in the
+  JSON report. **Warned about rather than fixed**, for the reason below — recalculating is
+  the user's call.
 - **`recalc` reports `spoiled`** — cells that held a real value and now hold an error. The
   Small Group is complete, but a document is free to use any of the other ~370 functions in
   Part 4, and recalculating one that does is data loss; the CLI warns on stderr rather than
