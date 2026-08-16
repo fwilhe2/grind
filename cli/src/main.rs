@@ -67,6 +67,9 @@ enum Command {
     },
 
     /// Print a cell or a range
+    ///
+    /// Prints what the cell displays — its number format applied, so a date prints as a
+    /// date. `--raw` prints the stored value instead.
     Get {
         file: PathBuf,
         /// Cell address, e.g. A1 or Data.B2
@@ -74,6 +77,9 @@ enum Command {
         /// Print the formula source instead of the value
         #[arg(long)]
         formula: bool,
+        /// Print the stored value rather than the formatted display text
+        #[arg(long)]
+        raw: bool,
     },
 
     /// Print a rectangle of values, tab-separated
@@ -84,6 +90,9 @@ enum Command {
         /// Stop after this many rows
         #[arg(long, default_value_t = 40)]
         max_rows: u32,
+        /// Print stored values rather than formatted display text
+        #[arg(long)]
+        raw: bool,
     },
 
     /// Set a cell's value or formula
@@ -166,6 +175,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             file,
             address,
             formula,
+            raw,
         } => {
             let app = load(file, cli)?;
             let reference = a1::parse(address)?;
@@ -182,13 +192,22 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     lines: vec![source],
                 }));
             }
-            Ok(Report::Cells(cells(&app, file, sheet, pos, pos, u32::MAX)?))
+            Ok(Report::Cells(cells(
+                &app,
+                file,
+                sheet,
+                pos,
+                pos,
+                u32::MAX,
+                *raw,
+            )?))
         }
 
         Command::View {
             file,
             address,
             max_rows,
+            raw,
         } => {
             let app = load(file, cli)?;
             let (sheet, start, end) = match address {
@@ -201,7 +220,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 }
             };
             Ok(Report::Cells(cells(
-                &app, file, sheet, start, end, *max_rows,
+                &app, file, sheet, start, end, *max_rows, *raw,
             )?))
         }
 
@@ -377,6 +396,7 @@ fn document(app: &App, file: &Path, changed: bool, written: bool) -> DocumentRep
 }
 
 /// A rectangle of cells, read the only way a shell may read them.
+#[allow(clippy::too_many_arguments)]
 fn cells(
     app: &App,
     file: &Path,
@@ -384,6 +404,7 @@ fn cells(
     start: Pos,
     end: Pos,
     max_rows: u32,
+    raw: bool,
 ) -> Result<CellsReport, String> {
     let last_row = end
         .row
@@ -403,6 +424,7 @@ fn cells(
             out.push(Cell {
                 address: a1::format(None, pos),
                 value: report::show(&value),
+                text: viewport.text(row, col).unwrap_or_default().to_owned(),
                 kind: report::kind(&value),
                 formula: app.formula(sheet, pos).map_err(|e| e.to_string())?,
             });
@@ -411,6 +433,7 @@ fn cells(
     Ok(CellsReport {
         path: show_path(file),
         sheet: name,
+        raw,
         cells: out,
         rows: rows.end - rows.start,
         cols: cols.end - cols.start,

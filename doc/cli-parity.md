@@ -50,7 +50,8 @@ stops ratcheting.
 ## Reading
 
 - `get` — `sheet get`
-- `get_viewport` — `sheet view`
+- `get_viewport` — `sheet view` (its display text is what `view` prints; `--raw` prints the
+  stored values instead)
 - `formula` — `sheet get --formula`
 - `formula_count` — `sheet info`
 - `sheet_count` — `sheet info`

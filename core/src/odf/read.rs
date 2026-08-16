@@ -11,8 +11,11 @@
 //! and all mutation flows through the shared [`Builder`] — so there is no child-to-parent
 //! channel to get wrong, and no downcasting.
 
+use std::collections::HashMap;
+
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
+use crate::numfmt::{Format, Kind, Part};
 
 use super::context::{Attrs, Context};
 use super::names::{Name, Ns};
@@ -42,11 +45,41 @@ pub struct Builder {
     col: u32,
     /// Cells of the row being read, held back until the row ends because
     /// `table:number-rows-repeated` may ask for the whole row again.
-    row_cells: Vec<(u32, CellValue, Option<String>, Option<NumberKind>)>,
+    row_cells: Vec<RowCell>,
     /// Text accumulated by the paragraph contexts under the current cell.
     text: String,
     /// Cells left in the materialisation budget. See [`MAX_MATERIALISED_CELLS`].
     budget: u64,
+
+    // --- styles (§5) ---
+    /// `number:*-style` by `style:name`.
+    number_styles: HashMap<String, Format>,
+    /// A `table-cell` `style:style`'s name to its `style:data-style-name` — the one link
+    /// between "how it looks" and "how the number renders" (§5.1).
+    cell_styles: HashMap<String, String>,
+    /// The parts of the `number:*-style` currently being read, and the text its literal
+    /// pieces are collecting. Both live here rather than in the context, because a child
+    /// element has no channel back to its parent — the parent takes these at its `end`.
+    parts: Vec<Part>,
+    style_text: String,
+    /// `table:default-cell-style-name` per column of the current sheet, and for the current
+    /// row. A cell's own `table:style-name` wins over the row's, which wins over the
+    /// column's — the resolution order §5.1's indirection implies and the reason a
+    /// whole-column format is not lost.
+    col_styles: Vec<Option<String>>,
+    row_style: Option<String>,
+    /// Next column to be claimed by a `table:table-column` declaration.
+    col_decl: u32,
+}
+
+/// One cell of the buffered row. A struct rather than a tuple since the day it grew a
+/// fourth member.
+struct RowCell {
+    col: u32,
+    value: CellValue,
+    formula: Option<String>,
+    kind: Option<NumberKind>,
+    format: Option<Format>,
 }
 
 impl Builder {
@@ -66,6 +99,13 @@ impl Builder {
             row_cells: Vec::new(),
             text: String::new(),
             budget: MAX_MATERIALISED_CELLS,
+            number_styles: HashMap::new(),
+            cell_styles: HashMap::new(),
+            parts: Vec::new(),
+            style_text: String::new(),
+            col_styles: Vec::new(),
+            row_style: None,
+            col_decl: 0,
         }
     }
 
@@ -73,6 +113,37 @@ impl Builder {
         self.doc.sheets.push(Sheet::new(name));
         self.sheet = self.doc.sheets.len() - 1;
         self.row = 0;
+        self.col_styles.clear();
+        self.col_decl = 0;
+    }
+
+    /// The number format a cell displays through, following §5.1's indirection: the cell
+    /// style names a data style, and the data style is the format. A style that names none,
+    /// or names one the document does not define, simply leaves the cell unformatted —
+    /// tolerance again (§9), and the reason this returns an `Option` rather than a result.
+    fn resolve_format(&self, cell_style: Option<&str>, col: u32) -> Option<Format> {
+        let style = cell_style
+            .or(self.row_style.as_deref())
+            // The column default is consulted last, and only for cells that exist, so a
+            // formatted column costs entries for its cells rather than for its million rows.
+            .or_else(|| self.col_styles.get(col as usize)?.as_deref())?;
+        let data_style = self.cell_styles.get(style)?;
+        self.number_styles.get(data_style).cloned()
+    }
+
+    /// Claim `repeat` columns for a `table:table-column` declaration, recording the default
+    /// cell style it gives them.
+    fn declare_columns(&mut self, style: Option<String>, repeat: u32) {
+        let end = self.col_decl.saturating_add(repeat).min(MAX_COLS);
+        // A column that names no default style still has to occupy its slots, or every
+        // later declaration lands on the wrong column.
+        if style.is_some() {
+            self.col_styles.resize(end as usize, None);
+            for slot in &mut self.col_styles[self.col_decl as usize..end as usize] {
+                slot.clone_from(&style);
+            }
+        }
+        self.col_decl = end;
     }
 
     /// Write the buffered row `repeat` times, then advance the row cursor.
@@ -103,16 +174,19 @@ impl Builder {
             if row >= MAX_ROWS {
                 break;
             }
-            for (col, value, formula, kind) in &self.row_cells {
-                let pos = Pos::new(row, *col);
-                if !value.is_empty() {
-                    sheet.set(pos, value.clone());
+            for cell in &self.row_cells {
+                let pos = Pos::new(row, cell.col);
+                if !cell.value.is_empty() {
+                    sheet.set(pos, cell.value.clone());
                 }
-                if let Some(f) = formula {
+                if let Some(f) = &cell.formula {
                     sheet.set_formula(pos, f.clone());
                 }
-                if let Some(k) = kind {
-                    sheet.set_kind(pos, *k);
+                if let Some(k) = cell.kind {
+                    sheet.set_kind(pos, k);
+                }
+                if let Some(f) = &cell.format {
+                    sheet.set_format(pos, f.clone());
                 }
             }
             self.budget = self.budget.saturating_sub(per_row);
@@ -140,8 +214,16 @@ pub struct Root;
 impl Context<Builder> for Root {
     fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            (Ns::Office, "document" | "document-content") => Some(Box::new(Root)),
+            // `office:document-styles` is the root of a package's `styles.xml`, which is
+            // parsed with this same context stack — the named styles a cell references may
+            // live there rather than in `content.xml` (§1.1).
+            (Ns::Office, "document" | "document-content" | "document-styles") => {
+                Some(Box::new(Root))
+            }
             (Ns::Office, "body") => Some(Box::new(Body)),
+            // Both style sections hold the same elements and differ only in whether a human
+            // named them (§5.1), so one context reads both.
+            (Ns::Office, "automatic-styles" | "styles") => Some(Box::new(Styles)),
             _ => None,
         }
     }
@@ -239,8 +321,24 @@ impl Context<Builder> for Table {
             (Ns::Table, "table-row") => {
                 b.col = 0;
                 b.row_cells.clear();
+                b.row_style = attrs
+                    .get(Ns::Table, "default-cell-style-name")
+                    .map(str::to_owned);
                 let repeat = attrs.count(Ns::Table, "number-rows-repeated", MAX_ROWS);
                 Some(Box::new(Row { repeat }))
+            }
+            // Columns carry the default cell style for everything below them, which is how
+            // a whole formatted column is written (§3.3).
+            (Ns::Table, "table-column") => {
+                let style = attrs
+                    .get(Ns::Table, "default-cell-style-name")
+                    .map(str::to_owned);
+                let repeat = attrs.count(Ns::Table, "number-columns-repeated", MAX_COLS);
+                b.declare_columns(style, repeat);
+                Some(Box::new(super::context::Ignore))
+            }
+            (Ns::Table, "table-column-group" | "table-header-columns" | "table-columns") => {
+                Some(Box::new(Table))
             }
             // Row and column groups nest real rows inside a wrapper. Recursing with the
             // same context keeps the cursor continuous instead of losing the contents.
@@ -289,6 +387,7 @@ impl Context<Builder> for Row {
             date_value: attrs.get(Ns::Office, "date-value").map(str::to_owned),
             time_value: attrs.get(Ns::Office, "time-value").map(str::to_owned),
             formula: attrs.get(Ns::Table, "formula").map(str::to_owned),
+            style: attrs.get(Ns::Table, "style-name").map(str::to_owned),
             cached_error: attrs.get(Ns::Calcext, "value-type") == Some("error"),
             saw_paragraph: false,
         }))
@@ -309,6 +408,9 @@ struct Cell {
     date_value: Option<String>,
     time_value: Option<String>,
     formula: Option<String>,
+    /// `table:style-name` — resolved to a number format at the cell's end, when the styles
+    /// section has certainly been read (the schema puts it before the body).
+    style: Option<String>,
     /// `calcext:value-type="error"` — the formula's cached result is an error.
     cached_error: bool,
     /// Whether a `text:p` has already been seen, so the *second* one starts a new line.
@@ -423,14 +525,155 @@ impl Context<Builder> for Cell {
         if value.is_empty() && formula.is_none() {
             return; // Nothing to write; the columns were claimed at start.
         }
+        // §5.1's indirection, resolved once per cell rather than once per repeat.
+        let format = b.resolve_format(self.style.as_deref(), self.start);
         for i in 0..self.repeat {
             let col = self.start.saturating_add(i);
             if col >= MAX_COLS {
                 break;
             }
-            b.row_cells
-                .push((col, value.clone(), formula.clone(), kind));
+            b.row_cells.push(RowCell {
+                col,
+                value: value.clone(),
+                formula: formula.clone(),
+                kind,
+                format: format.clone(),
+            });
         }
+    }
+}
+
+// --- styles (§5) -----------------------------------------------------------------------
+
+/// `office:automatic-styles` and `office:styles`.
+///
+/// Only two things in here are read: a `number:*-style`, which *is* a format, and the
+/// `style:data-style-name` of a `table-cell` `style:style`, which is the link from a cell to
+/// one. Everything else a style carries — fonts, borders, column widths — is not modelled,
+/// so it falls down the ignore path and is dropped rather than half-kept.
+struct Styles;
+
+impl Context<Builder> for Styles {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "style") {
+            // ponytail: `style:parent-style-name` is not followed, so a cell style that
+            // inherits its data style from a parent rather than naming one loses its format.
+            // LibreOffice's own automatic styles always name it directly, which is why this
+            // has not bitten; walk the parent chain when a file shows up that needs it.
+            if let (Some(name), Some(data)) = (
+                attrs.get(Ns::Style, "name"),
+                attrs.get(Ns::Style, "data-style-name"),
+            ) {
+                b.cell_styles.insert(name.to_owned(), data.to_owned());
+            }
+            return Some(Box::new(super::context::Ignore));
+        }
+        if name.ns != Ns::Number {
+            return None;
+        }
+        let kind = match name.local.as_str() {
+            "number-style" => Kind::Number,
+            "percentage-style" => Kind::Percentage,
+            "currency-style" => Kind::Currency,
+            "date-style" => Kind::Date,
+            "time-style" => Kind::Time,
+            "boolean-style" => Kind::Boolean,
+            "text-style" => Kind::Text,
+            _ => return None,
+        };
+        b.parts.clear();
+        Some(Box::new(NumberStyle {
+            name: attrs.get(Ns::Style, "name").unwrap_or_default().to_owned(),
+            kind,
+        }))
+    }
+}
+
+/// One `number:*-style`: an ordered sequence of pieces (§5.2).
+struct NumberStyle {
+    name: String,
+    kind: Kind,
+}
+
+impl Context<Builder> for NumberStyle {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.ns != Ns::Number {
+            return None;
+        }
+        let long = attrs.get(Ns::Number, "style") == Some("long");
+        // The two pieces whose content is character data need a context of their own; every
+        // other piece is entirely described by its attributes and is pushed right here.
+        let part = match name.local.as_str() {
+            "text" => return Some(Box::new(StyleText { currency: false })),
+            "currency-symbol" => return Some(Box::new(StyleText { currency: true })),
+            "number" => Part::Number {
+                decimals: digits(attrs, "decimal-places", 2),
+                min_decimals: digits(attrs, "min-decimal-places", 0),
+                min_int: digits(attrs, "min-integer-digits", 1),
+                grouping: attrs.get(Ns::Number, "grouping") == Some("true"),
+            },
+            "year" => Part::Year { long },
+            "month" => Part::Month {
+                long,
+                textual: attrs.get(Ns::Number, "textual") == Some("true"),
+            },
+            "day" => Part::Day { long },
+            "day-of-week" => Part::DayOfWeek { long },
+            "hours" => Part::Hours { long },
+            "minutes" => Part::Minutes { long },
+            "seconds" => Part::Seconds {
+                long,
+                decimals: digits(attrs, "decimal-places", 0),
+            },
+            "am-pm" => Part::AmPm,
+            "boolean" => Part::Boolean,
+            "text-content" => Part::Content,
+            _ => return None,
+        };
+        b.parts.push(part);
+        Some(Box::new(super::context::Ignore))
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let format = Format {
+            kind: self.kind,
+            parts: std::mem::take(&mut b.parts),
+        };
+        b.number_styles.insert(std::mem::take(&mut self.name), format);
+    }
+}
+
+/// A digit-count attribute. Not [`Attrs::count`], which clamps to at least one: zero
+/// decimal places is both legal and common.
+fn digits(attrs: &Attrs, local: &str, default: u8) -> u8 {
+    attrs
+        .get(Ns::Number, local)
+        .and_then(|s| s.trim().parse::<u8>().ok())
+        .unwrap_or(default)
+}
+
+/// `number:text` and `number:currency-symbol` — the two pieces that *are* their content.
+struct StyleText {
+    currency: bool,
+}
+
+impl Context<Builder> for StyleText {
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        b.style_text.push_str(text);
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let text = std::mem::take(&mut b.style_text);
+        // An empty `number:text` says nothing, and keeping it would make a format's identity
+        // depend on whether the writer spelled the element `<number:text/>` or left it out —
+        // which is exactly the difference that stops a format round-tripping.
+        if text.is_empty() && !self.currency {
+            return;
+        }
+        b.parts.push(match self.currency {
+            true => Part::Currency(text),
+            false => Part::Text(text),
+        });
     }
 }
 

@@ -80,6 +80,13 @@ pub struct Viewport {
     pub rows: Range<u32>,
     pub cols: Range<u32>,
     cells: Vec<CellValue>, // row-major
+    /// What each cell *displays* — its number format applied (doc/ods-format.md §5).
+    ///
+    /// Carried beside the values rather than left to the caller because rendering needs the
+    /// cell's format and the document's epoch, and a shell has neither: handing it the value
+    /// alone would make every renderer either wrong about dates or a second implementation
+    /// of `numfmt`.
+    texts: Vec<String>,
 }
 
 impl Viewport {
@@ -91,6 +98,17 @@ impl Viewport {
         let r = (row - self.rows.start) as usize;
         let c = (col - self.cols.start) as usize;
         self.cells.get(r * width + c)
+    }
+
+    /// The display text of one cell — what a renderer draws.
+    pub fn text(&self, row: u32, col: u32) -> Option<&str> {
+        if !self.rows.contains(&row) || !self.cols.contains(&col) {
+            return None;
+        }
+        let width = (self.cols.end - self.cols.start) as usize;
+        let r = (row - self.rows.start) as usize;
+        let c = (col - self.cols.start) as usize;
+        self.texts.get(r * width + c).map(String::as_str)
     }
 
     /// One row of the viewport, left to right. `None` if the row is outside it.
@@ -370,15 +388,26 @@ impl App {
         // An inverted range is a caller bug, not a panic: normalise it to empty.
         let rows = rows.start..rows.end.max(rows.start);
         let cols = cols.start..cols.end.max(cols.start);
-        let mut cells = Vec::with_capacity(
-            ((rows.end - rows.start) as usize) * ((cols.end - cols.start) as usize),
-        );
+        let size = ((rows.end - rows.start) as usize) * ((cols.end - cols.start) as usize);
+        let mut cells = Vec::with_capacity(size);
+        let mut texts = Vec::with_capacity(size);
         for row in rows.clone() {
             for col in cols.clone() {
-                cells.push(s.get(Pos::new(row, col)));
+                let pos = Pos::new(row, col);
+                let value = s.get(pos);
+                texts.push(match s.format(pos) {
+                    Some(format) => format.render(&value, state.doc.null_date),
+                    None => numfmt::general(&value, s.kind(pos), state.doc.null_date),
+                });
+                cells.push(value);
             }
         }
-        Ok(Viewport { rows, cols, cells })
+        Ok(Viewport {
+            rows,
+            cols,
+            cells,
+            texts,
+        })
     }
 
     pub fn sheet_count(&self) -> usize {

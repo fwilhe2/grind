@@ -57,11 +57,21 @@ sheet set report.ods C2 - <<< "$(uname -sr)" >/dev/null
 `view` is tab-separated and nothing else, so `cut`, `awk` and `paste` work as usual:
 
 ```sh
-sheet view report.ods A1:B3 | cut -f2 | paste -sd+ | bc     # 6
+sheet view report.ods A1:B3 --raw | cut -f2 | paste -sd+ | bc     # 6
 ```
 
-For anything that needs types rather than text, `--format json` carries `ref`, `value`,
-`type` and the formula source:
+`view` and `get` print what the cell *displays* — its number format applied, so a date
+prints as a date rather than as a five-digit serial. Pass `--raw` for the stored value, which
+is what a script computing with the number wants:
+
+```sh
+sheet view from-libreoffice.ods A1    # 08/16/2026, in the format the document carries
+sheet view from-libreoffice.ods A1 --raw   # 46250, the serial the file stores
+```
+
+For anything that needs types rather than text, `--format json` carries `ref`, `value` (the
+stored value), `text` (the display), `type` and the formula source — both spellings, always,
+so a consumer picks rather than re-running the command:
 
 ```sh
 sheet --format json view report.ods A1:B4 |
@@ -74,7 +84,7 @@ sheet --format json get report.ods B4
 ```
 
 ```json
-{"path":"report.ods","sheet":"Sheet1","cells":[{"ref":"B4","value":"6","type":"float","formula":"=SUM([.B1:.B3])"}],"rows":1,"cols":1}
+{"path":"report.ods","sheet":"Sheet1","cells":[{"ref":"B4","value":"6","text":"6","type":"float","formula":"=SUM([.B1:.B3])"}],"rows":1,"cols":1}
 ```
 
 ## A model driven by shell variables

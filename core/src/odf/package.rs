@@ -51,6 +51,23 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// `styles.xml`, if the package has one.
+///
+/// Separate from [`content_xml`] because it is optional in a way content is not: the flat
+/// form has no such part at all (its `office:styles` sits in the one file), and a package
+/// written minimally — ours is — leaves it out. A document referencing a style that lived
+/// only there loses the style, never the document, so every failure here is `None`.
+pub fn styles_xml(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !is_package(bytes) {
+        return None;
+    }
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
+    let mut file = archive.by_name("styles.xml").ok()?;
+    let mut out = Vec::with_capacity(file.size() as usize);
+    file.read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
 /// Does the manifest declare any part as encrypted?
 ///
 /// Worth detecting up front. A password-protected document's `content.xml` is ciphertext,

@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sheet_core::model::NumberKind;
+use sheet_core::numfmt::{Format, Kind, Part};
 use sheet_core::{CellValue, Document, Form, Pos, Sheet};
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
@@ -202,6 +203,19 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                         g.kind(pos)
                     ));
                 }
+                // §5, compared as the text the user sees rather than as a `Format` struct.
+                // Style *names* are LibreOffice's to renumber, and the struct is one step
+                // too literal in the other direction: a date cell we write with no format of
+                // its own comes back carrying the ISO date style the writer supplies for it,
+                // which is not a difference in what the document says. What must not change
+                // is the rendering.
+                let (before, after) = (shown(w, pos, want), shown(g, pos, got));
+                if before != after {
+                    out.push(format!(
+                        "{label}: sheet {i} r{row}c{col} displayed {before:?}, back as \
+                         {after:?}"
+                    ));
+                }
                 if out.len() > 20 {
                     out.push(format!("{label}: ... and more"));
                     return out;
@@ -210,6 +224,15 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
         }
     }
     out
+}
+
+/// What a cell displays: through its number format, or through the plain spelling of its
+/// value when it has none.
+fn shown(sheet: &Sheet, pos: Pos, doc: &Document) -> String {
+    match sheet.format(pos) {
+        Some(format) => format.render(&sheet.get(pos), doc.null_date),
+        None => sheet_core::numfmt::general(&sheet.get(pos), sheet.kind(pos), doc.null_date),
+    }
 }
 
 // --- direction "out": ours -> LibreOffice -> ours ---------------------------------------
@@ -272,6 +295,93 @@ fn dates() -> (String, Document) {
     ("dates".to_owned(), doc)
 }
 
+/// Number formats — §5.2, and the phase that makes a date print as a date.
+///
+/// Every family in the Small Group's reach, each on a cell whose *value* also has to
+/// survive: a format that comes back changed shows the user something else, and a format
+/// that comes back attached to a different cell is worse.
+fn formats() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+        ..Default::default()
+    };
+    let epoch = doc.null_date;
+
+    let number = |decimals, min_decimals, grouping| {
+        let mut f = Format::new(Kind::Number);
+        f.push(Part::Number {
+            decimals,
+            min_decimals,
+            min_int: 1,
+            grouping,
+        });
+        f
+    };
+    let mut percent = Format::new(Kind::Percentage);
+    percent.push(Part::Number {
+        decimals: 1,
+        min_decimals: 1,
+        min_int: 1,
+        grouping: false,
+    });
+    percent.push(Part::Text("%".into()));
+
+    let mut currency = Format::new(Kind::Currency);
+    currency.push(Part::Number {
+        decimals: 2,
+        min_decimals: 2,
+        min_int: 1,
+        grouping: true,
+    });
+    currency.push(Part::Text("\u{a0}".into()));
+    currency.push(Part::Currency("\u{20ac}".into()));
+
+    // A date spelled the way a European locale spells it — the case that proves the format
+    // is carried rather than the value being re-derived from `office:date-value`.
+    let mut date = Format::new(Kind::Date);
+    date.push(Part::Day { long: true });
+    date.push(Part::Text(".".into()));
+    date.push(Part::Month { long: true, textual: false });
+    date.push(Part::Text(".".into()));
+    date.push(Part::Year { long: true });
+
+    let mut clock = Format::new(Kind::Time);
+    clock.push(Part::Hours { long: true });
+    clock.push(Part::Text(":".into()));
+    clock.push(Part::Minutes { long: true });
+    clock.push(Part::Text(" ".into()));
+    clock.push(Part::AmPm);
+
+    let sheet = doc.sheet_mut(0).unwrap();
+    let cells: Vec<(CellValue, Option<NumberKind>, Format)> = vec![
+        (CellValue::Number(1234.5), None, number(2, 2, true)),
+        // The same family with different attributes: two styles, not one, and a pool that
+        // conflates them shows one of the cells the wrong number of digits.
+        (CellValue::Number(1234.5), None, number(0, 0, false)),
+        (CellValue::Number(0.075), None, percent),
+        (CellValue::Number(-19.99), None, currency),
+        (
+            CellValue::Number(sheet_core::formula::date::serial(2026, 8, 16, epoch)),
+            Some(NumberKind::Date),
+            date,
+        ),
+        (CellValue::Number(0.5), Some(NumberKind::Time), clock),
+    ];
+    for (row, (value, kind, format)) in cells.into_iter().enumerate() {
+        let pos = Pos::new(row as u32, 0);
+        sheet.set(pos, value);
+        if let Some(kind) = kind {
+            sheet.set_kind(pos, kind);
+        }
+        sheet.set_format(pos, format);
+    }
+    // A formatted cell beside an unformatted one holding the same value: the style must not
+    // spread sideways, which is the failure a repeated-cell optimisation introduces.
+    sheet.set(Pos::new(0, 1), CellValue::Number(1234.5));
+
+    ("formats".to_owned(), doc)
+}
+
 fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
@@ -296,6 +406,7 @@ fn cases() -> Vec<(String, Document)> {
         // likely to be written as something LO rejects outright (§3.2).
         ("empty".to_owned(), Document::default()),
         named,
+        formats(),
         case(
             "numbers",
             &[

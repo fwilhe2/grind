@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::grid::Column;
+use crate::numfmt::Format;
 
 /// A cell's value.
 ///
@@ -58,10 +59,15 @@ impl From<bool> for CellValue {
 /// at all. This records only how the cell *spelled* that number, so the writer can put it
 /// back the way it found it instead of turning every date in a document into a bare serial.
 ///
-/// ponytail: two variants and no format string, so a date cell survives a round trip but
-/// its `MM/DD/YY` versus `DD.MM.YYYY` styling does not — nothing carries styles yet.
-/// Phase 5's `numfmt` is the upgrade: once a cell has a real number format, the value type
-/// is derived from it the way LibreOffice derives it, and this table goes away.
+/// This is the value *type*, not the display: how the cell is spelled out is
+/// [`Sheet::format`]'s business (§5.2), and the two are independent — a date with no format
+/// is a real cell, and the writer gives it the ISO default so LibreOffice does not invent a
+/// locale one.
+///
+/// ponytail: a date that a *formula* computes has no kind, because the evaluator's `Value`
+/// carries no Date subtype — so `=DATE(2026;8;16)` displays as its serial until the cell is
+/// given a format. Part 4 §4.3.3 makes the subtype part of the value model, which is where
+/// the fix belongs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NumberKind {
     Date,
@@ -101,6 +107,14 @@ pub struct Sheet {
     /// A side table for the same reason `formulas` is one: the *value* is an ordinary
     /// [`CellValue::Number`] and only its spelling is extra.
     kinds: BTreeMap<Pos, NumberKind>,
+    /// How each cell is *displayed* (doc/ods-format.md §5.2). A third side table, and the
+    /// same argument: a number format changes nothing about the value.
+    ///
+    /// ponytail: one [`Format`] per formatted cell rather than an index into a document-wide
+    /// pool, so a column formatted top to bottom holds a thousand equal clones. Pooling
+    /// happens on write, where it is required anyway (§5.3); intern here when a profile
+    /// blames the clones.
+    formats: BTreeMap<Pos, Format>,
 }
 
 impl Sheet {
@@ -110,6 +124,7 @@ impl Sheet {
             cols: Vec::new(),
             formulas: BTreeMap::new(),
             kinds: BTreeMap::new(),
+            formats: BTreeMap::new(),
         }
     }
 
@@ -141,6 +156,25 @@ impl Sheet {
 
     pub fn set_kind(&mut self, pos: Pos, kind: NumberKind) {
         self.kinds.insert(pos, kind);
+    }
+
+    /// Every date or time cell, in address order.
+    pub fn kinds(&self) -> impl Iterator<Item = (Pos, NumberKind)> {
+        self.kinds.iter().map(|(pos, kind)| (*pos, *kind))
+    }
+
+    /// The cell's number format, or `None` when it is displayed as its plain value.
+    pub fn format(&self, pos: Pos) -> Option<&Format> {
+        self.formats.get(&pos)
+    }
+
+    pub fn set_format(&mut self, pos: Pos, format: Format) {
+        self.formats.insert(pos, format);
+    }
+
+    /// Every formatted cell, in address order — what the writer pools into styles.
+    pub fn formats(&self) -> impl Iterator<Item = (Pos, &Format)> {
+        self.formats.iter().map(|(pos, f)| (*pos, f))
     }
 
     pub fn get(&self, pos: Pos) -> CellValue {

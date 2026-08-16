@@ -8,12 +8,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
 
-**Phases 0–4 and 6 of 7.** It reads and writes ODF spreadsheets, in both the package (`.ods`)
-and flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
+**Phases 0–4 and 6 of 7, and phase 5's number formats.** It reads and writes ODF
+spreadsheets, in both the package (`.ods`) and flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
 three it declines are password-protected — and documents written here survive a round trip
 through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
-Small Group functions**, and the `sheet` CLI drives all of it. No styles or number formats
-yet (phase 5). See [`doc/plan.md`](doc/plan.md).
+Small Group functions**, reads and preserves **number formats** so a date prints as a date,
+and the `sheet` CLI drives all of it. No cell styling — fonts, borders, colours — and no way
+to *set* a format yet (the rest of phase 5). See [`doc/plan.md`](doc/plan.md).
 
 ```sh
 sheet new book.ods
@@ -22,6 +23,7 @@ sheet set book.ods A2 2
 sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
 sheet recalc book.ods
 sheet view book.ods A1:A3                 # tab-separated, pipes into anything
+sheet view book.ods A1:A3 --raw           # stored values, not formatted display text
 ```
 
 Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`,

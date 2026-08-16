@@ -24,6 +24,17 @@ use crate::model::Document;
 pub fn read(bytes: &[u8]) -> Result<Document> {
     let content = package::content_xml(bytes)?;
     let mut builder = read::Builder::new();
+    // `styles.xml` first, so a named style defined there is already known when a cell in
+    // `content.xml` references it (doc/ods-format.md §5.1). It holds no cells, so nothing
+    // else about the document depends on the order. A part that will not parse costs the
+    // styles it carried and not the document — §9 tolerance, one level up.
+    if let Some(styles) = package::styles_xml(bytes) {
+        let _ = context::parse(
+            std::io::Cursor::new(styles),
+            Box::new(read::Root),
+            &mut builder,
+        );
+    }
     context::parse(
         std::io::Cursor::new(content),
         Box::new(read::Root),

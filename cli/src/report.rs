@@ -34,6 +34,10 @@ pub enum Report {
 pub struct CellsReport {
     pub path: String,
     pub sheet: String,
+    /// Whether the text output prints stored values rather than display text (`--raw`).
+    /// Not serialised: JSON carries both spellings of every cell and lets the caller pick.
+    #[serde(skip)]
+    pub raw: bool,
     /// Row-major, one entry per cell in the requested rectangle.
     pub cells: Vec<Cell>,
     pub rows: u32,
@@ -44,7 +48,12 @@ pub struct CellsReport {
 pub struct Cell {
     #[serde(rename = "ref")]
     pub address: String,
+    /// The stored value, spelled the way the file stores it. A script computing with a
+    /// cell wants this one, whatever the document's number format says.
     pub value: String,
+    /// What the cell *displays*, its number format applied — the same text a spreadsheet
+    /// would show in that cell.
+    pub text: String,
     #[serde(rename = "type")]
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,7 +109,13 @@ impl Report {
             // One cell prints as one bare field, which is what `get` wants.
             Report::Cells(cells) => {
                 for row in cells.cells.chunks(cells.cols.max(1) as usize) {
-                    let line: Vec<&str> = row.iter().map(|c| c.value.as_str()).collect();
+                    let line: Vec<&str> = row
+                        .iter()
+                        .map(|c| match cells.raw {
+                            true => c.value.as_str(),
+                            false => c.text.as_str(),
+                        })
+                        .collect();
                     println!("{}", line.join("\t"));
                 }
             }

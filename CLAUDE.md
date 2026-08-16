@@ -82,6 +82,12 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 | **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file | `core/tests/corpus_parse.rs`, `core/tests/corpus_eval.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
 | **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
 
+Loop C compares number formats as **the text the cell displays**, not as a `Format` struct.
+Style names are LibreOffice's to renumber, and the struct is one step too literal in the
+other direction — a bare date cell comes back carrying the ISO style the writer supplies for
+it, which is not a difference in what the document says. What must not change is the
+rendering.
+
 Loop A currently reports **358 read, 3 password-protected, 0 failed**. Encrypted documents are
 its *one* accepted non-success outcome, named explicitly in the test rather than filtered away
 — every other error still fails the loop.
@@ -167,6 +173,27 @@ every mutation*, including a 4000-step randomised sequence diffed against a dumb
 reference. Values reading back correctly while blocks silently fragment is the failure mode
 this store has; test structure, not just values.
 
+### `core/src/numfmt/` — number formats
+
+Phase 5's model, and **display only**: a format never touches a value, which is why a
+formatted cell still sums and still round-trips as the number it is (§5.2).
+
+- **The shape is the spec's**: a `number:*-style` is an *ordered sequence of pieces*, and
+  rendering is a walk over it. There is deliberately **no format-code string** (`"#,##0.00"`)
+  anywhere in the core — that spelling is Excel's, ODF has no such attribute, and a code
+  parser would be the translation layer this project exists not to have.
+- **No XML in the module.** `odf/read.rs` builds a `Format` from elements and `odf/write.rs`
+  puts it back, so the vocabulary has exactly one consumer on each side and they fail
+  together rather than drifting.
+- `numfmt::general` is what a cell with *no* format displays as, and it is where "a date
+  prints as a date" comes from without any style in the document: the value type is enough.
+- Three deliberate gaps, named in the module docs: `style:map` (so a negative renders with a
+  leading `-` rather than through the red-negative sub-style), the locale (month and weekday
+  names are English; `HOST-LOCALE` has no home in the core yet), and
+  `number:truncate-on-overflow="false"`.
+- A date a *formula* computes has no format and no `NumberKind`, so `=DATE(2026;8;16)`
+  displays as its serial. The subtype belongs in `formula::value` (Part 4 §4.3.3), not here.
+
 ### `core/src/odf/` — the reader
 
 `package`, `names` and `context` are format-agnostic (`[GENERIC]` in the spec) and will be
@@ -200,6 +227,15 @@ Non-obvious things a change here can break:
 - Every value-parse failure degrades to a safe default **scoped to its own cell**, never to a
   rejected document. A `date` cell whose `office:date-value` will not parse keeps the text and
   loses only its type; the document still loads.
+- **A cell's format is reached through two indirections and three defaults.**
+  `table:style-name` names a `style:style`, which names a `style:data-style-name`, which is
+  the `number:*-style` (§5.1). A cell with no style of its own inherits the row's
+  `table:default-cell-style-name`, then the column's — which is how a whole formatted column
+  is written, and dropping it loses most real formatting. Column defaults are applied only to
+  cells that exist, so a formatted column costs its cells and not its million rows.
+- **`styles.xml` is parsed too, before `content.xml`.** A package keeps named styles there,
+  and a cell in the content may reference one. It carries no cells, so nothing else depends
+  on the order, and a part that will not parse costs its styles rather than the document.
 - **A `date` or `time` cell becomes a `CellValue::Number`** — Part 4 §4.3.3 says "Date is a
   subtype of Number", so the serial *is* the value and `[.A1]+1` is the next day. Which
   spelling it had rides in `Sheet::kind` (a side table, like `formulas`) purely so the writer
@@ -217,6 +253,19 @@ collapses runs of whitespace inside `text:p`**, so a literal `"a    b"` comes ba
 and why `paragraph()` emits them. Our own reader does not collapse, so this bug is invisible
 until a document meets LibreOffice. Reading has the mirror-image rule: `text:s` carries a
 **count**, and ignoring it flattens every multi-space string.
+
+**Formats are pooled, and the pool is the only construct there is.** ODF has no way to put a
+format on a cell — §5.3's indirection is mandatory — so the writer collects the distinct
+formats, writes each once as `N{i}` with a `ce{i}` cell style pointing at it, and puts
+`table:style-name` on the cells. Pooling that silently reindexes is worse than none: the
+second cell then displays through *another* document's format, which is why the test asserts
+that two cells sharing a format share a name.
+
+A date or time cell with **no** format is written with an ISO default anyway. LibreOffice
+requires a date cell to have a date style and invents one from its own locale when a file
+omits it, so writing nothing means the document comes back with `M/D/YY` bolted on — and the
+round trip is no longer an identity. A date carrying a fraction is a DateTime (§4.3.4) and
+takes a style that shows both halves, because a format cannot look at the value it is given.
 
 Structural invariants worth not breaking: a table needs at least one `table:table-column`
 and one `table:table-row` even when empty (§3.2); a formula always travels with its cached
@@ -394,6 +443,15 @@ ordinary ones, and `table:database-range` names are not read, so a formula namin
 `#NAME?`. Still deferred *in code*: loop C's `back` direction skips formula-bearing
 documents.
 
+**Phase 5 has its number formats done** (`core/src/numfmt/`). Formats are read through
+§5.1's indirection — cell style, row default, column default, and `styles.xml` as well as
+`content.xml` — rendered, pooled back out as automatic styles, and checked by loop C in both
+directions. `sheet view` and `sheet get` print what a cell displays, with `--raw` for the
+stored value, and `--format json` carries both. What is left in the phase: **no way to set a
+format** — nothing can, so no shell is hiding a capability — plus `style:map`, locales, and
+cell styles beyond the data-style link (fonts, borders, backgrounds are read and dropped, as
+they always were).
+
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
 stub and because phase 4's functions were reachable only from `cargo test`. It brought the
 core operations the CLI needed and nothing else: `Action::SetFormula`, `Action::Batch`,
@@ -403,5 +461,5 @@ direction needs, so phase 4's last deferral now has its machinery.
 
 Deliberately still absent, and *not* parity gaps — nothing can do them at all, so no shell is
 hiding a capability: adding, renaming and deleting sheets; editing named expressions; CSV.
-Phase 5 (styles and number formats) is the next one in the plan's order, and it is what makes
-`view` able to print a date as a date.
+The rest of phase 5 — setting a format, cell styles, `style:map`, locales — is next in the
+plan's order.

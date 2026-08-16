@@ -9,16 +9,21 @@
 //! whether `office:mimetype` sits on it (§7.3) — so there is no second serialiser to keep
 //! in step.
 //!
-//! The output is deliberately minimal (§1.4): no `styles.xml`, no `meta.xml`, no
-//! `settings.xml`, and no automatic styles, because there is nothing yet to put in them.
-//! Styles arrive in phase 5 and land in the one `content` function.
+//! The output is deliberately minimal (§1.4): no `styles.xml`, no `meta.xml` and no
+//! `settings.xml`, because there is nothing yet to put in them. `office:automatic-styles`
+//! is written when — and only when — some cell carries a number format, and it holds
+//! exactly the formats in use: §5.3's pooling rule is not an optimisation here, it is the
+//! only construct ODF has for saying a cell looks a certain way.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{Cursor, Write as _};
+use std::sync::LazyLock;
 
-use super::names::{OFFICE, TABLE, TEXT};
+use super::names::{NUMBER, OFFICE, STYLE, TABLE, TEXT};
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
+use crate::numfmt::{Format, Kind, Part};
 use crate::{Error, Result};
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
@@ -54,18 +59,28 @@ fn content(doc: &Document, form: Form) -> String {
         Form::Package => "office:document-content",
     };
 
+    let pool = Pool::new(doc);
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     // Declare only the namespaces this part actually uses (§1.4). `table:formula`'s `of:`
     // prefix is part of the *string*, not a namespace-resolved name (§4), so no `xmlns:of`.
     let _ = write!(
         out,
-        "<{root} xmlns:office=\"{OFFICE}\" xmlns:table=\"{TABLE}\" xmlns:text=\"{TEXT}\" \
-         office:version=\"{VERSION}\""
+        "<{root} xmlns:office=\"{OFFICE}\" xmlns:table=\"{TABLE}\" xmlns:text=\"{TEXT}\""
     );
+    // The two style namespaces appear only in a document that has styles (§1.4).
+    if !pool.is_empty() {
+        let _ = write!(out, " xmlns:style=\"{STYLE}\" xmlns:number=\"{NUMBER}\"");
+    }
+    let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
     }
-    out.push_str(">\n <office:body>\n  <office:spreadsheet>\n");
+    out.push_str(">\n");
+    // Before the body, which is where the schema puts it.
+    if !pool.is_empty() {
+        pool.write(&mut out);
+    }
+    out.push_str(" <office:body>\n  <office:spreadsheet>\n");
     // The epoch, and only when it is not the default — writing the default would be
     // correct but LibreOffice omits it, and matching that keeps our output diffable
     // against a file it wrote. First in the element, which is where the schema puts it.
@@ -97,13 +112,229 @@ fn content(doc: &Document, form: Form) -> String {
         out.push_str("   </table:named-expressions>\n");
     }
     for sheet in &doc.sheets {
-        table(&mut out, sheet, doc.null_date);
+        table(&mut out, sheet, doc.null_date, &pool);
     }
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     out
 }
 
-fn table(out: &mut String, sheet: &Sheet, null_date: i64) {
+/// The format a date cell gets when the document gives it none.
+///
+/// Not decoration: LibreOffice *requires* a date cell to display through a date style and
+/// invents one from its own locale when a file omits it, so a document written without one
+/// comes back with `M/D/YY` bolted on and the round trip is no longer an identity. Writing
+/// the ISO spelling instead makes the file say what it means, in the one form that reads
+/// the same in every locale (§3.4 Note 2).
+static DATE_DEFAULT: LazyLock<Format> = LazyLock::new(|| Format {
+    kind: Kind::Date,
+    parts: vec![
+        Part::Year { long: true },
+        Part::Text("-".into()),
+        Part::Month {
+            long: true,
+            textual: false,
+        },
+        Part::Text("-".into()),
+        Part::Day { long: true },
+    ],
+});
+
+/// A date that carries a time is a DateTime (§4.3.4) and needs a style that shows both,
+/// since a format cannot look at the value it is given.
+static DATETIME_DEFAULT: LazyLock<Format> = LazyLock::new(|| {
+    let mut parts = DATE_DEFAULT.parts.clone();
+    parts.push(Part::Text(" ".into()));
+    parts.extend(TIME_DEFAULT.parts.iter().cloned());
+    Format {
+        kind: Kind::Date,
+        parts,
+    }
+});
+
+/// The same for a time cell — a 24-hour clock, for the same reason.
+static TIME_DEFAULT: LazyLock<Format> = LazyLock::new(|| Format {
+    kind: Kind::Time,
+    parts: vec![
+        Part::Hours { long: true },
+        Part::Text(":".into()),
+        Part::Minutes { long: true },
+        Part::Text(":".into()),
+        Part::Seconds {
+            long: true,
+            decimals: 0,
+        },
+    ],
+});
+
+/// The format a cell is actually written with: its own, or the default its value type
+/// demands.
+fn effective(sheet: &Sheet, pos: Pos) -> Option<&Format> {
+    if let Some(format) = sheet.format(pos) {
+        return Some(format);
+    }
+    match sheet.kind(pos) {
+        Some(NumberKind::Date) => match sheet.get(pos) {
+            CellValue::Number(n) if n.fract() != 0.0 => Some(&DATETIME_DEFAULT),
+            _ => Some(&DATE_DEFAULT),
+        },
+        Some(NumberKind::Time) => Some(&TIME_DEFAULT),
+        None => None,
+    }
+}
+
+/// Every distinct number format in the document, in first-seen order.
+///
+/// The index into this is the style's identity on the way out: format *i* is written as a
+/// `number:*-style` named `N{i}` and a `table-cell` style named `ce{i}` pointing at it, and
+/// every cell that shares the format shares both (§5.3).
+struct Pool<'a> {
+    formats: Vec<&'a Format>,
+    index: HashMap<&'a Format, usize>,
+}
+
+impl<'a> Pool<'a> {
+    fn new(doc: &'a Document) -> Self {
+        let mut pool = Pool {
+            formats: Vec::new(),
+            index: HashMap::new(),
+        };
+        for sheet in &doc.sheets {
+            let explicit = sheet.formats().map(|(pos, _)| pos);
+            let implied = sheet.kinds().map(|(pos, _)| pos);
+            for pos in explicit.chain(implied) {
+                let Some(format) = effective(sheet, pos) else {
+                    continue;
+                };
+                // `insert` would *overwrite* the index of a format already pooled, quietly
+                // pointing its first cells at a later style.
+                if !pool.index.contains_key(format) {
+                    pool.index.insert(format, pool.formats.len());
+                    pool.formats.push(format);
+                }
+            }
+        }
+        pool
+    }
+
+    /// ` table:style-name="ce3"`, or nothing when the cell has no format.
+    fn attr(&self, format: Option<&Format>) -> String {
+        match format.and_then(|f| self.index.get(f)) {
+            Some(i) => format!(" table:style-name=\"ce{i}\""),
+            None => String::new(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.formats.is_empty()
+    }
+
+    /// `office:automatic-styles`: each format once, and one cell style per format to point
+    /// at it — the indirection is mandatory, there is no way to put a format on a cell
+    /// directly (§5.3).
+    fn write(&self, out: &mut String) {
+        out.push_str(" <office:automatic-styles>\n");
+        for (i, format) in self.formats.iter().enumerate() {
+            let _ = writeln!(out, "  {}", data_style(format, i));
+            let _ = writeln!(
+                out,
+                "  <style:style style:name=\"ce{i}\" style:family=\"table-cell\" \
+                 style:data-style-name=\"N{i}\"/>"
+            );
+        }
+        out.push_str(" </office:automatic-styles>\n");
+    }
+}
+
+/// One `number:*-style` (§5.2) — the exact inverse of what `read`'s `NumberStyle` builds.
+fn data_style(format: &Format, i: usize) -> String {
+    let element = match format.kind {
+        Kind::Number => "number:number-style",
+        Kind::Percentage => "number:percentage-style",
+        Kind::Currency => "number:currency-style",
+        Kind::Date => "number:date-style",
+        Kind::Time => "number:time-style",
+        Kind::Boolean => "number:boolean-style",
+        Kind::Text => "number:text-style",
+    };
+    let mut out = format!("<{element} style:name=\"N{i}\">");
+    for part in &format.parts {
+        // `number:style="long"` is the spec's spelling of "padded"; short is the default and
+        // is written by omission, which is what LibreOffice does too.
+        let long = |long: &bool| match long {
+            true => " number:style=\"long\"",
+            false => "",
+        };
+        match part {
+            Part::Text(text) => {
+                let _ = write!(out, "<number:text>{}</number:text>", esc(text));
+            }
+            Part::Currency(symbol) => {
+                let _ = write!(
+                    out,
+                    "<number:currency-symbol>{}</number:currency-symbol>",
+                    esc(symbol)
+                );
+            }
+            Part::Number {
+                decimals,
+                min_decimals,
+                min_int,
+                grouping,
+            } => {
+                let _ = write!(
+                    out,
+                    "<number:number number:decimal-places=\"{decimals}\" \
+                     number:min-decimal-places=\"{min_decimals}\" \
+                     number:min-integer-digits=\"{min_int}\"{}/>",
+                    match grouping {
+                        true => " number:grouping=\"true\"",
+                        false => "",
+                    }
+                );
+            }
+            Part::Year { long: l } => {
+                let _ = write!(out, "<number:year{}/>", long(l));
+            }
+            Part::Month { long: l, textual } => {
+                let _ = write!(
+                    out,
+                    "<number:month{}{}/>",
+                    long(l),
+                    match textual {
+                        true => " number:textual=\"true\"",
+                        false => "",
+                    }
+                );
+            }
+            Part::Day { long: l } => {
+                let _ = write!(out, "<number:day{}/>", long(l));
+            }
+            Part::DayOfWeek { long: l } => {
+                let _ = write!(out, "<number:day-of-week{}/>", long(l));
+            }
+            Part::Hours { long: l } => {
+                let _ = write!(out, "<number:hours{}/>", long(l));
+            }
+            Part::Minutes { long: l } => {
+                let _ = write!(out, "<number:minutes{}/>", long(l));
+            }
+            Part::Seconds { long: l, decimals } => {
+                let _ = write!(
+                    out,
+                    "<number:seconds{} number:decimal-places=\"{decimals}\"/>",
+                    long(l)
+                );
+            }
+            Part::AmPm => out.push_str("<number:am-pm/>"),
+            Part::Boolean => out.push_str("<number:boolean/>"),
+            Part::Content => out.push_str("<number:text-content/>"),
+        }
+    }
+    let _ = write!(out, "</{element}>");
+    out
+}
+
+fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     let cols = sheet.used_cols().max(1);
     let rows = sheet.used_rows();
 
@@ -133,7 +364,7 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64) {
             row += blank;
             continue;
         }
-        write_row(out, sheet, row, cols, null_date);
+        write_row(out, sheet, row, cols, null_date, pool);
         row += 1;
     }
 
@@ -147,7 +378,14 @@ fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
     })
 }
 
-fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32, null_date: i64) {
+fn write_row(
+    out: &mut String,
+    sheet: &Sheet,
+    row: u32,
+    cols: u32,
+    null_date: i64,
+    pool: &Pool,
+) {
     out.push_str("    <table:table-row>");
     // Trailing empty cells are simply not written: unmentioned is the same as empty
     // (§3.3), and the row is known non-blank so at least one cell survives.
@@ -163,34 +401,51 @@ fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32, null_date: i6
         let pos = Pos::new(row, col);
         let value = sheet.get(pos);
         let formula = sheet.formula(pos);
+        let format = effective(sheet, pos);
         // Only blank runs are compressed. Repeating a *valued* cell would need the formula
         // to repeat with it, and a formula is position-dependent — a correctness trap for
-        // bytes nobody is short of.
+        // bytes nobody is short of. A run of blanks sharing one format compresses like any
+        // other; one that does not share it stops the run, or the format would spread.
         let repeat = if value.is_empty() && formula.is_none() {
             (col..=last)
                 .take_while(|c| {
                     let p = Pos::new(row, *c);
-                    sheet.get(p).is_empty() && sheet.formula(p).is_none()
+                    sheet.get(p).is_empty()
+                        && sheet.formula(p).is_none()
+                        && effective(sheet, p) == format
                 })
                 .count() as u32
         } else {
             1
         };
-        cell(out, &value, formula, sheet.kind(pos), null_date, repeat);
+        cell(
+            out,
+            &value,
+            formula,
+            sheet.kind(pos),
+            format,
+            null_date,
+            repeat,
+            pool,
+        );
         col += repeat;
     }
     out.push_str("</table:table-row>\n");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cell(
     out: &mut String,
     value: &CellValue,
     formula: Option<&str>,
     kind: Option<NumberKind>,
+    format: Option<&Format>,
     null_date: i64,
     repeat: u32,
+    pool: &Pool,
 ) {
     let mut attrs = count(repeat, "columns");
+    attrs.push_str(&pool.attr(format));
     if let Some(f) = formula {
         let _ = write!(attrs, " table:formula=\"{}\"", esc(f));
     }
@@ -212,38 +467,22 @@ fn cell(
             // calendar date or a clock, and go back out the way they came in. The kind is
             // consulted only here, so a cell whose date was overwritten with text or a
             // boolean cannot carry a stale one out — no side table to keep in step.
-            match kind {
-                Some(NumberKind::Date) => {
-                    let _ = write!(
-                        out,
-                        "<table:table-cell{attrs} office:value-type=\"date\" \
-                         office:date-value=\"{}\"/>",
-                        date::format_date(n, null_date)
-                    );
-                }
-                Some(NumberKind::Time) => {
-                    let _ = write!(
-                        out,
-                        "<table:table-cell{attrs} office:value-type=\"time\" \
-                         office:time-value=\"{}\"/>",
-                        date::format_time(n)
-                    );
-                }
-                None => {
-                    let _ = write!(
-                        out,
-                        "<table:table-cell{attrs} office:value-type=\"float\" \
-                         office:value=\"{n}\"/>"
-                    );
-                }
-            }
+            let typed = match kind {
+                Some(NumberKind::Date) => format!(
+                    "office:value-type=\"date\" office:date-value=\"{}\"",
+                    date::format_date(n, null_date)
+                ),
+                Some(NumberKind::Time) => format!(
+                    "office:value-type=\"time\" office:time-value=\"{}\"",
+                    date::format_time(n)
+                ),
+                None => format!("office:value-type=\"float\" office:value=\"{n}\""),
+            };
+            display(out, &attrs, &typed, value, format, null_date);
         }
         CellValue::Bool(b) => {
-            let _ = write!(
-                out,
-                "<table:table-cell{attrs} office:value-type=\"boolean\" \
-                 office:boolean-value=\"{b}\"/>"
-            );
+            let typed = format!("office:value-type=\"boolean\" office:boolean-value=\"{b}\"");
+            display(out, &attrs, &typed, value, format, null_date);
         }
         CellValue::Text(s) => {
             // Carried as paragraphs rather than `office:string-value`, which is what LO
@@ -264,6 +503,31 @@ fn cell(
             out.push_str("</table:table-cell>");
         }
     }
+}
+
+/// A typed cell, with the `text:p` its format renders when it has one.
+///
+/// The display text is redundant to us — the value and the style say everything — and is
+/// written anyway because §7.2's template writes it and because a reader that does not
+/// implement number formats shows *something* rather than a blank cell. It is never the
+/// value: every branch here carries a typed `office:*-value` attribute beside it.
+fn display(
+    out: &mut String,
+    attrs: &str,
+    typed: &str,
+    value: &CellValue,
+    format: Option<&Format>,
+    null_date: i64,
+) {
+    let Some(format) = format else {
+        let _ = write!(out, "<table:table-cell{attrs} {typed}/>");
+        return;
+    };
+    let _ = write!(
+        out,
+        "<table:table-cell{attrs} {typed}><text:p>{}</text:p></table:table-cell>",
+        paragraph(&format.render(value, null_date))
+    );
 }
 
 /// ` table:number-<axis>-repeated="n"`, or nothing at all when `n` is one.
@@ -450,6 +714,73 @@ mod tests {
         assert_eq!(paragraph("a "), "a<text:s text:c=\"1\"/>");
         assert_eq!(paragraph("a\tb"), "a<text:tab/>b");
         assert_eq!(paragraph("<&"), "&lt;&amp;");
+    }
+
+    fn money() -> Format {
+        let mut f = Format::new(Kind::Currency);
+        f.push(Part::Number {
+            decimals: 2,
+            min_decimals: 2,
+            min_int: 1,
+            grouping: true,
+        });
+        f.push(Part::Currency(" \u{20ac}".into()));
+        f
+    }
+
+    /// §5.3: one style per distinct format, however many cells wear it. Two cells sharing a
+    /// format must share a name — pooling that silently reindexes is worse than none, since
+    /// the second cell then displays through the *other* format in the document.
+    #[test]
+    fn identical_formats_pool_into_one_style_and_different_ones_do_not() {
+        let mut doc = Document::default();
+        let mut percent = Format::new(Kind::Percentage);
+        percent.push(Part::Number {
+            decimals: 1,
+            min_decimals: 1,
+            min_int: 1,
+            grouping: false,
+        });
+        let sheet = doc.sheet_mut(0).unwrap();
+        for row in 0..3 {
+            sheet.set(Pos::new(row, 0), CellValue::Number(1.0));
+        }
+        sheet.set_format(Pos::new(0, 0), money());
+        sheet.set_format(Pos::new(1, 0), percent);
+        sheet.set_format(Pos::new(2, 0), money());
+
+        let xml = flat(&doc);
+        assert_eq!(xml.matches("<style:style ").count(), 2, "{xml}");
+        assert_eq!(xml.matches("table:style-name=\"ce0\"").count(), 2, "{xml}");
+        assert_eq!(xml.matches("table:style-name=\"ce1\"").count(), 1, "{xml}");
+        // The link from cell to format is the only construct ODF has (§5.3).
+        assert!(
+            xml.contains("<style:style style:name=\"ce0\" style:family=\"table-cell\" \
+                          style:data-style-name=\"N0\"/>"),
+            "{xml}"
+        );
+    }
+
+    /// A formatted cell carries its display text, and the value beside it is untouched —
+    /// the format is display only (§5.2).
+    #[test]
+    fn a_formatted_cell_carries_display_text_next_to_its_real_value() {
+        let mut doc = Document::default();
+        let sheet = doc.sheet_mut(0).unwrap();
+        sheet.set(Pos::new(0, 0), CellValue::Number(1234.5));
+        sheet.set_format(Pos::new(0, 0), money());
+
+        let xml = flat(&doc);
+        assert!(xml.contains("office:value=\"1234.5\""), "{xml}");
+        assert!(xml.contains("<text:p>1,234.50 \u{20ac}</text:p>"), "{xml}");
+    }
+
+    /// A document with no formats must not gain a style section or its namespaces (§1.4).
+    #[test]
+    fn a_document_without_formats_declares_no_style_namespaces() {
+        let xml = flat(&Document::default());
+        assert!(!xml.contains("automatic-styles"), "{xml}");
+        assert!(!xml.contains("xmlns:number"), "{xml}");
     }
 
     #[test]
