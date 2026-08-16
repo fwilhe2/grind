@@ -362,6 +362,78 @@ fn editing_a_cell_a_formula_reads_warns_that_the_document_is_stale() {
     assert!(!json.contains("\"stale\""), "got: {json}");
 }
 
+/// The point of a name is a formula that reads, so the assertions are formulas.
+#[test]
+fn a_named_range_can_be_defined_and_used_from_a_formula() {
+    let dir = Sandbox::new("names");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    for (row, value) in [(1, "10"), (2, "20"), (3, "30"), (4, "40")] {
+        ok(&["set", &s(&file), &format!("A{row}"), value]);
+    }
+
+    // An address becomes a *named range*: sheet-qualified and absolute on every axis, or it
+    // would mean a different range read from another sheet or two rows down.
+    ok(&["name", &s(&file), "sales", "A1:A4"]);
+    assert_eq!(
+        ok(&["name", &s(&file), "sales"]).trim(),
+        "[$Sheet1.$A$1:.$A$4]"
+    );
+
+    ok(&["set", &s(&file), "C1", "=SUM(sales)"]);
+    assert_eq!(ok(&["get", &s(&file), "C1"]).trim(), "100");
+
+    // A leading `=` makes it a named *expression* instead, and one name may use another.
+    ok(&["name", &s(&file), "average", "=AVERAGE(sales)"]);
+    ok(&["set", &s(&file), "C2", "=average"]);
+    assert_eq!(ok(&["get", &s(&file), "C2"]).trim(), "25");
+
+    // Both survive the round trip through the file, which is the only thing that makes a
+    // name worth having.
+    assert!(ok(&["info", &s(&file)]).contains("[$Sheet1.$A$1:.$A$4]"));
+
+    // Redefining is not a second name — §5.11 names are case-consistent.
+    ok(&["name", &s(&file), "SALES", "A1:A2"]);
+    ok(&["recalc", &s(&file)]);
+    assert_eq!(ok(&["get", &s(&file), "C1"]).trim(), "30");
+    assert_eq!(
+        // Lines, not occurrences: `average` mentions `sales` in its own expression.
+        ok(&["info", &s(&file)])
+            .lines()
+            .filter(|l| l.starts_with("sales\t"))
+            .count(),
+        1,
+        "redefining made a second name"
+    );
+
+    // Deleting one a formula still mentions is allowed, and says what it cost.
+    let output = sheet(&["name", &s(&file), "sales", "--delete"]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no longer defined"));
+    ok(&["recalc", &s(&file)]);
+    assert_eq!(ok(&["get", &s(&file), "C1"]).trim(), "#NAME?");
+
+    assert!(!sheet(&["name", &s(&file), "sales", "--delete"]).status.success());
+}
+
+/// A name that cannot be lexed, or that a reference would win against, is refused where the
+/// user is — storing one means every formula mentioning it says `#NAME?` for good.
+#[test]
+fn a_name_that_no_formula_could_mention_is_refused() {
+    let dir = Sandbox::new("badnames");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+
+    for bad in ["A1", "$B$7", "my range", "1st", ""] {
+        let output = sheet(&["name", &s(&file), bad, "B1:B2"]);
+        assert!(!output.status.success(), "{bad:?} should be refused");
+    }
+    // And the expression is parsed before it is stored, for the same reason.
+    assert!(!sheet(&["name", &s(&file), "ok", "=SUM("]).status.success());
+    assert!(!sheet(&["name", &s(&file), "ok", "not an address"]).status.success());
+    assert!(ok(&["info", &s(&file)]).lines().all(|l| !l.starts_with("ok")));
+}
+
 /// A document with no formulas is never stale, and must not pay for the check.
 #[test]
 fn a_document_without_formulas_is_never_reported_stale() {

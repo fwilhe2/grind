@@ -514,6 +514,18 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
 - **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
   CLI translates addresses but never formulas; a syntax translator is the thing this project
   exists not to have.
+- **`sheet name` defines a named expression (§5.11), which is what lets a formula say what
+  it means** — `SUM(expenses)` rather than `SUM([.B2:.B4])`. Same rule as `set`: a leading
+  `=` is an expression, anything else is an address. An address is stored **absolute and
+  sheet-qualified** (`a1::as_definition`), because a name is document-level — a relative one
+  would shift with the formula mentioning it and an unqualified one would mean a different
+  range on another sheet. `App::set_name` **parses before it stores** and validates the name
+  in the *core*, because a name that will not lex is unreachable: the document would carry it
+  and every formula naming it would still say `#NAME?`. A name that is also a **cell**
+  address is refused (`A1`, `Q1` — LibreOffice refuses those too); a whole-column one is
+  *not*, because OpenFormula always brackets a reference, and refusing `SALES` would rule out
+  most of the words anyone wants. `Action::SetName` sets `edits.only_values = false`, or R6's
+  splice would write the cells and silently drop the name.
 - **Every command that writes reports `stale`.** A cached value and a formula are two claims
   about the same cell, and editing a cell a formula *reads* makes them disagree without
   touching the formula's own cell — `set B2 4321` leaves `B5 = SUM([.B2:.B4])` on disk beside
@@ -628,7 +640,7 @@ restore_session}`. `App::recalc` writing computed values back is also what loop 
 direction needs, so phase 4's last deferral now has its machinery.
 
 Deliberately still absent, and *not* parity gaps — nothing can do them at all, so no shell is
-hiding a capability: adding, renaming and deleting sheets; editing named expressions; CSV.
+hiding a capability: adding, renaming and deleting sheets; CSV.
 
 **Phase 7 is done — the stop is written down.** `doc/not-doing.md` is the product document
 the plan asks for before any GUI: what is never (macros, xlsx writing, Large Group, arrays,

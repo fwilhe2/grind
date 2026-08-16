@@ -48,6 +48,15 @@ pub enum Action {
         pos: Pos,
         style: Option<Box<CellStyle>>,
     },
+    /// A named expression (§5.11), `None` deleting it.
+    ///
+    /// Document-level rather than per-cell, which is the one thing that makes it unlike
+    /// every other action here — see [`Document::names`] for why the key is lower-cased and
+    /// why a named *range* is stored as the reference it stands for.
+    SetName {
+        name: String,
+        expression: Option<String>,
+    },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
     Batch(Vec<Action>),
@@ -118,6 +127,17 @@ impl Document {
                     style: previous,
                 })
             }
+            Action::SetName { name, expression } => {
+                let key = name.to_lowercase();
+                let previous = match expression {
+                    Some(e) => self.names.insert(key.clone(), e),
+                    None => self.names.remove(&key),
+                };
+                Some(Action::SetName {
+                    name: key,
+                    expression: previous,
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -156,6 +176,11 @@ impl Document {
                 self.edits.cells.insert((*sheet, *pos));
                 self.edits.only_values = false;
             }
+            // Not a cell at all: `table:named-expressions` is its own element, somewhere
+            // R6's splicing writer does not touch. Left unsaid, a new name would be dropped
+            // on the next save — the document's bytes would come back with the cells edited
+            // and the name gone.
+            Action::SetName { .. } => self.edits.only_values = false,
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
@@ -167,6 +192,8 @@ impl Document {
             | Action::SetFormula { sheet, .. }
             | Action::SetFormat { sheet, .. }
             | Action::SetStyle { sheet, .. } => self.sheet(*sheet).is_some(),
+            // Names are document-level, so there is no sheet index to be wrong about.
+            Action::SetName { .. } => true,
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

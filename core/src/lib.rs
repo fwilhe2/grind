@@ -48,6 +48,9 @@ pub enum Error {
     /// Password-protected. The document is fine; we have no key. Distinct from
     /// [`Error::Xml`] so callers can tell "cannot open" from "will not parse".
     Encrypted,
+    /// A formula or a name that is not what §5 says one is. Rejected at the point it is
+    /// *defined* rather than stored and discovered later — see [`App::set_name`].
+    Formula(String),
     Io(std::io::Error),
 }
 
@@ -63,6 +66,7 @@ impl fmt::Display for Error {
             Error::Xml(e) => write!(f, "xml: {e}"),
             Error::Package(e) => write!(f, "package: {e}"),
             Error::Encrypted => write!(f, "password-protected document"),
+            Error::Formula(e) => write!(f, "{e}"),
             Error::Io(e) => write!(f, "io: {e}"),
         }
     }
@@ -542,6 +546,56 @@ impl App {
         Ok(s.formula_count())
     }
 
+    /// Define a named expression, or redefine one (§5.11).
+    ///
+    /// `expression` is OpenFormula text without the `of:=` prefix, exactly as a formula
+    /// stores it — `[$Data.$A$1:.$B$9]` for a named range, `SUM([$Data.$A$1:.$A$9])` for a
+    /// named expression. The two are the same thing to everything downstream, which is why
+    /// the reader turns a `table:named-range` into the reference it stands for.
+    ///
+    /// It is **parsed before it is stored**, because a name is used from every formula in
+    /// the document: a broken one is not one broken cell but `#NAME?` everywhere it is
+    /// mentioned, and the address it was typed at is long gone by then.
+    pub fn set_name(&self, name: &str, expression: &str) -> Result<()> {
+        validate_name(name)?;
+        formula::parse::parse(expression).map_err(|e| Error::Formula(e.to_string()))?;
+        self.mutate(|state| {
+            let inverse = state
+                .doc
+                .apply(Action::SetName {
+                    name: name.to_owned(),
+                    expression: Some(expression.to_owned()),
+                })
+                .expect("a name addresses no sheet");
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Delete a named expression. `false` if there was no such name.
+    ///
+    /// Deleting one a formula still mentions is allowed and turns that formula into
+    /// `#NAME?` at the next recalculation — the same answer LibreOffice gives, and refusing
+    /// would mean a name could never be removed from a document that once used it.
+    pub fn clear_name(&self, name: &str) -> bool {
+        self.mutate(|state| {
+            if !state.doc.names.contains_key(&name.to_lowercase()) {
+                return false;
+            }
+            let inverse = state
+                .doc
+                .apply(Action::SetName {
+                    name: name.to_owned(),
+                    expression: None,
+                })
+                .expect("a name addresses no sheet");
+            state.undo.push(inverse);
+            state.redo.clear();
+            true
+        })
+    }
+
     /// Every named expression, name and expression alike (§5.11).
     pub fn names(&self) -> Vec<(String, String)> {
         self.state
@@ -602,6 +656,48 @@ pub struct Recalc {
     /// function this build does not implement (`sheet functions` lists the ones it does).
     /// Undoing the recalculation is one step, which is the way back.
     pub spoiled: usize,
+}
+
+/// Whether a string is a name a formula could actually mention (§5.11 `Identifier`).
+///
+/// Checked when a name is *defined*, in the core, because a name that cannot be lexed is
+/// unreachable: the document would carry it and every formula naming it would still say
+/// `#NAME?`. Storing one is therefore never useful, whoever asked.
+///
+/// Two rules, both from the grammar rather than from taste:
+///
+/// * it must lex as a single [`formula::lex::Token::Name`] — which rules out spaces,
+///   punctuation, a leading digit, and the empty string, and admits any Unicode letter
+///   because §5.6's `LetterXML` is [XML1.0]'s Letter production;
+/// * it must not *also* read as a **cell** address. `A1` and `$B$7` are names the grammar
+///   allows and addresses every user and every other spreadsheet's name box reads first, so
+///   one would mean two things at once. LibreOffice refuses them, and refuses `Q1` for the
+///   same reason, which is worth knowing before naming a quarter.
+///
+/// A column or a row alone — `SALES` lexes as `[.SALES]`, a whole column — is *not* refused,
+/// and that is the difference between this and a first guess. OpenFormula always brackets a
+/// reference, so `SUM(SALES)` is unambiguous in the file whatever `SALES` would mean inside
+/// brackets; refusing it would rule out most of the words anyone wants to name a range.
+fn validate_name(name: &str) -> Result<()> {
+    let refused = |why: &str| Err(Error::Formula(format!("{name:?} is not a valid name: {why}")));
+    match formula::lex::lex(name) {
+        Ok(tokens) => match tokens.as_slice() {
+            [formula::lex::Token::Name(n)] if n == name => {}
+            _ => return refused("a name is one identifier — a letter or _, then letters, digits or _"),
+        },
+        Err(_) => return refused("a name is one identifier — a letter or _, then letters, digits or _"),
+    }
+    // `[.A1]` is how a reference is spelled, so lexing the name inside brackets asks the
+    // same question a reader would, without a second address parser to disagree with the
+    // first. Both axes present is what makes it a *cell* rather than a whole column.
+    if let Ok(tokens) = formula::lex::lex(&format!("[.{name}]"))
+        && let [formula::lex::Token::Ref(r)] = tokens.as_slice()
+        && r.start.row.is_some()
+        && r.start.col.is_some()
+    {
+        return refused("it is also a cell address, and everything reads that first");
+    }
+    Ok(())
 }
 
 /// Every formula cell whose stored value disagrees with a fresh evaluation, as the actions

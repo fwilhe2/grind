@@ -27,6 +27,8 @@ sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
 sheet recalc book.ods
 sheet format book.ods A3 currency --symbol '€' --grouping
 sheet style book.ods A1 --bold --background '#dddddd'
+sheet name book.ods total A1:A2           # a named range, so formulas can say what they mean
+sheet set book.ods A4 '=SUM(total)'
 sheet view book.ods A1:A3                 # tab-separated, pipes into anything
 sheet view book.ods A1:A3 --raw           # stored values, not formatted display text
 ```

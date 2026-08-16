@@ -131,6 +131,33 @@ pub fn format(sheet: Option<&str>, pos: Pos) -> String {
     }
 }
 
+/// A reference as a *name* has to be written: sheet-qualified and absolute on every axis.
+///
+/// Both halves matter, and neither is decoration. A named range with no sheet resolves
+/// against whichever sheet the formula that mentions it sits on, so `total` would mean a
+/// different range read from a second sheet; and a relative one shifts with the formula's
+/// own position, so `SUM(total)` two rows down would sum two rows down. §5.11 names are
+/// document-level, and this is what LibreOffice writes.
+///
+/// The sheet defaults to the first, which is what a user typing a bare `B2:B9` means.
+pub fn as_definition(app: &App, reference: &Reference) -> Result<String, String> {
+    if reference.source.is_some() {
+        return Err("external document references are out of scope".to_owned());
+    }
+    let default = app.sheet_name(0).map_err(|e| e.to_string())?;
+    let mut out = reference.clone();
+    for end in [Some(&mut out.start), out.end.as_mut()].into_iter().flatten() {
+        if end.sheet.is_none() {
+            end.sheet = Some(default.clone());
+        }
+        end.sheet_absolute = true;
+        for axis in [end.col.as_mut(), end.row.as_mut()].into_iter().flatten() {
+            axis.absolute = true;
+        }
+    }
+    Ok(out.to_string())
+}
+
 /// Whether a reference names exactly one cell — what `get` needs and `view` does not.
 pub fn is_single(reference: &Reference) -> bool {
     reference.end.is_none() && reference.start.row.is_some() && reference.start.col.is_some()

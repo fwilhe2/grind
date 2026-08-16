@@ -14,8 +14,7 @@
 # see. When you add one, add it below — that is the whole maintenance rule.
 #
 # What it deliberately cannot show, because nothing can do it yet: adding, renaming or
-# deleting a sheet; editing a named expression (they are read, resolved and written, but
-# only a document can introduce one); cell fonts; CSV.
+# deleting a sheet; cell fonts; CSV.
 
 set -euo pipefail
 
@@ -107,6 +106,19 @@ say "get: one cell, its stored value, and its formula"
 "$SHEET" get "$book" B12
 "$SHEET" get "$book" B12 --raw
 "$SHEET" get "$book" B5 --formula
+
+# A name is what makes a formula say what it means: `SUM(expenses)` rather than
+# `SUM([.B2:.B4])`. An address becomes a named *range*, written absolute and
+# sheet-qualified so it means the same thing read from anywhere; a target starting with `=`
+# becomes a named *expression* instead, and one name may build on another.
+
+say "name: a named range, and an expression over it"
+run name "$book" expenses B2:B4
+"$SHEET" name "$book" expenses
+run name "$book" biggest '=MAX(expenses)'
+run set "$book" F1 '=SUM(expenses)'
+run set "$book" F2 '=biggest'
+"$SHEET" view "$book" F1:F2 --raw
 
 say "info: sheets, extents, formula counts, named expressions"
 "$SHEET" info "$book"

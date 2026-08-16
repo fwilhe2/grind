@@ -219,6 +219,21 @@ enum Command {
         border: Option<String>,
     },
 
+    /// Define, redefine or delete a named range or expression (§5.11)
+    ///
+    /// With no target, prints what the name stands for. `sheet info` lists them all.
+    Name {
+        file: PathBuf,
+        /// The name, as a formula would spell it: a letter or _, then letters, digits or _
+        name: String,
+        /// An address (`Data.B2:C9`), or an expression when it starts with `=`
+        /// (`=SUM([$Data.$B$2:.$B$9])`). Omit to print the current definition.
+        target: Option<String>,
+        /// Delete the name instead
+        #[arg(long, conflicts_with = "target")]
+        delete: bool,
+    },
+
     /// Recalculate every formula in the document
     Recalc { file: PathBuf },
 
@@ -432,6 +447,43 @@ fn run(cli: &Cli) -> Result<Report, String> {
             finish(&app, cli, file, changed > 0)
         }
 
+        Command::Name {
+            file,
+            name,
+            target,
+            delete,
+        } => {
+            let app = load(file, cli)?;
+            if *delete {
+                let removed = app.clear_name(name);
+                if !removed {
+                    return Err(format!("no such name: {name}"));
+                }
+                return finish(&app, cli, file, true);
+            }
+            let Some(target) = target else {
+                // Reading one, which is a `get` for names and writes nothing.
+                let (_, expression) = app
+                    .names()
+                    .into_iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                    .ok_or_else(|| format!("no such name: {name}"))?;
+                return Ok(Report::Text(TextReport {
+                    lines: vec![expression],
+                }));
+            };
+
+            // Same rule as `set`: a leading `=` means a formula, anything else is an
+            // address. A named range and a named expression are one thing in the model, so
+            // this is the only place the two spellings differ.
+            let expression = match target.strip_prefix('=') {
+                Some(formula) => formula.to_owned(),
+                None => a1::as_definition(&app, &a1::parse(target)?)?,
+            };
+            app.set_name(name, &expression).map_err(|e| e.to_string())?;
+            finish(&app, cli, file, true)
+        }
+
         Command::Recalc { file } => {
             let app = load(file, cli)?;
             let recalc = app.recalc().map_err(|e| e.to_string())?;
@@ -589,8 +641,9 @@ fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, St
             match stale.spoiled {
                 0 => String::new(),
                 n => format!(
-                    ", though {n} of them would become errors — a function this build \
-                     does not implement; see `sheet functions`"
+                    ", though {n} of them would become errors — a name that is no longer \
+                     defined, or a function this build does not implement; see \
+                     `sheet functions`"
                 ),
             }
         );

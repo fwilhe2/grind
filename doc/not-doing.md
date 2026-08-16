@@ -77,7 +77,6 @@ CLI parity gaps.
 | Not yet | Owner | Gate |
 |---|---|---|
 | **Adding, renaming, deleting sheets** | Phase 9 shells | The core has no action for it; the CLI is not hiding one. |
-| **Editing named expressions** | Phase 9 shells | Read, resolved and written today; not editable. |
 | **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes.md` already drives the import half from the shell. |
 | **Sort and filter** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. |
 | **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
