@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{CellValue, Document, Pos};
+use crate::model::{CellValue, Document, Pos, Sheet};
 use crate::numfmt::Format;
 use crate::style::CellStyle;
 
@@ -57,6 +57,17 @@ pub enum Action {
         name: String,
         expression: Option<String>,
     },
+    /// Insert a sheet at `index`, carrying everything on it.
+    ///
+    /// A whole [`Sheet`] rather than a name because this is the inverse of
+    /// [`Action::RemoveSheet`], and undoing a deletion has to bring the cells back.
+    InsertSheet { index: usize, sheet: Box<Sheet> },
+    /// Remove the sheet at `index`, cells and all.
+    RemoveSheet { index: usize },
+    /// Rename the sheet at `index` (`table:name`).
+    ///
+    /// Formulas naming the old sheet are **not** rewritten — see [`crate::App::rename_sheet`].
+    RenameSheet { index: usize, name: String },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
     Batch(Vec<Action>),
@@ -138,6 +149,36 @@ impl Document {
                     expression: previous,
                 })
             }
+            // The three that move sheets rather than cells. They shift every later index,
+            // which the undo stack survives for one reason: it is strictly ordered, so an
+            // older entry is only ever applied *after* this one has been undone and the
+            // index space it was recorded in is back. That is also why sheet handles are not
+            // needed here, and the note is the whole argument against introducing them.
+            Action::InsertSheet { index, sheet } => {
+                if index > self.sheets.len() {
+                    return None;
+                }
+                self.sheets.insert(index, *sheet);
+                Some(Action::RemoveSheet { index })
+            }
+            Action::RemoveSheet { index } => {
+                if index >= self.sheets.len() {
+                    return None;
+                }
+                let sheet = self.sheets.remove(index);
+                Some(Action::InsertSheet {
+                    index,
+                    sheet: Box::new(sheet),
+                })
+            }
+            Action::RenameSheet { index, name } => {
+                let s = self.sheet_mut(index)?;
+                let previous = std::mem::replace(&mut s.name, name);
+                Some(Action::RenameSheet {
+                    index,
+                    name: previous,
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -181,6 +222,13 @@ impl Document {
             // on the next save — the document's bytes would come back with the cells edited
             // and the name gone.
             Action::SetName { .. } => self.edits.only_values = false,
+            // Not a cell either, and worse: adding or removing a sheet shifts every later
+            // index, so the `(sheet, pos)` keys already in `cells` would name the wrong
+            // sheet. Regenerating is what makes that harmless — the splice map is never
+            // consulted again.
+            Action::InsertSheet { .. } | Action::RemoveSheet { .. } | Action::RenameSheet { .. } => {
+                self.edits.only_values = false;
+            }
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
@@ -194,6 +242,11 @@ impl Document {
             | Action::SetStyle { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names are document-level, so there is no sheet index to be wrong about.
             Action::SetName { .. } => true,
+            // One past the end is where a sheet is appended, so an insert is checked with
+            // `<=` and a removal with `<`.
+            Action::InsertSheet { index, .. } => *index <= self.sheets.len(),
+            Action::RemoveSheet { index } => *index < self.sheets.len(),
+            Action::RenameSheet { index, .. } => self.sheet(*index).is_some(),
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

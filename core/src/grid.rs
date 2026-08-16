@@ -44,7 +44,10 @@ fn kind_of(v: &CellValue) -> Kind {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Serialised only as part of a whole [`crate::Sheet`], which is what
+/// [`crate::Action::InsertSheet`] carries so that undoing a sheet deletion brings the cells
+/// back — see `model.rs`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Block {
     Empty(u32),
     Number(Vec<f64>),
@@ -110,7 +113,7 @@ impl Block {
 }
 
 /// One column of one sheet.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Column {
     blocks: Vec<Block>,
 }

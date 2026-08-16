@@ -88,12 +88,45 @@ impl Pos {
     }
 }
 
+/// A `BTreeMap` keyed by [`Pos`], written as a list of pairs.
+///
+/// JSON has string keys and nothing else, so `serde_json` refuses a struct key outright —
+/// and a session file is JSON. One helper on the four side tables rather than a string
+/// spelling of `Pos`, because `Pos` is a *value* in every other action and respelling it
+/// there would change a format for the sake of this one.
+mod pairs {
+    use super::Pos;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S: Serializer, V: Serialize>(
+        map: &BTreeMap<Pos, V>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        map.iter().collect::<Vec<_>>().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+        d: D,
+    ) -> Result<BTreeMap<Pos, V>, D::Error> {
+        Ok(Vec::<(Pos, V)>::deserialize(d)?.into_iter().collect())
+    }
+}
+
 /// One sheet: a sparse set of columns.
 ///
 /// Columns past the last used one simply do not exist, and trailing empty columns are
 /// dropped on write, so `used_cols` is always the real extent rather than a high-water
 /// mark.
-#[derive(Debug, Default, Clone)]
+///
+/// Serialisable because [`crate::Action::InsertSheet`] carries a whole one: undoing a sheet
+/// deletion has to bring its cells back, and the undo stack outlives the process when a
+/// shell passes `--session`.
+///
+/// ponytail: that puts a deleted sheet's every cell into the session file. Fine for the
+/// sheets a person deletes by hand; if a session file ever gets embarrassing, keep the
+/// removed sheet in a side arena and let the action carry a handle.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sheet {
     pub name: String,
     cols: Vec<Column>,
@@ -103,10 +136,12 @@ pub struct Sheet {
     /// [`CellValue`] and only its source is extra. Phase 4 replaces the string with a
     /// parsed AST; until then carrying it means a re-save does not silently drop every
     /// formula in the document.
+    #[serde(with = "pairs")]
     formulas: BTreeMap<Pos, String>,
     /// Which cells hold a date or a time rather than a plain number — see [`NumberKind`].
     /// A side table for the same reason `formulas` is one: the *value* is an ordinary
     /// [`CellValue::Number`] and only its spelling is extra.
+    #[serde(with = "pairs")]
     kinds: BTreeMap<Pos, NumberKind>,
     /// How each cell is *displayed* (doc/ods-format.md §5.2). A third side table, and the
     /// same argument: a number format changes nothing about the value.
@@ -115,10 +150,12 @@ pub struct Sheet {
     /// pool, so a column formatted top to bottom holds a thousand equal clones. Pooling
     /// happens on write, where it is required anyway (§5.3); intern here when a profile
     /// blames the clones.
+    #[serde(with = "pairs")]
     formats: BTreeMap<Pos, Format>,
     /// How each cell *looks* (§5.1) — the other half of its `style:style`. A fourth side
     /// table, and the same ponytail as `formats`: one clone per styled cell, pooled only on
     /// the way out.
+    #[serde(with = "pairs")]
     styles: BTreeMap<Pos, CellStyle>,
 }
 

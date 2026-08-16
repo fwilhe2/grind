@@ -646,3 +646,45 @@ fn a_missing_file_reports_the_path() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("/nonexistent/book.ods"));
 }
+
+/// The whole sheet lifecycle through the CLI, on disk: a sheet is only real once it comes
+/// back out of the file it was written to.
+#[test]
+fn a_sheet_can_be_added_renamed_and_deleted_from_the_cli() {
+    let dir = Sandbox::new("sheets");
+    let file = dir.path("book.ods");
+    ok(&["new", &s(&file)]);
+    ok(&["add", &s(&file), "Data"]);
+    ok(&["set", &s(&file), "Data.A1", "7"]);
+    assert_eq!(ok(&["get", &s(&file), "Data.A1"]).trim(), "7");
+
+    // Case-insensitively, the way a reference resolves a sheet name (§5.8).
+    ok(&["rename", &s(&file), "data", "Q3 Actuals"]);
+    assert_eq!(ok(&["get", &s(&file), "'Q3 Actuals'.A1"]).trim(), "7");
+
+    let output = sheet(&["add", &s(&file), "q3 actuals"]);
+    assert!(!output.status.success(), "a duplicate name is refused");
+
+    ok(&["remove", &s(&file), "Q3 Actuals"]);
+    let json = ok(&["--format", "json", "info", &s(&file)]);
+    assert!(!json.contains("Q3 Actuals"), "gone from the file: {json}");
+
+    let output = sheet(&["remove", &s(&file), "Sheet1"]);
+    assert!(!output.status.success(), "the last sheet stays");
+}
+
+/// Deleting a sheet is undoable across invocations, which is the whole reason the inverse
+/// carries the sheet rather than its name.
+#[test]
+fn undoing_a_deleted_sheet_from_a_session_restores_its_cells() {
+    let dir = Sandbox::new("sheet-undo");
+    let file = dir.path("book.ods");
+    let session = dir.path("session.json");
+    ok(&["new", &s(&file)]);
+    ok(&["add", &s(&file), "Data"]);
+    ok(&["set", &s(&file), "Data.B2", "kept"]);
+
+    ok(&["--session", &s(&session), "remove", &s(&file), "Data"]);
+    ok(&["--session", &s(&session), "undo", &s(&file)]);
+    assert_eq!(ok(&["get", &s(&file), "Data.B2"]).trim(), "kept");
+}

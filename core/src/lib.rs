@@ -48,6 +48,9 @@ pub enum Error {
     /// Password-protected. The document is fine; we have no key. Distinct from
     /// [`Error::Xml`] so callers can tell "cannot open" from "will not parse".
     Encrypted,
+    /// A sheet operation ODF has no spelling for: a name another sheet already has, an
+    /// empty one, or removing the document's last sheet.
+    BadSheet(String),
     /// A formula or a name that is not what §5 says one is. Rejected at the point it is
     /// *defined* rather than stored and discovered later — see [`App::set_name`].
     Formula(String),
@@ -66,6 +69,7 @@ impl fmt::Display for Error {
             Error::Xml(e) => write!(f, "xml: {e}"),
             Error::Package(e) => write!(f, "package: {e}"),
             Error::Encrypted => write!(f, "password-protected document"),
+            Error::BadSheet(e) => write!(f, "{e}"),
             Error::Formula(e) => write!(f, "{e}"),
             Error::Io(e) => write!(f, "io: {e}"),
         }
@@ -256,6 +260,82 @@ impl App {
                     formula: None,
                     value,
                 })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    // --- sheets ---
+    //
+    // Adding and removing a sheet shifts every later index, which the undo stack survives
+    // because it is strictly ordered — see `Document::apply`. Nothing here reorders sheets:
+    // a new one is appended, because that is the button a shell has, and a move is a
+    // capability to add when something can ask for it rather than a parameter to carry now.
+
+    /// Append an empty sheet, returning its index.
+    pub fn add_sheet(&self, name: &str) -> Result<usize> {
+        self.mutate(|state| {
+            check_sheet_name(&state.doc, name, None)?;
+            let index = state.doc.sheets.len();
+            let inverse = state
+                .doc
+                .apply(Action::InsertSheet {
+                    index,
+                    sheet: Box::new(Sheet::new(name)),
+                })
+                .expect("appending is always in range");
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(index)
+        })
+    }
+
+    /// Rename a sheet.
+    ///
+    /// Formulas naming the old sheet are **not** rewritten, so `[$Old.$A$1]` becomes a
+    /// reference to a sheet that no longer exists. That is visible rather than silent: the
+    /// cells go stale, [`App::stale`] counts them, and recalculating turns them into `#REF!`.
+    ///
+    /// ponytail: rewriting them means walking every formula's AST and re-serialising it,
+    /// which is a document-wide edit that also has to reach named expressions. Worth doing
+    /// when a shell makes renaming ordinary; the reference rewrite belongs in `formula::`,
+    /// beside the serialiser that already prints one.
+    pub fn rename_sheet(&self, sheet: usize, name: &str) -> Result<()> {
+        self.mutate(|state| {
+            check_sheet_name(&state.doc, name, Some(sheet))?;
+            let inverse = state
+                .doc
+                .apply(Action::RenameSheet {
+                    index: sheet,
+                    name: name.to_owned(),
+                })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Remove a sheet and everything on it.
+    ///
+    /// The last one is refused: a document with no sheet is a spreadsheet with nowhere to
+    /// type, and every shell would need a special case for it. Undoing brings the cells back
+    /// — the inverse carries the whole sheet.
+    ///
+    /// Formulas on *other* sheets that name this one are left alone, for the same reason and
+    /// with the same consequence as [`App::rename_sheet`].
+    pub fn remove_sheet(&self, sheet: usize) -> Result<()> {
+        self.mutate(|state| {
+            if state.doc.sheets.len() <= 1 {
+                return Err(Error::BadSheet(
+                    "a document needs a sheet; this is the last one".to_owned(),
+                ));
+            }
+            let inverse = state
+                .doc
+                .apply(Action::RemoveSheet { index: sheet })
                 .ok_or(Error::NoSuchSheet(sheet))?;
             state.undo.push(inverse);
             state.redo.clear();
@@ -656,6 +736,31 @@ pub struct Recalc {
     /// function this build does not implement (`sheet functions` lists the ones it does).
     /// Undoing the recalculation is one step, which is the way back.
     pub spoiled: usize,
+}
+
+/// Whether `name` can be this document's sheet `except`'s name — or a new sheet's, with
+/// `except` being `None`.
+///
+/// Two rules, and deliberately no third. A sheet name is `table:name`, whose schema type is
+/// a plain string, so the *characters* are not ours to police: the serialiser already quotes
+/// anything a reference cannot spell bare (`serialize.rs`, `'It''s a sheet'`).
+///
+/// * Empty is refused, because `[.A1]` and `['".A1]` would then be the same reference.
+/// * A duplicate is refused, case-insensitively, because that is how a reference resolves it
+///   (§5.8) — two sheets differing only in case would make `[$data.$A$1]` mean either.
+fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result<()> {
+    if name.trim().is_empty() {
+        return Err(Error::BadSheet("a sheet needs a name".to_owned()));
+    }
+    let taken = doc
+        .sheets
+        .iter()
+        .enumerate()
+        .any(|(i, s)| Some(i) != except && s.name.eq_ignore_ascii_case(name));
+    match taken {
+        true => Err(Error::BadSheet(format!("a sheet is already called {name:?}"))),
+        false => Ok(()),
+    }
 }
 
 /// Whether a string is a name a formula could actually mention (§5.11 `Identifier`).

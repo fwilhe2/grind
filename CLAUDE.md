@@ -640,7 +640,18 @@ restore_session}`. `App::recalc` writing computed values back is also what loop 
 direction needs, so phase 4's last deferral now has its machinery.
 
 Deliberately still absent, and *not* parity gaps — nothing can do them at all, so no shell is
-hiding a capability: adding, renaming and deleting sheets; CSV.
+hiding a capability: reordering sheets; CSV.
+
+**Sheets are add, rename and delete** (`App::{add_sheet, rename_sheet, remove_sheet}`,
+`sheet add|rename|remove`), built ahead of phase 9 because a grid UI wants them within the
+hour. Three things carry the weight: `Action::InsertSheet` carries a whole `Sheet`, so
+undoing a deletion brings the cells back rather than an empty sheet with the right name;
+adding or removing shifts every later index and the undo stack survives it *because it is
+strictly ordered* — an older entry is only applied once the sheet action above it has been
+undone — which is why there are no sheet handles; and a rename does **not** rewrite the
+formulas naming the old sheet, so they go stale and `finish`'s existing warning is what says
+so. A `Sheet` is `Serialize` for the session file, which is why `Pos`-keyed side tables are
+written as pairs (`model.rs`'s `pairs`): JSON has no key but a string.
 
 **Phase 7 is done — the stop is written down.** `doc/not-doing.md` is the product document
 the plan asks for before any GUI: what is never (macros, xlsx writing, Large Group, arrays,

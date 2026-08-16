@@ -13,8 +13,8 @@
 # it stops working, and a feature that lands without a line here is a feature nobody can
 # see. When you add one, add it below — that is the whole maintenance rule.
 #
-# What it deliberately cannot show, because nothing can do it yet: adding, renaming or
-# deleting a sheet; cell fonts; CSV.
+# What it deliberately cannot show, because nothing can do it yet: moving a sheet; cell
+# fonts; CSV.
 
 set -euo pipefail
 
@@ -119,6 +119,20 @@ run name "$book" biggest '=MAX(expenses)'
 run set "$book" F1 '=SUM(expenses)'
 run set "$book" F2 '=biggest'
 "$SHEET" view "$book" F1:F2 --raw
+
+# A second sheet, and a formula on it reaching across to the first. Renaming does **not**
+# rewrite the formulas that mention the old name — they go stale instead, which the warning
+# on stderr says out loud and `sheet recalc` turns into an error. Deleting is undoable: the
+# inverse carries the whole sheet, so the cells come back.
+
+say "sheets: add, write across one, rename, and delete"
+run add "$book" Notes
+run set "$book" Notes.A1 'sales region count'
+run set "$book" Notes.B1 '=COUNT([$Sheet1.$B$2:.$B$4])'
+run rename "$book" Notes Summary
+"$SHEET" view "$book" Summary.A1:B1 --raw
+run --session "$session" remove "$book" Summary
+run --session "$session" undo "$book"
 
 say "info: sheets, extents, formula counts, named expressions"
 "$SHEET" info "$book"

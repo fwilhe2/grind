@@ -109,6 +109,13 @@ fn axis(a: &Option<lex::Axis>, whole: u32) -> u32 {
     a.map_or(whole, |a| a.index)
 }
 
+/// A sheet by name, for the commands that address one directly rather than through a cell
+/// reference. Same lookup, so `sheet rename data …` and `sheet set data.A1 …` cannot
+/// disagree about which sheet `data` is.
+pub fn sheet(app: &App, name: &str) -> Result<usize, String> {
+    sheet_index(app, Some(name))
+}
+
 /// Sheet names match case-insensitively, as they do in a formula.
 fn sheet_index(app: &App, name: Option<&str>) -> Result<usize, String> {
     let Some(name) = name else {

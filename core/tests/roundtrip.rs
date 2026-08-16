@@ -602,7 +602,10 @@ fn cases() -> Vec<(String, Document)> {
         sheets: vec![
             Sheet::new("First"),
             Sheet::new("Second"),
-            Sheet::new("Third"),
+            // A space is what `sheet add` lets a person type, and it is the character a
+            // reference has to quote (§5.8) — so it is the one worth putting through
+            // LibreOffice rather than assuming.
+            Sheet::new("Q3 Actuals"),
         ],
         ..Default::default()
     };

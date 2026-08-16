@@ -31,6 +31,9 @@ stops ratcheting.
 - `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
 - `set_name` — `sheet name <name> <address-or-=expression>`
 - `clear_name` — `sheet name <name> --delete`
+- `add_sheet` — `sheet add <name>`
+- `rename_sheet` — `sheet rename <sheet> <name>`
+- `remove_sheet` — `sheet remove <sheet>`
 - `recalc` — `sheet recalc`
 - `stale` — every command that writes: the warning on stderr, and the `stale` field of its
   JSON report. Not a command of its own, because the answer is only interesting *after* an

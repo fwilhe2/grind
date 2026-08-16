@@ -417,3 +417,106 @@ fn the_app_is_shareable_across_threads() {
         assert_eq!(app.get(0, p(49, t)).unwrap(), CellValue::Number(49.0));
     }
 }
+
+// --- sheets ---
+
+#[test]
+fn a_sheet_can_be_added_renamed_and_removed() {
+    let app = App::new();
+    assert_eq!(app.add_sheet("Data").unwrap(), 1);
+    assert_eq!(app.sheet_count(), 2);
+    assert_eq!(app.sheet_name(1).unwrap(), "Data");
+
+    app.rename_sheet(1, "Q3 Actuals").unwrap();
+    assert_eq!(app.sheet_name(1).unwrap(), "Q3 Actuals");
+    // Renaming a sheet to what it is already called is not a duplicate.
+    app.rename_sheet(1, "Q3 Actuals").unwrap();
+
+    app.remove_sheet(1).unwrap();
+    assert_eq!(app.sheet_count(), 1);
+}
+
+/// A sheet name is how a reference names one (§5.8), and that lookup is case-insensitive —
+/// so two sheets differing only in case would make `[$data.$A$1]` mean either.
+#[test]
+fn a_sheet_name_must_be_unique_and_non_empty() {
+    let app = App::new();
+    assert!(app.add_sheet("sheet1").is_err());
+    assert!(app.add_sheet("  ").is_err());
+    assert!(app.add_sheet("").is_err());
+    // A refused edit leaves nothing behind — not a sheet, and not an undo entry.
+    assert_eq!(app.sheet_count(), 1);
+    assert!(!app.can_undo());
+
+    app.add_sheet("Data").unwrap();
+    assert!(app.rename_sheet(1, "SHEET1").is_err());
+}
+
+/// A document with no sheet is a spreadsheet with nowhere to type.
+#[test]
+fn the_last_sheet_cannot_be_removed() {
+    let app = App::new();
+    assert!(app.remove_sheet(0).is_err());
+    assert_eq!(app.sheet_count(), 1);
+    assert!(!app.can_undo());
+}
+
+/// The one that makes deleting a sheet safe: the inverse carries the whole sheet, so undo
+/// brings back the cells rather than an empty sheet with the right name.
+#[test]
+fn undoing_a_sheet_deletion_brings_the_cells_back() {
+    let app = App::new();
+    app.add_sheet("Data").unwrap();
+    app.set_cell(1, p(4, 2), 42.0).unwrap();
+    app.set_formula(1, p(5, 2), "=[.C5]*2").unwrap();
+
+    app.remove_sheet(1).unwrap();
+    assert_eq!(app.sheet_count(), 1);
+
+    assert!(app.undo());
+    assert_eq!(app.sheet_count(), 2);
+    assert_eq!(app.sheet_name(1).unwrap(), "Data");
+    assert_eq!(app.get(1, p(4, 2)).unwrap(), CellValue::Number(42.0));
+    assert_eq!(
+        app.formula(1, p(5, 2)).unwrap().as_deref(),
+        Some("=[.C5]*2")
+    );
+    assert_eq!(app.get(1, p(5, 2)).unwrap(), CellValue::Number(84.0));
+}
+
+/// Removing a sheet shifts every later index, and the undo stack holds entries recorded in
+/// the *old* numbering. It survives because the stack is strictly ordered: the older entry
+/// is only applied once the removal above it has been undone and the numbering is back.
+#[test]
+fn undo_survives_the_index_shift_a_removal_causes() {
+    let app = App::new();
+    app.add_sheet("Middle").unwrap();
+    app.add_sheet("Last").unwrap();
+    app.set_cell(2, p(0, 0), 7.0).unwrap(); // Last.A1, recorded as sheet 2
+    app.remove_sheet(1).unwrap(); // Last is now sheet 1
+
+    assert!(app.undo()); // puts Middle back, so Last is sheet 2 again
+    assert!(app.undo()); // clears Last.A1, addressed as sheet 2
+    assert_eq!(app.sheet_count(), 3);
+    assert_eq!(app.get(2, p(0, 0)).unwrap(), CellValue::Empty);
+}
+
+/// A deleted sheet has to survive the session file too, or `--session` would undo a deletion
+/// into an empty sheet. `Pos`-keyed maps are the trap: JSON has no key but a string.
+#[test]
+fn a_deleted_sheet_survives_a_session_round_trip() {
+    let app = App::new();
+    app.add_sheet("Data").unwrap();
+    app.set_cell(1, p(0, 0), "kept").unwrap();
+    app.remove_sheet(1).unwrap();
+
+    let json = serde_json::to_string(&app.session()).unwrap();
+    // A fresh app, as a stateless shell has: the document is re-read and only the stacks
+    // come from the file.
+    let restored = App::new();
+    restored.restore_session(serde_json::from_str(&json).unwrap());
+
+    assert!(restored.undo());
+    assert_eq!(restored.sheet_count(), 2);
+    assert_eq!(restored.get(1, p(0, 0)).unwrap(), CellValue::Text("kept".into()));
+}

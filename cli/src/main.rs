@@ -234,6 +234,34 @@ enum Command {
         delete: bool,
     },
 
+    /// Append an empty sheet
+    Add {
+        file: PathBuf,
+        /// The new sheet's name, unique in the document
+        name: String,
+    },
+
+    /// Rename a sheet
+    ///
+    /// Formulas naming the old sheet are not rewritten — they go stale, and recalculating
+    /// turns them into errors. `sheet info` lists the sheets.
+    Rename {
+        file: PathBuf,
+        /// The sheet to rename
+        sheet: String,
+        /// Its new name
+        name: String,
+    },
+
+    /// Delete a sheet and everything on it
+    ///
+    /// The document's last sheet cannot be deleted. Undo brings the cells back.
+    Remove {
+        file: PathBuf,
+        /// The sheet to delete
+        sheet: String,
+    },
+
     /// Recalculate every formula in the document
     Recalc { file: PathBuf },
 
@@ -481,6 +509,26 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 None => a1::as_definition(&app, &a1::parse(target)?)?,
             };
             app.set_name(name, &expression).map_err(|e| e.to_string())?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::Add { file, name } => {
+            let app = load(file, cli)?;
+            app.add_sheet(name).map_err(|e| e.to_string())?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::Rename { file, sheet, name } => {
+            let app = load(file, cli)?;
+            let index = a1::sheet(&app, sheet)?;
+            app.rename_sheet(index, name).map_err(|e| e.to_string())?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::Remove { file, sheet } => {
+            let app = load(file, cli)?;
+            let index = a1::sheet(&app, sheet)?;
+            app.remove_sheet(index).map_err(|e| e.to_string())?;
             finish(&app, cli, file, true)
         }
 

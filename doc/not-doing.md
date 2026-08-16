@@ -76,7 +76,7 @@ CLI parity gaps.
 
 | Not yet | Owner | Gate |
 |---|---|---|
-| **Adding, renaming, deleting sheets** | Phase 9 shells | The core has no action for it; the CLI is not hiding one. |
+| **Reordering sheets** | When a shell has somewhere to drag one to | A new sheet is appended and that is the whole vocabulary; `Action::InsertSheet` already carries an index, so a move is two actions in a batch when something can ask for one. |
 | **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes.md` already drives the import half from the shell. |
 | **Sort and filter** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. |
 | **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
@@ -112,6 +112,7 @@ the code, and this table is an index rather than a second source of truth.
 | **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `CLAUDE.md` |
 | **Loop C's `back` direction** | Skips formula-bearing documents. | `roundtrip.rs` |
 | **Named expressions** | One flat map, so a sheet-local name is visible document-wide. | `model.rs:258` |
+| **Renaming or deleting a sheet** | Formulas naming it are not rewritten, so they go stale and recalculate to an error. Visible rather than silent: every write warns, and `sheet recalc` counts it. | `App::rename_sheet` |
 
 The `ponytail:` comments are the full ledger and outnumber this table; these are the ones a
 *user* would notice.
