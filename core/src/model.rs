@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::grid::Column;
 use crate::numfmt::Format;
+use crate::style::CellStyle;
 
 /// A cell's value.
 ///
@@ -115,6 +116,10 @@ pub struct Sheet {
     /// happens on write, where it is required anyway (§5.3); intern here when a profile
     /// blames the clones.
     formats: BTreeMap<Pos, Format>,
+    /// How each cell *looks* (§5.1) — the other half of its `style:style`. A fourth side
+    /// table, and the same ponytail as `formats`: one clone per styled cell, pooled only on
+    /// the way out.
+    styles: BTreeMap<Pos, CellStyle>,
 }
 
 impl Sheet {
@@ -125,6 +130,7 @@ impl Sheet {
             formulas: BTreeMap::new(),
             kinds: BTreeMap::new(),
             formats: BTreeMap::new(),
+            styles: BTreeMap::new(),
         }
     }
 
@@ -176,6 +182,29 @@ impl Sheet {
     /// data style rather than a style of its own.
     pub fn clear_format(&mut self, pos: Pos) {
         self.formats.remove(&pos);
+    }
+
+    /// The cell's styling, or `None` when it is drawn plainly.
+    pub fn style(&self, pos: Pos) -> Option<&CellStyle> {
+        self.styles.get(&pos)
+    }
+
+    /// A style that sets nothing is stored as no style at all, so "plain" has one spelling
+    /// and the writer never emits an empty `style:style`.
+    pub fn set_style(&mut self, pos: Pos, style: CellStyle) {
+        match style.is_plain() {
+            true => self.styles.remove(&pos),
+            false => self.styles.insert(pos, style),
+        };
+    }
+
+    pub fn clear_style(&mut self, pos: Pos) {
+        self.styles.remove(&pos);
+    }
+
+    /// Every styled cell, in address order.
+    pub fn styles(&self) -> impl Iterator<Item = (Pos, &CellStyle)> {
+        self.styles.iter().map(|(pos, s)| (*pos, s))
     }
 
     /// Every formatted cell, in address order — what the writer pools into styles.

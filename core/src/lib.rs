@@ -25,6 +25,7 @@ pub mod grid;
 pub mod model;
 pub mod numfmt;
 pub mod odf;
+pub mod style;
 
 pub use action::Action;
 pub use model::{CellValue, Document, Pos, Sheet};
@@ -274,41 +275,66 @@ impl App {
         end: Pos,
         format: Option<numfmt::Format>,
     ) -> Result<usize> {
+        let cells = self.rectangle(start, end)?;
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            // A no-op cell is left out of the batch, so re-applying a format a cell already
+            // has does not push an undo entry that restores nothing.
+            let updates = cells
+                .filter(|pos| state.doc.sheet(sheet).and_then(|s| s.format(*pos)) != format.as_ref())
+                .map(|pos| Action::SetFormat {
+                    sheet,
+                    pos,
+                    format: format.clone().map(Box::new),
+                })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
+        })
+    }
+
+    /// Every position in an inclusive rectangle, once its size has been checked.
+    fn rectangle(&self, start: Pos, end: Pos) -> Result<impl Iterator<Item = Pos> + use<>> {
         let rows = u64::from(end.row.saturating_sub(start.row)) + 1;
         let cols = u64::from(end.col.saturating_sub(start.col)) + 1;
         if rows.saturating_mul(cols) > MAX_FORMATTED_CELLS {
             return Err(Error::TooLarge(rows.saturating_mul(cols)));
         }
+        Ok((start.row..=end.row)
+            .flat_map(move |row| (start.col..=end.col).map(move |col| Pos::new(row, col))))
+    }
+
+    /// Set — or with `None`, clear — the styling of every cell in a rectangle.
+    ///
+    /// The twin of [`App::set_format`] in every respect: one [`Action::Batch`] so undo is
+    /// one step, bounded by [`MAX_FORMATTED_CELLS`] for the same reason, and it *replaces*
+    /// rather than merges — a shell that wants "make this bold as well" reads the style
+    /// first, which is one call and keeps this one from growing a merge policy.
+    pub fn set_style(
+        &self,
+        sheet: usize,
+        start: Pos,
+        end: Pos,
+        style: Option<style::CellStyle>,
+    ) -> Result<usize> {
+        let cells = self.rectangle(start, end)?;
+        // A style that sets nothing is no style, so the two spellings of "plain" cannot
+        // produce different documents.
+        let style = style.filter(|s| !s.is_plain());
         self.mutate(|state| {
             if state.doc.sheet(sheet).is_none() {
                 return Err(Error::NoSuchSheet(sheet));
             }
-            let mut updates = Vec::new();
-            for row in start.row..=end.row {
-                for col in start.col..=end.col {
-                    let pos = Pos::new(row, col);
-                    // A no-op cell is left out of the batch, so re-applying a format a cell
-                    // already has does not push an undo entry that restores nothing.
-                    if state.doc.sheet(sheet).and_then(|s| s.format(pos)) == format.as_ref() {
-                        continue;
-                    }
-                    updates.push(Action::SetFormat {
-                        sheet,
-                        pos,
-                        format: format.clone().map(Box::new),
-                    });
-                }
-            }
-            let changed = updates.len();
-            if changed > 0 {
-                let inverse = state
-                    .doc
-                    .apply(Action::Batch(updates))
-                    .ok_or(Error::NoSuchSheet(sheet))?;
-                state.undo.push(inverse);
-                state.redo.clear();
-            }
-            Ok(changed)
+            let updates = cells
+                .filter(|pos| state.doc.sheet(sheet).and_then(|s| s.style(*pos)) != style.as_ref())
+                .map(|pos| Action::SetStyle {
+                    sheet,
+                    pos,
+                    style: style.clone().map(Box::new),
+                })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
         })
     }
 
@@ -546,6 +572,20 @@ impl App {
             state.redo = session.redo;
         });
     }
+}
+
+/// Apply a batch and record its inverse, or do nothing at all when it is empty.
+fn apply_batch(state: &mut State, sheet: usize, updates: Vec<Action>) -> Result<usize> {
+    let changed = updates.len();
+    if changed > 0 {
+        let inverse = state
+            .doc
+            .apply(Action::Batch(updates))
+            .ok_or(Error::NoSuchSheet(sheet))?;
+        state.undo.push(inverse);
+        state.redo.clear();
+    }
+    Ok(changed)
 }
 
 /// What one [`App::recalc`] did.

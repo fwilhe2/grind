@@ -13,9 +13,10 @@ spreadsheets, in both the package (`.ods`) and flat (`.fods`) forms. All 361 doc
 three it declines are password-protected — and documents written here survive a round trip
 through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
 Small Group functions**, reads, sets and preserves **number formats** so a date prints as a
-date, and the `sheet` CLI drives all of it. No cell styling yet — fonts, borders, colours —
-and formats are the ISO spellings, since nothing has a locale (the rest of phase 5). See
-[`doc/plan.md`](doc/plan.md).
+date, and **cell styling** — weights, colours, borders, alignment. The `sheet` CLI drives all
+of it, and [`examples/sample.sh`](examples/sample.sh) builds a document out of every feature
+there is. No fonts yet, and formats are the ISO spellings since nothing has a locale (the
+rest of phase 5). See [`doc/plan.md`](doc/plan.md).
 
 ```sh
 sheet new book.ods
@@ -24,6 +25,7 @@ sheet set book.ods A2 2
 sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
 sheet recalc book.ods
 sheet format book.ods A3 currency --symbol '€' --grouping
+sheet style book.ods A1 --bold --background '#dddddd'
 sheet view book.ods A1:A3                 # tab-separated, pipes into anything
 sheet view book.ods A1:A3 --raw           # stored values, not formatted display text
 ```

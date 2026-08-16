@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{CellValue, Document, Pos};
 use crate::numfmt::Format;
+use crate::style::CellStyle;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Action {
@@ -39,6 +40,13 @@ pub enum Action {
         sheet: usize,
         pos: Pos,
         format: Option<Box<Format>>,
+    },
+    /// A cell's styling (doc/ods-format.md §5.1). Display only, like [`Action::SetFormat`],
+    /// and separate from it because one may change without the other.
+    SetStyle {
+        sheet: usize,
+        pos: Pos,
+        style: Option<Box<CellStyle>>,
     },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
@@ -96,6 +104,19 @@ impl Document {
                     format: previous,
                 })
             }
+            Action::SetStyle { sheet, pos, style } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.style(pos).cloned().map(Box::new);
+                match style {
+                    Some(style) => s.set_style(pos, *style),
+                    None => s.clear_style(pos),
+                }
+                Some(Action::SetStyle {
+                    sheet,
+                    pos,
+                    style: previous,
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -121,7 +142,8 @@ impl Document {
         match action {
             Action::SetCell { sheet, .. }
             | Action::SetFormula { sheet, .. }
-            | Action::SetFormat { sheet, .. } => self.sheet(*sheet).is_some(),
+            | Action::SetFormat { sheet, .. }
+            | Action::SetStyle { sheet, .. } => self.sheet(*sheet).is_some(),
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

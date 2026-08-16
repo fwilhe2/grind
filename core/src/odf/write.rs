@@ -20,10 +20,11 @@ use std::fmt::Write as _;
 use std::io::{Cursor, Write as _};
 use std::sync::LazyLock;
 
-use super::names::{NUMBER, OFFICE, STYLE, TABLE, TEXT};
+use super::names::{FO, NUMBER, OFFICE, STYLE, TABLE, TEXT};
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
+use crate::style::{CellStyle, EDGES};
 use crate::{Error, Result};
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
@@ -69,7 +70,10 @@ fn content(doc: &Document, form: Form) -> String {
     );
     // The two style namespaces appear only in a document that has styles (§1.4).
     if !pool.is_empty() {
-        let _ = write!(out, " xmlns:style=\"{STYLE}\" xmlns:number=\"{NUMBER}\"");
+        let _ = write!(
+            out,
+            " xmlns:style=\"{STYLE}\" xmlns:number=\"{NUMBER}\" xmlns:fo=\"{FO}\""
+        );
     }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
@@ -152,14 +156,21 @@ fn effective(sheet: &Sheet, pos: Pos) -> Option<&Format> {
     }
 }
 
-/// Every distinct number format in the document, in first-seen order.
+/// How one cell is written: its number format and its styling, which travel together on a
+/// single `style:style` and are therefore pooled together (§5.3). A cell with neither gets
+/// no `table:style-name` at all.
+type Look<'a> = (Option<&'a Format>, Option<&'a CellStyle>);
+
+/// Every distinct format and every distinct look in the document, in first-seen order.
 ///
-/// The index into this is the style's identity on the way out: format *i* is written as a
-/// `number:*-style` named `N{i}` and a `table-cell` style named `ce{i}` pointing at it, and
-/// every cell that shares the format shares both (§5.3).
+/// Two pools, because the file has two vocabularies: format *i* is a `number:*-style` named
+/// `N{i}`, look *i* is a `table-cell` `style:style` named `ce{i}` that points at one and
+/// carries the properties. Every cell that shares a look shares its name.
 struct Pool<'a> {
     formats: Vec<&'a Format>,
     index: HashMap<&'a Format, usize>,
+    looks: Vec<Look<'a>>,
+    look_index: HashMap<Look<'a>, usize>,
 }
 
 impl<'a> Pool<'a> {
@@ -167,15 +178,25 @@ impl<'a> Pool<'a> {
         let mut pool = Pool {
             formats: Vec::new(),
             index: HashMap::new(),
+            looks: Vec::new(),
+            look_index: HashMap::new(),
         };
         for sheet in &doc.sheets {
-            let explicit = sheet.formats().map(|(pos, _)| pos);
-            let implied = sheet.kinds().map(|(pos, _)| pos);
-            for pos in explicit.chain(implied) {
-                let Some(format) = effective(sheet, pos) else {
+            let formatted = sheet.formats().map(|(pos, _)| pos);
+            let dated = sheet.kinds().map(|(pos, _)| pos);
+            let styled = sheet.styles().map(|(pos, _)| pos);
+            for pos in formatted.chain(dated).chain(styled) {
+                let look = (effective(sheet, pos), sheet.style(pos));
+                if let Some(format) = look.0 {
+                    pool.add(format);
+                }
+                if look.1.is_none() && look.0.is_none() {
                     continue;
-                };
-                pool.add(format);
+                }
+                if !pool.look_index.contains_key(&look) {
+                    pool.look_index.insert(look, pool.looks.len());
+                    pool.looks.push(look);
+                }
             }
         }
         pool
@@ -196,16 +217,16 @@ impl<'a> Pool<'a> {
         }
     }
 
-    /// ` table:style-name="ce3"`, or nothing when the cell has no format.
-    fn attr(&self, format: Option<&Format>) -> String {
-        match format.and_then(|f| self.index.get(f)) {
+    /// ` table:style-name="ce3"`, or nothing when the cell has neither format nor styling.
+    fn attr(&self, look: Look) -> String {
+        match self.look_index.get(&look) {
             Some(i) => format!(" table:style-name=\"ce{i}\""),
             None => String::new(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.formats.is_empty()
+        self.formats.is_empty() && self.looks.is_empty()
     }
 
     /// `office:automatic-styles`: each format once, and one cell style per format to point
@@ -215,14 +236,76 @@ impl<'a> Pool<'a> {
         out.push_str(" <office:automatic-styles>\n");
         for (i, format) in self.formats.iter().enumerate() {
             let _ = writeln!(out, "  {}", data_style(format, i, self));
-            let _ = writeln!(
+        }
+        for (i, (format, style)) in self.looks.iter().enumerate() {
+            let data = match format.and_then(|f| self.index.get(f)) {
+                Some(n) => format!(" style:data-style-name=\"N{n}\""),
+                None => String::new(),
+            };
+            let _ = write!(
                 out,
-                "  <style:style style:name=\"ce{i}\" style:family=\"table-cell\" \
-                 style:data-style-name=\"N{i}\"/>"
+                "  <style:style style:name=\"ce{i}\" style:family=\"table-cell\"{data}"
             );
+            match style {
+                Some(style) => {
+                    let _ = writeln!(out, ">{}</style:style>", properties(style));
+                }
+                None => out.push_str("/>\n"),
+            }
         }
         out.push_str(" </office:automatic-styles>\n");
     }
+}
+
+/// The property children of a cell style (§5.1), in the order the schema declares them.
+///
+/// Every value goes out exactly as it came in. LibreOffice will re-quantise a border width
+/// and rewrite a font reference (§5.4) — that is its normalisation, not ours to anticipate.
+fn properties(style: &CellStyle) -> String {
+    let mut out = String::new();
+    let attr = |out: &mut String, name: &str, value: &Option<String>| {
+        if let Some(value) = value {
+            let _ = write!(out, " {name}=\"{}\"", esc(value));
+        }
+    };
+
+    let mut cell = String::new();
+    attr(&mut cell, "fo:background-color", &style.background);
+    attr(&mut cell, "style:vertical-align", &style.vertical_align);
+    attr(&mut cell, "fo:wrap-option", &style.wrap);
+    // The shorthand when every edge agrees, four attributes when they do not — the two
+    // spell the same style, and emitting both would be a document contradicting itself.
+    match style.uniform_border() {
+        Some(border) => {
+            let _ = write!(cell, " fo:border=\"{}\"", esc(border));
+        }
+        None => {
+            for (i, edge) in EDGES.iter().enumerate() {
+                attr(&mut cell, &format!("fo:border-{edge}"), &style.borders[i]);
+            }
+        }
+    }
+    if !cell.is_empty() {
+        let _ = write!(out, "<style:table-cell-properties{cell}/>");
+    }
+
+    if let Some(align) = &style.align {
+        let _ = write!(
+            out,
+            "<style:paragraph-properties fo:text-align=\"{}\"/>",
+            esc(align)
+        );
+    }
+
+    let mut text = String::new();
+    attr(&mut text, "fo:font-weight", &style.font_weight);
+    attr(&mut text, "fo:font-style", &style.font_style);
+    attr(&mut text, "fo:font-size", &style.font_size);
+    attr(&mut text, "fo:color", &style.color);
+    if !text.is_empty() {
+        let _ = write!(out, "<style:text-properties{text}/>");
+    }
+    out
 }
 
 /// One `number:*-style` (§5.2) — the exact inverse of what `read`'s `NumberStyle` builds.
@@ -394,7 +477,7 @@ fn write_row(
         let pos = Pos::new(row, col);
         let value = sheet.get(pos);
         let formula = sheet.formula(pos);
-        let format = effective(sheet, pos);
+        let look = (effective(sheet, pos), sheet.style(pos));
         // Only blank runs are compressed. Repeating a *valued* cell would need the formula
         // to repeat with it, and a formula is position-dependent — a correctness trap for
         // bytes nobody is short of. A run of blanks sharing one format compresses like any
@@ -405,7 +488,7 @@ fn write_row(
                     let p = Pos::new(row, *c);
                     sheet.get(p).is_empty()
                         && sheet.formula(p).is_none()
-                        && effective(sheet, p) == format
+                        && (effective(sheet, p), sheet.style(p)) == look
                 })
                 .count() as u32
         } else {
@@ -416,7 +499,7 @@ fn write_row(
             &value,
             formula,
             sheet.kind(pos),
-            format,
+            look,
             null_date,
             repeat,
             pool,
@@ -432,13 +515,14 @@ fn cell(
     value: &CellValue,
     formula: Option<&str>,
     kind: Option<NumberKind>,
-    format: Option<&Format>,
+    look: Look,
     null_date: i64,
     repeat: u32,
     pool: &Pool,
 ) {
+    let format = look.0;
     let mut attrs = count(repeat, "columns");
-    attrs.push_str(&pool.attr(format));
+    attrs.push_str(&pool.attr(look));
     if let Some(f) = formula {
         let _ = write!(attrs, " table:formula=\"{}\"", esc(f));
     }

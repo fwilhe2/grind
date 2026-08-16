@@ -28,6 +28,7 @@ use std::process::Command;
 
 use sheet_core::model::NumberKind;
 use sheet_core::numfmt::{Format, Kind, Map, Op, Part};
+use sheet_core::style::{self, CellStyle};
 use sheet_core::{CellValue, Document, Form, Pos, Sheet};
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
@@ -209,6 +210,13 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 // its own comes back carrying the ISO date style the writer supplies for it,
                 // which is not a difference in what the document says. What must not change
                 // is the rendering.
+                if !same_style(w.style(pos), g.style(pos)) {
+                    out.push(format!(
+                        "{label}: sheet {i} r{row}c{col} style was {:?}, back as {:?}",
+                        w.style(pos),
+                        g.style(pos)
+                    ));
+                }
                 let (before, after) = (shown(w, pos, want), shown(g, pos, got));
                 if before != after {
                     out.push(format!(
@@ -224,6 +232,34 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
         }
     }
     out
+}
+
+/// Are these the same cell style, allowing for LibreOffice's own normalisation?
+///
+/// The one place styles are not compared as written, and for a measured reason
+/// (doc/ods-format.md §5.4): LO converts a border width to its internal unit and back, so
+/// `0.5pt` returns as `0.51pt`. Everything else about a border — the line style, the colour
+/// — and every other property must come back exactly.
+fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
+    let (Some(a), Some(b)) = (a, b) else {
+        return a.is_none() && b.is_none();
+    };
+    let borders = a.borders.iter().zip(&b.borders).all(|(a, b)| {
+        match (a.as_deref().and_then(style::border_parts), b.as_deref().and_then(style::border_parts)) {
+            (Some((wa, sa, ca)), Some((wb, sb, cb))) => {
+                (wa - wb).abs() < 0.05 && sa == sb && ca == cb
+            }
+            _ => a == b,
+        }
+    });
+    borders
+        && CellStyle {
+            borders: Default::default(),
+            ..a.clone()
+        } == CellStyle {
+            borders: Default::default(),
+            ..b.clone()
+        }
 }
 
 /// What a cell displays: through its number format, or through the plain spelling of its
@@ -394,6 +430,84 @@ fn formats() -> (String, Document) {
     ("formats".to_owned(), doc)
 }
 
+/// Cell styling — §5.1, and the half of phase 5 that is not about the value.
+///
+/// Deliberately no `fo:font-family`: LibreOffice replaces it with a `style:font-name`
+/// pointing into `office:font-face-decls` (§5.4), so it is not something a document can
+/// carry through unchanged and the model does not pretend otherwise.
+fn styles() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+
+    let header = CellStyle {
+        font_weight: Some("bold".into()),
+        background: Some("#ffff00".into()),
+        align: Some("center".into()),
+        ..Default::default()
+    };
+    let emphasis = CellStyle {
+        font_style: Some("italic".into()),
+        color: Some("#ff0000".into()),
+        font_size: Some("14pt".into()),
+        ..Default::default()
+    };
+    let mut boxed = CellStyle {
+        vertical_align: Some("middle".into()),
+        wrap: Some("wrap".into()),
+        ..Default::default()
+    };
+    boxed.set_border(Some("0.5pt solid #000000".into()));
+    // Edges that disagree, which is the case the `fo:border` shorthand cannot express.
+    let mut ruled = CellStyle::default();
+    ruled.borders[0] = Some("1pt solid #0000ff".into());
+    ruled.borders[3] = Some("0.06pt dashed #00ff00".into());
+
+    for (row, style) in [header, emphasis, boxed, ruled].into_iter().enumerate() {
+        let pos = Pos::new(row as u32, 0);
+        sheet.set(pos, CellValue::Text(format!("styled {row}")));
+        sheet.set_style(pos, style);
+    }
+    // A styled cell that also carries a number format: one `style:style` holds both, and
+    // the pool has to key on the pair or one of them is lost.
+    let both = Pos::new(4, 0);
+    sheet.set(both, CellValue::Number(0.5));
+    sheet.set_format(both, Format {
+        kind: Kind::Percentage,
+        parts: vec![
+            Part::Number {
+                decimals: 0,
+                min_decimals: 0,
+                min_int: 1,
+                grouping: false,
+            },
+            Part::Text("%".into()),
+        ],
+        maps: Vec::new(),
+    });
+    sheet.set_style(
+        both,
+        CellStyle {
+            font_weight: Some("bold".into()),
+            ..Default::default()
+        },
+    );
+    // The same styling on a second cell, so the pool is exercised rather than trusted.
+    let twin = Pos::new(5, 0);
+    sheet.set(twin, CellValue::Number(1.0));
+    sheet.set_style(
+        twin,
+        CellStyle {
+            font_weight: Some("bold".into()),
+            ..Default::default()
+        },
+    );
+
+    ("styles".to_owned(), doc)
+}
+
 fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
@@ -419,6 +533,7 @@ fn cases() -> Vec<(String, Document)> {
         ("empty".to_owned(), Document::default()),
         named,
         formats(),
+        styles(),
         case(
             "numbers",
             &[

@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Map, Op, Part};
+use crate::style::{CellStyle, EDGES};
 
 use super::context::{Attrs, Context};
 use super::names::{Name, Ns};
@@ -57,6 +58,8 @@ pub struct Builder {
     /// A `table-cell` `style:style`'s name to its `style:data-style-name` — the one link
     /// between "how it looks" and "how the number renders" (§5.1).
     cell_styles: HashMap<String, String>,
+    /// The same styles' own properties: fonts, colours, borders, alignment.
+    style_props: HashMap<String, CellStyle>,
     /// The parts of the `number:*-style` currently being read, and the text its literal
     /// pieces are collecting. Both live here rather than in the context, because a child
     /// element has no channel back to its parent — the parent takes these at its `end`.
@@ -84,6 +87,7 @@ struct RowCell {
     formula: Option<String>,
     kind: Option<NumberKind>,
     format: Option<Format>,
+    style: Option<CellStyle>,
 }
 
 impl Builder {
@@ -105,6 +109,7 @@ impl Builder {
             budget: MAX_MATERIALISED_CELLS,
             number_styles: HashMap::new(),
             cell_styles: HashMap::new(),
+            style_props: HashMap::new(),
             parts: Vec::new(),
             style_text: String::new(),
             pending_maps: Vec::new(),
@@ -127,13 +132,25 @@ impl Builder {
     /// or names one the document does not define, simply leaves the cell unformatted —
     /// tolerance again (§9), and the reason this returns an `Option` rather than a result.
     fn resolve_format(&self, cell_style: Option<&str>, col: u32) -> Option<Format> {
-        let style = cell_style
-            .or(self.row_style.as_deref())
-            // The column default is consulted last, and only for cells that exist, so a
-            // formatted column costs entries for its cells rather than for its million rows.
-            .or_else(|| self.col_styles.get(col as usize)?.as_deref())?;
+        let style = self.style_name(cell_style, col)?;
         let data_style = self.cell_styles.get(style)?;
         self.number_styles.get(data_style).cloned()
+    }
+
+    /// The cell's own styling, through the same chain — one lookup, two answers, because a
+    /// `style:style` carries both.
+    fn resolve_style(&self, cell_style: Option<&str>, col: u32) -> Option<CellStyle> {
+        let style = self.style_name(cell_style, col)?;
+        self.style_props.get(style).cloned()
+    }
+
+    /// Which `style:style` applies: the cell's own, else the row's default, else the
+    /// column's. The column default is consulted last, and only for cells that exist, so a
+    /// styled column costs entries for its cells rather than for its million rows.
+    fn style_name<'a>(&'a self, cell_style: Option<&'a str>, col: u32) -> Option<&'a str> {
+        cell_style
+            .or(self.row_style.as_deref())
+            .or_else(|| self.col_styles.get(col as usize)?.as_deref())
     }
 
     /// Attach every `style:map` collected in this section to the style that declared it.
@@ -213,6 +230,9 @@ impl Builder {
                 }
                 if let Some(f) = &cell.format {
                     sheet.set_format(pos, f.clone());
+                }
+                if let Some(s) = &cell.style {
+                    sheet.set_style(pos, s.clone());
                 }
             }
             self.budget = self.budget.saturating_sub(per_row);
@@ -553,6 +573,7 @@ impl Context<Builder> for Cell {
         }
         // §5.1's indirection, resolved once per cell rather than once per repeat.
         let format = b.resolve_format(self.style.as_deref(), self.start);
+        let style = b.resolve_style(self.style.as_deref(), self.start);
         for i in 0..self.repeat {
             let col = self.start.saturating_add(i);
             if col >= MAX_COLS {
@@ -564,6 +585,7 @@ impl Context<Builder> for Cell {
                 formula: formula.clone(),
                 kind,
                 format: format.clone(),
+                style: style.clone(),
             });
         }
     }
@@ -586,17 +608,23 @@ impl Context<Builder> for Styles {
 
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         if name.is(Ns::Style, "style") {
+            // Only cell styles. A `table-column` style carrying a width, or a `text` style
+            // inside a paragraph, has nothing this model holds.
+            if attrs.get(Ns::Style, "family") != Some("table-cell") {
+                return Some(Box::new(super::context::Ignore));
+            }
+            let Some(name) = attrs.get(Ns::Style, "name").map(str::to_owned) else {
+                return Some(Box::new(super::context::Ignore));
+            };
             // ponytail: `style:parent-style-name` is not followed, so a cell style that
             // inherits its data style from a parent rather than naming one loses its format.
             // LibreOffice's own automatic styles always name it directly, which is why this
             // has not bitten; walk the parent chain when a file shows up that needs it.
-            if let (Some(name), Some(data)) = (
-                attrs.get(Ns::Style, "name"),
-                attrs.get(Ns::Style, "data-style-name"),
-            ) {
-                b.cell_styles.insert(name.to_owned(), data.to_owned());
+            if let Some(data) = attrs.get(Ns::Style, "data-style-name") {
+                b.cell_styles.insert(name.clone(), data.to_owned());
             }
-            return Some(Box::new(super::context::Ignore));
+            b.style_props.insert(name.clone(), CellStyle::default());
+            return Some(Box::new(CellStyleProps { name }));
         }
         if name.ns != Ns::Number {
             return None;
@@ -616,6 +644,70 @@ impl Context<Builder> for Styles {
             name: attrs.get(Ns::Style, "name").unwrap_or_default().to_owned(),
             kind,
         }))
+    }
+}
+
+/// The property children of a `table-cell` `style:style` (§5.1).
+///
+/// Each one is written straight into the style being built rather than accumulated and
+/// handed back, for the usual reason: a child has no channel to its parent, and the
+/// [`Builder`] is the channel.
+struct CellStyleProps {
+    name: String,
+}
+
+impl Context<Builder> for CellStyleProps {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.ns != Ns::Style {
+            return None;
+        }
+        let style = b.style_props.get_mut(&self.name)?;
+        // Most of a style is `fo:`, but a few properties are `style:` — `vertical-align` is
+        // the one here. Both spellings are asked for by meaning, never by prefix (§8.1).
+        let fo = |local: &str| {
+            attrs
+                .get_any(&[(Ns::Fo, local), (Ns::Style, local)])
+                .map(str::to_owned)
+        };
+        match name.local.as_str() {
+            "table-cell-properties" => {
+                style.background = fo("background-color");
+                style.vertical_align = fo("vertical-align");
+                style.wrap = fo("wrap-option");
+                // The shorthand first, then each edge, so a document that writes both — and
+                // LibreOffice does — ends with the specific one winning.
+                style.set_border(fo("border"));
+                for (i, edge) in EDGES.iter().enumerate() {
+                    if let Some(value) = fo(&format!("border-{edge}")) {
+                        style.borders[i] = Some(value);
+                    }
+                }
+                // ODF spells "explicitly no border" as `none`; the model spells it as an
+                // absent attribute, and keeping both would make two equal styles unequal.
+                for edge in &mut style.borders {
+                    if edge.as_deref() == Some("none") {
+                        *edge = None;
+                    }
+                }
+            }
+            "text-properties" => {
+                style.font_weight = fo("font-weight");
+                style.font_style = fo("font-style");
+                style.font_size = fo("font-size");
+                style.color = fo("color");
+            }
+            "paragraph-properties" => style.align = fo("text-align"),
+            _ => return None,
+        }
+        Some(Box::new(super::context::Ignore))
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        // A style that sets nothing is no style: keeping it would have every cell in a
+        // LibreOffice document carrying an empty one.
+        if b.style_props.get(&self.name).is_some_and(CellStyle::is_plain) {
+            b.style_props.remove(&self.name);
+        }
     }
 }
 

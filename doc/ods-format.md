@@ -362,6 +362,30 @@ Do not inline per-cell property sets (there is no such construct — all formatt
 identical property sets. This mirrors LO's own internal item-pool/flyweight design (see
 architecture doc) and is the single biggest lever for keeping large sheets small.
 
+### 5.4 What LibreOffice does *not* give back as written
+
+Measured, not read: a document carrying each property below was converted with
+
+```sh
+soffice --headless --convert-to fods in.fods
+```
+
+and the output compared with the input. Everything not listed here came back byte-identical,
+including `fo:background-color`, `fo:color`, `fo:font-size`, `fo:font-weight`,
+`fo:font-style`, `fo:text-align`, `style:vertical-align` and `fo:wrap-option`.
+
+| Written | Comes back as | Why it matters |
+|---|---|---|
+| `fo:border="0.5pt solid #000000"` | `0.51pt solid #000000` | Widths go through LO's internal integer unit and back, so a round trip is **not** exact. `1pt` → `0.99pt`, `0.05pt` → `0.06pt`. Compare widths numerically, never as text. |
+| `fo:font-family="Liberation Sans"` | `style:font-name="Liberation Sans1"` | The family is replaced by a reference into `office:font-face-decls`, a second vocabulary. A reader that only knows `fo:font-family` loses the font. |
+| edges left unset | `fo:border-bottom="none"` etc. | LO writes every edge explicitly. `"none"` is the *absence* of a border, so a model that stores it as a value makes two equal styles unequal. |
+| — | `style:text-align-source`, `style:repeat-content` | Added unasked. Harmless, and a reminder that a style comes back with more than it left with. |
+
+A style applied to every cell of a column also comes back on the **column**
+(`table:table-column table:default-cell-style-name=…`) with the cells themselves unstyled,
+which is why cell-style resolution has to consult the column default (§5.1) rather than the
+cell alone.
+
 ---
 
 ## 6. LibreOffice-only extensions **[ODS]**

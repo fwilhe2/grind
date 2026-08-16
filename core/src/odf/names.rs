@@ -22,6 +22,9 @@ pub enum Ns {
     Number,
     /// `style:` — style elements and their properties (§5.1).
     Style,
+    /// `fo:` — the XSL-FO-compatible properties a style is mostly made of: fonts, colours,
+    /// borders, alignment.
+    Fo,
     /// LibreOffice's calc extension namespace. Recognised because it carries a legitimate
     /// alias for `office:value-type` (§9).
     Calcext,
@@ -33,6 +36,7 @@ pub const TABLE: &str = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
 pub const TEXT: &str = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
 pub const NUMBER: &str = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
 pub const STYLE: &str = "urn:oasis:names:tc:opendocument:xmlns:style:1.0";
+pub const FO: &str = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0";
 pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
 
 impl Ns {
@@ -43,6 +47,7 @@ impl Ns {
             b if b == TEXT.as_bytes() => Ns::Text,
             b if b == NUMBER.as_bytes() => Ns::Number,
             b if b == STYLE.as_bytes() => Ns::Style,
+            b if b == FO.as_bytes() => Ns::Fo,
             b if b == CALCEXT.as_bytes() => Ns::Calcext,
             _ => Ns::Other,
         }

@@ -205,6 +205,28 @@ formatted cell still sums and still round-trips as the number it is (§5.2).
   `Action::Batch`, and bounds it: a format costs an entry per cell, so `A1:ZZ100000` is an
   exhaustion request rather than an intent and is refused by size.
 
+### `core/src/style.rs` — cell styling
+
+§5's other half: a number format says how a *value* is spelled, this says how the cell looks
+around it. Both live on one `style:style` and are pooled together, which is why the writer's
+pool keys on the **pair**.
+
+- **The values are ODF's own, kept verbatim** — `"bold"`, `"#ffff00"`, `"0.5pt solid
+  #000000"`. Parsing XSL-FO strings into a typed model buys nothing until something *renders*
+  them, and nothing does yet. When a renderer needs a colour as three bytes it parses one
+  string in one place.
+- **Validation lives at the edge that has a user**: `sheet style` takes an enum for
+  alignment and checks a colour's syntax. A *document's* value is whatever the document said,
+  because rejecting it would lose the cell rather than the attribute.
+- **`fo:border` is a shorthand for four edges, not a fifth field.** It is expanded on the way
+  in and collapsed when the edges agree, or two spellings of one style would be unequal and
+  the pool would emit both. ODF's `"none"` is read as *absent*, for the same reason.
+- Two properties are deliberately not carried, both measured rather than assumed
+  (doc/ods-format.md §5.4): **`fo:font-family`**, which LO rewrites into an
+  `office:font-face-decls` reference, and **exact border widths**, which LO re-quantises
+  (`0.5pt` comes back `0.51pt`) — so loop C compares widths numerically and everything else
+  exactly.
+
 ### `core/src/odf/` — the reader
 
 `package`, `names` and `context` are format-agnostic (`[GENERIC]` in the spec) and will be
@@ -396,6 +418,17 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
   writing it back quietly. The whole recalculation is one `Action::Batch`, so one `undo` is
   the way back.
 
+## The sample document
+
+`examples/sample.sh` builds a document out of **every feature this build supports**, through
+the CLI and nothing else. It is a living inventory rather than a demo: `cli/tests/cli.rs`
+runs it, so a feature that breaks or a flag that changes fails the build. **A feature that
+lands without a line there is a feature nobody can see — add one when you add a capability.**
+
+```sh
+SHEET=target/debug/sheet examples/sample.sh /tmp/demo
+```
+
 ## Conventions
 
 - **Positions are 0-based in the core.** Only the CLI is 1-based, and it converts in exactly
@@ -463,11 +496,13 @@ in one undo step; `general` clears it. The vocabulary is `numfmt::preset` in the
 a GUI's format picker cannot invent a second one.
 
 Two-branch formats (`style:map`) read, render and round-trip; `sheet format` cannot build
-one, but a document that has one keeps it.
+one, but a document that has one keeps it. **Cell styling** — weights, colours, borders,
+alignment, wrapping — reads, writes and round-trips too (`core/src/style.rs`), and `sheet
+style` sets it.
 
 What is left in the phase: locales — a preset date is the ISO spelling and nothing can ask
-for `DD.MM.YYYY` yet, though the model holds one fine — and cell styles beyond the
-data-style link (fonts, borders and backgrounds are read and dropped, as they always were).
+for `DD.MM.YYYY` yet, though the model holds one fine — and fonts, which LibreOffice rewrites
+into a `office:font-face-decls` reference (§5.4) and which nothing can draw anyway.
 
 **Phase 6 is done, out of order** — the CLI, because the ratchet cannot ratchet while it is a
 stub and because phase 4's functions were reachable only from `cargo test`. It brought the

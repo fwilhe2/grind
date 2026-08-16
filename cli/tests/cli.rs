@@ -216,6 +216,42 @@ fn formatting_an_absurd_rectangle_fails_instead_of_trying() {
     );
 }
 
+/// `examples/sample.sh` is the inventory of what this build can do, and an inventory that
+/// is not run is a wish list. Running it here means a feature that stops working, or a
+/// command that changes its flags, fails the build rather than the next reader.
+#[test]
+fn the_sample_script_still_builds_its_document() {
+    let dir = Sandbox::new("sample");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the workspace root")
+        .join("examples/sample.sh");
+
+    let output = Command::new("bash")
+        .arg(&script)
+        .arg(s(&dir.path("out")))
+        .env("SHEET", env!("CARGO_BIN_EXE_sheet"))
+        .output()
+        .expect("bash runs");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Both forms exist, and the document reads back as the one the script described.
+    assert!(dir.path("out/sample.ods").exists());
+    assert!(dir.path("out/sample.fods").exists());
+    let book = s(&dir.path("out/sample.ods"));
+    assert_eq!(ok(&["get", &book, "B12"]).trim(), "2026-08-16");
+    assert_eq!(ok(&["get", &book, "B12", "--raw"]).trim(), "46250");
+    assert_eq!(ok(&["get", &book, "B5", "--formula"]).trim(), "=SUM([.B2:.B4])");
+    // A styled and formatted header, and a currency cell whose value is untouched.
+    assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1234.5");
+    assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
+}
+
 #[test]
 fn recalc_updates_a_stale_value_and_reports_it() {
     let dir = Sandbox::new("recalc");

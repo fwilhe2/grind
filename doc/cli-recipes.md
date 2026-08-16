@@ -140,6 +140,21 @@ sheet format report.ods A1 date >/dev/null
 sheet get report.ods A1                                  # 2026-08-16
 ```
 
+## Style a header row
+
+```sh
+sheet style report.ods A1:E1 --bold --background '#dddddd' --align center \
+      --border '0.5pt solid #000000' >/dev/null
+sheet style report.ods A1:E1 >/dev/null      # no options: plain again
+```
+
+`style` *replaces* a cell's styling rather than adding to it, so one command says everything
+that cell should look like. Fonts are deliberately absent — LibreOffice rewrites a font
+family into a reference nothing here follows yet.
+
+[`examples/sample.sh`](../examples/sample.sh) builds a document using every feature at once,
+and is run by the test suite, so it is always a working example of the current CLI.
+
 ## Gate a repository's spreadsheets in CI
 
 An error cell is text beginning with `#`. This fails the build when a committed document

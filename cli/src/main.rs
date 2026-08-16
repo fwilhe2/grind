@@ -20,6 +20,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use sheet_core::numfmt;
+use sheet_core::style::{self, CellStyle};
 use sheet_core::{App, CellValue, Pos, Session};
 
 use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
@@ -73,6 +74,23 @@ enum Style {
     Time,
     Boolean,
     Text,
+}
+
+/// `fo:text-align`, in the spelling a person uses. ODF's own values are writing-direction
+/// relative — `start` and `end`, not left and right — and this is the translation.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum Align {
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum VAlign {
+    Top,
+    Middle,
+    Bottom,
 }
 
 #[derive(Subcommand)]
@@ -160,6 +178,42 @@ enum Command {
         /// Currency symbol
         #[arg(long, default_value = "$")]
         symbol: String,
+    },
+
+    /// Set how a cell or range looks
+    ///
+    /// Replaces the cell's styling rather than adding to it, so `sheet style A1` with no
+    /// options makes A1 plain again. Fonts are deliberately absent: LibreOffice rewrites a
+    /// font family into a reference nothing here can follow yet.
+    Style {
+        file: PathBuf,
+        /// Cell address or range, e.g. A1:D1 or Data.B:B
+        address: String,
+        #[arg(long)]
+        bold: bool,
+        #[arg(long)]
+        italic: bool,
+        /// Text colour, #rrggbb
+        #[arg(long, value_parser = color)]
+        color: Option<String>,
+        /// Cell background, #rrggbb or "transparent"
+        #[arg(long, value_parser = color)]
+        background: Option<String>,
+        /// Horizontal alignment
+        #[arg(long, value_enum)]
+        align: Option<Align>,
+        /// Vertical alignment
+        #[arg(long, value_enum)]
+        valign: Option<VAlign>,
+        /// Wrap text at the cell edge
+        #[arg(long)]
+        wrap: bool,
+        /// Font size, e.g. 14pt
+        #[arg(long)]
+        size: Option<String>,
+        /// Border on every edge, as width, line and colour: "0.5pt solid #000000"
+        #[arg(long, value_parser = border)]
+        border: Option<String>,
     },
 
     /// Recalculate every formula in the document
@@ -329,6 +383,55 @@ fn run(cli: &Cli) -> Result<Report, String> {
             finish(&app, cli, file, changed > 0)
         }
 
+        Command::Style {
+            file,
+            address,
+            bold,
+            italic,
+            color,
+            background,
+            align,
+            valign,
+            wrap,
+            size,
+            border,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address)?)?;
+            let mut want = CellStyle {
+                font_weight: bold.then(|| "bold".to_owned()),
+                font_style: italic.then(|| "italic".to_owned()),
+                font_size: size.clone(),
+                color: color.clone(),
+                background: background.clone(),
+                align: align.map(|a| {
+                    match a {
+                        // §16.5: the values are relative to the writing direction.
+                        Align::Left => "start",
+                        Align::Center => "center",
+                        Align::Right => "end",
+                        Align::Justify => "justify",
+                    }
+                    .to_owned()
+                }),
+                vertical_align: valign.map(|v| {
+                    match v {
+                        VAlign::Top => "top",
+                        VAlign::Middle => "middle",
+                        VAlign::Bottom => "bottom",
+                    }
+                    .to_owned()
+                }),
+                wrap: wrap.then(|| "wrap".to_owned()),
+                borders: Default::default(),
+            };
+            want.set_border(border.clone());
+            let changed = app
+                .set_style(sheet, start, end, Some(want))
+                .map_err(|e| e.to_string())?;
+            finish(&app, cli, file, changed > 0)
+        }
+
         Command::Recalc { file } => {
             let app = load(file, cli)?;
             let recalc = app.recalc().map_err(|e| e.to_string())?;
@@ -388,6 +491,28 @@ fn run(cli: &Cli) -> Result<Report, String> {
 }
 
 // --- helpers ---
+
+/// A colour as ODF spells one. Checked here rather than in the core: this is where a user's
+/// typing enters, and a *document's* value is whatever the document said.
+fn color(value: &str) -> Result<String, String> {
+    let hex = value.strip_prefix('#').unwrap_or_default();
+    if value == "transparent"
+        || (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Ok(value.to_owned());
+    }
+    Err(format!("{value}: expected #rrggbb or transparent"))
+}
+
+/// A border as its three parts, so a typo becomes an error here rather than an attribute
+/// LibreOffice silently drops.
+fn border(value: &str) -> Result<String, String> {
+    match style::border_parts(value) {
+        Some(_) => Ok(value.to_owned()),
+        None => Err(format!("{value}: expected a width, a line and a colour, \
+                             e.g. \"0.5pt solid #000000\"")),
+    }
+}
 
 /// The core's [`numfmt::Kind`] for a command-line style. `General` and `Datetime` never get
 /// here: neither is a family.
