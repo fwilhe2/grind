@@ -26,6 +26,7 @@ use crate::model::Pos;
 
 use super::super::eval::{Address, Area, order};
 use super::super::value::{FormulaError, Value};
+use super::super::wildcard;
 use super::Args;
 
 type Answer = Result<Value, FormulaError>;
@@ -62,7 +63,14 @@ fn search(key: &Value, values: &[Value], mode: Mode) -> Result<usize, FormulaErr
             continue;
         };
         let candidate = match mode {
-            Mode::Exact => ordering == Ordering::Equal,
+            // §6.14.9 and §6.14.12 both defer to HOST-USE-WILDCARDS, and only the unsorted
+            // search can honour it — a pattern has no place in an ordering (see `wildcard`).
+            Mode::Exact => match (key, value) {
+                (Value::Text(pattern), Value::Text(text)) if wildcard::is_pattern(pattern) => {
+                    wildcard::matches(pattern, text)
+                }
+                _ => ordering == Ordering::Equal,
+            },
             Mode::Ascending => ordering != Ordering::Greater,
             Mode::Descending => ordering != Ordering::Less,
         };
@@ -293,6 +301,25 @@ mod tests {
         // §6.14.3: only the chosen parameter is evaluated, so the division never happens.
         assert_eq!(eval("=CHOOSE(1;\"a\";1/0)"), Value::Text("a".into()));
         assert_eq!(eval("=CHOOSE(4;\"a\")"), Value::Error(FormulaError::Value));
+    }
+
+    #[test]
+    fn an_unsorted_search_and_a_criterion_both_read_text_as_a_pattern() {
+        // §3.4 item 6, and only where the host properties reach: the exact searches and
+        // `=`/`<>`. B5 is "fruit", A5 is "apple".
+        assert_eq!(eval("=MATCH(\"ap*\";[.A1:.A5];0)"), Value::Number(5.0));
+        assert_eq!(eval("=MATCH(\"?pple\";[.A1:.A5];0)"), Value::Number(5.0));
+        assert_eq!(
+            eval("=MATCH(\"pple\";[.A1:.A5];0)"),
+            Value::Error(FormulaError::NA) // anchored: no implicit leading `*`
+        );
+        assert_eq!(
+            eval("=VLOOKUP(\"a*\";[.A1:.B5];2;FALSE())"),
+            Value::Text("fruit".into())
+        );
+        assert_eq!(eval("=COUNTIF([.B1:.B5];\"t*\")"), Value::Number(2.0));
+        assert_eq!(eval("=COUNTIF([.B1:.B5];\"<>t*\")"), Value::Number(3.0));
+        assert_eq!(eval("=COUNTIF([.B1:.B5];\"~*\")"), Value::Number(0.0));
     }
 
     #[test]
