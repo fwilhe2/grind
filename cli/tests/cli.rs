@@ -218,6 +218,22 @@ fn show_prints_the_styling_a_toolbar_would_merge_into() {
     assert!(shown.contains("fo:font-weight\tbold"), "{shown}");
     assert!(shown.contains("fo:background-color\t#ffff00"), "{shown}");
 
+    // A palette name is the same attribute a GUI's swatch writes — the table is the core's
+    // (`style::PALETTE`), so neither shell has its own idea of navy. Its colour reaches a
+    // border too, because a name in the file is an attribute LibreOffice drops silently.
+    ok(&[
+        "style", &s(&file), "A1", "--color", "navy", "--background", "Silver",
+        "--border", "0.5pt solid red",
+    ]);
+    let shown = ok(&["style", &s(&file), "A1", "--show"]);
+    assert!(shown.contains("fo:color\t#001f3f"), "{shown}");
+    assert!(shown.contains("fo:background-color\t#dddddd"), "case is irrelevant: {shown}");
+    assert!(shown.contains("fo:border\t0.5pt solid #ff4136"), "{shown}");
+    // A name that is not one says so, and names the palette rather than only the hex form.
+    let refused = sheet(&["style", &s(&file), "A1", "--color", "nvy"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("navy"));
+
     // Merging is the caller's job, and this is what makes it possible: read, add italic,
     // write, and the bold is still there.
     ok(&[

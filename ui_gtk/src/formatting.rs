@@ -32,11 +32,11 @@ use std::sync::Arc;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use gtk::glib;
+use gtk::{gdk, glib};
 
 use sheet_core::locale::Locale;
 use sheet_core::numfmt::{self, Kind};
-use sheet_core::style::CellStyle;
+use sheet_core::style::{self, CellStyle};
 use sheet_core::App;
 
 use crate::grid::{Grid, Notice};
@@ -88,6 +88,18 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     // `bool` is the whole mechanism.
     let updating = Rc::new(Cell::new(false));
 
+    // Each control is one field, and every one of them goes through `restyle`, so "read the
+    // active cell, change one thing, write the rectangle" exists once.
+    let field = |grid: &Grid, app: &Arc<App>, updating: &Rc<Cell<bool>>| {
+        let (grid, app, updating) = (grid.clone(), app.clone(), updating.clone());
+        move |set: &dyn Fn(&mut CellStyle)| {
+            if updating.get() {
+                return;
+            }
+            restyle(&grid, &app, set);
+        }
+    };
+
     let bold = toggle("format-text-bold-symbolic", "Bold");
     let italic = toggle("format-text-italic-symbolic", "Italic");
     let emphasis = linked(&[&bold, &italic]);
@@ -99,10 +111,24 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
 
     let wrap = toggle("format-justify-fill-symbolic", "Wrap Text");
 
-    let color = gtk::ColorDialogButton::new(Some(gtk::ColorDialog::new()));
-    color.set_tooltip_text(Some("Text Colour"));
-    let background = gtk::ColorDialogButton::new(Some(gtk::ColorDialog::new()));
-    background.set_tooltip_text(Some("Cell Background"));
+    // The two colour buttons offer `style::PALETTE` — the palette a document written from
+    // either shell uses — with a dialog behind "Custom…" for anything else.
+    let color = {
+        let apply = field(grid, app, &updating);
+        Swatches::new(
+            &gtk::Label::new(Some("A")).upcast(),
+            "Text Colour",
+            move |value| apply(&|style| style.color = value.clone()),
+        )
+    };
+    let background = {
+        let apply = field(grid, app, &updating);
+        Swatches::new(
+            &gtk::Image::from_icon_name("color-select-symbolic").upcast(),
+            "Cell Background",
+            move |value| apply(&|style| style.background = value.clone()),
+        )
+    };
 
     let clear = gtk::Button::from_icon_name("edit-clear-symbolic");
     clear.set_tooltip_text(Some("Clear Formatting"));
@@ -118,8 +144,8 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         emphasis.upcast_ref::<gtk::Widget>(),
         align.upcast_ref(),
         wrap.upcast_ref(),
-        color.upcast_ref(),
-        background.upcast_ref(),
+        color.button.upcast_ref(),
+        background.button.upcast_ref(),
         numbers.upcast_ref(),
         clear.upcast_ref(),
     ] {
@@ -127,18 +153,6 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     }
 
     // --- writing ---
-
-    // Each toggle is one field, and every one of them goes through `restyle`, so "read the
-    // active cell, change one thing, write the rectangle" exists once.
-    let field = |grid: &Grid, app: &Arc<App>, updating: &Rc<Cell<bool>>| {
-        let (grid, app, updating) = (grid.clone(), app.clone(), updating.clone());
-        move |set: &dyn Fn(&mut CellStyle)| {
-            if updating.get() {
-                return;
-            }
-            restyle(&grid, &app, set);
-        }
-    };
 
     let apply = field(grid, app, &updating);
     bold.connect_toggled(move |button| {
@@ -165,17 +179,6 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         button.connect_toggled(move |button| {
             let on = button.is_active();
             apply(&|style| style.align = on.then(|| value.to_owned()));
-        });
-    }
-
-    for (button, text) in [(&color, true), (&background, false)] {
-        let apply = field(grid, app, &updating);
-        button.connect_rgba_notify(move |button| {
-            let hex = hex(button.rgba());
-            apply(&|style| match text {
-                true => style.color = Some(hex.clone()),
-                false => style.background = Some(hex.clone()),
-            });
         });
     }
 
@@ -229,16 +232,10 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
             left.set_active(matches!(align, Some("start" | "left")));
             center.set_active(align == Some("center"));
             right.set_active(matches!(align, Some("end" | "right")));
-            // A cell with no colour of its own shows the **theme's**, not the swatch's own
+            // A cell with no colour of its own shows the **theme's**, not a swatch's own
             // default — a red swatch over an unstyled cell is a claim about the cell.
-            let palette = crate::theme::Palette::of(&colors.0);
-            for (button, value, unset) in [
-                (&colors.0, &style.color, palette.foreground),
-                (&colors.1, &style.background, palette.background),
-            ] {
-                let rgba = value.as_deref().and_then(crate::theme::color).unwrap_or(unset);
-                button.set_rgba(&rgba);
-            }
+            colors.0.show(style.color.as_deref(), true);
+            colors.1.show(style.background.as_deref(), false);
             picker.show(format.as_ref());
             updating.set(false);
         }
@@ -278,6 +275,182 @@ fn restyle(grid: &Grid, app: &Arc<App>, set: &dyn Fn(&mut CellStyle)) {
     let style = (!style.is_plain()).then_some(style);
     if let Err(error) = app.set_style(sheet, start, end, style) {
         grid.report(Notice::Refused(error.to_string()));
+    }
+}
+
+/// One colour button: the cell's colour on its face, [`style::PALETTE`] as the choices, and a
+/// dialog behind *Custom…* for anything else.
+///
+/// The palette is a **default, not a limit** — it lives in the core so that `sheet style
+/// --color navy` and this button's navy swatch write the same attribute, and the dialog is
+/// what keeps arbitrary colours reachable. *Automatic* is the third answer and the one a
+/// colour dialog cannot give: remove the attribute, and let the theme decide again.
+struct Swatches {
+    button: gtk::MenuButton,
+    /// The colour drawn on the button's face — the cell's own, or the theme's when the cell
+    /// has none. A `Cell` because the draw function reads it on every frame.
+    shown: Rc<Cell<gdk::RGBA>>,
+    face: gtk::DrawingArea,
+}
+
+impl Swatches {
+    fn new(
+        head: &gtk::Widget,
+        tooltip: &str,
+        pick: impl Fn(Option<String>) + 'static,
+    ) -> Rc<Self> {
+        let pick = Rc::new(pick);
+        let shown = Rc::new(Cell::new(gdk::RGBA::BLACK));
+        let face = area(shown.clone(), 16, 4);
+
+        let stack = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        stack.set_halign(gtk::Align::Center);
+        stack.append(head);
+        stack.append(&face);
+
+        let popover = gtk::Popover::new();
+        let button = gtk::MenuButton::builder()
+            .child(&stack)
+            .tooltip_text(tooltip)
+            .popover(&popover)
+            .build();
+        button.add_css_class("flat");
+
+        let choices = gtk::Grid::builder()
+            .row_spacing(4)
+            .column_spacing(4)
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_start(6)
+            .margin_end(6)
+            .build();
+        // Six to a row, which puts the greys on the last one — the palette's own order, so a
+        // user reading clrs.cc and a user reading this menu see the same thing.
+        for (index, (name, hex)) in style::PALETTE.iter().enumerate() {
+            let Some(rgba) = crate::theme::color(hex) else {
+                continue;
+            };
+            let swatch = gtk::Button::builder()
+                .child(&area(Rc::new(Cell::new(rgba)), 20, 20))
+                .tooltip_text(capitalised(name))
+                .build();
+            swatch.add_css_class("flat");
+            swatch.connect_clicked(glib::clone!(
+                #[weak]
+                popover,
+                #[strong]
+                pick,
+                move |_| {
+                    popover.popdown();
+                    pick(Some((*hex).to_owned()));
+                }
+            ));
+            choices.attach(&swatch, (index % 6) as i32, (index / 6) as i32, 1, 1);
+        }
+
+        let automatic = gtk::Button::with_label("Automatic");
+        automatic.connect_clicked(glib::clone!(
+            #[weak]
+            popover,
+            #[strong]
+            pick,
+            move |_| {
+                popover.popdown();
+                pick(None);
+            }
+        ));
+        choices.attach(&automatic, 0, 3, 3, 1);
+
+        let custom = gtk::Button::with_label("Custom…");
+        custom.connect_clicked(glib::clone!(
+            #[weak]
+            popover,
+            #[strong]
+            pick,
+            #[strong]
+            shown,
+            move |button| {
+                popover.popdown();
+                let window = button.root().and_downcast::<gtk::Window>();
+                let pick = pick.clone();
+                gtk::ColorDialog::new().choose_rgba(
+                    window.as_ref(),
+                    Some(&shown.get()),
+                    gtk::gio::Cancellable::NONE,
+                    move |chosen| {
+                        if let Ok(rgba) = chosen {
+                            pick(Some(hex(rgba)));
+                        }
+                    },
+                );
+            }
+        ));
+        choices.attach(&custom, 3, 3, 3, 1);
+        popover.set_child(Some(&choices));
+
+        Rc::new(Self {
+            button,
+            shown,
+            face,
+        })
+    }
+
+    /// Show what the cell has: its own colour, or the theme's when it has none.
+    ///
+    /// `text` picks *which* of the theme's, because "no colour" means the foreground for text
+    /// and the sheet's background for a fill.
+    fn show(&self, value: Option<&str>, text: bool) {
+        let palette = crate::theme::Palette::of(&self.face);
+        let unset = match text {
+            true => palette.foreground,
+            false => palette.background,
+        };
+        self.shown
+            .set(value.and_then(crate::theme::color).unwrap_or(unset));
+        self.face.queue_draw();
+    }
+}
+
+/// A rectangle that paints one colour — a swatch, with a hairline so that white on white is
+/// still a swatch.
+fn area(color: Rc<Cell<gdk::RGBA>>, width: i32, height: i32) -> gtk::DrawingArea {
+    let area = gtk::DrawingArea::new();
+    area.set_content_width(width);
+    area.set_content_height(height);
+    area.set_draw_func(move |area, cr, w, h| {
+        let rgba = color.get();
+        let (w, h) = (f64::from(w), f64::from(h));
+        cr.set_source_rgba(
+            f64::from(rgba.red()),
+            f64::from(rgba.green()),
+            f64::from(rgba.blue()),
+            f64::from(rgba.alpha()),
+        );
+        cr.rectangle(0.0, 0.0, w, h);
+        let _ = cr.fill();
+        // The hairline is the theme's foreground, faded — the same trick the grid's lines use,
+        // and the reason a white swatch has an edge in both light and dark.
+        let edge = crate::theme::with_alpha(crate::theme::Palette::of(area).foreground, 0.3);
+        cr.set_source_rgba(
+            f64::from(edge.red()),
+            f64::from(edge.green()),
+            f64::from(edge.blue()),
+            f64::from(edge.alpha()),
+        );
+        cr.set_line_width(1.0);
+        cr.rectangle(0.5, 0.5, w - 1.0, h - 1.0);
+        let _ = cr.stroke();
+    });
+    area
+}
+
+/// A palette name as a menu shows it. The names are ASCII and lower-case by construction
+/// (`style::PALETTE`), so this is the whole of the transformation.
+fn capitalised(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
     }
 }
 
@@ -489,7 +662,6 @@ fn hex(rgba: gtk::gdk::RGBA) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheet_core::style;
 
     /// The strip's vocabulary is the core's. Both halves of that are checkable without a
     /// display: every kind the menu offers is one `numfmt` builds, and a colour makes the
@@ -512,6 +684,24 @@ mod tests {
             }
         }
         assert!(numfmt::datetime_preset().is_preset());
+    }
+
+    /// The swatches are the core's palette, both ways: every hex paints, and every label a
+    /// menu shows resolves back to the colour it painted — which is what makes a navy swatch
+    /// and `sheet style --color navy` the same attribute.
+    #[test]
+    fn every_palette_colour_paints_and_its_label_resolves_back() {
+        for (name, hex) in style::PALETTE {
+            assert!(
+                crate::theme::color(hex).is_some(),
+                "{name} is {hex}, which does not parse as a colour"
+            );
+            assert_eq!(
+                style::palette(&capitalised(name)),
+                Some(hex),
+                "the menu's label for {hex} does not resolve back to it"
+            );
+        }
     }
 
     #[test]

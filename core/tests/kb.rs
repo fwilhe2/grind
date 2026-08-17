@@ -466,3 +466,44 @@ fn changed_lines(before: &str, after: &str) -> (usize, usize) {
         counts.values().filter(|n| **n < 0).map(|n| -*n as usize).sum(),
     )
 }
+
+/// `style::PALETTE` is held against a document, not against its own comment.
+///
+/// `custom-colors.fods` is the clrs.cc palette as LibreOffice wrote it, with each colour's
+/// **name** in the cell it fills — so the table a shell offers by default can be checked
+/// against a real `fo:background-color` rather than trusted. A colour that drifts here is a
+/// document whose swatch labelled "navy" is not navy.
+#[test]
+fn the_default_palette_is_the_one_the_sample_document_uses() {
+    let app = sheet_core::App::new();
+    app.open_file(&data("samples", "custom-colors.fods")).unwrap();
+    let (rows, cols) = app.used_extent(0).unwrap();
+
+    let mut found = 0;
+    for row in 0..rows {
+        for col in 0..cols {
+            let pos = Pos::new(row, col);
+            let sheet_core::CellValue::Text(label) = app.get(0, pos).unwrap() else {
+                continue;
+            };
+            let Some(expected) = sheet_core::style::palette(&label) else {
+                continue; // the caption row, which names no colour
+            };
+            let background = app
+                .style_at(0, pos)
+                .unwrap()
+                .and_then(|style| style.background);
+            assert_eq!(
+                background.as_deref(),
+                Some(expected),
+                "{label} at {pos:?} is not the palette's {expected}"
+            );
+            found += 1;
+        }
+    }
+    assert_eq!(
+        found,
+        sheet_core::style::PALETTE.len(),
+        "the fixture stopped covering the whole palette"
+    );
+}

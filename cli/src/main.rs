@@ -240,10 +240,10 @@ enum Command {
         bold: bool,
         #[arg(long)]
         italic: bool,
-        /// Text colour, #rrggbb
+        /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
         #[arg(long, value_parser = color)]
         color: Option<String>,
-        /// Cell background, #rrggbb or "transparent"
+        /// Cell background: a palette name, #rrggbb, or "transparent"
         #[arg(long, value_parser = color)]
         background: Option<String>,
         /// Horizontal alignment
@@ -258,7 +258,7 @@ enum Command {
         /// Font size, e.g. 14pt
         #[arg(long)]
         size: Option<String>,
-        /// Border on every edge, as width, line and colour: "0.5pt solid #000000"
+        /// Border on every edge, as width, line and colour: "0.5pt solid navy"
         #[arg(long, value_parser = border)]
         border: Option<String>,
     },
@@ -755,22 +755,44 @@ fn locale(value: &str) -> Result<sheet_core::locale::Locale, String> {
 /// A colour as ODF spells one. Checked here rather than in the core: this is where a user's
 /// typing enters, and a *document's* value is whatever the document said.
 fn color(value: &str) -> Result<String, String> {
+    // A palette name first, so `--color navy` and a GUI's navy swatch write the same
+    // attribute (`style::PALETTE`). Anything else has to be a colour a document can hold.
+    if let Some(hex) = style::palette(value) {
+        return Ok(hex.to_owned());
+    }
     let hex = value.strip_prefix('#').unwrap_or_default();
     if value == "transparent"
         || (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
     {
         return Ok(value.to_owned());
     }
-    Err(format!("{value}: expected #rrggbb or transparent"))
+    Err(format!(
+        "{value}: expected #rrggbb, transparent, or a palette name ({})",
+        style::PALETTE
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 /// A border as its three parts, so a typo becomes an error here rather than an attribute
-/// LibreOffice silently drops.
+/// LibreOffice silently drops. Its colour takes a palette name too, which means resolving
+/// one — a name reaching the file would be an attribute LibreOffice drops silently.
 fn border(value: &str) -> Result<String, String> {
-    match style::border_parts(value) {
-        Some(_) => Ok(value.to_owned()),
-        None => Err(format!("{value}: expected a width, a line and a colour, \
-                             e.g. \"0.5pt solid #000000\"")),
+    let malformed = || {
+        format!("{value}: expected a width, a line and a colour, \
+                 e.g. \"0.5pt solid #000000\"")
+    };
+    let fields: Vec<&str> = value.split_whitespace().collect();
+    let [width, line, name] = fields[..] else {
+        return Err(malformed());
+    };
+    // The width is kept as it was typed; only the colour is rewritten.
+    let resolved = format!("{width} {line} {}", color(name)?);
+    match style::border_parts(&resolved) {
+        Some(_) => Ok(resolved),
+        None => Err(malformed()),
     }
 }
 

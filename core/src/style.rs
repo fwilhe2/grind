@@ -34,6 +34,48 @@ use serde::{Deserialize, Serialize};
 /// Which edge a border is on. The array order in [`CellStyle::borders`].
 pub const EDGES: [&str; 4] = ["left", "right", "top", "bottom"];
 
+/// The colours a shell offers by default, and the names a person may spell them by — the
+/// palette at <https://clrs.cc/>.
+///
+/// A **default, never a limit**: ODF takes any `#rrggbb`, `CellStyle` keeps whatever the
+/// document said, and a shell may still ask for a colour that is not here. What this fixes is
+/// the two places a colour is *chosen* rather than read — a GUI's swatches and `sheet style
+/// --color` — for the same reason `numfmt::preset` lives in the core: a document coloured
+/// from one shell and one coloured from another should not need a second table to agree.
+///
+/// The hexes are held against a real document rather than against this comment:
+/// `core/tests/data/samples/custom-colors.fods` is this palette as LibreOffice wrote it, with
+/// each colour's name in the cell it fills, and a test reads it back.
+pub const PALETTE: [(&str, &str); 17] = [
+    ("navy", "#001f3f"),
+    ("blue", "#0074d9"),
+    ("aqua", "#7fdbff"),
+    ("teal", "#39cccc"),
+    ("purple", "#b10dc9"),
+    ("fuchsia", "#f012be"),
+    ("maroon", "#85144b"),
+    ("red", "#ff4136"),
+    ("orange", "#ff851b"),
+    ("yellow", "#ffdc00"),
+    ("olive", "#3d9970"),
+    ("green", "#2ecc40"),
+    ("lime", "#01ff70"),
+    ("black", "#111111"),
+    ("gray", "#aaaaaa"),
+    ("silver", "#dddddd"),
+    ("white", "#ffffff"),
+];
+
+/// A [`PALETTE`] name as the colour a document stores, case-insensitively. `None` for anything
+/// else, including a hex a caller should keep as it is.
+pub fn palette(name: &str) -> Option<&'static str> {
+    let name = name.trim().to_ascii_lowercase();
+    PALETTE
+        .iter()
+        .find(|(known, _)| *known == name)
+        .map(|(_, hex)| *hex)
+}
+
 /// How one cell looks. Every field is an ODF attribute value, and `None` means the
 /// attribute is absent — which is not the same as a value of `"none"`, the spelling ODF
 /// uses for "explicitly no border".

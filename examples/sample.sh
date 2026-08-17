@@ -89,9 +89,12 @@ run format "$book" B5 number --decimals 2 --grouping
 run format "$book" B6 general                              # back to the plain value
 run format "$book" B11 number --decimals 2 --locale de-DE  # 2.155,01 rather than 2,155.01
 
+# Colours may be named as well as spelled in hex: the names are the palette in
+# `style::PALETTE`, which lives in the core so that a name here and a swatch in a GUI write
+# the same attribute. Anything outside it is still a plain #rrggbb.
 say "cell styling"
-run style "$book" A1:E1 --bold --background '#dddddd' --align center --border '0.5pt solid #000000'
-run style "$book" A2:A4 --italic --color '#0000aa'
+run style "$book" A1:E1 --bold --background silver --align center --border '0.5pt solid navy'
+run style "$book" A2:A4 --italic --color navy
 run style "$book" E3 --wrap --valign top --size 9pt
 run style "$book" B5 --bold --align right
 

@@ -330,6 +330,13 @@ pool keys on the **pair**.
   `office:font-face-decls` reference, and **exact border widths**, which LO re-quantises
   (`0.5pt` comes back `0.51pt`) — so loop C compares widths numerically and everything else
   exactly.
+- **`PALETTE` is the colours a shell offers by default** — the palette at
+  <https://clrs.cc/>, with a name per colour — and it is in the core for `numfmt::preset`'s
+  reason: `sheet style --color navy` and a GUI's navy swatch must write the same attribute.
+  A **default, never a limit**: any `#rrggbb` still goes through, and a document's colour is
+  whatever the document said. The table is held against a *document* rather than a comment —
+  `core/tests/data/samples/custom-colors.fods` is this palette as LibreOffice wrote it with
+  each name in the cell it fills, and `kb.rs` reads all seventeen back.
 
 ### `core/src/odf/` — the reader
 
@@ -693,6 +700,12 @@ core is missing something.
   (`Grid::target`), because a whole-column selection would ask for a million entries and the
   core refuses it; and `updating` guards the refresh, because setting a `GtkToggleButton`
   programmatically fires the same signal a click does.
+- **The colour buttons offer `style::PALETTE`, and three answers rather than two.** The
+  seventeen clrs.cc colours are the default choices, *Custom…* opens `gtk::ColorDialog` for
+  anything else, and *Automatic* removes the attribute — the answer a colour dialog cannot
+  give, and the reason clearing one colour does not mean clearing the whole style. Each button
+  wears the cell's own colour: a `gtk::DrawingArea` painting the hex under an "A" or the
+  eyedropper icon, with a faded-foreground hairline so white on white is still a swatch.
 - **The strip refreshes on two events, and only one is a selection change.** Undo, redo and a
   load change the cell under an unmoved selection, so the window's own `refresh` calls
   `Strip::refresh` as well — the same shape `chrome::Tabs` has.
@@ -731,7 +744,10 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
   well" is a read, a field and a write, and the CLI can do all three. Text output is one
   `key<TAB>value` line per thing that is set — ODF's own attribute names for a style, `sheet
   format`'s own flags for a format, and `preset` saying whether those flags would rebuild it.
-  A plain cell prints *nothing*, which is what a script tests for. One cell rather than a
+  `--color`/`--background`/`--border` take a **palette name** as well as a hex
+  (`style::PALETTE`), resolved to the hex before it reaches the document, because a name in
+  the file is an attribute LibreOffice drops silently. A plain cell prints *nothing*, which is
+  what a script tests for. One cell rather than a
   rectangle: the answer for a rectangle is either "they agree" or a list, and a list is what
   `sheet view` is.
 - **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
@@ -925,8 +941,9 @@ cells — backgrounds under the selection wash, the four `fo:border-*` edges ove
 lines, weight, slant, size, both alignments and wrapping — and `formatting.rs` is the format
 strip, whose whole vocabulary is `style::CellStyle`'s fields and `numfmt::preset`'s
 parameters. It brought C7 (`App::{style_at, format_at}`, reached by `sheet style|format
---show`), C8 (`Viewport::style`), and the inverse of the format vocabulary in the core, where
-both shells share it: `Format::{preset_params, is_preset}` and `Locale::tag`.
+--show`), C8 (`Viewport::style`), and the vocabulary both shells share rather than each
+inventing: `Format::{preset_params, is_preset}`, `Locale::tag`, and `style::PALETTE` — the
+clrs.cc colours a shell offers by default, checked against `custom-colors.fods`.
 
 Next is M8 — column widths and row heights, which is also what would let a wrapped cell and
 an oversized font stop clipping — then M9's packaging. The wasm shell after that is the honest
