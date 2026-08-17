@@ -97,4 +97,5 @@ Reachable from the CLI, but not `App` methods, so the test does not track them:
 - `core::a1` — addressing, the only 0↔1 conversion in the workspace. Free functions, used
   by every shell and by every command that takes an address.
 - `sheet functions` — `formula::funcs::implemented()`, already gated against
-  `doc/small-group.md` by its own test
+  `doc/small-group.md` by its own test; `--long` adds `formula::funcs::catalog()`, the
+  spec's own signature and summary for each, which is what a GUI's autocomplete offers

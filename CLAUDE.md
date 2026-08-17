@@ -540,6 +540,15 @@ that spec is the source of truth and a rule without a citation is a guess.
   and nothing else), and `RATE`/`IRR` iterate from `Guess` first — that is which root
   LibreOffice reports — falling back to a sign-change sweep of the whole domain only when the
   secant lands on nothing.
+- **`funcs::catalog()` is the spec quoted, not paraphrased.** Autocomplete needs a list, a
+  signature hint needs the parameter names, and a tooltip needs one line — all three are
+  already in Part 4, so `catalog.rs` carries each section's `Syntax:` and `Summary:`
+  verbatim with its section number, and the OASIS copyright alongside ours for the same
+  reason `doc/small-group.md` does. Two tests hold it: it names exactly `implemented()`, and
+  every section matches `doc/small-group.md`. The first of them found **three errata in the
+  spec** — §6.13.20 `ISNA`, §6.20.18 `REPT` and §6.12.45 `SLN` each have a `Syntax:` line
+  naming a *different* function — which are corrected in place and noted at the entry.
+  `sheet functions --long` prints it.
 - **`funcs::implemented()` is checked against `doc/small-group.md` by a test.** A function
   outside it fails the build, which is the anti-bloat rule made mechanical. The document has
   **two halves** and the test splits on the `# Beyond the Small Group` heading: above it is

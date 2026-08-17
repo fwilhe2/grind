@@ -27,6 +27,7 @@ mod datetime;
 mod db;
 mod fin;
 mod info;
+mod catalog;
 mod logical;
 mod lookup;
 mod math;
@@ -62,6 +63,8 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
 pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
+
+pub use catalog::{FuncInfo, catalog};
 
 /// How many functions §2.3.2 E) enumerates. The conformance claim's denominator, and the
 /// only number a coverage report may compare against — checked against
@@ -559,6 +562,55 @@ mod tests {
         );
         assert_eq!(eval("=PI(1)"), Value::Error(FormulaError::Value));
         assert_eq!(eval("=ABS()"), Value::Error(FormulaError::Value));
+    }
+
+    /// The catalog is what a shell offers a user, so it has to be the same list the
+    /// evaluator answers to — a function missing from it is unreachable from an
+    /// autocomplete, and one that is only in it is a promise nothing keeps.
+    #[test]
+    fn the_catalog_names_exactly_what_is_implemented() {
+        let mut catalogued: Vec<&str> = super::catalog().iter().map(|f| f.name).collect();
+        let mut implemented = super::implemented();
+        catalogued.sort_unstable();
+        implemented.sort_unstable();
+        assert_eq!(catalogued, implemented);
+
+        // Extracted from the spec rather than written about it, so each entry has to look
+        // like what it was extracted from.
+        for info in super::catalog() {
+            assert!(
+                info.signature.starts_with(info.name)
+                    && info.signature[info.name.len()..].starts_with('('),
+                "{}'s signature does not start with a call: {}",
+                info.name,
+                info.signature
+            );
+            assert!(!info.brief.is_empty(), "{} has no summary", info.name);
+        }
+    }
+
+    /// The section number is the citation, and a wrong one sends a reader to the wrong
+    /// definition — which is worse than none. `doc/small-group.md` carries the same
+    /// numbers, extracted the same way, so the two are checked against each other.
+    #[test]
+    fn every_catalogued_section_matches_the_small_group_document() {
+        let doc = include_str!("../../../../doc/small-group.md");
+        let documented: Vec<(&str, &str)> = doc
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("- `"))
+            .filter_map(|line| line.split_once("` — §"))
+            .collect();
+        for info in super::catalog() {
+            let (_, section) = documented
+                .iter()
+                .find(|(name, _)| *name == info.name)
+                .unwrap_or_else(|| panic!("{} is not in doc/small-group.md", info.name));
+            assert_eq!(
+                *section, info.section,
+                "{} cites §{} here and §{section} in doc/small-group.md",
+                info.name, info.section
+            );
+        }
     }
 
     /// The feature line, checked by a machine rather than by discipline (CLAUDE.md).

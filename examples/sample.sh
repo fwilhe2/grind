@@ -156,6 +156,7 @@ say "eval: what a formula would say at a cell, storing nothing"
 
 say "functions: what this build implements"
 "$SHEET" functions | tail -1
+"$SHEET" functions --long --filter vlookup    # signature and summary, from the spec
 
 # --- editing safely ----------------------------------------------------------------------
 

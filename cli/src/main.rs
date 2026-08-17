@@ -328,7 +328,14 @@ enum Command {
     },
 
     /// List the OpenFormula functions this build implements
-    Functions,
+    Functions {
+        /// Print each one's signature, summary and specification section
+        #[arg(long)]
+        long: bool,
+        /// Only functions whose name contains this
+        #[arg(long, value_name = "TEXT")]
+        filter: Option<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -666,9 +673,27 @@ fn run(cli: &Cli) -> Result<Report, String> {
             Ok(Report::Text(TextReport { lines: vec![line] }))
         }
 
-        Command::Functions => {
+        Command::Functions { long, filter } => {
             let names = sheet_core::formula::funcs::implemented();
-            let mut lines: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
+            let matches = |name: &str| {
+                filter
+                    .as_ref()
+                    .is_none_or(|f| name.to_uppercase().contains(&f.to_uppercase()))
+            };
+            // The catalog is the same list with the spec's own summary and syntax beside
+            // each name — what a GUI's autocomplete offers, so the two cannot disagree.
+            let mut lines: Vec<String> = match long {
+                true => sheet_core::formula::funcs::catalog()
+                    .iter()
+                    .filter(|info| matches(info.name))
+                    .map(|info| format!("{}\t{}\t§{}", info.signature, info.brief, info.section))
+                    .collect(),
+                false => names
+                    .iter()
+                    .filter(|n| matches(n))
+                    .map(|n| (*n).to_owned())
+                    .collect(),
+            };
             lines.sort();
             let beyond = sheet_core::formula::funcs::beyond_small_group();
             // Not "112 of 110": the Small Group is the conformance claim and the functions
