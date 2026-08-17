@@ -623,6 +623,10 @@ core is missing something.
   pushes, shells never poll). `Observer` is `Send + Sync` and a widget is neither, so what
   crosses is a token; the loop drains a burst into one refresh, *after* the mutation that
   sent it released the lock.
+- **The clipboard carries `App::input_text`, not the display text**: pasted back it
+  reproduces the cells exactly, and pasted elsewhere `1234.5` is a number where
+  `1,234.50 €` is a guess about that program's locale. Paste is asynchronous because the
+  clipboard is, and lands as one `App::enter_range` — one undo step.
 - **`chrome.rs` is the parts made of ordinary widgets** — formula bar, name box, sheet tabs,
   status bar — and owns nothing either. The name box resolves through `core::a1`, so what it
   means by `Data.B2:C9` is what a formula means by it.
@@ -829,5 +833,9 @@ one core capability: `App::input_text` — what an editor shows for a cell, whic
 `App::enter`'s inverse and therefore belongs beside it rather than in a shell (`sheet get
 --input`).
 
-Next is M5 — the clipboard, whose core half (`enter_range`, `clear_range`) already exists —
-and then M6's formula UX. The wasm shell after that is the honest test of rule 5.
+**M5 is done**: the clipboard. Ctrl+C/X/V over a selection, tab-separated, through
+`enter_range` and `clear_range`.
+
+Next is M6 — the formula UX: Point mode, F4, Tab-column memory, reference colouring from
+`display::spans`, autocomplete over a `funcs::catalog()` that does not exist yet (C9), and
+the live preview chip. The wasm shell after that is the honest test of rule 5.

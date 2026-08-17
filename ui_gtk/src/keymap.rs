@@ -85,6 +85,10 @@ pub enum Action {
     Move { motion: Motion, extend: bool },
     /// Ctrl+A — everything the sheet uses.
     SelectAll,
+    Copy,
+    /// Copy, then empty what was copied.
+    Cut,
+    Paste,
 }
 
 /// The key map. One table, no state.
@@ -129,9 +133,13 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
             }),
             false,
         ),
-        Key::Char(c) if mods.ctrl && !mods.shift && c.eq_ignore_ascii_case(&'a') => {
-            Some(Action::SelectAll)
-        }
+        Key::Char(c) if mods.ctrl && !mods.shift => match c.to_ascii_lowercase() {
+            'a' => Some(Action::SelectAll),
+            'c' => Some(Action::Copy),
+            'x' => Some(Action::Cut),
+            'v' => Some(Action::Paste),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -355,6 +363,20 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn the_clipboard_keys_are_the_ones_everybody_has() {
+        for (c, action) in [
+            ('c', Action::Copy),
+            ('x', Action::Cut),
+            ('v', Action::Paste),
+            ('a', Action::SelectAll),
+        ] {
+            assert_eq!(action_for(Key::Char(c), ctrl()), Some(action));
+            // The keyval's case is the keyboard's business, not the shortcut's.
+            assert_eq!(action_for(Key::Char(c.to_ascii_uppercase()), ctrl()), Some(action));
+        }
     }
 
     #[test]

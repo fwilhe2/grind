@@ -673,6 +673,18 @@ mod imp {
                         active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
                     }
                 }
+                Action::Copy => {
+                    self.copy(false);
+                    return glib::Propagation::Stop;
+                }
+                Action::Cut => {
+                    self.copy(true);
+                    return glib::Propagation::Stop;
+                }
+                Action::Paste => {
+                    self.paste();
+                    return glib::Propagation::Stop;
+                }
             };
             self.set_selection(selection);
             glib::Propagation::Stop
@@ -804,18 +816,111 @@ mod imp {
             }
         }
 
+        /// Put the selection on the clipboard as tab-separated rows, and with `cut`, empty
+        /// it afterwards.
+        ///
+        /// What travels is each cell's `App::input_text` — the raw number, or a formula in
+        /// display form — rather than what the cell *displays*. Two reasons: pasted back
+        /// here it reproduces the cells exactly, and pasted into another spreadsheet
+        /// `1234.5` is a number where `1,234.50 €` is a guess about that program's locale.
+        ///
+        /// ponytail: a cell holding a tab or a newline has them replaced with spaces, so
+        /// that the rectangle survives. The upgrade is quoting, in a codec shared with
+        /// `sheet paste` — both halves split on tabs today and neither may grow a private
+        /// dialect (`doc/plan.md` rule 4).
+        fn copy(&self, cut: bool) {
+            let app = self.app.borrow().clone();
+            let Some(app) = app else { return };
+            let Some((start, end)) = self.clamped_selection() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            let text = (start.row..=end.row)
+                .map(|row| {
+                    (start.col..=end.col)
+                        .map(|col| {
+                            app.input_text(sheet, Pos::new(row, col))
+                                .unwrap_or_default()
+                                .replace(['\t', '\n', '\r'], " ")
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\t")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.obj().clipboard().set_text(&text);
+            if cut {
+                let _ = app.clear_range(sheet, start, end);
+                self.obj().queue_draw();
+            }
+        }
+
+        /// Read the clipboard and fill from the selection's top-left corner.
+        ///
+        /// Asynchronous because the clipboard is: the data may be owned by another process
+        /// that has to be asked for it. Every cell goes through the same typing rule a
+        /// keystroke does, in one `Action::Batch`, so a paste is one undo step.
+        fn paste(&self) {
+            let (start, _) = self.selection.get().rect();
+            self.obj().clipboard().read_text_async(
+                gtk::gio::Cancellable::NONE,
+                glib::clone!(
+                    #[weak(rename_to = grid)]
+                    self.obj(),
+                    move |result| {
+                        let Ok(Some(text)) = result else { return };
+                        let rows: Vec<Vec<String>> = text
+                            .lines()
+                            .map(|line| line.split('\t').map(str::to_owned).collect())
+                            .collect();
+                        let imp = grid.imp();
+                        let app = imp.app.borrow().clone();
+                        let Some(app) = app else { return };
+                        match app.enter_range(imp.sheet.get(), start, &rows, RecalcMode::Document) {
+                            Ok(outcome) => {
+                                if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
+                                    imp.notice(Notice::RecalcSkipped(recalc.spoiled));
+                                }
+                                // Select what landed, which is what makes a paste visible
+                                // and a second paste elsewhere obvious.
+                                let last = Pos::new(
+                                    start.row + rows.len().saturating_sub(1) as u32,
+                                    start.col
+                                        + rows.iter().map(Vec::len).max().unwrap_or(1).saturating_sub(1) as u32,
+                                );
+                                imp.set_selection(Selection {
+                                    anchor: start,
+                                    active: last,
+                                });
+                            }
+                            Err(error) => imp.notice(Notice::BadFormula(error.to_string(), 0)),
+                        }
+                        grid.queue_draw();
+                    }
+                ),
+            );
+        }
+
+        /// The selection, cut down to the cells that exist. A whole-column selection is
+        /// 1048576 rows and every one of the operations here would otherwise be asked to
+        /// walk them.
+        fn clamped_selection(&self) -> Option<(Pos, Pos)> {
+            let (start, end) = self.selection.get().rect();
+            let (rows, cols) = self.used_extent();
+            let end = Pos::new(
+                end.row.min(rows.saturating_sub(1)),
+                end.col.min(cols.saturating_sub(1)),
+            );
+            (rows > 0 && cols > 0 && end.row >= start.row && end.col >= start.col)
+                .then_some((start, end))
+        }
+
         /// Empty the selection — Delete, and one undo step whatever its size.
         fn clear(&self) {
             let app = self.app.borrow().clone();
-            let Some(app) = app else { return };
-            let (start, end) = self.selection.get().rect();
-            let (rows, cols) = self.used_extent();
-            // Clamped to the used extent: Delete over a whole column must not ask the core
-            // for a million cells, and there is nothing to clear out there anyway.
-            let end = Pos::new(end.row.min(rows.saturating_sub(1)), end.col.min(cols.saturating_sub(1)));
-            if end.row < start.row || end.col < start.col {
+            let (Some(app), Some((start, end))) = (app, self.clamped_selection()) else {
                 return;
-            }
+            };
             let _ = app.clear_range(self.sheet.get(), start, end);
             self.obj().queue_draw();
         }
