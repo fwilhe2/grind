@@ -36,6 +36,8 @@ pub enum Key {
     Delete,
     Backspace,
     F2,
+    /// Cycles the `$` markers of a reference while editing (`state::cycle_absolute`).
+    F4,
     /// A character, exactly as it was typed — [`crate::state`] seeds an edit with it, so
     /// case-folding here would make every typed capital arrive in lower case.
     Char(char),

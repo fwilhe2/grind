@@ -171,6 +171,34 @@ pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
     Ok(out.to_string())
 }
 
+/// The reference covering a rectangle — what a shell builds when a user *points* at cells
+/// rather than typing an address.
+///
+/// Relative on every axis, because that is what pointing means: the formula is being
+/// written where it will live, and a reference typed by hand is relative unless a `$` says
+/// otherwise. [`crate::formula::display::reference_text`] prints it the way a formula bar
+/// shows it.
+pub fn reference(sheet: Option<&str>, start: Pos, end: Pos) -> Reference {
+    let cell = |pos: Pos| lex::CellRef {
+        sheet: sheet.map(str::to_owned),
+        sheet_absolute: sheet.is_some(),
+        col: Some(lex::Axis {
+            index: pos.col,
+            absolute: false,
+        }),
+        row: Some(lex::Axis {
+            index: pos.row,
+            absolute: false,
+        }),
+    };
+    Reference {
+        source: None,
+        start: cell(start),
+        // One cell is one end: `[.B2]`, never `[.B2:.B2]`, which is what a user reads back.
+        end: (start != end).then(|| cell(end)),
+    }
+}
+
 /// Whether a reference names exactly one cell — what `get` needs and `view` does not.
 pub fn is_single(reference: &Reference) -> bool {
     reference.end.is_none() && reference.start.row.is_some() && reference.start.col.is_some()

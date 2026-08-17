@@ -54,8 +54,8 @@ use std::ops::Range;
 
 use crate::a1;
 
-use super::lex::SyntaxError;
-use super::parse::parse;
+use super::lex::{Reference, SyntaxError};
+use super::parse::{Expr, parse};
 use super::serialize::Bare;
 
 /// What a scanned run of display-form text is.
@@ -110,6 +110,14 @@ impl std::error::Error for DisplayError {}
 /// [`from_display`] accepts back.
 pub fn to_display(canonical: &str) -> Result<String, SyntaxError> {
     Ok(format!("={}", Bare(&parse(canonical)?)))
+}
+
+/// One reference, in display form — `B2`, `Data.B2:C9`, `$A$1`.
+///
+/// The same printer the whole formula goes through, so a reference a shell writes into an
+/// editor is spelled exactly as the one [`to_display`] would have shown there.
+pub fn reference_text(reference: &Reference) -> String {
+    Bare(&Expr::Ref(reference.clone())).to_string()
 }
 
 /// Display form → canonical: `=SUM(B2:B4)` → `=SUM([.B2:.B4])`.
@@ -473,6 +481,25 @@ mod tests {
         assert_eq!(from_display("=$$'year end'").unwrap(), "=$$'year end'");
         // The quoted part of a `$$'…'` is skipped whole, so nothing inside it is scanned.
         assert_eq!(from_display("=$$'A1 and B2'").unwrap(), "=$$'A1 and B2'");
+    }
+
+    #[test]
+    fn a_pointed_reference_prints_the_way_it_would_be_typed() {
+        use crate::Pos;
+        let one = a1::reference(None, Pos::new(1, 1), Pos::new(1, 1));
+        assert_eq!(reference_text(&one), "B2");
+        let range = a1::reference(None, Pos::new(1, 1), Pos::new(3, 1));
+        assert_eq!(reference_text(&range), "B2:B4");
+        let elsewhere = a1::reference(Some("Data"), Pos::new(0, 0), Pos::new(8, 2));
+        assert_eq!(reference_text(&elsewhere), "$Data.A1:C9");
+        // And what it prints is what the scanner reads back.
+        for reference in [one, range, elsewhere] {
+            let text = reference_text(&reference);
+            assert_eq!(
+                from_display(&format!("=SUM({text})")).expect(&text),
+                format!("=SUM({})", reference)
+            );
+        }
     }
 
     #[test]

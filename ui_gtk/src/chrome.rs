@@ -67,6 +67,19 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         grid,
         move |_| grid.commit(Some(Dir::Down))
     ));
+    // The references, coloured — the same function the in-cell editor uses, over the same
+    // buffer, so the two copies of the formula cannot be coloured differently.
+    let colour = |entry: &gtk::Entry| {
+        let dark = crate::theme::is_dark(&crate::theme::Palette::of(entry));
+        let text = entry.text().to_string();
+        entry.set_attributes(&crate::theme::reference_attributes(&text, dark));
+    };
+    colour(&entry);
+    grid.buffer().connect_text_notify(glib::clone!(
+        #[weak]
+        entry,
+        move |_| colour(&entry)
+    ));
 
     let accept = icon_button("object-select-symbolic", "Accept");
     accept.connect_clicked(glib::clone!(
@@ -81,6 +94,19 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         move |_| grid.cancel_edit()
     ));
 
+    // The two labels at the end: what the function being typed takes, and what the formula
+    // would say if it were committed now.
+    let hint = gtk::Label::builder()
+        .use_markup(true)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .max_width_chars(44)
+        .xalign(1.0)
+        .build();
+    hint.add_css_class("dim-label");
+    let chip = gtk::Label::new(None);
+    chip.add_css_class("dim-label");
+    chip.add_css_class("numeric");
+
     let bar = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(6)
@@ -89,20 +115,130 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         .margin_top(3)
         .margin_bottom(3)
         .build();
-    for widget in [name_box.upcast_ref::<gtk::Widget>(), reject.upcast_ref(), accept.upcast_ref(), entry.upcast_ref()] {
+    for widget in [
+        name_box.upcast_ref::<gtk::Widget>(),
+        reject.upcast_ref(),
+        accept.upcast_ref(),
+        entry.upcast_ref(),
+        hint.upcast_ref(),
+        chip.upcast_ref(),
+    ] {
         bar.append(widget);
     }
-    bar.reorder_child_after(&entry, Some(&accept));
+
+    // Both are recomputed on every change to the shared buffer — the preview after a beat,
+    // because it evaluates and a keystroke is not the moment to do that.
+    let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
+    let update = glib::clone!(
+        #[weak]
+        grid,
+        #[weak]
+        entry,
+        #[weak]
+        hint,
+        #[weak]
+        chip,
+        #[strong]
+        app,
+        #[strong]
+        pending,
+        move || {
+            let text = grid.buffer().text().to_string();
+            // The caret is the focused editable's; when the formula bar does not have it,
+            // the end of the text is where the typing is.
+            let caret = match entry.has_focus() {
+                true => byte_offset(&text, entry.position()),
+                false => grid.caret(),
+            };
+            match crate::state::call_at(&text, caret)
+                .and_then(|(name, argument)| crate::formula_ux::signature_markup(&name, argument))
+            {
+                Some(markup) => {
+                    hint.set_markup(&markup);
+                    hint.set_visible(true);
+                }
+                None => hint.set_visible(false),
+            }
+
+            if let Some(source) = pending.take() {
+                source.remove();
+            }
+            if !grid.is_editing() || !text.starts_with('=') {
+                chip.set_visible(false);
+                return;
+            }
+            let (app, chip, grid, pending2) = (app.clone(), chip.clone(), grid.clone(), pending.clone());
+            pending.set(Some(glib::timeout_add_local_once(
+                std::time::Duration::from_millis(150),
+                move || {
+                    pending2.set(None);
+                    let text = grid.buffer().text().to_string();
+                    // Errors included, which is half the value: a formula that will not
+                    // parse says so before it is committed rather than after.
+                    let preview = match sheet_core::formula::display::from_display(&text) {
+                        Ok(canonical) => app
+                            .preview(grid.sheet(), grid.selection().active, &canonical)
+                            .map(|value| show_value(&value))
+                            .unwrap_or_else(|error| error.to_string()),
+                        Err(error) => error.message,
+                    };
+                    chip.set_text(&format!("= {preview}"));
+                    chip.set_visible(true);
+                },
+            )));
+        }
+    );
+    update();
+    grid.buffer().connect_text_notify(glib::clone!(
+        #[strong]
+        update,
+        move |_| update()
+    ));
+    grid.connect_editing_changed(glib::clone!(
+        #[strong]
+        update,
+        move |_| update()
+    ));
+    grid.connect_caret_moved(glib::clone!(
+        #[strong]
+        update,
+        move || update()
+    ));
+    // And the formula bar's own caret, for when it is the one being typed in.
+    entry.connect_cursor_position_notify(glib::clone!(
+        #[strong]
+        update,
+        move |_| update()
+    ));
 
     // The two buttons are only meaningful while an edit is open; the rest of the time they
     // would be two things to wonder about.
-    let update = move |editing: bool| {
+    let buttons = move |editing: bool| {
         accept.set_visible(editing);
         reject.set_visible(editing);
     };
-    update(false);
-    grid.connect_editing_changed(update);
+    buttons(false);
+    grid.connect_editing_changed(buttons);
     bar
+}
+
+/// A `GtkEditable` position, which counts characters, as a byte offset — which is what
+/// every scanner here counts in.
+fn byte_offset(text: &str, position: i32) -> usize {
+    text.char_indices()
+        .nth(position.max(0) as usize)
+        .map_or(text.len(), |(byte, _)| byte)
+}
+
+/// A previewed value, spelled the way the cell would spell it with no format.
+fn show_value(value: &CellValue) -> String {
+    match value {
+        CellValue::Empty => String::new(),
+        CellValue::Number(n) => show(*n),
+        CellValue::Bool(true) => "TRUE".to_owned(),
+        CellValue::Bool(false) => "FALSE".to_owned(),
+        CellValue::Text(text) => text.clone(),
+    }
 }
 
 /// An address or a defined name, as the name box takes it.

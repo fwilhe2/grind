@@ -425,7 +425,7 @@ lint`, the loops, parity.
 | M3 | Selection + navigation — *done* | keymap.rs Ready mode, header click/drag selection, Ctrl+arrows, status-bar aggregates | keyboard-only navigation of a corpus file feels right |
 | M4 | Editing v1 + chrome — *done* | `state.rs` Enter/Edit, in-cell editor + formula bar (shared buffer), commit/cancel, undo/redo, auto-recalc + banners, Delete, sheet tabs (+ undo toast), name-box navigation, save/save-as/close-confirm | the values and formulas of `examples/sample.sh` are typeable by hand in the GUI; its formats and styles wait for M7 |
 | M5 | Clipboard — *done* | copy TSV / paste TSV via `gdk::Clipboard`, cut = copy + `clear_range`, `enter_range` under it | copy in the GUI → paste into LibreOffice, and back |
-| M6 | Formula UX | Point mode, F4, Tab memory, span coloring (day-one `gtk::Text` attributes spike), autocomplete (C9 lands here, core-first), signature hints, live preview | `=SUM(` + drag B2:B4 + `)` + Enter → colored, previewed, committed; one Ctrl+Z reverts edit + ripple |
+| M6 | Formula UX — *done* | Point mode, F4, Tab memory, span coloring (day-one `gtk::Text` attributes spike), autocomplete (C9 lands here, core-first), signature hints, live preview | `=SUM(` + drag B2:B4 + `)` + Enter → colored, previewed, committed; one Ctrl+Z reverts edit + ripple |
 | M7 | Styles + formatting UI | C7 getters + C8 viewport styles, styled grid rendering, the format strip | GUI- and CLI-formatted documents identical for the same operations |
 | M8 | Widths & heights | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
 | M9 | Packaging & polish | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
@@ -433,7 +433,9 @@ lint`, the loops, parity.
 ## The gaps, written down
 
 Deferred by decision, not omission — each either has a not-doing.md row already or gets
-one as its milestone lands: a clipboard cell holding a tab or a newline (they become
+one as its milestone lands: pointing at cells on *another* sheet (the qualified form is
+written correctly, but switching sheets mid-edit is not wired) · a clipboard cell holding a
+tab or a newline (they become
 spaces, so the rectangle survives; the upgrade is quoting, in a codec shared with `sheet
 paste`) · rich clipboard flavours, so a copy carries values and formulas as text and
 nothing else · zoom (Ctrl+wheel) · freeze panes (the same-widget-headers

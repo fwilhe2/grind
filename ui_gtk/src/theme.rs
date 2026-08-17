@@ -101,6 +101,96 @@ const WHITE: gdk::RGBA = gdk::RGBA::WHITE;
 const BLACK: gdk::RGBA = gdk::RGBA::BLACK;
 const BLUE: gdk::RGBA = gdk::RGBA::new(0.21, 0.52, 0.89, 1.0);
 
+/// Eight colours for the references in a formula, in the order they appear.
+///
+/// These are the one place a colour is **not** taken from the theme, and deliberately: they
+/// are data colours, like a chart's series, and a theme has no opinion about the fourth
+/// reference in a formula. What the theme decides is which of the two sets to use — the
+/// darker one reads on a light sheet and the lighter one on a dark sheet, which is the part
+/// that would otherwise be unreadable.
+pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
+    let hex = match dark {
+        false => [
+            (0x1c, 0x71, 0xd8), // blue
+            (0x2e, 0xc2, 0x7e), // green
+            (0xc6, 0x46, 0x00), // orange
+            (0x81, 0x3d, 0x9c), // purple
+            (0xc0, 0x1c, 0x28), // red
+            (0x18, 0x65, 0x6a), // teal
+            (0xa5, 0x1d, 0x2d), // maroon
+            (0x86, 0x5e, 0x3c), // brown
+        ],
+        true => [
+            (0x78, 0xae, 0xed),
+            (0x8f, 0xf0, 0xa4),
+            (0xff, 0xbe, 0x6f),
+            (0xdc, 0x8a, 0xdd),
+            (0xff, 0x7b, 0x63),
+            (0x5b, 0xc8, 0xaf),
+            (0xf6, 0x61, 0x51),
+            (0xcd, 0xab, 0x8f),
+        ],
+    };
+    hex.map(|(r, g, b): (u8, u8, u8)| {
+        gdk::RGBA::new(
+            f32::from(r) / 255.0,
+            f32::from(g) / 255.0,
+            f32::from(b) / 255.0,
+            1.0,
+        )
+    })
+}
+
+/// Which colour each reference in a formula gets: one per **distinct** reference, so the
+/// same range mentioned twice is the same colour in both places and in the grid.
+///
+/// The spans come from `display::spans` — the scanner that also decides what a reference
+/// *is* when the formula is committed — so what is coloured and what is stored cannot
+/// disagree.
+pub fn reference_colors(text: &str, dark: bool) -> Vec<(std::ops::Range<usize>, gdk::RGBA)> {
+    let palette = reference_palette(dark);
+    let mut seen: Vec<&str> = Vec::new();
+    sheet_core::formula::display::spans(text)
+        .into_iter()
+        .filter(|span| span.kind == sheet_core::formula::display::TokenKind::Ref)
+        .map(|span| {
+            let source = &text[span.range.clone()];
+            let index = seen.iter().position(|s| *s == source).unwrap_or_else(|| {
+                seen.push(source);
+                seen.len() - 1
+            });
+            (span.range, palette[index % palette.len()])
+        })
+        .collect()
+}
+
+/// The same colours as Pango attributes, for a `GtkEditable` showing the formula.
+///
+/// Byte indices line up by construction: `display::spans` reports bytes because Pango
+/// counts in bytes.
+pub fn reference_attributes(text: &str, dark: bool) -> gtk::pango::AttrList {
+    let attributes = gtk::pango::AttrList::new();
+    for (range, color) in reference_colors(text, dark) {
+        let mut attribute = gtk::pango::AttrColor::new_foreground(
+            (color.red() * 65535.0) as u16,
+            (color.green() * 65535.0) as u16,
+            (color.blue() * 65535.0) as u16,
+        );
+        attribute.set_start_index(range.start as u32);
+        attribute.set_end_index(range.end as u32);
+        attributes.insert(attribute);
+    }
+    attributes
+}
+
+/// Whether the running theme is a dark one, which is all the reference palette needs to
+/// know. Read from the background rather than from a setting, so a high-contrast or
+/// hand-rolled theme is classified by what it actually looks like.
+pub fn is_dark(palette: &Palette) -> bool {
+    let bg = palette.background;
+    0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue() < 0.5
+}
+
 #[allow(deprecated)]
 fn named(widget: &gtk::Widget, name: &str) -> Option<gdk::RGBA> {
     widget.style_context().lookup_color(name)

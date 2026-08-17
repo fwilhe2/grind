@@ -17,6 +17,7 @@
 //! a burst of changes into a single refresh.
 
 mod chrome;
+mod formula_ux;
 mod geom;
 mod grid;
 mod keymap;

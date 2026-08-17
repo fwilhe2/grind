@@ -28,7 +28,7 @@
 //! and an active cell, and [`crate::keymap`] holds every rule about moving them. This widget
 //! translates events into that vocabulary, applies the answer, and repaints.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::sync::Arc;
 
 use libadwaita::gtk;
@@ -97,6 +97,12 @@ impl Grid {
         self.imp().commit(direction);
     }
 
+    /// Where the caret is in the shared buffer, as a byte offset — what the signature hint
+    /// and the completion both key off.
+    pub fn caret(&self) -> usize {
+        self.imp().caret()
+    }
+
     pub fn is_editing(&self) -> bool {
         self.imp().mode.get().is_editing()
     }
@@ -106,23 +112,31 @@ impl Grid {
         self.imp().cancel();
     }
 
+    /// Told whenever the caret moves without the text changing — an arrow key through a
+    /// formula, or this widget placing it after a reference it just wrote. The signature
+    /// hint depends on *where* the caret is, so a text-changed signal alone would leave it
+    /// one keystroke behind.
+    pub fn connect_caret_moved(&self, f: impl Fn() + 'static) {
+        self.imp().on_caret.borrow_mut().push(Box::new(f));
+    }
+
     /// Told whenever an edit opens or closes — the formula bar's ✓/✗ buttons, and anything
     /// else that only makes sense mid-edit.
     pub fn connect_editing_changed(&self, f: impl Fn(bool) + 'static) {
-        self.imp().on_editing.replace(Some(Box::new(f)));
+        self.imp().on_editing.borrow_mut().push(Box::new(f));
     }
 
     /// Told when something happened that a user has to hear about. Chrome turns these into
     /// a toast or a banner; the grid does not know which.
     pub fn connect_notice(&self, f: impl Fn(Notice) + 'static) {
-        self.imp().on_notice.replace(Some(Box::new(f)));
+        self.imp().on_notice.borrow_mut().push(Box::new(f));
     }
 
     /// Called after every selection change, with the selection that resulted — what the
     /// status bar and the formula bar are driven from. The grid does not know what they
     /// are; it reports, and chrome decides.
     pub fn connect_selection_changed(&self, f: impl Fn(Selection) + 'static) {
-        self.imp().on_selection.replace(Some(Box::new(f)));
+        self.imp().on_selection.borrow_mut().push(Box::new(f));
     }
 }
 
@@ -162,10 +176,13 @@ mod imp {
 
     use super::Notice;
 
-    /// What the grid tells chrome when the selection moves.
+    // What the grid tells chrome. Lists rather than slots: the formula bar wants the
+    // editing signal for its buttons *and* for its hint, and a `connect_` that quietly
+    // replaced the previous subscriber would leave one of them never called.
     type SelectionHook = Box<dyn Fn(Selection)>;
     type NoticeHook = Box<dyn Fn(Notice)>;
     type EditingHook = Box<dyn Fn(bool)>;
+    type CaretHook = Box<dyn Fn()>;
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
@@ -229,9 +246,10 @@ mod imp {
         /// What a drag started on, so that dragging across headers selects whole columns
         /// rather than the cells the pointer happens to pass over.
         pub drag: Cell<Option<Hit>>,
-        pub on_selection: RefCell<Option<SelectionHook>>,
-        pub on_notice: RefCell<Option<NoticeHook>>,
-        pub on_editing: RefCell<Option<EditingHook>>,
+        pub on_selection: RefCell<Vec<SelectionHook>>,
+        pub on_notice: RefCell<Vec<NoticeHook>>,
+        pub on_editing: RefCell<Vec<EditingHook>>,
+        pub on_caret: RefCell<Vec<CaretHook>>,
         /// Ready, or an edit in progress. The whole editing state, since the text lives in
         /// the buffer and the cell in the selection.
         pub mode: Cell<Mode>,
@@ -246,6 +264,27 @@ mod imp {
         /// click on the sheet. `WidgetExt::allocation` would answer the same question and
         /// is deprecated as of 4.12.
         pub editor_rect: Cell<Rect>,
+        /// The reference being pointed at, if any: the cells, and the byte range of the
+        /// text this widget last wrote for them.
+        pub pending: RefCell<Option<Pending>>,
+        /// Set while the buffer is being rewritten from here, so that the change signal can
+        /// tell "the user typed" from "we wrote a reference".
+        pub applying: Cell<bool>,
+        /// Tab-column memory: the column a run of Tabs started in, so that Enter goes back
+        /// to it. One integer, and disproportionately loved.
+        pub tab_origin: Cell<Option<u32>>,
+        /// The autocomplete popover, parented to this widget so it appears under the cell
+        /// being typed into rather than at the formula bar.
+        pub completion: OnceCell<crate::formula_ux::Completion>,
+    }
+
+    /// A reference being pointed at.
+    #[derive(Clone, Debug)]
+    pub struct Pending {
+        /// Byte range in the buffer holding the text this reference was rendered to.
+        pub span: std::ops::Range<usize>,
+        pub anchor: Pos,
+        pub active: Pos,
     }
 
     impl Default for Grid {
@@ -262,9 +301,10 @@ mod imp {
                 layout: RefCell::new(None),
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
-                on_selection: RefCell::new(None),
-                on_notice: RefCell::new(None),
-                on_editing: RefCell::new(None),
+                on_selection: RefCell::new(Vec::new()),
+                on_notice: RefCell::new(Vec::new()),
+                on_editing: RefCell::new(Vec::new()),
+                on_caret: RefCell::new(Vec::new()),
                 mode: Cell::new(Mode::default()),
                 editor: gtk::Text::new(),
                 buffer: gtk::EntryBuffer::default(),
@@ -274,6 +314,10 @@ mod imp {
                     w: 0.0,
                     h: 0.0,
                 }),
+                pending: RefCell::new(None),
+                applying: Cell::new(false),
+                tab_origin: Cell::new(None),
+                completion: OnceCell::new(),
             }
         }
     }
@@ -328,9 +372,13 @@ mod imp {
             }
         }
 
-        /// A widget with children has to unparent them, or GTK complains at teardown.
+        /// A widget with children has to unparent them, or GTK complains at teardown — and
+        /// a popover is a child too, even though it draws in its own surface.
         fn dispose(&self) {
             self.editor.unparent();
+            if let Some(completion) = self.completion.get() {
+                completion.dispose();
+            }
         }
 
         fn constructed(&self) {
@@ -341,10 +389,38 @@ mod imp {
             // The editor is a child of the grid rather than an overlay: an overlay
             // positions in widget coordinates and would re-derive the scroll arithmetic
             // every frame, where a child is allocated by the same `cell_rect` that draws.
+            let _ = self
+                .completion
+                .set(crate::formula_ux::Completion::new(&*widget));
             self.editor.set_buffer(&self.buffer);
+            // The caret moving is its own event: the completion and the signature hint are
+            // both questions about where it is, not about what the text says.
+            self.editor.connect_cursor_position_notify(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_| grid.imp().caret_moved()
+            ));
             self.editor.set_parent(&*widget);
             self.editor.set_visible(false);
             self.editor.add_css_class("sheet-editor");
+
+            // Anything the *user* types finalises the reference being pointed at: the next
+            // arrow key then starts a new one rather than moving the last.
+            self.buffer.connect_text_notify(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_| {
+                    let imp = grid.imp();
+                    if !imp.applying.get() {
+                        imp.pending.replace(None);
+                    }
+                    imp.restyle_formula();
+                    imp.update_completion();
+                    // The editor grows with what is typed into it.
+                    grid.queue_allocate();
+                    grid.queue_draw();
+                }
+            ));
 
             // **Capture phase**, so the grid decides before the editor child does. Every
             // key it does not claim then travels on to the editor untouched, which is what
@@ -415,10 +491,13 @@ mod imp {
             }
             let active = self.selection.get().active;
             let cell = self.geom().cell_rect(active.row, active.col);
-            let (_, natural, _, _) = self.editor.measure(gtk::Orientation::Horizontal, -1);
-            let w = f64::from(natural)
-                .max(cell.w)
-                .min((width - cell.x).max(cell.w));
+            // Measured from the text, not from the widget: a `gtk::Text` asks for a width
+            // in characters and knows nothing about what it is holding, so an unmeasured
+            // editor clips a formula at the column's edge.
+            let layout = self.layout();
+            layout.set_text(&self.buffer.text());
+            let wanted = f64::from(layout.pixel_size().0) + 4.0 * PAD;
+            let w = wanted.max(cell.w).min((width - cell.x).max(cell.w));
             let rect = Rect { w, ..cell };
             self.editor_rect.set(rect);
             self.editor.size_allocate(
@@ -482,6 +561,7 @@ mod imp {
             self.draw_lines(&frame);
             self.draw_cells(&frame);
             self.draw_active(&frame);
+            self.draw_references(&frame);
             snapshot.pop();
 
             self.draw_headers(&frame);
@@ -623,7 +703,40 @@ mod imp {
                 shift: state.contains(gtk::gdk::ModifierType::SHIFT_MASK),
                 alt: state.contains(gtk::gdk::ModifierType::ALT_MASK),
             };
-            let action = match state::on_key(self.mode.get(), key_of(keyval), mods) {
+            // While the list is up it owns the keys that pick from it, and nothing else —
+            // typing keeps narrowing it, and every other key means what it always means.
+            if let Some(completion) = self.completion.get().filter(|c| c.is_visible()) {
+                match key_of(keyval) {
+                    Key::Up => {
+                        completion.step(-1);
+                        return glib::Propagation::Stop;
+                    }
+                    Key::Down => {
+                        completion.step(1);
+                        return glib::Propagation::Stop;
+                    }
+                    Key::Tab | Key::Return => {
+                        if let Some((span, insert)) = completion.accept() {
+                            self.replace(span, &insert);
+                            return glib::Propagation::Stop;
+                        }
+                    }
+                    Key::Escape => {
+                        completion.hide();
+                        return glib::Propagation::Stop;
+                    }
+                    _ => {}
+                }
+            }
+
+            let text = self.buffer.text().to_string();
+            let at = state::Where {
+                mode: self.mode.get(),
+                text: &text,
+                caret: self.caret(),
+                pending: self.pending.borrow().is_some(),
+            };
+            let action = match state::on_key(at, key_of(keyval), mods) {
                 Outcome::Passthrough => return glib::Propagation::Proceed,
                 Outcome::Navigate(action) => action,
                 Outcome::Begin(seed) => {
@@ -649,6 +762,14 @@ mod imp {
                         Mode::Edit => Mode::Enter,
                         _ => Mode::Edit,
                     });
+                    return glib::Propagation::Stop;
+                }
+                Outcome::Point { motion, extend } => {
+                    self.point(motion, extend);
+                    return glib::Propagation::Stop;
+                }
+                Outcome::CycleAbsolute => {
+                    self.cycle_absolute();
                     return glib::Propagation::Stop;
                 }
             };
@@ -695,6 +816,7 @@ mod imp {
         /// `Seed::Cell` needs no work: the buffer already holds the cell's input text,
         /// because that is what it holds whenever nothing is being edited.
         pub fn begin(&self, seed: Seed, focus_cell: bool) {
+            self.pending.replace(None);
             if let Seed::Char(c) = seed {
                 self.buffer.set_text(c.to_string());
             }
@@ -710,8 +832,159 @@ mod imp {
                 // the seed; the caret belongs at the end of what is there.
                 self.editor.set_position(-1);
             }
+            self.restyle_formula();
+            self.update_completion();
             self.obj().queue_allocate();
             self.obj().queue_draw();
+        }
+
+        // --- pointing (doc/gtk-shell.md's formula UX) ---
+
+        /// Where the caret is, as a byte offset into the buffer.
+        ///
+        /// The in-cell editor's, whenever an edit is open — it is the widget being typed
+        /// into, and after a reference is written this widget puts the caret there itself.
+        /// With no edit open there is no caret, and the end of the text is the one answer
+        /// that is never nonsense. (The formula bar's own caret is the formula bar's to
+        /// report; it asks this only when it does not have the focus.)
+        pub fn caret(&self) -> usize {
+            let text = self.buffer.text().to_string();
+            if !self.editor.is_visible() {
+                return text.len();
+            }
+            let position = self.editor.position().max(0) as usize;
+            text.char_indices()
+                .nth(position)
+                .map_or(text.len(), |(byte, _)| byte)
+        }
+
+        /// Move — or start — the reference being pointed at.
+        fn point(&self, motion: keymap::Motion, extend: bool) {
+            let pending = self.pending.borrow().clone();
+            let from = match &pending {
+                Some(pending) => Selection {
+                    anchor: pending.anchor,
+                    active: pending.active,
+                },
+                // The first arrow points one cell away from the one being edited, which is
+                // where the eye already is.
+                None => Selection::at(self.selection.get().active),
+            };
+            let app = self.app.borrow().clone();
+            let sheet = self.sheet.get();
+            let occupied = |pos: Pos| {
+                app.as_ref()
+                    .and_then(|app| app.get(sheet, pos).ok())
+                    .is_some_and(|value| !value.is_empty())
+            };
+            let moved = keymap::moved(from, motion, extend, self.extent(), &occupied);
+            self.set_pending(moved, pending.map(|p| p.span));
+        }
+
+        /// Write the reference `selection` names into the buffer, replacing whatever was
+        /// written for it last time.
+        fn set_pending(&self, selection: Selection, span: Option<std::ops::Range<usize>>) {
+            let (start, end) = selection.rect();
+            let text = display::reference_text(&sheet_core::a1::reference(None, start, end));
+            let span = span.unwrap_or_else(|| {
+                let caret = self.caret();
+                caret..caret
+            });
+            let placed = self.replace(span.clone(), &text);
+            self.pending.replace(Some(Pending {
+                span: placed,
+                anchor: selection.anchor,
+                active: selection.active,
+            }));
+            // The cells being pointed at have to be on screen, or pointing at a cell below
+            // the fold means typing blind.
+            self.scroll_into_view(selection.active);
+            self.obj().queue_draw();
+        }
+
+        /// Replace a byte range of the buffer, leaving the caret after what was written.
+        /// Returns the range the new text occupies.
+        fn replace(&self, span: std::ops::Range<usize>, with: &str) -> std::ops::Range<usize> {
+            let full = self.buffer.text().to_string();
+            let (head, tail) = (&full[..span.start], &full[span.end.min(full.len())..]);
+            let text = format!("{head}{with}{tail}");
+            let placed = span.start..span.start + with.len();
+            self.applying.set(true);
+            self.buffer.set_text(&text);
+            self.editor.set_position(caret_at(&text, placed.end));
+            self.applying.set(false);
+            self.restyle_formula();
+            // The buffer's own change signal fired *inside* `set_text`, before the caret
+            // moved — so anything that reads the caret has to be told again, now.
+            self.caret_moved();
+            placed
+        }
+
+        /// F4: `B2` → `$B$2` → `B$2` → `$B2` → `B2`, on the reference being pointed at or
+        /// the one under the caret.
+        fn cycle_absolute(&self) {
+            let text = self.buffer.text().to_string();
+            let at = self
+                .pending
+                .borrow()
+                .as_ref()
+                .map_or_else(|| self.caret(), |pending| pending.span.end);
+            let Some((span, replacement)) = state::cycle_absolute(&text, at) else {
+                return;
+            };
+            let placed = self.replace(span, &replacement);
+            // The pending reference keeps pointing at the same cells; only its spelling and
+            // therefore its length changed.
+            if let Some(pending) = self.pending.borrow_mut().as_mut() {
+                pending.span = placed;
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Whether a click on the grid should point at cells rather than move the cursor.
+        fn pointing(&self) -> bool {
+            self.mode.get().is_editing()
+                && (self.pending.borrow().is_some()
+                    || state::ref_eligible(&self.buffer.text(), self.caret()))
+        }
+
+        /// Offer what could be typed next, under the cell being typed into.
+        fn update_completion(&self) {
+            let Some(completion) = self.completion.get() else {
+                return;
+            };
+            if !self.mode.get().is_editing() {
+                return completion.hide();
+            }
+            let names: Vec<String> = self
+                .app
+                .borrow()
+                .as_ref()
+                .map(|app| app.names().into_iter().map(|(name, _)| name).collect())
+                .unwrap_or_default();
+            completion.update(
+                &self.buffer.text(),
+                self.caret(),
+                &names,
+                self.editor_rect.get(),
+            );
+        }
+
+        /// Fan out a caret move: what can be offered and what the hint says both change.
+        fn caret_moved(&self) {
+            self.update_completion();
+            for hook in self.on_caret.borrow().iter() {
+                hook();
+            }
+        }
+
+        /// Colour the references in the editor. The formula bar does the same to its own
+        /// copy from the same function, so the two cannot disagree.
+        fn restyle_formula(&self) {
+            let text = self.buffer.text().to_string();
+            let dark = crate::theme::is_dark(&self.palette());
+            self.editor
+                .set_attributes(Some(&crate::theme::reference_attributes(&text, dark)));
         }
 
         /// Store what the buffer holds, then move.
@@ -767,16 +1040,12 @@ mod imp {
         /// Where the cursor goes once an edit is stored. Committing moves the *cursor*,
         /// never extends a selection.
         fn move_after_commit(&self, from: Pos, direction: Option<Dir>) {
-            self.set_selection(match direction {
-                Some(dir) => keymap::moved(
-                    Selection::at(from),
-                    keymap::Motion::By(dir),
-                    false,
-                    self.extent(),
-                    &|_| false,
-                ),
-                None => Selection::at(from),
-            });
+            let (to, tab_origin) = state::after_commit(from, direction, self.tab_origin.get());
+            self.tab_origin.set(tab_origin);
+            self.set_selection(Selection::at(Pos::new(
+                to.row.min(MAX_ROWS - 1),
+                to.col.min(MAX_COLS - 1),
+            )));
         }
 
         /// Throw the edit away. The document is never touched, so there is nothing to undo.
@@ -788,6 +1057,10 @@ mod imp {
         }
 
         fn end_edit(&self) {
+            if let Some(completion) = self.completion.get() {
+                completion.hide();
+            }
+            self.pending.replace(None);
             self.mode.set(Mode::Ready);
             self.editor.set_visible(false);
             self.editing_changed(false);
@@ -795,7 +1068,7 @@ mod imp {
         }
 
         fn editing_changed(&self, editing: bool) {
-            if let Some(hook) = self.on_editing.borrow().as_ref() {
+            for hook in self.on_editing.borrow().iter() {
                 hook(editing);
             }
         }
@@ -811,8 +1084,8 @@ mod imp {
         }
 
         fn notice(&self, notice: Notice) {
-            if let Some(hook) = self.on_notice.borrow().as_ref() {
-                hook(notice);
+            for hook in self.on_notice.borrow().iter() {
+                hook(notice.clone());
             }
         }
 
@@ -927,17 +1200,27 @@ mod imp {
 
         /// Press: a cell, or a whole column or row from its header.
         fn press(&self, x: f64, y: f64, extend: bool) {
+            let hit = self.geom().hit(x, y);
             if self.mode.get().is_editing() {
                 // A click *inside* the editor is a caret move, and the event reaches here
                 // only because the editor is a child of this widget.
                 if self.editor_rect.get().contains(x, y) {
                     return;
                 }
-                // Clicking away from an open edit stores it, which is what every
-                // spreadsheet does and what a user who clicks the next cell means.
+                // A click where a reference could go points at cells instead of ending the
+                // edit — `=SUM(` then clicking B2 is how most formulas get written.
+                if self.pointing()
+                    && let Hit::Cell { row, col } = hit
+                {
+                    self.drag.set(Some(hit));
+                    let span = self.pending.borrow().as_ref().map(|p| p.span.clone());
+                    self.set_pending(Selection::at(Pos::new(row, col)), span);
+                    return;
+                }
+                // Clicking anywhere else stores the edit, which is what every spreadsheet
+                // does and what a user who clicks the next cell means.
                 self.commit(None);
             }
-            let hit = self.geom().hit(x, y);
             self.drag.set(Some(hit));
             let Some(target) = self.selection_for(hit) else { return };
             self.set_selection(match extend {
@@ -953,6 +1236,20 @@ mod imp {
         fn extend_to(&self, x: f64, y: f64) {
             let Some(start) = self.drag.get() else { return };
             let hit = self.geom().hit(x, y);
+            // Dragging while pointing grows the reference rather than the selection, which
+            // is what `=SUM(` + drag B2:B4 means.
+            if let Some(pending) = self.pending.borrow().clone()
+                && let Hit::Cell { row, col } = hit
+            {
+                self.set_pending(
+                    Selection {
+                        anchor: pending.anchor,
+                        active: Pos::new(row, col),
+                    },
+                    Some(pending.span),
+                );
+                return;
+            }
             // A drag that began on a column header keeps selecting columns even when the
             // pointer wanders into the cells.
             let hit = match (start, hit) {
@@ -995,7 +1292,7 @@ mod imp {
             self.refresh_buffer();
             self.scroll_into_view(selection.active);
             self.obj().queue_draw();
-            if let Some(hook) = self.on_selection.borrow().as_ref() {
+            for hook in self.on_selection.borrow().iter() {
                 hook(selection);
             }
         }
@@ -1062,18 +1359,53 @@ mod imp {
                 .append_color(&f.palette.background, &rect(active.x, active.y, active.w, active.h));
         }
 
+        /// Outline the ranges the formula being edited mentions, in the colours the text
+        /// is coloured with — which is the whole point: the same scanner assigns both, so
+        /// a reference and its outline cannot disagree about what it covers.
+        fn draw_references(&self, f: &Frame) {
+            if !self.mode.get().is_editing() {
+                return;
+            }
+            let app = self.app.borrow().clone();
+            let Some(app) = app else { return };
+            let text = self.buffer.text().to_string();
+            let pending = self.pending.borrow().clone();
+            for (range, color) in crate::theme::reference_colors(&text, crate::theme::is_dark(&f.palette)) {
+                let Ok(reference) = sheet_core::a1::parse(&text[range.clone()]) else {
+                    continue;
+                };
+                let Ok((sheet, start, end)) = sheet_core::a1::resolve(&app, &reference) else {
+                    continue;
+                };
+                if sheet != self.sheet.get() {
+                    continue;
+                }
+                let top_left = f.geom.cell_rect(start.row, start.col);
+                let bottom_right = f.geom.cell_rect(end.row, end.col);
+                // The one being pointed at is thicker, so it is obvious which one an arrow
+                // key will move.
+                let thickness = match &pending {
+                    Some(pending) if pending.span == range => 3.0,
+                    _ => 2.0,
+                };
+                outline(
+                    f.snapshot,
+                    Rect {
+                        x: top_left.x,
+                        y: top_left.y,
+                        w: bottom_right.x + bottom_right.w - top_left.x,
+                        h: bottom_right.y + bottom_right.h - top_left.y,
+                    },
+                    color,
+                    thickness,
+                );
+            }
+        }
+
         /// The active cell's border, drawn after the text so it is never painted over.
         fn draw_active(&self, f: &Frame) {
             let cell = f.geom.cell_rect(f.selection.active.row, f.selection.active.col);
-            let t = 2.0;
-            for edge in [
-                rect(cell.x - 1.0, cell.y - 1.0, cell.w + 2.0, t),
-                rect(cell.x - 1.0, cell.y + cell.h - 1.0, cell.w + 2.0, t),
-                rect(cell.x - 1.0, cell.y - 1.0, t, cell.h + 2.0),
-                rect(cell.x + cell.w - 1.0, cell.y - 1.0, t, cell.h + 2.0),
-            ] {
-                f.snapshot.append_color(&f.palette.accent, &edge);
-            }
+            outline(f.snapshot, cell, f.palette.accent, 2.0);
         }
 
         fn draw_lines(&self, f: &Frame) {
@@ -1288,7 +1620,20 @@ mod imp {
             K::Delete | K::KP_Delete => Key::Delete,
             K::BackSpace => Key::Backspace,
             K::F2 => Key::F2,
+            K::F4 => Key::F4,
             other => other.to_unicode().map_or(Key::Other, Key::Char),
+        }
+    }
+
+    /// A rectangle drawn as four thin ones, since a snapshot has no stroke.
+    fn outline(snapshot: &gtk::Snapshot, r: Rect, color: gtk::gdk::RGBA, t: f64) {
+        for edge in [
+            rect(r.x - 1.0, r.y - 1.0, r.w + 2.0, t),
+            rect(r.x - 1.0, r.y + r.h - 1.0, r.w + 2.0, t),
+            rect(r.x - 1.0, r.y - 1.0, t, r.h + 2.0),
+            rect(r.x + r.w - 1.0, r.y - 1.0, t, r.h + 2.0),
+        ] {
+            snapshot.append_color(&color, &edge);
         }
     }
 

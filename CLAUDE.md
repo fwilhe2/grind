@@ -636,6 +636,28 @@ core is missing something.
   reproduces the cells exactly, and pasted elsewhere `1234.5` is a number where
   `1,234.50 €` is a guess about that program's locale. Paste is asynchronous because the
   clipboard is, and lands as one `App::enter_range` — one undo step.
+- **Point mode is a predicate, not a mode.** `state::ref_eligible(text, caret)` asks whether
+  a reference could go where the caret is — a formula, and an operator, `(`, `;` or the `=`
+  itself before it — and while a pending reference exists the arrows keep moving it. A flag
+  would go stale the moment someone moved the caret. Pointing borrows the *keymap's* motion
+  vocabulary, so Ctrl+arrow points at a data edge and PgDn points a screenful, for free.
+- **A pending reference is a byte range plus two positions.** Every point event re-renders
+  `a1::reference` through `display::reference_text` and replaces that range, so the text
+  never accumulates halves of a reference. Anything the user types clears the pending — the
+  buffer's own change signal does it, guarded by an `applying` flag so the widget's own
+  writes do not count.
+- **The caret moving is its own signal.** The buffer's change signal fires *inside*
+  `set_text`, before the caret is repositioned, so a signature hint driven by it alone is one
+  keystroke behind — and an arrow through a formula changes no text at all.
+  `connect_caret_moved` is what the hint and the completion listen to.
+- **References are coloured by `display::spans`**, the same scanner that decides what a
+  reference is when the formula is committed — one per *distinct* reference, in both editors
+  and as outlines on the grid, with the pending one drawn thicker. The eight colours are the
+  one place a colour is not the theme's: they are data colours, and the theme only decides
+  which of the two sets reads on this background.
+- **The autocomplete and the signature hint are `funcs::catalog()`** — the spec's own list,
+  signature and summary. A shell keeping its own would offer a function the evaluator does
+  not have.
 - **`chrome.rs` is the parts made of ordinary widgets** — formula bar, name box, sheet tabs,
   status bar — and owns nothing either. The name box resolves through `core::a1`, so what it
   means by `Data.B2:C9` is what a formula means by it.
@@ -845,6 +867,12 @@ one core capability: `App::input_text` — what an editor shows for a cell, whic
 **M5 is done**: the clipboard. Ctrl+C/X/V over a selection, tab-separated, through
 `enter_range` and `clear_range`.
 
-Next is M6 — the formula UX: Point mode, F4, Tab-column memory, reference colouring from
-`display::spans`, autocomplete over a `funcs::catalog()` that does not exist yet (C9), and
-the live preview chip. The wasm shell after that is the honest test of rule 5.
+**M6 is done**: the formula UX. Point mode (arrows and drags build a reference where one
+could go), F4 cycling `$`, Tab-column memory, reference colouring in both editors and as
+outlines on the grid, an autocomplete popover over `funcs::catalog()` and the document's
+names, a signature hint with the current argument bold, and a live preview chip — errors
+included, which is half the value. It brought C9 (`funcs::catalog()`) and two core helpers,
+`a1::reference` and `display::reference_text`.
+
+Next is M7 — styles and the formatting UI (C7's getters and C8's viewport styles), then M8's
+column widths and M9's packaging. The wasm shell after that is the honest test of rule 5.
