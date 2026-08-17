@@ -88,7 +88,7 @@ CLI parity gaps.
 | **Splicing a format or style change** | When a shell makes it the common edit | A new `style:style` has to be merged into the file's own `office:automatic-styles` — a second splice site and a pool. `sheet format` and `sheet style` regenerate. |
 | **`calcext:` on the way out** | No gate; R4 allows it, R2 outranks it | `calcext:value-type` is not valid against the ODF schema, so an item earns its place only with a measured LibreOffice behaviour that cannot be had any other way. Read and ignored today. |
 | **Incremental recalculation** | When a UI makes whole-document recalc feel slow | `eval.rs:16`. `graph.rs` is in the plan and unbuilt on purpose; recursion-with-memoisation is the topological order today. |
-| **Reading `.xlsx`** | Never scheduled, always allowed | Read-only, via `calamine`, if a real week of use demands it. |
+| **Reading `.xlsx`** | **Phase 10** — `doc/xlsx-import.md` | Scheduled, by explicit decision: Excel is where other people's documents come from, and converting them today means driving a 400 MB office suite headless. One way in — writing `.xlsx` stays in §1. Read by its own filter rather than `calamine`, whose trade is written down in that plan. |
 
 ---
 
