@@ -32,7 +32,12 @@ pub enum Key {
     PageDown,
     Tab,
     Return,
-    /// A printable character, already case-folded for matching.
+    Escape,
+    Delete,
+    Backspace,
+    F2,
+    /// A character, exactly as it was typed — [`crate::state`] seeds an edit with it, so
+    /// case-folding here would make every typed capital arrive in lower case.
     Char(char),
     /// Anything this shell does not claim, which must keep travelling.
     Other,
@@ -124,7 +129,9 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
             }),
             false,
         ),
-        Key::Char('a') if mods.ctrl && !mods.shift => Some(Action::SelectAll),
+        Key::Char(c) if mods.ctrl && !mods.shift && c.eq_ignore_ascii_case(&'a') => {
+            Some(Action::SelectAll)
+        }
         _ => None,
     }
 }

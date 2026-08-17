@@ -674,3 +674,38 @@ fn a_pasted_rectangle_lands_cell_by_cell_in_one_step() {
     assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Empty);
     assert!(!app.can_undo());
 }
+
+/// What an editor shows and what pressing Enter means have to be inverses, or opening a
+/// cell and closing it again quietly changes the document. Every kind of cell, in one loop.
+#[test]
+fn what_an_editor_shows_enters_back_as_the_same_cell() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 5.0).unwrap();
+    let cells = [
+        (1, "42"),
+        (2, "hello"),
+        (3, "TRUE"),
+        (4, "'007"),      // text that would otherwise read as a number
+        (5, "'=SUM(A1)"), // text that would otherwise read as a formula
+        (6, "=[.A1]*2"),  // a formula, which comes back in display form
+        (7, ""),
+    ];
+    for (row, input) in cells {
+        app.enter(0, p(row, 0), input, RecalcMode::No).unwrap();
+    }
+    for (row, input) in cells {
+        let before = app.get(0, p(row, 0)).unwrap();
+        let shown = app.input_text(0, p(row, 0)).unwrap();
+        // The one step a shell always takes: what an editor holds is display form, and
+        // `enter` takes the canonical syntax the file stores.
+        let typed = match shown.starts_with('=') {
+            true => sheet_core::formula::display::from_display(&shown).unwrap(),
+            false => shown.clone(),
+        };
+        app.enter(0, p(row, 0), &typed, RecalcMode::No).unwrap();
+        assert_eq!(app.get(0, p(row, 0)).unwrap(), before, "{input} showed as {shown:?}");
+    }
+    // A formula is shown the way a formula bar shows one, and stored the way ODF does.
+    assert_eq!(app.input_text(0, p(6, 0)).unwrap(), "=A1*2");
+    assert_eq!(app.formula(0, p(6, 0)).unwrap().as_deref(), Some("=[.A1]*2"));
+}

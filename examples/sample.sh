@@ -110,6 +110,8 @@ say "get: one cell, its stored value, and its formula"
 "$SHEET" get "$book" B12
 "$SHEET" get "$book" B12 --raw
 "$SHEET" get "$book" B5 --formula
+"$SHEET" get "$book" B5 --input                             # what an editor would show
+"$SHEET" get "$book" E2 --input                             # and the ' that keeps 007 text
 
 # A name is what makes a formula say what it means: `SUM(expenses)` rather than
 # `SUM([.B2:.B4])`. An address becomes a named *range*, written absolute and

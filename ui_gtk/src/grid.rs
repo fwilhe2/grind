@@ -70,18 +70,71 @@ impl Grid {
         self.imp().sheet.get()
     }
 
-    /// Move the selection from outside the widget — what the name box will navigate with,
-    /// and what primes the status bar before anything has been clicked.
+    /// Move the selection from outside the widget — what the name box navigates with, and
+    /// what primes the status bar before anything has been clicked.
     pub fn set_selection(&self, selection: Selection) {
         self.imp().set_selection(selection);
     }
 
+    /// The text being edited, which the formula bar shares.
+    ///
+    /// **One buffer, two views.** The in-cell editor and the formula bar are both
+    /// `GtkEditable`s over this, so their content stays in step for free while each keeps
+    /// its own caret and selection — which is exactly the familiar behaviour. When nothing
+    /// is being edited it holds the active cell's `App::input_text`, which is what makes
+    /// the formula bar show the cell.
+    pub fn buffer(&self) -> gtk::EntryBuffer {
+        self.imp().buffer.clone()
+    }
+
+    /// Start editing the active cell from outside — the formula bar taking focus.
+    pub fn begin_edit(&self, focus_cell: bool) {
+        self.imp().begin(crate::state::Seed::Cell, focus_cell);
+    }
+
+    /// Store what the buffer holds and move on; the formula bar's Enter key.
+    pub fn commit(&self, direction: Option<crate::keymap::Dir>) {
+        self.imp().commit(direction);
+    }
+
+    pub fn is_editing(&self) -> bool {
+        self.imp().mode.get().is_editing()
+    }
+
+    /// Throw the edit away and put the cell back the way it was.
+    pub fn cancel_edit(&self) {
+        self.imp().cancel();
+    }
+
+    /// Told whenever an edit opens or closes — the formula bar's ✓/✗ buttons, and anything
+    /// else that only makes sense mid-edit.
+    pub fn connect_editing_changed(&self, f: impl Fn(bool) + 'static) {
+        self.imp().on_editing.replace(Some(Box::new(f)));
+    }
+
+    /// Told when something happened that a user has to hear about. Chrome turns these into
+    /// a toast or a banner; the grid does not know which.
+    pub fn connect_notice(&self, f: impl Fn(Notice) + 'static) {
+        self.imp().on_notice.replace(Some(Box::new(f)));
+    }
+
     /// Called after every selection change, with the selection that resulted — what the
-    /// status bar and, later, the formula bar are driven from. The grid does not know what
-    /// they are; it reports, and chrome decides.
+    /// status bar and the formula bar are driven from. The grid does not know what they
+    /// are; it reports, and chrome decides.
     pub fn connect_selection_changed(&self, f: impl Fn(Selection) + 'static) {
         self.imp().on_selection.replace(Some(Box::new(f)));
     }
+}
+
+/// Something the user has to be told, from an edit they made.
+#[derive(Clone, Debug)]
+pub enum Notice {
+    /// The formula would not parse, so nothing was stored. Carries the message and the byte
+    /// offset of the problem.
+    BadFormula(String, usize),
+    /// The edit landed, and the recalculation behind it was skipped because it would have
+    /// replaced this many cached values with errors.
+    RecalcSkipped(usize),
 }
 
 impl Default for Grid {
@@ -99,12 +152,20 @@ mod imp {
     use sheet_core::formula::value::FormulaError;
     use sheet_core::{CellValue, Pos};
 
+    use sheet_core::RecalcMode;
+    use sheet_core::formula::display;
+
     use crate::geom::{Hit, Rect};
-    use crate::keymap::{self, Action, Extent, Key, Mods};
+    use crate::keymap::{self, Action, Dir, Extent, Key, Mods};
+    use crate::state::{self, Mode, Outcome, Seed};
     use crate::theme::{Palette, with_alpha};
+
+    use super::Notice;
 
     /// What the grid tells chrome when the selection moves.
     type SelectionHook = Box<dyn Fn(Selection)>;
+    type NoticeHook = Box<dyn Fn(Notice)>;
+    type EditingHook = Box<dyn Fn(bool)>;
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
@@ -169,6 +230,22 @@ mod imp {
         /// rather than the cells the pointer happens to pass over.
         pub drag: Cell<Option<Hit>>,
         pub on_selection: RefCell<Option<SelectionHook>>,
+        pub on_notice: RefCell<Option<NoticeHook>>,
+        pub on_editing: RefCell<Option<EditingHook>>,
+        /// Ready, or an edit in progress. The whole editing state, since the text lives in
+        /// the buffer and the cell in the selection.
+        pub mode: Cell<Mode>,
+        /// The in-cell editor: a real `gtk::Text` child, allocated over the active cell.
+        ///
+        /// Not a custom-drawn one, and not negotiable: `gtk::Text` brings the input method
+        /// with it — preedit, dead keys, CJK, Compose — plus the caret, selection and
+        /// clipboard. Hand-rolling `GtkIMContext` is the classic way to ship broken input.
+        pub editor: gtk::Text,
+        pub buffer: gtk::EntryBuffer,
+        /// Where the editor was last put, so that a click inside it can be told from a
+        /// click on the sheet. `WidgetExt::allocation` would answer the same question and
+        /// is deprecated as of 4.12.
+        pub editor_rect: Cell<Rect>,
     }
 
     impl Default for Grid {
@@ -186,6 +263,17 @@ mod imp {
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
                 on_selection: RefCell::new(None),
+                on_notice: RefCell::new(None),
+                on_editing: RefCell::new(None),
+                mode: Cell::new(Mode::default()),
+                editor: gtk::Text::new(),
+                buffer: gtk::EntryBuffer::default(),
+                editor_rect: Cell::new(Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 0.0,
+                }),
             }
         }
     }
@@ -240,15 +328,29 @@ mod imp {
             }
         }
 
+        /// A widget with children has to unparent them, or GTK complains at teardown.
+        fn dispose(&self) {
+            self.editor.unparent();
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let widget = self.obj();
             widget.set_focusable(true);
 
-            // Keys are taken on the widget itself while it is the only thing that wants
-            // them. The plan moves this to the window in Capture phase once an editor child
-            // exists, which is the milestone that has something to protect.
+            // The editor is a child of the grid rather than an overlay: an overlay
+            // positions in widget coordinates and would re-derive the scroll arithmetic
+            // every frame, where a child is allocated by the same `cell_rect` that draws.
+            self.editor.set_buffer(&self.buffer);
+            self.editor.set_parent(&*widget);
+            self.editor.set_visible(false);
+            self.editor.add_css_class("sheet-editor");
+
+            // **Capture phase**, so the grid decides before the editor child does. Every
+            // key it does not claim then travels on to the editor untouched, which is what
+            // keeps the input method working.
             let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             keys.connect_key_pressed(glib::clone!(
                 #[weak(rename_to = grid)]
                 widget,
@@ -260,6 +362,18 @@ mod imp {
 
             // One gesture for click and drag alike: a click is a drag that never moved, and
             // writing them separately is how the two disagree about what shift means.
+            let click = gtk::GestureClick::new();
+            click.connect_pressed(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_, presses, _, _| {
+                    if presses == 2 {
+                        grid.imp().begin(Seed::Cell, true);
+                    }
+                }
+            ));
+            widget.add_controller(click);
+
             let drag = gtk::GestureDrag::new();
             drag.connect_drag_begin(glib::clone!(
                 #[weak(rename_to = grid)]
@@ -292,6 +406,28 @@ mod imp {
 
     impl ScrollableImpl for Grid {}
 
+    impl Grid {
+        /// Where the in-cell editor sits: over the active cell, grown to fit the text but
+        /// never past the edge of the view.
+        fn allocate_editor(&self, width: f64) {
+            if !self.editor.is_visible() {
+                return;
+            }
+            let active = self.selection.get().active;
+            let cell = self.geom().cell_rect(active.row, active.col);
+            let (_, natural, _, _) = self.editor.measure(gtk::Orientation::Horizontal, -1);
+            let w = f64::from(natural)
+                .max(cell.w)
+                .min((width - cell.x).max(cell.w));
+            let rect = Rect { w, ..cell };
+            self.editor_rect.set(rect);
+            self.editor.size_allocate(
+                &gtk::gdk::Rectangle::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32),
+                -1,
+            );
+        }
+    }
+
     impl WidgetImpl for Grid {
         /// A scrollable asks for nothing and takes what it is given; the scrolled window
         /// decides the size and this decides what fits in it.
@@ -301,6 +437,7 @@ mod imp {
 
         fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
             self.configure_adjustments(f64::from(width), f64::from(height));
+            self.allocate_editor(f64::from(width));
         }
 
         /// The font and the metrics derived from it are only knowable once the widget has
@@ -348,6 +485,10 @@ mod imp {
             snapshot.pop();
 
             self.draw_headers(&frame);
+            // Last, and only while editing: a real child widget, drawn over its cell.
+            if self.editor.is_visible() {
+                widget.snapshot_child(&self.editor, snapshot);
+            }
         }
     }
 
@@ -420,7 +561,14 @@ mod imp {
             adjustment.connect_value_changed(glib::clone!(
                 #[weak(rename_to = grid)]
                 self.obj(),
-                move |_| grid.queue_draw()
+                move |_| {
+                    // The editor is allocated over a cell, so scrolling has to move it as
+                    // well as repaint — otherwise it stays put while the sheet slides.
+                    if grid.imp().editor.is_visible() {
+                        grid.queue_allocate();
+                    }
+                    grid.queue_draw();
+                }
             ));
             match orientation {
                 gtk::Orientation::Horizontal => self.hadjustment.replace(Some(adjustment)),
@@ -475,8 +623,34 @@ mod imp {
                 shift: state.contains(gtk::gdk::ModifierType::SHIFT_MASK),
                 alt: state.contains(gtk::gdk::ModifierType::ALT_MASK),
             };
-            let Some(action) = keymap::action_for(key_of(keyval), mods) else {
-                return glib::Propagation::Proceed;
+            let action = match state::on_key(self.mode.get(), key_of(keyval), mods) {
+                Outcome::Passthrough => return glib::Propagation::Proceed,
+                Outcome::Navigate(action) => action,
+                Outcome::Begin(seed) => {
+                    self.begin(seed, true);
+                    // The seeded character is already in the buffer, so the key must not
+                    // also reach the editor and be typed a second time.
+                    return glib::Propagation::Stop;
+                }
+                Outcome::Commit(direction) => {
+                    self.commit(direction);
+                    return glib::Propagation::Stop;
+                }
+                Outcome::Cancel => {
+                    self.cancel();
+                    return glib::Propagation::Stop;
+                }
+                Outcome::Clear => {
+                    self.clear();
+                    return glib::Propagation::Stop;
+                }
+                Outcome::ToggleMode => {
+                    self.mode.set(match self.mode.get() {
+                        Mode::Edit => Mode::Enter,
+                        _ => Mode::Edit,
+                    });
+                    return glib::Propagation::Stop;
+                }
             };
             let selection = match action {
                 Action::Move { motion, extend } => {
@@ -504,8 +678,160 @@ mod imp {
             glib::Propagation::Stop
         }
 
+        /// Start editing the active cell.
+        ///
+        /// `Seed::Cell` needs no work: the buffer already holds the cell's input text,
+        /// because that is what it holds whenever nothing is being edited.
+        pub fn begin(&self, seed: Seed, focus_cell: bool) {
+            if let Seed::Char(c) = seed {
+                self.buffer.set_text(c.to_string());
+            }
+            self.mode.set(match seed {
+                Seed::Char(_) => Mode::Enter,
+                Seed::Cell => Mode::Edit,
+            });
+            self.editor.set_visible(true);
+            self.editing_changed(true);
+            if focus_cell {
+                self.editor.grab_focus();
+                // Focusing selects everything, which would make the next keystroke delete
+                // the seed; the caret belongs at the end of what is there.
+                self.editor.set_position(-1);
+            }
+            self.obj().queue_allocate();
+            self.obj().queue_draw();
+        }
+
+        /// Store what the buffer holds, then move.
+        ///
+        /// Display form goes back to canonical here — the one step between what an editor
+        /// holds and what `App::enter` takes — and a formula that will not parse **does not
+        /// commit**: the edit stays open with the caret on the problem, because silently
+        /// storing `=SUM(B2` as text is how a spreadsheet loses a user's work.
+        pub fn commit(&self, direction: Option<Dir>) {
+            let app = self.app.borrow().clone();
+            let (Some(app), true) = (app, self.mode.get().is_editing()) else {
+                return;
+            };
+            let text = self.buffer.text().to_string();
+            // Nothing typed, nothing stored: opening a cell and closing it again must not
+            // push an undo entry or mark the document modified.
+            let active = self.selection.get().active;
+            if app
+                .input_text(self.sheet.get(), active)
+                .is_ok_and(|before| before == text)
+            {
+                self.end_edit();
+                self.move_after_commit(active, direction);
+                return;
+            }
+            let input = match text.starts_with('=') {
+                true => match display::from_display(&text) {
+                    Ok(canonical) => canonical,
+                    Err(e) => {
+                        self.editor.set_position(caret_at(&text, e.at));
+                        self.notice(Notice::BadFormula(e.message, e.at));
+                        return;
+                    }
+                },
+                false => text,
+            };
+
+            // `RecalcMode::Document` is what makes a GUI feel live: the ripple lands in the
+            // same undo entry. It is skipped rather than refused when it would spoil a
+            // cached value, and the notice is how that gets said out loud.
+            match app.enter(self.sheet.get(), active, &input, RecalcMode::Document) {
+                Ok(outcome) => {
+                    if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
+                        self.notice(Notice::RecalcSkipped(recalc.spoiled));
+                    }
+                }
+                Err(error) => self.notice(Notice::BadFormula(error.to_string(), 0)),
+            }
+            self.end_edit();
+            self.move_after_commit(active, direction);
+        }
+
+        /// Where the cursor goes once an edit is stored. Committing moves the *cursor*,
+        /// never extends a selection.
+        fn move_after_commit(&self, from: Pos, direction: Option<Dir>) {
+            self.set_selection(match direction {
+                Some(dir) => keymap::moved(
+                    Selection::at(from),
+                    keymap::Motion::By(dir),
+                    false,
+                    self.extent(),
+                    &|_| false,
+                ),
+                None => Selection::at(from),
+            });
+        }
+
+        /// Throw the edit away. The document is never touched, so there is nothing to undo.
+        pub fn cancel(&self) {
+            self.end_edit();
+            self.refresh_buffer();
+            self.obj().grab_focus();
+            self.obj().queue_draw();
+        }
+
+        fn end_edit(&self) {
+            self.mode.set(Mode::Ready);
+            self.editor.set_visible(false);
+            self.editing_changed(false);
+            self.obj().grab_focus();
+        }
+
+        fn editing_changed(&self, editing: bool) {
+            if let Some(hook) = self.on_editing.borrow().as_ref() {
+                hook(editing);
+            }
+        }
+
+        /// Put the active cell's editable text in the shared buffer — what the formula bar
+        /// shows, and what F2 starts from.
+        fn refresh_buffer(&self) {
+            let app = self.app.borrow().clone();
+            let text = app
+                .and_then(|app| app.input_text(self.sheet.get(), self.selection.get().active).ok())
+                .unwrap_or_default();
+            self.buffer.set_text(text);
+        }
+
+        fn notice(&self, notice: Notice) {
+            if let Some(hook) = self.on_notice.borrow().as_ref() {
+                hook(notice);
+            }
+        }
+
+        /// Empty the selection — Delete, and one undo step whatever its size.
+        fn clear(&self) {
+            let app = self.app.borrow().clone();
+            let Some(app) = app else { return };
+            let (start, end) = self.selection.get().rect();
+            let (rows, cols) = self.used_extent();
+            // Clamped to the used extent: Delete over a whole column must not ask the core
+            // for a million cells, and there is nothing to clear out there anyway.
+            let end = Pos::new(end.row.min(rows.saturating_sub(1)), end.col.min(cols.saturating_sub(1)));
+            if end.row < start.row || end.col < start.col {
+                return;
+            }
+            let _ = app.clear_range(self.sheet.get(), start, end);
+            self.obj().queue_draw();
+        }
+
         /// Press: a cell, or a whole column or row from its header.
         fn press(&self, x: f64, y: f64, extend: bool) {
+            if self.mode.get().is_editing() {
+                // A click *inside* the editor is a caret move, and the event reaches here
+                // only because the editor is a child of this widget.
+                if self.editor_rect.get().contains(x, y) {
+                    return;
+                }
+                // Clicking away from an open edit stores it, which is what every
+                // spreadsheet does and what a user who clicks the next cell means.
+                self.commit(None);
+            }
             let hit = self.geom().hit(x, y);
             self.drag.set(Some(hit));
             let Some(target) = self.selection_for(hit) else { return };
@@ -561,6 +887,7 @@ mod imp {
         /// whoever is listening.
         pub fn set_selection(&self, selection: Selection) {
             self.selection.set(selection);
+            self.refresh_buffer();
             self.scroll_into_view(selection.active);
             self.obj().queue_draw();
             if let Some(hook) = self.on_selection.borrow().as_ref() {
@@ -673,9 +1000,15 @@ mod imp {
                 return;
             };
 
+            // The cell being edited is drawn by the editor child, not here — otherwise its
+            // stored value shows through the text being typed over it.
+            let editing = self.mode.get().is_editing().then(|| self.selection.get().active);
             let layout = self.layout();
             for row in rows.clone() {
                 for col in fetch.clone() {
+                    if editing == Some(Pos::new(row, col)) {
+                        continue;
+                    }
                     let Some(value) = viewport.get(row, col) else {
                         continue;
                     };
@@ -825,6 +1158,11 @@ mod imp {
         snapshot.pop();
     }
 
+    /// A byte offset as `GtkEditable` counts positions: in characters.
+    fn caret_at(text: &str, byte: usize) -> i32 {
+        text.get(..byte).map_or(-1, |head| head.chars().count() as i32)
+    }
+
     /// A GDK keyval as [`keymap`] spells it. The keypad duplicates matter: a numeric-keypad
     /// arrow with Num Lock off is a different keyval and the same intent.
     fn key_of(keyval: gtk::gdk::Key) -> Key {
@@ -841,9 +1179,11 @@ mod imp {
             // Shift+Tab arrives as its own keyval, not as Tab with a modifier.
             K::Tab | K::KP_Tab | K::ISO_Left_Tab => Key::Tab,
             K::Return | K::KP_Enter => Key::Return,
-            other => other
-                .to_unicode()
-                .map_or(Key::Other, |c| Key::Char(c.to_ascii_lowercase())),
+            K::Escape => Key::Escape,
+            K::Delete | K::KP_Delete => Key::Delete,
+            K::BackSpace => Key::Backspace,
+            K::F2 => Key::F2,
+            other => other.to_unicode().map_or(Key::Other, Key::Char),
         }
     }
 

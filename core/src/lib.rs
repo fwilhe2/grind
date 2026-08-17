@@ -746,6 +746,46 @@ impl App {
         Ok((s.used_rows(), s.used_cols()))
     }
 
+    /// What an editor puts in front of a user for one cell: the text that, entered back
+    /// unchanged, leaves the cell exactly as it is.
+    ///
+    /// [`App::enter`]'s inverse, and in the core for that reason — a shell deriving it
+    /// would be deriving the typing rule a second time, and the two would drift on the
+    /// cases that matter. A text cell that would otherwise read as a number, a logical or a
+    /// formula comes back with the `'` that forces it to text: `007` typed back without one
+    /// is the number 7.
+    ///
+    /// A formula comes back in **display form** (`=SUM(B2:B4)`), so a shell hands it to
+    /// [`formula::display::from_display`] on the way back in, exactly as it does for a
+    /// formula the user typed. That one step is the whole difference between what an editor
+    /// holds and what [`App::enter`] takes.
+    ///
+    /// ponytail: a *date* comes back as its serial, because the typing rule has no literal
+    /// date (doc/gtk-shell.md C3 defers locale-aware ones on purpose). A formatted date
+    /// still displays as a date afterwards; an unformatted one becomes a plain number. The
+    /// fix is a literal date in [`typed`], not a second rule here.
+    pub fn input_text(&self, sheet: usize, pos: Pos) -> Result<String> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        if let Some(formula) = s.formula(pos) {
+            // A formula that will not parse is shown as it is stored, which is the honest
+            // answer and still editable.
+            return Ok(formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned()));
+        }
+        Ok(match s.get(pos) {
+            CellValue::Empty => String::new(),
+            CellValue::Number(n) => formula::value::format_number(n),
+            CellValue::Bool(true) => "TRUE".to_owned(),
+            CellValue::Bool(false) => "FALSE".to_owned(),
+            // The typing rule itself decides whether the `'` is needed, so there is one
+            // rule rather than a copy of it.
+            CellValue::Text(text) => match typed(&state.doc, sheet, pos, &text).0 {
+                Entered::Text => text,
+                _ => format!("'{text}"),
+            },
+        })
+    }
+
     /// A cell's formula source, or `None` if it holds a plain value.
     pub fn formula(&self, sheet: usize, pos: Pos) -> Result<Option<String>> {
         let state = self.state.read().unwrap();

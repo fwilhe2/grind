@@ -114,6 +114,9 @@ enum Command {
         /// Print the formula source instead of the value
         #[arg(long)]
         formula: bool,
+        /// Print what an editor would show: the text that, set again, changes nothing
+        #[arg(long, conflicts_with = "formula")]
+        input: bool,
         /// Print the stored value rather than the formatted display text
         #[arg(long)]
         raw: bool,
@@ -356,6 +359,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             file,
             address,
             formula,
+            input,
             raw,
         } => {
             let app = load(file, cli)?;
@@ -371,6 +375,13 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     .unwrap_or_default();
                 return Ok(Report::Text(TextReport {
                     lines: vec![source],
+                }));
+            }
+            if *input {
+                // What a GUI puts in its formula bar, and what `sheet set` takes back
+                // unchanged — the same text, because it is the same rule.
+                return Ok(Report::Text(TextReport {
+                    lines: vec![app.input_text(sheet, pos).say()?],
                 }));
             }
             Ok(Report::Cells(cells(

@@ -602,6 +602,30 @@ core is missing something.
   range is clamped to the used extent first — a whole-column selection must not walk a
   million rows — and evaluated at a cell one *past* it, because a formula evaluated inside
   its own range is a circular reference.
+- **`state.rs` is the editing machine, and pure**: Ready → Enter | Edit. The difference
+  between the two editing modes is one rule — an arrow key *commits* in Enter and moves the
+  caret in Edit — and it exists because M6's Point mode grows out of it.
+- **The in-cell editor is a real `gtk::Text` child of the grid**, allocated over the active
+  cell by the same `cell_rect` that draws it, sharing **one `gtk::EntryBuffer`** with the
+  formula bar so the two stay in step while each keeps its own caret. A custom-drawn editor
+  is rejected outright: `gtk::Text` brings the input method, the caret, selection and
+  clipboard, and hand-rolling `GtkIMContext` is the classic way to ship broken input. The
+  cell under it is skipped by `draw_cells`, or its stored value shows through.
+- **The key controller is in Capture phase**, so the grid decides before the editor child
+  does and everything it does not claim travels on untouched.
+- **A commit that changes nothing writes nothing.** Opening a cell and closing it again must
+  not push an undo entry, and a click inside the editor is a caret move rather than a commit
+  — the grid compares against `App::input_text` and checks the editor's own rectangle.
+- **Every edit runs `RecalcMode::Document`**, so a GUI feels live; when that would spoil a
+  cached value the edit still lands and an `adw::Banner` offers *Recalculate Anyway*. A
+  banner rather than a toast because it is a state the document is in, not an event.
+- **The observer bridge is `async-channel` + one `spawn_future_local`** (rule 3: the core
+  pushes, shells never poll). `Observer` is `Send + Sync` and a widget is neither, so what
+  crosses is a token; the loop drains a burst into one refresh, *after* the mutation that
+  sent it released the lock.
+- **`chrome.rs` is the parts made of ordinary widgets** — formula bar, name box, sheet tabs,
+  status bar — and owns nothing either. The name box resolves through `core::a1`, so what it
+  means by `Data.B2:C9` is what a formula means by it.
 
 ### `cli/` — the `sheet` binary, and the parity ratchet
 
@@ -797,6 +821,13 @@ including whole columns and rows from the headers, Ctrl+arrows to the data edges
 Home/End/PgUp/PgDn, scroll-into-view, and a status bar showing Sum · Count · Average of the
 selection.
 
-Next is M4 — editing: `state.rs`, the in-cell editor and formula bar over one shared buffer,
-commit through `App::enter`, undo/redo, the recalculation banners, sheet tabs and save. Then
-clipboard and the formula UX; the wasm shell after that is the honest test of rule 5.
+**M4 is done**: editing. `state.rs` (pure, tested), the in-cell editor and the formula bar
+over one shared buffer, commit through `App::enter` with the ripple in the same undo entry,
+Delete over a selection, undo/redo, the spoilage banner, sheet tabs with an undo toast for a
+deletion, name-box navigation, and open/save/save-as with a close confirmation. It brought
+one core capability: `App::input_text` — what an editor shows for a cell, which is
+`App::enter`'s inverse and therefore belongs beside it rather than in a shell (`sheet get
+--input`).
+
+Next is M5 — the clipboard, whose core half (`enter_range`, `clear_range`) already exists —
+and then M6's formula UX. The wasm shell after that is the honest test of rule 5.

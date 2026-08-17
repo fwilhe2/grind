@@ -34,8 +34,6 @@ pub struct Rect {
 }
 
 impl Rect {
-    /// Used by the round-trip test below, and by the next milestone's click handling.
-    #[allow(dead_code)]
     pub fn contains(&self, x: f64, y: f64) -> bool {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
     }
@@ -47,7 +45,6 @@ impl Rect {
 /// resize drag starts within a few pixels of a boundary that is also part of a header
 /// button — the narrower target has to win or resizing is unreachable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum Hit {
     Cell { row: u32, col: u32 },
     RowHeader(u32),
@@ -109,7 +106,6 @@ pub struct GridGeom {
 }
 
 /// How close to a boundary a pointer counts as being *on* it.
-#[allow(dead_code)]
 const EDGE_GRAB: f64 = 4.0;
 
 impl GridGeom {
@@ -166,11 +162,9 @@ impl GridGeom {
 
     /// What is under a point in **widget** space.
     ///
-    /// Nothing calls this yet — selection arrives with the keyboard and mouse milestone.
-    /// It is here because it is [`GridGeom::cell_rect`]'s inverse, and testing the two
-    /// against each other is what catches an off-by-one that would otherwise only show up
-    /// as a grid that looks very slightly wrong.
-    #[allow(dead_code)]
+    /// [`GridGeom::cell_rect`]'s inverse, and the two are tested against each other —
+    /// an off-by-one here would otherwise only show up as a grid that looks very slightly
+    /// wrong under the pointer.
     pub fn hit(&self, x: f64, y: f64) -> Hit {
         let in_row_header = x < self.header_w;
         let in_col_header = y < self.header_h;

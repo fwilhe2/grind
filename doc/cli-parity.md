@@ -72,6 +72,8 @@ stops ratcheting.
 - `get_viewport` — `sheet view` (its display text is what `view` prints; `--raw` prints the
   stored values instead)
 - `formula` — `sheet get --formula`
+- `input_text` — `sheet get --input`, which prints what an editor would show for the cell:
+  the text that, given back to `sheet set`, leaves it exactly as it is
 - `formula_count` — `sheet info`
 - `sheet_count` — `sheet info`
 - `sheet_name` — `sheet info`, and any sheet-qualified address

@@ -18,6 +18,41 @@ use libadwaita::prelude::*;
 
 use gtk::gdk;
 
+/// The one stylesheet this shell installs: the in-cell editor.
+///
+/// A bare `gtk::Text` is transparent and carries the theme's entry padding, so over a cell
+/// it shows the value underneath and puts the caret a few pixels off from where the grid
+/// draws text. Both are fixed with named theme colours rather than literals, so it follows
+/// light, dark and high-contrast like everything else here.
+const EDITOR_CSS: &str = "
+.sheet-editor {
+  background-color: @view_bg_color;
+  color: @view_fg_color;
+  caret-color: @view_fg_color;
+  padding: 0 3px;
+  margin: 0;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+}
+";
+
+/// Install the stylesheet, once, for the whole display.
+pub fn install() {
+    let Some(display) = gdk::Display::default() else {
+        return;
+    };
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(EDITOR_CSS);
+    gtk::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Palette {
     /// The sheet behind the cells.
