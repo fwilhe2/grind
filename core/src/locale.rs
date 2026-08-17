@@ -68,6 +68,14 @@ impl Locale {
             .then(|| Locale::new(language.to_lowercase(), country.to_uppercase()))
     }
 
+    /// [`Locale::parse`]'s inverse — how a shell shows and takes a locale back.
+    pub fn tag(&self) -> String {
+        match self.country.is_empty() {
+            true => self.language.clone(),
+            false => format!("{}-{}", self.language, self.country),
+        }
+    }
+
     fn comma_decimal(&self) -> bool {
         COMMA_DECIMAL.contains(&self.language.to_lowercase().as_str())
     }
@@ -102,6 +110,15 @@ pub fn separators(locale: Option<&Locale>) -> (char, char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tag_round_trips_through_parse() {
+        for tag in ["de-DE", "de", "pt-BR"] {
+            assert_eq!(Locale::parse(tag).unwrap().tag(), tag);
+        }
+        // A shell may spell it either way; the tag comes back canonical.
+        assert_eq!(Locale::parse("DE_de").unwrap().tag(), "de-DE");
+    }
 
     #[test]
     fn the_separators_swap_with_the_language_and_not_with_the_country() {

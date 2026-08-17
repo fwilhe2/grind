@@ -220,6 +220,48 @@ impl Format {
         self.parts.push(part);
     }
 
+    /// The [`preset`] arguments that come closest to this format — its kind, the digits and
+    /// grouping of its first `number:number`, and its currency symbol.
+    ///
+    /// What a format *picker* shows as its current state, and in the core because both a GUI
+    /// and `sheet format --show` ask it: two shells deriving "how many decimals is this"
+    /// separately would eventually answer differently about the same cell. A format with no
+    /// numeric part — a date, a boolean — has no digits, and says so as `(0, false)`.
+    pub fn preset_params(&self) -> (Kind, u8, bool, String) {
+        let (decimals, grouping) = self
+            .parts
+            .iter()
+            .find_map(|part| match part {
+                Part::Number {
+                    decimals, grouping, ..
+                } => Some((*decimals, *grouping)),
+                _ => None,
+            })
+            .unwrap_or((0, false));
+        let symbol = self
+            .parts
+            .iter()
+            .find_map(|part| match part {
+                Part::Currency(symbol) => Some(symbol.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        (self.kind, decimals, grouping, symbol)
+    }
+
+    /// Whether [`preset`] — or [`datetime_preset`] — built from [`Format::preset_params`]
+    /// *is* this format.
+    ///
+    /// False for a format a document brought that this vocabulary cannot spell: `DD.MM.YYYY`,
+    /// a two-branch currency, a `number:min-decimal-places` short of its decimals. A picker
+    /// showing such a format has to say so rather than offer parameters that would silently
+    /// replace it with something else.
+    pub fn is_preset(&self) -> bool {
+        let (kind, decimals, grouping, symbol) = self.preset_params();
+        let same = |built: Format| built.in_locale(self.locale.clone()) == *self;
+        same(preset(kind, decimals, grouping, &symbol)) || same(datetime_preset())
+    }
+
     /// Whether the hours in this format are a 12-hour clock (§16.27.19: `number:am-pm`).
     fn twelve_hour(&self) -> bool {
         self.parts.contains(&Part::AmPm)

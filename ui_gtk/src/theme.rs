@@ -196,6 +196,23 @@ fn named(widget: &gtk::Widget, name: &str) -> Option<gdk::RGBA> {
     widget.style_context().lookup_color(name)
 }
 
+/// A colour **the document** chose — `fo:color`, `fo:background-color`, a border's third
+/// field — as a colour to paint with.
+///
+/// The one place a colour does not come from the theme, and it has to be: a cell that says
+/// `#ffff00` is yellow in every session. `None` for anything not to be painted, which is
+/// where the two cases that are not colours live: ODF's `"transparent"` (GDK parses it as
+/// opaque black, so leaving it to the parser would be a very visible bug) and a value this
+/// build does not recognise — a document's attribute is whatever the document said
+/// (`core/src/style.rs`), so it is dropped at the point of painting rather than at the point
+/// of reading, where dropping it would lose the cell.
+pub fn color(value: &str) -> Option<gdk::RGBA> {
+    match value.trim() {
+        "transparent" | "none" => None,
+        value => value.parse().ok(),
+    }
+}
+
 pub fn with_alpha(color: gdk::RGBA, alpha: f32) -> gdk::RGBA {
     gdk::RGBA::new(color.red(), color.green(), color.blue(), alpha)
 }

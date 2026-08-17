@@ -17,6 +17,7 @@
 //! a burst of changes into a single refresh.
 
 mod chrome;
+mod formatting;
 mod formula_ux;
 mod geom;
 mod grid;
@@ -96,6 +97,7 @@ struct Ui {
     toasts: adw::ToastOverlay,
     banner: adw::Banner,
     tabs: Rc<chrome::Tabs>,
+    strip: Rc<formatting::Strip>,
     undo: gtk::Button,
     redo: gtk::Button,
     path: RefCell<Option<PathBuf>>,
@@ -153,9 +155,11 @@ impl Ui {
         add_sheet.set_action_name(Some("win.sheet-add"));
         add_sheet.add_css_class("flat");
         let tabs = chrome::Tabs::new(&grid, app, &add_sheet);
+        let strip = formatting::strip(&grid, app);
 
         let view = adw::ToolbarView::builder().content(&toasts).build();
         view.add_top_bar(&header);
+        view.add_top_bar(&strip.widget);
         view.add_top_bar(&chrome::formula_bar(&grid, app));
         view.add_top_bar(&banner);
         view.add_bottom_bar(&tabs.widget);
@@ -179,6 +183,7 @@ impl Ui {
             toasts,
             banner,
             tabs,
+            strip,
             undo,
             redo,
             path: RefCell::new(path),
@@ -257,6 +262,9 @@ impl Ui {
         self.undo.set_sensitive(self.app.can_undo());
         self.redo.set_sensitive(self.app.can_redo());
         self.tabs.refresh();
+        // Undo, redo and a load all change the cell under an unmoved selection, which is
+        // what the format strip is showing.
+        self.strip.refresh();
     }
 
     fn toast(&self, text: &str) {
@@ -280,6 +288,7 @@ impl Ui {
     fn notice(self: &Rc<Self>, notice: Notice) {
         match notice {
             Notice::BadFormula(message, _) => self.toast(&format!("Not a formula: {message}")),
+            Notice::Refused(message) => self.toast(&message),
             // A banner rather than a toast: this is a *state* the document is in, not an
             // event that happened, and it stays true until something recalculates.
             Notice::RecalcSkipped(spoiled) => {

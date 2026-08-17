@@ -201,8 +201,8 @@ enum Command {
         /// Cell address or range, e.g. B2:B40 or Data.C:C
         address: String,
         /// How to display it
-        #[arg(value_enum)]
-        style: Style,
+        #[arg(value_enum, required_unless_present = "show", conflicts_with = "show")]
+        style: Option<Style>,
         /// Digits after the decimal point, for number, percent and currency
         #[arg(long, default_value_t = 2)]
         decimals: u8,
@@ -215,17 +215,27 @@ enum Command {
         /// Locale for the decimal and grouping characters, e.g. de-DE
         #[arg(long, value_parser = locale)]
         locale: Option<sheet_core::locale::Locale>,
+        /// Print the format of one cell instead of setting one
+        #[arg(long, conflicts_with_all = ["decimals", "grouping", "symbol", "locale"])]
+        show: bool,
     },
 
     /// Set how a cell or range looks
     ///
     /// Replaces the cell's styling rather than adding to it, so `sheet style A1` with no
-    /// options makes A1 plain again. Fonts are deliberately absent: LibreOffice rewrites a
-    /// font family into a reference nothing here can follow yet.
+    /// options makes A1 plain again — and `--show` is how a shell reads the current styling
+    /// first, which is what makes "bold as well" one command after another. Fonts are
+    /// deliberately absent: LibreOffice rewrites a font family into a reference nothing here
+    /// can follow yet.
     Style {
         file: PathBuf,
         /// Cell address or range, e.g. A1:D1 or Data.B:B
         address: String,
+        /// Print the styling of one cell instead of setting any
+        #[arg(long, conflicts_with_all = [
+            "bold", "italic", "color", "background", "align", "valign", "wrap", "size", "border",
+        ])]
+        show: bool,
         #[arg(long)]
         bold: bool,
         #[arg(long)]
@@ -497,13 +507,17 @@ fn run(cli: &Cli) -> Result<Report, String> {
             grouping,
             symbol,
             locale,
+            show,
         } => {
             let app = load(file, cli)?;
+            if *show {
+                return shown(&app, file, address, false, true);
+            }
             let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
-            let format = match style {
+            let format = match style.expect("clap requires a style unless --show") {
                 Style::General => None,
                 Style::Datetime => Some(numfmt::datetime_preset()),
-                style => Some(numfmt::preset(kind(*style), *decimals, *grouping, symbol)),
+                style => Some(numfmt::preset(kind(style), *decimals, *grouping, symbol)),
             }
             .map(|format| format.in_locale(locale.clone()));
             let changed = app
@@ -515,6 +529,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
         Command::Style {
             file,
             address,
+            show,
             bold,
             italic,
             color,
@@ -526,6 +541,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
             border,
         } => {
             let app = load(file, cli)?;
+            if *show {
+                return shown(&app, file, address, true, false);
+            }
             let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
             let mut want = CellStyle {
                 font_weight: bold.then(|| "bold".to_owned()),
@@ -945,6 +963,34 @@ fn single(app: &App, address: &str) -> Result<(usize, Pos, Pos), String> {
         return Err(format!("{address}: expected one cell, not a range"));
     }
     a1::resolve(app, &reference).say()
+}
+
+/// `--show` for both `style` and `format`: one cell's styling, its format, or both.
+///
+/// One cell rather than a rectangle, because the answer for a rectangle is either "they
+/// agree" or a list, and a caller that wants the list already has `sheet view`. It reads and
+/// writes nothing, so no `finish` and no `stale` warning.
+fn shown(
+    app: &App,
+    file: &Path,
+    address: &str,
+    style: bool,
+    format: bool,
+) -> Result<Report, String> {
+    let (sheet, pos, _) = single(app, address)?;
+    Ok(Report::CellStyle(Box::new(report::CellStyleReport {
+        path: file.display().to_string(),
+        sheet: app.sheet_name(sheet).say()?,
+        address: a1::format(None, pos),
+        style: match style {
+            true => app.style_at(sheet, pos).say()?,
+            false => None,
+        },
+        format: match format {
+            true => app.format_at(sheet, pos).say()?,
+            false => None,
+        },
+    })))
 }
 
 /// `--text`, as the core's typing rule spells it. The rule lives in `App::enter`, so a

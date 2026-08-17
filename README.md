@@ -104,9 +104,12 @@ to build):
 cargo run -p sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
 ```
 
-It reads and draws today — values, number formats, alignment, text that overflows into
-empty neighbours — and does not edit yet. `doc/gtk-shell.md` is the plan it is being built
-to, milestone by milestone.
+It reads, draws and edits today: values, formulas typed in A1 form with point mode and
+autocomplete, number formats and cell styling as the document spells them, selection and
+navigation, the clipboard, undo, sheets, and a format strip whose whole vocabulary is the
+core's. What it does not have yet is column widths and row heights, so every column is the
+same width — that is the next milestone. `doc/gtk-shell.md` is the plan it is being built to,
+milestone by milestone, and `doc/not-doing.md` says where each capability stops.
 
 **The command line** (`sheet`), which is the whole feature set:
 

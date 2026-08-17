@@ -107,6 +107,11 @@ the code, and this table is an index rather than a second source of truth.
 | **`style:map`** | Read, rendered and round-tripped; `sheet format` cannot build one. | `numfmt/` module docs |
 | **`style:parent-style-name`** | Not followed. A cell style inheriting its data style from a parent loses the format. | `read.rs:622` |
 | **Border widths** | Compared numerically in loop C, because LibreOffice re-quantises them (`0.5pt` → `0.51pt`). | `style.rs` |
+| **Border line styles, on screen** | Read, written and round-tripped; *drawn* solid, so `dashed` and `double` look like `solid`. The width and colour are honoured, which is what carries the meaning of a ruled table. | `grid.rs`'s `draw_borders` |
+| **Wrapped text, on screen** | Wraps inside its own cell and clips at the row height, because every row is one line tall until the model carries heights. A font size larger than the row clips for the same reason. | `grid.rs`'s `draw_cells` |
+| **The in-cell editor's font** | The widget's, not the cell's — a bold cell is edited in a regular weight. `gtk::Text` is a real child widget, and restyling it per cell is a second font path for the duration of one edit. | `doc/gtk-shell.md` M7 |
+| **Formatting a whole column** | Formats the column's *used* part. A real column default is `table:default-cell-style-name`, which the reader honours on the way in and the model cannot yet write. | `Grid::target` |
+| **The format picker's vocabulary** | Exactly `numfmt::preset`'s parameters, which is what makes GUI- and CLI-formatted documents identical. A document's format that is outside it — `DD.MM.YYYY`, a two-branch currency — is kept, rendered, and reported as one the picker cannot build (`Format::is_preset`) rather than silently replaced. | `ui_gtk/src/formatting.rs` |
 | **`NOW` / `TODAY`** | UTC, not the host's local time. | `date.rs:283` |
 | **String comparison** | Code-point order after case folding, not locale collation. §6.4.9 permits it. | `eval.rs:503` |
 | **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `CLAUDE.md` |

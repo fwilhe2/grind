@@ -111,28 +111,45 @@ pub struct Viewport {
     /// alone would make every renderer either wrong about dates or a second implementation
     /// of `numfmt`.
     texts: Vec<String>,
+    /// How each cell *looks* — weight, colours, alignment, borders (`style.rs`).
+    ///
+    /// Beside the text for the same reason: a renderer that had to ask for a style per cell
+    /// would either take the lock once per cell or keep its own copy of the document. One
+    /// clone per styled cell, and the vector is viewport-sized rather than sheet-sized.
+    ///
+    /// ponytail: a `CellStyle` is nine `Option<String>`s and this clones them per visible
+    /// cell. Interning them — the writer already pools styles — is the upgrade, once a
+    /// profile says a screenful of styled cells costs anything.
+    styles: Vec<Option<style::CellStyle>>,
 }
 
 impl Viewport {
-    pub fn get(&self, row: u32, col: u32) -> Option<&CellValue> {
+    /// The index of one cell in the row-major vectors, or `None` if it is outside.
+    fn at(&self, row: u32, col: u32) -> Option<usize> {
         if !self.rows.contains(&row) || !self.cols.contains(&col) {
             return None;
         }
         let width = (self.cols.end - self.cols.start) as usize;
         let r = (row - self.rows.start) as usize;
         let c = (col - self.cols.start) as usize;
-        self.cells.get(r * width + c)
+        Some(r * width + c)
+    }
+
+    pub fn get(&self, row: u32, col: u32) -> Option<&CellValue> {
+        self.cells.get(self.at(row, col)?)
     }
 
     /// The display text of one cell — what a renderer draws.
     pub fn text(&self, row: u32, col: u32) -> Option<&str> {
-        if !self.rows.contains(&row) || !self.cols.contains(&col) {
-            return None;
-        }
-        let width = (self.cols.end - self.cols.start) as usize;
-        let r = (row - self.rows.start) as usize;
-        let c = (col - self.cols.start) as usize;
-        self.texts.get(r * width + c).map(String::as_str)
+        self.texts.get(self.at(row, col)?).map(String::as_str)
+    }
+
+    /// How one cell looks, or `None` for a plain cell — and for one outside the viewport.
+    ///
+    /// A renderer wants both answers to be "draw nothing special", so the two `None`s are
+    /// deliberately the same: an unstyled cell and a cell off screen need no distinction.
+    pub fn style(&self, row: u32, col: u32) -> Option<&style::CellStyle> {
+        self.styles.get(self.at(row, col)?)?.as_ref()
     }
 
     /// One row of the viewport, left to right. `None` if the row is outside it.
@@ -707,6 +724,7 @@ impl App {
         let size = ((rows.end - rows.start) as usize) * ((cols.end - cols.start) as usize);
         let mut cells = Vec::with_capacity(size);
         let mut texts = Vec::with_capacity(size);
+        let mut styles = Vec::with_capacity(size);
         for row in rows.clone() {
             for col in cols.clone() {
                 let pos = Pos::new(row, col);
@@ -715,6 +733,7 @@ impl App {
                     Some(format) => format.render(&value, state.doc.null_date),
                     None => numfmt::general(&value, s.kind(pos), state.doc.null_date),
                 });
+                styles.push(s.style(pos).cloned());
                 cells.push(value);
             }
         }
@@ -723,6 +742,7 @@ impl App {
             cols,
             cells,
             texts,
+            styles,
         })
     }
 
@@ -784,6 +804,29 @@ impl App {
                 _ => format!("'{text}"),
             },
         })
+    }
+
+    /// How one cell looks, or `None` for a plain one.
+    ///
+    /// [`App::set_style`] *replaces* rather than merges, deliberately — so "make this bold as
+    /// well" is this call, a field set, and one `set_style`. That read-merge-write is what a
+    /// toolbar's bold button is, and the reason the merge policy lives in the caller that
+    /// knows which button was pressed rather than in the core.
+    pub fn style_at(&self, sheet: usize, pos: Pos) -> Result<Option<style::CellStyle>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.style(pos).cloned())
+    }
+
+    /// How one cell's value is spelled, or `None` for the general format.
+    ///
+    /// The twin of [`App::style_at`], and what a format picker shows as its current state.
+    /// Not carried in the [`Viewport`], because rendering needs the *text*, which is already
+    /// there — this is for the one cell a user is asking about.
+    pub fn format_at(&self, sheet: usize, pos: Pos) -> Result<Option<numfmt::Format>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.format(pos).cloned())
     }
 
     /// A cell's formula source, or `None` if it holds a plain value.

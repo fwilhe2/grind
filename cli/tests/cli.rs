@@ -202,6 +202,52 @@ fn a_date_shows_as_a_date_once_the_cell_says_so() {
     assert_eq!(ok(&["get", &s(&file), "A1", "--raw"]).trim(), "46250");
 }
 
+/// `--show` is the read half a toolbar needs: `set_style` replaces, so "bold as well" is a
+/// read, a merge and a write — and the CLI can do it because a GUI can.
+#[test]
+fn show_prints_the_styling_a_toolbar_would_merge_into() {
+    let dir = Sandbox::new("show");
+    let file = dir.path("book.ods");
+    ok(&["new", &s(&file)]);
+    ok(&["set", &s(&file), "A1", "1234.5"]);
+    assert_eq!(ok(&["style", &s(&file), "A1", "--show"]), "", "a plain cell says nothing");
+    assert_eq!(ok(&["format", &s(&file), "A1", "--show"]), "");
+
+    ok(&["style", &s(&file), "A1", "--bold", "--background", "#ffff00"]);
+    let shown = ok(&["style", &s(&file), "A1", "--show"]);
+    assert!(shown.contains("fo:font-weight\tbold"), "{shown}");
+    assert!(shown.contains("fo:background-color\t#ffff00"), "{shown}");
+
+    // Merging is the caller's job, and this is what makes it possible: read, add italic,
+    // write, and the bold is still there.
+    ok(&[
+        "style", &s(&file), "A1", "--bold", "--italic", "--background", "#ffff00",
+    ]);
+    let shown = ok(&["style", &s(&file), "A1", "--show"]);
+    assert!(shown.contains("fo:font-style\titalic") && shown.contains("fo:font-weight\tbold"));
+
+    // A format prints the flags that would recreate it, and says that they would.
+    ok(&[
+        "format", &s(&file), "A1", "currency", "--decimals", "2", "--grouping", "--symbol", "€",
+        "--locale", "de-DE",
+    ]);
+    let shown = ok(&["format", &s(&file), "A1", "--show"]);
+    for line in ["kind\tcurrency", "decimals\t2", "grouping\ttrue", "symbol\t€", "locale\tde-DE", "preset\ttrue"] {
+        assert!(shown.contains(line), "{line} missing from {shown}");
+    }
+    // JSON carries the structure rather than the prose, which is what a picker restores from.
+    let json = ok(&["--format", "json", "style", &s(&file), "A1", "--show"]);
+    assert_eq!(field(&json, "ref"), "A1");
+    assert_eq!(field(&json, "font_weight"), "bold");
+
+    // Showing and setting are different requests, and asking for both at once is a mistake
+    // clap catches rather than a silent precedence rule.
+    assert!(!sheet(&["style", &s(&file), "A1", "--show", "--bold"]).status.success());
+    assert!(!sheet(&["format", &s(&file), "A1", "date", "--show"]).status.success());
+    assert!(!sheet(&["format", &s(&file), "A1"]).status.success());
+    assert!(!sheet(&["style", &s(&file), "A1:B2", "--show"]).status.success());
+}
+
 /// The rectangle is bounded, because a format costs an entry per cell.
 #[test]
 fn formatting_an_absurd_rectangle_fails_instead_of_trying() {

@@ -74,6 +74,12 @@ stops ratcheting.
 - `formula` — `sheet get --formula`
 - `input_text` — `sheet get --input`, which prints what an editor would show for the cell:
   the text that, given back to `sheet set`, leaves it exactly as it is
+- `style_at` — `sheet style <cell> --show`, which prints the cell's styling under ODF's own
+  attribute names. The read half of the read-merge-write a bold button is, since `set_style`
+  replaces rather than merges.
+- `format_at` — `sheet format <cell> --show`, printing the flags that would recreate the
+  format and whether they can (`preset`) — a document may hold one this vocabulary cannot
+  build.
 - `formula_count` — `sheet info`
 - `sheet_count` — `sheet info`
 - `sheet_name` — `sheet info`, and any sheet-qualified address

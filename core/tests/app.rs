@@ -709,3 +709,46 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
     assert_eq!(app.input_text(0, p(6, 0)).unwrap(), "=A1*2");
     assert_eq!(app.formula(0, p(6, 0)).unwrap().as_deref(), Some("=[.A1]*2"));
 }
+
+/// C7 and C8 together: what a toolbar does. A bold button is a read, a field, and a write —
+/// and the grid learns about it from the viewport rather than by asking per cell.
+#[test]
+fn a_style_reads_back_and_rides_in_the_viewport() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.5).unwrap();
+    assert_eq!(app.style_at(0, p(0, 0)).unwrap(), None, "a plain cell has no style");
+    assert_eq!(app.format_at(0, p(0, 0)).unwrap(), None);
+
+    // Read, merge, write — the flow `set_style`'s docs promise and the one a bold toggle is.
+    let mut style = app.style_at(0, p(0, 0)).unwrap().unwrap_or_default();
+    style.font_weight = Some("bold".into());
+    app.set_style(0, p(0, 0), p(0, 0), Some(style)).unwrap();
+    style = app.style_at(0, p(0, 0)).unwrap().unwrap();
+    assert_eq!(style.font_weight.as_deref(), Some("bold"));
+    style.background = Some("#ffff00".into());
+    app.set_style(0, p(0, 0), p(0, 0), Some(style)).unwrap();
+
+    app.set_format(
+        0,
+        p(0, 0),
+        p(0, 0),
+        Some(sheet_core::numfmt::preset(sheet_core::numfmt::Kind::Percentage, 1, false, "")),
+    )
+    .unwrap();
+    let format = app.format_at(0, p(0, 0)).unwrap().unwrap();
+    assert_eq!(format.kind, sheet_core::numfmt::Kind::Percentage);
+
+    let v = app.get_viewport(0, 0..2, 0..2).unwrap();
+    let seen = v.style(0, 0).expect("the styled cell carries its style into the viewport");
+    assert_eq!(seen.font_weight.as_deref(), Some("bold"));
+    assert_eq!(seen.background.as_deref(), Some("#ffff00"));
+    assert_eq!(v.style(1, 1), None, "an unstyled cell");
+    assert_eq!(v.style(9, 9), None, "and one outside the viewport, which needs no distinction");
+    assert_eq!(v.text(0, 0), Some("150.0%"), "the format is still what decides the text");
+
+    // Clearing is the same call with `None`, and the viewport forgets it too.
+    app.set_style(0, p(0, 0), p(0, 0), None).unwrap();
+    assert_eq!(app.style_at(0, p(0, 0)).unwrap(), None);
+    assert_eq!(app.get_viewport(0, 0..1, 0..1).unwrap().style(0, 0), None);
+    assert!(app.style_at(9, p(0, 0)).is_err() && app.format_at(9, p(0, 0)).is_err());
+}

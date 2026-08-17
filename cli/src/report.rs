@@ -10,10 +10,14 @@
 //! exists. `changed` means the command did something; `written` means the disk was touched,
 //! and it is false under `--dry-run` and false for a no-op. **A no-op is a success.**
 
+use std::fmt;
+
 use clap::ValueEnum;
 use serde::Serialize;
 use sheet_core::CellValue;
 use sheet_core::formula::value::format_number;
+use sheet_core::numfmt;
+use sheet_core::style::{CellStyle, EDGES};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Format {
@@ -26,6 +30,9 @@ pub enum Format {
 pub enum Report {
     Cells(CellsReport),
     Document(DocumentReport),
+    /// Boxed: a `CellStyle` and a `Format` together are five times the next variant, and
+    /// every command would carry the difference.
+    CellStyle(Box<CellStyleReport>),
     Text(TextReport),
 }
 
@@ -97,6 +104,25 @@ pub struct Name {
     pub expression: String,
 }
 
+/// `style --show` and `format --show` — how one cell looks, and how its value is spelled.
+///
+/// One report for both because a shell reading either wants the same shape, and because the
+/// two travel on one `style:style` in the file. JSON carries the structures themselves — a
+/// picker restoring its state wants the fields, not prose — and the text form is one
+/// `key<TAB>value` line per thing that is set, which is `sheet format`'s own flags for a
+/// format and ODF's own attribute names for a style.
+#[derive(Debug, Serialize)]
+pub struct CellStyleReport {
+    pub path: String,
+    pub sheet: String,
+    #[serde(rename = "ref")]
+    pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<CellStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<numfmt::Format>,
+}
+
 /// `fmt` and `functions` — output that is not about a document.
 #[derive(Debug, Serialize)]
 pub struct TextReport {
@@ -149,6 +175,11 @@ impl Report {
                     if doc.can_redo { "  redo" } else { "" },
                 );
             }
+            Report::CellStyle(cell) => {
+                for (key, value) in describe(cell) {
+                    println!("{key}\t{value}");
+                }
+            }
             Report::Text(text) => {
                 for line in &text.lines {
                     println!("{line}");
@@ -156,6 +187,72 @@ impl Report {
             }
         }
     }
+}
+
+/// A `--show` report as `key<TAB>value` lines — only what is actually set, so a plain cell
+/// prints nothing at all and a script can test for that.
+///
+/// A style prints under ODF's own attribute names, because those are what the fields *are*
+/// (`core/src/style.rs`). A format prints under `sheet format`'s flag names, because those
+/// are what recreates it — and `preset` says whether they can: a document may hold a format
+/// this vocabulary cannot build (`DD.MM.YYYY`, a two-branch currency), and reporting its
+/// decimals as though `sheet format` would reproduce it would be a lie.
+fn describe(cell: &CellStyleReport) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut set = |key: &str, value: &dyn fmt::Display| out.push((key.to_owned(), value.to_string()));
+
+    if let Some(format) = &cell.format {
+        let (kind, decimals, grouping, symbol) = format.preset_params();
+        set("kind", &format!("{kind:?}").to_lowercase());
+        // The three numeric families are the ones whose digits and separators mean anything.
+        if matches!(
+            kind,
+            numfmt::Kind::Number | numfmt::Kind::Percentage | numfmt::Kind::Currency
+        ) {
+            set("decimals", &decimals);
+            set("grouping", &grouping);
+        }
+        if !symbol.is_empty() {
+            set("symbol", &symbol);
+        }
+        if let Some(locale) = &format.locale {
+            set("locale", &locale.tag());
+        }
+        if !format.maps.is_empty() {
+            set("branches", &format.maps.len());
+        }
+        set("preset", &format.is_preset());
+    }
+
+    if let Some(style) = &cell.style {
+        for (key, value) in [
+            ("fo:font-weight", &style.font_weight),
+            ("fo:font-style", &style.font_style),
+            ("fo:font-size", &style.font_size),
+            ("fo:color", &style.color),
+            ("fo:background-color", &style.background),
+            ("fo:text-align", &style.align),
+            ("style:vertical-align", &style.vertical_align),
+            ("fo:wrap-option", &style.wrap),
+        ] {
+            if let Some(value) = value {
+                set(key, value);
+            }
+        }
+        // The shorthand when the edges agree, and the four attributes when they do not —
+        // which is how the file spells it either way.
+        match style.uniform_border() {
+            Some(border) => set("fo:border", &border),
+            None => {
+                for (edge, value) in EDGES.iter().zip(&style.borders) {
+                    if let Some(value) = value {
+                        set(&format!("fo:border-{edge}"), value);
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// A cell as text. Numbers go through the formula engine's own formatter rather than `{}`,

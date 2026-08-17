@@ -36,7 +36,7 @@ use libadwaita::prelude::*;
 
 use gtk::glib;
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
-use sheet_core::App;
+use sheet_core::{App, Pos};
 
 use crate::geom::{ColWidths, GridGeom, MAX_COLS, MAX_ROWS};
 use crate::keymap::Selection;
@@ -132,6 +132,37 @@ impl Grid {
         self.imp().on_notice.borrow_mut().push(Box::new(f));
     }
 
+    /// Tell the chrome something, from a part of the chrome that has no toast of its own —
+    /// the format strip, whose writes can be refused for the same reasons the grid's can.
+    pub fn report(&self, notice: Notice) {
+        self.imp().notice(notice);
+    }
+
+    /// The selection as a rectangle the core will accept: clamped to the sheet's used extent,
+    /// never smaller than the anchor cell.
+    ///
+    /// A whole-column selection is 1048576 rows, and every per-cell operation — formatting,
+    /// styling, summing — has to stop at the data or ask for a million writes.
+    ///
+    /// ponytail: which means "format column A" formats the *used* part of column A, where a
+    /// spreadsheet would put a default style on the column itself. That needs the column
+    /// default styles the reader already honours on the way in (see `odf/read.rs`) to become
+    /// something the model can *write*, which is M8's neighbourhood.
+    pub fn target(&self) -> Option<(usize, Pos, Pos)> {
+        let app = self.imp().app.borrow().clone()?;
+        let sheet = self.sheet();
+        let (start, end) = self.selection().rect();
+        let (rows, cols) = app.used_extent(sheet).ok()?;
+        Some((
+            sheet,
+            start,
+            Pos::new(
+                end.row.min(rows.saturating_sub(1)).max(start.row),
+                end.col.min(cols.saturating_sub(1)).max(start.col),
+            ),
+        ))
+    }
+
     /// Called after every selection change, with the selection that resulted — what the
     /// status bar and the formula bar are driven from. The grid does not know what they
     /// are; it reports, and chrome decides.
@@ -149,6 +180,9 @@ pub enum Notice {
     /// The edit landed, and the recalculation behind it was skipped because it would have
     /// replaced this many cached values with errors.
     RecalcSkipped(usize),
+    /// The core refused, and said why — a rectangle too large to format, a sheet that is
+    /// gone. Carries the core's own message rather than a rephrasing of it.
+    Refused(String),
 }
 
 impl Default for Grid {
@@ -223,6 +257,14 @@ mod imp {
         rows: std::ops::Range<u32>,
         cols: std::ops::Range<u32>,
         selection: Selection,
+        /// The cells this paint draws, read **once** — three passes need them (backgrounds
+        /// under the selection wash, borders over the grid lines, then the text), and asking
+        /// three times would take the document's lock three times a frame.
+        ///
+        /// Wider than `cols` by [`OVERFLOW_MARGIN`] either side, so a label anchored just
+        /// off-screen still reaches into the view and "is the neighbour empty" needs no
+        /// second read. `None` when there is no document.
+        cells: Option<sheet_core::Viewport>,
     }
 
     pub struct Grid {
@@ -538,11 +580,14 @@ mod imp {
             let width = f64::from(widget.width());
             let height = f64::from(widget.height());
             let geom = self.geom();
+            let rows = geom.visible_rows(height);
+            let cols = geom.visible_cols(width);
             let frame = Frame {
                 snapshot,
                 palette: self.palette(),
-                rows: geom.visible_rows(height),
-                cols: geom.visible_cols(width),
+                cells: self.read(&rows, &cols),
+                rows,
+                cols,
                 geom,
                 width,
                 height,
@@ -557,8 +602,14 @@ mod imp {
                 width - geom.header_w,
                 height - geom.header_h,
             ));
+            // Cell backgrounds go **under** the selection wash: a tint over a yellow cell
+            // still reads as selected, where a yellow cell over the tint hides it.
+            self.draw_backgrounds(&frame);
             self.draw_selection(&frame);
             self.draw_lines(&frame);
+            // And a cell's own borders over the grid lines, which is what makes a ruled
+            // table look ruled rather than slightly darker.
+            self.draw_borders(&frame);
             self.draw_cells(&frame);
             self.draw_active(&frame);
             self.draw_references(&frame);
@@ -591,6 +642,19 @@ mod imp {
                     .as_ref()
                     .map_or(0.0, gtk::Adjustment::value),
             }
+        }
+
+        /// The one read a paint makes — [`Frame::cells`].
+        fn read(
+            &self,
+            rows: &std::ops::Range<u32>,
+            cols: &std::ops::Range<u32>,
+        ) -> Option<sheet_core::Viewport> {
+            let app = self.app.borrow();
+            let app = app.as_ref()?;
+            let fetch = cols.start.saturating_sub(OVERFLOW_MARGIN)
+                ..(cols.end.saturating_add(OVERFLOW_MARGIN)).min(MAX_COLS);
+            app.get_viewport(self.sheet.get(), rows.clone(), fetch).ok()
         }
 
         fn palette(&self) -> Palette {
@@ -1083,7 +1147,7 @@ mod imp {
             self.buffer.set_text(text);
         }
 
-        fn notice(&self, notice: Notice) {
+        pub fn notice(&self, notice: Notice) {
             for hook in self.on_notice.borrow().iter() {
                 hook(notice.clone());
             }
@@ -1421,21 +1485,75 @@ mod imp {
             }
         }
 
-        /// Draw the values, with the two overflow rules.
+        /// A cell's `fo:background-color`, and the reason it is a pass of its own: an *empty*
+        /// cell can be filled too, so this cannot ride along with the text.
+        fn draw_backgrounds(&self, f: &Frame) {
+            let Some(cells) = &f.cells else { return };
+            for row in f.rows.clone() {
+                for col in f.cols.clone() {
+                    let Some(fill) = cells.style(row, col).and_then(|s| s.background.as_deref())
+                    else {
+                        continue;
+                    };
+                    // ODF's `"transparent"` is a colour that means "do not paint", and GDK
+                    // parses it as opaque black — which would be a very visible bug.
+                    let Some(color) = crate::theme::color(fill) else {
+                        continue;
+                    };
+                    let cell = f.geom.cell_rect(row, col);
+                    f.snapshot
+                        .append_color(&color, &rect(cell.x, cell.y, cell.w, cell.h));
+                }
+            }
+        }
+
+        /// The four `fo:border-*` edges, over the grid lines.
         ///
-        /// Columns are fetched with a margin either side so that a label anchored just
+        /// ponytail: the line style is ignored — `dashed` and `double` draw as solid. Dashes
+        /// need `gsk::Stroke` and a path per edge, and nothing in the corpus renders visibly
+        /// wrong without them. The width and colour are honoured, which is what carries the
+        /// meaning of a ruled table.
+        fn draw_borders(&self, f: &Frame) {
+            let Some(cells) = &f.cells else { return };
+            for row in f.rows.clone() {
+                for col in f.cols.clone() {
+                    let Some(style) = cells.style(row, col) else {
+                        continue;
+                    };
+                    let cell = f.geom.cell_rect(row, col);
+                    for (edge, border) in style.borders.iter().enumerate() {
+                        let Some((points, _, color)) =
+                            border.as_deref().and_then(sheet_core::style::border_parts)
+                        else {
+                            continue;
+                        };
+                        let Some(color) = crate::theme::color(color) else {
+                            continue;
+                        };
+                        // A hairline is still a line: a 0.5pt border must not round to zero.
+                        let t = (points * 4.0 / 3.0).max(1.0);
+                        // `style::EDGES` order — left, right, top, bottom.
+                        let edge = match edge {
+                            0 => rect(cell.x, cell.y, t, cell.h),
+                            1 => rect(cell.x + cell.w - t, cell.y, t, cell.h),
+                            2 => rect(cell.x, cell.y, cell.w, t),
+                            _ => rect(cell.x, cell.y + cell.h - t, cell.w, t),
+                        };
+                        f.snapshot.append_color(&color, &edge);
+                    }
+                }
+            }
+        }
+
+        /// Draw the values, with the two overflow rules and the cell's own text styling.
+        ///
+        /// Columns were fetched with a margin either side so that a label anchored just
         /// off-screen still reaches into the view, and so that "is the next cell empty"
         /// can be answered without a second read.
         fn draw_cells(&self, f: &Frame) {
-            let (geom, palette, rows, cols) = (&f.geom, &f.palette, &f.rows, &f.cols);
-            let app = self.app.borrow();
-            let Some(app) = app.as_ref() else { return };
-            let fetch = cols.start.saturating_sub(OVERFLOW_MARGIN)
-                ..(cols.end.saturating_add(OVERFLOW_MARGIN)).min(MAX_COLS);
-            let Ok(viewport) = app.get_viewport(self.sheet.get(), rows.clone(), fetch.clone())
-            else {
-                return;
-            };
+            let (geom, palette, rows) = (&f.geom, &f.palette, &f.rows);
+            let Some(viewport) = &f.cells else { return };
+            let fetch = viewport.cols.clone();
 
             // The cell being edited is drawn by the editor child, not here — otherwise its
             // stored value shows through the text being typed over it.
@@ -1456,18 +1574,40 @@ mod imp {
                     if text.is_empty() {
                         continue;
                     }
+                    // The style decides the font and the colour, and may override where the
+                    // text sits — but not the *fallbacks*, which stay the value's own rules.
+                    let style = viewport.style(row, col);
+                    layout.set_attributes(style.and_then(font).as_ref());
+                    let color = style
+                        .and_then(|s| s.color.as_deref())
+                        .and_then(crate::theme::color)
+                        .unwrap_or(palette.foreground);
+                    let align = style
+                        .and_then(|s| s.align.as_deref())
+                        .and_then(aligned)
+                        .unwrap_or_else(|| alignment(value));
+                    let valign = valigned(style.and_then(|s| s.vertical_align.as_deref()));
+                    let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
+
+                    let cell = geom.cell_rect(row, col);
+                    // ponytail: a wrapped cell is drawn inside its own width and clips at the
+                    // row height, because rows are all one line tall until M8 stores heights.
+                    // Wrapping is still worth honouring: two words on two lines read as two
+                    // words, where one elided line reads as a truncated value.
+                    layout.set_width(match wrapping {
+                        true => ((cell.w - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
+                        false => -1,
+                    });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
-                    let cell = geom.cell_rect(row, col);
-                    let fits = f64::from(text_w) <= cell.w - 2.0 * PAD;
-                    let align = alignment(value);
+                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * PAD;
 
                     // A number that does not fit is never truncated — a wrong magnitude
                     // read as a right one is worse than no reading at all.
                     if !fits && align == Align::Right {
                         layout.set_text("##########");
                         let (w, h) = layout.pixel_size();
-                        draw_text(f.snapshot, &layout, palette.foreground, &cell, cell, w, h, Align::Right);
+                        draw_text(f.snapshot, &layout, color, &cell, cell, w, h, (Align::Right, valign));
                         continue;
                     }
 
@@ -1483,15 +1623,19 @@ mod imp {
                     draw_text(
                         f.snapshot,
                         &layout,
-                        palette.foreground,
+                        color,
                         &cell,
                         paint,
                         text_w,
                         text_h,
-                        align,
+                        (align, valign),
                     );
                 }
             }
+            // The layout is shared and reused, so anything set for one cell has to be unset
+            // or the headers inherit it.
+            layout.set_attributes(None);
+            layout.set_width(-1);
         }
 
         fn draw_headers(&self, f: &Frame) {
@@ -1519,7 +1663,7 @@ mod imp {
                 }
                 layout.set_text(&sheet_core::formula::lex::column_name(col));
                 let (w, h) = layout.pixel_size();
-                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, Align::Center);
+                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle));
             }
             snapshot.pop();
 
@@ -1536,7 +1680,7 @@ mod imp {
                 }
                 layout.set_text(&(row + 1).to_string());
                 let (w, h) = layout.pixel_size();
-                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, Align::Center);
+                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle));
             }
             snapshot.pop();
 
@@ -1551,6 +1695,89 @@ mod imp {
         Left,
         Center,
         Right,
+    }
+
+    /// Where a cell's text sits in it vertically. Middle unless the cell says otherwise —
+    /// which is the same default `style:vertical-align="automatic"` means for a value.
+    #[derive(Clone, Copy, PartialEq, Eq, Default)]
+    enum VAlign {
+        Top,
+        #[default]
+        Middle,
+        Bottom,
+    }
+
+    /// `fo:text-align` as this grid draws it (§16.5, and `core/src/style.rs` keeps the ODF
+    /// spelling verbatim). `start`/`end` are relative to the writing direction, and this grid
+    /// is left-to-right; anything else — `justify`, a value from a newer ODF — falls back to
+    /// the value's own rule rather than guessing.
+    fn aligned(value: &str) -> Option<Align> {
+        match value {
+            "start" | "left" => Some(Align::Left),
+            "center" => Some(Align::Center),
+            "end" | "right" => Some(Align::Right),
+            _ => None,
+        }
+    }
+
+    fn valigned(value: Option<&str>) -> VAlign {
+        match value {
+            Some("top") => VAlign::Top,
+            Some("bottom") => VAlign::Bottom,
+            _ => VAlign::Middle,
+        }
+    }
+
+    /// A cell style's font as Pango attributes, or `None` when it says nothing about one.
+    ///
+    /// Weight, slant and size only: `fo:font-family` is deliberately not carried by the model
+    /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
+    /// nothing here to set a family from.
+    ///
+    /// ponytail: a size larger than the row is clipped, because every row is one line tall
+    /// until M8 stores heights. The alternative — deriving row height from the tallest styled
+    /// cell — is a layout pass the geometry has no model for yet.
+    fn font(style: &sheet_core::style::CellStyle) -> Option<pango::AttrList> {
+        let attrs = pango::AttrList::new();
+        let mut any = false;
+        if let Some(weight) = style.font_weight.as_deref() {
+            let weight = match weight {
+                "bold" => Some(pango::Weight::Bold),
+                "normal" => Some(pango::Weight::Normal),
+                // ODF also allows a hundreds number, and that *is* Pango's scale — 700 is
+                // `Bold` on both sides, so the number is passed through rather than mapped.
+                n => n.parse::<i32>().ok().map(pango::Weight::__Unknown),
+            };
+            if let Some(weight) = weight {
+                attrs.insert(pango::AttrInt::new_weight(weight));
+                any = true;
+            }
+        }
+        if let Some(slant) = style.font_style.as_deref() {
+            let slant = match slant {
+                "italic" => Some(pango::Style::Italic),
+                "oblique" => Some(pango::Style::Oblique),
+                "normal" => Some(pango::Style::Normal),
+                _ => None,
+            };
+            if let Some(slant) = slant {
+                attrs.insert(pango::AttrInt::new_style(slant));
+                any = true;
+            }
+        }
+        // A length in points, which is what a spreadsheet's font size always is. A
+        // percentage — ODF allows one — is relative to a style this model does not inherit
+        // from, so it is left alone rather than resolved against the wrong base.
+        if let Some(points) = style
+            .font_size
+            .as_deref()
+            .and_then(|size| size.strip_suffix("pt"))
+            .and_then(|points| points.parse::<f64>().ok())
+        {
+            attrs.insert(pango::AttrSize::new((points * f64::from(pango::SCALE)) as i32));
+            any = true;
+        }
+        any.then_some(attrs)
     }
 
     /// What a value's type says about where it sits in its cell.
@@ -1578,15 +1805,21 @@ mod imp {
         paint: Rect,
         text_w: i32,
         text_h: i32,
-        align: Align,
+        align: (Align, VAlign),
     ) {
+        let (align, valign) = align;
         let text_w = f64::from(text_w);
+        let text_h = f64::from(text_h);
         let x = match align {
             Align::Left => cell.x + PAD,
             Align::Center => cell.x + (cell.w - text_w) / 2.0,
             Align::Right => cell.x + cell.w - PAD - text_w,
         };
-        let y = cell.y + (cell.h - f64::from(text_h)) / 2.0;
+        let y = match valign {
+            VAlign::Top => cell.y + 2.0,
+            VAlign::Middle => cell.y + (cell.h - text_h) / 2.0,
+            VAlign::Bottom => cell.y + cell.h - 2.0 - text_h,
+        };
         snapshot.push_clip(&rect(paint.x, paint.y, paint.w, paint.h));
         snapshot.save();
         snapshot.translate(&graphene::Point::new(x as f32, y as f32));

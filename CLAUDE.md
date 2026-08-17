@@ -282,6 +282,12 @@ formatted cell still sums and still round-trips as the number it is (§5.2).
   `App::set_format` takes a rectangle (formatting a column is the normal case) as one
   `Action::Batch`, and bounds it: a format costs an entry per cell, so `A1:ZZ100000` is an
   exhaustion request rather than an intent and is refused by size.
+- **`Format::preset_params` and `is_preset` are the *inverse* of `preset`, and in the core for
+  the same reason.** A picker showing a cell's format asks "how many decimals is this" — and
+  two shells deriving that separately would eventually answer differently about one cell.
+  `is_preset` is the honesty half: a document may hold a format this vocabulary cannot spell
+  (`DD.MM.YYYY`, a two-branch currency), and a picker offering parameters for it would replace
+  it with something the user never asked for. `sheet format --show` prints both.
 
 ### `core/src/locale.rs` — two characters, and where the rest of a locale is not
 
@@ -561,8 +567,9 @@ that spec is the source of truth and a rule without a citation is a guess.
 ### `ui_gtk/` — the GNOME shell
 
 Phase 9's first shell, planned in `doc/gtk-shell.md`, which is normative for this phase the
-way `doc/plan.md` is for the rest. Crate `sheet-gtk`, binary `sheet-gtk`. It reads and draws
-today and does not edit; the milestones are in the plan.
+way `doc/plan.md` is for the rest. Crate `sheet-gtk`, binary `sheet-gtk`. It reads, draws and
+edits today, formats and styles included; what is left is widths and packaging, and the
+milestones are in the plan.
 
 It owns no data. Every paint asks `App::get_viewport` for the cells that fit on screen and
 throws them away — which is what makes a 1048576 × 16384 sheet cost a screenful. A field
@@ -592,7 +599,22 @@ core is missing something.
   off-screen still reaches into view and "is the neighbour empty" needs no second read.
 - **Every colour comes from the theme** (`theme.rs`), never a literal, or the grid is white
   in a dark session. `lookup_color` is deprecated with no replacement, so it is called in
-  exactly that one place, with fallbacks.
+  exactly that one place, with fallbacks. The two exceptions are both data rather than
+  decoration: the reference palette, and **a colour the document chose** — `theme::color`
+  parses `fo:color`, `fo:background-color` and a border's colour, and is where ODF's
+  `"transparent"` stops being a colour (GDK parses it as opaque black, which would be a very
+  visible bug).
+- **One viewport read per frame, three passes over it.** `Frame::cells` is read once in
+  `snapshot()` because backgrounds go **under** the selection wash, a cell's own borders go
+  **over** the grid lines, and the text goes over both — asking three times would take the
+  document's lock three times a frame. A styled cell's `fo:background-color` is a pass of its
+  own for a second reason: an *empty* cell can be filled, so it cannot ride along with text
+  that is not drawn.
+- **A style may override where the text sits, never what it falls back to.** `fo:text-align`
+  and `style:vertical-align` win when present; without them the alignment is still the
+  *value's* (numbers right, errors centred), because that is what carries "this number is
+  actually text". Weight, slant and size become Pango attributes on the one reused layout —
+  which then has to be reset, or the headers inherit the last styled cell's font.
 - **GTK 4 has no partial invalidation** — no `queue_draw_area`, so any change redraws the
   widget. That is fine because the cost is bounded by the cells on screen, and it means the
   performance lever is text shaping (one reused `pango::Layout`, `ponytail:` noted) rather
@@ -661,6 +683,22 @@ core is missing something.
 - **`chrome.rs` is the parts made of ordinary widgets** — formula bar, name box, sheet tabs,
   status bar — and owns nothing either. The name box resolves through `core::a1`, so what it
   means by `Data.B2:C9` is what a formula means by it.
+- **`formatting.rs` is the format strip, and it maps 1:1 onto the core's vocabulary.** Every
+  toggle is one field of `style::CellStyle`; the number menu offers exactly `numfmt::preset`'s
+  parameters and builds the format by calling it, which is what makes a document formatted
+  here and one formatted by `sheet format` the same document. Three things carry it: a bold
+  button is a **read of the active cell** through `App::style_at`, one field, and a write
+  (`set_style` replaces, deliberately — the merge policy lives in the caller that knows which
+  button was pressed); the write is the selection **clamped to the used extent**
+  (`Grid::target`), because a whole-column selection would ask for a million entries and the
+  core refuses it; and `updating` guards the refresh, because setting a `GtkToggleButton`
+  programmatically fires the same signal a click does.
+- **The strip refreshes on two events, and only one is a selection change.** Undo, redo and a
+  load change the cell under an unmoved selection, so the window's own `refresh` calls
+  `Strip::refresh` as well — the same shape `chrome::Tabs` has.
+- **`Notice::Refused` is how a part of the chrome with no toast of its own speaks.** The strip
+  can be refused for the reasons the grid can (a rectangle too large, a sheet that is gone),
+  and `Grid::report` carries the core's own message to the window rather than to nowhere.
 
 ### `cli/` — the `sheet` binary, and the parity ratchet
 
@@ -688,6 +726,14 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
   emptied — each one `App` call, each one undo step.
 - **`sheet fmt --display` / `--from-display`** convert between stored and display form
   (`formula::display`), which is how a shell's formula bar and the file agree.
+- **`sheet style --show` / `sheet format --show`** are the read half of a toolbar, and the
+  reason the GUI's bold button is not a UI-only feature: `set_style` replaces, so "bold as
+  well" is a read, a field and a write, and the CLI can do all three. Text output is one
+  `key<TAB>value` line per thing that is set — ODF's own attribute names for a style, `sheet
+  format`'s own flags for a format, and `preset` saying whether those flags would rebuild it.
+  A plain cell prints *nothing*, which is what a script tests for. One cell rather than a
+  rectangle: the answer for a rectangle is either "they agree" or a list, and a list is what
+  `sheet view` is.
 - **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
   CLI translates addresses but never formulas; a syntax translator is the thing this project
   exists not to have.
@@ -874,5 +920,14 @@ names, a signature hint with the current argument bold, and a live preview chip 
 included, which is half the value. It brought C9 (`funcs::catalog()`) and two core helpers,
 `a1::reference` and `display::reference_text`.
 
-Next is M7 — styles and the formatting UI (C7's getters and C8's viewport styles), then M8's
-column widths and M9's packaging. The wasm shell after that is the honest test of rule 5.
+**M7 is done**: styles and the formatting UI. The grid draws what a document says about its
+cells — backgrounds under the selection wash, the four `fo:border-*` edges over the grid
+lines, weight, slant, size, both alignments and wrapping — and `formatting.rs` is the format
+strip, whose whole vocabulary is `style::CellStyle`'s fields and `numfmt::preset`'s
+parameters. It brought C7 (`App::{style_at, format_at}`, reached by `sheet style|format
+--show`), C8 (`Viewport::style`), and the inverse of the format vocabulary in the core, where
+both shells share it: `Format::{preset_params, is_preset}` and `Locale::tag`.
+
+Next is M8 — column widths and row heights, which is also what would let a wrapped cell and
+an oversized font stop clipping — then M9's packaging. The wasm shell after that is the honest
+test of rule 5.

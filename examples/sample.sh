@@ -113,6 +113,12 @@ say "get: one cell, its stored value, and its formula"
 "$SHEET" get "$book" B5 --input                             # what an editor would show
 "$SHEET" get "$book" E2 --input                             # and the ' that keeps 007 text
 
+# Setting a style replaces it, so "bold as well" is a read, a field and a write — which is
+# exactly what a toolbar's bold button does, and it needs this to read first.
+say "--show: how a cell looks, and how its value is spelled"
+"$SHEET" style "$book" A1 --show
+"$SHEET" format "$book" B11 --show                          # the flags that recreate it
+
 # A name is what makes a formula say what it means: `SUM(expenses)` rather than
 # `SUM([.B2:.B4])`. An address becomes a named *range*, written absolute and
 # sheet-qualified so it means the same thing read from anywhere; a target starting with `=`
