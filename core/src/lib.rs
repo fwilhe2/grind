@@ -19,6 +19,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
+pub mod a1;
 pub mod action;
 pub mod formula;
 pub mod grid;
@@ -241,6 +242,138 @@ impl App {
             state.undo.push(inverse);
             state.redo.clear();
             Ok(())
+        })
+    }
+
+    /// What pressing Enter means — the typing rule, in the core so no two shells disagree.
+    ///
+    /// `input` is what the user typed, and [`interpret`] decides what it is: a leading `=`
+    /// is a formula in **canonical** syntax (a shell converts display form first, with
+    /// [`formula::display::from_display`]), a leading `'` forces the rest to be text, an
+    /// empty string clears the cell, and anything else is a number, a logical or text.
+    ///
+    /// One [`Action`], so a cell that held a formula loses it when a number is typed over
+    /// it — which is what every spreadsheet does and what two separate calls would get
+    /// wrong.
+    ///
+    /// With [`RecalcMode::Document`] the dependents are recalculated inside the same lock
+    /// and land in the **same undo entry**, so one Ctrl+Z takes back the edit and its
+    /// ripple. Unless it would *spoil* a cell — a cached value this build's function set
+    /// cannot reproduce — in which case the edit still commits, the recalculation is
+    /// skipped, and [`EnterOutcome::recalc`] says so: refusing the edit would make a
+    /// document that uses one unimplemented function read-only, which is worse than stale.
+    pub fn enter(
+        &self,
+        sheet: usize,
+        pos: Pos,
+        input: &str,
+        recalc: RecalcMode,
+    ) -> Result<EnterOutcome> {
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let (kind, edit) = typed(&state.doc, sheet, pos, input);
+            let recalc = commit(state, sheet, vec![edit], recalc)?;
+            Ok(EnterOutcome {
+                kind,
+                cells: 1,
+                recalc,
+            })
+        })
+    }
+
+    /// Fill a rectangle from `anchor`, one row per row — the core half of a paste.
+    ///
+    /// Every cell goes through the same rule [`App::enter`] uses, so a pasted `=A1+1` is a
+    /// formula and a pasted `'123` is text; the whole thing plus its recalculation is one
+    /// [`Action::Batch`], so undoing a paste is one step. Ragged rows are fine: a row's
+    /// cells land where the row puts them.
+    ///
+    /// Bounded by [`MAX_FORMATTED_CELLS`], for the reason [`App::set_format`] is.
+    pub fn enter_range(
+        &self,
+        sheet: usize,
+        anchor: Pos,
+        rows: &[Vec<String>],
+        recalc: RecalcMode,
+    ) -> Result<EnterOutcome> {
+        let width = rows.iter().map(Vec::len).max().unwrap_or(0) as u32;
+        let last = Pos::new(
+            anchor.row + rows.len().saturating_sub(1) as u32,
+            anchor.col + width.saturating_sub(1),
+        );
+        // For the size check only; the cells themselves come from `rows`.
+        let _bounded = self.rectangle(anchor, last)?;
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let mut kind = Entered::Cleared;
+            let mut edits = Vec::new();
+            for (r, row) in rows.iter().enumerate() {
+                for (c, input) in row.iter().enumerate() {
+                    let pos = Pos::new(anchor.row + r as u32, anchor.col + c as u32);
+                    let (this, edit) = typed(&state.doc, sheet, pos, input);
+                    if (r, c) == (0, 0) {
+                        kind = this;
+                    }
+                    edits.push(edit);
+                }
+            }
+            let cells = edits.len();
+            let recalc = commit(state, sheet, edits, recalc)?;
+            Ok(EnterOutcome {
+                kind,
+                cells,
+                recalc,
+            })
+        })
+    }
+
+    /// What a formula *would* evaluate to, without storing anything.
+    ///
+    /// Three properties a shell leans on, and there is a test for each: it takes only a
+    /// **read** lock, so it is safe from a worker thread; it notifies **no observer**; and
+    /// it creates **no undo entry**. That is what makes a live result chip and a status-bar
+    /// aggregate cheap enough to recompute while someone is typing.
+    pub fn preview(&self, sheet: usize, pos: Pos, formula: &str) -> Result<CellValue> {
+        let state = self.state.read().unwrap();
+        if state.doc.sheet(sheet).is_none() {
+            return Err(Error::NoSuchSheet(sheet));
+        }
+        Ok(formula::eval::to_cell(
+            formula::eval::Engine::new(&state.doc)
+                .eval(formula, formula::eval::Address::new(sheet, pos)),
+        ))
+    }
+
+    /// Empty every cell in a rectangle, formulas included. Returns how many were not
+    /// already empty.
+    ///
+    /// [`App::set_format`]'s shape, for the same reasons: one [`Action::Batch`] so that
+    /// Delete over a selection is one undo step, bounded by [`MAX_FORMATTED_CELLS`], and a
+    /// cell that is already empty is left out rather than written with what it holds.
+    pub fn clear_range(&self, sheet: usize, start: Pos, end: Pos) -> Result<usize> {
+        let cells = self.rectangle(start, end)?;
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let updates = cells
+                .filter(|pos| {
+                    state.doc.sheet(sheet).is_some_and(|s| {
+                        !s.get(*pos).is_empty() || s.formula(*pos).is_some()
+                    })
+                })
+                .map(|pos| Action::SetFormula {
+                    sheet,
+                    pos,
+                    formula: None,
+                    value: CellValue::Empty,
+                })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
         })
     }
 
@@ -711,6 +844,142 @@ impl App {
             state.redo = session.redo;
         });
     }
+}
+
+/// Whether an edit recalculates the document behind it (doc/gtk-shell.md C3).
+///
+/// An enum rather than a bool because the useful third answer — recalculate only what
+/// depends on the cell that changed — is what `eval.rs`'s `ponytail:` note is about, and it
+/// arrives as a variant rather than as a second parameter.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RecalcMode {
+    /// Leave the rest of the document alone; [`App::stale`] is how a caller finds out.
+    #[default]
+    No,
+    /// Recalculate every formula, in the same undo entry as the edit.
+    Document,
+}
+
+/// What [`App::enter`] made of the text it was given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entered {
+    Formula,
+    Number,
+    Bool,
+    Text,
+    Cleared,
+}
+
+/// What one [`App::enter`] or [`App::enter_range`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnterOutcome {
+    /// What the input became — the anchor cell's, for a range.
+    pub kind: Entered,
+    /// How many cells were written.
+    pub cells: usize,
+    /// The recalculation, when one was asked for. `spoiled > 0` means it was **skipped**
+    /// and `changed` is what recalculating *would* have changed — the number a banner
+    /// reports, and the reason it has to be offered rather than done.
+    pub recalc: Option<Recalc>,
+}
+
+/// The typing rule: what a string a user typed means (doc/gtk-shell.md C3).
+///
+/// One [`Action::SetFormula`] whatever the answer, because every one of these outcomes also
+/// has to *remove* whatever formula the cell held — typing `5` over `=SUM(A1:A4)` replaces
+/// it, and two actions would leave the formula behind with a new cached value.
+///
+/// A formula's cached value is computed against the document as it stands, which is both
+/// what [`App::set_formula`] does and what pressing Enter in a spreadsheet does.
+fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Action) {
+    let cell = |kind, value| {
+        (
+            kind,
+            Action::SetFormula {
+                sheet,
+                pos,
+                formula: None,
+                value,
+            },
+        )
+    };
+    // The `'` rule is load-bearing rather than a convenience: without it the strings `=x`
+    // and `123` cannot be typed into a cell at all.
+    if let Some(text) = input.strip_prefix('\'') {
+        return cell(Entered::Text, CellValue::Text(text.to_owned()));
+    }
+    if input.starts_with('=') {
+        let value = formula::eval::to_cell(
+            formula::eval::Engine::new(doc).eval(input, formula::eval::Address::new(sheet, pos)),
+        );
+        return (
+            Entered::Formula,
+            Action::SetFormula {
+                sheet,
+                pos,
+                formula: Some(input.to_owned()),
+                value,
+            },
+        );
+    }
+    if let Ok(n) = input.parse::<f64>() {
+        return cell(Entered::Number, CellValue::Number(n));
+    }
+    match input {
+        "TRUE" | "true" => cell(Entered::Bool, CellValue::Bool(true)),
+        "FALSE" | "false" => cell(Entered::Bool, CellValue::Bool(false)),
+        "" => cell(Entered::Cleared, CellValue::Empty),
+        _ => cell(Entered::Text, CellValue::Text(input.to_owned())),
+    }
+}
+
+/// Apply an edit and, if asked, the recalculation behind it — as **one** undo entry.
+///
+/// The order matters and is the whole point: the edit lands first, the recalculation is
+/// computed against the document that results, and the inverses are pushed reversed so that
+/// undoing runs the recalculation back before the edit that caused it.
+fn commit(
+    state: &mut State,
+    sheet: usize,
+    edits: Vec<Action>,
+    mode: RecalcMode,
+) -> Result<Option<Recalc>> {
+    let mut inverses = Vec::new();
+    if !edits.is_empty() {
+        inverses.push(
+            state
+                .doc
+                .apply(Action::Batch(edits))
+                .ok_or(Error::NoSuchSheet(sheet))?,
+        );
+    }
+    let recalc = match mode {
+        RecalcMode::No => None,
+        RecalcMode::Document => {
+            let (updates, spoiled) = recalculated(&state.doc);
+            let changed = updates.len();
+            // Spoiling is the one case where the edit outlives its own recalculation.
+            if spoiled == 0 && changed > 0 {
+                inverses.push(
+                    state
+                        .doc
+                        .apply(Action::Batch(updates))
+                        .expect("every sheet index came from the document itself"),
+                );
+            }
+            Some(Recalc { changed, spoiled })
+        }
+    };
+    if let Some(last) = inverses.pop() {
+        inverses.reverse();
+        inverses.insert(0, last);
+        state.undo.push(match inverses.len() {
+            1 => inverses.pop().expect("just checked"),
+            _ => Action::Batch(inverses),
+        });
+        state.redo.clear();
+    }
+    Ok(recalc)
 }
 
 /// Apply a batch and record its inverse, or do nothing at all when it is empty.

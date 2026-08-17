@@ -24,9 +24,18 @@ stops ratcheting.
 
 ## Editing
 
-- `set_cell` — `sheet set`
-- `set_formula` — `sheet set` with a value starting `=`
+- `enter` — `sheet set` (the typing rule: `=` a formula, `'` text, empty clears, `--recalc`
+  recalculates the document in the same undo step)
+- `enter_range` — `sheet paste <anchor> <tsv>`, or `-` to read the rows from stdin
+- `preview` — `sheet eval <address> <formula>`, which stores nothing and writes nothing
+- `set_cell` — not exposed directly: `sheet set` goes through `App::enter`, which is the
+  typing rule every shell shares and which *replaces* whatever the cell held, formula
+  included. `set_cell` is the primitive underneath it, and the one shape that can leave a
+  value sitting beside a formula that disagrees with it — which is the state `stale` exists
+  to report, not one a user asks for.
+- `set_formula` — `sheet set` with a value starting `=`, through `App::enter`
 - `clear_formula` — `sheet clear --formula-only`
+- `clear_range` — `sheet clear <range>`
 - `set_style` — `sheet style` (and `sheet style <range>` with no options to clear one)
 - `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
 - `set_name` — `sheet name <name> <address-or-=expression>`
@@ -81,6 +90,9 @@ stops ratcheting.
 
 Reachable from the CLI, but not `App` methods, so the test does not track them:
 
-- `sheet fmt` — `formula::parse` plus the AST's `Display`
+- `sheet fmt` — `formula::parse` plus the AST's `Display`; `--display` / `--from-display`
+  are `formula::display`, checked against the whole corpus by loop B's third half
+- `core::a1` — addressing, the only 0↔1 conversion in the workspace. Free functions, used
+  by every shell and by every command that takes an address.
 - `sheet functions` — `formula::funcs::implemented()`, already gated against
   `doc/small-group.md` by its own test

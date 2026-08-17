@@ -301,13 +301,30 @@ fn recalc_updates_a_stale_value_and_reports_it() {
 /// This build implements part of OpenFormula, so recalculating a document that uses the rest
 /// destroys a good cached value. The warning is the difference between that and silent data
 /// loss, and it must not reach stdout.
+///
+/// The fixture is written by hand because nothing here can produce it: a cached value that
+/// disagrees with its formula is what a *document from another program* looks like, and
+/// `sheet set` cannot make one — `App::enter` replaces a formula rather than leaving a value
+/// beside it.
 #[test]
 fn recalc_warns_on_stderr_when_it_turns_a_value_into_an_error() {
     let dir = Sandbox::new("spoil");
-    let file = dir.path("book.ods");
-    ok(&["new", &s(&file)]);
-    ok(&["set", &s(&file), "A1", "=SUBTOTAL(9;[.B1:.B2])"]);
-    ok(&["set", &s(&file), "A1", "169.625"]);
+    let file = dir.path("book.fods");
+    std::fs::write(
+        &file,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Sheet1">
+    <table:table-column/>
+    <table:table-row><table:table-cell table:formula="of:=SUBTOTAL(9;[.B1:.B2])" office:value-type="float" office:value="169.625"><text:p>169.625</text:p></table:table-cell></table:table-row>
+   </table:table>
+  </office:spreadsheet>
+ </office:body>
+</office:document>"#,
+    )
+    .unwrap();
 
     let output = sheet(&["recalc", &s(&file)]);
     assert!(

@@ -146,13 +146,25 @@ pub struct Reference {
 }
 
 pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
+    Ok(lex_spans(src)?.0)
+}
+
+/// The tokens, and the `char` offset each one starts at.
+///
+/// The offsets exist for one reason: the parser reports failures by *token*, and a caller
+/// that wants to put a caret on the problem needs a position in the text. Keeping them here
+/// rather than in a `Token` field means nothing that merely reads tokens pays for them.
+pub fn lex_spans(src: &str) -> Result<(Vec<Token>, Vec<usize>), SyntaxError> {
     // Char-indexed: the grammar allows non-ASCII in identifiers, sheet names and strings,
     // and byte offsets in a diagnostic would point at the wrong place.
     let src: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
+    let mut at = Vec::new();
     let mut i = 0;
     while i < src.len() {
         let c = src[i];
+        at.truncate(out.len());
+        at.resize(out.len() + 1, i);
         match c {
             // §5.14 Whitespace, exactly these four.
             ' ' | '\t' | '\n' | '\r' => i += 1,
@@ -257,7 +269,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
             c => return err(format!("unexpected character {c:?}"), i),
         }
     }
-    Ok(out)
+    at.truncate(out.len());
+    Ok((out, at))
 }
 
 /// §5.6 `FunctionName` / §5.11 `Identifier`, loosened to any Unicode alphabetic since the

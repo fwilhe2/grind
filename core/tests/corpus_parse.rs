@@ -17,6 +17,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use sheet_core::formula::display::{from_display, to_display};
 use sheet_core::formula::lex::Token;
 use sheet_core::formula::parse::parse;
 
@@ -111,8 +112,33 @@ fn juxtaposed(formula: &str) -> bool {
     })
 }
 
+/// Why a formula that parses cannot survive display form, when the reason is the *syntax*
+/// rather than a bug here.
+///
+/// One entry, and it is the collision the module documents: unbracketed, a defined name and
+/// a cell address are the same shape, so a document whose name is cell-shaped comes back as
+/// a reference. `App::set_name` refuses to create such a name, which is what keeps this to
+/// documents written elsewhere.
+fn ambiguous(canonical: &str, display: &str) -> Option<&'static str> {
+    let Ok(tokens) = sheet_core::formula::lex::lex(canonical.trim_start_matches('=')) else {
+        return None;
+    };
+    let before = tokens
+        .iter()
+        .filter(|t| matches!(t, Token::Name(_)))
+        .count();
+    let after = sheet_core::formula::display::spans(display)
+        .iter()
+        .filter(|s| s.kind == sheet_core::formula::display::TokenKind::Name)
+        .count();
+    // A name the scanner read as a reference is the collision, whichever way it then fails:
+    // `DCOUNT(database1;…)` where `database1` is a defined name, and LibreOffice's own
+    // `of:Err:502` marker, where two bare names sit either side of the range operator.
+    (before > after).then_some("a bare name where a reference belongs")
+}
+
 #[test]
-fn every_corpus_formula_parses() {
+fn every_corpus_formula_parses_and_survives_display_form() {
     let Some(root) = corpus_root() else {
         eprintln!(
             "skipping: no LibreOffice corpus at {DEFAULT_CORPUS}; \
@@ -132,6 +158,9 @@ fn every_corpus_formula_parses() {
     // Grouped by reason so the output is a work list rather than a wall of near-duplicates.
     let mut excuses: BTreeMap<&str, usize> = BTreeMap::new();
     let mut failures: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
+    let mut trips = 0usize;
+    let mut trip_excuses: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut trip_failures: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
     for path in &files {
         let Ok(doc) = sheet_core::read_file(path) else {
             continue; // loop A owns reading; a document it cannot open is its problem.
@@ -139,7 +168,42 @@ fn every_corpus_formula_parses() {
         for sheet in &doc.sheets {
             for (_, formula) in sheet.formulas() {
                 total += 1;
-                let Err(e) = parse(formula) else { continue };
+                let e = match parse(formula) {
+                    // The other half of loop B's front end: canonical → display →
+                    // canonical is what every shell's formula bar does twice per edit, and
+                    // a lossy conversion there rewrites a user's formula behind their back.
+                    Ok(expr) => {
+                        trips += 1;
+                        let canonical = format!("={expr}");
+                        let display = to_display(&canonical).expect("it just parsed");
+                        match from_display(&display) {
+                            Ok(back) if back == canonical => {}
+                            other => {
+                                let message = match &other {
+                                    Ok(back) => format!("{display}  ->  {back}"),
+                                    Err(e) => format!("{display}  ->  {e}"),
+                                };
+                                match ambiguous(&canonical, &display) {
+                                    Some(reason) => *trip_excuses.entry(reason).or_default() += 1,
+                                    None => {
+                                        let entry = trip_failures
+                                            .entry(match &other {
+                                                Ok(_) => "came back different".to_owned(),
+                                                Err(e) => e.message.clone(),
+                                            })
+                                            .or_default();
+                                        entry.0 += 1;
+                                        if entry.1.len() < 3 {
+                                            entry.1.push(format!("{canonical}  ->  {message}"));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    Err(e) => e,
+                };
                 if let Some(reason) = excused(formula, &e.message) {
                     *excuses.entry(reason).or_default() += 1;
                     continue;
@@ -171,5 +235,26 @@ fn every_corpus_formula_parses() {
         }
     }
 
+    let trip_failed: usize = trip_failures.values().map(|(n, _)| n).sum();
+    let trip_excluded: usize = trip_excuses.values().sum();
+    eprintln!(
+        "loop B (display): {trips} formulas round-tripped, {} identical, \
+         {trip_excluded} ambiguous, {trip_failed} failed",
+        trips - trip_failed - trip_excluded,
+    );
+    for (reason, count) in &trip_excuses {
+        eprintln!("  {count:>5}  ambiguous: {reason}");
+    }
+    for (message, (count, examples)) in &trip_failures {
+        eprintln!("  {count:>5}  {message}");
+        for example in examples {
+            eprintln!("           {example}");
+        }
+    }
+
     assert!(failed == 0, "{failed} formulas failed to parse");
+    assert!(
+        trip_failed == 0,
+        "{trip_failed} formulas did not survive display form"
+    );
 }

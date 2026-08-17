@@ -16,61 +16,95 @@
 //! digit (§5.3), parameters separated by `;` (§5.6), and the sheet of a range's second end
 //! omitted when it is inherited anyway (§5.8) — which is the spelling LO uses, so a
 //! formula we write back is the formula a user recognises.
+//!
+//! One printer, two spellings. [`Bare`] is the same walk with the brackets left off a
+//! reference — the *display form* a person types and reads (`SUM(B2:B4)`), which
+//! `formula::display` turns back into the canonical one. A second serialiser would be a
+//! second set of precedence rules to keep in step, so the difference is one flag threaded
+//! through this file and nothing else.
 
 use std::fmt;
 
-use super::lex::{Axis, CellRef, Reference, column_name};
+use super::lex::{Axis, CellRef, Op, Reference, column_name};
 use super::parse::{Expr, POSTFIX_BP, PREFIX_BP, infix_bp};
 use super::value::format_number;
 
-impl fmt::Display for Expr {
+/// An expression printed in **display form**: references without their `[…]`.
+///
+/// Everything else is spelled exactly as the canonical form spells it, `;` separators
+/// included, because that is the syntax this project stores and there is deliberately no
+/// translation from another spreadsheet's.
+pub struct Bare<'a>(pub &'a Expr);
+
+impl fmt::Display for Bare<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Expr::Number(n) => f.write_str(&format_number(*n)),
-            // §5.4: a literal `"` is written doubled.
-            Expr::Text(s) => write!(f, "\"{}\"", s.replace('"', "\"\"")),
-            Expr::Error(e) => f.write_str(e.name()),
-            Expr::Ref(r) => write!(f, "{r}"),
-            Expr::Name(name) => write!(f, "{}", name_text(name)),
-            Expr::Call { name, args } => {
-                write!(f, "{name}(")?;
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        f.write_str(";")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                f.write_str(")")
-            }
-            Expr::Prefix(op, operand) => {
-                f.write_str(op.text())?;
-                child(f, operand, PREFIX_BP)
-            }
-            Expr::Postfix(op, operand) => {
-                child(f, operand, POSTFIX_BP)?;
-                f.write_str(op.text())
-            }
-            Expr::Binary(op, lhs, rhs) => {
-                let bp = infix_bp(*op);
-                child(f, lhs, bp)?;
-                f.write_str(op.text())?;
-                // Every infix operator in §5.5 Table 1 is left-associative, so a right
-                // child of equal precedence needs brackets: `1-(2-3)` is not `1-2-3`.
-                child(f, rhs, bp + 1)
-            }
-            Expr::Paren(inner) => write!(f, "({inner})"),
-            Expr::Empty => Ok(()),
-        }
+        expr(f, self.0, true)
     }
 }
 
-/// Write `expr` as the child of something binding at `parent_bp`, bracketing if it would
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        expr(f, self, false)
+    }
+}
+
+fn expr(f: &mut fmt::Formatter<'_>, e: &Expr, bare: bool) -> fmt::Result {
+    match e {
+        Expr::Number(n) => f.write_str(&format_number(*n)),
+        // §5.4: a literal `"` is written doubled.
+        Expr::Text(s) => write!(f, "\"{}\"", s.replace('"', "\"\"")),
+        Expr::Error(e) => f.write_str(e.name()),
+        Expr::Ref(r) => reference(f, r, bare),
+        Expr::Name(name) => write!(f, "{}", name_text(name)),
+        Expr::Call { name, args } => {
+            write!(f, "{name}(")?;
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    f.write_str(";")?;
+                }
+                expr(f, arg, bare)?;
+            }
+            f.write_str(")")
+        }
+        Expr::Prefix(op, operand) => {
+            f.write_str(op.text())?;
+            child(f, operand, PREFIX_BP, bare)
+        }
+        Expr::Postfix(op, operand) => {
+            child(f, operand, POSTFIX_BP, bare)?;
+            f.write_str(op.text())
+        }
+        Expr::Binary(op, lhs, rhs) => {
+            // `[Sheet2.C22]:[.C33]` — the range *operator* between two references — is not
+            // the single reference `[Sheet2.C22:.C33]`: the second end there inherits the
+            // first's sheet, and here it does not. Display form spells both `Sheet2.C22:C33`,
+            // so this one keeps its brackets, the same honesty an external reference gets.
+            let bare = bare && *op != Op::Range;
+            let bp = infix_bp(*op);
+            child(f, lhs, bp, bare)?;
+            f.write_str(op.text())?;
+            // Every infix operator in §5.5 Table 1 is left-associative, so a right
+            // child of equal precedence needs brackets: `1-(2-3)` is not `1-2-3`.
+            child(f, rhs, bp + 1, bare)
+        }
+        Expr::Paren(inner) => {
+            f.write_str("(")?;
+            expr(f, inner, bare)?;
+            f.write_str(")")
+        }
+        Expr::Empty => Ok(()),
+    }
+}
+
+/// Write `e` as the child of something binding at `parent_bp`, bracketing if it would
 /// otherwise re-associate.
-fn child(f: &mut fmt::Formatter<'_>, expr: &Expr, parent_bp: u8) -> fmt::Result {
-    if binding_power(expr) < parent_bp {
-        write!(f, "({expr})")
+fn child(f: &mut fmt::Formatter<'_>, e: &Expr, parent_bp: u8, bare: bool) -> fmt::Result {
+    if binding_power(e) < parent_bp {
+        f.write_str("(")?;
+        expr(f, e, bare)?;
+        f.write_str(")")
     } else {
-        write!(f, "{expr}")
+        expr(f, e, bare)
     }
 }
 
@@ -103,57 +137,80 @@ fn name_text(name: &str) -> String {
 
 impl fmt::Display for Reference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        reference(f, self, false)
+    }
+}
+
+fn reference(f: &mut fmt::Formatter<'_>, r: &Reference, bare: bool) -> fmt::Result {
+    // An external-source reference keeps its brackets in display form too: nothing
+    // evaluates one, the syntax has no unbracketed spelling for the `'…'#` part, and a
+    // rare construct shown honestly beats one shown wrong.
+    let bare = bare && r.source.is_none();
+    if !bare {
         f.write_str("[")?;
-        if let Some(source) = &self.source {
+        if let Some(source) = &r.source {
             write!(f, "'{}'#", source.replace('\'', "''"))?;
         }
-        write!(f, "{}", self.start)?;
-        if let Some(end) = &self.end {
-            // §5.8 lets the second end inherit the first's sheet, and omitting it there is
-            // both shorter and what the reader will reconstruct.
-            let end = if end.sheet == self.start.sheet {
-                CellRef {
-                    sheet: None,
-                    sheet_absolute: false,
-                    ..end.clone()
-                }
-            } else {
-                end.clone()
-            };
-            write!(f, ":{end}")?;
-        }
-        f.write_str("]")
     }
+    cell_ref(f, &r.start, bare)?;
+    if let Some(end) = &r.end {
+        // §5.8 lets the second end inherit the first's sheet, and omitting it there is
+        // both shorter and what the reader will reconstruct.
+        let end = if end.sheet == r.start.sheet {
+            CellRef {
+                sheet: None,
+                sheet_absolute: false,
+                ..end.clone()
+            }
+        } else {
+            end.clone()
+        };
+        f.write_str(":")?;
+        cell_ref(f, &end, bare)?;
+    }
+    if !bare {
+        f.write_str("]")?;
+    }
+    Ok(())
 }
 
 impl fmt::Display for CellRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(sheet) = &self.sheet {
-            if self.sheet_absolute {
-                f.write_str("$")?;
-            }
-            // SheetName ::= '$'? [^\].#$']+ — anything outside that set forces the quoted
-            // form, and a literal quote inside it is doubled (§5.8).
-            if sheet.contains([']', '.', '#', '$', '\'', ' ']) || sheet.is_empty() {
-                write!(f, "'{}'", sheet.replace('\'', "''"))?;
-            } else {
-                f.write_str(sheet)?;
-            }
-        }
-        f.write_str(".")?;
-        if let Some(Axis { index, absolute }) = self.col {
-            write!(
-                f,
-                "{}{}",
-                if absolute { "$" } else { "" },
-                column_name(index)
-            )?;
-        }
-        if let Some(Axis { index, absolute }) = self.row {
-            write!(f, "{}{}", if absolute { "$" } else { "" }, index + 1)?;
-        }
-        Ok(())
+        cell_ref(f, self, false)
     }
+}
+
+fn cell_ref(f: &mut fmt::Formatter<'_>, c: &CellRef, bare: bool) -> fmt::Result {
+    if let Some(sheet) = &c.sheet {
+        if c.sheet_absolute {
+            f.write_str("$")?;
+        }
+        // SheetName ::= '$'? [^\].#$']+ — anything outside that set forces the quoted
+        // form, and a literal quote inside it is doubled (§5.8). The set is the same in
+        // display form, where a `.` in an unquoted name would read as the separator.
+        if sheet.contains([']', '.', '#', '$', '\'', ' ']) || sheet.is_empty() {
+            write!(f, "'{}'", sheet.replace('\'', "''"))?;
+        } else {
+            f.write_str(sheet)?;
+        }
+    }
+    // The dot before the cell is what the brackets make unambiguous; display form drops it
+    // when there is no sheet to separate (`B2`), and keeps it when there is (`Data.B2`).
+    if !bare || c.sheet.is_some() {
+        f.write_str(".")?;
+    }
+    if let Some(Axis { index, absolute }) = c.col {
+        write!(
+            f,
+            "{}{}",
+            if absolute { "$" } else { "" },
+            column_name(index)
+        )?;
+    }
+    if let Some(Axis { index, absolute }) = c.row {
+        write!(f, "{}{}", if absolute { "$" } else { "" }, index + 1)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@
 //! would need evaluator machinery that does not exist. They fail as syntax errors, which
 //! is a truthful answer.
 
-use super::lex::{Op, Reference, SyntaxError, Token, lex};
+use super::lex::{Op, Reference, SyntaxError, Token, lex_spans};
 use super::value::FormulaError;
 
 /// An expression (§5.2).
@@ -70,15 +70,29 @@ pub(crate) const PREFIX_BP: u8 = 70;
 /// property of *when* to evaluate rather than of the expression, and is dropped until
 /// there is a recalculation engine with an opinion about it.
 pub fn parse(formula: &str) -> Result<Expr, SyntaxError> {
-    let mut p = Parser {
-        tokens: lex(strip_intro(formula))?,
-        pos: 0,
-    };
-    let expr = p.expr(0)?;
-    if p.pos != p.tokens.len() {
-        return p.fail("unexpected trailing input");
-    }
-    Ok(expr)
+    let body = strip_intro(formula);
+    // The intro is stripped before lexing, so every offset below is relative to `body`;
+    // adding it back is what makes the reported position an offset into what was passed in.
+    let intro = formula.chars().count() - body.chars().count();
+    let (tokens, offsets) = lex_spans(body).map_err(|e| shift(e, intro))?;
+    let mut p = Parser { tokens, pos: 0 };
+    let parsed = p.expr(0).and_then(|expr| match p.pos == p.tokens.len() {
+        true => Ok(expr),
+        false => p.fail("unexpected trailing input"),
+    });
+    // The parser counts in tokens, which is the only unit it has; a caller wants a caret.
+    parsed.map_err(|e| SyntaxError {
+        at: offsets
+            .get(e.at)
+            .copied()
+            .unwrap_or_else(|| body.chars().count())
+            + intro,
+        ..e
+    })
+}
+
+fn shift(e: SyntaxError, by: usize) -> SyntaxError {
+    SyntaxError { at: e.at + by, ..e }
 }
 
 /// `of:=` / `=` / `==` → the expression after it (§5.2).
@@ -123,9 +137,8 @@ impl Parser {
         token
     }
 
-    /// ponytail: `at` is a token index for structural errors and a character offset for
-    /// lexical ones. Both only ever reach a human. Give tokens spans when the CLI starts
-    /// underlining the offending part of a formula.
+    /// `at` is a **token index** here; [`parse`] maps it back to a character offset through
+    /// the spans the lexer kept, so what a caller sees is always a position in the text.
     fn fail<T>(&self, message: &str) -> Result<T, SyntaxError> {
         Err(SyntaxError {
             message: message.to_owned(),

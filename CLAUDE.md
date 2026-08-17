@@ -114,7 +114,7 @@ Correctness is checked against LibreOffice, not against our own opinion. `soffic
 | Loop | Asserts | Where | Corpus |
 |---|---|---|---|
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `core/tests/corpus_read.rs` | 361 files in `ods/` + `fods/` |
-| **B** — formula conformance | *parse half:* every formula in the corpus parses. *evaluate half:* recalculating each fixture matches the cached value already in the file | `core/tests/corpus_parse.rs`, `core/tests/corpus_eval.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
+| **B** — formula conformance | *parse half:* every formula in the corpus parses. *display half:* each one survives canonical → display form → canonical. *evaluate half:* recalculating each fixture matches the cached value already in the file | `core/tests/corpus_parse.rs`, `core/tests/corpus_eval.rs` | 509 per-function `.fods` in `functions/**/fods/`, plus loop A's 361 |
 | **C** — round-trip differential | write → `soffice --headless --convert-to` → read back → semantically identical, and the reverse | `core/tests/roundtrip.rs` | hand-built cases + 20 densest value-only corpus files |
 
 `core/tests/kb.rs` is the fourth check and the only one that never skips: **R7's fourteen
@@ -152,6 +152,13 @@ exclusions are four *syntactic* classes named in `excused()` — inline arrays, 
 labels, and formulas the corpus contains that §5.2's `Expression` production does not
 describe (`of:=NOT(0)NOT(0)` and `of:=(…)AND(…)`, which LO reads but the grammar does not
 allow). Never excuse a file; excuse a construct, or fix the parser.
+
+Loop B's *display* half rides in the same walk (one read of the corpus, two checks): **75845
+formulas round-trip through display form, 75552 identically, 271 ambiguous, 0 failed**. The
+one ambiguity class is named rather than excused per file — unbracketed, a defined name and
+a cell address are the same shape, so a document whose name is cell-shaped (`database1`, and
+LibreOffice's own `of:Err:502` marker) comes back as a reference. `App::set_name` refuses to
+create such a name, which is what keeps the class to documents written elsewhere.
 
 Loop B's evaluate half reports **13327 of 52213 formula cells matching LibreOffice**, with
 37600 needing a function that does not exist yet, 1247 disagreeing and 39 reading the clock.
@@ -215,6 +222,21 @@ Rules that are cheap now and expensive later — breaking one quietly ends the p
 5. **No filesystem assumptions.** Every `*_file` has a `*_bytes` twin — the browser has no
    filesystem and this is not retrofittable.
 6. **Every feature must survive a LibreOffice round-trip** (loop C).
+
+### `core/src/a1.rs` — addressing, and the only `+ 1`
+
+Addresses as a person writes them — `A1`, `$B$7`, `Data.B2`, `'Q3 Actuals'.A1:.C9` — are ODF
+reference syntax minus the brackets. **The only 0↔1 conversion in the workspace lives here**,
+which is the point of it being in the core rather than in a shell: a second shell doing its
+own would be a second chance to be off by one.
+
+- **It does not parse an address.** `parse` wraps the string in `[…]` and calls `lex::lex`,
+  so a shell and a formula cannot disagree about what an address means, and whole-column
+  forms work because §5.8 already describes them.
+- The inbound half of the conversion is not here either: `lex::Axis` is already 0-based. The
+  outbound `+ 1` in `format` is the only index arithmetic outside the lexer.
+- The one liberty is case: §5.8 spells a column `[A-Z]+`, so the *cell* half is upper-cased
+  before lexing while the sheet name is left exactly as typed.
 
 ### `core/src/grid.rs` — the column store
 
@@ -481,6 +503,21 @@ that spec is the source of truth and a rule without a citation is a guess.
 - **`NOW` and `TODAY` are the only two functions that are not a pure function of the
   document.** Loop B counts them in its own `volatile` column, and `date::now` carries a
   `ponytail:` for reading UTC rather than the host's locale.
+- **`display.rs` is the formula bar's syntax, and it is not a second parser.** A document
+  stores `of:=SUM([.B2:.B4])`; a shell shows `=SUM(B2:B4)`. `to_display` re-serialises
+  through `serialize::Bare` — one printer with the brackets left off, so precedence is not
+  computed twice. `from_display` *scans* for reference-shaped runs, re-brackets them and
+  hands the result to the existing lexer and parser, so the grammar that validates a typed
+  formula is the grammar that reads the file. `spans` is that same scanner exposed in **byte**
+  ranges (Pango attribute indices are bytes), which is why an editor's colourer and its
+  committer cannot disagree about what a reference is. Two forms stay bracketed on purpose:
+  an external-source reference, and the range *operator* between two references
+  (`[Sheet2.C22]:[.C33]`, whose second end does **not** inherit the first's sheet the way
+  `[Sheet2.C22:.C33]` does). Function names keep the case they were typed in, as `sheet set`
+  stores them.
+- **A parse error now carries a character offset, not a token index.** `lex::lex_spans` keeps
+  where each token started and `parse` maps the parser's token index back through it, which is
+  what lets `DisplayError` put a caret on the problem.
 - **`criterion.rs` is where empty cells stop behaving.** §4.11.8 spells out that `"=0"` does
   *not* match an empty cell even though an empty cell converts to 0 everywhere else, that
   `"<>7"` does, and that a criterion which is a *reference* to an empty cell means the number
@@ -554,9 +591,9 @@ core is missing something.
 
 ### `cli/` — the `sheet` binary, and the parity ratchet
 
-Three files: `main.rs` (clap structs, one `match` arm per subcommand), `report.rs` (what gets
-printed), `a1.rs` (addressing). A subcommand is a few lines that drive `App`; anything longer
-belongs in the core. Conventions come from
+Two files: `main.rs` (clap structs, one `match` arm per subcommand) and `report.rs` (what
+gets printed); addressing moved down to `core::a1`, where every shell shares it. A
+subcommand is a few lines that drive `App`; anything longer belongs in the core. Conventions come from
 [fwilhe2/editor](https://github.com/fwilhe2/editor)'s CLI: file as a positional, long flags
 only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics on stderr,
 **errors are never JSON**.
@@ -567,15 +604,17 @@ only, `--session`/`--format`/`--dry-run` global, results on stdout, diagnostics 
   both directions. Adding a core capability without exposing it fails CI; so does a stale
   row. The test also asserts it found ≥12 methods — a scanner matching nothing would pass
   vacuously and quietly retire the ratchet.
-- **Addresses are ODF reference syntax minus the brackets** — `A1`, `$B$7`, `Data.B2`,
-  `'Q3 Actuals'.A1:.C9`. `a1.rs` does not parse them: it wraps them in `[…]` and calls
-  `lex::lex`, so the CLI and a formula cannot disagree about what an address means, and
-  whole-column forms work because §5.8 already describes them. The one liberty taken is
-  case: §5.8 spells a column `[A-Z]+`, so the *cell* half is upper-cased before lexing while
-  the sheet name is left exactly as typed.
-- **The 1-based/0-based conversion is `a1::format`, and it is the only index arithmetic in
-  `cli/`.** There is no inbound `-1` at all — `lex::Axis` is already 0-based, so that half
-  lives in the lexer, shared with the evaluator.
+- **Addresses are `core::a1`'s**, which is where the 1-based/0-based conversion lives for
+  every shell at once — see its section above. Nothing in `cli/` does index arithmetic.
+- **`sheet set` is `App::enter`, the typing rule**, not `set_cell`: a leading `=` is a
+  formula, a leading `'` (which is what `--text` spells) forces text, an empty value clears,
+  and whatever the cell held — a formula included — is replaced. `--recalc` recalculates the
+  document in the same undo step, which is what a GUI does on every commit.
+- **`sheet eval`, `sheet paste`, `sheet clear <range>`** are the CLI halves of what the grid
+  needs: a formula previewed without storing it, a rectangle filled from TSV, a rectangle
+  emptied — each one `App` call, each one undo step.
+- **`sheet fmt --display` / `--from-display`** convert between stored and display form
+  (`formula::display`), which is how a shell's formula bar and the file agree.
 - **Formula text is stored verbatim in OpenFormula syntax**, brackets and `;` included. The
   CLI translates addresses but never formulas; a syntax translator is the thing this project
   exists not to have.
@@ -620,8 +659,8 @@ SHEET=target/debug/sheet examples/sample.sh /tmp/demo
 
 ## Conventions
 
-- **Positions are 0-based in the core.** Only the CLI is 1-based, and it converts in exactly
-  one place — `cli/src/a1.rs`.
+- **Positions are 0-based in the core.** Only a user interface is 1-based, and the whole
+  workspace converts in exactly one place — `core/src/a1.rs`.
 - **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and their upgrade
   path (e.g. text and bool sharing one block; linear block lookup). They are a tracked ledger,
   not apologies — do not silently "fix" one without reading the reason.
@@ -733,9 +772,12 @@ phase the way `doc/plan.md` is for the rest, and holding the three decisions tak
 front: A1 display-form formulas, recalculation that is automatic only when it cannot spoil
 a cached value, and column widths in scope.
 
-Done: **M0** (the CI split) and **M1, the read-only grid** — see `ui_gtk/` under
-Architecture for what it is and what not to break.
+Done: **M0** (the CI split), **M1, the read-only grid** — see `ui_gtk/` under Architecture
+for what it is and what not to break — and **M2, the core work the editing milestones need**,
+CLI-first as rule 4 requires: `core::a1` (C1), `formula::display` (C2) with loop B's third
+half over the corpus, and `App::{enter, preview, clear_range, enter_range}` (C3–C6) reached
+by `sheet set --recalc`, `sheet eval`, `sheet clear <range>` and `sheet paste`.
 
-Next is M2 — the core work the editing milestones need (`core::a1`, display-form formulas,
-`App::{enter, preview, clear_range, enter_range}`), CLI-first as rule 4 requires. Then the
-wasm shell, which is the honest test of rule 5.
+Next is M3 — selection and navigation in the grid (`keymap.rs`, header selection, Ctrl+arrows,
+status-bar aggregates). Then editing, clipboard and the formula UX; the wasm shell after
+that is the honest test of rule 5.

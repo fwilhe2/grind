@@ -8,7 +8,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use sheet_core::{App, CellValue, Observer, Pos};
+use sheet_core::{App, CellValue, Entered, Observer, Pos, Recalc, RecalcMode};
 
 fn p(row: u32, col: u32) -> Pos {
     Pos::new(row, col)
@@ -519,4 +519,158 @@ fn a_deleted_sheet_survives_a_session_round_trip() {
     assert!(restored.undo());
     assert_eq!(restored.sheet_count(), 2);
     assert_eq!(restored.get(1, p(0, 0)).unwrap(), CellValue::Text("kept".into()));
+}
+
+// --- the typing rule, and what a shell needs behind it (doc/gtk-shell.md C3–C6) ---
+
+/// Every branch of `enter`'s interpretation, including the two that exist so that a string
+/// can be typed at all.
+#[test]
+fn enter_reads_what_was_typed_the_way_every_spreadsheet_does() {
+    let app = App::new();
+    for (row, input, kind, value) in [
+        (0, "12.5", Entered::Number, CellValue::Number(12.5)),
+        (1, "TRUE", Entered::Bool, CellValue::Bool(true)),
+        (2, "hello", Entered::Text, CellValue::Text("hello".into())),
+        // The `'` rule: without it neither of these two cells could hold what it holds.
+        (3, "'=SUM(A1)", Entered::Text, CellValue::Text("=SUM(A1)".into())),
+        (4, "'123", Entered::Text, CellValue::Text("123".into())),
+        (5, "", Entered::Cleared, CellValue::Empty),
+    ] {
+        let outcome = app.enter(0, p(row, 0), input, RecalcMode::No).unwrap();
+        assert_eq!(outcome.kind, kind, "{input}");
+        assert_eq!(outcome.cells, 1);
+        assert_eq!(app.get(0, p(row, 0)).unwrap(), value, "{input}");
+    }
+
+    let outcome = app.enter(0, p(6, 0), "=[.A1]*2", RecalcMode::No).unwrap();
+    assert_eq!(outcome.kind, Entered::Formula);
+    assert_eq!(app.get(0, p(6, 0)).unwrap(), CellValue::Number(25.0));
+    assert_eq!(app.formula(0, p(6, 0)).unwrap().as_deref(), Some("=[.A1]*2"));
+}
+
+/// Typing a value over a formula has to remove the formula. Two actions — set the value,
+/// clear the formula — would leave a stale formula beside a fresh cached value, which is
+/// exactly the disagreement `stale` exists to report.
+#[test]
+fn typing_over_a_formula_removes_it() {
+    let app = App::new();
+    app.enter(0, p(0, 0), "=1+1", RecalcMode::No).unwrap();
+    app.enter(0, p(0, 0), "7", RecalcMode::No).unwrap();
+    assert_eq!(app.formula(0, p(0, 0)).unwrap(), None);
+    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(7.0));
+
+    // And one undo puts both back.
+    assert!(app.undo());
+    assert_eq!(app.formula(0, p(0, 0)).unwrap().as_deref(), Some("=1+1"));
+}
+
+/// The whole point of `RecalcMode::Document`: an edit and the ripple it causes are one
+/// undo entry, so Ctrl+Z takes back what the user did rather than half of it.
+#[test]
+fn an_edit_and_its_ripple_undo_together() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    app.set_formula(0, p(1, 0), "=[.A1]*10").unwrap();
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
+
+    let outcome = app.enter(0, p(0, 0), "5", RecalcMode::Document).unwrap();
+    assert_eq!(outcome.recalc.unwrap(), Recalc { changed: 1, spoiled: 0 });
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(50.0));
+
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(
+        app.get(0, p(1, 0)).unwrap(),
+        CellValue::Number(10.0),
+        "one undo, both cells"
+    );
+    // And it really was one entry: the next undo is the formula's own, not the ripple's.
+    assert!(app.undo());
+    assert_eq!(app.formula(0, p(1, 0)).unwrap(), None);
+}
+
+/// The edit lands even when its recalculation cannot: refusing would make a document that
+/// uses one unimplemented function read-only, which is worse than leaving it stale.
+#[test]
+fn an_edit_that_would_spoil_a_cell_still_commits_without_recalculating() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 5.0).unwrap();
+    app.set_formula(0, p(1, 0), "=SUBTOTAL(9;[.A1:.A1])").unwrap();
+    app.set_cell(0, p(1, 0), 5.0).unwrap(); // a cached value from a better evaluator
+
+    let outcome = app.enter(0, p(0, 0), "6", RecalcMode::Document).unwrap();
+    let recalc = outcome.recalc.unwrap();
+    assert_eq!(recalc.spoiled, 1);
+    assert!(recalc.changed > 0, "and it says how much is now out of date");
+    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(6.0), "the edit stands");
+    assert_eq!(
+        app.get(0, p(1, 0)).unwrap(),
+        CellValue::Number(5.0),
+        "the cached value was not replaced with #NAME?"
+    );
+}
+
+/// `preview` is called while someone is typing, from a worker thread. All three properties
+/// are what makes that safe, and none of them is visible from the value it returns.
+#[test]
+fn preview_writes_nothing_notifies_nobody_and_records_no_history() {
+    let app = Arc::new(App::new());
+    app.set_cell(0, p(0, 0), 4.0).unwrap();
+    let counter = Arc::new(Counter(AtomicUsize::new(0)));
+    app.set_observer(counter.clone());
+
+    assert_eq!(
+        app.preview(0, p(9, 9), "=[.A1]*3").unwrap(),
+        CellValue::Number(12.0)
+    );
+    assert_eq!(counter.0.load(Ordering::SeqCst), 0, "no observer tick");
+    assert!(app.undo() && !app.can_undo(), "only the one edit is in the history");
+    assert_eq!(app.get(0, p(9, 9)).unwrap(), CellValue::Empty, "nothing stored");
+
+    // Only a read lock: a second reader can hold one at the same time.
+    let held = app.get_viewport(0, 0..1, 0..1).unwrap();
+    assert_eq!(app.preview(0, p(0, 1), "=1+1").unwrap(), CellValue::Number(2.0));
+    drop(held);
+}
+
+#[test]
+fn clearing_a_range_is_one_undo_step_and_takes_the_formulas_with_it() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    app.set_formula(0, p(1, 1), "=[.A1]+1").unwrap();
+    app.set_cell(0, p(3, 3), "far away").unwrap();
+
+    assert_eq!(app.clear_range(0, p(0, 0), p(2, 2)).unwrap(), 2, "only the two");
+    assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Empty);
+    assert_eq!(app.formula(0, p(1, 1)).unwrap(), None);
+    assert_eq!(app.get(0, p(3, 3)).unwrap(), CellValue::Text("far away".into()));
+
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(app.formula(0, p(1, 1)).unwrap().as_deref(), Some("=[.A1]+1"));
+
+    // A rectangle nobody could mean is refused by size rather than served slowly.
+    assert!(app.clear_range(0, p(0, 0), p(1_000_000, 100)).is_err());
+}
+
+#[test]
+fn a_pasted_rectangle_lands_cell_by_cell_in_one_step() {
+    let app = App::new();
+    let rows = vec![
+        vec!["1".to_owned(), "2".to_owned()],
+        vec!["=[.B2]*2".to_owned()], // ragged, and a formula
+    ];
+    let outcome = app
+        .enter_range(0, p(1, 1), &rows, RecalcMode::Document)
+        .unwrap();
+    assert_eq!(outcome.cells, 3);
+    assert_eq!(outcome.kind, Entered::Number, "the anchor's kind");
+    assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(app.get(0, p(1, 2)).unwrap(), CellValue::Number(2.0));
+    assert_eq!(app.get(0, p(2, 1)).unwrap(), CellValue::Number(2.0));
+
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Empty);
+    assert!(!app.can_undo());
 }

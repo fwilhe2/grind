@@ -2,32 +2,34 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Addressing — the only place in the CLI that touches an index.
+//! Addressing — **the only 0↔1 conversion in the workspace**, and the module every shell
+//! addresses cells through.
 //!
-//! Addresses on the command line are ODF reference syntax without the brackets: `A1`,
-//! `$B$7`, `A1:D20`, `Data.B2`, `'Q3 Actuals'.A1:.C9`. They are not parsed here. [`parse`]
-//! wraps the string in `[…]` and hands it to the formula lexer, so the CLI and a formula
+//! An address as a person writes one is ODF reference syntax without the brackets: `A1`,
+//! `$B$7`, `A1:D20`, `Data.B2`, `'Q3 Actuals'.A1:.C9`. It is not parsed here. [`parse`]
+//! wraps the string in `[…]` and hands it to the formula lexer, so a shell and a formula
 //! cannot disagree about what an address means, and whole-column forms (`A:A`) work because
 //! §5.8 already describes them.
 //!
-//! The 1-based/0-based conversion is therefore *not* in this file either: `lex::Axis` is
-//! already 0-based, so the inbound half lives in the lexer where both callers share it. The
-//! outbound `+ 1` in [`format`] is the only index arithmetic in `cli/`, and nothing else
-//! here may do any.
+//! The inbound 1-based/0-based conversion is therefore not here either: `lex::Axis` is
+//! already 0-based, so that half lives in the lexer where every caller shares it. The
+//! outbound `+ 1` in [`format`] is the only index arithmetic outside the lexer, and lives
+//! here rather than in a shell — a second shell doing its own would be a second chance to
+//! be off by one.
 
-use sheet_core::formula::lex::{self, Reference, Token};
-use sheet_core::{App, Pos};
+use crate::formula::lex::{self, Reference, Token};
+use crate::{App, Error, Pos, Result};
 
-/// A command-line address as a reference.
+/// A user's address as a reference.
 ///
-/// The one piece of syntax the CLI adds is the leading `.`: ODF writes a same-sheet
+/// The one piece of syntax a shell adds is the leading `.`: ODF writes a same-sheet
 /// reference as `[.A1]`, and asking a user to type the dot would be noise. Each end of a
 /// range gets its own, since `[.A1:.B2]` is the ODF form — but only when that end does not
 /// already name a sheet, so `Data.B2:C3` becomes `[Data.B2:.C3]` and §5.8's rule that the
 /// second end inherits the first's sheet does the rest.
-pub fn parse(addr: &str) -> Result<Reference, String> {
+pub fn parse(addr: &str) -> Result<Reference> {
     if addr.trim().is_empty() {
-        return Err("empty address".to_owned());
+        return Err(Error::Formula("empty address".to_owned()));
     }
     let bracketed: Vec<String> = split_range(addr)
         .into_iter()
@@ -40,10 +42,10 @@ pub fn parse(addr: &str) -> Result<Reference, String> {
         .collect();
     let source = format!("[{}]", bracketed.join(":"));
 
-    let tokens = lex::lex(&source).map_err(|e| format!("{addr}: {e}"))?;
+    let tokens = lex::lex(&source).map_err(|e| Error::Formula(format!("{addr}: {e}")))?;
     match tokens.as_slice() {
         [Token::Ref(reference)] => Ok(reference.clone()),
-        _ => Err(format!("{addr}: not a cell address or range")),
+        _ => Err(Error::Formula(format!("{addr}: not a cell address or range"))),
     }
 }
 
@@ -88,12 +90,14 @@ fn sheet_dot(part: &str) -> Option<usize> {
 /// A missing axis is a whole column or row (§5.8) and is clamped to the sheet's used extent
 /// — the same bound the evaluator uses, and the reason `view A:A` reads what is there
 /// instead of a million empty rows.
-pub fn resolve(app: &App, reference: &Reference) -> Result<(usize, Pos, Pos), String> {
+pub fn resolve(app: &App, reference: &Reference) -> Result<(usize, Pos, Pos)> {
     let sheet = sheet_index(app, reference.start.sheet.as_deref())?;
     if reference.source.is_some() {
-        return Err("external document references are out of scope".to_owned());
+        return Err(Error::Formula(
+            "external document references are out of scope".to_owned(),
+        ));
     }
-    let (rows, cols) = app.used_extent(sheet).map_err(|e| e.to_string())?;
+    let (rows, cols) = app.used_extent(sheet)?;
 
     let end = reference.end.as_ref().unwrap_or(&reference.start);
     // A whole column starts at row 0 and ends at the last used row; likewise a whole row.
@@ -112,12 +116,12 @@ fn axis(a: &Option<lex::Axis>, whole: u32) -> u32 {
 /// A sheet by name, for the commands that address one directly rather than through a cell
 /// reference. Same lookup, so `sheet rename data …` and `sheet set data.A1 …` cannot
 /// disagree about which sheet `data` is.
-pub fn sheet(app: &App, name: &str) -> Result<usize, String> {
+pub fn sheet(app: &App, name: &str) -> Result<usize> {
     sheet_index(app, Some(name))
 }
 
 /// Sheet names match case-insensitively, as they do in a formula.
-fn sheet_index(app: &App, name: Option<&str>) -> Result<usize, String> {
+fn sheet_index(app: &App, name: Option<&str>) -> Result<usize> {
     let Some(name) = name else {
         return Ok(0);
     };
@@ -126,10 +130,10 @@ fn sheet_index(app: &App, name: Option<&str>) -> Result<usize, String> {
             app.sheet_name(i)
                 .is_ok_and(|n| n.eq_ignore_ascii_case(name))
         })
-        .ok_or_else(|| format!("no such sheet: {name}"))
+        .ok_or_else(|| Error::BadSheet(format!("no such sheet: {name}")))
 }
 
-/// A position as a user reads it. The only `+ 1` in the CLI.
+/// A position as a user reads it. The only `+ 1` anywhere.
 pub fn format(sheet: Option<&str>, pos: Pos) -> String {
     let cell = format!("{}{}", lex::column_name(pos.col), pos.row + 1);
     match sheet {
@@ -147,11 +151,13 @@ pub fn format(sheet: Option<&str>, pos: Pos) -> String {
 /// document-level, and this is what LibreOffice writes.
 ///
 /// The sheet defaults to the first, which is what a user typing a bare `B2:B9` means.
-pub fn as_definition(app: &App, reference: &Reference) -> Result<String, String> {
+pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
     if reference.source.is_some() {
-        return Err("external document references are out of scope".to_owned());
+        return Err(Error::Formula(
+            "external document references are out of scope".to_owned(),
+        ));
     }
-    let default = app.sheet_name(0).map_err(|e| e.to_string())?;
+    let default = app.sheet_name(0)?;
     let mut out = reference.clone();
     for end in [Some(&mut out.start), out.end.as_mut()].into_iter().flatten() {
         if end.sheet.is_none() {

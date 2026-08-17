@@ -11,7 +11,6 @@
 //! Diagnostics go to stderr, results to stdout, and an error never appears on stdout in
 //! either format.
 
-mod a1;
 mod report;
 
 use std::io::Read;
@@ -19,9 +18,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use sheet_core::a1;
 use sheet_core::numfmt;
 use sheet_core::style::{self, CellStyle};
-use sheet_core::{App, CellValue, Pos, Session};
+use sheet_core::{App, CellValue, Pos, RecalcMode, Session};
 
 use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
 
@@ -134,8 +134,8 @@ enum Command {
 
     /// Set a cell's value or formula
     ///
-    /// A leading '=' makes it a formula; otherwise the value is taken as a number, TRUE or
-    /// FALSE, or text. "-" reads the value from stdin.
+    /// A leading '=' makes it a formula and a leading apostrophe forces text; otherwise the
+    /// value is taken as a number, TRUE or FALSE, or text. "-" reads the value from stdin.
     Set {
         file: PathBuf,
         /// Cell address, e.g. A1 or Data.B2
@@ -146,14 +146,45 @@ enum Command {
         /// Store the value as text, whatever it looks like
         #[arg(long)]
         text: bool,
+        /// Recalculate the document in the same undo step, unless that would spoil a cell
+        #[arg(long)]
+        recalc: bool,
     },
 
-    /// Clear a cell, leaving it empty
+    /// Fill a rectangle from tab-separated rows
+    ///
+    /// Each cell is read the way `set` reads its value. "-" reads the rows from stdin.
+    Paste {
+        file: PathBuf,
+        /// Where the first cell goes, e.g. B2
+        anchor: String,
+        /// Tab-separated rows, one per line; "-" reads them from stdin
+        #[arg(allow_hyphen_values = true)]
+        rows: String,
+        /// Recalculate the document in the same undo step, unless that would spoil a cell
+        #[arg(long)]
+        recalc: bool,
+    },
+
+    /// Evaluate a formula against the document without storing anything
+    ///
+    /// The address is where the formula would sit, which is what its relative references
+    /// are relative to.
+    Eval {
+        file: PathBuf,
+        /// Cell address the formula would live at, e.g. B5
+        address: String,
+        /// The formula, e.g. '=SUM([.B2:.B4])'
+        #[arg(allow_hyphen_values = true)]
+        formula: String,
+    },
+
+    /// Clear a cell or a range, leaving it empty
     Clear {
         file: PathBuf,
-        /// Cell address, e.g. A1 or Data.B2
+        /// Cell address or range, e.g. A1 or B2:D40
         address: String,
-        /// Remove only the formula, keeping the value it last computed
+        /// Remove only the formula, keeping the value it last computed (one cell)
         #[arg(long)]
         formula_only: bool,
     },
@@ -278,10 +309,19 @@ enum Command {
     Redo { file: PathBuf },
 
     /// Parse a formula and print it back in normalised form
+    ///
+    /// Stored form brackets its references — =SUM([.B2:.B4]) — and display form, what a
+    /// formula bar shows, does not: =SUM(B2:B4). The two convert losslessly.
     Fmt {
         /// The formula, e.g. '=SUM([.A1:.A2])'
         #[arg(allow_hyphen_values = true)]
         formula: String,
+        /// Print it in display form, without the brackets
+        #[arg(long, conflicts_with = "from_display")]
+        display: bool,
+        /// Read display form and print the stored form
+        #[arg(long)]
+        from_display: bool,
     },
 
     /// List the OpenFormula functions this build implements
@@ -319,15 +359,15 @@ fn run(cli: &Cli) -> Result<Report, String> {
             raw,
         } => {
             let app = load(file, cli)?;
-            let reference = a1::parse(address)?;
+            let reference = a1::parse(address).say()?;
             if !a1::is_single(&reference) {
                 return Err(format!("{address}: get takes one cell, not a range"));
             }
-            let (sheet, pos, _) = a1::resolve(&app, &reference)?;
+            let (sheet, pos, _) = a1::resolve(&app, &reference).say()?;
             if *formula {
                 let source = app
                     .formula(sheet, pos)
-                    .map_err(|e| e.to_string())?
+                    .say()?
                     .unwrap_or_default();
                 return Ok(Report::Text(TextReport {
                     lines: vec![source],
@@ -352,10 +392,10 @@ fn run(cli: &Cli) -> Result<Report, String> {
         } => {
             let app = load(file, cli)?;
             let (sheet, start, end) = match address {
-                Some(address) => a1::resolve(&app, &a1::parse(address)?)?,
+                Some(address) => a1::resolve(&app, &a1::parse(address).say()?).say()?,
                 // No range given: everything the sheet uses.
                 None => {
-                    let (rows, cols) = app.used_extent(0).map_err(|e| e.to_string())?;
+                    let (rows, cols) = app.used_extent(0).say()?;
                     let last = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
                     (0, Pos::new(0, 0), last)
                 }
@@ -370,20 +410,48 @@ fn run(cli: &Cli) -> Result<Report, String> {
             address,
             value,
             text,
+            recalc,
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, address)?;
             let value = read_stdin_if_dash(value)?;
-            if !text && value.starts_with('=') {
-                // Stored verbatim; `App::set_formula` computes and stores the cached value
-                // alongside, because a formula without one renders blank in LibreOffice.
-                app.set_formula(sheet, pos, &value)
-                    .map_err(|e| e.to_string())?;
-            } else {
-                app.set_cell(sheet, pos, literal(&value, *text))
-                    .map_err(|e| e.to_string())?;
-            }
+            // `App::enter` is the typing rule, shared with every GUI: a leading `=` is a
+            // formula stored verbatim with its cached value, a leading `'` is text, and
+            // `--text` is that same rule spelled as a flag.
+            app.enter(sheet, pos, &forced_text(&value, *text), mode(*recalc))
+                .say()?;
             finish(&app, cli, file, true)
+        }
+
+        Command::Paste {
+            file,
+            anchor,
+            rows,
+            recalc,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, pos, _) = single(&app, anchor)?;
+            let text = read_stdin_if_dash(rows)?;
+            let rows: Vec<Vec<String>> = text
+                .lines()
+                .map(|line| line.split('\t').map(str::to_owned).collect())
+                .collect();
+            let outcome = app.enter_range(sheet, pos, &rows, mode(*recalc)).say()?;
+            finish(&app, cli, file, outcome.cells > 0)
+        }
+
+        Command::Eval {
+            file,
+            address,
+            formula,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, pos, _) = single(&app, address)?;
+            // A read, not an edit: nothing is stored and nothing is written.
+            let value = app.preview(sheet, pos, formula).say()?;
+            Ok(Report::Text(TextReport {
+                lines: vec![report::show(&value)],
+            }))
         }
 
         Command::Clear {
@@ -392,15 +460,15 @@ fn run(cli: &Cli) -> Result<Report, String> {
             formula_only,
         } => {
             let app = load(file, cli)?;
-            let (sheet, pos, _) = single(&app, address)?;
             if *formula_only {
-                app.clear_formula(sheet, pos).map_err(|e| e.to_string())?;
-            } else {
-                app.clear_formula(sheet, pos).map_err(|e| e.to_string())?;
-                app.set_cell(sheet, pos, CellValue::Empty)
-                    .map_err(|e| e.to_string())?;
+                // The one form that is a cell rather than a rectangle: it keeps the value.
+                let (sheet, pos, _) = single(&app, address)?;
+                app.clear_formula(sheet, pos).say()?;
+                return finish(&app, cli, file, true);
             }
-            finish(&app, cli, file, true)
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
+            let changed = app.clear_range(sheet, start, end).say()?;
+            finish(&app, cli, file, changed > 0)
         }
 
         Command::Format {
@@ -413,7 +481,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             locale,
         } => {
             let app = load(file, cli)?;
-            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address)?)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
             let format = match style {
                 Style::General => None,
                 Style::Datetime => Some(numfmt::datetime_preset()),
@@ -422,7 +490,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             .map(|format| format.in_locale(locale.clone()));
             let changed = app
                 .set_format(sheet, start, end, format)
-                .map_err(|e| e.to_string())?;
+                .say()?;
             finish(&app, cli, file, changed > 0)
         }
 
@@ -440,7 +508,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             border,
         } => {
             let app = load(file, cli)?;
-            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address)?)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
             let mut want = CellStyle {
                 font_weight: bold.then(|| "bold".to_owned()),
                 font_style: italic.then(|| "italic".to_owned()),
@@ -471,7 +539,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             want.set_border(border.clone());
             let changed = app
                 .set_style(sheet, start, end, Some(want))
-                .map_err(|e| e.to_string())?;
+                .say()?;
             finish(&app, cli, file, changed > 0)
         }
 
@@ -506,35 +574,35 @@ fn run(cli: &Cli) -> Result<Report, String> {
             // this is the only place the two spellings differ.
             let expression = match target.strip_prefix('=') {
                 Some(formula) => formula.to_owned(),
-                None => a1::as_definition(&app, &a1::parse(target)?)?,
+                None => a1::as_definition(&app, &a1::parse(target).say()?).say()?,
             };
-            app.set_name(name, &expression).map_err(|e| e.to_string())?;
+            app.set_name(name, &expression).say()?;
             finish(&app, cli, file, true)
         }
 
         Command::Add { file, name } => {
             let app = load(file, cli)?;
-            app.add_sheet(name).map_err(|e| e.to_string())?;
+            app.add_sheet(name).say()?;
             finish(&app, cli, file, true)
         }
 
         Command::Rename { file, sheet, name } => {
             let app = load(file, cli)?;
-            let index = a1::sheet(&app, sheet)?;
-            app.rename_sheet(index, name).map_err(|e| e.to_string())?;
+            let index = a1::sheet(&app, sheet).say()?;
+            app.rename_sheet(index, name).say()?;
             finish(&app, cli, file, true)
         }
 
         Command::Remove { file, sheet } => {
             let app = load(file, cli)?;
-            let index = a1::sheet(&app, sheet)?;
-            app.remove_sheet(index).map_err(|e| e.to_string())?;
+            let index = a1::sheet(&app, sheet).say()?;
+            app.remove_sheet(index).say()?;
             finish(&app, cli, file, true)
         }
 
         Command::Recalc { file } => {
             let app = load(file, cli)?;
-            let recalc = app.recalc().map_err(|e| e.to_string())?;
+            let recalc = app.recalc().say()?;
             // Diagnostics to stderr, so the warning cannot corrupt parseable output. This
             // build implements a subset of OpenFormula; a document using anything else
             // loses a good cached value to #NAME? here, and saying so is the difference
@@ -573,11 +641,18 @@ fn run(cli: &Cli) -> Result<Report, String> {
             finish(&app, cli, file, changed)
         }
 
-        Command::Fmt { formula } => {
-            let expr = sheet_core::formula::parse::parse(formula).map_err(|e| e.to_string())?;
-            Ok(Report::Text(TextReport {
-                lines: vec![format!("={expr}")],
-            }))
+        Command::Fmt {
+            formula,
+            display,
+            from_display,
+        } => {
+            use sheet_core::formula::display;
+            let line = match (display, from_display) {
+                (true, _) => display::to_display(formula).say()?,
+                (_, true) => display::from_display(formula).say()?,
+                _ => format!("={}", sheet_core::formula::parse::parse(formula).say()?),
+            };
+            Ok(Report::Text(TextReport { lines: vec![line] }))
         }
 
         Command::Functions => {
@@ -602,6 +677,20 @@ fn run(cli: &Cli) -> Result<Report, String> {
 }
 
 // --- helpers ---
+
+/// A core error reaching the user as text.
+///
+/// The CLI's own failures are already strings — a bad flag, a file that exists — so this is
+/// the one adapter between the two, rather than a closure at every call site.
+trait Say<T> {
+    fn say(self) -> Result<T, String>;
+}
+
+impl<T, E: std::fmt::Display> Say<T> for std::result::Result<T, E> {
+    fn say(self) -> Result<T, String> {
+        self.map_err(|e| e.to_string())
+    }
+}
 
 /// A locale tag as a person types one — `de-DE`, or a bare `de`.
 fn locale(value: &str) -> Result<sheet_core::locale::Locale, String> {
@@ -681,7 +770,7 @@ fn load(file: &Path, cli: &Cli) -> Result<App, String> {
 fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, String> {
     let written = changed && !cli.dry_run;
     if written {
-        app.save_file(file).map_err(|e| e.to_string())?;
+        app.save_file(file).say()?;
     }
     save_session(app, cli)?;
 
@@ -785,10 +874,10 @@ fn cells(
         .min(start.row.saturating_add(max_rows.saturating_sub(1)));
     let rows = start.row..last_row.saturating_add(1);
     let cols = start.col..end.col.saturating_add(1);
-    let name = app.sheet_name(sheet).map_err(|e| e.to_string())?;
+    let name = app.sheet_name(sheet).say()?;
     let viewport = app
         .get_viewport(sheet, rows.clone(), cols.clone())
-        .map_err(|e| e.to_string())?;
+        .say()?;
 
     let mut out = Vec::new();
     for row in rows.clone() {
@@ -800,7 +889,7 @@ fn cells(
                 value: report::show(&value),
                 text: viewport.text(row, col).unwrap_or_default().to_owned(),
                 kind: report::kind(&value),
-                formula: app.formula(sheet, pos).map_err(|e| e.to_string())?,
+                formula: app.formula(sheet, pos).say()?,
             });
         }
     }
@@ -815,27 +904,27 @@ fn cells(
 }
 
 fn single(app: &App, address: &str) -> Result<(usize, Pos, Pos), String> {
-    let reference = a1::parse(address)?;
+    let reference = a1::parse(address).say()?;
     if !a1::is_single(&reference) {
         return Err(format!("{address}: expected one cell, not a range"));
     }
-    a1::resolve(app, &reference)
+    a1::resolve(app, &reference).say()
 }
 
-/// What the user typed, as a value: a number, a logical, or text (§6.3 has nothing to say
-/// here — this is a shell's convenience, not a conversion the engine performs).
-fn literal(value: &str, force_text: bool) -> CellValue {
-    if force_text {
-        return CellValue::Text(value.to_owned());
+/// `--text`, as the core's typing rule spells it. The rule lives in `App::enter`, so a
+/// document edited from a shell and one edited from the CLI cannot disagree about what
+/// `123` in a cell means.
+fn forced_text(value: &str, force: bool) -> String {
+    match force {
+        true => format!("'{value}"),
+        false => value.to_owned(),
     }
-    if let Ok(n) = value.parse::<f64>() {
-        return CellValue::Number(n);
-    }
-    match value {
-        "TRUE" | "true" => CellValue::Bool(true),
-        "FALSE" | "false" => CellValue::Bool(false),
-        "" => CellValue::Empty,
-        _ => CellValue::Text(value.to_owned()),
+}
+
+fn mode(recalc: bool) -> RecalcMode {
+    match recalc {
+        true => RecalcMode::Document,
+        false => RecalcMode::No,
     }
 }
 

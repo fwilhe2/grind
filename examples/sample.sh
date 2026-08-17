@@ -51,6 +51,10 @@ run set "$book" E1 'Note'
 run set "$book" E2 '007' --text    # forced to text, or it would be the number 7
 printf 'first line\nsecond line' | run set "$book" E3 -   # from stdin, newline and all
 
+say "paste: tab-separated rows into a rectangle, in one undo step"
+printf 'West\t9999\nCentral\t8888\n' | run paste "$book" A16 -
+"$SHEET" view "$book" A16:B17 --raw
+
 say "formulas: OpenFormula syntax, stored verbatim"
 run set "$book" B5 '=SUM([.B2:.B4])'                       # math
 run set "$book" C2 '=[.B2]/[.$B$5]'                        # an absolute reference
@@ -140,8 +144,13 @@ say "info: sheets, extents, formula counts, named expressions"
 say "json: every command is machine-readable"
 "$SHEET" --format json get "$book" C2
 
-say "fmt: parse a formula and print it back normalised"
+say "fmt: the stored form, the display form a formula bar shows, and back"
 "$SHEET" fmt '=SUM([.A1:.A2])*-2^2'
+"$SHEET" fmt --display '=SUM([.A1:.A2])*-2^2'
+"$SHEET" fmt --from-display '=SUM(A1:A2)*-2^2'
+
+say "eval: what a formula would say at a cell, storing nothing"
+"$SHEET" eval "$book" B20 '=SUM([.B2:.B4])*2'
 
 say "functions: what this build implements"
 "$SHEET" functions | tail -1
@@ -159,9 +168,10 @@ run --session "$session" undo "$book"
 run --session "$session" redo "$book"
 run --session "$session" undo "$book"
 
-say "clear: a cell, and a formula while keeping its value"
+say "clear: a cell, a whole rectangle, and a formula while keeping its value"
 run set "$book" G1 'scratch'
 run clear "$book" G1
+run clear "$book" A16:B17                                  # the pasted rows, in one step
 run clear "$book" B6 --formula-only
 
 say "convert: the same document as flat XML"
@@ -189,6 +199,15 @@ printf 'changed lines: %s of %s\n' \
 say "stale: the edit above invalidated a total, and said so"
 "$SHEET" get "$out/sample.fods" B5 --raw
 run recalc "$out/sample.fods"
+"$SHEET" get "$out/sample.fods" B5 --raw
+
+# What a GUI does on every commit, and what the CLI does only when asked: the edit and the
+# recalculation it causes land as one change, so one `undo` takes back both. It is skipped
+# — with a warning — when recalculating would replace a cached value this build cannot
+# reproduce, which is the same honesty `recalc` prints.
+
+say "set --recalc: the edit and its ripple, in one step"
+run set "$out/sample.fods" B2 1234.5 --recalc
 "$SHEET" get "$out/sample.fods" B5 --raw
 
 printf '\n%s and %s\n' "$book" "$out/sample.fods"
