@@ -9,22 +9,28 @@
 //! [`App::get_viewport`] returns, and eventually the keys and the editing. If a field
 //! shows up here that is not a presentation concern, the core is missing something.
 //!
-//! `doc/gtk-shell.md` is the plan and the running record of what is built. This is
-//! milestone 1: a document opens and draws, and nothing edits it yet.
+//! `doc/gtk-shell.md` is the plan and the running record of what is built. Milestones 1 and
+//! 3 are here: a document opens, draws, and can be navigated and selected with the keyboard
+//! and the mouse. Nothing edits it yet.
 
 mod geom;
 mod grid;
+mod keymap;
 mod theme;
 
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use libadwaita as adw;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use sheet_core::App;
+use sheet_core::{App, CellValue, Pos, a1};
+
+use keymap::Selection;
 
 /// The reverse-DNS identity GNOME keys a window, its icon and its settings on.
 const APP_ID: &str = "io.github.fwilhe2.Sheet";
@@ -95,14 +101,112 @@ fn window(
 
     let view = adw::ToolbarView::builder().content(&scroller).build();
     view.add_top_bar(&header);
+    view.add_bottom_bar(&status_bar(&grid, app));
 
-    adw::ApplicationWindow::builder()
+    let window = adw::ApplicationWindow::builder()
         .application(application)
         .title(title(path))
         .default_width(1100)
         .default_height(700)
         .content(&view)
-        .build()
+        .build();
+    // The grid is what the keys are for, so it starts focused rather than waiting for a
+    // click to make the arrow keys work.
+    // Two traits spell `set_focus`; `GtkWindowExt`'s is the one that means "focus this".
+    gtk::prelude::GtkWindowExt::set_focus(&window, Some(&grid));
+    window
+}
+
+/// The status bar: where the selection is, and what it adds up to.
+///
+/// The aggregates are `App::preview` over generated formulas rather than a second summing
+/// loop here — `SUM`, `COUNTA` (a status bar's Count is non-empty, not numeric) and
+/// `AVERAGE` — so what the bar says and what a cell would say cannot differ.
+///
+/// Debounced, because a drag changes the selection on every motion event and each change
+/// costs a walk of the range. ponytail: the walk runs on the main thread, so a selection
+/// spanning a very large used extent stutters the drag; the plan's answer is a worker and a
+/// generation counter, which is the threading milestone's machinery rather than this one's.
+fn status_bar(grid: &grid::Grid, app: &Arc<App>) -> gtk::Box {
+    let label = gtk::Label::builder()
+        .xalign(0.0)
+        .margin_start(10)
+        .margin_end(10)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+    let bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    // libadwaita paints a toolbar; without the class the bar is transparent and the grid
+    // scrolls underneath the text.
+    bar.add_css_class("toolbar");
+    bar.append(&label);
+
+    let pending: Rc<Cell<Option<gtk::glib::SourceId>>> = Rc::new(Cell::new(None));
+    let app = app.clone();
+    let sheet = grid.sheet();
+    grid.connect_selection_changed(move |selection| {
+        if let Some(source) = pending.take() {
+            source.remove();
+        }
+        let (app, label, pending2) = (app.clone(), label.clone(), pending.clone());
+        pending.set(Some(gtk::glib::timeout_add_local_once(
+            std::time::Duration::from_millis(100),
+            move || {
+                pending2.set(None);
+                label.set_text(&status_text(&app, sheet, selection));
+            },
+        )));
+    });
+    // Nothing has moved yet, so the first paint would otherwise show an empty bar.
+    grid.set_selection(grid.selection());
+    bar
+}
+
+/// `B2:B4 — Sum 1,234.5 · Count 3 · Average 411.5`, or just the address when the selection
+/// holds nothing.
+fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
+    let (start, end) = selection.rect();
+    if selection.is_single() {
+        // One cell has nothing to add up, and every other spreadsheet stays quiet about it.
+        return a1::format(None, start);
+    }
+    let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
+    // Clamped to the used extent first: a whole-column selection must not ask the evaluator
+    // to walk a million empty rows.
+    let Ok((rows, cols)) = app.used_extent(sheet) else {
+        return address;
+    };
+    let end = Pos::new(end.row.min(rows.saturating_sub(1)), end.col.min(cols.saturating_sub(1)));
+    if rows == 0 || cols == 0 || end.row < start.row || end.col < start.col {
+        return address;
+    }
+
+    let range = format!("[.{}:.{}]", a1::format(None, start), a1::format(None, end));
+    // Evaluated at a cell one past the used extent: a formula is evaluated *as if* it sat
+    // somewhere, and somewhere inside the range would be a circular reference.
+    let at = Pos::new(rows, 0);
+    let of = |formula: String| match app.preview(sheet, at, &formula) {
+        Ok(CellValue::Number(n)) => Some(n),
+        _ => None,
+    };
+    let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
+    if count == 0.0 {
+        return address;
+    }
+    let mut parts = vec![address, format!("Count {}", show(count))];
+    // Sum and Average of no numbers are not zero, they are nothing — AVERAGE says so with
+    // #DIV/0!, which is why both are read back as an optional number.
+    if let Some(sum) = of(format!("=SUM({range})"))
+        && let Some(average) = of(format!("=AVERAGE({range})"))
+    {
+        parts.insert(1, format!("Sum {}", show(sum)));
+        parts.push(format!("Average {}", show(average)));
+    }
+    parts.join("  ·  ")
+}
+
+fn show(n: f64) -> String {
+    sheet_core::formula::value::format_number(n)
 }
 
 /// The document's name, or what an unsaved one is called until it has one.

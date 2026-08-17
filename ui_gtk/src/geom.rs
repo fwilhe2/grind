@@ -150,6 +150,20 @@ impl GridGeom {
         first..(last + 1).min(MAX_COLS)
     }
 
+    /// The scroll position that brings a cell fully into view, given the content area's
+    /// size — unchanged on the axes where it already is.
+    ///
+    /// Pure, and tested, because "the active cell scrolled off the bottom" and "the view
+    /// jumps a row every keypress" are the same off-by-one seen from two sides.
+    pub fn scroll_into_view(&self, row: u32, col: u32, page_w: f64, page_h: f64) -> (f64, f64) {
+        let x = self.cols.x_of(col);
+        let y = self.y_of(row);
+        (
+            keep_in(self.scroll_x, x, self.cols.width_of(col), page_w),
+            keep_in(self.scroll_y, y, self.row_height, page_h),
+        )
+    }
+
     /// What is under a point in **widget** space.
     ///
     /// Nothing calls this yet — selection arrives with the keyboard and mouse milestone.
@@ -195,6 +209,19 @@ impl GridGeom {
             },
         }
     }
+}
+
+/// Move `scroll` the least it takes to show `start .. start + size` inside `page`.
+fn keep_in(scroll: f64, start: f64, size: f64, page: f64) -> f64 {
+    if start < scroll {
+        return start;
+    }
+    // A cell taller or wider than the view is shown from its top-left corner rather than
+    // its far edge, which is the reading order.
+    if start + size > scroll + page {
+        return (start + size - page).min(start).max(0.0);
+    }
+    scroll
 }
 
 #[cfg(test)]
@@ -296,6 +323,24 @@ mod tests {
             ..geom()
         };
         assert_eq!(bottom.visible_rows(124.0).end, MAX_ROWS);
+    }
+
+    /// Only as far as it has to, and never past the cell's own corner.
+    #[test]
+    fn scrolling_a_cell_into_view_moves_the_least_it_can() {
+        let g = GridGeom {
+            scroll_x: 0.0,
+            scroll_y: 100.0,
+            ..geom()
+        };
+        // Already inside: nothing moves.
+        assert_eq!(g.scroll_into_view(6, 1, 400.0, 100.0), (0.0, 100.0));
+        // Above the view: its top edge.
+        assert_eq!(g.scroll_into_view(2, 1, 400.0, 100.0).1, 40.0);
+        // Below it: just far enough that its bottom edge shows.
+        assert_eq!(g.scroll_into_view(10, 1, 400.0, 100.0).1, 120.0);
+        // Wider than the page: the left edge wins, or the cell is unreadable.
+        assert_eq!(g.scroll_into_view(6, 3, 50.0, 100.0).0, 240.0);
     }
 
     #[test]

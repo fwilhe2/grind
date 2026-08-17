@@ -588,6 +588,20 @@ core is missing something.
   widget. That is fine because the cost is bounded by the cells on screen, and it means the
   performance lever is text shaping (one reused `pango::Layout`, `ponytail:` noted) rather
   than damage tracking.
+- **`keymap.rs` is pure too**, and holds the selection as well as the keys: an anchor and an
+  active cell, plus every rule for moving them. `moved` takes an `occupied` closure rather
+  than an `App`, which is what keeps the *rule* headless-testable and the *reads* in the
+  widget. Ctrl+arrow bounds its scan by the **used extent** rather than by row 1048576 — the
+  same bound the scrollbar uses, and the reason Ctrl+Down in an empty column lands on data
+  rather than a million rows into nothing.
+- **A key the keymap does not claim returns `Propagation::Proceed`**, which is what leaves
+  the toolkit's bindings — and later the editor's input method — working. There is a test
+  that a Ctrl-modified key never also moves one cell.
+- **The status bar's aggregates are `App::preview` over generated formulas** (`SUM`,
+  `COUNTA`, `AVERAGE`), so what the bar says and what a cell would say cannot differ. The
+  range is clamped to the used extent first — a whole-column selection must not walk a
+  million rows — and evaluated at a cell one *past* it, because a formula evaluated inside
+  its own range is a circular reference.
 
 ### `cli/` — the `sheet` binary, and the parity ratchet
 
@@ -778,6 +792,11 @@ CLI-first as rule 4 requires: `core::a1` (C1), `formula::display` (C2) with loop
 half over the corpus, and `App::{enter, preview, clear_range, enter_range}` (C3–C6) reached
 by `sheet set --recalc`, `sheet eval`, `sheet clear <range>` and `sheet paste`.
 
-Next is M3 — selection and navigation in the grid (`keymap.rs`, header selection, Ctrl+arrows,
-status-bar aggregates). Then editing, clipboard and the formula UX; the wasm shell after
-that is the honest test of rule 5.
+**M3 is done too**: selection and navigation — `keymap.rs` (pure, tested), click and drag
+including whole columns and rows from the headers, Ctrl+arrows to the data edges, Ctrl+A,
+Home/End/PgUp/PgDn, scroll-into-view, and a status bar showing Sum · Count · Average of the
+selection.
+
+Next is M4 — editing: `state.rs`, the in-cell editor and formula bar over one shared buffer,
+commit through `App::enter`, undo/redo, the recalculation banners, sheet tabs and save. Then
+clipboard and the formula UX; the wasm shell after that is the honest test of rule 5.
