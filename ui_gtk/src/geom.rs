@@ -75,11 +75,6 @@ pub struct Sizes {
 }
 
 impl Sizes {
-    /// Every track the same, which is what a document that sizes nothing gets.
-    pub fn uniform(default: f64, count: u32) -> Self {
-        Self::new(default, count, Vec::new())
-    }
-
     /// `sizes` is taken in any order; ties keep the last one given.
     pub fn new(default: f64, count: u32, mut sizes: Vec<(u32, f64)>) -> Self {
         // Reversed first, so that a stable sort leaves the *last* entry given for an index at
@@ -172,11 +167,6 @@ pub struct GridGeom {
 const EDGE_GRAB: f64 = 4.0;
 
 impl GridGeom {
-    /// Content-space y of a row's top edge.
-    pub fn y_of(&self, row: u32) -> f64 {
-        self.rows.offset_of(row)
-    }
-
     /// The row containing a content-space y, clamped to the sheet.
     pub fn row_at(&self, y: f64) -> u32 {
         self.rows.at(y)
@@ -297,8 +287,8 @@ mod tests {
         GridGeom {
             header_w: 50.0,
             header_h: 24.0,
-            rows: Sizes::uniform(20.0, MAX_ROWS),
-            cols: Sizes::uniform(80.0, MAX_COLS),
+            rows: Sizes::new(20.0, MAX_ROWS, Vec::new()),
+            cols: Sizes::new(80.0, MAX_COLS, Vec::new()),
             scroll_x: 0.0,
             scroll_y: 0.0,
         }
@@ -447,7 +437,7 @@ mod tests {
     /// to replace it rather than pile up beside it.
     #[test]
     fn resizing_the_same_track_twice_keeps_the_last_size() {
-        let s = Sizes::uniform(80.0, 10).with(2, 30.0).with(2, 50.0);
+        let s = Sizes::new(80.0, 10, Vec::new()).with(2, 30.0).with(2, 50.0);
         assert_eq!(s.size_of(2), 50.0);
         assert_eq!(s.total(), 10.0 * 80.0 - 30.0);
     }

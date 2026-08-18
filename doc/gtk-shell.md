@@ -427,7 +427,7 @@ lint`, the loops, parity.
 | M5 | Clipboard — *done* | copy TSV / paste TSV via `gdk::Clipboard`, cut = copy + `clear_range`, `enter_range` under it | copy in the GUI → paste into LibreOffice, and back |
 | M6 | Formula UX — *done* | Point mode, F4, Tab memory, span coloring (day-one `gtk::Text` attributes spike), autocomplete (C9 lands here, core-first), signature hints, live preview | `=SUM(` + drag B2:B4 + `)` + Enter → colored, previewed, committed; one Ctrl+Z reverts edit + ripple |
 | M7 | Styles + formatting UI — *done* | C7 getters (`style_at`, `format_at`, `sheet style\|format --show`) + C8 viewport styles, styled grid rendering (background, borders, weight/slant/size, both alignments, wrap), the format strip (`formatting.rs`), whose colour buttons offer `style::PALETTE` — the clrs.cc palette, in the core so `sheet style --color navy` writes the same attribute — with a dialog behind *Custom…* and *Automatic* to remove the colour | GUI- and CLI-formatted documents identical for the same operations — both build their `Format` from `numfmt::preset` and their `CellStyle` field by field, and `Format::preset_params`/`is_preset` are in the core so neither shell derives "how many decimals is this" for itself |
-| M8 | Widths & heights | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
+| M8 | Widths & heights — *done* | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
 | M9 | Packaging & polish | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
 
 ## The gaps, written down
@@ -446,14 +446,16 @@ unmerged) · full grid accessibility · typing during a background recalc · loc
 separators. CSV, sort/filter, find/replace, the chart and print keep their existing
 not-doing rows and gates.
 
-M7 added four of its own, each named where it lives: a wrapped cell clips at the row height
-(every row is one line tall until M8 stores heights, `grid.rs`'s `draw_cells`) and a font
-size larger than the row clips for the same reason · a border's *line style* is ignored, so
-`dashed` and `double` draw solid (`draw_borders`) · the in-cell editor draws in the widget's
-font rather than the cell's, because `gtk::Text` is a real child and restyling it per cell is
-a second font path · formatting a **whole column** formats its used part rather than putting
-a default style on the column, which needs `table:default-cell-style-name` to become
-something the model can write (`Grid::target`, and M8's neighbourhood).
+M7 added four of its own, each named where it lives: a wrapped cell clips at its row's height
+and a font size larger than the row clips for the same reason — M8 gives every row a real
+height (dragged, or set with `sheet height`), but nothing yet *grows* one to fit a wrapped
+cell or an oversized font, which is a layout pass the geometry has no model for
+(`grid.rs`'s `draw_cells`, `font`) · a border's *line style* is ignored, so `dashed` and
+`double` draw solid (`draw_borders`) · the in-cell editor draws in the widget's font rather
+than the cell's, because `gtk::Text` is a real child and restyling it per cell is a second
+font path · formatting a **whole column** formats its used part rather than putting a
+default style on the column, which needs `table:default-cell-style-name` to become
+something the model can write (`Grid::target`).
 
 ## Verification
 

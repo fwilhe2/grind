@@ -1411,6 +1411,17 @@ mod imp {
             self.obj().queue_draw();
         }
 
+        /// Double-clicking a row boundary: back to the default height, `autofit`'s doc
+        /// comment explains why a row has no measured equivalent.
+        fn clear_height(&self, row: u32) {
+            let Some(app) = self.app.borrow().clone() else { return };
+            let sheet = self.sheet.get();
+            if let Err(error) = app.set_row_height(sheet, row..row + 1, None) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
         /// Press: a cell, or a whole column or row from its header.
         fn press(&self, x: f64, y: f64, extend: bool) {
             let hit = self.geom().hit(x, y);
@@ -1758,9 +1769,10 @@ mod imp {
 
                     let cell = geom.cell_rect(row, col);
                     // ponytail: a wrapped cell is drawn inside its own width and clips at the
-                    // row height, because rows are all one line tall until M8 stores heights.
-                    // Wrapping is still worth honouring: two words on two lines read as two
-                    // words, where one elided line reads as a truncated value.
+                    // row's height — a real one since M8, but nothing grows it to fit what
+                    // wraps into it. Wrapping is still worth honouring: two words on two
+                    // lines read as two words, where one elided line reads as a truncated
+                    // value.
                     layout.set_width(match wrapping {
                         true => ((cell.w - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
                         false => -1,
@@ -1901,9 +1913,9 @@ mod imp {
     /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
     /// nothing here to set a family from.
     ///
-    /// ponytail: a size larger than the row is clipped, because every row is one line tall
-    /// until M8 stores heights. The alternative — deriving row height from the tallest styled
-    /// cell — is a layout pass the geometry has no model for yet.
+    /// ponytail: a size larger than the row is clipped. The alternative — deriving row
+    /// height from the tallest styled cell — is a layout pass the geometry has no model for
+    /// yet; M8 gives a row a real height, but nothing grows one automatically.
     fn font(style: &sheet_core::style::CellStyle) -> Option<pango::AttrList> {
         let attrs = pango::AttrList::new();
         let mut any = false;
