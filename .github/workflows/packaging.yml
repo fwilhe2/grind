@@ -14,7 +14,7 @@ jobs:
       - run: cargo install cargo-deb --locked
       - run: cargo deb -p sheet-cli
       - run: cargo deb -p sheet-gtk
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa9 # v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: deb-packages
           path: target/debian/*.deb
@@ -28,7 +28,7 @@ jobs:
       - run: cargo build --release -p sheet-cli -p sheet-gtk
       - run: cargo generate-rpm -p cli
       - run: cargo generate-rpm -p ui_gtk
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa9 # v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rpm-packages
           path: target/generate-rpm/*.rpm
