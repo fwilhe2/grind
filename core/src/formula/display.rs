@@ -140,12 +140,20 @@ pub fn from_display(text: &str) -> Result<String, DisplayError> {
         if span.range.end <= body_start {
             continue;
         }
-        emit(&mut out, &mut origin, &text[cursor..span.range.start], cursor, true);
+        emit(
+            &mut out,
+            &mut origin,
+            &text[cursor..span.range.start],
+            cursor,
+            true,
+        );
         let source = &text[span.range.clone()];
         let at = span.range.start;
         match span.kind {
             // Already bracketed: an external-source reference, left exactly as it stands.
-            TokenKind::Ref if source.starts_with('[') => emit(&mut out, &mut origin, source, at, true),
+            TokenKind::Ref if source.starts_with('[') => {
+                emit(&mut out, &mut origin, source, at, true)
+            }
             TokenKind::Ref => {
                 let reference = a1::parse(source).map_err(|e| DisplayError {
                     message: e.to_string(),
@@ -154,7 +162,13 @@ pub fn from_display(text: &str) -> Result<String, DisplayError> {
                 emit(&mut out, &mut origin, &reference.to_string(), at, false);
             }
             TokenKind::Bool => {
-                emit(&mut out, &mut origin, &format!("{}()", source.to_uppercase()), at, false);
+                emit(
+                    &mut out,
+                    &mut origin,
+                    &format!("{}()", source.to_uppercase()),
+                    at,
+                    false,
+                );
             }
             _ => emit(&mut out, &mut origin, source, at, true),
         }
@@ -236,7 +250,9 @@ pub fn spans(text: &str) -> Vec<Span> {
                 } else {
                     let end = plain_ident(&chars, i);
                     let word: String = chars[start..end].iter().map(|(_, c)| *c).collect();
-                    let kind = match word.eq_ignore_ascii_case("TRUE") || word.eq_ignore_ascii_case("FALSE") {
+                    let kind = match word.eq_ignore_ascii_case("TRUE")
+                        || word.eq_ignore_ascii_case("FALSE")
+                    {
                         true => TokenKind::Bool,
                         false => TokenKind::Name,
                     };
@@ -472,7 +488,10 @@ mod tests {
         // Excel's exact collision: LOG10 is a function and a cell address.
         assert_eq!(from_display("=LOG10(2)").unwrap(), "=LOG10(2)");
         assert_eq!(from_display("=LOG10").unwrap(), "=[.LOG10]");
-        assert_eq!(from_display("=COM.MICROSOFT.X(1)").unwrap(), "=COM.MICROSOFT.X(1)");
+        assert_eq!(
+            from_display("=COM.MICROSOFT.X(1)").unwrap(),
+            "=COM.MICROSOFT.X(1)"
+        );
     }
 
     #[test]
@@ -525,7 +544,10 @@ mod tests {
         // §6.15.9, §6.15.2: TRUE and FALSE are functions, and every other spreadsheet lets
         // you type them without the parentheses.
         assert_eq!(from_display("=TRUE").unwrap(), "=TRUE()");
-        assert_eq!(from_display("=IF(A1;true;FALSE)").unwrap(), "=IF([.A1];TRUE();FALSE())");
+        assert_eq!(
+            from_display("=IF(A1;true;FALSE)").unwrap(),
+            "=IF([.A1];TRUE();FALSE())"
+        );
     }
 
     #[test]
@@ -544,11 +566,18 @@ mod tests {
     fn what_will_not_parse_says_where() {
         // §5.6 allows an empty parameter, so the broken formula has to be really broken.
         let e = from_display("=SUM(B2))").unwrap_err();
-        assert_eq!(&"=SUM(B2))"[e.at..], ")", "the caret lands on the trailing `)`");
+        assert_eq!(
+            &"=SUM(B2))"[e.at..],
+            ")",
+            "the caret lands on the trailing `)`"
+        );
         // The offset is a *byte* offset into the display text, past a multi-byte name.
         let text = "=SUMÅÅ(1))";
         let e = from_display(text).unwrap_err();
-        assert!(text.is_char_boundary(e.at), "a byte offset lands on a char boundary");
+        assert!(
+            text.is_char_boundary(e.at),
+            "a byte offset lands on a char boundary"
+        );
         assert_eq!(&text[e.at..], ")");
     }
 
@@ -556,7 +585,10 @@ mod tests {
     fn spans_are_byte_ranges_the_editor_can_colour() {
         let text = "=SUM(B2:B4;Data.A1)";
         let found = spans(text);
-        let kinds: Vec<_> = found.iter().map(|s| (&text[s.range.clone()], s.kind)).collect();
+        let kinds: Vec<_> = found
+            .iter()
+            .map(|s| (&text[s.range.clone()], s.kind))
+            .collect();
         assert_eq!(
             kinds,
             [

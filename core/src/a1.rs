@@ -45,7 +45,9 @@ pub fn parse(addr: &str) -> Result<Reference> {
     let tokens = lex::lex(&source).map_err(|e| Error::Formula(format!("{addr}: {e}")))?;
     match tokens.as_slice() {
         [Token::Ref(reference)] => Ok(reference.clone()),
-        _ => Err(Error::Formula(format!("{addr}: not a cell address or range"))),
+        _ => Err(Error::Formula(format!(
+            "{addr}: not a cell address or range"
+        ))),
     }
 }
 
@@ -159,7 +161,10 @@ pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
     }
     let default = app.sheet_name(0)?;
     let mut out = reference.clone();
-    for end in [Some(&mut out.start), out.end.as_mut()].into_iter().flatten() {
+    for end in [Some(&mut out.start), out.end.as_mut()]
+        .into_iter()
+        .flatten()
+    {
         if end.sheet.is_none() {
             end.sheet = Some(default.clone());
         }

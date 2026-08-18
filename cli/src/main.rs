@@ -19,6 +19,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use sheet_core::a1;
+use sheet_core::formula::lex::column_name;
 use sheet_core::numfmt;
 use sheet_core::style::{self, CellStyle};
 use sheet_core::{App, CellValue, Pos, RecalcMode, Session};
@@ -261,6 +262,35 @@ enum Command {
         /// Border on every edge, as width, line and colour: "0.5pt solid navy"
         #[arg(long, value_parser = border)]
         border: Option<String>,
+    },
+
+    /// Set the width of a column or a run of columns (§5.4)
+    ///
+    /// With no length, prints the width of every sized column in the range — nothing at all
+    /// when they are all at the shell's default, which is what a script tests for.
+    Width {
+        file: PathBuf,
+        /// A column or a run of them: B, B:D, or Data.B:D
+        columns: String,
+        /// An ODF length: 2.5cm, 64pt, 0.9in. Omit to print.
+        length: Option<String>,
+        /// Back to the default width
+        #[arg(long, conflicts_with = "length")]
+        clear: bool,
+    },
+
+    /// Set the height of a row or a run of rows (§5.4)
+    ///
+    /// The twin of `width`, addressed by row number: 3, 3:7, or Data.3:7.
+    Height {
+        file: PathBuf,
+        /// A row or a run of them: 3, 3:7, or Data.3:7
+        rows: String,
+        /// An ODF length: 0.5cm, 14pt. Omit to print.
+        length: Option<String>,
+        /// Back to the default height
+        #[arg(long, conflicts_with = "length")]
+        clear: bool,
     },
 
     /// Define, redefine or delete a named range or expression (§5.11)
@@ -575,6 +605,48 @@ fn run(cli: &Cli) -> Result<Report, String> {
             want.set_border(border.clone());
             let changed = app
                 .set_style(sheet, start, end, Some(want))
+                .say()?;
+            finish(&app, cli, file, changed > 0)
+        }
+
+        Command::Width {
+            file,
+            columns,
+            length,
+            clear,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = tracks(&app, columns)?;
+            let range = start.col..end.col + 1;
+            let Some(length) = length.clone().or(clear.then(String::new)) else {
+                let widths = app.col_widths(sheet).say()?;
+                return Ok(lines(widths.into_iter().filter_map(|(col, w)| {
+                    range.contains(&col).then(|| (column_name(col), w))
+                })));
+            };
+            let changed = app
+                .set_col_width(sheet, range, (!length.is_empty()).then_some(length))
+                .say()?;
+            finish(&app, cli, file, changed > 0)
+        }
+
+        Command::Height {
+            file,
+            rows,
+            length,
+            clear,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = tracks(&app, rows)?;
+            let range = start.row..end.row + 1;
+            let Some(length) = length.clone().or(clear.then(String::new)) else {
+                let heights = app.row_heights(sheet).say()?;
+                return Ok(lines(heights.into_iter().filter_map(|(row, h)| {
+                    range.contains(&row).then(|| ((row + 1).to_string(), h))
+                })));
+            };
+            let changed = app
+                .set_row_height(sheet, range, (!length.is_empty()).then_some(length))
                 .say()?;
             finish(&app, cli, file, changed > 0)
         }
@@ -976,6 +1048,27 @@ fn cells(
         cells: out,
         rows: rows.end - rows.start,
         cols: cols.end - cols.start,
+    })
+}
+
+/// A run of columns (`B`, `B:D`, `Data.B:D`) or of rows (`3`, `3:7`) as the sheet and the
+/// corners `core::a1` resolves it to.
+///
+/// A single track is spelled as a range of one and goes down the same path, so this stays
+/// two lines and does no index arithmetic — §5.8's whole-column and whole-row forms are
+/// already what a lone `B` or `3` means, and the only `+ 1` in the workspace stays in `a1`.
+fn tracks(app: &App, spec: &str) -> Result<(usize, Pos, Pos), String> {
+    let spec = match spec.contains(':') {
+        true => spec.to_owned(),
+        false => format!("{spec}:{spec}"),
+    };
+    a1::resolve(app, &a1::parse(&spec).say()?).say()
+}
+
+/// `key<TAB>value` lines, the shape every `--show` prints in.
+fn lines(rows: impl Iterator<Item = (String, String)>) -> Report {
+    Report::Text(TextReport {
+        lines: rows.map(|(key, value)| format!("{key}\t{value}")).collect(),
     })
 }
 

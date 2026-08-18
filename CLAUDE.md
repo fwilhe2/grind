@@ -945,6 +945,16 @@ parameters. It brought C7 (`App::{style_at, format_at}`, reached by `sheet style
 inventing: `Format::{preset_params, is_preset}`, `Locale::tag`, and `style::PALETTE` — the
 clrs.cc colours a shell offers by default, checked against `custom-colors.fods`.
 
-Next is M8 — column widths and row heights, which is also what would let a wrapped cell and
-an oversized font stop clipping — then M9's packaging. The wasm shell after that is the honest
-test of rule 5.
+**M8 is done**: column widths and row heights (§5.4). `App::{set_col_width, set_row_height,
+col_widths, row_heights}` (C10), reached by `sheet width|height`; the reader keeps a
+`table-column`/`table-row` style's size verbatim the way every other ODF length is kept, the
+writer pools distinct sizes the same way it pools formats, and a sized track past the used
+extent is still declared, since widening an empty column is ordinary. The GTK shell drags a
+header edge to resize, double-clicks a column edge to autofit to its widest cell (the shell
+measures, the core stores) and a row edge to clear back to the default — `geom.rs`'s `Sizes`
+is prefix sums over the document's own widths and heights rather than a uniform grid. What it
+does not do: grow a row to fit a wrapped cell or an oversized font, which stays a clip
+(`grid.rs`'s `ponytail:` notes) — that is a text-layout pass the geometry has no model for,
+not a widths-and-heights gap.
+
+Next is M9's packaging. The wasm shell after that is the honest test of rule 5.

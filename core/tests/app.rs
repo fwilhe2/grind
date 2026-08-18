@@ -518,7 +518,10 @@ fn a_deleted_sheet_survives_a_session_round_trip() {
 
     assert!(restored.undo());
     assert_eq!(restored.sheet_count(), 2);
-    assert_eq!(restored.get(1, p(0, 0)).unwrap(), CellValue::Text("kept".into()));
+    assert_eq!(
+        restored.get(1, p(0, 0)).unwrap(),
+        CellValue::Text("kept".into())
+    );
 }
 
 // --- the typing rule, and what a shell needs behind it (doc/gtk-shell.md C3–C6) ---
@@ -533,7 +536,12 @@ fn enter_reads_what_was_typed_the_way_every_spreadsheet_does() {
         (1, "TRUE", Entered::Bool, CellValue::Bool(true)),
         (2, "hello", Entered::Text, CellValue::Text("hello".into())),
         // The `'` rule: without it neither of these two cells could hold what it holds.
-        (3, "'=SUM(A1)", Entered::Text, CellValue::Text("=SUM(A1)".into())),
+        (
+            3,
+            "'=SUM(A1)",
+            Entered::Text,
+            CellValue::Text("=SUM(A1)".into()),
+        ),
         (4, "'123", Entered::Text, CellValue::Text("123".into())),
         (5, "", Entered::Cleared, CellValue::Empty),
     ] {
@@ -546,7 +554,10 @@ fn enter_reads_what_was_typed_the_way_every_spreadsheet_does() {
     let outcome = app.enter(0, p(6, 0), "=[.A1]*2", RecalcMode::No).unwrap();
     assert_eq!(outcome.kind, Entered::Formula);
     assert_eq!(app.get(0, p(6, 0)).unwrap(), CellValue::Number(25.0));
-    assert_eq!(app.formula(0, p(6, 0)).unwrap().as_deref(), Some("=[.A1]*2"));
+    assert_eq!(
+        app.formula(0, p(6, 0)).unwrap().as_deref(),
+        Some("=[.A1]*2")
+    );
 }
 
 /// Typing a value over a formula has to remove the formula. Two actions — set the value,
@@ -575,7 +586,13 @@ fn an_edit_and_its_ripple_undo_together() {
     assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
 
     let outcome = app.enter(0, p(0, 0), "5", RecalcMode::Document).unwrap();
-    assert_eq!(outcome.recalc.unwrap(), Recalc { changed: 1, spoiled: 0 });
+    assert_eq!(
+        outcome.recalc.unwrap(),
+        Recalc {
+            changed: 1,
+            spoiled: 0
+        }
+    );
     assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(50.0));
 
     assert!(app.undo());
@@ -596,14 +613,22 @@ fn an_edit_and_its_ripple_undo_together() {
 fn an_edit_that_would_spoil_a_cell_still_commits_without_recalculating() {
     let app = App::new();
     app.set_cell(0, p(0, 0), 5.0).unwrap();
-    app.set_formula(0, p(1, 0), "=SUBTOTAL(9;[.A1:.A1])").unwrap();
+    app.set_formula(0, p(1, 0), "=SUBTOTAL(9;[.A1:.A1])")
+        .unwrap();
     app.set_cell(0, p(1, 0), 5.0).unwrap(); // a cached value from a better evaluator
 
     let outcome = app.enter(0, p(0, 0), "6", RecalcMode::Document).unwrap();
     let recalc = outcome.recalc.unwrap();
     assert_eq!(recalc.spoiled, 1);
-    assert!(recalc.changed > 0, "and it says how much is now out of date");
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(6.0), "the edit stands");
+    assert!(
+        recalc.changed > 0,
+        "and it says how much is now out of date"
+    );
+    assert_eq!(
+        app.get(0, p(0, 0)).unwrap(),
+        CellValue::Number(6.0),
+        "the edit stands"
+    );
     assert_eq!(
         app.get(0, p(1, 0)).unwrap(),
         CellValue::Number(5.0),
@@ -625,12 +650,22 @@ fn preview_writes_nothing_notifies_nobody_and_records_no_history() {
         CellValue::Number(12.0)
     );
     assert_eq!(counter.0.load(Ordering::SeqCst), 0, "no observer tick");
-    assert!(app.undo() && !app.can_undo(), "only the one edit is in the history");
-    assert_eq!(app.get(0, p(9, 9)).unwrap(), CellValue::Empty, "nothing stored");
+    assert!(
+        app.undo() && !app.can_undo(),
+        "only the one edit is in the history"
+    );
+    assert_eq!(
+        app.get(0, p(9, 9)).unwrap(),
+        CellValue::Empty,
+        "nothing stored"
+    );
 
     // Only a read lock: a second reader can hold one at the same time.
     let held = app.get_viewport(0, 0..1, 0..1).unwrap();
-    assert_eq!(app.preview(0, p(0, 1), "=1+1").unwrap(), CellValue::Number(2.0));
+    assert_eq!(
+        app.preview(0, p(0, 1), "=1+1").unwrap(),
+        CellValue::Number(2.0)
+    );
     drop(held);
 }
 
@@ -641,14 +676,24 @@ fn clearing_a_range_is_one_undo_step_and_takes_the_formulas_with_it() {
     app.set_formula(0, p(1, 1), "=[.A1]+1").unwrap();
     app.set_cell(0, p(3, 3), "far away").unwrap();
 
-    assert_eq!(app.clear_range(0, p(0, 0), p(2, 2)).unwrap(), 2, "only the two");
+    assert_eq!(
+        app.clear_range(0, p(0, 0), p(2, 2)).unwrap(),
+        2,
+        "only the two"
+    );
     assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Empty);
     assert_eq!(app.formula(0, p(1, 1)).unwrap(), None);
-    assert_eq!(app.get(0, p(3, 3)).unwrap(), CellValue::Text("far away".into()));
+    assert_eq!(
+        app.get(0, p(3, 3)).unwrap(),
+        CellValue::Text("far away".into())
+    );
 
     assert!(app.undo());
     assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
-    assert_eq!(app.formula(0, p(1, 1)).unwrap().as_deref(), Some("=[.A1]+1"));
+    assert_eq!(
+        app.formula(0, p(1, 1)).unwrap().as_deref(),
+        Some("=[.A1]+1")
+    );
 
     // A rectangle nobody could mean is refused by size rather than served slowly.
     assert!(app.clear_range(0, p(0, 0), p(1_000_000, 100)).is_err());
@@ -703,11 +748,18 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
             false => shown.clone(),
         };
         app.enter(0, p(row, 0), &typed, RecalcMode::No).unwrap();
-        assert_eq!(app.get(0, p(row, 0)).unwrap(), before, "{input} showed as {shown:?}");
+        assert_eq!(
+            app.get(0, p(row, 0)).unwrap(),
+            before,
+            "{input} showed as {shown:?}"
+        );
     }
     // A formula is shown the way a formula bar shows one, and stored the way ODF does.
     assert_eq!(app.input_text(0, p(6, 0)).unwrap(), "=A1*2");
-    assert_eq!(app.formula(0, p(6, 0)).unwrap().as_deref(), Some("=[.A1]*2"));
+    assert_eq!(
+        app.formula(0, p(6, 0)).unwrap().as_deref(),
+        Some("=[.A1]*2")
+    );
 }
 
 /// C7 and C8 together: what a toolbar does. A bold button is a read, a field, and a write —
@@ -716,7 +768,11 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
 fn a_style_reads_back_and_rides_in_the_viewport() {
     let app = App::new();
     app.set_cell(0, p(0, 0), 1.5).unwrap();
-    assert_eq!(app.style_at(0, p(0, 0)).unwrap(), None, "a plain cell has no style");
+    assert_eq!(
+        app.style_at(0, p(0, 0)).unwrap(),
+        None,
+        "a plain cell has no style"
+    );
     assert_eq!(app.format_at(0, p(0, 0)).unwrap(), None);
 
     // Read, merge, write — the flow `set_style`'s docs promise and the one a bold toggle is.
@@ -732,19 +788,34 @@ fn a_style_reads_back_and_rides_in_the_viewport() {
         0,
         p(0, 0),
         p(0, 0),
-        Some(sheet_core::numfmt::preset(sheet_core::numfmt::Kind::Percentage, 1, false, "")),
+        Some(sheet_core::numfmt::preset(
+            sheet_core::numfmt::Kind::Percentage,
+            1,
+            false,
+            "",
+        )),
     )
     .unwrap();
     let format = app.format_at(0, p(0, 0)).unwrap().unwrap();
     assert_eq!(format.kind, sheet_core::numfmt::Kind::Percentage);
 
     let v = app.get_viewport(0, 0..2, 0..2).unwrap();
-    let seen = v.style(0, 0).expect("the styled cell carries its style into the viewport");
+    let seen = v
+        .style(0, 0)
+        .expect("the styled cell carries its style into the viewport");
     assert_eq!(seen.font_weight.as_deref(), Some("bold"));
     assert_eq!(seen.background.as_deref(), Some("#ffff00"));
     assert_eq!(v.style(1, 1), None, "an unstyled cell");
-    assert_eq!(v.style(9, 9), None, "and one outside the viewport, which needs no distinction");
-    assert_eq!(v.text(0, 0), Some("150.0%"), "the format is still what decides the text");
+    assert_eq!(
+        v.style(9, 9),
+        None,
+        "and one outside the viewport, which needs no distinction"
+    );
+    assert_eq!(
+        v.text(0, 0),
+        Some("150.0%"),
+        "the format is still what decides the text"
+    );
 
     // Clearing is the same call with `None`, and the viewport forgets it too.
     app.set_style(0, p(0, 0), p(0, 0), None).unwrap();

@@ -29,8 +29,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::formula::date;
-use crate::locale::{self, Locale};
 use crate::formula::value::format_number;
+use crate::locale::{self, Locale};
 use crate::model::CellValue;
 
 /// Which `number:*-style` element this is.
@@ -67,17 +67,33 @@ pub enum Part {
     /// `number:currency-symbol` — the symbol is the element's content.
     Currency(String),
     /// `number:year`, long being four digits.
-    Year { long: bool },
+    Year {
+        long: bool,
+    },
     /// `number:month`; `textual` is `number:textual="true"`, a name rather than a number.
-    Month { long: bool, textual: bool },
+    Month {
+        long: bool,
+        textual: bool,
+    },
     /// `number:day`, long being two digits.
-    Day { long: bool },
+    Day {
+        long: bool,
+    },
     /// `number:day-of-week`, long being the full name.
-    DayOfWeek { long: bool },
-    Hours { long: bool },
-    Minutes { long: bool },
+    DayOfWeek {
+        long: bool,
+    },
+    Hours {
+        long: bool,
+    },
+    Minutes {
+        long: bool,
+    },
     /// `number:seconds`, with `number:decimal-places` for sub-second precision.
-    Seconds { long: bool, decimals: u8 },
+    Seconds {
+        long: bool,
+        decimals: u8,
+    },
     /// `number:am-pm` — its presence is what makes the hours a 12-hour clock.
     AmPm,
     /// `number:boolean` — the logical value as a word.
@@ -320,8 +336,7 @@ impl Format {
         // `-` in the negative branch — and adding one on top renders `--19.99`.
         let mut out = String::new();
         let signed = self.maps.is_empty() && sign_carrying(&self.parts);
-        if scaled < 0.0 && signed && !matches!(self.kind, Kind::Date | Kind::Time | Kind::Boolean)
-        {
+        if scaled < 0.0 && signed && !matches!(self.kind, Kind::Date | Kind::Time | Kind::Boolean) {
             out.push('-');
         }
 
@@ -380,7 +395,9 @@ impl Format {
                 Part::Seconds { long, decimals } => {
                     let exact = (n - n.floor()) * 86_400.0;
                     let s = exact - (exact / 60.0).floor() * 60.0;
-                    let width = usize::from(*long) + 1 + usize::from(*decimals > 0)
+                    let width = usize::from(*long)
+                        + 1
+                        + usize::from(*decimals > 0)
                         + usize::from(*decimals);
                     out.push_str(&format!(
                         "{s:0width$.decimals$}",
@@ -553,7 +570,11 @@ pub fn datetime_preset() -> Format {
 /// This is where "a date prints as a date" comes from without any style in the document:
 /// the value type is enough (§4.3.3), and the spelling is the ISO one the reader accepts,
 /// so what a shell shows can always be typed back in.
-pub fn general(value: &CellValue, kind: Option<crate::model::NumberKind>, null_date: i64) -> String {
+pub fn general(
+    value: &CellValue,
+    kind: Option<crate::model::NumberKind>,
+    null_date: i64,
+) -> String {
     match (value, kind) {
         (CellValue::Number(n), Some(crate::model::NumberKind::Date)) => {
             let (y, m, d) = date::ymd(*n, null_date);
@@ -651,7 +672,10 @@ mod tests {
         assert_eq!(render(&german, 1234.5), "1.234,50");
         assert_eq!(render(&german, -1234.5), "-1.234,50");
         // A locale the table does not know keeps the default separators rather than failing.
-        assert_eq!(render(&format.in_locale(Locale::parse("zz")), 1234.5), "1,234.50");
+        assert_eq!(
+            render(&format.in_locale(Locale::parse("zz")), 1234.5),
+            "1,234.50"
+        );
     }
 
     #[test]
@@ -765,8 +789,14 @@ mod tests {
             Some((Op::Ge, "0".to_owned()))
         );
         // Two-character operators must win over their first character.
-        assert_eq!(parse_condition("value()<>0"), Some((Op::Ne, "0".to_owned())));
-        assert_eq!(parse_condition("value()<-1.5"), Some((Op::Lt, "-1.5".to_owned())));
+        assert_eq!(
+            parse_condition("value()<>0"),
+            Some((Op::Ne, "0".to_owned()))
+        );
+        assert_eq!(
+            parse_condition("value()<-1.5"),
+            Some((Op::Lt, "-1.5".to_owned()))
+        );
         assert_eq!(parse_condition("cellcontent()>0"), None);
         assert_eq!(parse_condition("value()"), None);
     }

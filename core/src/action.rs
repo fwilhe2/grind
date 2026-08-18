@@ -48,6 +48,22 @@ pub enum Action {
         pos: Pos,
         style: Option<Box<CellStyle>>,
     },
+    /// A column's `style:column-width`, `None` returning it to the default (§5.4).
+    ///
+    /// A track rather than a cell, so it has no [`Pos`] — and its own action rather than a
+    /// flag on [`Action::SetStyle`] because a column's width and a cell's look are two
+    /// different `style:style` families.
+    SetColWidth {
+        sheet: usize,
+        col: u32,
+        width: Option<String>,
+    },
+    /// A row's `style:row-height` — the twin of [`Action::SetColWidth`].
+    SetRowHeight {
+        sheet: usize,
+        row: u32,
+        height: Option<String>,
+    },
     /// A named expression (§5.11), `None` deleting it.
     ///
     /// Document-level rather than per-cell, which is the one thing that makes it unlike
@@ -138,6 +154,26 @@ impl Document {
                     style: previous,
                 })
             }
+            Action::SetColWidth { sheet, col, width } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.col_width(col).map(str::to_owned);
+                s.set_col_width(col, width);
+                Some(Action::SetColWidth {
+                    sheet,
+                    col,
+                    width: previous,
+                })
+            }
+            Action::SetRowHeight { sheet, row, height } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.row_height(row).map(str::to_owned);
+                s.set_row_height(row, height);
+                Some(Action::SetRowHeight {
+                    sheet,
+                    row,
+                    height: previous,
+                })
+            }
             Action::SetName { name, expression } => {
                 let key = name.to_lowercase();
                 let previous = match expression {
@@ -221,12 +257,19 @@ impl Document {
             // R6's splicing writer does not touch. Left unsaid, a new name would be dropped
             // on the next save — the document's bytes would come back with the cells edited
             // and the name gone.
+            // Not a cell either: a track style lives in `office:automatic-styles` and is
+            // named from a `<table:table-column>`, neither of which the splice touches.
+            Action::SetColWidth { .. } | Action::SetRowHeight { .. } => {
+                self.edits.only_values = false
+            }
             Action::SetName { .. } => self.edits.only_values = false,
             // Not a cell either, and worse: adding or removing a sheet shifts every later
             // index, so the `(sheet, pos)` keys already in `cells` would name the wrong
             // sheet. Regenerating is what makes that harmless — the splice map is never
             // consulted again.
-            Action::InsertSheet { .. } | Action::RemoveSheet { .. } | Action::RenameSheet { .. } => {
+            Action::InsertSheet { .. }
+            | Action::RemoveSheet { .. }
+            | Action::RenameSheet { .. } => {
                 self.edits.only_values = false;
             }
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
@@ -239,7 +282,9 @@ impl Document {
             Action::SetCell { sheet, .. }
             | Action::SetFormula { sheet, .. }
             | Action::SetFormat { sheet, .. }
-            | Action::SetStyle { sheet, .. } => self.sheet(*sheet).is_some(),
+            | Action::SetStyle { sheet, .. }
+            | Action::SetColWidth { sheet, .. }
+            | Action::SetRowHeight { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names are document-level, so there is no sheet index to be wrong about.
             Action::SetName { .. } => true,
             // One past the end is where a sheet is appended, so an insert is checked with

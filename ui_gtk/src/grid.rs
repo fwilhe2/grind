@@ -38,8 +38,20 @@ use gtk::glib;
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 use sheet_core::{App, Pos};
 
-use crate::geom::{ColWidths, GridGeom, MAX_COLS, MAX_ROWS};
+use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::Selection;
+
+/// Pixels to an ODF millimetre.
+///
+/// A length in a document is physical (§5.4) and a widget is not, so something has to
+/// choose. 96 dpi is the toolkit's own notional density — GTK scales the whole widget for a
+/// HiDPI display on top of this, so a column set to 2.5cm is 2.5cm on a correctly configured
+/// screen and consistent everywhere else.
+const PX_PER_MM: f64 = 96.0 / 25.4;
+
+/// The narrowest a drag may make a track. Zero is legal in ODF and means *hidden*, which is
+/// a feature with its own UI rather than something to arrive at by dragging past the edge.
+const MIN_TRACK: f64 = 6.0;
 
 glib::wrapper! {
     pub struct Grid(ObjectSubclass<imp::Grid>)
@@ -202,6 +214,7 @@ mod imp {
 
     use sheet_core::RecalcMode;
     use sheet_core::formula::display;
+    use sheet_core::style;
 
     use crate::geom::{Hit, Rect};
     use crate::keymap::{self, Action, Dir, Extent, Key, Mods};
@@ -288,6 +301,9 @@ mod imp {
         /// What a drag started on, so that dragging across headers selects whole columns
         /// rather than the cells the pointer happens to pass over.
         pub drag: Cell<Option<Hit>>,
+        /// A track being resized, in pixels — presentation state until the pointer is
+        /// released, at which point it becomes one core write and one undo entry.
+        pub resize: Cell<Option<Resize>>,
         pub on_selection: RefCell<Vec<SelectionHook>>,
         pub on_notice: RefCell<Vec<NoticeHook>>,
         pub on_editing: RefCell<Vec<EditingHook>>,
@@ -320,6 +336,14 @@ mod imp {
         pub completion: OnceCell<crate::formula_ux::Completion>,
     }
 
+    /// A column or row being dragged wider.
+    #[derive(Clone, Copy, Debug)]
+    pub struct Resize {
+        /// [`Hit::ColEdge`] or [`Hit::RowEdge`] — which boundary was grabbed.
+        pub track: Hit,
+        pub size: f64,
+    }
+
     /// A reference being pointed at.
     #[derive(Clone, Debug)]
     pub struct Pending {
@@ -343,6 +367,7 @@ mod imp {
                 layout: RefCell::new(None),
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
+                resize: Cell::new(None),
                 on_selection: RefCell::new(Vec::new()),
                 on_notice: RefCell::new(Vec::new()),
                 on_editing: RefCell::new(Vec::new()),
@@ -484,9 +509,16 @@ mod imp {
             click.connect_pressed(glib::clone!(
                 #[weak(rename_to = grid)]
                 widget,
-                move |_, presses, _, _| {
-                    if presses == 2 {
-                        grid.imp().begin(Seed::Cell, true);
+                move |_, presses, x, y| {
+                    if presses != 2 {
+                        return;
+                    }
+                    // On a boundary the second click is a fit, not an edit — the boundary is
+                    // in the header band, where there is nothing to type into anyway.
+                    match grid.imp().geom().hit(x, y) {
+                        Hit::ColEdge(col) => grid.imp().autofit(col),
+                        Hit::RowEdge(row) => grid.imp().clear_height(row),
+                        _ => grid.imp().begin(Seed::Cell, true),
                     }
                 }
             ));
@@ -516,9 +548,29 @@ mod imp {
             drag.connect_drag_end(glib::clone!(
                 #[weak(rename_to = grid)]
                 widget,
-                move |_, _, _| grid.imp().drag.set(None)
+                move |_, _, _| {
+                    grid.imp().drag.set(None);
+                    grid.imp().commit_resize();
+                }
             ));
             widget.add_controller(drag);
+
+            // The pointer says what a press would do before it happens, which is the only
+            // thing that makes a 4px target discoverable.
+            let motion = gtk::EventControllerMotion::new();
+            motion.connect_motion(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_, x, y| {
+                    let cursor = match grid.imp().geom().hit(x, y) {
+                        Hit::ColEdge(_) => Some("col-resize"),
+                        Hit::RowEdge(_) => Some("row-resize"),
+                        _ => None,
+                    };
+                    grid.set_cursor_from_name(cursor);
+                }
+            ));
+            widget.add_controller(motion);
         }
     }
 
@@ -597,10 +649,10 @@ mod imp {
             snapshot.append_color(&frame.palette.background, &rect(0.0, 0.0, width, height));
 
             snapshot.push_clip(&rect(
-                geom.header_w,
-                geom.header_h,
-                width - geom.header_w,
-                height - geom.header_h,
+                frame.geom.header_w,
+                frame.geom.header_h,
+                width - frame.geom.header_w,
+                height - frame.geom.header_h,
             ));
             // Cell backgrounds go **under** the selection wash: a tint over a yellow cell
             // still reads as selected, where a yellow cell over the tint hides it.
@@ -624,13 +676,45 @@ mod imp {
     }
 
     impl Grid {
+        /// What the document says about one axis, in pixels.
+        ///
+        /// ponytail: read afresh every time rather than cached and invalidated. A document
+        /// sizes a handful of tracks out of sixteen thousand, so this is a short walk over a
+        /// `BTreeMap` and cannot go stale; cache it against a document-change token if a
+        /// profiler ever blames it.
+        fn track_sizes(&self, default: f64, count: u32, rows: bool) -> Sizes {
+            let sheet = self.sheet.get();
+            let app = self.app.borrow();
+            let sizes = app
+                .as_ref()
+                .and_then(|app| match rows {
+                    true => app.row_heights(sheet).ok(),
+                    false => app.col_widths(sheet).ok(),
+                })
+                .unwrap_or_default();
+            let sizes = sizes
+                .iter()
+                .filter_map(|(i, len)| Some((*i, style::length_mm(len)? * PX_PER_MM)))
+                .collect();
+            Sizes::new(default, count, sizes)
+        }
+
         fn geom(&self) -> GridGeom {
             let m = self.metrics.get();
+            let mut rows = self.track_sizes(m.row_height, MAX_ROWS, true);
+            let mut cols = self.track_sizes(m.col_width, MAX_COLS, false);
+            // A resize in progress is painted before it is stored, so the whole grid reflows
+            // under the pointer rather than a guide line standing in for it.
+            match self.resize.get() {
+                Some(Resize { track: Hit::ColEdge(col), size }) => cols = cols.with(col, size),
+                Some(Resize { track: Hit::RowEdge(row), size }) => rows = rows.with(row, size),
+                _ => {}
+            }
             GridGeom {
                 header_w: m.header_w,
                 header_h: m.header_h,
-                row_height: m.row_height,
-                cols: ColWidths::Uniform(m.col_width),
+                rows,
+                cols,
                 scroll_x: self
                     .hadjustment
                     .borrow()
@@ -736,16 +820,16 @@ mod imp {
             configure(
                 self.hadjustment.borrow().as_ref(),
                 page_w,
-                geom.cols.x_of(used_cols.min(MAX_COLS)),
-                geom.cols.width_of(0),
+                geom.cols.offset_of(used_cols.min(MAX_COLS)),
+                geom.cols.size_of(0),
                 geom.cols.total(),
             );
             configure(
                 self.vadjustment.borrow().as_ref(),
                 page_h,
-                geom.y_of(used_rows.min(MAX_ROWS)),
-                geom.row_height,
-                geom.y_of(MAX_ROWS),
+                geom.rows.offset_of(used_rows.min(MAX_ROWS)),
+                geom.rows.size_of(0),
+                geom.rows.total(),
             );
         }
 
@@ -1262,6 +1346,82 @@ mod imp {
             self.obj().queue_draw();
         }
 
+        /// The current size of the track a boundary belongs to, or `None` if this is not a
+        /// boundary at all — which is also how `press` tells a resize from a selection.
+        fn track_size_of(&self, hit: Hit) -> Option<f64> {
+            let geom = self.geom();
+            match hit {
+                Hit::ColEdge(col) => Some(geom.cols.size_of(col)),
+                Hit::RowEdge(row) => Some(geom.rows.size_of(row)),
+                _ => None,
+            }
+        }
+
+        /// The end of a resize drag: the pixels become an ODF length and one undo entry.
+        fn commit_resize(&self) {
+            let Some(resize) = self.resize.take() else { return };
+            let Some(app) = self.app.borrow().clone() else { return };
+            let sheet = self.sheet.get();
+            let length = Some(style::mm_length(resize.size / PX_PER_MM));
+            let result = match resize.track {
+                Hit::ColEdge(col) => app.set_col_width(sheet, col..col + 1, length),
+                Hit::RowEdge(row) => app.set_row_height(sheet, row..row + 1, length),
+                _ => return,
+            };
+            if let Err(error) = result {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Double-clicking a column boundary: wide enough for the widest thing in the
+        /// column, which is what every spreadsheet does with that gesture.
+        ///
+        /// The shell measures and the core stores — text width is a font question and the
+        /// core has no font. Only the used extent is measured, because a column of a million
+        /// empty cells has no widest thing in it.
+        ///
+        /// ponytail: no row equivalent. A row's natural height is the font's line height
+        /// until something wraps, and measuring a wrapped cell means laying it out at its
+        /// own column's width — so double-clicking a row boundary clears the height back to
+        /// the default, which is that answer for every row this build can draw.
+        fn autofit(&self, col: u32) {
+            let Some(app) = self.app.borrow().clone() else { return };
+            let sheet = self.sheet.get();
+            let Ok((rows, _)) = app.used_extent(sheet) else { return };
+            let layout = self.layout();
+            layout.set_width(-1);
+
+            let mut width: f64 = 0.0;
+            if let Ok(viewport) = app.get_viewport(sheet, 0..rows, col..col + 1) {
+                for row in 0..rows {
+                    let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
+                        continue;
+                    };
+                    layout.set_attributes(viewport.style(row, col).and_then(font).as_ref());
+                    layout.set_text(text);
+                    width = width.max(f64::from(layout.pixel_size().0));
+                }
+            }
+            let width = (width + 2.0 * PAD).max(MIN_TRACK);
+            let length = Some(style::mm_length(width / PX_PER_MM));
+            if let Err(error) = app.set_col_width(sheet, col..col + 1, length) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Double-clicking a row boundary: back to the default height, `autofit`'s doc
+        /// comment explains why a row has no measured equivalent.
+        fn clear_height(&self, row: u32) {
+            let Some(app) = self.app.borrow().clone() else { return };
+            let sheet = self.sheet.get();
+            if let Err(error) = app.set_row_height(sheet, row..row + 1, None) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
         /// Press: a cell, or a whole column or row from its header.
         fn press(&self, x: f64, y: f64, extend: bool) {
             let hit = self.geom().hit(x, y);
@@ -1286,6 +1446,12 @@ mod imp {
                 self.commit(None);
             }
             self.drag.set(Some(hit));
+            // A press *on* a boundary is a resize rather than a selection — which is why
+            // `Hit` distinguishes the two at all.
+            if let Some(size) = self.track_size_of(hit) {
+                self.resize.set(Some(Resize { track: hit, size }));
+                return;
+            }
             let Some(target) = self.selection_for(hit) else { return };
             self.set_selection(match extend {
                 true => Selection {
@@ -1299,6 +1465,19 @@ mod imp {
         /// Drag: extend from the anchor, in whatever the press started on.
         fn extend_to(&self, x: f64, y: f64) {
             let Some(start) = self.drag.get() else { return };
+            // A resize drag moves the boundary itself. The track's *leading* edge does not
+            // move, so measuring against it is stable however far the pointer has gone.
+            if let Some(resize) = self.resize.get() {
+                let geom = self.geom();
+                let size = match resize.track {
+                    Hit::ColEdge(col) => x - geom.header_w + geom.scroll_x - geom.cols.offset_of(col),
+                    Hit::RowEdge(row) => y - geom.header_h + geom.scroll_y - geom.rows.offset_of(row),
+                    _ => return,
+                };
+                self.resize.set(Some(Resize { size: size.max(MIN_TRACK), ..resize }));
+                self.obj().queue_draw();
+                return;
+            }
             let hit = self.geom().hit(x, y);
             // Dragging while pointing grows the reference rather than the selection, which
             // is what `=SUM(` + drag B2:B4 means.
@@ -1386,8 +1565,7 @@ mod imp {
         fn extent(&self) -> Extent {
             let (rows, cols) = self.used_extent();
             let geom = self.geom();
-            let visible = ((f64::from(self.obj().height()) - geom.header_h) / geom.row_height)
-                .max(1.0) as u32;
+            let visible = geom.visible_rows(f64::from(self.obj().height())).count() as u32;
             Extent {
                 rows,
                 cols,
@@ -1591,9 +1769,10 @@ mod imp {
 
                     let cell = geom.cell_rect(row, col);
                     // ponytail: a wrapped cell is drawn inside its own width and clips at the
-                    // row height, because rows are all one line tall until M8 stores heights.
-                    // Wrapping is still worth honouring: two words on two lines read as two
-                    // words, where one elided line reads as a truncated value.
+                    // row's height — a real one since M8, but nothing grows it to fit what
+                    // wraps into it. Wrapping is still worth honouring: two words on two
+                    // lines read as two words, where one elided line reads as a truncated
+                    // value.
                     layout.set_width(match wrapping {
                         true => ((cell.w - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
                         false => -1,
@@ -1734,9 +1913,9 @@ mod imp {
     /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
     /// nothing here to set a family from.
     ///
-    /// ponytail: a size larger than the row is clipped, because every row is one line tall
-    /// until M8 stores heights. The alternative — deriving row height from the tallest styled
-    /// cell — is a layout pass the geometry has no model for yet.
+    /// ponytail: a size larger than the row is clipped. The alternative — deriving row
+    /// height from the tallest styled cell — is a layout pass the geometry has no model for
+    /// yet; M8 gives a row a real height, but nothing grows one automatically.
     fn font(style: &sheet_core::style::CellStyle) -> Option<pango::AttrList> {
         let attrs = pango::AttrList::new();
         let mut any = false;

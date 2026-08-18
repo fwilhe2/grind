@@ -157,6 +157,20 @@ pub struct Sheet {
     /// the way out.
     #[serde(with = "pairs")]
     styles: BTreeMap<Pos, CellStyle>,
+    /// `style:column-width` per column, as the document spelled it (`"2.258cm"`).
+    ///
+    /// The string is ODF's, for `style.rs`'s reason: one parser in one place
+    /// ([`crate::style::length_mm`]) and a document keeps what it came with. Keyed by column
+    /// rather than by [`Pos`], so an ordinary `BTreeMap` serialises.
+    ///
+    /// Sparse, and bounded on the way in: a `table:number-columns-repeated="16368"` run is
+    /// the sheet's *background* width rather than per-column layout, and materialising it
+    /// would be sixteen thousand equal strings — see `odf::read`'s `MAX_TRACK_RUN`.
+    #[serde(default)]
+    col_widths: BTreeMap<u32, String>,
+    /// `style:row-height` per row — the twin of `col_widths`, same rules.
+    #[serde(default)]
+    row_heights: BTreeMap<u32, String>,
 }
 
 impl Sheet {
@@ -168,7 +182,44 @@ impl Sheet {
             kinds: BTreeMap::new(),
             formats: BTreeMap::new(),
             styles: BTreeMap::new(),
+            col_widths: BTreeMap::new(),
+            row_heights: BTreeMap::new(),
         }
+    }
+
+    /// The column's width, or `None` when it is drawn at the shell's default.
+    pub fn col_width(&self, col: u32) -> Option<&str> {
+        self.col_widths.get(&col).map(String::as_str)
+    }
+
+    pub fn row_height(&self, row: u32) -> Option<&str> {
+        self.row_heights.get(&row).map(String::as_str)
+    }
+
+    /// Set or (with `None`) clear a column's width. An empty string clears too, so a shell
+    /// cannot store a width that no length parses.
+    pub fn set_col_width(&mut self, col: u32, width: Option<String>) {
+        match width {
+            Some(w) => self.col_widths.insert(col, w),
+            None => self.col_widths.remove(&col),
+        };
+    }
+
+    pub fn set_row_height(&mut self, row: u32, height: Option<String>) {
+        match height {
+            Some(h) => self.row_heights.insert(row, h),
+            None => self.row_heights.remove(&row),
+        };
+    }
+
+    /// Every sized column, in order — what a renderer's prefix sums and the writer's pool
+    /// both walk.
+    pub fn col_widths(&self) -> impl Iterator<Item = (u32, &str)> {
+        self.col_widths.iter().map(|(c, w)| (*c, w.as_str()))
+    }
+
+    pub fn row_heights(&self) -> impl Iterator<Item = (u32, &str)> {
+        self.row_heights.iter().map(|(r, h)| (*r, h.as_str()))
     }
 
     pub fn formula(&self, pos: Pos) -> Option<&str> {

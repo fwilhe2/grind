@@ -42,8 +42,8 @@ pub struct Locale {
 /// The list is the discriminator, not an inventory of supported locales — anything absent
 /// gets the `.`/`,` pair, which is what English, Chinese, Japanese and Korean use.
 const COMMA_DECIMAL: [&str; 26] = [
-    "af", "az", "be", "bg", "ca", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hr", "hu",
-    "id", "is", "it", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru",
+    "af", "az", "be", "bg", "ca", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hr", "hu", "id",
+    "is", "it", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru",
 ];
 
 /// Languages that group with a space rather than with the other separator.
