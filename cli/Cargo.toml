@@ -5,6 +5,7 @@
 [package]
 name = "sheet-cli"
 version = "0.0.0"
+description = "An ODF-native spreadsheet — command-line interface"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -18,3 +19,18 @@ sheet-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `sheet-core` is
+# format-neutral plumbing, not a system library.
+[package.metadata.deb]
+name = "sheet-cli"
+maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+section = "utils"
+assets = [["target/release/sheet", "usr/bin/sheet", "755"]]
+
+# Read by `cargo generate-rpm` (packaging.yml).
+[package.metadata.generate-rpm]
+name = "sheet-cli"
+assets = [{ source = "target/release/sheet", dest = "/usr/bin/sheet", mode = "755" }]

@@ -224,7 +224,10 @@ icon — nothing builds or installs them yet, since this is a pure Cargo workspa
 files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section already reads,
 so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
 selection move, which is why `ui_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
-manifest was the one "stretch" item and was skipped.
+manifest was the one "stretch" item and was skipped. `.github/workflows/packaging.yml` builds
+`.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for both `sheet-cli` and
+`sheet-gtk`, reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in
+each crate's `Cargo.toml`, as artifacts on every push — not yet attached to a release.
 
 The wasm shell after this is the honest test of rule 5 (no filesystem assumptions).
 `doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of everything

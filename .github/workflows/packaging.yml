@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: packaging
+on: [push, pull_request]
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
+      - run: cargo install cargo-deb --locked
+      - run: cargo deb -p sheet-cli
+      - run: cargo deb -p sheet-gtk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa9 # v4.6.2
+        with:
+          name: deb-packages
+          path: target/debian/*.deb
+
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
+      - run: cargo install cargo-generate-rpm --locked
+      - run: cargo build --release -p sheet-cli -p sheet-gtk
+      - run: cargo generate-rpm -p cli
+      - run: cargo generate-rpm -p ui_gtk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa9 # v4.6.2
+        with:
+          name: rpm-packages
+          path: target/generate-rpm/*.rpm
