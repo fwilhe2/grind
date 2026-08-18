@@ -166,12 +166,13 @@ fn content(doc: &Document, form: Form) -> String {
         out,
         "<{root} xmlns:office=\"{OFFICE}\" xmlns:table=\"{TABLE}\" xmlns:text=\"{TEXT}\""
     );
-    // The two style namespaces appear only in a document that has styles (§1.4).
+    // The style namespaces appear only in a document that has styles (§1.4), and the two
+    // that only a *cell* style uses only when one does.
     if !pool.is_empty() {
-        let _ = write!(
-            out,
-            " xmlns:style=\"{STYLE}\" xmlns:number=\"{NUMBER}\" xmlns:fo=\"{FO}\""
-        );
+        let _ = write!(out, " xmlns:style=\"{STYLE}\"");
+    }
+    if pool.styles_cells() {
+        let _ = write!(out, " xmlns:number=\"{NUMBER}\" xmlns:fo=\"{FO}\"");
     }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
@@ -230,16 +231,14 @@ fn content(doc: &Document, form: Form) -> String {
 /// comes back with `M/D/YY` bolted on and the round trip is no longer an identity. Writing
 /// the ISO spelling instead makes the file say what it means, in the one form that reads
 /// the same in every locale (§3.4 Note 2).
-static DATE_DEFAULT: LazyLock<Format> =
-    LazyLock::new(|| numfmt::preset(Kind::Date, 0, false, ""));
+static DATE_DEFAULT: LazyLock<Format> = LazyLock::new(|| numfmt::preset(Kind::Date, 0, false, ""));
 
 /// A date that carries a time is a DateTime (§4.3.4) and needs a style that shows both,
 /// since a format cannot look at the value it is given.
 static DATETIME_DEFAULT: LazyLock<Format> = LazyLock::new(numfmt::datetime_preset);
 
 /// The same for a time cell — a 24-hour clock, for the same reason.
-static TIME_DEFAULT: LazyLock<Format> =
-    LazyLock::new(|| numfmt::preset(Kind::Time, 0, false, ""));
+static TIME_DEFAULT: LazyLock<Format> = LazyLock::new(|| numfmt::preset(Kind::Time, 0, false, ""));
 
 /// The format a cell is actually written with: its own, or the default its value type
 /// demands.
@@ -272,6 +271,13 @@ struct Pool<'a> {
     index: HashMap<&'a Format, usize>,
     looks: Vec<Look<'a>>,
     look_index: HashMap<Look<'a>, usize>,
+    /// The distinct column widths and row heights (§5.4), pooled the same way and for the
+    /// same reason: a track's size is reachable only through a `style:style` of family
+    /// `table-column`/`table-row`, named `co{i}`/`ro{i}` here.
+    cols: Vec<&'a str>,
+    col_index: HashMap<&'a str, usize>,
+    rows: Vec<&'a str>,
+    row_index: HashMap<&'a str, usize>,
 }
 
 impl<'a> Pool<'a> {
@@ -281,8 +287,26 @@ impl<'a> Pool<'a> {
             index: HashMap::new(),
             looks: Vec::new(),
             look_index: HashMap::new(),
+            cols: Vec::new(),
+            col_index: HashMap::new(),
+            rows: Vec::new(),
+            row_index: HashMap::new(),
         };
         for sheet in &doc.sheets {
+            // `entry` rather than `insert`, which would overwrite the index of a size
+            // already pooled and point its first tracks at a later style.
+            for (_, width) in sheet.col_widths() {
+                let next = pool.cols.len();
+                if *pool.col_index.entry(width).or_insert(next) == next {
+                    pool.cols.push(width);
+                }
+            }
+            for (_, height) in sheet.row_heights() {
+                let next = pool.rows.len();
+                if *pool.row_index.entry(height).or_insert(next) == next {
+                    pool.rows.push(height);
+                }
+            }
             let formatted = sheet.formats().map(|(pos, _)| pos);
             let dated = sheet.kinds().map(|(pos, _)| pos);
             let styled = sheet.styles().map(|(pos, _)| pos);
@@ -326,8 +350,33 @@ impl<'a> Pool<'a> {
         }
     }
 
+    /// ` table:style-name="co3"` for a column's width, or nothing for a default one.
+    fn col_attr(&self, width: Option<&str>) -> String {
+        match width.and_then(|w| self.col_index.get(w)) {
+            Some(i) => format!(" table:style-name=\"co{i}\""),
+            None => String::new(),
+        }
+    }
+
+    /// The row twin of [`Pool::col_attr`].
+    fn row_attr(&self, height: Option<&str>) -> String {
+        match height.and_then(|h| self.row_index.get(h)) {
+            Some(i) => format!(" table:style-name=\"ro{i}\""),
+            None => String::new(),
+        }
+    }
+
     fn is_empty(&self) -> bool {
-        self.formats.is_empty() && self.looks.is_empty()
+        self.formats.is_empty()
+            && self.looks.is_empty()
+            && self.cols.is_empty()
+            && self.rows.is_empty()
+    }
+
+    /// Whether anything here spells a *cell*, which is what needs `number:` and `fo:`. A
+    /// document whose only styles are track sizes uses neither (§1.4).
+    fn styles_cells(&self) -> bool {
+        !self.formats.is_empty() || !self.looks.is_empty()
     }
 
     /// `office:automatic-styles`: each format once, and one cell style per format to point
@@ -353,6 +402,25 @@ impl<'a> Pool<'a> {
                 }
                 None => out.push_str("/>\n"),
             }
+        }
+        // §5.4. `style:use-optimal-column-width` is deliberately not written: the size here
+        // is one somebody chose, and claiming it was derived would invite a reader to
+        // re-derive it from text this program never measured.
+        for (i, width) in self.cols.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "  <style:style style:name=\"co{i}\" style:family=\"table-column\">\
+                 <style:table-column-properties style:column-width=\"{}\"/></style:style>",
+                esc(width)
+            );
+        }
+        for (i, height) in self.rows.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "  <style:style style:name=\"ro{i}\" style:family=\"table-row\">\
+                 <style:table-row-properties style:row-height=\"{}\"/></style:style>",
+                esc(height)
+            );
         }
         out.push_str(" </office:automatic-styles>\n");
     }
@@ -524,12 +592,30 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
 
 fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     let cols = sheet.used_cols().max(1);
-    let rows = sheet.used_rows();
+    // A sized track past the last value still has to be declared, or the layout is lost —
+    // widening an empty column is a perfectly ordinary thing to do.
+    let declared = cols.max(last(sheet.col_widths()));
+    let rows = sheet.used_rows().max(last(sheet.row_heights()));
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
     // Both the column block and the row block are mandatory, even for an all-empty sheet
-    // (§3.2), which is why everything here has a `.max(1)` behind it.
-    let _ = writeln!(out, "    <table:table-column{}/>", count(cols, "columns"));
+    // (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring columns
+    // of equal width are one declaration, which is what the reader's repeat handling reads
+    // back and what keeps a sheet's declarations to a handful.
+    let mut col = 0;
+    while col < declared {
+        let width = sheet.col_width(col);
+        let run = (col..declared)
+            .take_while(|c| sheet.col_width(*c) == width)
+            .count() as u32;
+        let _ = writeln!(
+            out,
+            "    <table:table-column{}{}/>",
+            pool.col_attr(width),
+            count(run, "columns")
+        );
+        col += run;
+    }
 
     if rows == 0 {
         out.push_str("    <table:table-row><table:table-cell/></table:table-row>\n");
@@ -537,16 +623,19 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
 
     let mut row = 0;
     while row < rows {
+        let height = sheet.row_height(row);
         // Interior blank rows collapse into one repeated row (§3.3) — the main file-size
         // lever, and the difference between a 20-row sheet and 20 rows plus a megabyte of
-        // nothing after one stray edit at row 50 000.
+        // nothing after one stray edit at row 50 000. A row of a different height stops the
+        // run, or the height would spread down the sheet.
         let blank = (row..rows)
-            .take_while(|r| is_blank(sheet, *r, cols))
+            .take_while(|r| is_blank(sheet, *r, cols) && sheet.row_height(*r) == height)
             .count() as u32;
         if blank > 0 {
             let _ = writeln!(
                 out,
-                "    <table:table-row{}><table:table-cell/></table:table-row>",
+                "    <table:table-row{}{}><table:table-cell/></table:table-row>",
+                pool.row_attr(height),
                 count(blank, "rows")
             );
             row += blank;
@@ -559,6 +648,11 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     out.push_str("   </table:table>\n");
 }
 
+/// One past the last track a sparse size table mentions.
+fn last<'a>(sizes: impl Iterator<Item = (u32, &'a str)>) -> u32 {
+    sizes.map(|(i, _)| i.saturating_add(1)).max().unwrap_or(0)
+}
+
 fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
     (0..cols).all(|col| {
         let pos = Pos::new(row, col);
@@ -566,15 +660,12 @@ fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
     })
 }
 
-fn write_row(
-    out: &mut String,
-    sheet: &Sheet,
-    row: u32,
-    cols: u32,
-    null_date: i64,
-    pool: &Pool,
-) {
-    out.push_str("    <table:table-row>");
+fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32, null_date: i64, pool: &Pool) {
+    let _ = write!(
+        out,
+        "    <table:table-row{}>",
+        pool.row_attr(sheet.row_height(row))
+    );
     // Trailing empty cells are simply not written: unmentioned is the same as empty
     // (§3.3), and the row is known non-blank so at least one cell survives.
     let last = (0..cols)
@@ -852,6 +943,31 @@ mod tests {
     }
 
     #[test]
+    fn a_sized_track_past_the_used_extent_is_still_declared() {
+        let mut doc = Document::default();
+        let sheet = doc.sheet_mut(0).unwrap();
+        sheet.set(Pos::new(0, 0), CellValue::Number(1.0));
+        sheet.set_col_width(4, Some("5cm".into()));
+
+        // The declarations run to the last *sized* column, not to the last used one, or the
+        // width would have no column to sit on. Loop C cannot check this — LibreOffice drops
+        // a width outside its own used extent on the way back — so it is checked here.
+        let xml = flat(&doc);
+        assert!(
+            xml.contains("<style:table-column-properties style:column-width=\"5cm\""),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<table:table-column table:number-columns-repeated=\"4\"/>"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<table:table-column table:style-name=\"co0\"/>"),
+            "{xml}"
+        );
+    }
+
+    #[test]
     fn trailing_blank_cells_are_not_written_at_all() {
         let mut doc = Document::default();
         let sheet = doc.sheet_mut(0).unwrap();
@@ -944,8 +1060,10 @@ mod tests {
         assert_eq!(xml.matches("table:style-name=\"ce1\"").count(), 1, "{xml}");
         // The link from cell to format is the only construct ODF has (§5.3).
         assert!(
-            xml.contains("<style:style style:name=\"ce0\" style:family=\"table-cell\" \
-                          style:data-style-name=\"N0\"/>"),
+            xml.contains(
+                "<style:style style:name=\"ce0\" style:family=\"table-cell\" \
+                          style:data-style-name=\"N0\"/>"
+            ),
             "{xml}"
         );
     }

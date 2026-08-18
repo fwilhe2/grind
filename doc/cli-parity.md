@@ -38,6 +38,8 @@ stops ratcheting.
 - `clear_range` — `sheet clear <range>`
 - `set_style` — `sheet style` (and `sheet style <range>` with no options to clear one)
 - `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
+- `set_col_width` — `sheet width <columns> <length>` (and `--clear` to drop one)
+- `set_row_height` — `sheet height <rows> <length>` (and `--clear` to drop one)
 - `set_name` — `sheet name <name> <address-or-=expression>`
 - `clear_name` — `sheet name <name> --delete`
 - `add_sheet` — `sheet add <name>`
@@ -80,6 +82,10 @@ stops ratcheting.
 - `format_at` — `sheet format <cell> --show`, printing the flags that would recreate the
   format and whether they can (`preset`) — a document may hold one this vocabulary cannot
   build.
+- `col_widths` — `sheet width <columns>` with no length, printing one `A<TAB>2.258cm` line per
+  sized column. A column the document never sized prints nothing, because ODF's own answer
+  there is "whatever the application's default is".
+- `row_heights` — `sheet height <rows>` with no length, the same shape
 - `formula_count` — `sheet info`
 - `sheet_count` — `sheet info`
 - `sheet_name` — `sheet info`, and any sheet-qualified address

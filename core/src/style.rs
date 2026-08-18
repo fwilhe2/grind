@@ -139,9 +139,53 @@ pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
     Some((points, style, color))
 }
 
+/// An ODF length (`"2.258cm"`, `"0.889in"`, `"64pt"`) in millimetres.
+///
+/// The one parser, in one place — column widths and row heights are stored as the strings
+/// the document wrote (see [`crate::model::Sheet::col_width`]), and everything that has to
+/// *measure* one comes through here: a renderer laying out a grid, and loop C comparing a
+/// width across a round trip that respells `2.258cm` as `22.58mm`.
+///
+/// `None` for anything that is not a number and one of §18's units. `px` is deliberately
+/// absent: ODF allows it, but a pixel has no defined size in a document, and nothing in the
+/// corpus writes one.
+pub fn length_mm(length: &str) -> Option<f64> {
+    let length = length.trim();
+    let digits = length.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let per_mm = match &length[digits.len()..] {
+        "mm" => 1.0,
+        "cm" => 10.0,
+        "in" => 25.4,
+        "pt" => 25.4 / 72.0,
+        "pc" => 25.4 / 6.0,
+        _ => return None,
+    };
+    Some(digits.parse::<f64>().ok()? * per_mm)
+}
+
+/// A measurement back as an ODF length. Millimetres, three decimals — enough that a
+/// round trip through LibreOffice's own `cm` spelling stays inside loop C's tolerance, and
+/// short enough not to write `12.000000000000002mm`.
+pub fn mm_length(mm: f64) -> String {
+    format!("{:.3}mm", mm)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_length_is_read_in_whatever_unit_it_was_written() {
+        assert_eq!(length_mm("22.58mm"), Some(22.58));
+        assert_eq!(length_mm("2.258cm"), Some(22.58));
+        assert_eq!(length_mm("1in"), Some(25.4));
+        assert_eq!(length_mm("72pt"), Some(25.4));
+        assert_eq!(length_mm("6pc"), Some(25.4));
+        assert_eq!(length_mm("2.5"), None, "a unit is not optional");
+        assert_eq!(length_mm("wide"), None);
+        assert_eq!(length_mm("2.5px"), None);
+        assert_eq!(length_mm(&mm_length(22.58)), Some(22.58));
+    }
 
     #[test]
     fn the_border_shorthand_is_four_edges_that_agree() {

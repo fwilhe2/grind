@@ -98,6 +98,13 @@ run style "$book" A2:A4 --italic --color navy
 run style "$book" E3 --wrap --valign top --size 9pt
 run style "$book" B5 --bold --align right
 
+# A length is ODF's own, in whatever unit it was written — LibreOffice respells them all in
+# centimetres on the way through, which is its business rather than the document's.
+say "column widths and row heights"
+run width "$book" A:A 4cm
+run width "$book" E:E 3.5cm
+run height "$book" 1:1 8mm
+
 say "recalculate the whole document"
 run recalc "$book"
 
@@ -121,6 +128,7 @@ say "get: one cell, its stored value, and its formula"
 say "--show: how a cell looks, and how its value is spelled"
 "$SHEET" style "$book" A1 --show
 "$SHEET" format "$book" B11 --show                          # the flags that recreate it
+"$SHEET" width "$book" A:E                                  # only the columns that were sized
 
 # A name is what makes a formula say what it means: `SUM(expenses)` rather than
 # `SUM([.B2:.B4])`. An address becomes a named *range*, written absolute and

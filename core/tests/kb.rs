@@ -161,7 +161,11 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
     let app = sheet_core::App::new();
     app.open_file(&data("kb", "fizzbuzz.fods")).unwrap();
     assert_eq!(app.formula_count(0).unwrap(), 18);
-    assert_eq!(app.used_extent(0).unwrap(), (0, 0), "no cached values to read");
+    assert_eq!(
+        app.used_extent(0).unwrap(),
+        (0, 0),
+        "no cached values to read"
+    );
 
     app.recalc().unwrap();
     assert_eq!(app.used_extent(0).unwrap(), (18, 1));
@@ -173,8 +177,8 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
         })
         .collect();
     let want = [
-        "1", "2", "fizz", "4", "buzz", "fizz", "7", "8", "fizz", "buzz", "11", "fizz", "13",
-        "14", "fizzbuzz", "16", "17", "fizz",
+        "1", "2", "fizz", "4", "buzz", "fizz", "7", "8", "fizz", "buzz", "11", "fizz", "13", "14",
+        "fizzbuzz", "16", "17", "fizz",
     ];
     assert_eq!(played, want);
 }
@@ -186,7 +190,12 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
 /// reject the schema itself over `draw:control` (an ODF quirk, not ours).
 fn jing(path: &Path) -> Option<Result<(), String>> {
     let schema = Path::new(env!("CARGO_MANIFEST_DIR")).join("../doc/OpenDocument-v1.4-schema.rng");
-    let out = Command::new("jing").arg("-i").arg(schema).arg(path).output().ok()?;
+    let out = Command::new("jing")
+        .arg("-i")
+        .arg(schema)
+        .arg(path)
+        .output()
+        .ok()?;
     Some(if out.status.success() {
         Ok(())
     } else {
@@ -407,7 +416,8 @@ fn saving_an_unedited_document_changes_nothing_at_all() {
 fn what_cannot_be_spliced_regenerates() {
     let doc = |edit: &dyn Fn(&sheet_core::App)| {
         let app = sheet_core::App::new();
-        app.open_file(&data("kb", "minimal-libreoffice.fods")).unwrap();
+        app.open_file(&data("kb", "minimal-libreoffice.fods"))
+            .unwrap();
         edit(&app);
         String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap()
     };
@@ -419,12 +429,17 @@ fn what_cannot_be_spliced_regenerates() {
     })));
     // A number format, which needs a `style:style` the source file does not contain.
     assert!(regenerated(&doc(&|app| {
-        app.set_format(0, Pos::new(0, 0), Pos::new(0, 0), Some(sheet_core::numfmt::preset(
-            sheet_core::numfmt::Kind::Percentage,
-            1,
-            false,
-            "",
-        )))
+        app.set_format(
+            0,
+            Pos::new(0, 0),
+            Pos::new(0, 0),
+            Some(sheet_core::numfmt::preset(
+                sheet_core::numfmt::Kind::Percentage,
+                1,
+                false,
+                "",
+            )),
+        )
         .unwrap();
     })));
     // And the case that does splice, so the three above are not passing for a shared reason.
@@ -462,8 +477,16 @@ fn changed_lines(before: &str, after: &str) -> (usize, usize) {
         *counts.entry(line).or_default() -= 1;
     }
     (
-        counts.values().filter(|n| **n > 0).map(|n| *n as usize).sum(),
-        counts.values().filter(|n| **n < 0).map(|n| -*n as usize).sum(),
+        counts
+            .values()
+            .filter(|n| **n > 0)
+            .map(|n| *n as usize)
+            .sum(),
+        counts
+            .values()
+            .filter(|n| **n < 0)
+            .map(|n| -*n as usize)
+            .sum(),
     )
 }
 
@@ -476,7 +499,8 @@ fn changed_lines(before: &str, after: &str) -> (usize, usize) {
 #[test]
 fn the_default_palette_is_the_one_the_sample_document_uses() {
     let app = sheet_core::App::new();
-    app.open_file(&data("samples", "custom-colors.fods")).unwrap();
+    app.open_file(&data("samples", "custom-colors.fods"))
+        .unwrap();
     let (rows, cols) = app.used_extent(0).unwrap();
 
     let mut found = 0;

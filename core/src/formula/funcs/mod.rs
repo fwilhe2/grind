@@ -22,12 +22,12 @@ use super::eval::{Address, Area, Engine, Operand};
 use super::parse::Expr;
 use super::value::{FormulaError, Value};
 
+mod catalog;
 mod criterion;
 mod datetime;
 mod db;
 mod fin;
 mod info;
-mod catalog;
 mod logical;
 mod lookup;
 mod math;

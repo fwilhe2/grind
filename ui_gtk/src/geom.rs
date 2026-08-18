@@ -56,51 +56,114 @@ pub enum Hit {
     Corner,
 }
 
-/// How wide each column is.
+/// How big each track on one axis is — column widths, or row heights.
 ///
-/// ponytail: one width for every column, because the model carries none yet. The variable
-/// case is a prefix-sum vector behind the same three methods — `doc/gtk-shell.md`'s widths
-/// milestone adds a variant here and nothing else in the shell changes.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ColWidths {
-    Uniform(f64),
+/// One type for both, because the arithmetic is the same and a sheet that got its columns
+/// right and its rows wrong is the bug two copies would produce. A document sizes a handful
+/// of tracks out of sixteen thousand, so the sparse list plus a running total is what makes
+/// [`Sizes::at`] a binary search rather than a walk from A.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sizes {
+    default: f64,
+    count: u32,
+    /// Ascending by index, distinct: the tracks the document gave a size of their own.
+    sizes: Vec<(u32, f64)>,
+    /// `run[k]` is how much the first `k` entries have displaced everything after them —
+    /// the sum of their sizes *minus* what the default would have been. An offset is then
+    /// `index * default + run[entries before it]`, with no walk over the sheet.
+    run: Vec<f64>,
 }
 
-impl ColWidths {
-    pub fn width_of(&self, _col: u32) -> f64 {
-        match self {
-            ColWidths::Uniform(w) => *w,
+impl Sizes {
+    /// Every track the same, which is what a document that sizes nothing gets.
+    pub fn uniform(default: f64, count: u32) -> Self {
+        Self::new(default, count, Vec::new())
+    }
+
+    /// `sizes` is taken in any order; ties keep the last one given.
+    pub fn new(default: f64, count: u32, mut sizes: Vec<(u32, f64)>) -> Self {
+        // Reversed first, so that a stable sort leaves the *last* entry given for an index at
+        // the front of its run and `dedup` keeps that one. `with` relies on it.
+        sizes.reverse();
+        sizes.sort_by_key(|(i, _)| *i);
+        sizes.dedup_by_key(|(i, _)| *i);
+        sizes.retain(|(i, size)| *i < count && *size > 0.0);
+        let mut run = Vec::with_capacity(sizes.len() + 1);
+        let mut acc = 0.0;
+        run.push(acc);
+        for (_, size) in &sizes {
+            acc += size - default;
+            run.push(acc);
+        }
+        Self {
+            default,
+            count,
+            sizes,
+            run,
         }
     }
 
-    /// Content-space x of a column's left edge.
-    pub fn x_of(&self, col: u32) -> f64 {
-        match self {
-            ColWidths::Uniform(w) => f64::from(col) * w,
+    /// How many entries lie strictly before `index`.
+    fn before(&self, index: u32) -> usize {
+        self.sizes.partition_point(|(i, _)| *i < index)
+    }
+
+    pub fn size_of(&self, index: u32) -> f64 {
+        match self.sizes.binary_search_by_key(&index, |(i, _)| *i) {
+            Ok(k) => self.sizes[k].1,
+            Err(_) => self.default,
         }
     }
 
-    /// The column containing a content-space x, clamped to the sheet.
-    pub fn col_at(&self, x: f64) -> u32 {
-        match self {
-            ColWidths::Uniform(w) => ((x.max(0.0) / w) as u32).min(MAX_COLS - 1),
-        }
+    /// Content-space offset of a track's leading edge. `count` itself is the far end.
+    pub fn offset_of(&self, index: u32) -> f64 {
+        f64::from(index) * self.default + self.run[self.before(index)]
     }
 
-    /// Content-space width of the whole sheet.
+    /// The track containing a content-space offset, clamped to the sheet.
+    pub fn at(&self, offset: f64) -> u32 {
+        let offset = offset.max(0.0);
+        // The last sized track that starts at or before `offset`; everything else is one of
+        // the uniform runs, before it or after it.
+        let k = self
+            .sizes
+            .partition_point(|(i, _)| self.offset_of(*i) <= offset);
+        let (from, at) = match k {
+            0 => (0, 0.0),
+            k => {
+                let (i, size) = self.sizes[k - 1];
+                let end = self.offset_of(i) + size;
+                if offset < end {
+                    return i;
+                }
+                (i + 1, end)
+            }
+        };
+        let index = u64::from(from) + ((offset - at) / self.default) as u64;
+        index.min(u64::from(self.count.saturating_sub(1))) as u32
+    }
+
+    /// Content-space size of the whole axis.
     pub fn total(&self) -> f64 {
-        self.x_of(MAX_COLS)
+        self.offset_of(self.count)
+    }
+
+    /// The same axis with one track resized — what a resize drag paints before it commits.
+    pub fn with(&self, index: u32, size: f64) -> Self {
+        let mut sizes = self.sizes.clone();
+        sizes.push((index, size));
+        Self::new(self.default, self.count, sizes)
     }
 }
 
-/// Everything needed to place a cell: the header band, the row pitch, the column widths
-/// and where the view is scrolled to.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Everything needed to place a cell: the header band, the two axes' sizes, and where the
+/// view is scrolled to.
+#[derive(Clone, Debug, PartialEq)]
 pub struct GridGeom {
     pub header_w: f64,
     pub header_h: f64,
-    pub row_height: f64,
-    pub cols: ColWidths,
+    pub rows: Sizes,
+    pub cols: Sizes,
     pub scroll_x: f64,
     pub scroll_y: f64,
 }
@@ -111,12 +174,12 @@ const EDGE_GRAB: f64 = 4.0;
 impl GridGeom {
     /// Content-space y of a row's top edge.
     pub fn y_of(&self, row: u32) -> f64 {
-        f64::from(row) * self.row_height
+        self.rows.offset_of(row)
     }
 
     /// The row containing a content-space y, clamped to the sheet.
     pub fn row_at(&self, y: f64) -> u32 {
-        ((y.max(0.0) / self.row_height) as u32).min(MAX_ROWS - 1)
+        self.rows.at(y)
     }
 
     /// A cell's rectangle in **widget** space. May lie outside the widget entirely — the
@@ -124,10 +187,10 @@ impl GridGeom {
     /// overflowing neighbour is drawn from.
     pub fn cell_rect(&self, row: u32, col: u32) -> Rect {
         Rect {
-            x: self.header_w + self.cols.x_of(col) - self.scroll_x,
-            y: self.header_h + self.y_of(row) - self.scroll_y,
-            w: self.cols.width_of(col),
-            h: self.row_height,
+            x: self.header_w + self.cols.offset_of(col) - self.scroll_x,
+            y: self.header_h + self.rows.offset_of(row) - self.scroll_y,
+            w: self.cols.size_of(col),
+            h: self.rows.size_of(row),
         }
     }
 
@@ -141,8 +204,8 @@ impl GridGeom {
 
     /// The columns visible in a widget `width`, end-exclusive.
     pub fn visible_cols(&self, width: f64) -> std::ops::Range<u32> {
-        let first = self.cols.col_at(self.scroll_x);
-        let last = self.cols.col_at(self.scroll_x + (width - self.header_w).max(0.0));
+        let first = self.cols.at(self.scroll_x);
+        let last = self.cols.at(self.scroll_x + (width - self.header_w).max(0.0));
         first..(last + 1).min(MAX_COLS)
     }
 
@@ -152,11 +215,19 @@ impl GridGeom {
     /// Pure, and tested, because "the active cell scrolled off the bottom" and "the view
     /// jumps a row every keypress" are the same off-by-one seen from two sides.
     pub fn scroll_into_view(&self, row: u32, col: u32, page_w: f64, page_h: f64) -> (f64, f64) {
-        let x = self.cols.x_of(col);
-        let y = self.y_of(row);
         (
-            keep_in(self.scroll_x, x, self.cols.width_of(col), page_w),
-            keep_in(self.scroll_y, y, self.row_height, page_h),
+            keep_in(
+                self.scroll_x,
+                self.cols.offset_of(col),
+                self.cols.size_of(col),
+                page_w,
+            ),
+            keep_in(
+                self.scroll_y,
+                self.rows.offset_of(row),
+                self.rows.size_of(row),
+                page_h,
+            ),
         )
     }
 
@@ -174,32 +245,32 @@ impl GridGeom {
         match (in_row_header, in_col_header) {
             (true, true) => Hit::Corner,
             (false, true) => {
-                let col = self.cols.col_at(content_x);
+                let col = self.cols.at(content_x);
                 // Within grabbing distance of this column's right edge, or of the previous
                 // column's — a boundary belongs to the column left of it.
-                let right = self.cols.x_of(col) + self.cols.width_of(col);
-                if right - content_x <= EDGE_GRAB {
+                let left = self.cols.offset_of(col);
+                if left + self.cols.size_of(col) - content_x <= EDGE_GRAB {
                     Hit::ColEdge(col)
-                } else if col > 0 && content_x - self.cols.x_of(col) <= EDGE_GRAB {
+                } else if col > 0 && content_x - left <= EDGE_GRAB {
                     Hit::ColEdge(col - 1)
                 } else {
                     Hit::ColHeader(col)
                 }
             }
             (true, false) => {
-                let row = self.row_at(content_y);
-                let bottom = self.y_of(row) + self.row_height;
-                if bottom - content_y <= EDGE_GRAB {
+                let row = self.rows.at(content_y);
+                let top = self.rows.offset_of(row);
+                if top + self.rows.size_of(row) - content_y <= EDGE_GRAB {
                     Hit::RowEdge(row)
-                } else if row > 0 && content_y - self.y_of(row) <= EDGE_GRAB {
+                } else if row > 0 && content_y - top <= EDGE_GRAB {
                     Hit::RowEdge(row - 1)
                 } else {
                     Hit::RowHeader(row)
                 }
             }
             (false, false) => Hit::Cell {
-                row: self.row_at(content_y),
-                col: self.cols.col_at(content_x),
+                row: self.rows.at(content_y),
+                col: self.cols.at(content_x),
             },
         }
     }
@@ -226,8 +297,8 @@ mod tests {
         GridGeom {
             header_w: 50.0,
             header_h: 24.0,
-            row_height: 20.0,
-            cols: ColWidths::Uniform(80.0),
+            rows: Sizes::uniform(20.0, MAX_ROWS),
+            cols: Sizes::uniform(80.0, MAX_COLS),
             scroll_x: 0.0,
             scroll_y: 0.0,
         }
@@ -340,8 +411,69 @@ mod tests {
     #[test]
     fn a_point_past_the_sheet_clamps_rather_than_overflowing() {
         let g = geom();
-        assert_eq!(g.cols.col_at(f64::from(u32::MAX)), MAX_COLS - 1);
+        assert_eq!(g.cols.at(f64::from(u32::MAX)), MAX_COLS - 1);
         assert_eq!(g.row_at(1e18), MAX_ROWS - 1);
-        assert_eq!(g.cols.col_at(-5.0), 0);
+        assert_eq!(g.cols.at(-5.0), 0);
+    }
+
+    /// The sparse case, which is every real document: `offset_of` and `at` are inverses
+    /// across the sized tracks *and* the uniform runs either side of them, and the total is
+    /// the default everywhere plus what the overrides changed.
+    #[test]
+    fn sized_tracks_displace_the_ones_after_them_and_nothing_else() {
+        // B is narrow, D is wide; A, C and everything past E is the 80px default.
+        let s = Sizes::new(80.0, 100, vec![(3, 200.0), (1, 20.0)]);
+        assert_eq!(s.size_of(0), 80.0);
+        assert_eq!(s.size_of(1), 20.0);
+        assert_eq!(s.size_of(3), 200.0);
+        assert_eq!(s.offset_of(0), 0.0);
+        assert_eq!(s.offset_of(1), 80.0);
+        assert_eq!(s.offset_of(2), 100.0);
+        assert_eq!(s.offset_of(3), 180.0);
+        assert_eq!(s.offset_of(4), 380.0);
+        assert_eq!(s.offset_of(5), 460.0);
+        assert_eq!(s.total(), 100.0 * 80.0 - 60.0 + 120.0);
+
+        for i in 0..12u32 {
+            let (start, end) = (s.offset_of(i), s.offset_of(i + 1));
+            assert_eq!(s.at(start), i, "start of {i}");
+            assert_eq!(s.at(end - 0.5), i, "end of {i}");
+        }
+        // Past the last track, not one past it.
+        assert_eq!(s.at(1e12), 99);
+    }
+
+    /// A resize drag repaints through `with`, so setting a track that already has a size has
+    /// to replace it rather than pile up beside it.
+    #[test]
+    fn resizing_the_same_track_twice_keeps_the_last_size() {
+        let s = Sizes::uniform(80.0, 10).with(2, 30.0).with(2, 50.0);
+        assert_eq!(s.size_of(2), 50.0);
+        assert_eq!(s.total(), 10.0 * 80.0 - 30.0);
+    }
+
+    /// A cell in a row of its own height still contains the point that named it — the same
+    /// round trip as the uniform case, which is where an off-by-one would hide.
+    #[test]
+    fn hit_and_cell_rect_are_inverses_with_sized_tracks() {
+        let g = GridGeom {
+            rows: Sizes::new(20.0, MAX_ROWS, vec![(1, 60.0)]),
+            cols: Sizes::new(80.0, MAX_COLS, vec![(0, 30.0), (2, 150.0)]),
+            scroll_x: 13.0,
+            scroll_y: 7.0,
+            ..geom()
+        };
+        for x in [50.0, 60.0, 120.0, 300.0, 900.0] {
+            for y in [24.0, 30.0, 70.0, 110.0, 400.0] {
+                let Hit::Cell { row, col } = g.hit(x, y) else {
+                    panic!("({x}, {y}) is inside the content area");
+                };
+                assert!(
+                    g.cell_rect(row, col).contains(x, y),
+                    "({x}, {y}) hit {row},{col} whose rect is {:?}",
+                    g.cell_rect(row, col)
+                );
+            }
+        }
     }
 }

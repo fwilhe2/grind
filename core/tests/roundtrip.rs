@@ -26,8 +26,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sheet_core::model::NumberKind;
 use sheet_core::locale::Locale;
+use sheet_core::model::NumberKind;
 use sheet_core::numfmt::{Format, Kind, Map, Op, Part};
 use sheet_core::style::{self, CellStyle};
 use sheet_core::{CellValue, Document, Form, Pos, Sheet};
@@ -176,6 +176,34 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 w.name, g.name
             ));
         }
+        // §5.4, compared as the measurement rather than as the string: LibreOffice respells
+        // every length in centimetres and quantises it to 1/100 mm, so `2.5cm` comes back
+        // `2.499cm`.
+        //
+        // Within the used extent only, and for the same reason number formats are compared
+        // as display text rather than as a struct: outside it, a width is not something the
+        // *document* says. ODF has no way to declare a column without declaring its width,
+        // so an LO file spells its own default across every unused column to the sheet's
+        // edge, and LO drops those again on the way back. Asserting there would test which
+        // widths LibreOffice considers worth writing. A sized column past the content is
+        // still written — `a_sized_track_past_the_used_extent_is_still_declared` in
+        // `odf::write` is what holds that.
+        for (col, width) in w.col_widths().filter(|(c, _)| *c < w.used_cols()) {
+            if !same_length(width, g.col_width(col)) {
+                out.push(format!(
+                    "{label}: sheet {i} column {col} was {width:?} wide, back as {:?}",
+                    g.col_width(col)
+                ));
+            }
+        }
+        for (row, height) in w.row_heights() {
+            if !same_length(height, g.row_height(row)) {
+                out.push(format!(
+                    "{label}: sheet {i} row {row} was {height:?} high, back as {:?}",
+                    g.row_height(row)
+                ));
+            }
+        }
         let rows = w.used_rows().max(g.used_rows());
         let cols = w.used_cols().max(g.used_cols());
         for row in 0..rows {
@@ -235,6 +263,17 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
     out
 }
 
+/// The same length, in millimetres, to within LibreOffice's own quantisation.
+///
+/// A tenth of a millimetre: LO stores lengths in 1/100 mm and rounds to three decimal places
+/// of a centimetre, so `0.9in` (22.86 mm) comes back as `2.286cm` and `21pt` as `0.741cm`.
+fn same_length(want: &str, got: Option<&str>) -> bool {
+    match (style::length_mm(want), got.and_then(style::length_mm)) {
+        (Some(a), Some(b)) => (a - b).abs() < 0.1,
+        _ => false,
+    }
+}
+
 /// Are these the same cell style, allowing for LibreOffice's own normalisation?
 ///
 /// The one place styles are not compared as written, and for a measured reason
@@ -246,7 +285,10 @@ fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
         return a.is_none() && b.is_none();
     };
     let borders = a.borders.iter().zip(&b.borders).all(|(a, b)| {
-        match (a.as_deref().and_then(style::border_parts), b.as_deref().and_then(style::border_parts)) {
+        match (
+            a.as_deref().and_then(style::border_parts),
+            b.as_deref().and_then(style::border_parts),
+        ) {
             (Some((wa, sa, ca)), Some((wb, sb, cb))) => {
                 (wa - wb).abs() < 0.05 && sa == sb && ca == cb
             }
@@ -389,7 +431,10 @@ fn formats() -> (String, Document) {
     let mut date = Format::new(Kind::Date);
     date.push(Part::Day { long: true });
     date.push(Part::Text(".".into()));
-    date.push(Part::Month { long: true, textual: false });
+    date.push(Part::Month {
+        long: true,
+        textual: false,
+    });
     date.push(Part::Text(".".into()));
     date.push(Part::Year { long: true });
 
@@ -480,20 +525,23 @@ fn styles() -> (String, Document) {
     // the pool has to key on the pair or one of them is lost.
     let both = Pos::new(4, 0);
     sheet.set(both, CellValue::Number(0.5));
-    sheet.set_format(both, Format {
-        kind: Kind::Percentage,
-        parts: vec![
-            Part::Number {
-                decimals: 0,
-                min_decimals: 0,
-                min_int: 1,
-                grouping: false,
-            },
-            Part::Text("%".into()),
-        ],
-        locale: None,
-        maps: Vec::new(),
-    });
+    sheet.set_format(
+        both,
+        Format {
+            kind: Kind::Percentage,
+            parts: vec![
+                Part::Number {
+                    decimals: 0,
+                    min_decimals: 0,
+                    min_int: 1,
+                    grouping: false,
+                },
+                Part::Text("%".into()),
+            ],
+            locale: None,
+            maps: Vec::new(),
+        },
+    );
     sheet.set_style(
         both,
         CellStyle {
@@ -513,6 +561,31 @@ fn styles() -> (String, Document) {
     );
 
     ("styles".to_owned(), doc)
+}
+
+/// Column widths and row heights (§5.4) — a `style:style` of family `table-column` or
+/// `table-row`, named from the track declaration rather than from a cell.
+///
+/// Three units, because the model keeps the string the document wrote and LibreOffice
+/// respells all of them in centimetres: what has to survive is the *measurement*, which is
+/// why the comparison is in millimetres. A sized column past the last value is the case that
+/// catches a writer bounding its declarations by the used extent.
+fn tracks() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    for row in 0..3u32 {
+        sheet.set(Pos::new(row, 0), CellValue::Text(format!("row {row}")));
+    }
+    sheet.set_col_width(0, Some("3.5cm".into()));
+    sheet.set_col_width(1, Some("0.9in".into()));
+    // Past the used extent: nothing is written in column E, and it is still 5cm wide.
+    sheet.set_col_width(4, Some("5cm".into()));
+    sheet.set_row_height(0, Some("14mm".into()));
+    sheet.set_row_height(2, Some("21pt".into()));
+    ("tracks".to_owned(), doc)
 }
 
 fn cases() -> Vec<(String, Document)> {
@@ -541,6 +614,7 @@ fn cases() -> Vec<(String, Document)> {
         named,
         formats(),
         styles(),
+        tracks(),
         case(
             "numbers",
             &[

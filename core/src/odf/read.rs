@@ -14,8 +14,8 @@
 use std::collections::HashMap;
 
 use crate::formula::date;
-use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::locale::Locale;
+use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Map, Op, Part};
 use crate::style::{CellStyle, EDGES};
 
@@ -36,6 +36,10 @@ const MAX_COLS: u32 = 16_384;
 /// extent is free — which puts the ceiling far above any real spreadsheet while still
 /// making a hostile or generator-broken file terminate.
 const MAX_MATERIALISED_CELLS: u64 = 4_000_000;
+
+/// How long a run of equally sized columns or rows is still *layout* rather than the
+/// sheet's background width. Shared with the setting side — see [`crate::MAX_TRACK_RUN`].
+use crate::MAX_TRACK_RUN;
 
 /// Everything the contexts share: the document under construction and the cursors into it.
 pub struct Builder {
@@ -85,6 +89,13 @@ pub struct Builder {
     row_style: Option<String>,
     /// Next column to be claimed by a `table:table-column` declaration.
     col_decl: u32,
+    /// A `table-column` or `table-row` `style:style`'s name to the one property this model
+    /// keeps of it: `style:column-width` or `style:row-height`, verbatim. One map for both
+    /// families, because a `style:name` is unique across the document (§5.1).
+    track_sizes: HashMap<String, String>,
+    /// `style:row-height` of the row being read, applied when the row ends because
+    /// `table:number-rows-repeated` decides how many rows it is for.
+    row_size: Option<String>,
 }
 
 /// One cell of the buffered row. A struct rather than a tuple since the day it grew a
@@ -128,6 +139,8 @@ impl Builder {
             col_styles: Vec::new(),
             row_style: None,
             col_decl: 0,
+            track_sizes: HashMap::new(),
+            row_size: None,
         }
     }
 
@@ -190,7 +203,7 @@ impl Builder {
 
     /// Claim `repeat` columns for a `table:table-column` declaration, recording the default
     /// cell style it gives them.
-    fn declare_columns(&mut self, style: Option<String>, repeat: u32) {
+    fn declare_columns(&mut self, style: Option<String>, width: Option<&str>, repeat: u32) {
         let end = self.col_decl.saturating_add(repeat).min(MAX_COLS);
         // A column that names no default style still has to occupy its slots, or every
         // later declaration lands on the wrong column.
@@ -198,6 +211,14 @@ impl Builder {
             self.col_styles.resize(end as usize, None);
             for slot in &mut self.col_styles[self.col_decl as usize..end as usize] {
                 slot.clone_from(&style);
+            }
+        }
+        if let Some(width) = width
+            && repeat <= MAX_TRACK_RUN
+            && let Some(sheet) = self.doc.sheets.get_mut(self.sheet)
+        {
+            for col in self.col_decl..end {
+                sheet.set_col_width(col, Some(width.to_owned()));
             }
         }
         self.col_decl = end;
@@ -220,6 +241,21 @@ impl Builder {
             && let Some(source) = self.doc.source.as_mut()
         {
             source.rows.insert((self.sheet, self.row), spans);
+        }
+
+        // A height applies to the row whether or not it holds anything — an empty row a
+        // document made tall is still tall.
+        if let Some(height) = self.row_size.take()
+            && repeat <= MAX_TRACK_RUN
+            && let Some(sheet) = self.doc.sheets.get_mut(self.sheet)
+        {
+            for r in 0..repeat {
+                let row = self.row.saturating_add(r);
+                if row >= MAX_ROWS {
+                    break;
+                }
+                sheet.set_row_height(row, Some(height.clone()));
+            }
         }
 
         if self.row_cells.is_empty() {
@@ -395,6 +431,11 @@ impl Context<Builder> for Table {
                 b.row_style = attrs
                     .get(Ns::Table, "default-cell-style-name")
                     .map(str::to_owned);
+                // §5.4: the row's own `style:style` is where its height lives.
+                b.row_size = attrs
+                    .get(Ns::Table, "style-name")
+                    .and_then(|name| b.track_sizes.get(name))
+                    .cloned();
                 let repeat = attrs.count(Ns::Table, "number-rows-repeated", MAX_ROWS);
                 b.row_repeat = repeat;
                 Some(Box::new(Row { repeat }))
@@ -405,8 +446,12 @@ impl Context<Builder> for Table {
                 let style = attrs
                     .get(Ns::Table, "default-cell-style-name")
                     .map(str::to_owned);
+                let width = attrs
+                    .get(Ns::Table, "style-name")
+                    .and_then(|name| b.track_sizes.get(name))
+                    .cloned();
                 let repeat = attrs.count(Ns::Table, "number-columns-repeated", MAX_COLS);
-                b.declare_columns(style, repeat);
+                b.declare_columns(style, width.as_deref(), repeat);
                 Some(Box::new(super::context::Ignore))
             }
             (Ns::Table, "table-column-group" | "table-header-columns" | "table-columns") => {
@@ -675,10 +720,10 @@ impl Context<Builder> for Cell {
 
 /// `office:automatic-styles` and `office:styles`.
 ///
-/// Only two things in here are read: a `number:*-style`, which *is* a format, and the
-/// `style:data-style-name` of a `table-cell` `style:style`, which is the link from a cell to
-/// one. Everything else a style carries — fonts, borders, column widths — is not modelled,
-/// so it falls down the ignore path and is dropped rather than half-kept.
+/// Three things in here are read: a `number:*-style`, which *is* a format; a `table-cell`
+/// `style:style`, which carries both the link to a format and the cell's own look; and a
+/// `table-column`/`table-row` one, of which only the size is kept (§5.4). Everything else a
+/// style carries falls down the ignore path and is dropped rather than half-kept.
 struct Styles;
 
 impl Context<Builder> for Styles {
@@ -688,14 +733,18 @@ impl Context<Builder> for Styles {
 
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         if name.is(Ns::Style, "style") {
-            // Only cell styles. A `table-column` style carrying a width, or a `text` style
-            // inside a paragraph, has nothing this model holds.
-            if attrs.get(Ns::Style, "family") != Some("table-cell") {
-                return Some(Box::new(super::context::Ignore));
-            }
+            let family = attrs.get(Ns::Style, "family").unwrap_or_default();
             let Some(name) = attrs.get(Ns::Style, "name").map(str::to_owned) else {
                 return Some(Box::new(super::context::Ignore));
             };
+            if let "table-column" | "table-row" = family {
+                return Some(Box::new(TrackStyleProps { name }));
+            }
+            // Anything else — a `text` style inside a paragraph, a `table` style — has
+            // nothing this model holds.
+            if family != "table-cell" {
+                return Some(Box::new(super::context::Ignore));
+            }
             // ponytail: `style:parent-style-name` is not followed, so a cell style that
             // inherits its data style from a parent rather than naming one loses its format.
             // LibreOffice's own automatic styles always name it directly, which is why this
@@ -794,9 +843,38 @@ impl Context<Builder> for CellStyleProps {
     fn end(&mut self, b: &mut Builder) {
         // A style that sets nothing is no style: keeping it would have every cell in a
         // LibreOffice document carrying an empty one.
-        if b.style_props.get(&self.name).is_some_and(CellStyle::is_plain) {
+        if b.style_props
+            .get(&self.name)
+            .is_some_and(CellStyle::is_plain)
+        {
             b.style_props.remove(&self.name);
         }
+    }
+}
+
+/// The property child of a `table-column` or `table-row` `style:style` (§5.4).
+///
+/// One property each is kept — `style:column-width`, `style:row-height` — verbatim, for the
+/// reason every other ODF length is kept verbatim (`style.rs`).
+/// `style:use-optimal-column-width`/`-row-height` is deliberately dropped: it says the size
+/// was *derived* from the content, and re-deriving it means measuring text, which the core
+/// cannot do. The explicit size travels beside it in every file that sets it, so the layout
+/// survives either way.
+struct TrackStyleProps {
+    name: String,
+}
+
+impl Context<Builder> for TrackStyleProps {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let size = match (name.ns, name.local.as_str()) {
+            (Ns::Style, "table-column-properties") => attrs.get(Ns::Style, "column-width"),
+            (Ns::Style, "table-row-properties") => attrs.get(Ns::Style, "row-height"),
+            _ => return None,
+        };
+        if let Some(size) = size {
+            b.track_sizes.insert(self.name.clone(), size.to_owned());
+        }
+        Some(Box::new(super::context::Ignore))
     }
 }
 

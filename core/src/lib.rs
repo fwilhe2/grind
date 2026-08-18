@@ -65,7 +65,8 @@ impl fmt::Display for Error {
             Error::NoSuchSheet(i) => write!(f, "no such sheet: {i}"),
             Error::TooLarge(n) => write!(
                 f,
-                "{n} cells is more than the {MAX_FORMATTED_CELLS} a format may cover at once"
+                "{n} is more than one command may cover at once \
+                 ({MAX_FORMATTED_CELLS} cells, {MAX_TRACK_RUN} rows or columns)"
             ),
             Error::Xml(e) => write!(f, "xml: {e}"),
             Error::Package(e) => write!(f, "package: {e}"),
@@ -92,6 +93,21 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Formats are stored per cell, so this bounds the memory a single command can ask for.
 /// Well above any rectangle a person selects, well below a whole sheet.
 pub const MAX_FORMATTED_CELLS: u64 = 1 << 16;
+
+/// How many columns or rows one [`App::set_col_width`] may cover — and, on the way in, how
+/// long a run of equally sized tracks is still *layout* rather than background.
+///
+/// One constant for both ends on purpose: a `<table:table-column
+/// table:number-columns-repeated="16368"/>` is a file saying "the rest of the sheet is the
+/// default width", not a decision about sixteen thousand columns, and materialising it would
+/// be that many equal strings per sheet. Setting a run this program then refuses to read
+/// back would be the same bug from the other side, so the reader's cap and the writer's
+/// limit are the same number.
+///
+/// ponytail: a document that really does size 2000 columns loses them past the cap. Storing
+/// a per-sheet *default* size instead would keep it, and is two more fields on `Sheet` plus a
+/// rule for which wins — worth it when a file turns up that needs it.
+pub const MAX_TRACK_RUN: u32 = 1024;
 
 /// A rectangle of values, already resolved — what a renderer draws.
 ///
@@ -379,9 +395,10 @@ impl App {
             }
             let updates = cells
                 .filter(|pos| {
-                    state.doc.sheet(sheet).is_some_and(|s| {
-                        !s.get(*pos).is_empty() || s.formula(*pos).is_some()
-                    })
+                    state
+                        .doc
+                        .sheet(sheet)
+                        .is_some_and(|s| !s.get(*pos).is_empty() || s.formula(*pos).is_some())
                 })
                 .map(|pos| Action::SetFormula {
                     sheet,
@@ -518,7 +535,9 @@ impl App {
             // A no-op cell is left out of the batch, so re-applying a format a cell already
             // has does not push an undo entry that restores nothing.
             let updates = cells
-                .filter(|pos| state.doc.sheet(sheet).and_then(|s| s.format(*pos)) != format.as_ref())
+                .filter(|pos| {
+                    state.doc.sheet(sheet).and_then(|s| s.format(*pos)) != format.as_ref()
+                })
                 .map(|pos| Action::SetFormat {
                     sheet,
                     pos,
@@ -571,6 +590,103 @@ impl App {
                 .collect::<Vec<_>>();
             self::apply_batch(state, sheet, updates)
         })
+    }
+
+    /// Set — or with `None`, clear — the width of a run of columns (§5.4).
+    ///
+    /// A range rather than one column because dragging three column headers wider is one
+    /// gesture and should be one undo step, and bounded by [`MAX_TRACK_RUN`] because that is
+    /// how long a run this program will read back.
+    ///
+    /// The width is an ODF length as the document stores it — `"2.5cm"`, `"64pt"`. It is
+    /// checked here rather than at each shell: a length nothing can parse would be a column
+    /// that silently vanishes from every renderer, and `style::mm_length` is what a shell
+    /// that has measured something in millimetres spells it with.
+    pub fn set_col_width(
+        &self,
+        sheet: usize,
+        cols: Range<u32>,
+        width: Option<String>,
+    ) -> Result<usize> {
+        let width = self.track_size(cols.len() as u64, width)?;
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let updates = cols
+                .filter(|col| {
+                    state.doc.sheet(sheet).and_then(|s| s.col_width(*col)) != width.as_deref()
+                })
+                .map(|col| Action::SetColWidth {
+                    sheet,
+                    col,
+                    width: width.clone(),
+                })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
+        })
+    }
+
+    /// The row twin of [`App::set_col_width`], in every respect.
+    pub fn set_row_height(
+        &self,
+        sheet: usize,
+        rows: Range<u32>,
+        height: Option<String>,
+    ) -> Result<usize> {
+        let height = self.track_size(rows.len() as u64, height)?;
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let updates = rows
+                .filter(|row| {
+                    state.doc.sheet(sheet).and_then(|s| s.row_height(*row)) != height.as_deref()
+                })
+                .map(|row| Action::SetRowHeight {
+                    sheet,
+                    row,
+                    height: height.clone(),
+                })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
+        })
+    }
+
+    /// A track size as it will be stored: bounded, and a length something can measure.
+    fn track_size(&self, tracks: u64, size: Option<String>) -> Result<Option<String>> {
+        if tracks > u64::from(MAX_TRACK_RUN) {
+            return Err(Error::TooLarge(tracks));
+        }
+        match size {
+            Some(size) => match style::length_mm(&size) {
+                Some(mm) if mm > 0.0 => Ok(Some(size)),
+                _ => Err(Error::Formula(format!("not a positive ODF length: {size}"))),
+            },
+            None => Ok(None),
+        }
+    }
+
+    /// Every sized column of a sheet, in order — what a renderer turns into prefix sums.
+    ///
+    /// The whole sheet rather than a viewport's worth, because an offset has to be counted
+    /// from column zero: a caller asking only about what is on screen would have to add up
+    /// the columns before it anyway. Sparse and capped by [`MAX_TRACK_RUN`] on the way in,
+    /// so this is a handful of entries rather than 16384.
+    pub fn col_widths(&self, sheet: usize) -> Result<Vec<(u32, String)>> {
+        let state = self.state.read().unwrap();
+        let sheet = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(sheet.col_widths().map(|(c, w)| (c, w.to_owned())).collect())
+    }
+
+    /// The row twin of [`App::col_widths`].
+    pub fn row_heights(&self, sheet: usize) -> Result<Vec<(u32, String)>> {
+        let state = self.state.read().unwrap();
+        let sheet = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(sheet
+            .row_heights()
+            .map(|(r, h)| (r, h.to_owned()))
+            .collect())
     }
 
     /// Recalculate every formula in the document, storing the results.
@@ -1110,7 +1226,9 @@ fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result
         .enumerate()
         .any(|(i, s)| Some(i) != except && s.name.eq_ignore_ascii_case(name));
     match taken {
-        true => Err(Error::BadSheet(format!("a sheet is already called {name:?}"))),
+        true => Err(Error::BadSheet(format!(
+            "a sheet is already called {name:?}"
+        ))),
         false => Ok(()),
     }
 }
@@ -1136,13 +1254,23 @@ fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result
 /// reference, so `SUM(SALES)` is unambiguous in the file whatever `SALES` would mean inside
 /// brackets; refusing it would rule out most of the words anyone wants to name a range.
 fn validate_name(name: &str) -> Result<()> {
-    let refused = |why: &str| Err(Error::Formula(format!("{name:?} is not a valid name: {why}")));
+    let refused = |why: &str| {
+        Err(Error::Formula(format!(
+            "{name:?} is not a valid name: {why}"
+        )))
+    };
     match formula::lex::lex(name) {
         Ok(tokens) => match tokens.as_slice() {
             [formula::lex::Token::Name(n)] if n == name => {}
-            _ => return refused("a name is one identifier — a letter or _, then letters, digits or _"),
+            _ => {
+                return refused(
+                    "a name is one identifier — a letter or _, then letters, digits or _",
+                );
+            }
         },
-        Err(_) => return refused("a name is one identifier — a letter or _, then letters, digits or _"),
+        Err(_) => {
+            return refused("a name is one identifier — a letter or _, then letters, digits or _");
+        }
     }
     // `[.A1]` is how a reference is spelled, so lexing the name inside brackets asks the
     // same question a reader would, without a second address parser to disagree with the
