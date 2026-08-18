@@ -1480,8 +1480,11 @@ mod imp {
             }
             let hit = self.geom().hit(x, y);
             // Dragging while pointing grows the reference rather than the selection, which
-            // is what `=SUM(` + drag B2:B4 means.
-            if let Some(pending) = self.pending.borrow().clone()
+            // is what `=SUM(` + drag B2:B4 means. Cloned into its own binding first, not the
+            // `if let` scrutinee, or the `Ref` would still be held when `set_pending` below
+            // tries to `borrow_mut` the same `RefCell` — a reentrant-borrow panic.
+            let pending = self.pending.borrow().clone();
+            if let Some(pending) = pending
                 && let Hit::Cell { row, col } = hit
             {
                 self.set_pending(
