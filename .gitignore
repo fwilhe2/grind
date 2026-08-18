@@ -6,3 +6,10 @@
 
 # `examples/sample.sh` with no argument writes here.
 /sample
+
+# The browser shell's build output, and the jsdom scaffolding its smoke test
+# installs next to itself.
+/ui_web/dist
+/ui_web/.smoke
+/ui_web/node_modules
+/ui_web/package-lock.json

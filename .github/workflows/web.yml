@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: ui_web
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The browser is the one platform that is not an operating system, so this is
+  # also the one shell whose artifact is the same everywhere. It is built once, on
+  # Linux — still not a cross-compile: wasm32-unknown-unknown *is* the target it
+  # runs on.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # The keymap and the layout arithmetic are plain Rust and are tested on the
+      # host, where no browser is involved.
+      - name: Test
+        run: cargo test -p sheet-web --all-targets
+
+      # The CLI must be the same version as the `wasm-bindgen` crate or the glue it
+      # writes will not match the module; the version is read from Cargo.lock so
+      # this cannot drift from what cargo resolved.
+      - name: Install wasm-bindgen-cli
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
+            | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+          echo "wasm-bindgen $version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Build
+        run: ./ui_web/build.sh release
+
+      # Drives the real module against the real page in jsdom, before anything
+      # cares how it looks. A failure here is wasm or wiring, not CSS — and it is
+      # where rule 5 (no filesystem assumptions) is checked end to end.
+      - name: Browser boundary smoke test
+        run: ./ui_web/smoke.sh release
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sheet-web
+          path: ui_web/dist
+          if-no-files-found: error

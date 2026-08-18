@@ -229,6 +229,11 @@ manifest was the one "stretch" item and was skipped. `.github/workflows/packagin
 `sheet-gtk`, reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in
 each crate's `Cargo.toml`, as artifacts on every push — not yet attached to a release.
 
-The wasm shell after this is the honest test of rule 5 (no filesystem assumptions).
+`ui_web/` is the wasm shell — rule 5's honest test, and it needed no core change: a document
+arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download
+(`App::save_bytes`), with no path anywhere. Built by `ui_web/build.sh` (needs
+`wasm32-unknown-unknown` and a version-matched `wasm-bindgen-cli`), checked without a browser
+by `ui_web/smoke.sh` (jsdom) and by `cargo test -p sheet-web` (keymap + layout arithmetic).
+Its gaps, on purpose: point mode, styling controls, column widths, and a uniform grid.
 `doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of everything
 deferred by decision in this phase.

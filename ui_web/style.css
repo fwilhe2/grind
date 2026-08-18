@@ -1,0 +1,156 @@
+/*
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+*/
+
+/* Colours come from the platform (`Canvas`, `AccentColor`, …) rather than a palette
+   of literals, so light and dark follow the reader's own setting — the same rule
+   `ui_gtk` follows with the GTK theme. A colour the *document* chose is written
+   inline by the shell and outranks everything here. */
+:root {
+  color-scheme: light dark;
+  --line: color-mix(in srgb, CanvasText 20%, Canvas);
+  --head: color-mix(in srgb, CanvasText 6%, Canvas);
+  --pick: color-mix(in srgb, AccentColor 18%, Canvas);
+  --cell-w: 96px;
+  --cell-h: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  /* Three fixed bars and one scrolling grid: the grid is the only thing that may
+     grow, which is what keeps the viewport arithmetic honest. */
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100dvh;
+  font: 14px/1.4 system-ui, sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--head);
+}
+
+.status {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+  font-size: 0.85em;
+}
+
+.gap {
+  flex: 1;
+}
+
+.name {
+  opacity: 0.7;
+}
+
+button {
+  font: inherit;
+  padding: 0.2rem 0.6rem;
+}
+
+.formula-bar {
+  gap: 0.6rem;
+}
+
+.address {
+  min-width: 5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#formula {
+  flex: 1;
+  font: 14px/1.4 ui-monospace, monospace;
+  padding: 0.2rem 0.4rem;
+}
+
+.surface {
+  overflow: auto;
+  outline: none;
+}
+
+.grid {
+  border-collapse: collapse;
+  table-layout: fixed;
+  /* The width the columns add up to, never the width of the surface. An auto-width
+     table is stretched to its container and its columns squeezed to fit, which is
+     not what `--cell-w` says and not what the shell renders — it asks for as many
+     columns as fit at that width, and a narrower one means one more of them. */
+  width: max-content;
+}
+
+.grid th,
+.grid td {
+  width: var(--cell-w);
+  height: var(--cell-h);
+  max-width: var(--cell-w);
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  /* Clipping rather than growing: a row that fits its content would change the
+     cell size the shell measures every frame. Same gap M8 left in the GTK grid. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: left;
+  font-weight: normal;
+}
+
+.head {
+  position: sticky;
+  background: var(--head);
+  text-align: center;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.head.col,
+.head.corner {
+  top: 0;
+  z-index: 1;
+}
+
+.head.row,
+.head.corner {
+  left: 0;
+  width: 3.5rem;
+  max-width: 3.5rem;
+}
+
+.head.corner {
+  z-index: 2;
+}
+
+.head.current {
+  opacity: 1;
+  font-weight: bold;
+  background: var(--pick);
+}
+
+.cell.selected {
+  background: var(--pick);
+}
+
+.cell.active {
+  outline: 2px solid AccentColor;
+  outline-offset: -2px;
+}
+
+#tabs {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.tab.current {
+  font-weight: bold;
+}

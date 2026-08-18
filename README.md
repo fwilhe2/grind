@@ -95,7 +95,7 @@ stops.
 
 ## Running it
 
-Three front ends, and the rule is that the command line reaches everything either shell does.
+Four front ends, and the rule is that the command line reaches everything any shell does.
 
 **The window** (`sheet-gtk`, GTK 4 and libadwaita — `libgtk-4-dev` and `libadwaita-1-dev`
 to build):
@@ -122,6 +122,24 @@ Vi-style modes: **Normal** navigates (`hjkl`/arrows, `g`/`G` for A1/the last use
 **Insert** (`i`/`a`/`c`) edits the active cell, and `:` opens a command line (`:w`, `:q`,
 `:wq`, `:recalc`, `:sheet name`, or a bare cell address to jump to). Run `sheet-tui --help`
 for the full key list.
+
+**The browser** (`sheet-web`, the same core compiled to WebAssembly — nothing runs on a
+server, and the document never leaves the machine):
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
+  | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+./ui_web/build.sh                                    # writes ui_web/dist
+python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
+```
+
+Open, edit, formulas, undo, sheets and save-as-download. It is the honest test of the rule
+that the core assumes no filesystem: a document arrives from the file picker as bytes and
+leaves as a download, and no path is involved at any point. What it does not have: point
+mode, the clipboard beyond the browser's own, styling controls, and column widths — every
+column is the same width, as in the terminal. `ui_web/smoke.sh` drives the real module
+against the real page in jsdom, so the wiring is checked without a browser.
 
 **The command line** (`sheet`), which is the whole feature set:
 
@@ -167,6 +185,7 @@ cargo test -p sheet-gtk          # the widget-free half: geometry, and later key
 
 ```sh
 cargo test -p sheet-tui
+cargo test -p sheet-web    # the browser-free half: the keymap and the layout arithmetic
 ```
 
 ## License

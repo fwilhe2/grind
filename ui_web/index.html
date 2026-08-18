@@ -1,0 +1,68 @@
+<!--
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sheet</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      The page is scaffolding: every element here is empty, and the shell fills it
+      from `App::get_viewport` on each frame. Nothing in this file is document
+      state, which is the same rule the GTK and TUI shells follow.
+    -->
+    <header class="bar">
+      <button id="open" type="button">Open…</button>
+      <button id="save" type="button">Save</button>
+      <span class="gap"></span>
+      <button id="undo" type="button" disabled>Undo</button>
+      <button id="redo" type="button" disabled>Redo</button>
+      <button id="recalc" type="button">Recalc</button>
+      <span class="gap"></span>
+      <span id="name" class="name"></span>
+      <!-- Hidden because the toolbar button is the affordance; the picker is the
+           browser's own, and the only way a page may read a file. -->
+      <input id="file-input" type="file" accept=".ods,.fods,.xml" hidden />
+    </header>
+
+    <div class="bar formula-bar">
+      <span id="address" class="address">A1</span>
+      <input
+        id="formula"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Cell contents"
+      />
+    </div>
+
+    <!-- tabindex, because a div holds no keyboard otherwise and every key this
+         shell claims arrives here. -->
+    <main id="surface" class="surface" tabindex="0">
+      <table class="grid">
+        <thead>
+          <tr id="head-row"></tr>
+        </thead>
+        <tbody id="body"></tbody>
+      </table>
+    </main>
+
+    <footer class="bar status">
+      <nav id="tabs" aria-label="Sheets"></nav>
+      <span id="summary"></span>
+      <span class="gap"></span>
+      <span id="message" role="status" aria-live="polite"></span>
+    </footer>
+
+    <script type="module">
+      import init from "./sheet_web.js";
+      await init();
+    </script>
+  </body>
+</html>
