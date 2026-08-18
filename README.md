@@ -95,7 +95,7 @@ stops.
 
 ## Running it
 
-Two front ends, and the rule is that the command line reaches everything the window does.
+Three front ends, and the rule is that the command line reaches everything either shell does.
 
 **The window** (`sheet-gtk`, GTK 4 and libadwaita — `libgtk-4-dev` and `libadwaita-1-dev`
 to build):
@@ -110,6 +110,18 @@ navigation, the clipboard, undo, sheets, and a format strip whose whole vocabula
 core's. What it does not have yet is column widths and row heights, so every column is the
 same width — that is the next milestone. `doc/gtk-shell.md` is the plan it is being built to,
 milestone by milestone, and `doc/not-doing.md` says where each capability stops.
+
+**The terminal** (`sheet-tui`, pure Rust — no system packages to install):
+
+```sh
+cargo run -p sheet-tui -- book.ods        # or a .fods; with no file, an empty document
+```
+
+Vi-style modes: **Normal** navigates (`hjkl`/arrows, `g`/`G` for A1/the last used cell,
+`Ctrl-f`/`Ctrl-b` to page),
+**Insert** (`i`/`a`/`c`) edits the active cell, and `:` opens a command line (`:w`, `:q`,
+`:wq`, `:recalc`, `:sheet name`, or a bare cell address to jump to). Run `sheet-tui --help`
+for the full key list.
 
 **The command line** (`sheet`), which is the whole feature set:
 
@@ -148,6 +160,13 @@ dependencies, and its own CI job:
 
 ```sh
 cargo test -p sheet-gtk          # the widget-free half: geometry, and later keys
+```
+
+`sheet-tui` has no system dependencies, so it builds and tests everywhere `sheet-core` and
+`sheet-cli` do:
+
+```sh
+cargo test -p sheet-tui
 ```
 
 ## License
