@@ -333,6 +333,7 @@ impl Ui {
                 self.dirty.set(false);
                 self.refresh();
                 self.toast("Saved");
+                remember_recent(path);
                 if self.closing.get() {
                     self.window.close();
                 }
@@ -398,6 +399,7 @@ impl Ui {
             Ok(()) => {
                 *self.path.borrow_mut() = Some(path.to_owned());
                 self.grid.set_sheet(0);
+                remember_recent(path);
             }
             Err(error) => {
                 self.loading.set(false);
@@ -558,6 +560,67 @@ impl Ui {
         glib::Propagation::Stop
     }
 
+    /// M9's shortcuts dialog. Built from the same accelerator table the window wires up, so
+    /// it cannot list a binding the keyboard does not actually have — plus the grid's own
+    /// vocabulary (`keymap.rs`), which has no `GAction` to read a name from.
+    fn shortcuts(&self) {
+        let window = gtk::ShortcutsWindow::builder()
+            .transient_for(&self.window)
+            .modal(true)
+            .build();
+
+        let group = gtk::ShortcutsGroup::builder().title("General").build();
+        let named = [
+            ("new", "New"),
+            ("open", "Open"),
+            ("save", "Save"),
+            ("save-as", "Save As"),
+            ("undo", "Undo"),
+            ("redo", "Redo"),
+            ("recalc", "Recalculate Now"),
+        ];
+        for (action, title) in named {
+            for (name, accels, _) in actions() {
+                if name != action || accels.is_empty() {
+                    continue;
+                }
+                group.add_shortcut(
+                    &gtk::ShortcutsShortcut::builder()
+                        .title(title)
+                        .accelerator(accels.join(" "))
+                        .build(),
+                );
+            }
+        }
+        let navigation = gtk::ShortcutsGroup::builder().title("Navigation & Editing").build();
+        for (accelerator, title) in [
+            ("Left Right Up Down", "Move selection"),
+            ("<Control>Left <Control>Right <Control>Up <Control>Down", "Jump to data edge"),
+            ("<Shift>Left <Shift>Right <Shift>Up <Shift>Down", "Extend selection"),
+            ("<Control>a", "Select all"),
+            ("Tab ISO_Left_Tab", "Move within a row"),
+            ("Return <Shift>Return", "Move within a column"),
+            ("Delete BackSpace", "Clear selection"),
+            ("F2", "Edit cell"),
+            ("F4", "Cycle $ in a reference"),
+            ("Escape", "Cancel edit"),
+            ("<Control>c <Control>x <Control>v", "Copy, cut, paste"),
+        ] {
+            navigation.add_shortcut(
+                &gtk::ShortcutsShortcut::builder()
+                    .title(title)
+                    .accelerator(accelerator)
+                    .build(),
+            );
+        }
+
+        let section = gtk::ShortcutsSection::builder().section_name("main").build();
+        section.add_group(&group);
+        section.add_group(&navigation);
+        window.add_section(&section);
+        window.present();
+    }
+
     fn about(&self) {
         let about = adw::AboutDialog::builder()
             .application_name("Sheet")
@@ -592,6 +655,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
         ("sheet-delete", &[][..], |ui| ui.delete_sheet()),
+        ("shortcuts", &["<Control>question"][..], |ui| ui.shortcuts()),
         ("about", &[][..], |ui| ui.about()),
     ]
 }
@@ -613,6 +677,7 @@ fn primary_menu() -> gio::Menu {
 
     let rest = gio::Menu::new();
     rest.append(Some("Recalculate Now"), Some("win.recalc"));
+    rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));
     menu.append_section(None, &rest);
     menu
@@ -643,6 +708,13 @@ impl Observer for Bridge {
         // dropped receiver is just a window that has gone away.
         let _ = self.0.try_send(());
     }
+}
+
+/// Recent files, the native way: `gtk::FileDialog`'s own "Recent" section already reads
+/// `GtkRecentManager`, so opening or saving a document only has to register it there — no
+/// custom "Open Recent" menu to build or keep in sync.
+fn remember_recent(path: &Path) {
+    gtk::RecentManager::default().add_item(&gio::File::for_path(path).uri());
 }
 
 /// The document's name, or what an unsaved one is called until it has one.

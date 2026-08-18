@@ -19,12 +19,12 @@ sheet-core = { path = "../core" }
 # The GNOME HIG widgets — banners, toasts, alert dialogs — are libadwaita's own.
 # v1_5 is the ubuntu-24.04 runtime, and every widget this shell uses exists there.
 libadwaita = { version = "0.7", features = ["v1_5"] }
-# Named only to turn on newer GTK APIs — `gtk::FileDialog` (4.10), which replaced the
-# deprecated file chooser, and `CssProvider::load_from_string` (4.12); libadwaita forwards
-# gtk feature flags only up to 4.6. 4.12 is under the ubuntu-24.04 runtime's 4.14, which is
-# what CI builds against. Still reached in code as `libadwaita::gtk`, and cargo unifies the
-# two into one crate, so the versions cannot drift.
-gtk4 = { version = "0.9", features = ["v4_12"] }
+# Named only to turn on newer GTK APIs — `gtk::FileDialog` (4.10), `CssProvider::
+# load_from_string` (4.12), `Accessible::announce` (4.14, M9's a11y floor); libadwaita
+# forwards gtk feature flags only up to 4.6. 4.14 is the ubuntu-24.04 runtime, which is what
+# CI builds against. Still reached in code as `libadwaita::gtk`, and cargo unifies the two
+# into one crate, so the versions cannot drift.
+gtk4 = { version = "0.9", features = ["v4_14"] }
 # The observer bridge: the core pushes changes from whatever thread made them, and the
 # main loop drains them. `glib`'s own channel was removed in gtk4-rs 0.16 and this is what
 # replaced it.

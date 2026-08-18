@@ -36,7 +36,7 @@ use libadwaita::prelude::*;
 
 use gtk::glib;
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
-use sheet_core::{App, Pos};
+use sheet_core::{App, Pos, a1};
 
 use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::Selection;
@@ -1534,10 +1534,28 @@ mod imp {
             self.selection.set(selection);
             self.refresh_buffer();
             self.scroll_into_view(selection.active);
+            self.announce_active_cell(selection.active);
             self.obj().queue_draw();
             for hook in self.on_selection.borrow().iter() {
                 hook(selection);
             }
+        }
+
+        /// The a11y floor (`doc/gtk-shell.md`): a custom-drawn grid has no other way to tell
+        /// assistive technology the selection moved, so every move speaks the cell's address
+        /// and, if it has one, its display text.
+        fn announce_active_cell(&self, pos: Pos) {
+            let Some(app) = self.app.borrow().clone() else { return };
+            let address = a1::format(None, pos);
+            let message = match app.get_viewport(self.sheet.get(), pos.row..pos.row + 1, pos.col..pos.col + 1) {
+                Ok(viewport) => match viewport.text(pos.row, pos.col) {
+                    Some(text) if !text.is_empty() => format!("{address}: {text}"),
+                    _ => address,
+                },
+                Err(_) => address,
+            };
+            self.obj()
+                .announce(&message, gtk::AccessibleAnnouncementPriority::Medium);
         }
 
         fn scroll_into_view(&self, pos: Pos) {

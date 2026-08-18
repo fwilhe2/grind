@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Sheet
+Comment=An ODF-native spreadsheet
+Exec=sheet-gtk %f
+Icon=io.github.fwilhe2.Sheet
+Terminal=false
+Type=Application
+Categories=Office;Spreadsheet;GTK;
+MimeType=application/vnd.oasis.opendocument.spreadsheet;application/vnd.oasis.opendocument.spreadsheet-flat-xml;
+StartupNotify=true

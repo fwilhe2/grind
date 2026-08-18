@@ -428,7 +428,21 @@ lint`, the loops, parity.
 | M6 | Formula UX — *done* | Point mode, F4, Tab memory, span coloring (day-one `gtk::Text` attributes spike), autocomplete (C9 lands here, core-first), signature hints, live preview | `=SUM(` + drag B2:B4 + `)` + Enter → colored, previewed, committed; one Ctrl+Z reverts edit + ripple |
 | M7 | Styles + formatting UI — *done* | C7 getters (`style_at`, `format_at`, `sheet style\|format --show`) + C8 viewport styles, styled grid rendering (background, borders, weight/slant/size, both alignments, wrap), the format strip (`formatting.rs`), whose colour buttons offer `style::PALETTE` — the clrs.cc palette, in the core so `sheet style --color navy` writes the same attribute — with a dialog behind *Custom…* and *Automatic* to remove the colour | GUI- and CLI-formatted documents identical for the same operations — both build their `Format` from `numfmt::preset` and their `CellStyle` field by field, and `Format::preset_params`/`is_preset` are in the core so neither shell derives "how many decimals is this" for itself |
 | M8 | Widths & heights — *done* | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
-| M9 | Packaging & polish | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
+| M9 | Packaging & polish — *done* | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
+
+M9 landed as: `ui_gtk/data/` carries the `.desktop` file, an AppStream metainfo document and a
+scalable icon, none built by anything — this is a pure Cargo workspace, so there is no build
+system to register them with yet; a shortcuts dialog (`gtk::ShortcutsWindow`, built from the
+same `actions()` table the window wires up plus `keymap.rs`'s own vocabulary, so it cannot
+list a binding the keyboard does not have); recent files, which needed no widget of its
+own — `gtk::FileDialog`'s "Recent" section already reads `GtkRecentManager`, so open and save
+only call `RecentManager::add_item`; and the a11y floor — `Grid::announce_active_cell`, hung
+off the same `set_selection` choke-point everything else about a moved selection already goes
+through, speaking the cell's address and, if it has one, its display text via
+`gtk::Accessible::announce` (GTK 4.14, which is why `ui_gtk/Cargo.toml`'s `gtk4` feature moved
+from `v4_12`). The flatpak manifest is the one item named "stretch" in the plan and was
+skipped — nothing here needs it before the packaging files above have a build system to sit
+in.
 
 ## The gaps, written down
 

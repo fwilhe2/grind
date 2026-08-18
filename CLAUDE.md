@@ -4,6 +4,12 @@ Guidance for Claude Code in this repo. This file is kept short on purpose — th
 any given piece of code lives in that code's own doc comments and in `doc/*.md`; read those
 when touching that area rather than expecting the full rationale here.
 
+<!--
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 ## What this is
 
 An ODF-native spreadsheet: one Rust core, native shells, a feature list that ends. Not a
@@ -203,7 +209,7 @@ green both directions), the OpenFormula engine (all 110 Small Group functions, d
 expressions), number formats and cell styling, the CLI (with the parity ratchet), sheet
 add/rename/delete, `doc/not-doing.md` (the product stop-line), and R6's diffable writer.
 
-**Phase 9 (the shells) is in progress**, planned in `doc/gtk-shell.md`. Done: M0–M8 — CI
+**Phase 9 (the shells) is done through M9**, planned in `doc/gtk-shell.md`. Done: M0–M8 — CI
 split, the read-only grid, core prep (`a1`, `formula::display`, `enter`/`preview`/
 `clear_range`/`enter_range`), selection/navigation, editing (in-cell editor + formula bar,
 undo/redo, spoilage banner), clipboard, formula UX (point mode, autocomplete, signature
@@ -212,7 +218,14 @@ double-click to autofit a column or clear a row, both surviving a LibreOffice ro
 What M8 does *not* do: grow a row to fit a wrapped cell or an oversized font — still clips,
 tracked as a `ponytail:` note in `ui_gtk/src/grid.rs`.
 
-Next is **M9** — packaging (`.desktop`, icon, AppStream metainfo, shortcuts, recent files,
-the a11y floor). The wasm shell after that is the honest test of rule 5 (no filesystem
-assumptions). `doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of
-everything deferred by decision in this phase.
+**M9** brought packaging under `ui_gtk/data/` (`.desktop`, AppStream metainfo, a scalable
+icon — nothing builds or installs them yet, since this is a pure Cargo workspace), a
+`gtk::ShortcutsWindow` built from the same accelerator table the window wires up, recent
+files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section already reads,
+so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
+selection move, which is why `ui_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
+manifest was the one "stretch" item and was skipped.
+
+The wasm shell after this is the honest test of rule 5 (no filesystem assumptions).
+`doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of everything
+deferred by decision in this phase.
