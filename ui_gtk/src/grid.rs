@@ -119,6 +119,19 @@ impl Grid {
         self.imp().mode.get().is_editing()
     }
 
+    /// Mirror the formula bar's caret into the in-cell editor's own.
+    ///
+    /// The two are separate `GtkEditable`s over one shared buffer, so each keeps its own
+    /// cursor position — but [`Self::caret`] only ever reads the in-cell editor's, which
+    /// point mode (`pointing()`, in this file) decides off. Without this, typing `=SUM(` in
+    /// the formula bar leaves the in-cell editor's position wherever it last was (0, most of
+    /// the time), so a click afterwards judges point mode against the wrong spot in the text
+    /// and just commits the edit instead — the formula bar calls this on every caret move so
+    /// the two never disagree about where "the" caret is.
+    pub fn set_caret(&self, position: i32) {
+        self.imp().editor.set_position(position);
+    }
+
     /// Throw the edit away and put the cell back the way it was.
     pub fn cancel_edit(&self) {
         self.imp().cancel();
@@ -1038,6 +1051,14 @@ mod imp {
                 let caret = self.caret();
                 caret..caret
             });
+            // A click here (`GestureDrag::connect_drag_begin`) grabs focus onto the grid
+            // widget itself, not the editor, so typing afterwards would have nowhere to land
+            // — reclaim it, since every point-mode update (click, drag, arrow key) funnels
+            // through here. *Before* the replacement, not after: focusing a `gtk::Text`
+            // selects all of its content (the same trap `begin` documents), and the next
+            // keystroke would replace the whole formula rather than extend it. `replace`
+            // ends by placing the caret, which collapses that selection again.
+            self.editor.grab_focus();
             let placed = self.replace(span.clone(), &text);
             self.pending.replace(Some(Pending {
                 span: placed,

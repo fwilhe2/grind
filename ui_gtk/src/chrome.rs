@@ -60,6 +60,9 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
             if entry.has_focus() && !grid.is_editing() {
                 grid.begin_edit(false);
             }
+            if entry.has_focus() {
+                grid.set_caret(entry.position());
+            }
         }
     ));
     entry.connect_activate(glib::clone!(
@@ -204,11 +207,19 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         update,
         move || update()
     ));
-    // And the formula bar's own caret, for when it is the one being typed in.
+    // And the formula bar's own caret, for when it is the one being typed in — mirrored into
+    // the in-cell editor too, since point mode judges a click against *its* caret.
     entry.connect_cursor_position_notify(glib::clone!(
+        #[weak]
+        grid,
         #[strong]
         update,
-        move |_| update()
+        move |entry| {
+            if entry.has_focus() {
+                grid.set_caret(entry.position());
+            }
+            update();
+        }
     ));
 
     // The two buttons are only meaningful while an edit is open; the rest of the time they
