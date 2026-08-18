@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "sheet-tui"
+version = "0.0.0"
+description = "An ODF-native spreadsheet — the terminal shell"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sheet-tui"
+path = "src/main.rs"
+
+[dependencies]
+sheet-core = { path = "../core" }
+# crossterm is used through `ratatui::crossterm`, so the two can never drift apart.
+ratatui = "0.30"
+
+# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `sheet-core` is
+# format-neutral plumbing, not a system library.
+[package.metadata.deb]
+name = "sheet-tui"
+maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+section = "utils"
+assets = [["target/release/sheet-tui", "usr/bin/sheet-tui", "755"]]
+
+# Read by `cargo generate-rpm` (packaging.yml).
+[package.metadata.generate-rpm]
+name = "sheet-tui"
+assets = [{ source = "target/release/sheet-tui", dest = "/usr/bin/sheet-tui", mode = "755" }]
