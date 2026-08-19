@@ -101,7 +101,10 @@ SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
 for loops C and E; loops A and B want a LibreOffice source checkout (`SHEET_LO_CORPUS`) for
 its `sc/qa/unit/data` fixture corpus. CI's `corpus` job gets that with a blobless sparse
-clone of just that directory rather than the whole tree.
+clone of just that directory rather than the whole tree. Loop E's oracle version is pinned
+(`ci/libreoffice-version`, "Pinning LibreOffice" in `doc/differential-fuzz.md`) — its
+`FLOOR` is a fact about one `soffice` build, and `scripts/soffice-tests.sh` runs against that
+same pin locally, in Docker, rather than a developer machine's own install.
 
 | Loop | Asserts | Where |
 |---|---|---|

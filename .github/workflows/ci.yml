@@ -29,19 +29,24 @@ jobs:
     # rule that every feature must survive a LibreOffice round trip (doc/plan.md,
     # rule 7) is enforced here by a machine rather than by remembering to run it.
     # Its "back" direction still skips: that one wants the checkout.
-    runs-on: ubuntu-latest
+    #
+    # `ubuntu-24.04` rather than `-latest`, and the package pinned to an exact version
+    # (`ci/libreoffice-version`, `doc/differential-fuzz.md` "Pinning LibreOffice"): loop E's
+    # oracle is the answer *this specific soffice* gives, and an unpinned apt install drifts
+    # under CI with no signal beyond a test going red for no code reason.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends "libreoffice-calc=$(cat ci/libreoffice-version)"
       - run: cargo test --test roundtrip -- --nocapture
 
   loop_e:
     # Loop E (doc/differential-fuzz.md) needs only `soffice`, same as loop C's "out"
     # direction, so it gets its own job rather than waiting on a LibreOffice checkout.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends "libreoffice-calc=$(cat ci/libreoffice-version)"
       - run: cargo test --test loop_e -- --nocapture
 
   corpus:
@@ -49,10 +54,10 @@ jobs:
     # corpus (sc/qa/unit/data) rather than the whole LibreOffice source tree — the tree is
     # tens of gigabytes of history the corpus tests never touch. A blobless, sparse clone
     # fetches only that one directory's current blobs.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends "libreoffice-calc=$(cat ci/libreoffice-version)"
       - run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
           git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data

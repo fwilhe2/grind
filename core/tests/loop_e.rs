@@ -36,11 +36,12 @@ use sheet_core::{CellValue, Pos};
 /// never lower it for a code change. Meaningful only at the default seed and default count —
 /// a run with either overridden prints its scoreboard and skips the ratchet.
 ///
-/// Unlike loop B's `FLOOR`, this one is also sensitive to *which* LibreOffice answered: the
-/// oracle's own version, not just its fixtures, can move a borderline formula (an
-/// `AVERAGEIF`/`NPV`/`SUMIF` divide-by-a-hair-different-count case) by exactly one across a
-/// point release. Set from CI's `soffice`, not a developer machine's, since CI is where the
-/// ratchet is enforced.
+/// Unlike loop B's `FLOOR`, this one is also sensitive to *which* LibreOffice answered, so
+/// it is measured against a version pinned in `ci/libreoffice-version` rather than whatever
+/// `apt-get install libreoffice-calc` gives a developer's machine that day — see "Pinning
+/// LibreOffice" in `doc/differential-fuzz.md` for the pin, `scripts/soffice-tests.sh` to run
+/// against it locally, and the upgrade procedure that keeps a version bump and a `FLOOR`
+/// change in the same commit.
 const FLOOR: usize = 911;
 
 const DEFAULT_SEED: u64 = 0x5EED;

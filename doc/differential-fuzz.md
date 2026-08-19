@@ -106,6 +106,50 @@ Named classes, the way loop B names its exclusions — not a tolerance:
   already does, for the profile lock) and the harness excludes format-code arguments until a
   locale can be pinned as deliberately as the profile is.
 
+## Pinning LibreOffice
+
+`FLOOR` is a fact about one specific `soffice` binary, not about the code: a LibreOffice
+point release can move a borderline formula (a stats function dividing by a hole-sized
+denominator, say) by exactly one, and the test has no way to tell that apart from a
+regression. So the version is pinned rather than left to `apt-get install`'s daily answer.
+
+**The pin.** `ci/libreoffice-version` holds one line, an exact Ubuntu package version
+(`apt-cache madison libreoffice-calc` on `ubuntu:24.04` lists the candidates) —
+currently `4:24.2.7-0ubuntu0.24.04.6`. `.github/workflows/ci.yml`'s `roundtrip`, `loop_e`
+and `corpus` jobs run on `ubuntu-24.04` (not `-latest`, which floats) and install exactly
+that version. The Ubuntu release and the package version move together — a version string
+from `noble` does not exist on `jammy`.
+
+**Running it locally, at the same pin.** `scripts/soffice-tests.sh` runs the soffice-backed
+tests inside `ubuntu:24.04` with Docker, installing the same pinned package CI does, so a
+disagreement between "works for me" and a red CI run is reproducible rather than argued
+about:
+
+```sh
+scripts/soffice-tests.sh                              # loop C (out) + loop E
+scripts/soffice-tests.sh --test loop_e -- --nocapture  # one test, extra args passed through
+```
+
+First run pays for a Rust toolchain install and a `cargo build`; a named Docker volume keeps
+both across runs. Without Docker, loop E still runs against whatever `soffice` is on `PATH`
+— useful for iterating on the generator or the parser, not for reading `FLOOR` as a verdict,
+since a local LibreOffice can legitimately disagree with the pin by one or two formulas.
+
+**Upgrading the pin, safely.** A version bump is a deliberate, reviewable change, not
+something that happens by CI drifting under it:
+
+1. Pick a new version from `apt-cache madison libreoffice-calc` on the target Ubuntu release
+   (`docker run --rm ubuntu:24.04 bash -c 'apt-get update -qq && apt-cache madison
+   libreoffice-calc'`) and write it into `ci/libreoffice-version`.
+2. Run `scripts/soffice-tests.sh` locally — it now installs the *new* pin — and note where
+   `loop C` and loop E's scoreboard land.
+3. If loop E's `matched` count changed, update `FLOOR` in `core/tests/loop_e.rs` and the
+   figure in this document's "The first run" section together with the version bump, in the
+   same commit. A `FLOOR` change with no version bump beside it is a regression, not routine
+   maintenance — that is the whole point of pinning.
+4. Push and let the `roundtrip`/`loop_e`/`corpus` CI jobs confirm the same numbers away from
+   this machine before merging.
+
 ## The ceiling, named
 
 LibreOffice writes doubles at **15 significant digits**, so this loop cannot compare tighter
