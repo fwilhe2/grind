@@ -53,6 +53,14 @@ const PX_PER_MM: f64 = 96.0 / 25.4;
 /// a feature with its own UI rather than something to arrive at by dragging past the edge.
 const MIN_TRACK: f64 = 6.0;
 
+/// How far the view may be zoomed either way. Past these a cell is either unreadable or a
+/// single cell fills the window, and neither is a view of a spreadsheet.
+const ZOOM_RANGE: std::ops::RangeInclusive<f64> = 0.25..=4.0;
+
+/// One wheel notch or one press of the zoom keys, as a factor rather than a step: zooming
+/// out and back in again lands where it started.
+pub const ZOOM_STEP: f64 = 1.1;
+
 glib::wrapper! {
     pub struct Grid(ObjectSubclass<imp::Grid>)
         @extends gtk::Widget,
@@ -71,6 +79,34 @@ impl Grid {
     pub fn set_sheet(&self, sheet: usize) {
         self.imp().sheet.set(sheet);
         self.set_selection(Selection::default());
+        self.invalidate();
+    }
+
+    /// The document changed: repaint, and forget what was measured from it.
+    ///
+    /// Every write goes through `App` and every write notifies the observer, so this one
+    /// call from the observer's end covers the whole shell — including this widget's own
+    /// edits, which reach the core the same way.
+    pub fn invalidate(&self) {
+        self.imp().auto_rows.replace(None);
+        self.queue_draw();
+    }
+
+    pub fn zoom(&self) -> f64 {
+        self.imp().zoom.get()
+    }
+
+    /// Scale the view. Clamped to [`ZOOM_RANGE`]; a factor of 1 is the document at the
+    /// toolkit's own idea of its size.
+    pub fn set_zoom(&self, zoom: f64) {
+        let zoom = zoom.clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+        if zoom == self.zoom() {
+            return;
+        }
+        self.imp().zoom.set(zoom);
+        // Row heights are measured unzoomed, so they survive; the scrollbars and the editor
+        // are both sized in pixels and do not.
+        self.queue_resize();
         self.queue_draw();
     }
 
@@ -246,6 +282,12 @@ mod imp {
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
+    /// Space above and below it, which is what makes the default row taller than a line.
+    const ROW_PAD: f64 = 8.0;
+    /// How much sheet is measured for natural row heights. A row above the view still
+    /// displaces the ones below it, so this pass cannot be limited to what is on screen —
+    /// past this much document every row keeps the default height instead.
+    const AUTO_HEIGHT_CELLS: u64 = 200_000;
     /// How many columns are fetched beyond the visible ones, so that a label anchored just
     /// off-screen still overflows into view.
     const OVERFLOW_MARGIN: u32 = 12;
@@ -301,6 +343,20 @@ mod imp {
         pub hscroll_policy: Cell<gtk::ScrollablePolicy>,
         pub vscroll_policy: Cell<gtk::ScrollablePolicy>,
         pub metrics: Cell<Metrics>,
+        /// The view's scale, applied to every pixel this widget derives — the metrics, the
+        /// document's own lengths, and the font, which takes it as a Pango *scale* so that a
+        /// cell with a size of its own zooms too.
+        ///
+        /// Nothing measured is stored zoomed: a natural row height is a document-space
+        /// number like the heights it sits beside, and only [`Grid::geom`] multiplies.
+        pub zoom: Cell<f64>,
+        /// Natural heights for rows the document did not size, measured from what is in
+        /// them — `None` until the next paint measures again.
+        ///
+        /// ponytail: the whole used extent is re-measured after any change, where measuring
+        /// only the rows a change touched would do. Bounded instead by [`AUTO_HEIGHT_CELLS`],
+        /// so the cost has a ceiling rather than a cache to invalidate correctly.
+        pub auto_rows: RefCell<Option<Vec<(u32, f64)>>>,
         pub palette: RefCell<Option<Palette>>,
         /// One reusable layout rather than one per cell.
         ///
@@ -376,6 +432,8 @@ mod imp {
                 hscroll_policy: Cell::new(gtk::ScrollablePolicy::Minimum),
                 vscroll_policy: Cell::new(gtk::ScrollablePolicy::Minimum),
                 metrics: Cell::new(Metrics::default()),
+                zoom: Cell::new(1.0),
+                auto_rows: RefCell::new(None),
                 palette: RefCell::new(None),
                 layout: RefCell::new(None),
                 selection: Cell::new(Selection::default()),
@@ -584,6 +642,27 @@ mod imp {
                 }
             ));
             widget.add_controller(motion);
+
+            // Ctrl+wheel zooms; every other wheel event travels on to the scrolled window,
+            // which is the one that knows how to scroll.
+            let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+            scroll.connect_scroll(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                #[upgrade_or]
+                glib::Propagation::Proceed,
+                move |controller, _, dy| {
+                    if !controller
+                        .current_event_state()
+                        .contains(gtk::gdk::ModifierType::CONTROL_MASK)
+                    {
+                        return glib::Propagation::Proceed;
+                    }
+                    grid.set_zoom(grid.zoom() * ZOOM_STEP.powf(-dy));
+                    glib::Propagation::Stop
+                }
+            ));
+            widget.add_controller(scroll);
         }
     }
 
@@ -602,6 +681,10 @@ mod imp {
             // in characters and knows nothing about what it is holding, so an unmeasured
             // editor clips a formula at the column's edge.
             let layout = self.layout();
+            // The editor child draws in the widget's own font, zoom included or not, so it is
+            // measured with no attributes at all.
+            layout.set_attributes(None);
+            layout.set_width(-1);
             layout.set_text(&self.buffer.text());
             let wanted = f64::from(layout.pixel_size().0) + 4.0 * PAD;
             let w = wanted.max(cell.w).min((width - cell.x).max(cell.w));
@@ -695,7 +778,7 @@ mod imp {
         /// sizes a handful of tracks out of sixteen thousand, so this is a short walk over a
         /// `BTreeMap` and cannot go stale; cache it against a document-change token if a
         /// profiler ever blames it.
-        fn track_sizes(&self, default: f64, count: u32, rows: bool) -> Sizes {
+        fn track_lengths(&self, rows: bool) -> Vec<(u32, f64)> {
             let sheet = self.sheet.get();
             let app = self.app.borrow();
             let sizes = app
@@ -705,27 +788,38 @@ mod imp {
                     false => app.col_widths(sheet).ok(),
                 })
                 .unwrap_or_default();
-            let sizes = sizes
+            sizes
                 .iter()
                 .filter_map(|(i, len)| Some((*i, style::length_mm(len)? * PX_PER_MM)))
-                .collect();
-            Sizes::new(default, count, sizes)
+                .collect()
+        }
+
+        /// The columns, unzoomed — what a natural height is measured against.
+        fn col_sizes(&self) -> Sizes {
+            Sizes::new(self.metrics.get().col_width, MAX_COLS, self.track_lengths(false))
         }
 
         fn geom(&self) -> GridGeom {
             let m = self.metrics.get();
-            let mut rows = self.track_sizes(m.row_height, MAX_ROWS, true);
-            let mut cols = self.track_sizes(m.col_width, MAX_COLS, false);
+            let zoom = self.zoom.get();
+            // The document's own heights are given *after* the measured ones, because
+            // `Sizes::new` keeps the last entry for an index: a row the document sized keeps
+            // that size and clips, which is what an explicit height means.
+            let mut heights = self.auto_heights();
+            heights.extend(self.track_lengths(true));
+            let mut rows = Sizes::new(m.row_height, MAX_ROWS, heights).scaled(zoom);
+            let mut cols = self.col_sizes().scaled(zoom);
             // A resize in progress is painted before it is stored, so the whole grid reflows
-            // under the pointer rather than a guide line standing in for it.
+            // under the pointer rather than a guide line standing in for it. It arrives in
+            // screen pixels, which is why it goes on after the zoom rather than before.
             match self.resize.get() {
                 Some(Resize { track: Hit::ColEdge(col), size }) => cols = cols.with(col, size),
                 Some(Resize { track: Hit::RowEdge(row), size }) => rows = rows.with(row, size),
                 _ => {}
             }
             GridGeom {
-                header_w: m.header_w,
-                header_h: m.header_h,
+                header_w: m.header_w * zoom,
+                header_h: m.header_h * zoom,
                 rows,
                 cols,
                 scroll_x: self
@@ -739,6 +833,72 @@ mod imp {
                     .as_ref()
                     .map_or(0.0, gtk::Adjustment::value),
             }
+        }
+
+        /// Natural heights for the rows that need one, measured once per document change.
+        ///
+        /// A row is only ever *grown*: the default height already fits a line of the widget's
+        /// font, so what can overflow it is a cell that wraps onto a second line or one whose
+        /// style asks for a bigger font. Both need a style, and a cell without one is skipped
+        /// without laying anything out — which is what keeps this a cheap pass over a sheet
+        /// where nine cells in ten are plain.
+        fn auto_heights(&self) -> Vec<(u32, f64)> {
+            if let Some(measured) = self.auto_rows.borrow().as_ref() {
+                return measured.clone();
+            }
+            let measured = self.measure_rows();
+            self.auto_rows.replace(Some(measured.clone()));
+            measured
+        }
+
+        fn measure_rows(&self) -> Vec<(u32, f64)> {
+            let Some(app) = self.app.borrow().clone() else {
+                return Vec::new();
+            };
+            let sheet = self.sheet.get();
+            let Ok((used_rows, used_cols)) = app.used_extent(sheet) else {
+                return Vec::new();
+            };
+            if used_rows == 0 || used_cols == 0 || u64::from(used_rows) * u64::from(used_cols) > AUTO_HEIGHT_CELLS {
+                return Vec::new();
+            }
+            let Ok(viewport) = app.get_viewport(sheet, 0..used_rows, 0..used_cols) else {
+                return Vec::new();
+            };
+
+            let default = self.metrics.get().row_height;
+            let cols = self.col_sizes();
+            let layout = self.layout();
+            let mut measured = Vec::new();
+            for row in 0..used_rows {
+                let mut tallest: f64 = 0.0;
+                for col in 0..used_cols {
+                    let Some(style) = viewport.style(row, col) else {
+                        continue;
+                    };
+                    let wrapping = style.wrap.as_deref() == Some("wrap");
+                    if !wrapping && style.font_size.is_none() {
+                        continue;
+                    }
+                    let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
+                        continue;
+                    };
+                    layout.set_attributes(font(style).as_ref());
+                    layout.set_width(match wrapping {
+                        true => ((cols.size_of(col) - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
+                        false => -1,
+                    });
+                    layout.set_text(text);
+                    tallest = tallest.max(f64::from(layout.pixel_size().1));
+                }
+                if tallest + ROW_PAD > default {
+                    measured.push((row, (tallest + ROW_PAD).ceil()));
+                }
+            }
+            // The layout is shared, so what was set for a measurement has to be unset.
+            layout.set_attributes(None);
+            layout.set_width(-1);
+            measured
         }
 
         /// The one read a paint makes — [`Frame::cells`].
@@ -772,10 +932,25 @@ mod imp {
             layout
         }
 
+        /// What a layout draws with: the cell's own attributes, plus the zoom as a font
+        /// *scale* — a multiplier over whatever size applies, so a cell that set its own size
+        /// zooms with everything else.
+        fn attrs(&self, cell: Option<pango::AttrList>) -> Option<pango::AttrList> {
+            let zoom = self.zoom.get();
+            if zoom == 1.0 {
+                return cell;
+            }
+            let attrs = cell.unwrap_or_default();
+            attrs.insert(pango::AttrFloat::new_scale(zoom));
+            Some(attrs)
+        }
+
         /// Drop everything derived from the style and derive it again.
         fn restyle(&self) {
             self.palette.replace(None);
             self.layout.replace(None);
+            // Row heights are measured in the widget's font, so a new one remeasures them.
+            self.auto_rows.replace(None);
             self.update_metrics();
             self.obj().queue_resize();
         }
@@ -787,7 +962,7 @@ mod imp {
             let scale = f64::from(pango::SCALE);
             let line = f64::from(metrics.ascent() + metrics.descent()) / scale;
             let digit = (f64::from(metrics.approximate_digit_width()) / scale).max(1.0);
-            let row_height = (line + 8.0).ceil();
+            let row_height = (line + ROW_PAD).ceil();
             self.metrics.set(Metrics {
                 row_height,
                 col_width: (digit * 11.0).ceil(),
@@ -1383,7 +1558,9 @@ mod imp {
             let Some(resize) = self.resize.take() else { return };
             let Some(app) = self.app.borrow().clone() else { return };
             let sheet = self.sheet.get();
-            let length = Some(style::mm_length(resize.size / PX_PER_MM));
+            // The drag happened on screen, so the zoom comes back out before the pixels
+            // become a physical length.
+            let length = Some(style::mm_length(resize.size / self.zoom.get() / PX_PER_MM));
             let result = match resize.track {
                 Hit::ColEdge(col) => app.set_col_width(sheet, col..col + 1, length),
                 Hit::RowEdge(row) => app.set_row_height(sheet, row..row + 1, length),
@@ -1402,10 +1579,9 @@ mod imp {
         /// core has no font. Only the used extent is measured, because a column of a million
         /// empty cells has no widest thing in it.
         ///
-        /// ponytail: no row equivalent. A row's natural height is the font's line height
-        /// until something wraps, and measuring a wrapped cell means laying it out at its
-        /// own column's width — so double-clicking a row boundary clears the height back to
-        /// the default, which is that answer for every row this build can draw.
+        /// A row needs no equivalent: a row without a height of its own is *already* fitted
+        /// to what is in it ([`Grid::measure_rows`]), so double-clicking a row boundary
+        /// clears the explicit height and the fit is what is left.
         fn autofit(&self, col: u32) {
             let Some(app) = self.app.borrow().clone() else { return };
             let sheet = self.sheet.get();
@@ -1413,6 +1589,8 @@ mod imp {
             let layout = self.layout();
             layout.set_width(-1);
 
+            // Measured unzoomed, because what is stored is a length in the document rather
+            // than a number of pixels on this screen at this scale.
             let mut width: f64 = 0.0;
             if let Ok(viewport) = app.get_viewport(sheet, 0..rows, col..col + 1) {
                 for row in 0..rows {
@@ -1424,6 +1602,7 @@ mod imp {
                     width = width.max(f64::from(layout.pixel_size().0));
                 }
             }
+            layout.set_attributes(None);
             let width = (width + 2.0 * PAD).max(MIN_TRACK);
             let length = Some(style::mm_length(width / PX_PER_MM));
             if let Err(error) = app.set_col_width(sheet, col..col + 1, length) {
@@ -1432,8 +1611,8 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        /// Double-clicking a row boundary: back to the default height, `autofit`'s doc
-        /// comment explains why a row has no measured equivalent.
+        /// Double-clicking a row boundary: drop the explicit height and let the row fit
+        /// itself again, which `autofit`'s doc comment explains.
         fn clear_height(&self, row: u32) {
             let Some(app) = self.app.borrow().clone() else { return };
             let sheet = self.sheet.get();
@@ -1797,7 +1976,7 @@ mod imp {
                     // The style decides the font and the colour, and may override where the
                     // text sits — but not the *fallbacks*, which stay the value's own rules.
                     let style = viewport.style(row, col);
-                    layout.set_attributes(style.and_then(font).as_ref());
+                    layout.set_attributes(self.attrs(style.and_then(font)).as_ref());
                     let color = style
                         .and_then(|s| s.color.as_deref())
                         .and_then(crate::theme::color)
@@ -1810,11 +1989,10 @@ mod imp {
                     let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
 
                     let cell = geom.cell_rect(row, col);
-                    // ponytail: a wrapped cell is drawn inside its own width and clips at the
-                    // row's height — a real one since M8, but nothing grows it to fit what
-                    // wraps into it. Wrapping is still worth honouring: two words on two
-                    // lines read as two words, where one elided line reads as a truncated
-                    // value.
+                    // A wrapped cell is drawn inside its own width, and its row was grown to
+                    // fit what wraps into it (`measure_rows`) unless the document set that
+                    // row a height of its own — an explicit height means explicit, so it
+                    // still clips.
                     layout.set_width(match wrapping {
                         true => ((cell.w - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
                         false => -1,
@@ -1863,6 +2041,7 @@ mod imp {
             let (snapshot, geom, palette) = (f.snapshot, &f.geom, &f.palette);
             let (width, height, rows, cols) = (f.width, f.height, &f.rows, &f.cols);
             let layout = self.layout();
+            layout.set_attributes(self.attrs(None).as_ref());
             snapshot.append_color(&palette.header, &rect(0.0, 0.0, width, geom.header_h));
             snapshot.append_color(&palette.header, &rect(0.0, 0.0, geom.header_w, height));
 
@@ -1905,6 +2084,7 @@ mod imp {
             }
             snapshot.pop();
 
+            layout.set_attributes(None);
             let line = with_alpha(palette.lines, 1.0);
             snapshot.append_color(&line, &rect(0.0, geom.header_h - 1.0, width, 1.0));
             snapshot.append_color(&line, &rect(geom.header_w - 1.0, 0.0, 1.0, height));
@@ -1955,9 +2135,8 @@ mod imp {
     /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
     /// nothing here to set a family from.
     ///
-    /// ponytail: a size larger than the row is clipped. The alternative — deriving row
-    /// height from the tallest styled cell — is a layout pass the geometry has no model for
-    /// yet; M8 gives a row a real height, but nothing grows one automatically.
+    /// A size larger than the row's default grows the row rather than clipping — the tallest
+    /// styled cell in a row is what [`imp::Grid::measure_rows`] takes its height from.
     fn font(style: &sheet_core::style::CellStyle) -> Option<pango::AttrList> {
         let attrs = pango::AttrList::new();
         let mut any = false;

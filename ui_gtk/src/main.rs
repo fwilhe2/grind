@@ -215,7 +215,7 @@ impl Ui {
                     while receiver.try_recv().is_ok() {}
                     ui.dirty.set(!ui.loading.replace(false));
                     ui.refresh();
-                    ui.grid.queue_draw();
+                    ui.grid.invalidate();
                 }
             }
         ));
@@ -578,6 +578,9 @@ impl Ui {
             ("undo", "Undo"),
             ("redo", "Redo"),
             ("recalc", "Recalculate Now"),
+            ("zoom-in", "Zoom In"),
+            ("zoom-out", "Zoom Out"),
+            ("zoom-reset", "Normal Size"),
         ];
         for (action, title) in named {
             for (name, accels, _) in actions() {
@@ -652,6 +655,16 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.app.redo();
         }),
         ("recalc", &["F9"][..], |ui| ui.recalculate()),
+        // Both spellings of the key, because a keyboard's `+` is `plus` with Shift and
+        // `equal` without, and a user pressing Ctrl and the key next to Backspace means one
+        // thing by it either way.
+        ("zoom-in", &["<Control>plus", "<Control>equal", "<Control>KP_Add"][..], |ui| {
+            ui.grid.set_zoom(ui.grid.zoom() * grid::ZOOM_STEP)
+        }),
+        ("zoom-out", &["<Control>minus", "<Control>KP_Subtract"][..], |ui| {
+            ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP)
+        }),
+        ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| ui.grid.set_zoom(1.0)),
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
         ("sheet-delete", &[][..], |ui| ui.delete_sheet()),
@@ -674,6 +687,12 @@ fn primary_menu() -> gio::Menu {
     sheets.append(Some("Rename Sheet…"), Some("win.sheet-rename"));
     sheets.append(Some("Delete Sheet"), Some("win.sheet-delete"));
     menu.append_section(None, &sheets);
+
+    let view = gio::Menu::new();
+    view.append(Some("Zoom In"), Some("win.zoom-in"));
+    view.append(Some("Zoom Out"), Some("win.zoom-out"));
+    view.append(Some("Normal Size"), Some("win.zoom-reset"));
+    menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
     rest.append(Some("Recalculate Now"), Some("win.recalc"));

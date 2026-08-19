@@ -143,6 +143,16 @@ impl Sizes {
         self.offset_of(self.count)
     }
 
+    /// The same axis at a zoom factor. Every size scales, including the default, so the
+    /// arithmetic above stays in one space and a zoomed grid is not a second layout path.
+    pub fn scaled(&self, factor: f64) -> Self {
+        Self::new(
+            self.default * factor,
+            self.count,
+            self.sizes.iter().map(|(i, size)| (*i, size * factor)).collect(),
+        )
+    }
+
     /// The same axis with one track resized — what a resize drag paints before it commits.
     pub fn with(&self, index: u32, size: f64) -> Self {
         let mut sizes = self.sizes.clone();
@@ -440,6 +450,18 @@ mod tests {
         let s = Sizes::new(80.0, 10, Vec::new()).with(2, 30.0).with(2, 50.0);
         assert_eq!(s.size_of(2), 50.0);
         assert_eq!(s.total(), 10.0 * 80.0 - 30.0);
+    }
+
+    /// Zooming moves every edge by the factor and keeps the tracks in the same order — a
+    /// track that was twice the default still is.
+    #[test]
+    fn scaling_an_axis_scales_every_track_and_every_offset() {
+        let s = Sizes::new(80.0, 100, vec![(1, 20.0), (3, 200.0)]).scaled(1.5);
+        assert_eq!(s.size_of(0), 120.0);
+        assert_eq!(s.size_of(1), 30.0);
+        assert_eq!(s.offset_of(4), 380.0 * 1.5);
+        assert_eq!(s.total(), Sizes::new(80.0, 100, vec![(1, 20.0), (3, 200.0)]).total() * 1.5);
+        assert_eq!(s.at(s.offset_of(3) + 1.0), 3);
     }
 
     /// A cell in a row of its own height still contains the point that named it — the same

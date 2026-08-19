@@ -429,6 +429,7 @@ lint`, the loops, parity.
 | M7 | Styles + formatting UI — *done* | C7 getters (`style_at`, `format_at`, `sheet style\|format --show`) + C8 viewport styles, styled grid rendering (background, borders, weight/slant/size, both alignments, wrap), the format strip (`formatting.rs`), whose colour buttons offer `style::PALETTE` — the clrs.cc palette, in the core so `sheet style --color navy` writes the same attribute — with a dialog behind *Custom…* and *Automatic* to remove the colour | GUI- and CLI-formatted documents identical for the same operations — both build their `Format` from `numfmt::preset` and their `CellStyle` field by field, and `Format::preset_params`/`is_preset` are in the core so neither shell derives "how many decimals is this" for itself |
 | M8 | Widths & heights — *done* | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
 | M9 | Packaging & polish — *done* | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
+| M10 | Row auto-height & zoom — *done* | a row without a height of its own is measured from what is in it; Ctrl+wheel and Ctrl+`+`/`-`/`0` scale the view | a wrapped cell and a 28pt cell are drawn whole; the grid at 1.6× is the same grid, bigger |
 
 M9 landed as: `ui_gtk/data/` carries the `.desktop` file, an AppStream metainfo document and a
 scalable icon, none built by anything — this is a pure Cargo workspace, so there is no build
@@ -444,6 +445,26 @@ from `v4_12`). The flatpak manifest is the one item named "stretch" in the plan 
 skipped — nothing here needs it before the packaging files above have a build system to sit
 in.
 
+M10 closed two of M7's four gaps, and both fell out of the geometry rather than being drawn
+around. **A row is fitted to what is in it** unless the document gave it a height of its own,
+which still wins and still clips — `Grid::measure_rows` lays out only the cells that *can*
+overflow a default row (one that wraps, or one whose style asks for a bigger font; a cell
+with no style of its own is skipped without being laid out), and the result is handed to
+`Sizes` beside the document's own heights. It is measured once per document change rather
+than per frame, because a row above the view displaces the ones below it and the pass
+therefore cannot be limited to what is on screen; `AUTO_HEIGHT_CELLS` is the ceiling on how
+much sheet is measured at all, past which every row keeps the default height. **Zoom** is one
+factor in `Grid::geom`: `Sizes::scaled` for both axes, the metrics and the header band
+multiplied, and the font scaled by a Pango *scale* attribute so a cell that set its own size
+zooms with everything else. Nothing measured is stored zoomed — a natural row height, an
+autofit width and a resize drag all become document lengths at 1×, which is what keeps a
+document saved at 200% identical to the same document saved at 100%.
+
+Two things it deliberately leaves: the in-cell editor keeps drawing in the widget's own
+unzoomed font (M7's gap, unchanged — restyling a `gtk::Text` per cell is the second font path
+that gap already names), and the 4px padding either side of a cell's text does not scale,
+which is invisible at 1× and a hair tight at 4×.
+
 ## The gaps, written down
 
 Deferred by decision, not omission — each either has a not-doing.md row already or gets
@@ -452,7 +473,7 @@ written correctly, but switching sheets mid-edit is not wired) · a clipboard ce
 tab or a newline (they become
 spaces, so the rectangle survives; the upgrade is quoting, in a codec shared with `sheet
 paste`) · rich clipboard flavours, so a copy carries values and formulas as text and
-nothing else · zoom (Ctrl+wheel) · freeze panes (the same-widget-headers
+nothing else · freeze panes (the same-widget-headers
 design accommodates them) · window-state persistence (needs a GSettings schema —
 post-packaging) · autosave · a manage-names dialog (the capability exists; `sheet name`
 reaches it) · merged-cell rendering (the model does not carry spans; cells render
@@ -460,11 +481,8 @@ unmerged) · full grid accessibility · typing during a background recalc · loc
 separators. CSV, sort/filter, find/replace, the chart and print keep their existing
 not-doing rows and gates.
 
-M7 added four of its own, each named where it lives: a wrapped cell clips at its row's height
-and a font size larger than the row clips for the same reason — M8 gives every row a real
-height (dragged, or set with `sheet height`), but nothing yet *grows* one to fit a wrapped
-cell or an oversized font, which is a layout pass the geometry has no model for
-(`grid.rs`'s `draw_cells`, `font`) · a border's *line style* is ignored, so `dashed` and
+M7 added four of its own, each named where it lives — two of which are now closed, see M10
+below: a border's *line style* is ignored, so `dashed` and
 `double` draw solid (`draw_borders`) · the in-cell editor draws in the widget's font rather
 than the cell's, because `gtk::Text` is a real child and restyling it per cell is a second
 font path · formatting a **whole column** formats its used part rather than putting a

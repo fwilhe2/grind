@@ -215,8 +215,9 @@ split, the read-only grid, core prep (`a1`, `formula::display`, `enter`/`preview
 undo/redo, spoilage banner), clipboard, formula UX (point mode, autocomplete, signature
 hints), styling + the format strip, and column widths/row heights (drag to resize,
 double-click to autofit a column or clear a row, both surviving a LibreOffice round-trip).
-What M8 does *not* do: grow a row to fit a wrapped cell or an oversized font — still clips,
-tracked as a `ponytail:` note in `ui_gtk/src/grid.rs`.
+M10 adds row auto-height (a row without a height of its own is measured from what is in it,
+so a wrapped cell and an oversized font are drawn whole) and zoom (Ctrl+wheel,
+Ctrl+`+`/`-`/`0`) — one factor in `Grid::geom`, with nothing measured ever stored zoomed.
 
 **M9** brought packaging under `ui_gtk/data/` (`.desktop`, AppStream metainfo, a scalable
 icon — nothing builds or installs them yet, since this is a pure Cargo workspace), a
