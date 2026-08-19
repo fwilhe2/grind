@@ -99,7 +99,9 @@ SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 ## The loops
 
 Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
-for loops C and E.
+for loops C and E; loops A and B want a LibreOffice source checkout (`SHEET_LO_CORPUS`) for
+its `sc/qa/unit/data` fixture corpus. CI's `corpus` job gets that with a blobless sparse
+clone of just that directory rather than the whole tree.
 
 | Loop | Asserts | Where |
 |---|---|---|
@@ -116,9 +118,10 @@ loop A 358 read / 3 password-protected / 0 failed; loop B parse 75845/77061 (121
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions and gates CI on the `out` direction. Loop E is at 912/1000
-at its default seed, with the 88 untriaged disagreements classified in
-`doc/differential-fuzz.md`.
+Loop C is green both directions and gates CI in both. Loop E is at 912/1000 at its default
+seed, with the 88 untriaged disagreements classified in `doc/differential-fuzz.md`. All four
+loops now run in CI (`build`, `roundtrip`, `loop_e`, `corpus` jobs) rather than only where a
+developer's machine happens to have a LibreOffice checkout.
 
 Each loop has exactly one documented loosening (loop A accepts `Error::Encrypted`; loop C
 compares doubles at 15 significant digits, all LibreOffice writes). A third exception is a

@@ -43,3 +43,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
       - run: cargo test --test loop_e -- --nocapture
+
+  corpus:
+    # Loops A and B, and loop C's "back" direction, want LibreOffice's own test-fixture
+    # corpus (sc/qa/unit/data) rather than the whole LibreOffice source tree — the tree is
+    # tens of gigabytes of history the corpus tests never touch. A blobless, sparse clone
+    # fetches only that one directory's current blobs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
+          git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data
+      - run: cargo test -p sheet-core --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
+        env:
+          SHEET_LO_CORPUS: /tmp/lo-core/sc/qa/unit/data
