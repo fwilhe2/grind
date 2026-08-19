@@ -96,16 +96,17 @@ The corpus tests need a LibreOffice checkout and skip with a notice without one:
 SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 ```
 
-## The three loops
+## The loops
 
 Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
-for loop C.
+for loops C and E.
 
 | Loop | Asserts | Where |
 |---|---|---|
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `core/tests/corpus_read.rs` |
 | **B** — formula conformance | parse / display round-trip / evaluate-matches-cached-value | `core/tests/corpus_parse.rs`, `corpus_eval.rs` |
 | **C** — round-trip differential | write → `soffice --convert-to` → read back → identical, and reverse | `core/tests/roundtrip.rs` |
+| **E** — generated differential | formulas generated from the catalog's signatures, evaluated by us and by LO | `core/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 
 `core/tests/kb.rs` is the fourth check and never skips: R7's vendored documents. It also
 validates the writer against the schema (`jing -i`) and measures R3/R6.
@@ -115,7 +116,9 @@ loop A 358 read / 3 password-protected / 0 failed; loop B parse 75845/77061 (121
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions and gates CI on the `out` direction.
+Loop C is green both directions and gates CI on the `out` direction. Loop E is at 912/1000
+at its default seed, with the 88 untriaged disagreements classified in
+`doc/differential-fuzz.md`.
 
 Each loop has exactly one documented loosening (loop A accepts `Error::Encrypted`; loop C
 compares doubles at 15 significant digits, all LibreOffice writes). A third exception is a
