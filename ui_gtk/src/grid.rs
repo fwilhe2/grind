@@ -106,6 +106,9 @@ impl Grid {
         self.imp().zoom.set(zoom);
         // Row heights are measured unzoomed, so they survive; the scrollbars and the editor
         // are both sized in pixels and do not.
+        if self.imp().mode.get().is_editing() {
+            self.imp().restyle_formula();
+        }
         self.queue_resize();
         self.queue_draw();
     }
@@ -681,9 +684,9 @@ mod imp {
             // in characters and knows nothing about what it is holding, so an unmeasured
             // editor clips a formula at the column's edge.
             let layout = self.layout();
-            // The editor child draws in the widget's own font, zoom included or not, so it is
-            // measured with no attributes at all.
-            layout.set_attributes(None);
+            // Measured in what the editor actually draws with — the cell's font and the zoom
+            // — or the editor is sized for text a different size to the text in it.
+            layout.set_attributes(self.editor.attributes().as_ref());
             layout.set_width(-1);
             layout.set_text(&self.buffer.text());
             let wanted = f64::from(layout.pixel_size().0) + 4.0 * PAD;
@@ -1324,11 +1327,33 @@ mod imp {
 
         /// Colour the references in the editor. The formula bar does the same to its own
         /// copy from the same function, so the two cannot disagree.
-        fn restyle_formula(&self) {
+        /// What the in-cell editor draws with: the reference colouring, over the cell's own
+        /// font and the zoom.
+        ///
+        /// The editor is a real `gtk::Text` child rather than something this widget draws, so
+        /// what a cell looks like has to be told to it rather than falling out of the same
+        /// layout — Pango attributes rather than CSS, because they are what the grid uses for
+        /// the same cell and what the colouring already speaks.
+        ///
+        /// The font only: weight, slant, size and the zoom. The *colour* stays the theme's,
+        /// because the reference colouring owns the foreground here and a cell colour
+        /// underneath it would be a second opinion about the same bytes.
+        pub fn restyle_formula(&self) {
             let text = self.buffer.text().to_string();
             let dark = crate::theme::is_dark(&self.palette());
-            self.editor
-                .set_attributes(Some(&crate::theme::reference_attributes(&text, dark)));
+            let attrs = crate::theme::reference_attributes(&text, dark);
+            let pos = self.selection.get().active;
+            let style = self
+                .app
+                .borrow()
+                .as_ref()
+                .and_then(|app| app.style_at(self.sheet.get(), pos).ok().flatten());
+            if let Some(cell) = self.attrs(style.as_ref().and_then(font)) {
+                for attribute in cell.attributes() {
+                    attrs.insert(attribute);
+                }
+            }
+            self.editor.set_attributes(Some(&attrs));
         }
 
         /// Store what the buffer holds, then move.
@@ -1958,6 +1983,8 @@ mod imp {
             // stored value shows through the text being typed over it.
             let editing = self.mode.get().is_editing().then(|| self.selection.get().active);
             let layout = self.layout();
+            // The padding is a distance on screen like everything else here, so it zooms.
+            let pad = PAD * self.zoom.get();
             for row in rows.clone() {
                 for col in fetch.clone() {
                     if editing == Some(Pos::new(row, col)) {
@@ -1994,19 +2021,19 @@ mod imp {
                     // row a height of its own — an explicit height means explicit, so it
                     // still clips.
                     layout.set_width(match wrapping {
-                        true => ((cell.w - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
+                        true => ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32,
                         false => -1,
                     });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
-                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * PAD;
+                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * pad;
 
                     // A number that does not fit is never truncated — a wrong magnitude
                     // read as a right one is worse than no reading at all.
                     if !fits && align == Align::Right {
                         layout.set_text("##########");
                         let (w, h) = layout.pixel_size();
-                        draw_text(f.snapshot, &layout, color, &cell, cell, w, h, (Align::Right, valign));
+                        draw_text(f.snapshot, &layout, color, &cell, cell, w, h, (Align::Right, valign), pad);
                         continue;
                     }
 
@@ -2028,6 +2055,7 @@ mod imp {
                         text_w,
                         text_h,
                         (align, valign),
+                        pad,
                     );
                 }
             }
@@ -2063,7 +2091,7 @@ mod imp {
                 }
                 layout.set_text(&sheet_core::formula::lex::column_name(col));
                 let (w, h) = layout.pixel_size();
-                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle));
+                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle), PAD);
             }
             snapshot.pop();
 
@@ -2080,7 +2108,7 @@ mod imp {
                 }
                 layout.set_text(&(row + 1).to_string());
                 let (w, h) = layout.pixel_size();
-                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle));
+                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle), PAD);
             }
             snapshot.pop();
 
@@ -2206,19 +2234,20 @@ mod imp {
         text_w: i32,
         text_h: i32,
         align: (Align, VAlign),
+        pad: f64,
     ) {
         let (align, valign) = align;
         let text_w = f64::from(text_w);
         let text_h = f64::from(text_h);
         let x = match align {
-            Align::Left => cell.x + PAD,
+            Align::Left => cell.x + pad,
             Align::Center => cell.x + (cell.w - text_w) / 2.0,
-            Align::Right => cell.x + cell.w - PAD - text_w,
+            Align::Right => cell.x + cell.w - pad - text_w,
         };
         let y = match valign {
-            VAlign::Top => cell.y + 2.0,
+            VAlign::Top => cell.y + pad / 2.0,
             VAlign::Middle => cell.y + (cell.h - text_h) / 2.0,
-            VAlign::Bottom => cell.y + cell.h - 2.0 - text_h,
+            VAlign::Bottom => cell.y + cell.h - pad / 2.0 - text_h,
         };
         snapshot.push_clip(&rect(paint.x, paint.y, paint.w, paint.h));
         snapshot.save();

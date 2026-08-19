@@ -429,7 +429,7 @@ lint`, the loops, parity.
 | M7 | Styles + formatting UI — *done* | C7 getters (`style_at`, `format_at`, `sheet style\|format --show`) + C8 viewport styles, styled grid rendering (background, borders, weight/slant/size, both alignments, wrap), the format strip (`formatting.rs`), whose colour buttons offer `style::PALETTE` — the clrs.cc palette, in the core so `sheet style --color navy` writes the same attribute — with a dialog behind *Custom…* and *Automatic* to remove the colour | GUI- and CLI-formatted documents identical for the same operations — both build their `Format` from `numfmt::preset` and their `CellStyle` field by field, and `Format::preset_params`/`is_preset` are in the core so neither shell derives "how many decimals is this" for itself |
 | M8 | Widths & heights — *done* | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
 | M9 | Packaging & polish — *done* | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
-| M10 | Row auto-height & zoom — *done* | a row without a height of its own is measured from what is in it; Ctrl+wheel and Ctrl+`+`/`-`/`0` scale the view | a wrapped cell and a 28pt cell are drawn whole; the grid at 1.6× is the same grid, bigger |
+| M10 | Row auto-height & zoom — *done* | a row without a height of its own is measured from what is in it; Ctrl+wheel and Ctrl+`+`/`-`/`0` scale the view; the in-cell editor draws in the cell's font | a wrapped cell and a 28pt cell are drawn whole; the grid at 1.6× is the same grid, bigger, editor included |
 
 M9 landed as: `ui_gtk/data/` carries the `.desktop` file, an AppStream metainfo document and a
 scalable icon, none built by anything — this is a pure Cargo workspace, so there is no build
@@ -460,10 +460,14 @@ zooms with everything else. Nothing measured is stored zoomed — a natural row 
 autofit width and a resize drag all become document lengths at 1×, which is what keeps a
 document saved at 200% identical to the same document saved at 100%.
 
-Two things it deliberately leaves: the in-cell editor keeps drawing in the widget's own
-unzoomed font (M7's gap, unchanged — restyling a `gtk::Text` per cell is the second font path
-that gap already names), and the 4px padding either side of a cell's text does not scale,
-which is invisible at 1× and a hair tight at 4×.
+It also closed M7's third gap on the way, because zoom made it visible: **the in-cell editor
+draws in the cell's font**. It is a real `gtk::Text` child rather than something this widget
+draws, so it is told what the cell looks like instead of inheriting it — as Pango attributes,
+not CSS, since attributes are what the grid uses for the same cell and what the reference
+colouring already speaks, and the two therefore merge into one list. The font only: weight,
+slant, size and the zoom. The *colour* stays the theme's, because the reference colouring owns
+the foreground while a formula is being typed and a cell colour underneath it would be a
+second opinion about the same bytes. The cell's padding scales with everything else.
 
 ## The gaps, written down
 
@@ -481,11 +485,9 @@ unmerged) · full grid accessibility · typing during a background recalc · loc
 separators. CSV, sort/filter, find/replace, the chart and print keep their existing
 not-doing rows and gates.
 
-M7 added four of its own, each named where it lives — two of which are now closed, see M10
-below: a border's *line style* is ignored, so `dashed` and
-`double` draw solid (`draw_borders`) · the in-cell editor draws in the widget's font rather
-than the cell's, because `gtk::Text` is a real child and restyling it per cell is a second
-font path · formatting a **whole column** formats its used part rather than putting a
+M7 added four of its own, each named where it lives — three of them closed by M10 above.
+What is left: a border's *line style* is ignored, so `dashed` and
+`double` draw solid (`draw_borders`) · formatting a **whole column** formats its used part rather than putting a
 default style on the column, which needs `table:default-cell-style-name` to become
 something the model can write (`Grid::target`).
 
