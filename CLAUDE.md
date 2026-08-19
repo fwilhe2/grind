@@ -118,8 +118,10 @@ loop A 358 read / 3 password-protected / 0 failed; loop B parse 75845/77061 (121
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions and gates CI in both. Loop E is at 912/1000 at its default
-seed, with the 88 untriaged disagreements classified in `doc/differential-fuzz.md`. All four
+Loop C is green both directions and gates CI in both. Loop E is at 911/1000 on CI's `soffice`
+at its default seed (a local LibreOffice can land one either side of this — `FLOOR` is set
+from CI, not a developer machine), with the untriaged disagreements classified in
+`doc/differential-fuzz.md`. All four
 loops now run in CI (`build`, `roundtrip`, `loop_e`, `corpus` jobs) rather than only where a
 developer's machine happens to have a LibreOffice checkout.
 

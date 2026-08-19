@@ -124,9 +124,11 @@ one already written down in `doc/ods-format.md` §3.4.
 
 ## The first run, and what F2 inherits
 
-Seed `0x5EED`, 1000 formulas: **912 match, 88 disagree**, which is `FLOOR` in
-`core/tests/loop_e.rs`. The 88 are not yet triaged, and they are not evenly spread — the
-recurring classes, for whoever picks up F2:
+Seed `0x5EED`, 1000 formulas, on CI's `soffice`: **911 match, 89 disagree**, which is
+`FLOOR` in `core/tests/loop_e.rs`. (A developer machine's LibreOffice can land one formula
+either side of this — a borderline `AVERAGEIF`/`NPV`/`SUMIF` case moves by exactly one across
+a point release — so `FLOOR` is set from CI, not a local run.) The disagreements are not yet
+triaged, and they are not evenly spread — the recurring classes, for whoever picks up F2:
 
 - **A logical cell used as text.** `TRIM([.C2])` on a `office:value-type="boolean"` cell is
   `"1"` in LO and `"TRUE"` here; `LOWER`, `REPT`, `SUBSTITUTE`, `MID` all repeat it. This is a
