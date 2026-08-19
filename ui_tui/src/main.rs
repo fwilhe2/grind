@@ -68,6 +68,16 @@ fn main() -> ExitCode {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
     }
+    if arg
+        .as_deref()
+        .is_some_and(|a| a == "-V" || a == "--version")
+    {
+        println!(
+            "sheet-tui {}",
+            sheet_core::build_info::describe_version(env!("CARGO_PKG_VERSION"))
+        );
+        return ExitCode::SUCCESS;
+    }
     let path = arg.map(PathBuf::from);
 
     let core = Arc::new(CoreApp::new());

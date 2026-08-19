@@ -633,6 +633,10 @@ impl Ui {
             .website("https://github.com/fwilhe2/sheet")
             .license_type(gtk::License::Agpl30)
             .comments("An ODF-native spreadsheet.")
+            .debug_info(sheet_core::build_info::describe(
+                "sheet-gtk",
+                env!("CARGO_PKG_VERSION"),
+            ))
             .build();
         about.present(Some(&self.window));
     }

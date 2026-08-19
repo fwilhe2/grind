@@ -26,10 +26,17 @@ use sheet_core::{App, CellValue, Pos, RecalcMode, Session};
 
 use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
 
+fn long_version() -> &'static str {
+    use std::sync::OnceLock;
+    static VERSION: OnceLock<String> = OnceLock::new();
+    VERSION.get_or_init(|| sheet_core::build_info::describe_version(env!("CARGO_PKG_VERSION")))
+}
+
 #[derive(Parser)]
 #[command(
     name = "sheet",
     version,
+    long_version = long_version(),
     about = "Drive the ODF spreadsheet core from the shell",
     long_about = "Drive the ODF spreadsheet core from the shell.\n\n\
         Cells are addressed in ODF reference syntax without the brackets: A1, $B$7, \

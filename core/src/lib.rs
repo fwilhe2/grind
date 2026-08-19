@@ -21,6 +21,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod a1;
 pub mod action;
+pub mod build_info;
 pub mod formula;
 pub mod grid;
 pub mod locale;
