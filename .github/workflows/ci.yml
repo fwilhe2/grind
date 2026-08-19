@@ -34,3 +34,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
       - run: cargo test --test roundtrip -- --nocapture
+
+  loop_e:
+    # Loop E (doc/differential-fuzz.md) needs only `soffice`, same as loop C's "out"
+    # direction, so it gets its own job rather than waiting on a LibreOffice checkout.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: cargo test --test loop_e -- --nocapture
