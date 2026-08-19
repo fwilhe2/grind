@@ -77,6 +77,17 @@ fn excused(formula: &str, message: &str) -> Option<&'static str> {
     if message == "expected a value" && formula.contains(";*") {
         return Some("an operator where a parameter belongs (not §5.2 Expression)");
     }
+    // `of:=COM.MICROSOFT.LAMBDA(x$; x$)(42)`, `of:=COM.MICROSOFT.LET(_xlpm.x$;42; _xlpm.x$)`:
+    // Excel interop LAMBDA/LET, spelled with `_xlpm.`-prefixed parameter names carrying `!`
+    // or `$` sigils. §5.14's identifier grammar has no such character, and §5.7's
+    // nonstandard-name allowance covers the function name, not the parameters inside it.
+    if (formula.contains("COM.MICROSOFT.LAMBDA(") || formula.contains("COM.MICROSOFT.LET("))
+        && (message == "expected a value"
+            || message == "unexpected character '$'"
+            || message == "unexpected character '!'")
+    {
+        return Some("COM.MICROSOFT.LAMBDA/LET parameter name carries an Excel sigil (not §5.14 identifier syntax)");
+    }
     None
 }
 
