@@ -22,9 +22,8 @@ use crate::style::{CellStyle, EDGES};
 use super::context::{Attrs, Context};
 use super::names::{Name, Ns};
 
-/// LibreOffice's sheet limits, and the clamp for every repeat count (§9).
-const MAX_ROWS: u32 = 1_048_576;
-const MAX_COLS: u32 = 16_384;
+/// The sheet limits, which are also the clamp for every repeat count (§9).
+use crate::{MAX_COLS, MAX_ROWS};
 
 /// Ceiling on cells actually written, across the whole document.
 ///

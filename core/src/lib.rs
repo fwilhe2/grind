@@ -89,6 +89,17 @@ impl From<std::io::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// How big a sheet is: the bounds every other spreadsheet uses, and the ones the reader
+/// clamps a repeat count to.
+///
+/// Public because a shell has to lay out a scrollbar over the same sheet the reader filled,
+/// and two copies of these numbers is one copy too many. Note this is *not* a limit on what
+/// [`formula::lex`] will parse — a foreign file may name a cell past the end and still has
+/// to load (R5), so the bound is applied where an address becomes a place on *this* sheet,
+/// in [`a1::resolve`].
+pub const MAX_ROWS: u32 = 1_048_576;
+pub const MAX_COLS: u32 = 16_384;
+
 /// How many cells one [`App::set_format`] may cover.
 ///
 /// Formats are stored per cell, so this bounds the memory a single command can ask for.

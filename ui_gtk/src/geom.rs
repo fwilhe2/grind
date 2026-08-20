@@ -20,9 +20,9 @@
 //! tested as a round trip, because a rectangle that does not contain the point that
 //! produced it is the whole class of off-by-one this module can have.
 
-/// ODF's sheet bounds, which are also the scrollable extent (§3.2).
-pub const MAX_ROWS: u32 = 1_048_576;
-pub const MAX_COLS: u32 = 16_384;
+/// ODF's sheet bounds, which are also the scrollable extent (§3.2). The core's, not a
+/// second opinion: a scrollbar that ended somewhere the reader does not is a bug waiting.
+pub use sheet_core::{MAX_COLS, MAX_ROWS};
 
 /// A rectangle in widget space. Not `graphene::Rect`, so this module stays pure.
 #[derive(Clone, Copy, Debug, PartialEq)]

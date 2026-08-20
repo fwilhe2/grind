@@ -214,8 +214,9 @@ accent API gets a CSS fallback). Files, each single-purpose:
   menu: New · Open · Save As… · Recalculate Now (F9) · Keyboard Shortcuts · About. Ctrl+S
   saves + "Saved" toast (`adw::ToastOverlay`) — `editor`'s shape.
 - **Formula bar row**: name box (narrow `gtk::Entry`; typing an address or defined name
-  navigates, resolved through `core::a1` — the same lookup as everywhere) · formula entry
-  (hexpand) · ✓/✗ buttons visible only while editing.
+  navigates, resolved through `core::a1` — the same lookup as everywhere; typing anything
+  else *defines* it over the selection, via `App::set_name`, and the core's own refusal is
+  the toast) · formula entry (hexpand) · ✓/✗ buttons visible only while editing.
 - **Sheet tab strip** (bottom): linked toggle buttons + `+`; double-click / context menu
   rename popover; Delete is **immediate, with an undo toast** ("Deleted 'Q3 Actuals' —
   Undo") — the HIG undo-toast pattern, exactly what the sheet-carrying inverse was built

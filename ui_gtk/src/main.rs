@@ -36,7 +36,7 @@ use libadwaita::gtk;
 use libadwaita::prelude::*;
 
 use gtk::{gio, glib};
-use sheet_core::{App, Form, Observer};
+use sheet_core::{App, Form, Observer, a1};
 
 use grid::{Grid, Notice};
 
@@ -428,6 +428,136 @@ impl Ui {
         ));
     }
 
+    // --- names ---
+
+    /// The names dialog: every defined name, editable in place, plus a row to add one.
+    ///
+    /// A name is document-level and there is no other window to hang it off, so this is a
+    /// list rather than a property panel. Each row is an `adw::EntryRow` over the name's
+    /// definition, which makes editing one the same gesture as reading it; the core does
+    /// every refusal, and its message is the toast.
+    fn manage_names(self: &Rc<Self>) {
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        list.add_css_class("boxed-list");
+        let empty = gtk::Label::builder()
+            .label("No names yet. Name a range to use it in a formula: SUM(expenses).")
+            .wrap(true)
+            .xalign(0.0)
+            .build();
+        empty.add_css_class("dim-label");
+
+        let toasts = adw::ToastOverlay::new();
+        // The window's own toast overlay is *under* the dialog, so a refusal shown there
+        // would be invisible exactly when it matters.
+        let say: Rc<dyn Fn(&str)> = {
+            let toasts = toasts.clone();
+            Rc::new(move |text: &str| toasts.add_toast(adw::Toast::new(text)))
+        };
+
+        // Adding: a name and a definition, prefilled with the selection, because naming what
+        // is selected is why the dialog was opened nine times in ten.
+        let (start, end) = self.grid.selection().rect();
+        let selected = match start == end {
+            true => a1::format(None, start),
+            false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+        };
+        let new_name = adw::EntryRow::builder().title("Name").build();
+        let new_definition = adw::EntryRow::builder()
+            .title("Definition")
+            .text(&selected)
+            .build();
+        let add_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        add_list.add_css_class("boxed-list");
+        add_list.append(&new_name);
+        add_list.append(&new_definition);
+        let add = gtk::Button::with_label("Add");
+        add.add_css_class("suggested-action");
+        add.set_halign(gtk::Align::End);
+
+        // Whether the list has anything in it is the only thing two places both need to
+        // know, and a row deletes itself, so this is all the shared state there is.
+        let sync_empty: Rc<dyn Fn()> = {
+            let (list, empty, app) = (list.clone(), empty.clone(), self.app.clone());
+            Rc::new(move || {
+                let any = !app.names().is_empty();
+                list.set_visible(any);
+                empty.set_visible(!any);
+            })
+        };
+        for (name, expression) in self.app.names() {
+            list.append(&name_row(&self.app, &name, &expression, &say, &sync_empty));
+        }
+        sync_empty();
+
+        add.connect_clicked(glib::clone!(
+            #[strong(rename_to = app)]
+            self.app,
+            #[weak]
+            list,
+            #[strong]
+            new_name,
+            #[strong]
+            new_definition,
+            #[strong]
+            say,
+            #[strong]
+            sync_empty,
+            move |_| {
+                let name = new_name.text();
+                match define(&app, &name, &new_definition.text()) {
+                    Ok(expression) => {
+                        // Redefining an existing name edits its row rather than adding a
+                        // second one with the same title.
+                        match row_named(&list, &name) {
+                            Some(row) => row.set_text(&definition_text(&expression)),
+                            None => list.append(&name_row(&app, &name, &expression, &say, &sync_empty)),
+                        }
+                        new_name.set_text("");
+                        sync_empty();
+                    }
+                    Err(error) => say(&error),
+                }
+            }
+        ));
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        for widget in [
+            empty.upcast_ref::<gtk::Widget>(),
+            list.upcast_ref(),
+            add_list.upcast_ref(),
+            add.upcast_ref(),
+        ] {
+            content.append(widget);
+        }
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .child(&content)
+            .build();
+        toasts.set_child(Some(&scroller));
+
+        let view = adw::ToolbarView::builder().content(&toasts).build();
+        view.add_top_bar(&adw::HeaderBar::new());
+        let dialog = adw::Dialog::builder()
+            .title("Names")
+            .content_width(480)
+            .content_height(420)
+            .child(&view)
+            .build();
+        dialog.present(Some(&self.window));
+    }
+
     // --- sheets ---
 
     fn add_sheet(self: &Rc<Self>) {
@@ -646,6 +776,104 @@ impl Ui {
 /// header bar and the keyboard cannot drift apart.
 type Handler = fn(&Rc<Ui>);
 
+/// One name, as a row: its definition editable in place, and a button that removes it.
+///
+/// `set_name` over the same name replaces it, so applying an edit is a definition and needs
+/// no separate "rename" path — the name itself is the row's title and does not change.
+fn name_row(
+    app: &Arc<App>,
+    name: &str,
+    expression: &str,
+    say: &Rc<dyn Fn(&str)>,
+    sync_empty: &Rc<dyn Fn()>,
+) -> adw::EntryRow {
+    let row = adw::EntryRow::builder()
+        .title(name)
+        .text(definition_text(expression))
+        .show_apply_button(true)
+        .build();
+    row.connect_apply(glib::clone!(
+        #[strong]
+        app,
+        #[strong]
+        say,
+        #[to_owned]
+        name,
+        move |row| {
+            if let Err(error) = define(&app, &name, &row.text()) {
+                say(&error);
+            }
+        }
+    ));
+
+    let delete = gtk::Button::from_icon_name("user-trash-symbolic");
+    delete.set_tooltip_text(Some("Delete"));
+    delete.set_valign(gtk::Align::Center);
+    delete.add_css_class("flat");
+    delete.connect_clicked(glib::clone!(
+        #[strong]
+        app,
+        #[strong]
+        sync_empty,
+        #[weak]
+        row,
+        #[to_owned]
+        name,
+        move |_| {
+            // A formula that mentions a deleted name goes stale rather than being rewritten
+            // — `App::clear_name`'s documented answer, and the banner counts it.
+            app.clear_name(&name);
+            if let Some(list) = row.parent().and_downcast::<gtk::ListBox>() {
+                list.remove(&row);
+            }
+            sync_empty();
+        }
+    ));
+    row.add_suffix(&delete);
+    row
+}
+
+/// The row for a name, if the list already has one — names are case-insensitive, as they
+/// are everywhere else.
+fn row_named(list: &gtk::ListBox, name: &str) -> Option<adw::EntryRow> {
+    let mut child = list.first_child();
+    while let Some(widget) = child {
+        child = widget.next_sibling();
+        if let Ok(row) = widget.downcast::<adw::EntryRow>()
+            && row.title().eq_ignore_ascii_case(name.trim())
+        {
+            return Some(row);
+        }
+    }
+    None
+}
+
+/// Define `name` as `target`, returning what was stored. `a1::definition` is the shared
+/// rule — a leading `=` is a formula, anything else an address — and `App::set_name` does
+/// every refusal, so its message is what a user sees.
+fn define(app: &App, name: &str, target: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("A name is needed".to_owned());
+    }
+    let expression = a1::definition(app, target).map_err(|e| e.to_string())?;
+    app.set_name(name, &expression)
+        .map(|()| expression)
+        .map_err(|e| e.to_string())
+}
+
+/// A stored definition in the form the dialog takes back.
+///
+/// A reference arrives bracketed, which `a1::definition` accepts as it stands; anything else
+/// is a *formula* and needs the `=` that says so, or retyping what was shown would be read
+/// as an address.
+fn definition_text(expression: &str) -> String {
+    match expression.starts_with('[') {
+        true => expression.to_owned(),
+        false => format!("={expression}"),
+    }
+}
+
 fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
     vec![
         ("new", &["<Control>n"][..], (|ui: &Rc<Ui>| ui.new_document()) as Handler),
@@ -669,6 +897,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP)
         }),
         ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| ui.grid.set_zoom(1.0)),
+        ("names", &[][..], |ui| ui.manage_names()),
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
         ("sheet-delete", &[][..], |ui| ui.delete_sheet()),
@@ -699,6 +928,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
+    rest.append(Some("Names…"), Some("win.names"));
     rest.append(Some("Recalculate Now"), Some("win.recalc"));
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));

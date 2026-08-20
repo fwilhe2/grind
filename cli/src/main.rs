@@ -685,12 +685,8 @@ fn run(cli: &Cli) -> Result<Report, String> {
             };
 
             // Same rule as `set`: a leading `=` means a formula, anything else is an
-            // address. A named range and a named expression are one thing in the model, so
-            // this is the only place the two spellings differ.
-            let expression = match target.strip_prefix('=') {
-                Some(formula) => formula.to_owned(),
-                None => a1::as_definition(&app, &a1::parse(target).say()?).say()?,
-            };
+            // address — `a1::definition`, shared with the shells so the two cannot differ.
+            let expression = a1::definition(&app, target).say()?;
             app.set_name(name, &expression).say()?;
             finish(&app, cli, file, true)
         }

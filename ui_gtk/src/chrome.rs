@@ -19,7 +19,7 @@ use gtk::glib;
 
 use sheet_core::{App, CellValue, Pos, a1};
 
-use crate::grid::Grid;
+use crate::grid::{Grid, Notice};
 use crate::keymap::{Dir, Selection};
 
 /// The formula bar: a name box, the shared editor, and the two buttons that end an edit.
@@ -30,7 +30,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
     let name_box = gtk::Entry::builder()
         .width_chars(10)
         .max_width_chars(14)
-        .tooltip_text("Go to a cell, a range or a defined name")
+        .tooltip_text("Go to a cell, a range or a defined name — or name the selection")
         .build();
     name_box.connect_activate(glib::clone!(
         #[weak]
@@ -38,12 +38,35 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         #[strong]
         app,
         move |entry| {
-            if let Some(selection) = locate(&app, grid.sheet(), &entry.text()) {
-                grid.set_selection(selection);
+            let text = entry.text();
+            match locate(&app, grid.sheet(), &text) {
+                Some(selection) => grid.set_selection(selection),
+                // Not somewhere to go, so it is something to name — what every other
+                // spreadsheet's name box does with a word it does not know.
+                None => {
+                    if let Err(error) = name_selection(&app, &grid, text.trim()) {
+                        grid.report(Notice::Refused(error));
+                        // The text stays put so it can be corrected rather than retyped.
+                        return;
+                    }
+                }
             }
-            entry.set_text("");
+            entry.set_text(&name_box_text(&app, grid.sheet(), grid.selection()));
             grid.grab_focus();
         }
+    ));
+    // The name box shows where the selection is — or, when the selection is exactly a
+    // defined range, what it is called. That is the only way a name is visible without
+    // opening a dialog, and it is how a user finds out one exists at all.
+    name_box.set_text(&name_box_text(app, grid.sheet(), grid.selection()));
+    grid.connect_selection_changed(glib::clone!(
+        #[weak]
+        name_box,
+        #[weak]
+        grid,
+        #[strong]
+        app,
+        move |selection| name_box.set_text(&name_box_text(&app, grid.sheet(), selection))
     ));
 
     let entry = gtk::Entry::builder()
@@ -269,16 +292,81 @@ fn locate(app: &App, sheet: usize, text: &str) -> Option<Selection> {
         .find(|(name, _)| name.eq_ignore_ascii_case(text))
         .map(|(_, expression)| expression);
     let reference = match &expression {
-        Some(expression) => a1::parse(expression.trim_start_matches('[').trim_end_matches(']')).ok()?,
-        None => a1::parse(text).ok()?,
+        Some(expression) => a1::parse(strip_brackets(expression)).ok()?,
+        // A bare word is a *whole column* to the grammar — `foo` is `[.FOO]`, column 4460 —
+        // and taking that literally means no three-letter word can ever be a name, since
+        // every one of them is a column up to `XFD`. A name box wants the other reading, so
+        // an address without a `:` has to name both axes: `A1` and `Data.B2` are places,
+        // `A:A` and `3:3` are the whole column and the whole row, and `foo` is a name.
+        None => match a1::parse(text).ok()? {
+            reference if text.contains(':') || is_a_cell(&reference) => reference,
+            _ => return None,
+        },
     };
     let (found, start, end) = a1::resolve(app, &reference).ok()?;
     // Navigating to another sheet is the sheet tabs' job, not the name box's, so a name
     // that lives elsewhere is refused rather than silently landing on the wrong sheet.
+    //
+    // The active cell is the range's *start*: going to a range means looking at the top of
+    // it, and the active cell is what the grid scrolls to.
     (found == sheet).then_some(Selection {
-        anchor: start,
-        active: end,
+        anchor: end,
+        active: start,
     })
+}
+
+/// What the name box shows for a selection: what it is called, or where it is.
+pub fn name_box_text(app: &App, sheet: usize, selection: Selection) -> String {
+    name_of(app, sheet, selection).unwrap_or_else(|| a1::format(None, selection.active))
+}
+
+/// The defined name covering exactly this selection, if there is one.
+///
+/// Exactly, not overlapping: a name is a handle on one range, and offering it for a
+/// selection that merely sits inside would put a word in the box that typing back would
+/// move the selection.
+fn name_of(app: &App, sheet: usize, selection: Selection) -> Option<String> {
+    let want = selection.rect();
+    app.names().into_iter().find_map(|(name, expression)| {
+        let reference = a1::parse(strip_brackets(&expression)).ok()?;
+        let (found, start, end) = a1::resolve(app, &reference).ok()?;
+        (found == sheet && (start, end) == want).then_some(name)
+    })
+}
+
+/// A stored definition without ODF's brackets — `[$Sheet1.$A$1]` is how a reference is
+/// written in a file, and `a1::parse` takes the address a person types.
+fn strip_brackets(expression: &str) -> &str {
+    expression
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(expression)
+}
+
+/// Whether a reference names a cell rather than a whole column or row — both axes present
+/// on both ends.
+fn is_a_cell(reference: &sheet_core::formula::lex::Reference) -> bool {
+    std::iter::once(&reference.start)
+        .chain(reference.end.as_ref())
+        .all(|end| end.row.is_some() && end.col.is_some())
+}
+
+/// Define `name` over whatever is selected — the other half of the name box.
+///
+/// Sheet-qualified and absolute, through `a1::as_definition`, because that is what a name
+/// has to be to mean the same range read from anywhere (§5.11). The core does the refusing:
+/// `App::set_name` already knows which words are names and which are addresses wearing a
+/// name's clothes, and a second opinion here would be a second thing to keep in step.
+fn name_selection(app: &App, grid: &Grid, name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Type a cell, a range, or a name for the selection".to_owned());
+    }
+    let sheet = grid.sheet();
+    let (start, end) = grid.selection().rect();
+    let sheet_name = app.sheet_name(sheet).map_err(|e| e.to_string())?;
+    let reference = a1::reference(Some(&sheet_name), start, end);
+    let expression = a1::as_definition(app, &reference).map_err(|e| e.to_string())?;
+    app.set_name(name, &expression).map_err(|e| e.to_string())
 }
 
 fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
@@ -463,4 +551,57 @@ fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
 
 fn show(n: f64) -> String {
     sheet_core::formula::value::format_number(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The name box's whole ambiguity, pinned: a word is a name, an address is a place, and
+    /// a whole column has to be asked for as a range. Without the last rule every word up to
+    /// `XFD` would silently be a column instead of a name.
+    #[test]
+    fn a_word_is_a_name_and_an_address_is_a_place() {
+        let app = App::new();
+        let go = |text: &str| locate(&app, 0, text);
+
+        // Places, with both axes named.
+        assert_eq!(go("A1").expect("A1 is a cell").active, Pos::new(0, 0));
+        assert_eq!(go("b3:c9").expect("a range").active, Pos::new(2, 1));
+        // A whole column, asked for the way a name box asks.
+        assert!(go("A:A").is_some());
+
+        // Words. Every one of these parses as a column and must not be taken as one.
+        for word in ["foo", "abc", "sales", "Total"] {
+            assert!(go(word).is_none(), "{word} should be a name, not a column");
+        }
+
+        // Until it is defined, and then it is where it points.
+        app.set_name("foo", "[$Sheet1.$B$2:.$B$4]").expect("a name");
+        assert_eq!(go("foo").expect("foo is defined now").active, Pos::new(1, 1));
+    }
+
+    /// The name box shows a name when the selection is exactly that name's range, and the
+    /// bare address otherwise — including when the selection only overlaps a name rather
+    /// than matching it.
+    #[test]
+    fn the_name_box_shows_a_name_when_the_selection_is_exactly_one() {
+        let app = App::new();
+        app.set_name("total", "[$Sheet1.$B$2:.$B$4]").expect("a name");
+
+        let exact = Selection {
+            anchor: Pos::new(1, 1),
+            active: Pos::new(3, 1),
+        };
+        assert_eq!(name_box_text(&app, 0, exact), "total");
+
+        let overlapping = Selection {
+            anchor: Pos::new(1, 1),
+            active: Pos::new(2, 1),
+        };
+        assert_eq!(name_box_text(&app, 0, overlapping), "B3");
+
+        let plain = Selection::at(Pos::new(0, 0));
+        assert_eq!(name_box_text(&app, 0, plain), "A1");
+    }
 }

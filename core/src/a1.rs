@@ -92,6 +92,12 @@ fn sheet_dot(part: &str) -> Option<usize> {
 /// A missing axis is a whole column or row (§5.8) and is clamped to the sheet's used extent
 /// — the same bound the evaluator uses, and the reason `view A:A` reads what is there
 /// instead of a million empty rows.
+///
+/// A reference past the end of the sheet is refused here rather than in the lexer, which
+/// has to keep parsing whatever a foreign file says (R5). This is the only place an address
+/// becomes a place, so it is the one place that can ask whether the place exists — and it
+/// has to ask, because the grammar reads a bare word as a whole column: `SALES` is
+/// `[.SALES]`, column 8708380, and a shell handed that scrolls off the end of the world.
 pub fn resolve(app: &App, reference: &Reference) -> Result<(usize, Pos, Pos)> {
     let sheet = sheet_index(app, reference.start.sheet.as_deref())?;
     if reference.source.is_some() {
@@ -108,7 +114,23 @@ pub fn resolve(app: &App, reference: &Reference) -> Result<(usize, Pos, Pos)> {
         axis(&end.row, rows.saturating_sub(1)),
         axis(&end.col, cols.saturating_sub(1)),
     );
+    for pos in [start, stop] {
+        if pos.row >= crate::MAX_ROWS || pos.col >= crate::MAX_COLS {
+            return Err(Error::Formula(format!(
+                "{} is past the end of the sheet",
+                format_pos(pos)
+            )));
+        }
+    }
     Ok((sheet, start, stop))
+}
+
+/// A position for an error message, without pretending a column past `XFD` has a name.
+fn format_pos(pos: Pos) -> String {
+    match pos.col < crate::MAX_COLS {
+        true => format(None, pos),
+        false => format!("column {}", pos.col + 1),
+    }
 }
 
 fn axis(a: &Option<lex::Axis>, whole: u32) -> u32 {
@@ -174,6 +196,30 @@ pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
         }
     }
     Ok(out.to_string())
+}
+
+/// What a user typed where a name's *definition* goes, as an expression [`App::set_name`]
+/// takes.
+///
+/// A leading `=` means a formula and everything else is an address, which is `set`'s rule
+/// and therefore the one already in the user's hands. A named range and a named expression
+/// are one thing in the model, so this is the only place the two spellings differ — and it
+/// lives here rather than in a command so that a dialog and a command line cannot disagree
+/// about what `B2:B4` defines.
+pub fn definition(app: &App, target: &str) -> Result<String> {
+    let target = target.trim();
+    match target.strip_prefix('=') {
+        Some(formula) => Ok(formula.to_owned()),
+        // Brackets tolerated on the way in: a definition read back out of a document wears
+        // them, and retyping what was shown has to work.
+        None => {
+            let bare = target
+                .strip_prefix('[')
+                .and_then(|rest| rest.strip_suffix(']'))
+                .unwrap_or(target);
+            as_definition(app, &parse(bare)?)
+        }
+    }
 }
 
 /// The reference covering a rectangle — what a shell builds when a user *points* at cells
@@ -287,6 +333,24 @@ mod tests {
         }
     }
 
+    /// A bare word is a whole column to the grammar, so `SALES` parses — but column 8708380
+    /// is not a place on a sheet, and a shell told to go there scrolls into nothing. The
+    /// parse still succeeds, because tolerance on the way in is the reader's rule too.
+    #[test]
+    fn a_reference_past_the_end_of_the_sheet_resolves_to_nothing() {
+        let app = App::new();
+        for word in ["SALES", "TOTAL", "ZZZZ"] {
+            let reference = parse(word).expect("a bare word lexes as a whole column");
+            assert!(
+                resolve(&app, &reference).is_err(),
+                "{word} is past the end of the sheet"
+            );
+        }
+        // The last real cell is still reachable, and so is a whole column inside the sheet.
+        assert!(resolve(&app, &at("XFD1048576")).is_ok());
+        assert!(resolve(&app, &at("A:A")).is_ok());
+    }
+
     #[test]
     fn formatting_is_the_inverse_of_parsing() {
         for addr in ["A1", "B7", "Z100", "AA1", "XFD1048576"] {
@@ -295,5 +359,20 @@ mod tests {
             assert_eq!(format(None, pos), addr);
         }
         assert_eq!(format(Some("Data"), Pos::new(1, 1)), "Data.B2");
+    }
+
+    /// The name box and `sheet name` share this rule: `=` means a formula, anything else an
+    /// address that gets sheet-qualified and made absolute — a bracketed definition read
+    /// back out of a document is accepted as-is, since retyping what was shown must work.
+    #[test]
+    fn a_leading_equals_is_a_formula_and_everything_else_an_address() {
+        let app = App::new();
+        assert_eq!(definition(&app, "B2:B4").unwrap(), "[$Sheet1.$B$2:.$B$4]");
+        assert_eq!(definition(&app, "=MAX(total)").unwrap(), "MAX(total)");
+        assert_eq!(
+            definition(&app, "[$Sheet1.$B$2:.$B$4]").unwrap(),
+            "[$Sheet1.$B$2:.$B$4]"
+        );
+        assert!(definition(&app, "not an address").is_err());
     }
 }
