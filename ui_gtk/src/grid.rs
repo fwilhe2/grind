@@ -113,6 +113,13 @@ impl Grid {
         self.queue_draw();
     }
 
+    /// Every used column autofit to its widest text and every explicit row height cleared,
+    /// so the whole sheet fits what is in it — the bulk form of double-clicking each column
+    /// and row boundary in turn.
+    pub fn autofit_all(&self) {
+        self.imp().autofit_all();
+    }
+
     pub fn selection(&self) -> Selection {
         self.imp().selection.get()
     }
@@ -1690,6 +1697,25 @@ mod imp {
                 self.notice(Notice::Refused(error.to_string()));
             }
             self.obj().queue_draw();
+        }
+
+        /// Every used column autofit and every explicit row height cleared, in one gesture:
+        /// the bulk form of `autofit`/`clear_height` done one boundary at a time. Each
+        /// column still gets its own [`App::set_col_width`] call, because the widest text
+        /// differs per column, so this is several undo steps rather than one — a coarser
+        /// grain than a single drag, but this is not a single drag.
+        pub fn autofit_all(&self) {
+            let Some(app) = self.app.borrow().clone() else { return };
+            let sheet = self.sheet.get();
+            let Ok((_, cols)) = app.used_extent(sheet) else { return };
+            for col in 0..cols {
+                self.autofit(col);
+            }
+            if let Ok(heights) = app.row_heights(sheet) {
+                for (row, _) in heights {
+                    self.clear_height(row);
+                }
+            }
         }
 
         /// Double-clicking a row boundary: drop the explicit height and let the row fit

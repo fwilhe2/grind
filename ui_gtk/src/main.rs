@@ -897,6 +897,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP)
         }),
         ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| ui.grid.set_zoom(1.0)),
+        ("autofit-all", &[][..], |ui| ui.grid.autofit_all()),
         ("names", &[][..], |ui| ui.manage_names()),
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
@@ -925,6 +926,7 @@ fn primary_menu() -> gio::Menu {
     view.append(Some("Zoom In"), Some("win.zoom-in"));
     view.append(Some("Zoom Out"), Some("win.zoom-out"));
     view.append(Some("Normal Size"), Some("win.zoom-reset"));
+    view.append(Some("Resize All Cells to Fit"), Some("win.autofit-all"));
     menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
