@@ -860,3 +860,102 @@ fn libreoffice_documents_survive_our_writer() {
         failures.len()
     );
 }
+
+// --- R7's kb/ corpus: rendered, not just read -------------------------------------------
+
+/// R7's hand-written half (`kb.rs`'s `KB`), named again rather than shared: each test binary
+/// is its own crate, and eight file names is cheaper than a shared support module.
+const KB: [&str; 8] = [
+    "filter.fods",
+    "fizzbuzz.fods",
+    "formula.fods",
+    "minimal.fods",
+    "minimal-libreoffice.fods",
+    "minimal-libreoffice-cleanup.fods",
+    "minimal-with-styles.fods",
+    "named-range.fods",
+];
+
+/// `minimal.fods`'s date, time and two booleans (`r0c5`, `r0c6`, `r0c10`, `r0c11`) carry no
+/// `table:style-name` at all — the whole point of that fixture (`kb.rs`: "twelve cells, no
+/// styles"). §5.2 leaves a styleless cell's display implementation-defined, and the two
+/// implementations pick differently: we still honour `office:value-type` and show a date, a
+/// time and a boolean; LibreOffice's own round trip degrades all four to a bare
+/// `office:value-type="float"`, so it shows the serial number and `1`/`0`. Both are legal
+/// readings of the same file, so this is the one named exception rather than a bug either
+/// side needs to fix.
+fn expected_render_gap(name: &str, sheet: usize, pos: Pos) -> bool {
+    name == "minimal.fods" && sheet == 0 && pos.row == 0 && matches!(pos.col, 5 | 6 | 10 | 11)
+}
+
+/// `kb.rs` checks these eight read and round-trip; this checks they *display* the same as
+/// LibreOffice shows them, cell by cell, formulas recalculated on both sides. Narrower than
+/// [`differences`] on purpose — `fizzbuzz.fods` and `formula.fods` carry no cached values at
+/// all, so what they have in common with LibreOffice is only ever the rendered text, never
+/// the raw `CellValue` LO's own recalculation happens to produce.
+#[test]
+fn kb_documents_render_the_same_in_libreoffice() {
+    if !have_soffice() {
+        eprintln!("skipping loop C (kb render): no soffice on PATH");
+        return;
+    }
+
+    let lab = Lab::new("kb-render");
+    let staged: Vec<_> = KB
+        .iter()
+        .map(|name| {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/kb")
+                .join(name);
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+            (*name, lab.input(name, &bytes))
+        })
+        .collect();
+    let out = lab.convert(&staged.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>());
+
+    let mut failures = Vec::new();
+    for (name, path) in &staged {
+        let app = sheet_core::App::new();
+        app.open_file(path).unwrap_or_else(|e| panic!("{name}: {e}"));
+        app.recalc().unwrap_or_else(|e| panic!("{name}: {e}"));
+
+        let got = converted(&out, path);
+
+        for sheet in 0..app.sheet_count().max(got.sheets.len()) {
+            let (want_rows, want_cols) = app.used_extent(sheet).unwrap_or((0, 0));
+            let got_sheet = got.sheet(sheet);
+            let got_extent = got_sheet.map_or((0, 0), |s| (s.used_rows(), s.used_cols()));
+            let rows = want_rows.max(got_extent.0);
+            let cols = want_cols.max(got_extent.1);
+
+            let ours = app
+                .get_viewport(sheet, 0..rows, 0..cols)
+                .unwrap_or_else(|e| panic!("{name} sheet {sheet}: {e}"));
+            for row in 0..rows {
+                for col in 0..cols {
+                    let pos = Pos::new(row, col);
+                    let want = ours.text(row, col).unwrap_or("");
+                    let theirs = match got_sheet {
+                        Some(s) => shown(s, pos, &got),
+                        None => String::new(),
+                    };
+                    if want != theirs && !expected_render_gap(name, sheet, pos) {
+                        failures.push(format!(
+                            "{name}: sheet {sheet} r{row}c{col} rendered {want:?}, \
+                             LibreOffice shows {theirs:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    for f in failures.iter().take(30) {
+        eprintln!("  {f}");
+    }
+    assert!(
+        failures.is_empty(),
+        "loop C (kb render): {} differences",
+        failures.len()
+    );
+}
