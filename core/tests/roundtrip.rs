@@ -893,6 +893,17 @@ fn expected_render_gap(name: &str, sheet: usize, pos: Pos) -> bool {
 /// [`differences`] on purpose — `fizzbuzz.fods` and `formula.fods` carry no cached values at
 /// all, so what they have in common with LibreOffice is only ever the rendered text, never
 /// the raw `CellValue` LO's own recalculation happens to produce.
+///
+/// **Not** a claim that a shell shows this the instant it opens one of these files. Neither
+/// side auto-recalculates on open: `ui_gtk::main`'s `open_file` never calls `App::recalc`,
+/// only F9/"Recalculate Now" does, and `a_document_of_formulas_with_no_cached_values_
+/// recalculates` (`kb.rs`) documents LibreOffice doing the same — `fizzbuzz.fods` is blank
+/// in both until something recalculates it. `soffice --convert-to`, which is what builds the
+/// LibreOffice side here, recalculates as part of the conversion, and the explicit
+/// `app.recalc()` a few lines down matches that on our side. So this test is "our formula
+/// engine agrees with LibreOffice's once both have recalculated", not "opening the file
+/// looks right" — the latter is a real, separate, as-designed gap and not what a green run
+/// here says anything about.
 #[test]
 fn kb_documents_render_the_same_in_libreoffice() {
     if !have_soffice() {
