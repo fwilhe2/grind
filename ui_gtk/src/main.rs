@@ -706,19 +706,20 @@ fn primary_menu() -> gio::Menu {
     menu
 }
 
-/// The file filters, in the words a user knows the formats by. Nothing user-facing names
+/// The file filter, in the words a user knows the format by. Nothing user-facing names
 /// another program (`CONTRIBUTING.md`).
+///
+/// One filter, both extensions: packaged and flat are the same document to everyone but the
+/// writer, so a dialog that makes the user pick between them is asking a question that has
+/// no answer at the point it is asked.
 fn spreadsheet_filters() -> gio::ListStore {
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("OpenDocument Spreadsheet"));
+    filter.add_pattern("*.ods");
+    filter.add_pattern("*.fods");
+
     let filters = gio::ListStore::new::<gtk::FileFilter>();
-    for (name, pattern) in [
-        ("OpenDocument Spreadsheet", "*.ods"),
-        ("Flat OpenDocument Spreadsheet", "*.fods"),
-    ] {
-        let filter = gtk::FileFilter::new();
-        filter.set_name(Some(name));
-        filter.add_pattern(pattern);
-        filters.append(&filter);
-    }
+    filters.append(&filter);
     filters
 }
 
