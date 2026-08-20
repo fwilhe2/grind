@@ -255,6 +255,62 @@ impl Default for Grid {
     }
 }
 
+/// What clicking on something selects, as arithmetic — free of the widget so it can be
+/// tested without a display. See `Grid::selection_for` for why the ends are this way round.
+fn selection_for_hit(hit: crate::geom::Hit) -> Selection {
+    use crate::geom::Hit;
+    match hit {
+        Hit::Cell { row, col } => Selection::at(Pos::new(row, col)),
+        Hit::ColHeader(col) | Hit::ColEdge(col) => Selection {
+            anchor: Pos::new(MAX_ROWS - 1, col),
+            active: Pos::new(0, col),
+        },
+        Hit::RowHeader(row) | Hit::RowEdge(row) => Selection {
+            anchor: Pos::new(row, MAX_COLS - 1),
+            active: Pos::new(row, 0),
+        },
+        Hit::Corner => Selection {
+            anchor: Pos::new(MAX_ROWS - 1, MAX_COLS - 1),
+            active: Pos::new(0, 0),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geom::Hit;
+
+    /// The whole point of the anchor/active order: the cell the view scrolls to stays next
+    /// to the header that was clicked, while the rectangle still covers the whole track.
+    #[test]
+    fn a_header_selects_its_whole_track_without_scrolling_off_the_sheet() {
+        let row = selection_for_hit(Hit::RowHeader(4));
+        assert_eq!(row.active, Pos::new(4, 0));
+        assert_eq!(row.rect(), (Pos::new(4, 0), Pos::new(4, MAX_COLS - 1)));
+
+        let col = selection_for_hit(Hit::ColHeader(2));
+        assert_eq!(col.active, Pos::new(0, 2));
+        assert_eq!(col.rect(), (Pos::new(0, 2), Pos::new(MAX_ROWS - 1, 2)));
+
+        let all = selection_for_hit(Hit::Corner);
+        assert_eq!(all.active, Pos::new(0, 0));
+        assert_eq!(all.rect(), (Pos::new(0, 0), Pos::new(MAX_ROWS - 1, MAX_COLS - 1)));
+    }
+
+    /// Dragging down the row header keeps the far anchor, so the rectangle grows over rows
+    /// and still spans every column.
+    #[test]
+    fn dragging_from_a_row_header_grows_the_row_range() {
+        let start = selection_for_hit(Hit::RowHeader(4));
+        let dragged = Selection {
+            anchor: start.anchor,
+            active: selection_for_hit(Hit::RowHeader(7)).active,
+        };
+        assert_eq!(dragged.rect(), (Pos::new(4, 0), Pos::new(7, MAX_COLS - 1)));
+    }
+}
+
 mod imp {
     use super::*;
 
@@ -1738,22 +1794,15 @@ mod imp {
         /// What clicking on something selects. A header selects the whole column or row —
         /// the sheet's whole extent, not the used one, because that is what a user means by
         /// "this column" when they are about to type into it.
+        ///
+        /// The active cell is the *near* end (row 0 of a column, column A of a row) and the
+        /// anchor the far one, not the other way round: [`Self::set_selection`] scrolls the
+        /// active cell into view, so an active cell at the sheet's far corner would fling
+        /// the view sixteen thousand columns away from the header just clicked. Extending a
+        /// drag from the far anchor still covers the same rectangle, since
+        /// [`Selection::rect`] normalises.
         fn selection_for(&self, hit: Hit) -> Option<Selection> {
-            Some(match hit {
-                Hit::Cell { row, col } => Selection::at(Pos::new(row, col)),
-                Hit::ColHeader(col) | Hit::ColEdge(col) => Selection {
-                    anchor: Pos::new(0, col),
-                    active: Pos::new(MAX_ROWS - 1, col),
-                },
-                Hit::RowHeader(row) | Hit::RowEdge(row) => Selection {
-                    anchor: Pos::new(row, 0),
-                    active: Pos::new(row, MAX_COLS - 1),
-                },
-                Hit::Corner => Selection {
-                    anchor: Pos::new(0, 0),
-                    active: Pos::new(MAX_ROWS - 1, MAX_COLS - 1),
-                },
-            })
+            Some(selection_for_hit(hit))
         }
 
         /// The one place a selection changes: scroll it into view, repaint, and tell
