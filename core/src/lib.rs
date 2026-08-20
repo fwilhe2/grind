@@ -908,10 +908,10 @@ impl App {
     /// formula the user typed. That one step is the whole difference between what an editor
     /// holds and what [`App::enter`] takes.
     ///
-    /// ponytail: a *date* comes back as its serial, because the typing rule has no literal
-    /// date (doc/gtk-shell.md C3 defers locale-aware ones on purpose). A formatted date
-    /// still displays as a date afterwards; an unformatted one becomes a plain number. The
-    /// fix is a literal date in [`typed`], not a second rule here.
+    /// A date or time comes back in the ISO spelling [`numfmt::general`] already promises is
+    /// always typeable back in — [`date_kind`] decides a cell counts as one whenever its
+    /// format says so, or failing that its [`model::NumberKind`] does, so a cell LibreOffice
+    /// wrote with `office:date-value` and no style of its own still round-trips.
     pub fn input_text(&self, sheet: usize, pos: Pos) -> Result<String> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -922,7 +922,10 @@ impl App {
         }
         Ok(match s.get(pos) {
             CellValue::Empty => String::new(),
-            CellValue::Number(n) => formula::value::format_number(n),
+            CellValue::Number(n) => match date_kind(s, pos) {
+                Some(kind) => numfmt::general(&CellValue::Number(n), Some(kind), state.doc.null_date),
+                None => formula::value::format_number(n),
+            },
             CellValue::Bool(true) => "TRUE".to_owned(),
             CellValue::Bool(false) => "FALSE".to_owned(),
             // The typing rule itself decides whether the `'` is needed, so there is one
@@ -1094,6 +1097,21 @@ pub struct EnterOutcome {
     pub recalc: Option<Recalc>,
 }
 
+/// Whether a cell counts as a date or a time — its format if it has one and the format
+/// says so, otherwise the [`model::NumberKind`] the reader left behind (§4.3.3's rule for
+/// a date carrying no style of its own).
+///
+/// An explicit format wins because it is the one the user can see and change; a plain
+/// number a user has *formatted* as a date is one they mean as a date even if the cell
+/// never carried an `office:date-value`.
+fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
+    match sheet.format(pos).map(|f| f.kind) {
+        Some(numfmt::Kind::Date) => Some(model::NumberKind::Date),
+        Some(numfmt::Kind::Time) => Some(model::NumberKind::Time),
+        _ => sheet.kind(pos),
+    }
+}
+
 /// The typing rule: what a string a user typed means (doc/gtk-shell.md C3).
 ///
 /// One [`Action::SetFormula`] whatever the answer, because every one of these outcomes also
@@ -1132,6 +1150,19 @@ fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Actio
                 value,
             },
         );
+    }
+    // A cell already known to hold a date or a time (by format or by `NumberKind`, see
+    // `date_kind`) accepts its own ISO spelling back — `input_text`'s exact inverse, not a
+    // general "anything that looks like a date is a date" rule (doc/gtk-shell.md C3 defers
+    // that on purpose).
+    if let Some(kind) = doc.sheet(sheet).and_then(|s| date_kind(s, pos)) {
+        let parsed = match kind {
+            model::NumberKind::Date => formula::date::parse_date(input, doc.null_date),
+            model::NumberKind::Time => formula::date::parse_time(input),
+        };
+        if let Some(n) = parsed {
+            return cell(Entered::Number, CellValue::Number(n));
+        }
     }
     if let Ok(n) = input.parse::<f64>() {
         return cell(Entered::Number, CellValue::Number(n));

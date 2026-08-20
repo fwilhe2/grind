@@ -762,6 +762,37 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
     );
 }
 
+/// A date-formatted cell edits as the date it displays, not the serial underneath — the
+/// same "editor shows what enter takes" guarantee as the loop above, but for a cell whose
+/// format says it holds a date rather than a plain number.
+#[test]
+fn a_date_formatted_cell_is_edited_as_a_date_not_a_serial() {
+    let app = App::new();
+    app.set_format(
+        0,
+        p(0, 0),
+        p(0, 0),
+        Some(sheet_core::numfmt::preset(
+            sheet_core::numfmt::Kind::Date,
+            0,
+            false,
+            "",
+        )),
+    )
+    .unwrap();
+    app.enter(0, p(0, 0), "2027-08-20", RecalcMode::No).unwrap();
+    let shown = app.input_text(0, p(0, 0)).unwrap();
+    assert_eq!(shown, "2027-08-20", "the editor should show the date, not its serial");
+
+    let before = app.get(0, p(0, 0)).unwrap();
+    app.enter(0, p(0, 0), &shown, RecalcMode::No).unwrap();
+    assert_eq!(
+        app.get(0, p(0, 0)).unwrap(),
+        before,
+        "re-entering what was shown must round-trip"
+    );
+}
+
 /// C7 and C8 together: what a toolbar does. A bold button is a read, a field, and a write —
 /// and the grid learns about it from the viewport rather than by asking per cell.
 #[test]
