@@ -1322,6 +1322,14 @@ mod imp {
                     self.paste();
                     return glib::Propagation::Stop;
                 }
+                Action::CopyValue => {
+                    self.copy_value();
+                    return glib::Propagation::Stop;
+                }
+                Action::Fill(dir) => {
+                    self.fill(dir);
+                    return glib::Propagation::Stop;
+                }
             };
             self.set_selection(selection);
             glib::Propagation::Stop
@@ -1657,11 +1665,51 @@ mod imp {
                 return;
             };
             let sheet = self.sheet.get();
-            let text = (start.row..=end.row)
+            self.obj()
+                .clipboard()
+                .set_text(&self.rect_text(&app, start, end, App::input_text));
+            if cut {
+                let _ = app.clear_range(sheet, start, end);
+                self.obj().queue_draw();
+            }
+        }
+
+        /// Put the selection's calculated values on the clipboard instead of their formulas
+        /// — "Copy Value" (Ctrl+Shift+C), for pasting a result somewhere that should not
+        /// follow the document if the source cell later changes.
+        fn copy_value(&self) {
+            let app = self.app.borrow().clone();
+            let Some(app) = app else { return };
+            let Some((start, end)) = self.clamped_selection() else {
+                return;
+            };
+            self.obj()
+                .clipboard()
+                .set_text(&self.rect_text(&app, start, end, App::value_text));
+        }
+
+        /// Every cell in a rectangle, tab- and newline-separated, by whatever `get` reads
+        /// for one — `App::input_text` for `copy`, `App::value_text` for `copy_value`. What
+        /// travels is the raw number or the formula in display form, not what the cell
+        /// *displays*: pasted back here it reproduces the cells exactly, and pasted into
+        /// another spreadsheet `1234.5` is a number where `1,234.50 €` is a guess about that
+        /// program's locale — `copy_value` is the one place that guess is exactly the point.
+        ///
+        /// ponytail: a cell holding a tab or a newline has them replaced with spaces, so the
+        /// rectangle survives. The upgrade is quoting, in a codec shared with `sheet paste`.
+        fn rect_text(
+            &self,
+            app: &App,
+            start: Pos,
+            end: Pos,
+            get: impl Fn(&App, usize, Pos) -> sheet_core::Result<String>,
+        ) -> String {
+            let sheet = self.sheet.get();
+            (start.row..=end.row)
                 .map(|row| {
                     (start.col..=end.col)
                         .map(|col| {
-                            app.input_text(sheet, Pos::new(row, col))
+                            get(app, sheet, Pos::new(row, col))
                                 .unwrap_or_default()
                                 .replace(['\t', '\n', '\r'], " ")
                         })
@@ -1669,12 +1717,51 @@ mod imp {
                         .join("\t")
                 })
                 .collect::<Vec<_>>()
-                .join("\n");
-            self.obj().clipboard().set_text(&text);
-            if cut {
-                let _ = app.clear_range(sheet, start, end);
-                self.obj().queue_draw();
+                .join("\n")
+        }
+
+        /// Extend the top row (`Dir::Down`) or left column (`Dir::Right`) of the selection
+        /// into the rest of it — Ctrl+D / Ctrl+R, the fill-handle drag's keyboard twin. Each
+        /// column (for `Down`) or row (for `Right`) keeps its own source, so a multi-column
+        /// Fill Down replicates column by column rather than one column's formula sideways.
+        ///
+        /// ponytail: one `App::fill` call, and one undo entry, per line — a Fill Down across
+        /// five columns is five undo steps rather than one. The upgrade is a multi-source
+        /// fill in the core; nothing here needs it until that is a common selection shape.
+        fn fill(&self, dir: Dir) {
+            let app = self.app.borrow().clone();
+            let Some(app) = app else { return };
+            let (start, end) = self.selection.get().rect();
+            if start == end {
+                return;
             }
+            let sheet = self.sheet.get();
+            match dir {
+                Dir::Down => {
+                    for col in start.col..=end.col {
+                        let _ = app.fill(
+                            sheet,
+                            Pos::new(start.row, col),
+                            Pos::new(start.row + 1, col),
+                            Pos::new(end.row, col),
+                            RecalcMode::Document,
+                        );
+                    }
+                }
+                Dir::Right => {
+                    for row in start.row..=end.row {
+                        let _ = app.fill(
+                            sheet,
+                            Pos::new(row, start.col),
+                            Pos::new(row, start.col + 1),
+                            Pos::new(row, end.col),
+                            RecalcMode::Document,
+                        );
+                    }
+                }
+                Dir::Up | Dir::Left => {}
+            }
+            self.obj().queue_draw();
         }
 
         /// Read the clipboard and fill from the selection's top-left corner.
@@ -1691,9 +1778,21 @@ mod imp {
                     self.obj(),
                     move |result| {
                         let Ok(Some(text)) = result else { return };
+                        // Display form back to canonical, cell by cell — the same step
+                        // `commit` takes for a single cell. A formula that will not parse
+                        // is passed through as typed, which `enter_range` then stores
+                        // verbatim rather than losing.
                         let rows: Vec<Vec<String>> = text
                             .lines()
-                            .map(|line| line.split('\t').map(str::to_owned).collect())
+                            .map(|line| {
+                                line.split('\t')
+                                    .map(|cell| match cell.starts_with('=') {
+                                        true => display::from_display(cell)
+                                            .unwrap_or_else(|_| cell.to_owned()),
+                                        false => cell.to_owned(),
+                                    })
+                                    .collect()
+                            })
                             .collect();
                         let imp = grid.imp();
                         let app = imp.app.borrow().clone();

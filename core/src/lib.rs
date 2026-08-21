@@ -425,6 +425,94 @@ impl App {
         })
     }
 
+    /// Replicate `source` across a rectangle — a fill, the way a drag handle or Ctrl+D/
+    /// Ctrl+R work elsewhere. A formula's relative references shift by each target cell's
+    /// offset from `source` ([`formula::shift`]); its absolute ones do not. A plain value is
+    /// copied as is.
+    ///
+    /// One [`Action::Batch`], bounded by [`MAX_FORMATTED_CELLS`], for the same reasons
+    /// [`App::enter_range`] is.
+    pub fn fill(
+        &self,
+        sheet: usize,
+        source: Pos,
+        start: Pos,
+        end: Pos,
+        recalc: RecalcMode,
+    ) -> Result<EnterOutcome> {
+        let targets: Vec<Pos> = self.rectangle(start, end)?.collect();
+        let (formula, value) = {
+            let state = self.state.read().unwrap();
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            (s.formula(source).map(str::to_owned), s.get(source))
+        };
+        // A formula this build cannot parse is copied verbatim rather than refused — the
+        // same honesty `App::input_text` shows for one.
+        let parsed = formula
+            .as_deref()
+            .and_then(|f| formula::parse::parse(f).ok());
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let mut kind = Entered::Cleared;
+            let mut edits = Vec::new();
+            for (i, pos) in targets.iter().copied().enumerate() {
+                // The text to store as this target's formula, `None` when `source` holds a
+                // plain value instead.
+                let text = match (&parsed, &formula) {
+                    (Some(expr), _) => {
+                        let shifted = formula::shift::shift(
+                            expr,
+                            i64::from(pos.row) - i64::from(source.row),
+                            i64::from(pos.col) - i64::from(source.col),
+                        );
+                        Some(format!("={shifted}"))
+                    }
+                    (None, Some(text)) => Some(text.clone()),
+                    (None, None) => None,
+                };
+                let (this, edit) = match text {
+                    Some(text) => {
+                        let value = formula::eval::to_cell(
+                            formula::eval::Engine::new(&state.doc)
+                                .eval(&text, formula::eval::Address::new(sheet, pos)),
+                        );
+                        (
+                            Entered::Formula,
+                            Action::SetFormula {
+                                sheet,
+                                pos,
+                                formula: Some(text),
+                                value,
+                            },
+                        )
+                    }
+                    None => (
+                        entered_kind(&value),
+                        Action::SetFormula {
+                            sheet,
+                            pos,
+                            formula: None,
+                            value: value.clone(),
+                        },
+                    ),
+                };
+                if i == 0 {
+                    kind = this;
+                }
+                edits.push(edit);
+            }
+            let cells = edits.len();
+            let recalc = commit(state, sheet, edits, recalc)?;
+            Ok(EnterOutcome {
+                kind,
+                cells,
+                recalc,
+            })
+        })
+    }
+
     /// What a formula *would* evaluate to, without storing anything.
     ///
     /// Three properties a shell leans on, and there is a test for each: it takes only a
@@ -985,6 +1073,14 @@ impl App {
         })
     }
 
+    /// What the cell *displays* — a formula's result, formatted, rather than its source.
+    /// "Copy Value" is this instead of [`App::input_text`].
+    pub fn value_text(&self, sheet: usize, pos: Pos) -> Result<String> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(render(s, pos, state.doc.null_date))
+    }
+
     /// How one cell looks, or `None` for a plain one.
     ///
     /// [`App::set_style`] *replaces* rather than merges, deliberately — so "make this bold as
@@ -1214,6 +1310,17 @@ fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
 ///
 /// A formula's cached value is computed against the document as it stands, which is both
 /// what [`App::set_formula`] does and what pressing Enter in a spreadsheet does.
+/// What kind of thing a value already stored in a cell is — [`App::fill`]'s answer for a
+/// source cell that holds no formula, where [`typed`] has no input text to classify.
+fn entered_kind(value: &CellValue) -> Entered {
+    match value {
+        CellValue::Empty => Entered::Cleared,
+        CellValue::Number(_) => Entered::Number,
+        CellValue::Bool(_) => Entered::Bool,
+        CellValue::Text(_) => Entered::Text,
+    }
+}
+
 fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Action) {
     let cell = |kind, value| {
         (

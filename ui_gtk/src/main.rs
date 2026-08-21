@@ -896,6 +896,9 @@ impl Ui {
             ("F4", "Cycle $ in a reference"),
             ("Escape", "Cancel edit"),
             ("<Control>c <Control>x <Control>v", "Copy, cut, paste"),
+            ("<Control><Shift>c", "Copy value"),
+            ("<Control>d", "Fill down"),
+            ("<Control>r", "Fill right"),
         ] {
             navigation.add_shortcut(
                 &gtk::ShortcutsShortcut::builder()

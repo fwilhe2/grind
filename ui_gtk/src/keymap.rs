@@ -94,6 +94,11 @@ pub enum Action {
     /// Copy, then empty what was copied.
     Cut,
     Paste,
+    /// Ctrl+Shift+C — a calculated cell's result rather than its formula.
+    CopyValue,
+    /// Ctrl+D / Ctrl+R — the selection's top row or left column, replicated into the rest
+    /// of the selection (`doc/gtk-shell.md`'s "extend a calculation").
+    Fill(Dir),
 }
 
 /// The key map. One table, no state.
@@ -143,8 +148,13 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
             'c' => Some(Action::Copy),
             'x' => Some(Action::Cut),
             'v' => Some(Action::Paste),
+            'd' => Some(Action::Fill(Dir::Down)),
+            'r' => Some(Action::Fill(Dir::Right)),
             _ => None,
         },
+        Key::Char(c) if mods.ctrl && mods.shift && c.eq_ignore_ascii_case(&'c') => {
+            Some(Action::CopyValue)
+        }
         _ => None,
     }
 }
@@ -385,6 +395,29 @@ mod tests {
                 Some(action)
             );
         }
+    }
+
+    #[test]
+    fn fill_and_copy_value_are_the_excel_and_calc_keys() {
+        assert_eq!(
+            action_for(Key::Char('d'), ctrl()),
+            Some(Action::Fill(Dir::Down))
+        );
+        assert_eq!(
+            action_for(Key::Char('r'), ctrl()),
+            Some(Action::Fill(Dir::Right))
+        );
+        let ctrl_shift = Mods {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            action_for(Key::Char('c'), ctrl_shift),
+            Some(Action::CopyValue)
+        );
+        // Plain Ctrl+C stays the formula-preserving copy.
+        assert_eq!(action_for(Key::Char('c'), ctrl()), Some(Action::Copy));
     }
 
     #[test]
