@@ -567,6 +567,152 @@ fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
     button
 }
 
+/// The tool strip: a small mode switch — Format · Calculate · View — in front of a stack
+/// of tool rows, one visible at a time.
+///
+/// The GNOME shape of "more tools than one row holds": plain linked toggle buttons over a
+/// `gtk::Stack` (`AdwToggleGroup` is libadwaita 1.7; this shell pins 1.5), and the mode
+/// never changes itself — chrome that moves under the pointer is the one ribbon behaviour
+/// deliberately not copied here. Every button activates a `win.` action the window already
+/// owns, so the strip adds reachability, never capability, and the parity ratchet is
+/// untouched.
+pub fn tools(grid: &Grid, format: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let stack = gtk::Stack::new();
+    stack.add_named(format, Some("Format"));
+    stack.add_named(&calculate_tools(), Some("Calculate"));
+    stack.add_named(&view_tools(grid), Some("View"));
+
+    let modes = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    modes.add_css_class("linked");
+    let mut first: Option<gtk::ToggleButton> = None;
+    for name in ["Format", "Calculate", "View"] {
+        let button = gtk::ToggleButton::builder()
+            .label(name)
+            .active(first.is_none())
+            .build();
+        match &first {
+            Some(first) => button.set_group(Some(first)),
+            None => first = Some(button.clone()),
+        }
+        button.connect_toggled(glib::clone!(
+            #[weak]
+            stack,
+            move |button| {
+                if button.is_active() {
+                    stack.set_visible_child_name(name);
+                }
+            }
+        ));
+        modes.append(&button);
+    }
+
+    let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    bar.add_css_class("toolbar");
+    bar.append(&modes);
+    bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+    bar.append(&stack);
+    bar
+}
+
+/// The Calculate row: what was buried in the primary menu, as labelled buttons.
+fn calculate_tools() -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    for (icon, label, action, tooltip) in [
+        (
+            "view-refresh-symbolic",
+            "Recalculate",
+            "win.recalc",
+            "Recalculate Now (F9)",
+        ),
+        (
+            "dialog-information-symbolic",
+            "Explain",
+            "win.explain-formula",
+            "Explain Formula (Ctrl+Shift+E)",
+        ),
+        (
+            "edit-find-symbolic",
+            "Calculations",
+            "win.calculations",
+            "Find everything this document calculates (Ctrl+Shift+F)",
+        ),
+        (
+            "user-bookmarks-symbolic",
+            "Names",
+            "win.names",
+            "Name a range, or manage the names",
+        ),
+    ] {
+        row.append(&tool_button(icon, label, action, tooltip));
+    }
+    row
+}
+
+/// The View row: the zoom, with its level readable and clickable in the middle, autofit,
+/// and the friendly-formulas toggle — whose checked state is the stateful action's own.
+fn view_tools(grid: &Grid) -> gtk::Box {
+    let out = gtk::Button::builder()
+        .icon_name("zoom-out-symbolic")
+        .action_name("win.zoom-out")
+        .tooltip_text("Zoom Out")
+        .build();
+    let level = gtk::Button::builder()
+        .label("100 %")
+        .action_name("win.zoom-reset")
+        .tooltip_text("Back to normal size")
+        .build();
+    level.add_css_class("numeric");
+    let level_in = gtk::Button::builder()
+        .icon_name("zoom-in-symbolic")
+        .action_name("win.zoom-in")
+        .tooltip_text("Zoom In")
+        .build();
+    grid.connect_zoom_changed(glib::clone!(
+        #[weak]
+        level,
+        move |factor| level.set_label(&format!("{:.0} %", factor * 100.0))
+    ));
+    let zoom = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    zoom.add_css_class("linked");
+    for button in [&out, &level, &level_in] {
+        button.add_css_class("flat");
+        zoom.append(button);
+    }
+
+    let friendly = gtk::ToggleButton::builder()
+        .label("Friendly Formulas")
+        .action_name("win.friendly-formulas")
+        .tooltip_text("Read a formula as a sentence while it is not being edited")
+        .build();
+    friendly.add_css_class("flat");
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    row.append(&zoom);
+    row.append(&tool_button(
+        "zoom-fit-best-symbolic",
+        "Fit Content",
+        "win.autofit-all",
+        "Resize every column and row to fit what is in it",
+    ));
+    row.append(&friendly);
+    row
+}
+
+/// An icon-and-label button that activates a window action — the tool rows' one shape.
+fn tool_button(icon: &str, label: &str, action: &str, tooltip: &str) -> gtk::Button {
+    let content = libadwaita::ButtonContent::builder()
+        .icon_name(icon)
+        .label(label)
+        .build();
+    let button = gtk::Button::builder()
+        .child(&content)
+        .action_name(action)
+        .tooltip_text(tooltip)
+        .build();
+    button.add_css_class("flat");
+    button
+}
+
 /// The sheet tab strip: one toggle button per sheet, and a `+`.
 ///
 /// Plain buttons rather than `adw::TabBar`, which is for documents in a window and brings

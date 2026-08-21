@@ -470,6 +470,25 @@ slant, size and the zoom. The *colour* stays the theme's, because the reference 
 the foreground while a formula is being typed and a cell colour underneath it would be a
 second opinion about the same bytes. The cell's padding scales with everything else.
 
+After M10, two polish passes changed what the plan above says about the chrome, and this
+paragraph is the record. **Motion**: zoom anchors on the pointer (Ctrl+wheel), a pinch
+gesture, or the view centre (keyboard), with a status-bar readout away from 100%; long
+programmatic jumps glide ~150ms (off with the system's animation setting) and land with a
+track of context; a resize drag shows the length it is choosing; the active cell and
+reference outlines have softened corners; selected header labels are bold and accented; the
+palette follows dark/accent changes at runtime via `adw::StyleManager` notifications (GTK
+does not expose the `css_changed` vfunc); the routine "Saved" toast is gone — the subtitle
+clearing is the confirmation. **Chrome**: the format strip became the Format page of a
+mode-switched tool row (`chrome::tools`) — Format · Calculate · View, plain linked toggles
+over a `gtk::Stack` (`AdwToggleGroup` is 1.7; the pin is 1.5), where Calculate holds
+Recalculate · Explain · Calculations… · Names… and View holds the zoom group, Fit Content
+and the Friendly Formulas toggle. The mode never switches itself: auto-appearing contextual
+tabs are the one ribbon behaviour deliberately not copied, being both the legally
+distinctive part of that design and the HIG's least favourite. Every button activates a
+`win.` action the window already owns, so the strip adds reachability, never capability.
+The primary menu slimmed to files · sheets · Keyboard Shortcuts · About, which is the HIG's
+idea of one.
+
 ## The gaps, written down
 
 Deferred by decision, not omission — each either has a not-doing.md row already or gets

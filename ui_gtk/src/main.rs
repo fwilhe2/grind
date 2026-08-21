@@ -160,7 +160,9 @@ impl Ui {
 
         let view = adw::ToolbarView::builder().content(&toasts).build();
         view.add_top_bar(&header);
-        view.add_top_bar(&strip.widget);
+        // The strip is the Format page of the mode-switched tool row — Calculate and View
+        // sit behind the same switch instead of only in the primary menu.
+        view.add_top_bar(&chrome::tools(&grid, &strip.widget));
         let formula_bar = chrome::formula_bar(&grid, app, true);
         view.add_top_bar(&formula_bar.widget);
         view.add_top_bar(&banner);
@@ -1123,6 +1125,9 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
     ]
 }
 
+/// The primary menu, slimmed to the HIG's idea of one: file and window-level items only.
+/// The document tools that used to pile up here live in the tool strip's Calculate and
+/// View pages (`chrome::tools`), where they are visible instead of buried.
 fn primary_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     let files = gio::Menu::new();
@@ -1138,19 +1143,7 @@ fn primary_menu() -> gio::Menu {
     sheets.append(Some("Delete Sheet"), Some("win.sheet-delete"));
     menu.append_section(None, &sheets);
 
-    let view = gio::Menu::new();
-    view.append(Some("Zoom In"), Some("win.zoom-in"));
-    view.append(Some("Zoom Out"), Some("win.zoom-out"));
-    view.append(Some("Normal Size"), Some("win.zoom-reset"));
-    view.append(Some("Resize All Cells to Fit"), Some("win.autofit-all"));
-    view.append(Some("Friendly Formulas"), Some("win.friendly-formulas"));
-    menu.append_section(None, &view);
-
     let rest = gio::Menu::new();
-    rest.append(Some("Calculations…"), Some("win.calculations"));
-    rest.append(Some("Names…"), Some("win.names"));
-    rest.append(Some("Explain Formula"), Some("win.explain-formula"));
-    rest.append(Some("Recalculate Now"), Some("win.recalc"));
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));
     menu.append_section(None, &rest);
