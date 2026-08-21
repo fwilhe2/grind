@@ -317,10 +317,15 @@ impl Ui {
             // A banner rather than a toast: this is a *state* the document is in, not an
             // event that happened, and it stays true until something recalculates.
             Notice::RecalcSkipped(spoiled) => {
-                self.banner.set_title(&format!(
-                    "{spoiled} formula cell(s) use functions this build does not have — \
-                     recalculating would replace their saved values"
-                ));
+                self.banner.set_title(&match spoiled {
+                    1 => "1 formula uses a function this build does not have — \
+                          recalculating would replace its saved value"
+                        .to_owned(),
+                    n => format!(
+                        "{n} formulas use functions this build does not have — \
+                         recalculating would replace their saved values"
+                    ),
+                });
                 self.banner.set_button_label(Some("Recalculate Anyway"));
                 self.banner.set_revealed(true);
             }
@@ -330,12 +335,16 @@ impl Ui {
     fn recalculate(self: &Rc<Self>) {
         self.banner.set_revealed(false);
         match self.app.recalc() {
-            Ok(recalc) if recalc.spoiled > 0 => {
-                self.undoable_toast(&format!("{} cell(s) became errors", recalc.spoiled))
-            }
-            Ok(recalc) if recalc.changed > 0 => {
-                self.toast(&format!("{} cell(s) recalculated", recalc.changed))
-            }
+            Ok(recalc) if recalc.spoiled > 0 => self.undoable_toast(&counted(
+                recalc.spoiled,
+                "cell became an error",
+                "cells became errors",
+            )),
+            Ok(recalc) if recalc.changed > 0 => self.toast(&counted(
+                recalc.changed,
+                "cell recalculated",
+                "cells recalculated",
+            )),
             Ok(_) => self.toast("Already up to date"),
             Err(error) => self.toast(&error.to_string()),
         }
@@ -356,8 +365,10 @@ impl Ui {
             Ok(()) => {
                 *self.path.borrow_mut() = Some(path.to_owned());
                 self.dirty.set(false);
+                // No "Saved" toast: the subtitle's "Unsaved changes" clearing is the
+                // confirmation, and routine success asking to be noticed is noise. A save
+                // that *fails* still says so below.
                 self.refresh();
-                self.toast("Saved");
                 remember_recent(path);
                 if self.closing.get() {
                     self.window.close();
@@ -988,6 +999,15 @@ fn name_row(
 /// address line underneath still names the cell to go and look at.
 fn headline(calc: &sheet_core::Calculation) -> String {
     chrome::friendly_line(&calc.formula).unwrap_or_else(|| calc.formula.clone())
+}
+
+/// `1 cell became an error` / `3 cells became errors` — the two spellings, by count.
+/// "1 cell(s)" is the one string shape that reads like the printf that made it.
+fn counted(n: usize, one: &str, many: &str) -> String {
+    match n {
+        1 => format!("1 {one}"),
+        n => format!("{n} {many}"),
+    }
 }
 
 /// The line above the list: how many were found, and which functions they call.

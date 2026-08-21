@@ -97,20 +97,15 @@ impl Grid {
     }
 
     /// Scale the view. Clamped to [`ZOOM_RANGE`]; a factor of 1 is the document at the
-    /// toolkit's own idea of its size.
+    /// toolkit's own idea of its size. Anchored on the centre of the view — the keyboard's
+    /// zoom; the wheel and a pinch anchor on the pointer instead (`imp::Grid::rezoom`).
     pub fn set_zoom(&self, zoom: f64) {
-        let zoom = zoom.clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
-        if zoom == self.zoom() {
-            return;
-        }
-        self.imp().zoom.set(zoom);
-        // Row heights are measured unzoomed, so they survive; the scrollbars and the editor
-        // are both sized in pixels and do not.
-        if self.imp().mode.get().is_editing() {
-            self.imp().restyle_formula();
-        }
-        self.queue_resize();
-        self.queue_draw();
+        self.imp().rezoom(zoom, None);
+    }
+
+    /// Told whenever the zoom changes, with the new factor — the status bar's readout.
+    pub fn connect_zoom_changed(&self, f: impl Fn(f64) + 'static) {
+        self.imp().on_zoom.borrow_mut().push(Box::new(f));
     }
 
     /// Every used column autofit to its widest text and every explicit row height cleared,
@@ -325,6 +320,7 @@ mod imp {
     use super::*;
 
     use gtk::graphene;
+    use gtk::gsk;
     use gtk::pango;
     use gtk::subclass::prelude::*;
     use sheet_core::formula::value::FormulaError;
@@ -348,6 +344,7 @@ mod imp {
     type NoticeHook = Box<dyn Fn(Notice)>;
     type EditingHook = Box<dyn Fn(bool)>;
     type CaretHook = Box<dyn Fn()>;
+    type ZoomHook = Box<dyn Fn(f64)>;
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
@@ -360,6 +357,12 @@ mod imp {
     /// How many columns are fetched beyond the visible ones, so that a label anchored just
     /// off-screen still overflows into view.
     const OVERFLOW_MARGIN: u32 = 12;
+    /// How far a programmatic scroll may be, in default row heights, before it glides
+    /// there instead of teleporting. Below this — an arrow key nudging the view a row —
+    /// it stays instant, which is what a keyboard repeat rate needs.
+    const GLIDE_AFTER: f64 = 3.0;
+    /// How long the glide takes. Short enough that holding an arrow key never waits on it.
+    const GLIDE_MS: u32 = 150;
 
     /// Font-derived sizes. Recomputed whenever the style changes, because a theme with a
     /// bigger font needs taller rows, not clipped text.
@@ -469,6 +472,14 @@ mod imp {
         /// Tab-column memory: the column a run of Tabs started in, so that Enter goes back
         /// to it. One integer, and disproportionately loved.
         pub tab_origin: Cell<Option<u32>>,
+        /// Where the pointer last was, in widget coordinates — what Ctrl+wheel zooms
+        /// around, so the cell under the cursor stays under the cursor.
+        pub pointer: Cell<Option<(f64, f64)>>,
+        /// The zoom when a pinch began; the gesture reports a scale relative to that.
+        pub pinch_base: Cell<f64>,
+        /// A programmatic scroll mid-glide, so a newer jump can stop it.
+        pub glide: RefCell<Option<libadwaita::TimedAnimation>>,
+        pub on_zoom: RefCell<Vec<ZoomHook>>,
         /// The autocomplete popover, parented to this widget so it appears under the cell
         /// being typed into rather than at the formula bar.
         pub completion: OnceCell<crate::formula_ux::Completion>,
@@ -524,6 +535,10 @@ mod imp {
                 pending: RefCell::new(None),
                 applying: Cell::new(false),
                 tab_origin: Cell::new(None),
+                pointer: Cell::new(None),
+                pinch_base: Cell::new(1.0),
+                glide: RefCell::new(None),
+                on_zoom: RefCell::new(Vec::new()),
                 completion: OnceCell::new(),
             }
         }
@@ -698,12 +713,14 @@ mod imp {
             widget.add_controller(drag);
 
             // The pointer says what a press would do before it happens, which is the only
-            // thing that makes a 4px target discoverable.
+            // thing that makes a 4px target discoverable. Its position is also remembered,
+            // because that is what a Ctrl+wheel zoom anchors on.
             let motion = gtk::EventControllerMotion::new();
             motion.connect_motion(glib::clone!(
                 #[weak(rename_to = grid)]
                 widget,
                 move |_, x, y| {
+                    grid.imp().pointer.set(Some((x, y)));
                     let cursor = match grid.imp().geom().hit(x, y) {
                         Hit::ColEdge(_) => Some("col-resize"),
                         Hit::RowEdge(_) => Some("row-resize"),
@@ -712,9 +729,15 @@ mod imp {
                     grid.set_cursor_from_name(cursor);
                 }
             ));
+            motion.connect_leave(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_| grid.imp().pointer.set(None)
+            ));
             widget.add_controller(motion);
 
-            // Ctrl+wheel zooms; every other wheel event travels on to the scrolled window,
+            // Ctrl+wheel zooms, anchored on the pointer — the cell under the cursor stays
+            // under the cursor. Every other wheel event travels on to the scrolled window,
             // which is the one that knows how to scroll.
             let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
             scroll.connect_scroll(glib::clone!(
@@ -729,11 +752,51 @@ mod imp {
                     {
                         return glib::Propagation::Proceed;
                     }
-                    grid.set_zoom(grid.zoom() * ZOOM_STEP.powf(-dy));
+                    let imp = grid.imp();
+                    imp.rezoom(grid.zoom() * ZOOM_STEP.powf(-dy), imp.pointer.get());
                     glib::Propagation::Stop
                 }
             ));
             widget.add_controller(scroll);
+
+            // A touchpad or touchscreen pinch is the same zoom, anchored on the gesture's
+            // own centre. The gesture needs two touch points, so it cannot collide with the
+            // click and drag gestures above.
+            // Dark mode and the accent colour arrive as style-manager properties, not
+            // system settings, and GTK does not expose the `css_changed` vfunc — without
+            // these two, flipping either at runtime would leave the grid painted from the
+            // stale cached palette until restart. The accent property is libadwaita ≥ 1.6;
+            // connecting to its notify by name is inert on 1.5 rather than an error.
+            let style = libadwaita::StyleManager::default();
+            style.connect_dark_notify(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_| grid.imp().restyle()
+            ));
+            style.connect_notify_local(
+                Some("accent-color"),
+                glib::clone!(
+                    #[weak(rename_to = grid)]
+                    widget,
+                    move |_, _| grid.imp().restyle()
+                ),
+            );
+
+            let pinch = gtk::GestureZoom::new();
+            pinch.connect_begin(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_, _| grid.imp().pinch_base.set(grid.zoom())
+            ));
+            pinch.connect_scale_changed(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |gesture, scale| {
+                    let imp = grid.imp();
+                    imp.rezoom(imp.pinch_base.get() * scale, gesture.bounding_box_center());
+                }
+            ));
+            widget.add_controller(pinch);
         }
     }
 
@@ -840,6 +903,7 @@ mod imp {
             snapshot.pop();
 
             self.draw_headers(&frame);
+            self.draw_resize_hint(&frame);
             // Last, and only while editing: a real child widget, drawn over its cell.
             if self.editor.is_visible() {
                 widget.snapshot_child(&self.editor, snapshot);
@@ -1044,6 +1108,11 @@ mod imp {
             // Row heights are measured in the widget's font, so a new one remeasures them.
             self.auto_rows.replace(None);
             self.update_metrics();
+            // The reference colouring picks its palette by light or dark, so an edit open
+            // across a theme flip has to be recoloured with the new one.
+            if self.mode.get().is_editing() {
+                self.restyle_formula();
+            }
             self.obj().queue_resize();
         }
 
@@ -1948,16 +2017,123 @@ mod imp {
                 return;
             }
             let geom = self.geom();
+            let zoom = self.zoom.get();
+            let m = self.metrics.get();
             let page_w = (f64::from(self.obj().width()) - geom.header_w).max(1.0);
             let page_h = (f64::from(self.obj().height()) - geom.header_h).max(1.0);
-            let (x, y) = geom.scroll_into_view(pos.row, pos.col, page_w, page_h);
-            // Setting a value the adjustment already has is a no-op, so this is also the
-            // test for "did anything move".
-            if let Some(h) = self.hadjustment.borrow().as_ref() {
-                h.set_value(x.min((h.upper() - h.page_size()).max(0.0)));
+            // One default track of context past the target, so a jump never lands with
+            // the cursor flush against the edge and whatever comes next hidden.
+            let (x, y) = geom.scroll_into_view(
+                pos.row,
+                pos.col,
+                page_w,
+                page_h,
+                m.col_width * zoom,
+                m.row_height * zoom,
+            );
+            let x = self
+                .hadjustment
+                .borrow()
+                .as_ref()
+                .map_or(x, |h| x.min((h.upper() - h.page_size()).max(0.0)));
+            let y = self
+                .vadjustment
+                .borrow()
+                .as_ref()
+                .map_or(y, |v| y.min((v.upper() - v.page_size()).max(0.0)));
+            let moved = (x - geom.scroll_x).abs().max((y - geom.scroll_y).abs());
+            if moved == 0.0 {
+                return;
             }
-            if let Some(v) = self.vadjustment.borrow().as_ref() {
-                v.set_value(y.min((v.upper() - v.page_size()).max(0.0)));
+            self.stop_glide();
+            // A long jump glides — Ctrl+arrow, the name box, "jump to cell" — and a short
+            // one is instant. The setting is the user's word on motion, and it is final.
+            let animate = self.obj().settings().is_gtk_enable_animations()
+                && moved > m.row_height * zoom * GLIDE_AFTER;
+            if !animate {
+                self.scroll_to(x, y);
+                return;
+            }
+            let (from_x, from_y) = (geom.scroll_x, geom.scroll_y);
+            let target = libadwaita::CallbackAnimationTarget::new(glib::clone!(
+                #[weak(rename_to = grid)]
+                self.obj(),
+                move |t| {
+                    grid.imp()
+                        .scroll_to(from_x + (x - from_x) * t, from_y + (y - from_y) * t);
+                }
+            ));
+            let glide = libadwaita::TimedAnimation::new(&*self.obj(), 0.0, 1.0, GLIDE_MS, target);
+            glide.set_easing(libadwaita::Easing::EaseOutCubic);
+            glide.play();
+            self.glide.replace(Some(glide));
+        }
+
+        /// Jump both adjustments. `upper` is grown first when the target lies past it —
+        /// [`configure`] recovers the exact upper on the next allocation, and growing it
+        /// here is what `configure` itself does with a value past the used extent.
+        fn scroll_to(&self, x: f64, y: f64) {
+            for (adjustment, value) in [
+                (self.hadjustment.borrow(), x),
+                (self.vadjustment.borrow(), y),
+            ] {
+                let Some(adjustment) = adjustment.as_ref() else {
+                    continue;
+                };
+                if value + adjustment.page_size() > adjustment.upper() {
+                    adjustment.set_upper(value + adjustment.page_size());
+                }
+                adjustment.set_value(value);
+            }
+        }
+
+        /// A newer scroll or a zoom outranks a glide in flight.
+        fn stop_glide(&self) {
+            if let Some(glide) = self.glide.take() {
+                glide.pause();
+            }
+        }
+
+        /// Change the zoom, keeping the sheet point under `anchor` (widget coordinates)
+        /// exactly there — the cell under the pointer stays under the pointer. With no
+        /// anchor, the centre of the content area holds still instead.
+        pub fn rezoom(&self, zoom: f64, anchor: Option<(f64, f64)>) {
+            let zoom = zoom.clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+            let old = self.zoom.get();
+            if zoom == old {
+                return;
+            }
+            self.stop_glide();
+            let widget = self.obj();
+            let (width, height) = (f64::from(widget.width()), f64::from(widget.height()));
+            let geom = self.geom();
+            let (ax, ay) = anchor.unwrap_or((
+                (geom.header_w + width) / 2.0,
+                (geom.header_h + height) / 2.0,
+            ));
+            // The sheet point under the anchor, in content space, at the old scale. An
+            // anchor inside the header band pins the first visible track instead.
+            let content_x = geom.scroll_x + (ax - geom.header_w).max(0.0);
+            let content_y = geom.scroll_y + (ay - geom.header_h).max(0.0);
+            self.zoom.set(zoom);
+            // Row heights are measured unzoomed, so they survive; the scrollbars and the
+            // editor are both sized in pixels and do not.
+            if self.mode.get().is_editing() {
+                self.restyle_formula();
+            }
+            // Every content distance scales by the factor — and so does the header band,
+            // which is why the anchor's offset into the content is re-derived against the
+            // *new* header size rather than reused.
+            let factor = zoom / old;
+            let m = self.metrics.get();
+            self.scroll_to(
+                (content_x * factor - (ax - m.header_w * zoom).max(0.0)).max(0.0),
+                (content_y * factor - (ay - m.header_h * zoom).max(0.0)).max(0.0),
+            );
+            widget.queue_resize();
+            widget.queue_draw();
+            for hook in self.on_zoom.borrow().iter() {
+                hook(zoom);
             }
         }
 
@@ -2246,7 +2422,14 @@ mod imp {
             let (snapshot, geom, palette) = (f.snapshot, &f.geom, &f.palette);
             let (width, height, rows, cols) = (f.width, f.height, &f.rows, &f.cols);
             let layout = self.layout();
-            layout.set_attributes(self.attrs(None).as_ref());
+            // A selected track's label is bold and accented on top of its wash — where the
+            // selection is, readable from the edges of the screen without looking for it.
+            let plain = self.attrs(None);
+            let bold = self.attrs(Some({
+                let list = pango::AttrList::new();
+                list.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
+                list
+            }));
             snapshot.append_color(&palette.header, &rect(0.0, 0.0, width, geom.header_h));
             snapshot.append_color(&palette.header, &rect(0.0, 0.0, geom.header_w, height));
 
@@ -2263,15 +2446,20 @@ mod imp {
                 };
                 // Which column am I in — the question a header answers, and the reason the
                 // selection reaches up here at all.
-                if (start.col..=end.col).contains(&col) {
+                let selected = (start.col..=end.col).contains(&col);
+                if selected {
                     snapshot.append_color(&wash, &rect(head.x, head.y, head.w, head.h));
                 }
+                layout.set_attributes(if selected { &bold } else { &plain }.as_ref());
                 layout.set_text(&sheet_core::formula::lex::column_name(col));
                 let (w, h) = layout.pixel_size();
                 draw_text(
                     snapshot,
                     &layout,
-                    palette.header_text,
+                    match selected {
+                        true => palette.accent,
+                        false => palette.header_text,
+                    },
                     &head,
                     head,
                     w,
@@ -2290,15 +2478,20 @@ mod imp {
                     w: geom.header_w,
                     ..cell
                 };
-                if (start.row..=end.row).contains(&row) {
+                let selected = (start.row..=end.row).contains(&row);
+                if selected {
                     snapshot.append_color(&wash, &rect(head.x, head.y, head.w, head.h));
                 }
+                layout.set_attributes(if selected { &bold } else { &plain }.as_ref());
                 layout.set_text(&(row + 1).to_string());
                 let (w, h) = layout.pixel_size();
                 draw_text(
                     snapshot,
                     &layout,
-                    palette.header_text,
+                    match selected {
+                        true => palette.accent,
+                        false => palette.header_text,
+                    },
                     &head,
                     head,
                     w,
@@ -2313,6 +2506,66 @@ mod imp {
             let line = with_alpha(palette.lines, 1.0);
             snapshot.append_color(&line, &rect(0.0, geom.header_h - 1.0, width, 1.0));
             snapshot.append_color(&line, &rect(geom.header_w - 1.0, 0.0, 1.0, height));
+        }
+
+        /// While a boundary is being dragged, the size it is choosing — as the document
+        /// length that will be stored, beside the boundary, where the eye already is.
+        fn draw_resize_hint(&self, f: &Frame) {
+            let Some(resize) = self.resize.get() else {
+                return;
+            };
+            // The same conversion `commit_resize` stores, shown in centimetres because
+            // that is the unit the rest of the document's lengths speak.
+            let mm = resize.size / self.zoom.get() / PX_PER_MM;
+            let text = format!("{:.2} cm", mm / 10.0);
+            let layout = self.layout();
+            layout.set_attributes(self.attrs(None).as_ref());
+            layout.set_width(-1);
+            layout.set_text(&text);
+            let (w, h) = layout.pixel_size();
+            let (w, h) = (f64::from(w), f64::from(h));
+            // Just past the moving edge, clear of the header band — and clamped inside
+            // the view, so dragging a track wider than the window keeps the number on it.
+            let (x, y) = match resize.track {
+                Hit::ColEdge(col) => (
+                    f.geom.header_w + f.geom.cols.offset_of(col) - f.geom.scroll_x
+                        + resize.size
+                        + 8.0,
+                    f.geom.header_h + 8.0,
+                ),
+                Hit::RowEdge(row) => (
+                    f.geom.header_w + 8.0,
+                    f.geom.header_h + f.geom.rows.offset_of(row) - f.geom.scroll_y
+                        + resize.size
+                        + 8.0,
+                ),
+                _ => return,
+            };
+            let pad = 6.0;
+            let bubble = Rect {
+                x: x.min(f.width - w - 2.0 * pad - 4.0).max(f.geom.header_w),
+                y: y.min(f.height - h - 2.0 * pad - 4.0).max(f.geom.header_h),
+                w: w + 2.0 * pad,
+                h: h + 2.0 * pad,
+            };
+            let rounded =
+                gsk::RoundedRect::from_rect(rect(bubble.x, bubble.y, bubble.w, bubble.h), 6.0);
+            f.snapshot.push_rounded_clip(&rounded);
+            f.snapshot.append_color(
+                &f.palette.header,
+                &rect(bubble.x, bubble.y, bubble.w, bubble.h),
+            );
+            f.snapshot.pop();
+            f.snapshot
+                .append_border(&rounded, &[1.0; 4], &[f.palette.lines; 4]);
+            f.snapshot.save();
+            f.snapshot.translate(&graphene::Point::new(
+                (bubble.x + pad) as f32,
+                (bubble.y + pad) as f32,
+            ));
+            f.snapshot.append_layout(&layout, &f.palette.foreground);
+            f.snapshot.restore();
+            layout.set_attributes(None);
         }
     }
 
@@ -2487,16 +2740,13 @@ mod imp {
         }
     }
 
-    /// A rectangle drawn as four thin ones, since a snapshot has no stroke.
+    /// An outlined rectangle with softened corners — the active cell's cursor and the
+    /// reference outlines. The radius is small enough that the rectangle still reads as
+    /// exactly the cells it covers; the grid lines and the selection wash stay square.
     fn outline(snapshot: &gtk::Snapshot, r: Rect, color: gtk::gdk::RGBA, t: f64) {
-        for edge in [
-            rect(r.x - 1.0, r.y - 1.0, r.w + 2.0, t),
-            rect(r.x - 1.0, r.y + r.h - 1.0, r.w + 2.0, t),
-            rect(r.x - 1.0, r.y - 1.0, t, r.h + 2.0),
-            rect(r.x + r.w - 1.0, r.y - 1.0, t, r.h + 2.0),
-        ] {
-            snapshot.append_color(&color, &edge);
-        }
+        let bounds =
+            gsk::RoundedRect::from_rect(rect(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0), 3.0);
+        snapshot.append_border(&bounds, &[t as f32; 4], &[color; 4]);
     }
 
     fn rect(x: f64, y: f64, w: f64, h: f64) -> graphene::Rect {

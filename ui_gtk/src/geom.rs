@@ -220,21 +220,36 @@ impl GridGeom {
     /// The scroll position that brings a cell fully into view, given the content area's
     /// size — unchanged on the axes where it already is.
     ///
+    /// `margin_x`/`margin_y` are how much *past* the cell the view goes whenever it does
+    /// move: a row of context beyond the cursor, so a jump never lands flush against the
+    /// edge with whatever comes next hidden. The margin never pushes the cell itself back
+    /// out of view.
+    ///
     /// Pure, and tested, because "the active cell scrolled off the bottom" and "the view
     /// jumps a row every keypress" are the same off-by-one seen from two sides.
-    pub fn scroll_into_view(&self, row: u32, col: u32, page_w: f64, page_h: f64) -> (f64, f64) {
+    pub fn scroll_into_view(
+        &self,
+        row: u32,
+        col: u32,
+        page_w: f64,
+        page_h: f64,
+        margin_x: f64,
+        margin_y: f64,
+    ) -> (f64, f64) {
         (
             keep_in(
                 self.scroll_x,
                 self.cols.offset_of(col),
                 self.cols.size_of(col),
                 page_w,
+                margin_x,
             ),
             keep_in(
                 self.scroll_y,
                 self.rows.offset_of(row),
                 self.rows.size_of(row),
                 page_h,
+                margin_y,
             ),
         )
     }
@@ -284,15 +299,17 @@ impl GridGeom {
     }
 }
 
-/// Move `scroll` the least it takes to show `start .. start + size` inside `page`.
-fn keep_in(scroll: f64, start: f64, size: f64, page: f64) -> f64 {
+/// Move `scroll` the least it takes to show `start .. start + size` inside `page`, plus
+/// `margin` of context past it when it moves at all.
+fn keep_in(scroll: f64, start: f64, size: f64, page: f64, margin: f64) -> f64 {
     if start < scroll {
-        return start;
+        return (start - margin).max(0.0);
     }
     // A cell taller or wider than the view is shown from its top-left corner rather than
-    // its far edge, which is the reading order.
+    // its far edge, which is the reading order — the `.min(start)` is also what keeps the
+    // margin from pushing the cell itself back out.
     if start + size > scroll + page {
-        return (start + size - page).min(start).max(0.0);
+        return (start + size - page + margin).min(start).max(0.0);
     }
     scroll
 }
@@ -407,13 +424,39 @@ mod tests {
             ..geom()
         };
         // Already inside: nothing moves.
-        assert_eq!(g.scroll_into_view(6, 1, 400.0, 100.0), (0.0, 100.0));
+        assert_eq!(
+            g.scroll_into_view(6, 1, 400.0, 100.0, 0.0, 0.0),
+            (0.0, 100.0)
+        );
         // Above the view: its top edge.
-        assert_eq!(g.scroll_into_view(2, 1, 400.0, 100.0).1, 40.0);
+        assert_eq!(g.scroll_into_view(2, 1, 400.0, 100.0, 0.0, 0.0).1, 40.0);
         // Below it: just far enough that its bottom edge shows.
-        assert_eq!(g.scroll_into_view(10, 1, 400.0, 100.0).1, 120.0);
+        assert_eq!(g.scroll_into_view(10, 1, 400.0, 100.0, 0.0, 0.0).1, 120.0);
         // Wider than the page: the left edge wins, or the cell is unreadable.
-        assert_eq!(g.scroll_into_view(6, 3, 50.0, 100.0).0, 240.0);
+        assert_eq!(g.scroll_into_view(6, 3, 50.0, 100.0, 0.0, 0.0).0, 240.0);
+    }
+
+    /// The margin: a move overshoots by a row of context, an axis that did not need to
+    /// move stays put, and the cell itself is never pushed back out by its own margin.
+    #[test]
+    fn scrolling_with_a_margin_leaves_context_past_the_cell() {
+        let g = GridGeom {
+            scroll_x: 0.0,
+            scroll_y: 100.0,
+            ..geom()
+        };
+        // Already inside: the margin does not shove a view that is not moving.
+        assert_eq!(
+            g.scroll_into_view(6, 1, 400.0, 100.0, 80.0, 20.0),
+            (0.0, 100.0)
+        );
+        // Below: the bottom edge plus one row of context.
+        assert_eq!(g.scroll_into_view(10, 1, 400.0, 100.0, 0.0, 20.0).1, 140.0);
+        // Above: the top edge minus it, clamped at the sheet's own top.
+        assert_eq!(g.scroll_into_view(2, 1, 400.0, 100.0, 0.0, 20.0).1, 20.0);
+        assert_eq!(g.scroll_into_view(0, 1, 400.0, 100.0, 0.0, 20.0).1, 0.0);
+        // Wider than the page: the left edge still wins over the margin.
+        assert_eq!(g.scroll_into_view(6, 3, 50.0, 100.0, 80.0, 0.0).0, 240.0);
     }
 
     #[test]

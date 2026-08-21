@@ -129,16 +129,18 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
     ));
     // The references, coloured — the same function the in-cell editor uses, over the same
     // buffer, so the two copies of the formula cannot be coloured differently.
-    let colour = |entry: &gtk::Entry| {
-        let dark = crate::theme::is_dark(&crate::theme::Palette::of(entry));
-        let text = entry.text().to_string();
-        entry.set_attributes(&crate::theme::reference_attributes(&text, dark));
-    };
-    colour(&entry);
+    colour_references(&entry);
     grid.buffer().connect_text_notify(glib::clone!(
         #[weak]
         entry,
-        move |_| colour(&entry)
+        move |_| colour_references(&entry)
+    ));
+    // A theme flip swaps which half of the reference palette reads, and fires no buffer
+    // signal — the same recolouring the grid does for itself in `restyle`.
+    libadwaita::StyleManager::default().connect_dark_notify(glib::clone!(
+        #[weak]
+        entry,
+        move |_| colour_references(&entry)
     ));
 
     // The friendly view, and the stack that puts it in front of the entry. A button rather
@@ -550,6 +552,14 @@ fn name_selection(app: &App, grid: &Grid, name: &str) -> Result<(), String> {
     app.set_name(name, &expression).map_err(|e| e.to_string())
 }
 
+/// Colour the references in the formula bar's entry — the same spans and palette as the
+/// in-cell editor, over the same buffer, so the two cannot be coloured differently.
+fn colour_references(entry: &gtk::Entry) {
+    let dark = crate::theme::is_dark(&crate::theme::Palette::of(entry));
+    let text = entry.text().to_string();
+    entry.set_attributes(&crate::theme::reference_attributes(&text, dark));
+}
+
 fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
     let button = gtk::Button::from_icon_name(icon);
     button.set_tooltip_text(Some(tooltip));
@@ -650,6 +660,7 @@ impl Tabs {
 pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
     let label = gtk::Label::builder()
         .xalign(0.0)
+        .hexpand(true)
         .margin_start(10)
         .margin_end(10)
         .margin_top(4)
@@ -660,6 +671,30 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
     // scrolls underneath the text.
     bar.add_css_class("toolbar");
     bar.append(&label);
+
+    // The zoom readout: invisible at 100%, because that is the resting state and a bar
+    // full of resting-state numbers is noise — and a button, because the one thing to do
+    // with a zoom you can see is put it back.
+    let zoom = gtk::Button::builder()
+        .visible(false)
+        .tooltip_text("Zoom — click for normal size")
+        .build();
+    zoom.add_css_class("flat");
+    zoom.add_css_class("numeric");
+    zoom.connect_clicked(glib::clone!(
+        #[weak]
+        grid,
+        move |_| grid.set_zoom(1.0)
+    ));
+    grid.connect_zoom_changed(glib::clone!(
+        #[weak]
+        zoom,
+        move |factor| {
+            zoom.set_label(&format!("{:.0} %", factor * 100.0));
+            zoom.set_visible((factor - 1.0).abs() > 0.005);
+        }
+    ));
+    bar.append(&zoom);
 
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
     let app = app.clone();
