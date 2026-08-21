@@ -108,6 +108,12 @@ Cells are addressed the way ODF references them, minus the brackets — `A1`, `$
 point a script — or an agent — at. [`doc/cli-recipes.md`](doc/cli-recipes.md) has worked
 examples: CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods` files.
 
+`sheet format`'s `--locale` decides the decimal and grouping characters (`1,234.50` vs.
+`1.234,50`). Leave it off and the app falls back to `$SHEET_LOCALE`, then
+`$XDG_CONFIG_HOME/sheet/locale` (a bare tag like `de-DE`, nothing else in the file), then no
+locale at all. The GTK window's format picker uses the same fallback when its locale field is
+left blank.
+
 **The terminal** (`sheet-tui`, no system packages needed):
 
 ```sh

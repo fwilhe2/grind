@@ -99,6 +99,28 @@ impl Locale {
     }
 }
 
+/// The app's locale when nothing more specific says otherwise: `SHEET_LOCALE`, then the XDG
+/// config file, then none at all — the separators an unmarked format already uses. A CLI flag
+/// or a picker's own entry outranks this; a caller with one of those just skips calling it.
+pub fn from_environment() -> Option<Locale> {
+    std::env::var("SHEET_LOCALE")
+        .ok()
+        .and_then(|tag| Locale::parse(&tag))
+        .or_else(from_config_file)
+}
+
+/// `$XDG_CONFIG_HOME/sheet/locale` (or `~/.config/sheet/locale`), a bare BCP 47 tag such as
+/// `de-DE` and nothing else — the one setting here doesn't need a config file format.
+fn from_config_file() -> Option<Locale> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
+        })?;
+    let tag = std::fs::read_to_string(base.join("sheet/locale")).ok()?;
+    Locale::parse(tag.trim())
+}
+
 /// What a format with no locale of its own uses — the separators of an unmarked document.
 pub const DEFAULT: (char, char) = ('.', ',');
 
@@ -135,6 +157,32 @@ mod tests {
         // A language nobody here has heard of falls back rather than failing.
         assert_eq!(separators(Some(&Locale::new("zz", "ZZ"))), DEFAULT);
         assert_eq!(separators(None), DEFAULT);
+    }
+
+    #[test]
+    fn the_environment_outranks_the_config_file() {
+        let dir = std::env::temp_dir().join(format!("sheet-locale-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sheet")).unwrap();
+        std::fs::write(dir.join("sheet/locale"), "fr-FR\n").unwrap();
+
+        // SAFETY: this test owns these two variables for its duration, restores them before
+        // returning, and nothing else in this binary reads them.
+        unsafe {
+            std::env::remove_var("SHEET_LOCALE");
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+        }
+        assert_eq!(from_environment(), Locale::parse("fr-FR"));
+
+        unsafe {
+            std::env::set_var("SHEET_LOCALE", "de-DE");
+        }
+        assert_eq!(from_environment(), Locale::parse("de-DE"));
+
+        unsafe {
+            std::env::remove_var("SHEET_LOCALE");
+            std::env::remove_var("XDG_CONFIG_HOME");
+        }
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

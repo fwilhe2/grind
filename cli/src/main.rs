@@ -220,7 +220,8 @@ enum Command {
         /// Currency symbol
         #[arg(long, default_value = "$")]
         symbol: String,
-        /// Locale for the decimal and grouping characters, e.g. de-DE
+        /// Locale for the decimal and grouping characters, e.g. de-DE. Defaults to
+        /// $SHEET_LOCALE, then $XDG_CONFIG_HOME/sheet/locale, then none.
         #[arg(long, value_parser = locale)]
         locale: Option<sheet_core::locale::Locale>,
         /// Print the format of one cell instead of setting one
@@ -572,7 +573,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 Style::Datetime => Some(numfmt::datetime_preset()),
                 style => Some(numfmt::preset(kind(style), *decimals, *grouping, symbol)),
             }
-            .map(|format| format.in_locale(locale.clone()));
+            .map(|format| {
+                format.in_locale(locale.clone().or_else(sheet_core::locale::from_environment))
+            });
             let changed = app.set_format(sheet, start, end, format).say()?;
             finish(&app, cli, file, changed > 0)
         }

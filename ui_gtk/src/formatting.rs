@@ -592,7 +592,7 @@ impl Picker {
                     return;
                 };
                 let locale = match picker.locale.text().trim() {
-                    "" => None,
+                    "" => sheet_core::locale::from_environment(),
                     tag => match Locale::parse(tag) {
                         Some(locale) => Some(locale),
                         // A tag that is not a tag is a typo, not a format: say so and change
