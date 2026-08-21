@@ -275,7 +275,8 @@ impl Ui {
 
     /// Everything derived from the document, in one place, run after every change.
     fn refresh(self: &Rc<Self>) {
-        self.title.set_title(&document_name(self.path.borrow().as_deref()));
+        self.title
+            .set_title(&document_name(self.path.borrow().as_deref()));
         self.title.set_subtitle(match self.dirty.get() {
             true => "Unsaved changes",
             false => "",
@@ -295,7 +296,10 @@ impl Ui {
     /// A toast with an Undo button — the HIG pattern for anything destructive that is
     /// cheaper to do and take back than to confirm first.
     fn undoable_toast(self: &Rc<Self>, text: &str) {
-        let toast = adw::Toast::builder().title(text).button_label("Undo").build();
+        let toast = adw::Toast::builder()
+            .title(text)
+            .button_label("Undo")
+            .build();
         toast.connect_button_clicked(glib::clone!(
             #[strong(rename_to = ui)]
             self,
@@ -436,7 +440,8 @@ impl Ui {
             move || {
                 // There is no `App::reset`, and there does not need to be: an empty document
                 // written and read back is one, through the same path a file takes.
-                let Ok(bytes) = sheet_core::write_bytes(&sheet_core::Document::default(), Form::Flat)
+                let Ok(bytes) =
+                    sheet_core::write_bytes(&sheet_core::Document::default(), Form::Flat)
                 else {
                     return;
                 };
@@ -535,7 +540,9 @@ impl Ui {
                         // second one with the same title.
                         match row_named(&list, &name) {
                             Some(row) => row.set_text(&definition_text(&expression)),
-                            None => list.append(&name_row(&app, &name, &expression, &say, &sync_empty)),
+                            None => {
+                                list.append(&name_row(&app, &name, &expression, &say, &sync_empty))
+                            }
                         }
                         new_name.set_text("");
                         sync_empty();
@@ -855,11 +862,19 @@ impl Ui {
                 );
             }
         }
-        let navigation = gtk::ShortcutsGroup::builder().title("Navigation & Editing").build();
+        let navigation = gtk::ShortcutsGroup::builder()
+            .title("Navigation & Editing")
+            .build();
         for (accelerator, title) in [
             ("Left Right Up Down", "Move selection"),
-            ("<Control>Left <Control>Right <Control>Up <Control>Down", "Jump to data edge"),
-            ("<Shift>Left <Shift>Right <Shift>Up <Shift>Down", "Extend selection"),
+            (
+                "<Control>Left <Control>Right <Control>Up <Control>Down",
+                "Jump to data edge",
+            ),
+            (
+                "<Shift>Left <Shift>Right <Shift>Up <Shift>Down",
+                "Extend selection",
+            ),
             ("<Control>a", "Select all"),
             ("Tab ISO_Left_Tab", "Move within a row"),
             ("Return <Shift>Return", "Move within a column"),
@@ -877,7 +892,9 @@ impl Ui {
             );
         }
 
-        let section = gtk::ShortcutsSection::builder().section_name("main").build();
+        let section = gtk::ShortcutsSection::builder()
+            .section_name("main")
+            .build();
         section.add_group(&group);
         section.add_group(&navigation);
         window.add_section(&section);
@@ -1039,7 +1056,11 @@ fn definition_text(expression: &str) -> String {
 
 fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
     vec![
-        ("new", &["<Control>n"][..], (|ui: &Rc<Ui>| ui.new_document()) as Handler),
+        (
+            "new",
+            &["<Control>n"][..],
+            (|ui: &Rc<Ui>| ui.new_document()) as Handler,
+        ),
         ("open", &["<Control>o"][..], |ui| ui.open()),
         ("save", &["<Control>s"][..], |ui| ui.save()),
         ("save-as", &["<Control><Shift>s"][..], |ui| ui.save_as()),
@@ -1053,17 +1074,27 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         // Both spellings of the key, because a keyboard's `+` is `plus` with Shift and
         // `equal` without, and a user pressing Ctrl and the key next to Backspace means one
         // thing by it either way.
-        ("zoom-in", &["<Control>plus", "<Control>equal", "<Control>KP_Add"][..], |ui| {
-            ui.grid.set_zoom(ui.grid.zoom() * grid::ZOOM_STEP)
+        (
+            "zoom-in",
+            &["<Control>plus", "<Control>equal", "<Control>KP_Add"][..],
+            |ui| ui.grid.set_zoom(ui.grid.zoom() * grid::ZOOM_STEP),
+        ),
+        (
+            "zoom-out",
+            &["<Control>minus", "<Control>KP_Subtract"][..],
+            |ui| ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP),
+        ),
+        ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| {
+            ui.grid.set_zoom(1.0)
         }),
-        ("zoom-out", &["<Control>minus", "<Control>KP_Subtract"][..], |ui| {
-            ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP)
-        }),
-        ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| ui.grid.set_zoom(1.0)),
         ("autofit-all", &[][..], |ui| ui.grid.autofit_all()),
         ("names", &[][..], |ui| ui.manage_names()),
-        ("calculations", &["<Control><Shift>f"][..], |ui| ui.explore_calculations()),
-        ("explain-formula", &["<Control><Shift>e"][..], |ui| ui.formula_bar.explain.popup()),
+        ("calculations", &["<Control><Shift>f"][..], |ui| {
+            ui.explore_calculations()
+        }),
+        ("explain-formula", &["<Control><Shift>e"][..], |ui| {
+            ui.formula_bar.explain.popup()
+        }),
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
         ("sheet-delete", &[][..], |ui| ui.delete_sheet()),

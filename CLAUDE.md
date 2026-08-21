@@ -54,6 +54,7 @@ cargo test                       # everything
 cargo test --test read_values    # one test file
 cargo test -- repeated_columns   # one test by name substring
 cargo clippy --workspace --all-targets   # must be clean; CI does not gate on it yet
+cargo fmt --all                          # rustfmt.toml is its config; CI does not gate on it yet
 reuse lint                       # must stay compliant; CI DOES gate on this
 ```
 

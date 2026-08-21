@@ -46,7 +46,10 @@ impl Rect {
 /// button — the narrower target has to win or resizing is unreachable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hit {
-    Cell { row: u32, col: u32 },
+    Cell {
+        row: u32,
+        col: u32,
+    },
     RowHeader(u32),
     ColHeader(u32),
     /// The boundary at the *right* edge of this column, in the column header.
@@ -149,7 +152,10 @@ impl Sizes {
         Self::new(
             self.default * factor,
             self.count,
-            self.sizes.iter().map(|(i, size)| (*i, size * factor)).collect(),
+            self.sizes
+                .iter()
+                .map(|(i, size)| (*i, size * factor))
+                .collect(),
         )
     }
 
@@ -205,7 +211,9 @@ impl GridGeom {
     /// The columns visible in a widget `width`, end-exclusive.
     pub fn visible_cols(&self, width: f64) -> std::ops::Range<u32> {
         let first = self.cols.at(self.scroll_x);
-        let last = self.cols.at(self.scroll_x + (width - self.header_w).max(0.0));
+        let last = self
+            .cols
+            .at(self.scroll_x + (width - self.header_w).max(0.0));
         first..(last + 1).min(MAX_COLS)
     }
 
@@ -460,7 +468,10 @@ mod tests {
         assert_eq!(s.size_of(0), 120.0);
         assert_eq!(s.size_of(1), 30.0);
         assert_eq!(s.offset_of(4), 380.0 * 1.5);
-        assert_eq!(s.total(), Sizes::new(80.0, 100, vec![(1, 20.0), (3, 200.0)]).total() * 1.5);
+        assert_eq!(
+            s.total(),
+            Sizes::new(80.0, 100, vec![(1, 20.0), (3, 200.0)]).total() * 1.5
+        );
         assert_eq!(s.at(s.offset_of(3) + 1.0), 3);
     }
 

@@ -442,10 +442,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             }
             let (sheet, pos, _) = a1::resolve(&app, &reference).say()?;
             if *formula {
-                let source = app
-                    .formula(sheet, pos)
-                    .say()?
-                    .unwrap_or_default();
+                let source = app.formula(sheet, pos).say()?.unwrap_or_default();
                 return Ok(Report::Text(TextReport {
                     lines: vec![source],
                 }));
@@ -576,9 +573,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 style => Some(numfmt::preset(kind(style), *decimals, *grouping, symbol)),
             }
             .map(|format| format.in_locale(locale.clone()));
-            let changed = app
-                .set_format(sheet, start, end, format)
-                .say()?;
+            let changed = app.set_format(sheet, start, end, format).say()?;
             finish(&app, cli, file, changed > 0)
         }
 
@@ -629,9 +624,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 borders: Default::default(),
             };
             want.set_border(border.clone());
-            let changed = app
-                .set_style(sheet, start, end, Some(want))
-                .say()?;
+            let changed = app.set_style(sheet, start, end, Some(want)).say()?;
             finish(&app, cli, file, changed > 0)
         }
 
@@ -873,7 +866,11 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 sheet_core::formula::funcs::SMALL_GROUP
             );
             if !beyond.is_empty() {
-                summary.push_str(&format!(" — plus {} beyond it: {}", beyond.len(), beyond.join(", ")));
+                summary.push_str(&format!(
+                    " — plus {} beyond it: {}",
+                    beyond.len(),
+                    beyond.join(", ")
+                ));
             }
             lines.push(summary);
             Ok(Report::Text(TextReport { lines }))
@@ -912,9 +909,7 @@ fn color(value: &str) -> Result<String, String> {
         return Ok(hex.to_owned());
     }
     let hex = value.strip_prefix('#').unwrap_or_default();
-    if value == "transparent"
-        || (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
-    {
+    if value == "transparent" || (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())) {
         return Ok(value.to_owned());
     }
     Err(format!(
@@ -932,8 +927,10 @@ fn color(value: &str) -> Result<String, String> {
 /// one — a name reaching the file would be an attribute LibreOffice drops silently.
 fn border(value: &str) -> Result<String, String> {
     let malformed = || {
-        format!("{value}: expected a width, a line and a colour, \
-                 e.g. \"0.5pt solid #000000\"")
+        format!(
+            "{value}: expected a width, a line and a colour, \
+                 e.g. \"0.5pt solid #000000\""
+        )
     };
     let fields: Vec<&str> = value.split_whitespace().collect();
     let [width, line, name] = fields[..] else {
@@ -1004,10 +1001,11 @@ fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, St
     // Only after a change, and only over a document that has formulas — `stale` costs a
     // recalculation, and asking it of `sheet info` would make reading a document as
     // expensive as recalculating one.
-    let stale = match changed && (0..app.sheet_count()).any(|i| app.formula_count(i).unwrap_or(0) > 0) {
-        true => app.stale(),
-        false => Default::default(),
-    };
+    let stale =
+        match changed && (0..app.sheet_count()).any(|i| app.formula_count(i).unwrap_or(0) > 0) {
+            true => app.stale(),
+            false => Default::default(),
+        };
     if stale.changed > 0 {
         eprintln!(
             "sheet: {} formula cell(s) now disagree with their cached value — \
@@ -1051,13 +1049,7 @@ fn require_session(cli: &Cli, what: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn document(
-    app: &App,
-    file: &Path,
-    changed: bool,
-    written: bool,
-    stale: usize,
-) -> DocumentReport {
+fn document(app: &App, file: &Path, changed: bool, written: bool, stale: usize) -> DocumentReport {
     let sheets = (0..app.sheet_count())
         .map(|i| {
             let (rows, cols) = app.used_extent(i).unwrap_or((0, 0));
@@ -1102,9 +1094,7 @@ fn cells(
     let rows = start.row..last_row.saturating_add(1);
     let cols = start.col..end.col.saturating_add(1);
     let name = app.sheet_name(sheet).say()?;
-    let viewport = app
-        .get_viewport(sheet, rows.clone(), cols.clone())
-        .say()?;
+    let viewport = app.get_viewport(sheet, rows.clone(), cols.clone()).say()?;
 
     let mut out = Vec::new();
     for row in rows.clone() {

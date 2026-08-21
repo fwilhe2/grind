@@ -137,20 +137,38 @@ mod tests {
 
     #[test]
     fn insert_change_and_clear() {
-        assert_eq!(normal_action(KeyCode::Char('i'), KeyModifiers::NONE), Some(Action::Insert));
-        assert_eq!(normal_action(KeyCode::Char('a'), KeyModifiers::NONE), Some(Action::Insert));
-        assert_eq!(normal_action(KeyCode::Char('c'), KeyModifiers::NONE), Some(Action::Change));
-        assert_eq!(normal_action(KeyCode::Char('x'), KeyModifiers::NONE), Some(Action::Clear));
+        assert_eq!(
+            normal_action(KeyCode::Char('i'), KeyModifiers::NONE),
+            Some(Action::Insert)
+        );
+        assert_eq!(
+            normal_action(KeyCode::Char('a'), KeyModifiers::NONE),
+            Some(Action::Insert)
+        );
+        assert_eq!(
+            normal_action(KeyCode::Char('c'), KeyModifiers::NONE),
+            Some(Action::Change)
+        );
+        assert_eq!(
+            normal_action(KeyCode::Char('x'), KeyModifiers::NONE),
+            Some(Action::Clear)
+        );
     }
 
     #[test]
     fn undo_redo_and_command_line() {
-        assert_eq!(normal_action(KeyCode::Char('u'), KeyModifiers::NONE), Some(Action::Undo));
+        assert_eq!(
+            normal_action(KeyCode::Char('u'), KeyModifiers::NONE),
+            Some(Action::Undo)
+        );
         assert_eq!(
             normal_action(KeyCode::Char('r'), KeyModifiers::CONTROL),
             Some(Action::Redo)
         );
-        assert_eq!(normal_action(KeyCode::Char(':'), KeyModifiers::NONE), Some(Action::Command));
+        assert_eq!(
+            normal_action(KeyCode::Char(':'), KeyModifiers::NONE),
+            Some(Action::Command)
+        );
     }
 
     #[test]

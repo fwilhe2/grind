@@ -969,7 +969,9 @@ impl App {
         Ok(match s.get(pos) {
             CellValue::Empty => String::new(),
             CellValue::Number(n) => match date_kind(s, pos) {
-                Some(kind) => numfmt::general(&CellValue::Number(n), Some(kind), state.doc.null_date),
+                Some(kind) => {
+                    numfmt::general(&CellValue::Number(n), Some(kind), state.doc.null_date)
+                }
                 None => formula::value::format_number(n),
             },
             CellValue::Bool(true) => "TRUE".to_owned(),

@@ -84,7 +84,10 @@ pub enum Motion {
 /// later the editor's input method, working.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
-    Move { motion: Motion, extend: bool },
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
     /// Ctrl+A — everything the sheet uses.
     SelectAll,
     Copy,
@@ -377,7 +380,10 @@ mod tests {
         ] {
             assert_eq!(action_for(Key::Char(c), ctrl()), Some(action));
             // The keyval's case is the keyboard's business, not the shortcut's.
-            assert_eq!(action_for(Key::Char(c.to_ascii_uppercase()), ctrl()), Some(action));
+            assert_eq!(
+                action_for(Key::Char(c.to_ascii_uppercase()), ctrl()),
+                Some(action)
+            );
         }
     }
 
@@ -412,11 +418,20 @@ mod tests {
         // A2:A4 filled, A7 filled, from A1.
         let occupied = sheet(&[(1, 0), (2, 0), (3, 0), (6, 0)]);
         // Into a run: its last cell.
-        assert_eq!(go(Pos::new(1, 0), Motion::Edge(Dir::Down), &occupied).row, 3);
+        assert_eq!(
+            go(Pos::new(1, 0), Motion::Edge(Dir::Down), &occupied).row,
+            3
+        );
         // From the end of a run across a gap: the next occupied cell.
-        assert_eq!(go(Pos::new(3, 0), Motion::Edge(Dir::Down), &occupied).row, 6);
+        assert_eq!(
+            go(Pos::new(3, 0), Motion::Edge(Dir::Down), &occupied).row,
+            6
+        );
         // Past the last of them: the used extent's edge, not row 1048576.
-        assert_eq!(go(Pos::new(6, 0), Motion::Edge(Dir::Down), &occupied).row, 9);
+        assert_eq!(
+            go(Pos::new(6, 0), Motion::Edge(Dir::Down), &occupied).row,
+            9
+        );
         // And backwards.
         assert_eq!(go(Pos::new(6, 0), Motion::Edge(Dir::Up), &occupied).row, 3);
         assert_eq!(go(Pos::new(0, 0), Motion::Edge(Dir::Up), &occupied).row, 0);
@@ -425,16 +440,31 @@ mod tests {
     #[test]
     fn the_ends_of_the_sheet_are_the_used_extent() {
         let occupied = sheet(&[]);
-        assert_eq!(go(Pos::new(3, 3), Motion::SheetStart, &occupied), Pos::new(0, 0));
-        assert_eq!(go(Pos::new(3, 3), Motion::SheetEnd, &occupied), Pos::new(9, 4));
-        assert_eq!(go(Pos::new(3, 3), Motion::RowStart, &occupied), Pos::new(3, 0));
-        assert_eq!(go(Pos::new(3, 3), Motion::RowEnd, &occupied), Pos::new(3, 4));
+        assert_eq!(
+            go(Pos::new(3, 3), Motion::SheetStart, &occupied),
+            Pos::new(0, 0)
+        );
+        assert_eq!(
+            go(Pos::new(3, 3), Motion::SheetEnd, &occupied),
+            Pos::new(9, 4)
+        );
+        assert_eq!(
+            go(Pos::new(3, 3), Motion::RowStart, &occupied),
+            Pos::new(3, 0)
+        );
+        assert_eq!(
+            go(Pos::new(3, 3), Motion::RowEnd, &occupied),
+            Pos::new(3, 4)
+        );
     }
 
     #[test]
     fn paging_moves_a_screenful_and_stops_at_the_top() {
         let occupied = sheet(&[]);
-        assert_eq!(go(Pos::new(1, 0), Motion::Page(Dir::Down), &occupied).row, 5);
+        assert_eq!(
+            go(Pos::new(1, 0), Motion::Page(Dir::Down), &occupied).row,
+            5
+        );
         assert_eq!(go(Pos::new(1, 0), Motion::Page(Dir::Up), &occupied).row, 0);
     }
 

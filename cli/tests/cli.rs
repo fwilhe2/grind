@@ -168,11 +168,22 @@ fn format_changes_what_a_cell_shows_and_not_what_it_holds() {
     ok(&["new", &s(&file)]);
     ok(&["set", &s(&file), "A1", "1234.5"]);
     ok(&["set", &s(&file), "A2", "0.075"]);
-    ok(&["format", &s(&file), "A1", "currency", "--symbol", "$", "--grouping"]);
+    ok(&[
+        "format",
+        &s(&file),
+        "A1",
+        "currency",
+        "--symbol",
+        "$",
+        "--grouping",
+    ]);
     ok(&["format", &s(&file), "A2", "percent", "--decimals", "1"]);
 
     assert_eq!(ok(&["view", &s(&file), "A1:A2"]), "1,234.50\u{a0}$\n7.5%\n");
-    assert_eq!(ok(&["view", &s(&file), "A1:A2", "--raw"]), "1234.5\n0.075\n");
+    assert_eq!(
+        ok(&["view", &s(&file), "A1:A2", "--raw"]),
+        "1234.5\n0.075\n"
+    );
     // The value a formula sees is the value, not the display.
     ok(&["set", &s(&file), "B1", "=[.A1]*2"]);
     assert_eq!(ok(&["get", &s(&file), "B1", "--raw"]).trim(), "2469");
@@ -210,10 +221,21 @@ fn show_prints_the_styling_a_toolbar_would_merge_into() {
     let file = dir.path("book.ods");
     ok(&["new", &s(&file)]);
     ok(&["set", &s(&file), "A1", "1234.5"]);
-    assert_eq!(ok(&["style", &s(&file), "A1", "--show"]), "", "a plain cell says nothing");
+    assert_eq!(
+        ok(&["style", &s(&file), "A1", "--show"]),
+        "",
+        "a plain cell says nothing"
+    );
     assert_eq!(ok(&["format", &s(&file), "A1", "--show"]), "");
 
-    ok(&["style", &s(&file), "A1", "--bold", "--background", "#ffff00"]);
+    ok(&[
+        "style",
+        &s(&file),
+        "A1",
+        "--bold",
+        "--background",
+        "#ffff00",
+    ]);
     let shown = ok(&["style", &s(&file), "A1", "--show"]);
     assert!(shown.contains("fo:font-weight\tbold"), "{shown}");
     assert!(shown.contains("fo:background-color\t#ffff00"), "{shown}");
@@ -222,12 +244,22 @@ fn show_prints_the_styling_a_toolbar_would_merge_into() {
     // (`style::PALETTE`), so neither shell has its own idea of navy. Its colour reaches a
     // border too, because a name in the file is an attribute LibreOffice drops silently.
     ok(&[
-        "style", &s(&file), "A1", "--color", "navy", "--background", "Silver",
-        "--border", "0.5pt solid red",
+        "style",
+        &s(&file),
+        "A1",
+        "--color",
+        "navy",
+        "--background",
+        "Silver",
+        "--border",
+        "0.5pt solid red",
     ]);
     let shown = ok(&["style", &s(&file), "A1", "--show"]);
     assert!(shown.contains("fo:color\t#001f3f"), "{shown}");
-    assert!(shown.contains("fo:background-color\t#dddddd"), "case is irrelevant: {shown}");
+    assert!(
+        shown.contains("fo:background-color\t#dddddd"),
+        "case is irrelevant: {shown}"
+    );
     assert!(shown.contains("fo:border\t0.5pt solid #ff4136"), "{shown}");
     // A name that is not one says so, and names the palette rather than only the hex form.
     let refused = sheet(&["style", &s(&file), "A1", "--color", "nvy"]);
@@ -237,18 +269,40 @@ fn show_prints_the_styling_a_toolbar_would_merge_into() {
     // Merging is the caller's job, and this is what makes it possible: read, add italic,
     // write, and the bold is still there.
     ok(&[
-        "style", &s(&file), "A1", "--bold", "--italic", "--background", "#ffff00",
+        "style",
+        &s(&file),
+        "A1",
+        "--bold",
+        "--italic",
+        "--background",
+        "#ffff00",
     ]);
     let shown = ok(&["style", &s(&file), "A1", "--show"]);
     assert!(shown.contains("fo:font-style\titalic") && shown.contains("fo:font-weight\tbold"));
 
     // A format prints the flags that would recreate it, and says that they would.
     ok(&[
-        "format", &s(&file), "A1", "currency", "--decimals", "2", "--grouping", "--symbol", "€",
-        "--locale", "de-DE",
+        "format",
+        &s(&file),
+        "A1",
+        "currency",
+        "--decimals",
+        "2",
+        "--grouping",
+        "--symbol",
+        "€",
+        "--locale",
+        "de-DE",
     ]);
     let shown = ok(&["format", &s(&file), "A1", "--show"]);
-    for line in ["kind\tcurrency", "decimals\t2", "grouping\ttrue", "symbol\t€", "locale\tde-DE", "preset\ttrue"] {
+    for line in [
+        "kind\tcurrency",
+        "decimals\t2",
+        "grouping\ttrue",
+        "symbol\t€",
+        "locale\tde-DE",
+        "preset\ttrue",
+    ] {
         assert!(shown.contains(line), "{line} missing from {shown}");
     }
     // JSON carries the structure rather than the prose, which is what a picker restores from.
@@ -258,10 +312,22 @@ fn show_prints_the_styling_a_toolbar_would_merge_into() {
 
     // Showing and setting are different requests, and asking for both at once is a mistake
     // clap catches rather than a silent precedence rule.
-    assert!(!sheet(&["style", &s(&file), "A1", "--show", "--bold"]).status.success());
-    assert!(!sheet(&["format", &s(&file), "A1", "date", "--show"]).status.success());
+    assert!(
+        !sheet(&["style", &s(&file), "A1", "--show", "--bold"])
+            .status
+            .success()
+    );
+    assert!(
+        !sheet(&["format", &s(&file), "A1", "date", "--show"])
+            .status
+            .success()
+    );
     assert!(!sheet(&["format", &s(&file), "A1"]).status.success());
-    assert!(!sheet(&["style", &s(&file), "A1:B2", "--show"]).status.success());
+    assert!(
+        !sheet(&["style", &s(&file), "A1:B2", "--show"])
+            .status
+            .success()
+    );
 }
 
 /// The rectangle is bounded, because a format costs an entry per cell.
@@ -308,7 +374,10 @@ fn the_sample_script_still_builds_its_document() {
     let book = s(&dir.path("out/sample.ods"));
     assert_eq!(ok(&["get", &book, "B12"]).trim(), "2026-08-16");
     assert_eq!(ok(&["get", &book, "B12", "--raw"]).trim(), "46250");
-    assert_eq!(ok(&["get", &book, "B5", "--formula"]).trim(), "=SUM([.B2:.B4])");
+    assert_eq!(
+        ok(&["get", &book, "B5", "--formula"]).trim(),
+        "=SUM([.B2:.B4])"
+    );
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1234.5");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
@@ -419,10 +488,16 @@ fn editing_a_cell_a_formula_reads_warns_that_the_document_is_stale() {
     assert_eq!(ok(&["get", &s(&file), "A2"]).trim(), "10");
 
     let output = sheet(&["set", &s(&file), "A1", "5"]);
-    assert!(output.status.success(), "staleness is a warning, not an error");
+    assert!(
+        output.status.success(),
+        "staleness is a warning, not an error"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("1 formula cell(s)"), "got: {stderr}");
-    assert!(stderr.contains("sheet recalc"), "it must say what to do: {stderr}");
+    assert!(
+        stderr.contains("sheet recalc"),
+        "it must say what to do: {stderr}"
+    );
     assert!(
         !String::from_utf8_lossy(&output.stdout).contains("recalc"),
         "diagnostics belong on stderr"
@@ -492,7 +567,11 @@ fn a_named_range_can_be_defined_and_used_from_a_formula() {
     ok(&["recalc", &s(&file)]);
     assert_eq!(ok(&["get", &s(&file), "C1"]).trim(), "#NAME?");
 
-    assert!(!sheet(&["name", &s(&file), "sales", "--delete"]).status.success());
+    assert!(
+        !sheet(&["name", &s(&file), "sales", "--delete"])
+            .status
+            .success()
+    );
 }
 
 /// A name that cannot be lexed, or that a reference would win against, is refused where the
@@ -509,8 +588,16 @@ fn a_name_that_no_formula_could_mention_is_refused() {
     }
     // And the expression is parsed before it is stored, for the same reason.
     assert!(!sheet(&["name", &s(&file), "ok", "=SUM("]).status.success());
-    assert!(!sheet(&["name", &s(&file), "ok", "not an address"]).status.success());
-    assert!(ok(&["info", &s(&file)]).lines().all(|l| !l.starts_with("ok")));
+    assert!(
+        !sheet(&["name", &s(&file), "ok", "not an address"])
+            .status
+            .success()
+    );
+    assert!(
+        ok(&["info", &s(&file)])
+            .lines()
+            .all(|l| !l.starts_with("ok"))
+    );
 }
 
 /// A document with no formulas is never stale, and must not pay for the check.

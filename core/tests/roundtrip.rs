@@ -927,7 +927,8 @@ fn kb_documents_render_the_same_in_libreoffice() {
     let mut failures = Vec::new();
     for (name, path) in &staged {
         let app = sheet_core::App::new();
-        app.open_file(path).unwrap_or_else(|e| panic!("{name}: {e}"));
+        app.open_file(path)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
         app.recalc().unwrap_or_else(|e| panic!("{name}: {e}"));
 
         let got = converted(&out, path);

@@ -14,8 +14,8 @@
 //! back to.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -130,7 +130,10 @@ impl App {
     fn begin_edit(&mut self, from_empty: bool) {
         let text = match from_empty {
             true => String::new(),
-            false => self.core.input_text(self.sheet, self.active).unwrap_or_default(),
+            false => self
+                .core
+                .input_text(self.sheet, self.active)
+                .unwrap_or_default(),
         };
         let buf: Vec<char> = text.chars().collect();
         let cursor = buf.len();
@@ -139,7 +142,10 @@ impl App {
     }
 
     fn clear_active(&mut self) {
-        match self.core.enter(self.sheet, self.active, "", RecalcMode::Document) {
+        match self
+            .core
+            .enter(self.sheet, self.active, "", RecalcMode::Document)
+        {
             Ok(_) => self.status.clear(),
             Err(e) => self.status = e.to_string(),
         }
@@ -195,7 +201,10 @@ impl App {
             return;
         };
         let text: String = buf.iter().collect();
-        let before = self.core.input_text(self.sheet, self.active).unwrap_or_default();
+        let before = self
+            .core
+            .input_text(self.sheet, self.active)
+            .unwrap_or_default();
         if before == text {
             self.status.clear();
         } else {
@@ -209,13 +218,15 @@ impl App {
                 },
                 false => text,
             };
-            match self.core.enter(self.sheet, self.active, &input, RecalcMode::Document) {
+            match self
+                .core
+                .enter(self.sheet, self.active, &input, RecalcMode::Document)
+            {
                 Ok(outcome) => {
                     self.status = match outcome.recalc.filter(|r| r.spoiled > 0) {
-                        Some(r) => format!(
-                            "{} cell(s) skipped recalculating — run :recalc",
-                            r.spoiled
-                        ),
+                        Some(r) => {
+                            format!("{} cell(s) skipped recalculating — run :recalc", r.spoiled)
+                        }
                         None => String::new(),
                     };
                 }
@@ -373,8 +384,9 @@ impl App {
         ])
         .areas(area);
 
-        let visible_cols =
-            (u32::from(grid_area.width.saturating_sub(ROW_HEADER_WIDTH)) / u32::from(COL_WIDTH)).max(1);
+        let visible_cols = (u32::from(grid_area.width.saturating_sub(ROW_HEADER_WIDTH))
+            / u32::from(COL_WIDTH))
+        .max(1);
         let visible_rows = u32::from(grid_area.height).max(1);
         self.visible_rows = visible_rows;
         self.visible_cols = visible_cols;
@@ -401,7 +413,11 @@ impl App {
         let mut lines = Vec::with_capacity(visible_rows as usize);
         for r in self.top.row..self.top.row + visible_rows {
             let mut spans = vec![Span::styled(
-                format!("{:>width$} ", r + 1, width = (ROW_HEADER_WIDTH - 1) as usize),
+                format!(
+                    "{:>width$} ",
+                    r + 1,
+                    width = (ROW_HEADER_WIDTH - 1) as usize
+                ),
                 Style::default().add_modifier(Modifier::DIM),
             )];
             for c in self.top.col..self.top.col + visible_cols {
@@ -420,7 +436,10 @@ impl App {
         let addr = sheet_core::a1::format(None, self.active);
         let content = match &self.mode {
             Mode::Insert { buf, .. } => buf.iter().collect::<String>(),
-            _ => self.core.input_text(self.sheet, self.active).unwrap_or_default(),
+            _ => self
+                .core
+                .input_text(self.sheet, self.active)
+                .unwrap_or_default(),
         };
         frame.render_widget(
             Line::from(vec![
@@ -478,7 +497,11 @@ mod tests {
     }
 
     fn app() -> App {
-        App::new(Arc::new(CoreApp::new()), Arc::new(RedrawFlag::default()), None)
+        App::new(
+            Arc::new(CoreApp::new()),
+            Arc::new(RedrawFlag::default()),
+            None,
+        )
     }
 
     fn status_line(app: &mut App, width: u16, height: u16) -> String {
@@ -509,8 +532,14 @@ mod tests {
         press(&mut app, KeyCode::Char('i'));
         type_str(&mut app, "=SUM(");
         press(&mut app, KeyCode::Enter);
-        assert!(matches!(app.mode, Mode::Insert { .. }), "commit must not have succeeded");
-        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), sheet_core::CellValue::Empty);
+        assert!(
+            matches!(app.mode, Mode::Insert { .. }),
+            "commit must not have succeeded"
+        );
+        assert_eq!(
+            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            sheet_core::CellValue::Empty
+        );
     }
 
     #[test]
@@ -520,7 +549,10 @@ mod tests {
         type_str(&mut app, "hello");
         press(&mut app, KeyCode::Esc);
         assert!(matches!(app.mode, Mode::Normal));
-        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), sheet_core::CellValue::Empty);
+        assert_eq!(
+            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            sheet_core::CellValue::Empty
+        );
     }
 
     #[test]
@@ -542,7 +574,10 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('k')); // back onto A1
         press(&mut app, KeyCode::Char('x'));
-        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), sheet_core::CellValue::Empty);
+        assert_eq!(
+            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            sheet_core::CellValue::Empty
+        );
         press(&mut app, KeyCode::Char('u'));
         assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), 5.0.into());
     }

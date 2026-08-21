@@ -123,11 +123,7 @@ pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<S
             false => glib_escape(part),
         })
         .collect();
-    Some(format!(
-        "{}({})",
-        glib_escape(&head),
-        parts.join(separator)
-    ))
+    Some(format!("{}({})", glib_escape(&head), parts.join(separator)))
 }
 
 fn glib_escape(text: &str) -> String {
@@ -222,16 +218,16 @@ impl Completion {
             row.set_margin_end(6);
             self.list.append(&row);
         }
-        self.offers.replace(offers.into_iter().take(MAX_OFFERS).collect());
+        self.offers
+            .replace(offers.into_iter().take(MAX_OFFERS).collect());
         *self.span.borrow_mut() = span;
         self.choose(0);
-        self.popover
-            .set_pointing_to(Some(&gtk::gdk::Rectangle::new(
-                at.x as i32,
-                at.y as i32,
-                at.w as i32,
-                at.h as i32,
-            )));
+        self.popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
+            at.x as i32,
+            at.y as i32,
+            at.w as i32,
+            at.h as i32,
+        )));
         self.popover.popup();
     }
 
@@ -289,7 +285,10 @@ mod tests {
 
         // Names come after functions, and are inserted without a parenthesis.
         let offers = candidates("ex", &names);
-        assert_eq!(offers.last().map(|c| c.insert.clone()), Some("excess".to_owned()));
+        assert_eq!(
+            offers.last().map(|c| c.insert.clone()),
+            Some("excess".to_owned())
+        );
         assert!(offers.iter().any(|c| c.name == "EXP"));
     }
 
@@ -301,7 +300,10 @@ mod tests {
 
         // The second argument of a two-argument function, and the spec's own names.
         let markup = signature_markup("vlookup", 1, false).expect("case does not matter");
-        assert!(markup.contains("<b>") && markup.contains("Column"), "{markup}");
+        assert!(
+            markup.contains("<b>") && markup.contains("Column"),
+            "{markup}"
+        );
         assert_eq!(signature_markup("NOSUCHFUNCTION", 0, false), None);
     }
 

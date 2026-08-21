@@ -86,7 +86,9 @@ fn excused(formula: &str, message: &str) -> Option<&'static str> {
             || message == "unexpected character '$'"
             || message == "unexpected character '!'")
     {
-        return Some("COM.MICROSOFT.LAMBDA/LET parameter name carries an Excel sigil (not §5.14 identifier syntax)");
+        return Some(
+            "COM.MICROSOFT.LAMBDA/LET parameter name carries an Excel sigil (not §5.14 identifier syntax)",
+        );
     }
     None
 }

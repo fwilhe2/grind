@@ -119,7 +119,11 @@ mod tests {
     fn the_column_count_does_not_depend_on_what_was_drawn() {
         let width = 1280.0;
         let first = CELL.visible(width, 800.0);
-        assert_eq!(CELL.visible(width, 800.0), first, "a repaint changes nothing");
+        assert_eq!(
+            CELL.visible(width, 800.0),
+            first,
+            "a repaint changes nothing"
+        );
         // What a stretched table reports back: the columns it was asked for, sharing
         // the width they had to fit in. Feeding that in is what diverged.
         let squeezed = Metrics {

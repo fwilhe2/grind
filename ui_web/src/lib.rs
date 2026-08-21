@@ -109,7 +109,9 @@ pub fn start() -> Result<(), JsValue> {
 /// two declarations that will not, and when they disagreed the grid grew a column
 /// every repaint.
 fn declare_cell_size(document: &Document) -> Result<(), JsValue> {
-    let Some(root) = document.document_element().and_then(|e| e.dyn_into::<HtmlElement>().ok())
+    let Some(root) = document
+        .document_element()
+        .and_then(|e| e.dyn_into::<HtmlElement>().ok())
     else {
         return Ok(());
     };
@@ -277,7 +279,10 @@ impl Ui {
         let scroll = self.scroll.get();
         let rows = scroll.row..scroll.row.saturating_add(visible.0);
         let cols = scroll.col..scroll.col.saturating_add(visible.1);
-        let viewport = self.app.get_viewport(sheet, rows.clone(), cols.clone()).map_err(js)?;
+        let viewport = self
+            .app
+            .get_viewport(sheet, rows.clone(), cols.clone())
+            .map_err(js)?;
 
         let selection = self.selection.get();
         let editing = self.editing.get();
@@ -289,10 +294,12 @@ impl Ui {
         self.dom.head.append_child(&corner)?;
         for col in cols.clone() {
             let cell = self.dom.document.create_element("th")?;
-            cell.set_class_name(match selection.contains(Pos::new(selection.active.row, col)) {
-                true => "head col current",
-                false => "head col",
-            });
+            cell.set_class_name(
+                match selection.contains(Pos::new(selection.active.row, col)) {
+                    true => "head col current",
+                    false => "head col",
+                },
+            );
             cell.set_text_content(Some(&lex::column_name(col)));
             self.dom.head.append_child(&cell)?;
         }
@@ -647,7 +654,10 @@ impl Ui {
                     true => self.selection.get().anchor,
                     false => pos,
                 };
-                self.set_selection(Selection { anchor, active: pos });
+                self.set_selection(Selection {
+                    anchor,
+                    active: pos,
+                });
                 self.dom.surface.focus()?;
             }
         }
@@ -819,7 +829,11 @@ fn css_of(style: Option<&CellStyle>, numeric: bool) -> String {
     set(&mut css, "background-color", &style.background);
     set(&mut css, "text-align", &style.align);
     // `automatic` is ODF's "you decide", which in CSS is saying nothing at all.
-    if style.vertical_align.as_deref().is_some_and(|v| v != "automatic") {
+    if style
+        .vertical_align
+        .as_deref()
+        .is_some_and(|v| v != "automatic")
+    {
         set(&mut css, "vertical-align", &style.vertical_align);
     }
     if let Some(wrap) = &style.wrap {
@@ -837,7 +851,12 @@ fn css_of(style: Option<&CellStyle>, numeric: bool) -> String {
 /// Which ODF form a name asks for. Anything that is not flat XML is a package,
 /// which is also the right answer for a name with no extension at all.
 fn form_of(name: &str) -> Form {
-    match name.rsplit('.').next().map(str::to_ascii_lowercase).as_deref() {
+    match name
+        .rsplit('.')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
         Some("fods") | Some("xml") => Form::Flat,
         _ => Form::Package,
     }

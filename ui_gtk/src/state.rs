@@ -78,7 +78,10 @@ pub enum Outcome {
     ToggleMode,
     /// Start or move a **pending reference**: the shell moves the pointed selection and
     /// writes the reference it names into the buffer, replacing the last one it wrote.
-    Point { motion: Motion, extend: bool },
+    Point {
+        motion: Motion,
+        extend: bool,
+    },
     /// F4: cycle the `$` markers of the reference being pointed at, or the one under the
     /// caret.
     CycleAbsolute,
@@ -264,7 +267,11 @@ fn is_name_char(c: char) -> bool {
 /// **Tab-column memory**: Enter after a run of Tabs returns to the column the run started
 /// in, which is how a person fills a table row by row. One remembered integer, and
 /// disproportionately loved by anyone who has typed a table.
-pub fn after_commit(from: Pos, direction: Option<Dir>, tab_origin: Option<u32>) -> (Pos, Option<u32>) {
+pub fn after_commit(
+    from: Pos,
+    direction: Option<Dir>,
+    tab_origin: Option<u32>,
+) -> (Pos, Option<u32>) {
     match direction {
         Some(Dir::Right) => (
             Pos::new(from.row, from.col.saturating_add(1)),
@@ -329,7 +336,10 @@ mod tests {
             Outcome::Begin(Seed::Cell)
         );
         // A shortcut is not typing, and must not start an edit with a stray character.
-        assert_eq!(on_key(at(Mode::Ready, ""), Key::Char('s'), ctrl()), Outcome::Passthrough);
+        assert_eq!(
+            on_key(at(Mode::Ready, ""), Key::Char('s'), ctrl()),
+            Outcome::Passthrough
+        );
         assert_eq!(
             on_key(at(Mode::Ready, ""), Key::Char('a'), ctrl()),
             Outcome::Navigate(keymap::Action::SelectAll)
@@ -345,7 +355,10 @@ mod tests {
                 extend: false
             })
         );
-        assert_eq!(on_key(at(Mode::Ready, ""), Key::Delete, plain()), Outcome::Clear);
+        assert_eq!(
+            on_key(at(Mode::Ready, ""), Key::Delete, plain()),
+            Outcome::Clear
+        );
     }
 
     /// The reason there are two editing modes at all.
@@ -355,17 +368,35 @@ mod tests {
             on_key(at(Mode::Enter, ""), Key::Right, plain()),
             Outcome::Commit(Some(Dir::Right))
         );
-        assert_eq!(on_key(at(Mode::Edit, ""), Key::Right, plain()), Outcome::Passthrough);
-        assert_eq!(on_key(at(Mode::Edit, ""), Key::F2, plain()), Outcome::ToggleMode);
+        assert_eq!(
+            on_key(at(Mode::Edit, ""), Key::Right, plain()),
+            Outcome::Passthrough
+        );
+        assert_eq!(
+            on_key(at(Mode::Edit, ""), Key::F2, plain()),
+            Outcome::ToggleMode
+        );
     }
 
     #[test]
     fn enter_and_tab_commit_and_shift_reverses_them() {
         for mode in [Mode::Enter, Mode::Edit] {
-            assert_eq!(on_key(at(mode, ""), Key::Return, plain()), Outcome::Commit(Some(Dir::Down)));
-            assert_eq!(on_key(at(mode, ""), Key::Return, shift()), Outcome::Commit(Some(Dir::Up)));
-            assert_eq!(on_key(at(mode, ""), Key::Tab, plain()), Outcome::Commit(Some(Dir::Right)));
-            assert_eq!(on_key(at(mode, ""), Key::Tab, shift()), Outcome::Commit(Some(Dir::Left)));
+            assert_eq!(
+                on_key(at(mode, ""), Key::Return, plain()),
+                Outcome::Commit(Some(Dir::Down))
+            );
+            assert_eq!(
+                on_key(at(mode, ""), Key::Return, shift()),
+                Outcome::Commit(Some(Dir::Up))
+            );
+            assert_eq!(
+                on_key(at(mode, ""), Key::Tab, plain()),
+                Outcome::Commit(Some(Dir::Right))
+            );
+            assert_eq!(
+                on_key(at(mode, ""), Key::Tab, shift()),
+                Outcome::Commit(Some(Dir::Left))
+            );
             assert_eq!(on_key(at(mode, ""), Key::Escape, plain()), Outcome::Cancel);
         }
     }
@@ -375,7 +406,11 @@ mod tests {
     #[test]
     fn the_editor_keeps_every_key_this_does_not_claim() {
         for key in [Key::Char('x'), Key::Home, Key::End, Key::PageUp, Key::Other] {
-            assert_eq!(on_key(at(Mode::Edit, ""), key, plain()), Outcome::Passthrough, "{key:?}");
+            assert_eq!(
+                on_key(at(Mode::Edit, ""), key, plain()),
+                Outcome::Passthrough,
+                "{key:?}"
+            );
         }
     }
 
@@ -415,7 +450,10 @@ mod tests {
             caret: 7,
             ..pointing
         };
-        assert_eq!(on_key(typing, Key::Down, plain()), Outcome::Commit(Some(Dir::Down)));
+        assert_eq!(
+            on_key(typing, Key::Down, plain()),
+            Outcome::Commit(Some(Dir::Down))
+        );
 
         // Once a reference is pending, the arrows keep moving it whatever the text says.
         let moving = Where {
@@ -430,7 +468,10 @@ mod tests {
             }
         );
         // And Tab still commits: pointing must not swallow the keys that end an edit.
-        assert_eq!(on_key(moving, Key::Tab, plain()), Outcome::Commit(Some(Dir::Right)));
+        assert_eq!(
+            on_key(moving, Key::Tab, plain()),
+            Outcome::Commit(Some(Dir::Right))
+        );
     }
 
     /// Excel's cycle, because everybody's fingers know it.
@@ -443,7 +484,10 @@ mod tests {
             text.replace_range(span, &replacement);
             seen.push(replacement);
         }
-        assert_eq!(seen, ["$B$2:$B$4", "B$2:B$4", "$B2:$B4", "B2:B4", "$B$2:$B$4"]);
+        assert_eq!(
+            seen,
+            ["$B$2:$B$4", "B$2:B$4", "$B2:$B4", "B2:B4", "$B$2:$B$4"]
+        );
     }
 
     #[test]

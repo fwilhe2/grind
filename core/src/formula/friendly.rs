@@ -473,7 +473,10 @@ mod tests {
     fn the_inline_rendering_never_unfolds_however_wide_it_gets() {
         let out = explain_inline("of:=RATE(12;-100;1000;0;0;0.05)").unwrap();
         assert!(!out.contains('\n'), "{out}");
-        assert!(out.starts_with("Interest Rate(Number Of Periods: 12, "), "{out}");
+        assert!(
+            out.starts_with("Interest Rate(Number Of Periods: 12, "),
+            "{out}"
+        );
     }
 
     #[test]

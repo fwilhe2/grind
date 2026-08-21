@@ -51,7 +51,10 @@ pub struct Chord<'a> {
 /// What the shell should do about a key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
-    Move { motion: Motion, extend: bool },
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
     /// Start editing. `Some(c)` is a printable key, which replaces the cell and is
     /// its first character; `None` is F2, which keeps what the cell holds.
     Begin(Option<char>),
@@ -132,7 +135,11 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
         // spells every named key with more than one character, which is exactly the
         // test for "printable" — `"a"` is a key, `"ArrowUp"` is a name.
         key => match key.chars().count() == 1 {
-            true => key.chars().next().filter(|c| !c.is_control()).map(|c| Action::Begin(Some(c))),
+            true => key
+                .chars()
+                .next()
+                .filter(|c| !c.is_control())
+                .map(|c| Action::Begin(Some(c))),
             false => None,
         },
     }
@@ -216,8 +223,14 @@ mod tests {
 
     #[test]
     fn a_printable_key_starts_an_edit_and_a_named_one_does_not() {
-        assert_eq!(action_for(&plain("7"), false), Some(Action::Begin(Some('7'))));
-        assert_eq!(action_for(&plain("="), false), Some(Action::Begin(Some('='))));
+        assert_eq!(
+            action_for(&plain("7"), false),
+            Some(Action::Begin(Some('7')))
+        );
+        assert_eq!(
+            action_for(&plain("="), false),
+            Some(Action::Begin(Some('=')))
+        );
         assert_eq!(action_for(&plain("F2"), false), Some(Action::Begin(None)));
         // Named keys this shell has no use for stay with the browser.
         for key in ["Shift", "CapsLock", "F5", "ArrowLeftFake"] {
@@ -282,30 +295,63 @@ mod tests {
     #[test]
     fn the_edges_use_the_used_extent_and_a_plain_move_the_sheet_limit() {
         let extent = (10, 5);
-        assert_eq!(moved(Pos::new(2, 3), Motion::RowEnd, extent, 1), Pos::new(2, 4));
-        assert_eq!(moved(Pos::new(2, 3), Motion::RowStart, extent, 1), Pos::new(2, 0));
-        assert_eq!(moved(Pos::new(2, 3), Motion::SheetEnd, extent, 1), Pos::new(9, 4));
-        assert_eq!(moved(Pos::new(2, 3), Motion::SheetStart, extent, 1), Pos::new(0, 0));
+        assert_eq!(
+            moved(Pos::new(2, 3), Motion::RowEnd, extent, 1),
+            Pos::new(2, 4)
+        );
+        assert_eq!(
+            moved(Pos::new(2, 3), Motion::RowStart, extent, 1),
+            Pos::new(2, 0)
+        );
+        assert_eq!(
+            moved(Pos::new(2, 3), Motion::SheetEnd, extent, 1),
+            Pos::new(9, 4)
+        );
+        assert_eq!(
+            moved(Pos::new(2, 3), Motion::SheetStart, extent, 1),
+            Pos::new(0, 0)
+        );
         // An empty sheet must not underflow into the last row of the address space.
-        assert_eq!(moved(Pos::new(0, 0), Motion::SheetEnd, (0, 0), 1), Pos::new(0, 0));
+        assert_eq!(
+            moved(Pos::new(0, 0), Motion::SheetEnd, (0, 0), 1),
+            Pos::new(0, 0)
+        );
     }
 
     #[test]
     fn a_move_stops_at_the_edge_of_the_sheet() {
-        assert_eq!(moved(Pos::new(0, 0), Motion::By(Dir::Up), (0, 0), 1), Pos::new(0, 0));
-        assert_eq!(moved(Pos::new(0, 0), Motion::By(Dir::Left), (0, 0), 1), Pos::new(0, 0));
+        assert_eq!(
+            moved(Pos::new(0, 0), Motion::By(Dir::Up), (0, 0), 1),
+            Pos::new(0, 0)
+        );
+        assert_eq!(
+            moved(Pos::new(0, 0), Motion::By(Dir::Left), (0, 0), 1),
+            Pos::new(0, 0)
+        );
         assert_eq!(
             moved(Pos::new(MAX_ROWS - 1, 0), Motion::By(Dir::Down), (0, 0), 1).row,
             MAX_ROWS - 1
         );
-        assert_eq!(moved(Pos::new(1, 0), Motion::Page(Dir::Down), (0, 0), 20).row, 21);
-        assert_eq!(moved(Pos::new(1, 0), Motion::Page(Dir::Up), (0, 0), 20).row, 0);
+        assert_eq!(
+            moved(Pos::new(1, 0), Motion::Page(Dir::Down), (0, 0), 20).row,
+            21
+        );
+        assert_eq!(
+            moved(Pos::new(1, 0), Motion::Page(Dir::Up), (0, 0), 20).row,
+            0
+        );
     }
 
     #[test]
     fn enter_goes_down_and_tab_goes_right() {
-        assert_eq!(after_commit(Pos::new(3, 3), Some(Dir::Down)), Pos::new(4, 3));
-        assert_eq!(after_commit(Pos::new(3, 3), Some(Dir::Right)), Pos::new(3, 4));
+        assert_eq!(
+            after_commit(Pos::new(3, 3), Some(Dir::Down)),
+            Pos::new(4, 3)
+        );
+        assert_eq!(
+            after_commit(Pos::new(3, 3), Some(Dir::Right)),
+            Pos::new(3, 4)
+        );
         assert_eq!(after_commit(Pos::new(0, 0), Some(Dir::Up)), Pos::new(0, 0));
         assert_eq!(after_commit(Pos::new(3, 3), None), Pos::new(3, 3));
     }

@@ -309,7 +309,8 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                 chip.set_visible(false);
                 return;
             }
-            let (app, chip, grid, pending2) = (app.clone(), chip.clone(), grid.clone(), pending.clone());
+            let (app, chip, grid, pending2) =
+                (app.clone(), chip.clone(), grid.clone(), pending.clone());
             pending.set(Some(glib::timeout_add_local_once(
                 std::time::Duration::from_millis(150),
                 move || {
@@ -776,7 +777,10 @@ mod tests {
 
         // Until it is defined, and then it is where it points.
         app.set_name("foo", "[$Sheet1.$B$2:.$B$4]").expect("a name");
-        assert_eq!(go("foo").expect("foo is defined now").active, Pos::new(1, 1));
+        assert_eq!(
+            go("foo").expect("foo is defined now").active,
+            Pos::new(1, 1)
+        );
     }
 
     /// The name box shows a name when the selection is exactly that name's range, and the
@@ -785,7 +789,8 @@ mod tests {
     #[test]
     fn the_name_box_shows_a_name_when_the_selection_is_exactly_one() {
         let app = App::new();
-        app.set_name("total", "[$Sheet1.$B$2:.$B$4]").expect("a name");
+        app.set_name("total", "[$Sheet1.$B$2:.$B$4]")
+            .expect("a name");
 
         let exact = Selection {
             anchor: Pos::new(1, 1),

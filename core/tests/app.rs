@@ -782,7 +782,10 @@ fn a_date_formatted_cell_is_edited_as_a_date_not_a_serial() {
     .unwrap();
     app.enter(0, p(0, 0), "2027-08-20", RecalcMode::No).unwrap();
     let shown = app.input_text(0, p(0, 0)).unwrap();
-    assert_eq!(shown, "2027-08-20", "the editor should show the date, not its serial");
+    assert_eq!(
+        shown, "2027-08-20",
+        "the editor should show the date, not its serial"
+    );
 
     let before = app.get(0, p(0, 0)).unwrap();
     app.enter(0, p(0, 0), &shown, RecalcMode::No).unwrap();

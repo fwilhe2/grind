@@ -34,10 +34,10 @@ use libadwaita::prelude::*;
 
 use gtk::{gdk, glib};
 
+use sheet_core::App;
 use sheet_core::locale::Locale;
 use sheet_core::numfmt::{self, Kind};
 use sheet_core::style::{self, CellStyle};
-use sheet_core::App;
 
 use crate::grid::{Grid, Notice};
 
@@ -226,7 +226,10 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
             updating.set(true);
             let (bold, italic, wrap, left, center, right) = &toggles;
             bold.set_active(style.font_weight.as_deref() == Some("bold"));
-            italic.set_active(matches!(style.font_style.as_deref(), Some("italic" | "oblique")));
+            italic.set_active(matches!(
+                style.font_style.as_deref(),
+                Some("italic" | "oblique")
+            ));
             wrap.set_active(style.wrap.as_deref() == Some("wrap"));
             let align = style.align.as_deref();
             left.set_active(matches!(align, Some("start" | "left")));
@@ -294,11 +297,7 @@ struct Swatches {
 }
 
 impl Swatches {
-    fn new(
-        head: &gtk::Widget,
-        tooltip: &str,
-        pick: impl Fn(Option<String>) + 'static,
-    ) -> Rc<Self> {
+    fn new(head: &gtk::Widget, tooltip: &str, pick: impl Fn(Option<String>) + 'static) -> Rc<Self> {
         let pick = Rc::new(pick);
         let shown = Rc::new(Cell::new(gdk::RGBA::BLACK));
         let face = area(shown.clone(), 16, 4);
@@ -536,11 +535,10 @@ impl Picker {
     }
 
     fn sensitivity(self: &Rc<Self>) {
-        let kind = KINDS.get(self.kind.selected() as usize).and_then(|(_, k)| *k);
-        let numeric = matches!(
-            kind,
-            Some(Kind::Number | Kind::Percentage | Kind::Currency)
-        );
+        let kind = KINDS
+            .get(self.kind.selected() as usize)
+            .and_then(|(_, k)| *k);
+        let numeric = matches!(kind, Some(Kind::Number | Kind::Percentage | Kind::Currency));
         self.decimals.set_sensitive(numeric);
         self.grouping.set_sensitive(numeric);
         self.symbol.set_sensitive(kind == Some(Kind::Currency));

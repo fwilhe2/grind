@@ -302,7 +302,10 @@ mod tests {
 
         let all = selection_for_hit(Hit::Corner);
         assert_eq!(all.active, Pos::new(0, 0));
-        assert_eq!(all.rect(), (Pos::new(0, 0), Pos::new(MAX_ROWS - 1, MAX_COLS - 1)));
+        assert_eq!(
+            all.rect(),
+            (Pos::new(0, 0), Pos::new(MAX_ROWS - 1, MAX_COLS - 1))
+        );
     }
 
     /// Dragging down the row header keeps the far anchor, so the rectangle grows over rows
@@ -558,7 +561,9 @@ mod imp {
 
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
             match pspec.name() {
-                "hadjustment" => self.set_adjustment(gtk::Orientation::Horizontal, value.get().ok()),
+                "hadjustment" => {
+                    self.set_adjustment(gtk::Orientation::Horizontal, value.get().ok())
+                }
                 "vadjustment" => self.set_adjustment(gtk::Orientation::Vertical, value.get().ok()),
                 "hscroll-policy" => self.hscroll_policy.set(value.get().unwrap()),
                 "vscroll-policy" => self.vscroll_policy.set(value.get().unwrap()),
@@ -757,7 +762,12 @@ mod imp {
             let rect = Rect { w, ..cell };
             self.editor_rect.set(rect);
             self.editor.size_allocate(
-                &gtk::gdk::Rectangle::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32),
+                &gtk::gdk::Rectangle::new(
+                    rect.x as i32,
+                    rect.y as i32,
+                    rect.w as i32,
+                    rect.h as i32,
+                ),
                 -1,
             );
         }
@@ -862,7 +872,11 @@ mod imp {
 
         /// The columns, unzoomed — what a natural height is measured against.
         fn col_sizes(&self) -> Sizes {
-            Sizes::new(self.metrics.get().col_width, MAX_COLS, self.track_lengths(false))
+            Sizes::new(
+                self.metrics.get().col_width,
+                MAX_COLS,
+                self.track_lengths(false),
+            )
         }
 
         fn geom(&self) -> GridGeom {
@@ -879,8 +893,14 @@ mod imp {
             // under the pointer rather than a guide line standing in for it. It arrives in
             // screen pixels, which is why it goes on after the zoom rather than before.
             match self.resize.get() {
-                Some(Resize { track: Hit::ColEdge(col), size }) => cols = cols.with(col, size),
-                Some(Resize { track: Hit::RowEdge(row), size }) => rows = rows.with(row, size),
+                Some(Resize {
+                    track: Hit::ColEdge(col),
+                    size,
+                }) => cols = cols.with(col, size),
+                Some(Resize {
+                    track: Hit::RowEdge(row),
+                    size,
+                }) => rows = rows.with(row, size),
                 _ => {}
             }
             GridGeom {
@@ -925,7 +945,10 @@ mod imp {
             let Ok((used_rows, used_cols)) = app.used_extent(sheet) else {
                 return Vec::new();
             };
-            if used_rows == 0 || used_cols == 0 || u64::from(used_rows) * u64::from(used_cols) > AUTO_HEIGHT_CELLS {
+            if used_rows == 0
+                || used_cols == 0
+                || u64::from(used_rows) * u64::from(used_cols) > AUTO_HEIGHT_CELLS
+            {
                 return Vec::new();
             }
             let Ok(viewport) = app.get_viewport(sheet, 0..used_rows, 0..used_cols) else {
@@ -951,7 +974,10 @@ mod imp {
                     };
                     layout.set_attributes(font(style).as_ref());
                     layout.set_width(match wrapping {
-                        true => ((cols.size_of(col) - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE)) as i32,
+                        true => {
+                            ((cols.size_of(col) - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE))
+                                as i32
+                        }
                         false => -1,
                     });
                     layout.set_text(text);
@@ -1038,7 +1064,11 @@ mod imp {
             });
         }
 
-        fn set_adjustment(&self, orientation: gtk::Orientation, adjustment: Option<gtk::Adjustment>) {
+        fn set_adjustment(
+            &self,
+            orientation: gtk::Orientation,
+            adjustment: Option<gtk::Adjustment>,
+        ) {
             let adjustment = adjustment.unwrap_or_default();
             adjustment.connect_value_changed(glib::clone!(
                 #[weak(rename_to = grid)]
@@ -1099,7 +1129,11 @@ mod imp {
 
         /// A key, in [`keymap`]'s vocabulary. `Proceed` for everything this shell does not
         /// claim, which is what keeps the toolkit's own bindings working.
-        fn key_pressed(&self, keyval: gtk::gdk::Key, state: gtk::gdk::ModifierType) -> glib::Propagation {
+        fn key_pressed(
+            &self,
+            keyval: gtk::gdk::Key,
+            state: gtk::gdk::ModifierType,
+        ) -> glib::Propagation {
             let mods = Mods {
                 ctrl: state.contains(gtk::gdk::ModifierType::CONTROL_MASK),
                 shift: state.contains(gtk::gdk::ModifierType::SHIFT_MASK),
@@ -1187,7 +1221,13 @@ mod imp {
                             .and_then(|app| app.get(sheet, pos).ok())
                             .is_some_and(|value| !value.is_empty())
                     };
-                    keymap::moved(self.selection.get(), motion, extend, self.extent(), &occupied)
+                    keymap::moved(
+                        self.selection.get(),
+                        motion,
+                        extend,
+                        self.extent(),
+                        &occupied,
+                    )
                 }
                 Action::SelectAll => {
                     let (rows, cols) = self.used_extent();
@@ -1510,7 +1550,10 @@ mod imp {
         fn refresh_buffer(&self) {
             let app = self.app.borrow().clone();
             let text = app
-                .and_then(|app| app.input_text(self.sheet.get(), self.selection.get().active).ok())
+                .and_then(|app| {
+                    app.input_text(self.sheet.get(), self.selection.get().active)
+                        .ok()
+                })
                 .unwrap_or_default();
             self.buffer.set_text(text);
         }
@@ -1591,7 +1634,13 @@ mod imp {
                                 let last = Pos::new(
                                     start.row + rows.len().saturating_sub(1) as u32,
                                     start.col
-                                        + rows.iter().map(Vec::len).max().unwrap_or(1).saturating_sub(1) as u32,
+                                        + rows
+                                            .iter()
+                                            .map(Vec::len)
+                                            .max()
+                                            .unwrap_or(1)
+                                            .saturating_sub(1)
+                                            as u32,
                                 );
                                 imp.set_selection(Selection {
                                     anchor: start,
@@ -1643,8 +1692,12 @@ mod imp {
 
         /// The end of a resize drag: the pixels become an ODF length and one undo entry.
         fn commit_resize(&self) {
-            let Some(resize) = self.resize.take() else { return };
-            let Some(app) = self.app.borrow().clone() else { return };
+            let Some(resize) = self.resize.take() else {
+                return;
+            };
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
             let sheet = self.sheet.get();
             // The drag happened on screen, so the zoom comes back out before the pixels
             // become a physical length.
@@ -1671,9 +1724,13 @@ mod imp {
         /// to what is in it ([`Grid::measure_rows`]), so double-clicking a row boundary
         /// clears the explicit height and the fit is what is left.
         fn autofit(&self, col: u32) {
-            let Some(app) = self.app.borrow().clone() else { return };
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
             let sheet = self.sheet.get();
-            let Ok((rows, _)) = app.used_extent(sheet) else { return };
+            let Ok((rows, _)) = app.used_extent(sheet) else {
+                return;
+            };
             let layout = self.layout();
             layout.set_width(-1);
 
@@ -1705,9 +1762,13 @@ mod imp {
         /// differs per column, so this is several undo steps rather than one — a coarser
         /// grain than a single drag, but this is not a single drag.
         pub fn autofit_all(&self) {
-            let Some(app) = self.app.borrow().clone() else { return };
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
             let sheet = self.sheet.get();
-            let Ok((_, cols)) = app.used_extent(sheet) else { return };
+            let Ok((_, cols)) = app.used_extent(sheet) else {
+                return;
+            };
             for col in 0..cols {
                 self.autofit(col);
             }
@@ -1721,7 +1782,9 @@ mod imp {
         /// Double-clicking a row boundary: drop the explicit height and let the row fit
         /// itself again, which `autofit`'s doc comment explains.
         fn clear_height(&self, row: u32) {
-            let Some(app) = self.app.borrow().clone() else { return };
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
             let sheet = self.sheet.get();
             if let Err(error) = app.set_row_height(sheet, row..row + 1, None) {
                 self.notice(Notice::Refused(error.to_string()));
@@ -1759,7 +1822,9 @@ mod imp {
                 self.resize.set(Some(Resize { track: hit, size }));
                 return;
             }
-            let Some(target) = self.selection_for(hit) else { return };
+            let Some(target) = self.selection_for(hit) else {
+                return;
+            };
             self.set_selection(match extend {
                 true => Selection {
                     anchor: self.selection.get().anchor,
@@ -1777,11 +1842,18 @@ mod imp {
             if let Some(resize) = self.resize.get() {
                 let geom = self.geom();
                 let size = match resize.track {
-                    Hit::ColEdge(col) => x - geom.header_w + geom.scroll_x - geom.cols.offset_of(col),
-                    Hit::RowEdge(row) => y - geom.header_h + geom.scroll_y - geom.rows.offset_of(row),
+                    Hit::ColEdge(col) => {
+                        x - geom.header_w + geom.scroll_x - geom.cols.offset_of(col)
+                    }
+                    Hit::RowEdge(row) => {
+                        y - geom.header_h + geom.scroll_y - geom.rows.offset_of(row)
+                    }
                     _ => return,
                 };
-                self.resize.set(Some(Resize { size: size.max(MIN_TRACK), ..resize }));
+                self.resize.set(Some(Resize {
+                    size: size.max(MIN_TRACK),
+                    ..resize
+                }));
                 self.obj().queue_draw();
                 return;
             }
@@ -1810,7 +1882,9 @@ mod imp {
                 (Hit::RowHeader(_) | Hit::RowEdge(_), Hit::Cell { row, .. }) => Hit::RowHeader(row),
                 _ => hit,
             };
-            let Some(target) = self.selection_for(hit) else { return };
+            let Some(target) = self.selection_for(hit) else {
+                return;
+            };
             self.set_selection(Selection {
                 anchor: self.selection.get().anchor,
                 active: target.active,
@@ -1848,9 +1922,15 @@ mod imp {
         /// assistive technology the selection moved, so every move speaks the cell's address
         /// and, if it has one, its display text.
         fn announce_active_cell(&self, pos: Pos) {
-            let Some(app) = self.app.borrow().clone() else { return };
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
             let address = a1::format(None, pos);
-            let message = match app.get_viewport(self.sheet.get(), pos.row..pos.row + 1, pos.col..pos.col + 1) {
+            let message = match app.get_viewport(
+                self.sheet.get(),
+                pos.row..pos.row + 1,
+                pos.col..pos.col + 1,
+            ) {
                 Ok(viewport) => match viewport.text(pos.row, pos.col) {
                     Some(text) if !text.is_empty() => format!("{address}: {text}"),
                     _ => address,
@@ -1917,9 +1997,13 @@ mod imp {
             }
             f.snapshot
                 .append_color(&with_alpha(f.palette.accent, 0.12), &rect(x, y, w, h));
-            let active = f.geom.cell_rect(f.selection.active.row, f.selection.active.col);
-            f.snapshot
-                .append_color(&f.palette.background, &rect(active.x, active.y, active.w, active.h));
+            let active = f
+                .geom
+                .cell_rect(f.selection.active.row, f.selection.active.col);
+            f.snapshot.append_color(
+                &f.palette.background,
+                &rect(active.x, active.y, active.w, active.h),
+            );
         }
 
         /// Outline the ranges the formula being edited mentions, in the colours the text
@@ -1933,7 +2017,9 @@ mod imp {
             let Some(app) = app else { return };
             let text = self.buffer.text().to_string();
             let pending = self.pending.borrow().clone();
-            for (range, color) in crate::theme::reference_colors(&text, crate::theme::is_dark(&f.palette)) {
+            for (range, color) in
+                crate::theme::reference_colors(&text, crate::theme::is_dark(&f.palette))
+            {
                 let Ok(reference) = sheet_core::a1::parse(&text[range.clone()]) else {
                     continue;
                 };
@@ -1967,7 +2053,9 @@ mod imp {
 
         /// The active cell's border, drawn after the text so it is never painted over.
         fn draw_active(&self, f: &Frame) {
-            let cell = f.geom.cell_rect(f.selection.active.row, f.selection.active.col);
+            let cell = f
+                .geom
+                .cell_rect(f.selection.active.row, f.selection.active.col);
             outline(f.snapshot, cell, f.palette.accent, 2.0);
         }
 
@@ -2056,7 +2144,11 @@ mod imp {
 
             // The cell being edited is drawn by the editor child, not here — otherwise its
             // stored value shows through the text being typed over it.
-            let editing = self.mode.get().is_editing().then(|| self.selection.get().active);
+            let editing = self
+                .mode
+                .get()
+                .is_editing()
+                .then(|| self.selection.get().active);
             let layout = self.layout();
             // The padding is a distance on screen like everything else here, so it zooms.
             let pad = PAD * self.zoom.get();
@@ -2108,7 +2200,17 @@ mod imp {
                     if !fits && align == Align::Right {
                         layout.set_text("##########");
                         let (w, h) = layout.pixel_size();
-                        draw_text(f.snapshot, &layout, color, &cell, cell, w, h, (Align::Right, valign), pad);
+                        draw_text(
+                            f.snapshot,
+                            &layout,
+                            color,
+                            &cell,
+                            cell,
+                            w,
+                            h,
+                            (Align::Right, valign),
+                            pad,
+                        );
                         continue;
                     }
 
@@ -2166,7 +2268,17 @@ mod imp {
                 }
                 layout.set_text(&sheet_core::formula::lex::column_name(col));
                 let (w, h) = layout.pixel_size();
-                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle), PAD);
+                draw_text(
+                    snapshot,
+                    &layout,
+                    palette.header_text,
+                    &head,
+                    head,
+                    w,
+                    h,
+                    (Align::Center, VAlign::Middle),
+                    PAD,
+                );
             }
             snapshot.pop();
 
@@ -2183,7 +2295,17 @@ mod imp {
                 }
                 layout.set_text(&(row + 1).to_string());
                 let (w, h) = layout.pixel_size();
-                draw_text(snapshot, &layout, palette.header_text, &head, head, w, h, (Align::Center, VAlign::Middle), PAD);
+                draw_text(
+                    snapshot,
+                    &layout,
+                    palette.header_text,
+                    &head,
+                    head,
+                    w,
+                    h,
+                    (Align::Center, VAlign::Middle),
+                    PAD,
+                );
             }
             snapshot.pop();
 
@@ -2277,7 +2399,9 @@ mod imp {
             .and_then(|size| size.strip_suffix("pt"))
             .and_then(|points| points.parse::<f64>().ok())
         {
-            attrs.insert(pango::AttrSize::new((points * f64::from(pango::SCALE)) as i32));
+            attrs.insert(pango::AttrSize::new(
+                (points * f64::from(pango::SCALE)) as i32,
+            ));
             any = true;
         }
         any.then_some(attrs)
@@ -2334,7 +2458,8 @@ mod imp {
 
     /// A byte offset as `GtkEditable` counts positions: in characters.
     fn caret_at(text: &str, byte: usize) -> i32 {
-        text.get(..byte).map_or(-1, |head| head.chars().count() as i32)
+        text.get(..byte)
+            .map_or(-1, |head| head.chars().count() as i32)
     }
 
     /// A GDK keyval as [`keymap`] spells it. The keypad duplicates matter: a numeric-keypad

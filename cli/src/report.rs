@@ -199,7 +199,8 @@ impl Report {
 /// decimals as though `sheet format` would reproduce it would be a lie.
 fn describe(cell: &CellStyleReport) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let mut set = |key: &str, value: &dyn fmt::Display| out.push((key.to_owned(), value.to_string()));
+    let mut set =
+        |key: &str, value: &dyn fmt::Display| out.push((key.to_owned(), value.to_string()));
 
     if let Some(format) = &cell.format {
         let (kind, decimals, grouping, symbol) = format.preset_params();
