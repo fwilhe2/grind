@@ -6,7 +6,7 @@
 //!
 //! A Pratt parser, because §5.5's Table 1 *is* a table of binding powers and this is the
 //! shape that transcribes it without inventing a precedence-climbing hierarchy of
-//! productions. The table's two surprises are both encoded in [`PREFIX_BP`]: prefix `-`
+//! productions. The table's two surprises are both encoded in `PREFIX_BP`: prefix `-`
 //! binds **tighter** than `^` (so `-2^2` is `4`, not `-4`), and `^` is **left**-associative
 //! (so `2^3^2` is `64`, not `512`) — the opposite of both in most languages.
 //!

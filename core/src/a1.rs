@@ -13,7 +13,7 @@
 //!
 //! The inbound 1-based/0-based conversion is therefore not here either: `lex::Axis` is
 //! already 0-based, so that half lives in the lexer where every caller shares it. The
-//! outbound `+ 1` in [`format`] is the only index arithmetic outside the lexer, and lives
+//! outbound `+ 1` in [`format()`] is the only index arithmetic outside the lexer, and lives
 //! here rather than in a shell — a second shell doing its own would be a second chance to
 //! be off by one.
 

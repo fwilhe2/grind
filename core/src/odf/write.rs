@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Serialising a document back to ODF. **[ODS]**, with `package` below it **[GENERIC]**.
+//! Serialising a document back to ODF. **\[ODS\]**, with `package` below it **\[GENERIC\]**.
 //!
 //! Templates from doc/ods-format.md §7; the package layout from §1.1/§1.3. The two forms
 //! share one content writer and differ in exactly two places — the root element name and

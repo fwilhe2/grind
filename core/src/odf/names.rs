@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Namespace URIs and name resolution. **[GENERIC]**
+//! Namespace URIs and name resolution. **\[GENERIC\]**
 //!
 //! Dispatch keys on `(namespace-uri, local-name)`, never on the prefix written in the
 //! document (doc/ods-format.md §8.1). Prefixes in the wild vary — `office:`, `ns0:`, a

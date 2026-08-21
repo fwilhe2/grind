@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The element-context stack. **[GENERIC]**
+//! The element-context stack. **\[GENERIC\]**
 //!
 //! A streaming parser driving a stack of per-element context objects, dispatched by
 //! resolved `(namespace, local-name)` (doc/ods-format.md §8). This is the whole reason the

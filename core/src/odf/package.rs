@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Getting at `content.xml`, whichever physical form the document takes. **[GENERIC]**
+//! Getting at `content.xml`, whichever physical form the document takes. **\[GENERIC\]**
 //!
 //! An ODF document is either a zip (`.ods`) or a single flat XML file (`.fods`); both
 //! carry the same logical content model, and only the packaging differs

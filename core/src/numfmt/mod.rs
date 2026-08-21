@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Number formats — ODF 1.4 Part 3 §16.27, and doc/ods-format.md §5.2. **[ODS]**
+//! Number formats — ODF 1.4 Part 3 §16.27, and doc/ods-format.md §5.2. **\[ODS\]**
 //!
 //! A number format is *display only*. The cell's value is the value (§5.2: "the number
 //! style only controls display"), and nothing here ever changes it — which is why a

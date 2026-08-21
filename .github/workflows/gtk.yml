@@ -16,4 +16,10 @@ jobs:
       # edit state machine — and none of them need a display, so nothing here wants
       # a compositor.
       - run: cargo test -p sheet-gtk --all-targets
+      # The lint and doc gates the `ci` workflow runs for every other crate. They live here
+      # because they compile the shell, and compiling it needs the packages above.
+      - run: cargo clippy -p sheet-gtk --all-targets -- -D warnings
+      - run: cargo doc --no-deps -p sheet-gtk
+        env:
+          RUSTDOCFLAGS: -D warnings
       - run: cargo build --release -p sheet-gtk

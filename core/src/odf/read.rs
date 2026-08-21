@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The ODS content model: one context per element we care about. **[ODS]**
+//! The ODS content model: one context per element we care about. **\[ODS\]**
 //!
 //! Structure per doc/ods-format.md §3. Everything not named here is handled by
 //! `context::Ignore` without a line of code, which is the point of §8.

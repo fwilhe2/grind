@@ -53,9 +53,10 @@ Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantic
 cargo test                       # everything
 cargo test --test read_values    # one test file
 cargo test -- repeated_columns   # one test by name substring
-cargo clippy --workspace --all-targets   # must be clean; CI does not gate on it yet
-cargo fmt --all                          # rustfmt.toml is its config; CI does not gate on it yet
-reuse lint                       # must stay compliant; CI DOES gate on this
+cargo clippy --workspace --all-targets   # CI gates on it, warnings as errors
+cargo fmt --all                          # rustfmt.toml is its config; CI gates on --check
+cargo doc --no-deps                      # CI gates on it with RUSTDOCFLAGS=-D warnings
+reuse lint                               # must stay compliant; CI gates on this too
 ```
 
 `sheet` is the CLI; every core capability is reachable from it, enforced by

@@ -12,6 +12,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
 
+  fmt:
+    # `rustfmt.toml` is only worth having if something checks it: the whole workspace,
+    # `ui_gtk` included, because formatting compiles nothing and needs no GTK.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cargo fmt --all --check
+
+  clippy:
+    # Warnings are errors here, which is the only setting that keeps a lint list at zero.
+    # `ui_gtk` is linted by the shells' own workflow, where the GTK packages are.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cargo clippy -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web --all-targets -- -D warnings
+
+  docs:
+    # The doc comments are this project's design record — `CLAUDE.md` sends a reader to them
+    # rather than repeating them — so a link in one that no longer resolves is a broken
+    # reference in the documentation, not a cosmetic warning.
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cargo doc --no-deps -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -19,7 +46,9 @@ jobs:
       # Named crates rather than --workspace: `ui_gtk` needs GTK4 and libadwaita
       # development packages, which this job does not install and the shells' own
       # workflow does.
-      - run: cargo build -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web
+      # `--locked`: `Cargo.lock` is committed, and a build that quietly updates it is a
+      # build of something other than what the commit says.
+      - run: cargo build --locked -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web
       # Loops A and B need a LibreOffice *checkout* for its corpus and skip without
       # one, so this job is the unit tests plus whatever else runs everywhere.
       - run: cargo test -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web

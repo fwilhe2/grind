@@ -341,7 +341,7 @@ impl App {
 
     /// What pressing Enter means — the typing rule, in the core so no two shells disagree.
     ///
-    /// `input` is what the user typed, and [`interpret`] decides what it is: a leading `=`
+    /// `input` is what the user typed, and `typed` decides what it is: a leading `=`
     /// is a formula in **canonical** syntax (a shell converts display form first, with
     /// [`formula::display::from_display`]), a leading `'` forces the rest to be text, an
     /// empty string clears the cell, and anything else is a number, a logical or text.
@@ -955,7 +955,7 @@ impl App {
     /// holds and what [`App::enter`] takes.
     ///
     /// A date or time comes back in the ISO spelling [`numfmt::general`] already promises is
-    /// always typeable back in — [`date_kind`] decides a cell counts as one whenever its
+    /// always typeable back in — `date_kind` decides a cell counts as one whenever its
     /// format says so, or failing that its [`model::NumberKind`] does, so a cell LibreOffice
     /// wrote with `office:date-value` and no style of its own still round-trips.
     pub fn input_text(&self, sheet: usize, pos: Pos) -> Result<String> {

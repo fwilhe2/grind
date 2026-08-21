@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Cell styling — the `style:style` of family `table-cell` (doc/ods-format.md §5.1). **[ODS]**
+//! Cell styling — the `style:style` of family `table-cell` (doc/ods-format.md §5.1). **\[ODS\]**
 //!
 //! The other half of §5: a number format says how a *value* is spelled, this says how the
 //! cell looks around it. The two travel together on one `style:style` and are pooled
