@@ -19,7 +19,7 @@ use std::ops::Range;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use sheet_core::formula::funcs;
+use sheet_core::formula::{friendly, funcs};
 
 use crate::geom::Rect;
 
@@ -85,23 +85,49 @@ pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
 /// The signature hint for the call the caret is in, as Pango markup with the current
 /// argument in bold.
 ///
-/// The signature is the spec's `Syntax:` line, so the argument the hint emphasises is the
-/// argument the normative definition names.
-pub fn signature_markup(name: &str, argument: usize) -> Option<String> {
-    let info = funcs::catalog()
+/// Two spellings of the same signature, `friendly` picking between them: the spec's own
+/// `Syntax:` line, types and all, or [`friendly::signature`]'s plain-English one. The
+/// friendly spelling is the same vocabulary [`friendly::explain`] labels a finished formula
+/// with, so what a user reads while typing and what they read afterwards agree.
+///
+/// A repeating parameter is the last one however many arguments follow it, which is why the
+/// emphasised index is clamped rather than dropped.
+pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<String> {
+    let (head, parts) = match friendly {
+        true => {
+            let (head, labels) = friendly::signature(name)?;
+            (head, labels)
+        }
+        false => {
+            let info = funcs::catalog()
+                .iter()
+                .find(|info| info.name.eq_ignore_ascii_case(name))?;
+            let (head, rest) = info.signature.split_once('(')?;
+            let rest = rest.strip_suffix(')').unwrap_or(rest);
+            (
+                head.to_owned(),
+                rest.split(';').map(str::to_owned).collect(),
+            )
+        }
+    };
+    let last = parts.len().saturating_sub(1);
+    let separator = match friendly {
+        true => "; ",
+        false => ";",
+    };
+    let parts: Vec<String> = parts
         .iter()
-        .find(|info| info.name.eq_ignore_ascii_case(name))?;
-    let (head, rest) = info.signature.split_once('(')?;
-    let rest = rest.strip_suffix(')').unwrap_or(rest);
-    let parts: Vec<String> = rest
-        .split(';')
         .enumerate()
-        .map(|(i, part)| match i == argument {
+        .map(|(i, part)| match i == argument.min(last) {
             true => format!("<b>{}</b>", glib_escape(part)),
             false => glib_escape(part),
         })
         .collect();
-    Some(format!("{}({})", glib_escape(head), parts.join(";")))
+    Some(format!(
+        "{}({})",
+        glib_escape(&head),
+        parts.join(separator)
+    ))
 }
 
 fn glib_escape(text: &str) -> String {
@@ -269,13 +295,25 @@ mod tests {
 
     #[test]
     fn the_signature_hint_bolds_the_argument_the_caret_is_in() {
-        let markup = signature_markup("SUM", 0).expect("SUM is in the catalog");
+        let markup = signature_markup("SUM", 0, false).expect("SUM is in the catalog");
         assert!(markup.starts_with("SUM("), "{markup}");
         assert!(markup.contains("<b>"), "{markup}");
 
         // The second argument of a two-argument function, and the spec's own names.
-        let markup = signature_markup("vlookup", 1).expect("case does not matter");
+        let markup = signature_markup("vlookup", 1, false).expect("case does not matter");
         assert!(markup.contains("<b>") && markup.contains("Column"), "{markup}");
-        assert_eq!(signature_markup("NOSUCHFUNCTION", 0), None);
+        assert_eq!(signature_markup("NOSUCHFUNCTION", 0, false), None);
+    }
+
+    #[test]
+    fn the_friendly_hint_reads_in_the_names_the_explanation_uses() {
+        let markup = signature_markup("RATE", 1, true).expect("RATE is in the catalog");
+        assert!(markup.starts_with("Interest Rate("), "{markup}");
+        assert!(markup.contains("Number Of Periods"), "{markup}");
+        assert!(markup.contains("<b>Payment</b>"), "{markup}");
+
+        // Past the last parameter of a repeating one is still that parameter.
+        let markup = signature_markup("SUM", 7, true).expect("SUM is in the catalog");
+        assert_eq!(markup, "Sum(<b>Number\u{2026}</b>)");
     }
 }

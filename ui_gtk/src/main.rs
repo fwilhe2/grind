@@ -98,6 +98,7 @@ struct Ui {
     banner: adw::Banner,
     tabs: Rc<chrome::Tabs>,
     strip: Rc<formatting::Strip>,
+    formula_bar: Rc<chrome::FormulaBar>,
     undo: gtk::Button,
     redo: gtk::Button,
     path: RefCell<Option<PathBuf>>,
@@ -160,7 +161,8 @@ impl Ui {
         let view = adw::ToolbarView::builder().content(&toasts).build();
         view.add_top_bar(&header);
         view.add_top_bar(&strip.widget);
-        view.add_top_bar(&chrome::formula_bar(&grid, app));
+        let formula_bar = chrome::formula_bar(&grid, app, true);
+        view.add_top_bar(&formula_bar.widget);
         view.add_top_bar(&banner);
         view.add_bottom_bar(&tabs.widget);
         view.add_bottom_bar(&chrome::status_bar(&grid, app));
@@ -184,6 +186,7 @@ impl Ui {
             banner,
             tabs,
             strip,
+            formula_bar,
             undo,
             redo,
             path: RefCell::new(path),
@@ -244,6 +247,24 @@ impl Ui {
                 application.set_accels_for_action(&format!("win.{name}"), accels);
             }
         }
+
+        // Friendly formulas are a *view*, so the action carries the state a checkbox in the
+        // menu reads — the one action here that is not a verb.
+        let friendly = gio::SimpleAction::new_stateful(
+            "friendly-formulas",
+            None,
+            &self.formula_bar.friendly().to_variant(),
+        );
+        friendly.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |action, _| {
+                let on = !ui.formula_bar.friendly();
+                ui.formula_bar.set_friendly(on);
+                action.set_state(&on.to_variant());
+            }
+        ));
+        self.window.add_action(&friendly);
 
         self.window.connect_close_request(glib::clone!(
             #[strong(rename_to = ui)]
@@ -708,6 +729,7 @@ impl Ui {
             ("undo", "Undo"),
             ("redo", "Redo"),
             ("recalc", "Recalculate Now"),
+            ("explain-formula", "Explain Formula"),
             ("zoom-in", "Zoom In"),
             ("zoom-out", "Zoom Out"),
             ("zoom-reset", "Normal Size"),
@@ -899,6 +921,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| ui.grid.set_zoom(1.0)),
         ("autofit-all", &[][..], |ui| ui.grid.autofit_all()),
         ("names", &[][..], |ui| ui.manage_names()),
+        ("explain-formula", &["<Control><Shift>e"][..], |ui| ui.formula_bar.explain.popup()),
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
         ("sheet-delete", &[][..], |ui| ui.delete_sheet()),
@@ -927,10 +950,12 @@ fn primary_menu() -> gio::Menu {
     view.append(Some("Zoom Out"), Some("win.zoom-out"));
     view.append(Some("Normal Size"), Some("win.zoom-reset"));
     view.append(Some("Resize All Cells to Fit"), Some("win.autofit-all"));
+    view.append(Some("Friendly Formulas"), Some("win.friendly-formulas"));
     menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
     rest.append(Some("Names…"), Some("win.names"));
+    rest.append(Some("Explain Formula"), Some("win.explain-formula"));
     rest.append(Some("Recalculate Now"), Some("win.recalc"));
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));

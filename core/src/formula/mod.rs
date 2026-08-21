@@ -10,6 +10,7 @@
 pub mod date;
 pub mod display;
 pub mod eval;
+pub mod friendly;
 pub mod funcs;
 pub mod lex;
 pub mod parse;

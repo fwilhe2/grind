@@ -17,16 +17,50 @@ use libadwaita::prelude::*;
 
 use gtk::glib;
 
+use sheet_core::formula::friendly;
 use sheet_core::{App, CellValue, Pos, a1};
 
 use crate::grid::{Grid, Notice};
 use crate::keymap::{Dir, Selection};
 
+/// The formula bar, and the one thing outside it may do: turn friendly mode on or off.
+///
+/// Same shape as [`crate::formatting::Strip`], and for the same reason — the window owns the
+/// action, the bar owns the widgets.
+pub struct FormulaBar {
+    pub widget: gtk::Box,
+    /// The ⓘ button, kept so the window's `win.explain-formula` action opens the same
+    /// popover a click on it does.
+    pub explain: gtk::MenuButton,
+    friendly: Rc<Cell<bool>>,
+    refresh: Box<dyn Fn()>,
+}
+
+impl FormulaBar {
+    pub fn friendly(&self) -> bool {
+        self.friendly.get()
+    }
+
+    pub fn set_friendly(&self, friendly: bool) {
+        self.friendly.set(friendly);
+        (self.refresh)();
+    }
+}
+
 /// The formula bar: a name box, the shared editor, and the two buttons that end an edit.
 ///
 /// The entry is built over the grid's own `EntryBuffer`, which is the whole trick — content
 /// stays in step with the in-cell editor for free, and each keeps its own caret.
-pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
+///
+/// **Friendly mode is a second *view* of that buffer, never a second copy of it.** A cell
+/// holding a formula is shown, while nothing is being edited, as
+/// [`friendly::explain_inline`] spells it — a `gtk::Button` in a `gtk::Stack`, in front of
+/// the entry rather than instead of it. Clicking it (or any of the ordinary ways an edit
+/// starts) swaps the entry back in, holding the *stored* ODF formula, which is the only
+/// spelling anything ever writes. Nothing here parses friendly text back: `doc/plan.md` R1
+/// says the document's formula is ODF's, and an editable friendly syntax would need a
+/// parameter-label spelling that cannot be confused with `=` as a comparison operator.
+pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar> {
     let name_box = gtk::Entry::builder()
         .width_chars(10)
         .max_width_chars(14)
@@ -107,6 +141,63 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         move |_| colour(&entry)
     ));
 
+    // The friendly view, and the stack that puts it in front of the entry. A button rather
+    // than a label so it is focusable and activatable — the friendly view is where the
+    // keyboard lands when nothing is being edited, and Space on it starts the edit.
+    let friendly = Rc::new(Cell::new(friendly));
+    let friendly_label = gtk::Label::builder()
+        .xalign(0.0)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .build();
+    let friendly_view = gtk::Button::builder()
+        .child(&friendly_label)
+        .has_frame(false)
+        .hexpand(true)
+        .tooltip_text("Click to edit the formula this build stores")
+        .build();
+    friendly_view.connect_clicked(glib::clone!(
+        #[weak]
+        grid,
+        move |_| grid.begin_edit(false)
+    ));
+    let stack = gtk::Stack::builder().hexpand(true).build();
+    stack.add_named(&entry, Some("raw"));
+    stack.add_named(&friendly_view, Some("friendly"));
+
+    // The multi-line rendering of the same formula, for when one line is not enough. Built
+    // on every popup, so there is nothing to keep in step while it is closed.
+    let explain_label = gtk::Label::builder().selectable(true).xalign(0.0).build();
+    explain_label.add_css_class("monospace");
+    let explain = gtk::MenuButton::builder()
+        .icon_name("dialog-information-symbolic")
+        .tooltip_text("Explain Formula")
+        .build();
+    explain.add_css_class("flat");
+    explain.set_popover(Some(
+        &gtk::Popover::builder()
+            .child(
+                &gtk::ScrolledWindow::builder()
+                    .child(&explain_label)
+                    .propagate_natural_height(true)
+                    .propagate_natural_width(true)
+                    .max_content_height(400)
+                    .max_content_width(560)
+                    .margin_top(6)
+                    .margin_bottom(6)
+                    .margin_start(6)
+                    .margin_end(6)
+                    .build(),
+            )
+            .build(),
+    ));
+    explain.set_create_popup_func(glib::clone!(
+        #[weak]
+        grid,
+        #[strong]
+        app,
+        move |_| explain_label.set_label(&explanation(&app, &grid))
+    ));
+
     let accept = icon_button("object-select-symbolic", "Accept");
     accept.connect_clicked(glib::clone!(
         #[weak]
@@ -145,7 +236,8 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         name_box.upcast_ref::<gtk::Widget>(),
         reject.upcast_ref(),
         accept.upcast_ref(),
-        entry.upcast_ref(),
+        stack.upcast_ref(),
+        explain.upcast_ref(),
         hint.upcast_ref(),
         chip.upcast_ref(),
     ] {
@@ -164,21 +256,45 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         hint,
         #[weak]
         chip,
+        #[weak]
+        stack,
+        #[weak]
+        friendly_label,
+        #[weak]
+        explain,
         #[strong]
         app,
+        #[strong]
+        friendly,
         #[strong]
         pending,
         move || {
             let text = grid.buffer().text().to_string();
+
+            // The friendly view stands in for the entry only when there is a formula to
+            // show it for and nobody is editing — a value is already spelled the way a
+            // person would spell it, and mid-edit the stored formula is the thing being
+            // worked on.
+            //
+            let explained = (!grid.is_editing()).then(|| friendly_line(&text)).flatten();
+            explain.set_visible(explained.is_some());
+            match explained.filter(|_| friendly.get()) {
+                Some(explained) => {
+                    friendly_label.set_label(&explained);
+                    stack.set_visible_child_name("friendly");
+                }
+                None => stack.set_visible_child_name("raw"),
+            }
+
             // The caret is the focused editable's; when the formula bar does not have it,
             // the end of the text is where the typing is.
             let caret = match entry.has_focus() {
                 true => byte_offset(&text, entry.position()),
                 false => grid.caret(),
             };
-            match crate::state::call_at(&text, caret)
-                .and_then(|(name, argument)| crate::formula_ux::signature_markup(&name, argument))
-            {
+            match crate::state::call_at(&text, caret).and_then(|(name, argument)| {
+                crate::formula_ux::signature_markup(&name, argument, friendly.get())
+            }) {
                 Some(markup) => {
                     hint.set_markup(&markup);
                     hint.set_visible(true);
@@ -245,6 +361,34 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         }
     ));
 
+    // A cell can change under an unmoved selection (undo, redo, a load), and two cells can
+    // hold the same text — neither fires the buffer's own signal, and both change what the
+    // friendly view should say.
+    grid.connect_selection_changed(glib::clone!(
+        #[strong]
+        update,
+        move |_| update()
+    ));
+    // Swapping the entry in is only half of starting an edit from the friendly view: it has
+    // to take the focus too, or the first keystroke goes to the button that is no longer
+    // there.
+    stack.connect_visible_child_name_notify(glib::clone!(
+        #[weak]
+        entry,
+        move |stack| {
+            if stack.visible_child_name().as_deref() == Some("raw") && stack.has_focus() {
+                entry.grab_focus();
+            }
+        }
+    ));
+    friendly_view.connect_clicked(glib::clone!(
+        #[weak]
+        entry,
+        move |_| {
+            entry.grab_focus();
+        }
+    ));
+
     // The two buttons are only meaningful while an edit is open; the rest of the time they
     // would be two things to wonder about.
     let buttons = move |editing: bool| {
@@ -253,7 +397,43 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
     };
     buttons(false);
     grid.connect_editing_changed(buttons);
-    bar
+
+    Rc::new(FormulaBar {
+        widget: bar,
+        explain,
+        friendly,
+        refresh: Box::new(update),
+    })
+}
+
+/// The one-line friendly rendering of what the shared buffer holds, or `None` when there is
+/// nothing to render one for.
+///
+/// **The buffer holds *display* form and [`friendly`] reads the stored form**, so this
+/// converts before it explains — the same step the preview chip takes. Skipping it does not
+/// merely fail: an unqualified `A1` parses the same in both spellings, but `$Sheet1.$B$2`
+/// lexes as a quoted *name* rather than a reference, so a sheet-qualified formula came out as
+/// `$$'Sheet1.B2':B4` instead of erroring and falling back to the entry.
+fn friendly_line(text: &str) -> Option<String> {
+    if !text.starts_with('=') {
+        return None;
+    }
+    let canonical = sheet_core::formula::display::from_display(text).ok()?;
+    friendly::explain_inline(&canonical).ok()
+}
+
+/// What the ⓘ popover says: the active cell's formula explained over as many lines as it
+/// takes, or why there is nothing to explain. A sentence rather than an empty popover,
+/// because a popover that opens empty reads as a bug.
+fn explanation(app: &App, grid: &Grid) -> String {
+    match app.formula(grid.sheet(), grid.selection().active) {
+        Ok(Some(formula)) => match friendly::explain(&formula) {
+            Ok(explained) => explained,
+            Err(error) => error.to_string(),
+        },
+        Ok(None) => "This cell has no formula.".to_owned(),
+        Err(error) => error.to_string(),
+    }
 }
 
 /// A `GtkEditable` position, which counts characters, as a byte offset — which is what
@@ -556,6 +736,24 @@ fn show(n: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The regression that made friendly mode look broken on any sheet but the first: the
+    /// buffer's display form has to be converted before it is explained, or a
+    /// sheet-qualified reference silently renders as a quoted name.
+    #[test]
+    fn the_friendly_line_reads_the_display_form_the_buffer_actually_holds() {
+        assert_eq!(
+            friendly_line("=COUNT($Sheet1.$B$2:$B$4)").as_deref(),
+            Some("Count Numbers(Number: $Sheet1.$B$2:$B$4)")
+        );
+        assert_eq!(
+            friendly_line("=ROUND(A1;2)").as_deref(),
+            Some("Round(Value: A1, Digits: 2)")
+        );
+        // Not a formula, and a formula that will not parse: the entry stays.
+        assert_eq!(friendly_line("12"), None);
+        assert_eq!(friendly_line("=SUM("), None);
+    }
 
     /// The name box's whole ambiguity, pinned: a word is a name, an address is a place, and
     /// a whole column has to be asked for as a range. Without the last rule every word up to

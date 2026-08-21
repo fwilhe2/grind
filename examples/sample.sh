@@ -167,13 +167,15 @@ say "fmt: the stored form, the display form a formula bar shows, and back"
 "$SHEET" fmt '=SUM([.A1:.A2])*-2^2'
 "$SHEET" fmt --display '=SUM([.A1:.A2])*-2^2'
 "$SHEET" fmt --from-display '=SUM(A1:A2)*-2^2'
+"$SHEET" fmt --friendly '=RATE([.A1];-100;1000;0;0;0.05)'   # read-only: full names, labelled args
+"$SHEET" fmt --friendly --inline '=RATE([.A1];-100;1000;0;0;0.05)'  # the same, on one line
 
 say "eval: what a formula would say at a cell, storing nothing"
 "$SHEET" eval "$book" B20 '=SUM([.B2:.B4])*2'
 
 say "functions: what this build implements"
 "$SHEET" functions | tail -1
-"$SHEET" functions --long --filter vlookup    # signature and summary, from the spec
+"$SHEET" functions --long --filter vlookup    # spec signature, friendly one, category, summary
 
 # --- editing safely ----------------------------------------------------------------------
 

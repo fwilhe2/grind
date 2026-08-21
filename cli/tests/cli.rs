@@ -706,6 +706,25 @@ fn functions_lists_what_this_build_implements() {
 }
 
 #[test]
+fn functions_long_adds_the_alias_and_category_beside_the_spec_signature() {
+    let out = ok(&["functions", "--long", "--filter", "pv"]);
+    assert!(out.contains("Present Value"), "{out}");
+    assert!(out.contains("Financial"), "{out}");
+    assert!(out.contains("§6.12.41"), "{out}");
+}
+
+#[test]
+fn fmt_friendly_explains_a_formula_without_touching_a_document() {
+    let out = ok(&["fmt", "--friendly", "=ROUND([.A1];2)"]);
+    assert_eq!(out.trim(), "Round(Value: A1, Digits: 2)");
+
+    // Read-only: never a fourth spelling of the formula, so it cannot be combined with the
+    // two that do round-trip.
+    let output = sheet(&["fmt", "--friendly", "--display", "=SUM([.A1])"]);
+    assert!(!output.status.success());
+}
+
+#[test]
 fn a_malformed_address_fails_without_writing_anything() {
     let dir = Sandbox::new("badaddr");
     let file = dir.path("book.ods");

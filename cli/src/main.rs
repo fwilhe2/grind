@@ -367,11 +367,20 @@ enum Command {
         #[arg(allow_hyphen_values = true)]
         formula: String,
         /// Print it in display form, without the brackets
-        #[arg(long, conflicts_with = "from_display")]
+        #[arg(long, conflicts_with_all = ["from_display", "friendly"])]
         display: bool,
         /// Read display form and print the stored form
-        #[arg(long)]
+        #[arg(long, conflicts_with = "friendly")]
         from_display: bool,
+        /// Print a read-only, IDE-flavoured rendering: full function names, one argument
+        /// per line past a width, each argument labelled with its parameter. Never parses
+        /// back — this is not a fourth spelling of the formula, only an explanation of one.
+        #[arg(long)]
+        friendly: bool,
+        /// With --friendly, keep it on one line however wide it gets — what a formula bar
+        /// shows, as against the multi-line explanation
+        #[arg(long, requires = "friendly")]
+        inline: bool,
     },
 
     /// List the OpenFormula functions this build implements
@@ -756,11 +765,17 @@ fn run(cli: &Cli) -> Result<Report, String> {
             formula,
             display,
             from_display,
+            friendly,
+            inline,
         } => {
             use sheet_core::formula::display;
-            let line = match (display, from_display) {
-                (true, _) => display::to_display(formula).say()?,
-                (_, true) => display::from_display(formula).say()?,
+            let line = match (display, from_display, friendly) {
+                (true, _, _) => display::to_display(formula).say()?,
+                (_, true, _) => display::from_display(formula).say()?,
+                (_, _, true) if *inline => {
+                    sheet_core::formula::friendly::explain_inline(formula).say()?
+                }
+                (_, _, true) => sheet_core::formula::friendly::explain(formula).say()?,
                 _ => format!("={}", sheet_core::formula::parse::parse(formula).say()?),
             };
             Ok(Report::Text(TextReport { lines: vec![line] }))
@@ -779,7 +794,18 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 true => sheet_core::formula::funcs::catalog()
                     .iter()
                     .filter(|info| matches(info.name))
-                    .map(|info| format!("{}\t{}\t§{}", info.signature, info.brief, info.section))
+                    .map(|info| {
+                        // The friendly signature carries the alias in its head, so it is one
+                        // column rather than two: `Present Value(Rate; Number Of Periods; …)`.
+                        let friendly = sheet_core::formula::friendly::signature(info.name)
+                            .map(|(head, params)| format!("{head}({})", params.join("; ")))
+                            .unwrap_or_else(|| info.name.to_owned());
+                        let category = sheet_core::formula::funcs::category(info);
+                        format!(
+                            "{}\t{friendly}\t{category}\t{}\t§{}",
+                            info.signature, info.brief, info.section
+                        )
+                    })
                     .collect(),
                 false => names
                     .iter()

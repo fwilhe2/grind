@@ -105,9 +105,17 @@ stops ratcheting.
 Reachable from the CLI, but not `App` methods, so the test does not track them:
 
 - `sheet fmt` — `formula::parse` plus the AST's `Display`; `--display` / `--from-display`
-  are `formula::display`, checked against the whole corpus by loop B's third half
+  are `formula::display`, checked against the whole corpus by loop B's third half.
+  `--friendly` is `formula::friendly::explain` — a read-only, multi-line, aliased,
+  parameter-labelled rendering; it never parses back, so it is not a fourth spelling of the
+  formula, only an explanation of one. `--friendly --inline` is
+  `formula::friendly::explain_inline`, the same rendering never unfolded, which is what the
+  GTK shell's formula bar shows in place of a stored formula.
 - `core::a1` — addressing, the only 0↔1 conversion in the workspace. Free functions, used
   by every shell and by every command that takes an address.
 - `sheet functions` — `formula::funcs::implemented()`, already gated against
   `doc/small-group.md` by its own test; `--long` adds `formula::funcs::catalog()`, the
-  spec's own signature and summary for each, which is what a GUI's autocomplete offers
+  spec's own signature and summary for each, which is what a GUI's autocomplete offers, plus
+  `formula::friendly::signature` and `formula::funcs::category` for a help browser's friendly
+  signature — the aliased name and one plain-English label per parameter, the same names the
+  GTK shell's signature hint reads in — and its grouping

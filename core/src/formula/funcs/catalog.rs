@@ -53,6 +53,29 @@ pub fn catalog() -> &'static [FuncInfo] {
     CATALOG
 }
 
+/// The function group a shell would file `info` under, e.g. for a help browser.
+///
+/// Derived from `section` rather than stored per entry: Part 4 §6 groups functions by the
+/// second component of their section number (`6.16.61` is `6.16`, Mathematical), and that
+/// grouping is exactly `doc/small-group.md`'s own headings — deriving it is one match arm
+/// instead of a hundred-odd hand-picked fields that could drift from the section already
+/// on hand.
+pub fn category(info: &FuncInfo) -> &'static str {
+    match info.section.split('.').nth(1) {
+        Some("9") => "Database",
+        Some("10") => "Date & Time",
+        Some("12") => "Financial",
+        Some("13") => "Information",
+        Some("14") => "Lookup & Reference",
+        Some("15") => "Logical",
+        Some("16") => "Math & Trigonometry",
+        Some("17") => "Rounding",
+        Some("18") => "Statistical",
+        Some("20") => "Text",
+        _ => "Other",
+    }
+}
+
 /// One entry per name in `funcs::implemented()`, checked by a test in that module.
 static CATALOG: &[FuncInfo] = &[
     FuncInfo {

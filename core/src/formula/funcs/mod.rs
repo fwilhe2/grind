@@ -64,7 +64,7 @@ pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
 
-pub use catalog::{FuncInfo, catalog};
+pub use catalog::{FuncInfo, catalog, category};
 
 /// How many functions §2.3.2 E) enumerates. The conformance claim's denominator, and the
 /// only number a coverage report may compare against — checked against
@@ -586,6 +586,23 @@ mod tests {
                 info.signature
             );
             assert!(!info.brief.is_empty(), "{} has no summary", info.name);
+        }
+    }
+
+    /// [`category`] derives the group from the section number rather than storing one per
+    /// entry, so the thing worth checking is that every section prefix this build actually
+    /// uses is one the match arm recognises — an unrecognised one would silently file a
+    /// function under "Other" in a help browser instead of failing a build.
+    #[test]
+    fn every_catalogued_function_has_a_known_category() {
+        for info in super::catalog() {
+            assert_ne!(
+                super::category(info),
+                "Other",
+                "{} (§{}) has no category match arm",
+                info.name,
+                info.section
+            );
         }
     }
 
