@@ -6,18 +6,88 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # sheet
 
-An ODF-native spreadsheet: one Rust core, native shells, and a feature list that ends.
+A spreadsheet that opens fast, does the parts you actually use, and keeps your files in a
+format nobody owns.
 
-**Phases 0–8 of 9.** It reads and writes ODF spreadsheets, in both the package (`.ods`) and
-flat (`.fods`) forms. All 361 documents in LibreOffice's own Calc test corpus load — the
-three it declines are password-protected — and documents written here survive a round trip
-through LibreOffice unchanged, checked in CI. It evaluates **all 110 of OpenFormula's
-Small Group functions**, reads, sets and preserves **number formats** so a date prints as a
-date, and **cell styling** — weights, colours, borders, alignment. The `sheet` CLI drives all
-of it, and [`examples/sample.sh`](examples/sample.sh) builds a document out of every feature
-there is. Formats carry their locale, so a German document's `1.234,50` stays that.
-No fonts — LibreOffice rewrites those into a reference nothing here follows. See
-[`doc/plan.md`](doc/plan.md).
+## Why this exists
+
+LibreOffice is great. It is the reason OpenDocument is a real format and not a standards
+document, and it does everything — which is the problem. Thirty years of menus, four
+toolbars, dialogs inside dialogs, and somewhere in there the six things I do in a
+spreadsheet: type numbers, sum a column, format it so it reads properly, name a range, look
+at what a formula is doing, save it.
+
+So this is my attempt to rebuild those six things from scratch, on my own terms:
+
+- **ODF-native, because free formats matter.** Not "imports .ods". The file on disk *is* the
+  model — OpenFormula semantics, ODF's error values, ODF's number formats, ODF's
+  references. Nothing is translated through somebody else's spreadsheet dialect on the way
+  in or out, so nothing is lost in the translation. Everything written validates against the
+  OASIS schema.
+- **A feature list that ends.** [`doc/not-doing.md`](doc/not-doing.md) is a product document:
+  what this will never do, what it does not do yet, and where each capability that exists
+  stops. A spreadsheet you can hold in your head is the point, not a milestone on the way to
+  a bigger one.
+- **An experiment in how software gets built.** Nearly all of this is written with an agent,
+  and the repository is arranged so that works: the rules are checked-in documents, and tests
+  fail the build when the code and the documents disagree. Correctness is not my opinion
+  either — every formula this thing evaluates is checked against LibreOffice's answer, and
+  every file it writes is opened by LibreOffice and read back.
+
+It is not a port of LibreOffice and contains none of its code. It implements the OASIS
+specifications, and uses LibreOffice as an oracle and a test corpus.
+
+## Where it is
+
+**Phases 0–8 done, phase 9 (the shells) in progress.** It reads and writes ODF spreadsheets
+in both forms, `.ods` and flat `.fods`. All 361 documents in LibreOffice's own Calc test
+corpus load — the three it declines are password-protected — and documents written here
+survive a round trip through LibreOffice unchanged, checked on every push.
+
+It evaluates **all 110 of OpenFormula's Small Group functions**, keeps **number formats** so
+a date prints as a date and a German document's `1.234,50` stays that, and **cell styling** —
+weights, colours, borders, alignment. It has named ranges, multiple sheets, undo, column
+widths and row heights.
+
+No fonts yet, and the list of what is deliberately missing is a document rather than an
+excuse: [`doc/not-doing.md`](doc/not-doing.md).
+
+## The window
+
+```sh
+cargo run -p sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
+```
+
+GTK 4 and libadwaita — a GNOME application, keyboard first. Type in cells, type formulas in
+the A1 form you already know (with point mode, autocomplete and a signature hint as you go),
+select, copy, paste, undo, resize columns by dragging or double-clicking to fit, zoom with
+Ctrl and the wheel.
+
+Two things it does that the big one does not:
+
+**Formulas in plain English.** The formula bar shows what a cell *does*, not what it stores:
+
+```
+=RATE(A1;-100;1000;0;0;0.05)
+Interest Rate(Number Of Periods: A1; Payment: -100; Present Value: 1000; …)
+```
+
+Click the bar and it turns straight back into the real formula for editing — the file is
+never touched, the names are never renamed, and everything stays exactly as compatible as it
+was. The ⓘ button unfolds a nested formula one argument per line.
+
+**Find everything that is calculated.** `Ctrl+Shift+F` lists every formula in the document,
+searchable by address, by formula text or by function name, each one clicking through to the
+cell. Including the arithmetic — `=A1/2` is as much a calculation as `=SUM(A1:A9)`, and it is
+usually the one you were looking for.
+
+## The other three front ends
+
+Every capability lives in one Rust core; each front end is a window onto it that owns
+nothing. The rule — enforced by a test, not by intention — is that **anything a window can
+do, the command line can do**.
+
+**The command line** (`sheet`), which is the whole feature set:
 
 ```sh
 sheet new book.ods
@@ -27,45 +97,52 @@ sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
 sheet recalc book.ods
 sheet format book.ods A3 currency --symbol '€' --grouping
 sheet style book.ods A1 --bold --background '#dddddd'
-sheet name book.ods total A1:A2           # a named range, so formulas can say what they mean
-sheet set book.ods A4 '=SUM(total)'
+sheet name book.ods total A1:A2           # a named range, so formulas say what they mean
+sheet calculations book.ods               # every computed cell, and what it calls
 sheet view book.ods A1:A3                 # tab-separated, pipes into anything
-sheet view book.ods A1:A3 --raw           # stored values, not formatted display text
 ```
 
 Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`,
-`Data.B2`, `'Q3 Actuals'.A1:.C9`. `--format json` makes every command machine-readable, and
-`--session` carries undo across invocations. [`doc/cli-recipes.md`](doc/cli-recipes.md) has
-worked scripts — CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods`.
-Whatever the core can do, the CLI can do:
-[`doc/cli-parity.md`](doc/cli-parity.md) lists every public method against the command that
-reaches it, and a test fails the build when one is missing.
+`Data.B2`, `'Q3 Actuals'.A1:.C9`. `--format json` makes every command machine-readable and
+`--session` carries undo across invocations, which together make this a reasonable thing to
+point a script — or an agent — at. [`doc/cli-recipes.md`](doc/cli-recipes.md) has worked
+examples: CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods` files.
 
-## What it must do
+**The terminal** (`sheet-tui`, no system packages needed):
 
-[`doc/plan.md`](doc/plan.md)'s requirements are normative, and each names what checks it.
-Everything written **is valid ODF**, checked against the OASIS RELAX NG schema — and carries
-only the boilerplate the document uses, so a new file is thirteen lines rather than five
-hundred. Everything LibreOffice writes **reads**, unknown elements and attributes included:
-strictness on the way out, tolerance on the way in.
+```sh
+cargo run -p sheet-tui -- book.ods
+```
 
-And writing **changes as little XML as it can**. Setting one cell in a 482-line LibreOffice
-file changes one element and leaves every other byte alone, indentation included — so a
-`.fods` lives in git the way a source file does, and opening a document to look at it is not
-a commit. What a spliced save cannot express (a new row, a changed number format) falls back
-to regenerating the file, and the fallbacks are named and tested rather than inferred.
+Vi-style modes: **Normal** navigates (`hjkl`/arrows, `g`/`G`, `Ctrl-f`/`Ctrl-b`), **Insert**
+(`i`/`a`/`c`) edits, `:` opens a command line (`:w`, `:q`, `:recalc`, or a bare address to
+jump). `sheet-tui --help` has the full key list.
 
-## Why
+**The browser** (`sheet-web`, the same core as WebAssembly — no server, the document never
+leaves your machine):
 
-LibreOffice is the leading implementation of OpenDocument, and ODF is worth having. Its UX
-and its feature surface are not. This is not a port of LibreOffice and contains none of its
-code: it implements ODF from the OASIS specifications, and uses LibreOffice as a conformance
-oracle and test corpus. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the clean-room rule.
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
+  | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+./ui_web/build.sh                                    # writes ui_web/dist
+python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
+```
 
-The architecture is [Shared Core, Native Shell](https://github.com/fwilhe2/editor) — all
-state and logic in one Rust crate, every UI a renderer and event forwarder that owns
-nothing. Shells come after the core is solid; the CLI comes first and stays the ratchet that
-keeps capabilities out of shells.
+Open, edit, formulas, undo, sheets, save as a download. No point mode, no styling controls,
+one column width for everything.
+
+## Your files stay yours
+
+Writing **changes as little XML as it can**. Setting one cell in a 482-line LibreOffice file
+changes one element and leaves every other byte alone, indentation included — so a `.fods`
+lives in git the way a source file does, and opening a document to look at it is not a
+commit. A new file is thirteen lines rather than five hundred, because it carries only the
+boilerplate it uses.
+
+Strictness on the way out, tolerance on the way in: everything written is valid ODF, and
+everything LibreOffice writes reads — unknown elements and attributes included, kept intact
+rather than dropped.
 
 ## What it will and will not do
 
@@ -77,83 +154,37 @@ find/replace · freeze panes · one chart type · CSV · print to PDF.
 xlsx *writing* · scenarios · solver · sparklines · OpenFormula Large Group.
 
 The "out" list is the product. Items move off it one at a time by explicit decision, and only
-if they survive a round-trip through LibreOffice. [`doc/not-doing.md`](doc/not-doing.md) is
-the full version — what is never, what is not yet, and where every capability that exists
-stops.
+if they survive a round trip through LibreOffice.
 
-## Specs
+## How it is checked
 
-| Document | What |
+Four loops, all of them running in CI, none of them grading their own homework:
+
+| | Asserts |
 |---|---|
-| `doc/OpenDocument-v1.4-schema.rng` | ODF 1.4 Part 3 — content schema |
-| `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 Part 4 — OpenFormula: per-function semantics, conversions, errors |
-| `doc/ods-format.md` | Clean-room notes on what LibreOffice actually does, cited `file:line` |
-| `doc/small-group.md` | The 110-function Small Group list, extracted from Part 4 §2.3.2 |
-| `doc/plan.md` | Phases, exit criteria, and the three verification loops |
-| `doc/not-doing.md` | The feature line, written down — never, not yet, and the limits of what exists |
-| `doc/gtk-shell.md` | The GTK shell, planned — phase 9's native shell |
+| **A** | every document in LibreOffice's Calc corpus loads |
+| **B** | formulas from that corpus parse, round-trip, and evaluate to the value LibreOffice cached |
+| **C** | what we write, LibreOffice reads back unchanged — and the reverse |
+| **E** | formulas generated from the function catalog, evaluated by us and by LibreOffice, compared |
 
-## Running it
+Plus eight named documents that must always load, vendored in the repository, and a check
+that everything written validates against the OASIS RELAX NG schema.
 
-Four front ends, and the rule is that the command line reaches everything any shell does.
-
-**The window** (`sheet-gtk`, GTK 4 and libadwaita — `libgtk-4-dev` and `libadwaita-1-dev`
-to build):
+## Building
 
 ```sh
-cargo run -p sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
+cargo test                       # everything but the GTK shell
+cargo test -p sheet-gtk          # its widget-free half: geometry, keys, edit state
 ```
 
-It reads, draws and edits today: values, formulas typed in A1 form with point mode and
-autocomplete, number formats and cell styling as the document spells them, selection and
-navigation, the clipboard, undo, sheets, and a format strip whose whole vocabulary is the
-core's. What it does not have yet is column widths and row heights, so every column is the
-same width — that is the next milestone. `doc/gtk-shell.md` is the plan it is being built to,
-milestone by milestone, and `doc/not-doing.md` says where each capability stops.
-
-**The terminal** (`sheet-tui`, pure Rust — no system packages to install):
+The corpus tests want a LibreOffice checkout and skip with a notice without one:
 
 ```sh
-cargo run -p sheet-tui -- book.ods        # or a .fods; with no file, an empty document
+SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 ```
 
-Vi-style modes: **Normal** navigates (`hjkl`/arrows, `g`/`G` for A1/the last used cell,
-`Ctrl-f`/`Ctrl-b` to page),
-**Insert** (`i`/`a`/`c`) edits the active cell, and `:` opens a command line (`:w`, `:q`,
-`:wq`, `:recalc`, `:sheet name`, or a bare cell address to jump to). Run `sheet-tui --help`
-for the full key list.
-
-**The browser** (`sheet-web`, the same core compiled to WebAssembly — nothing runs on a
-server, and the document never leaves the machine):
-
-```sh
-rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
-  | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
-./ui_web/build.sh                                    # writes ui_web/dist
-python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
-```
-
-Open, edit, formulas, undo, sheets and save-as-download. It is the honest test of the rule
-that the core assumes no filesystem: a document arrives from the file picker as bytes and
-leaves as a download, and no path is involved at any point. What it does not have: point
-mode, the clipboard beyond the browser's own, styling controls, and column widths — every
-column is the same width, as in the terminal. `ui_web/smoke.sh` drives the real module
-against the real page in jsdom, so the wiring is checked without a browser.
-
-**The command line** (`sheet`), which is the whole feature set:
-
-```sh
-cargo run -p sheet-cli -- new book.ods
-cargo run -p sheet-cli -- set book.ods A1 1
-cargo run -p sheet-cli -- set book.ods A2 '=[.A1]*2'   # ODF syntax, verbatim
-cargo run -p sheet-cli -- view book.ods A1:A2
-cargo run -p sheet-cli -- --format json info book.ods
-```
-
-`examples/sample.sh` builds a document out of every feature this build has, through the
-CLI and nothing else — which also makes it the most interesting thing to open in the
-window:
+`examples/sample.sh` builds a document out of every feature this build has, through the CLI
+and nothing else — which also makes it the most interesting thing to open in the window:
 
 ```sh
 cargo build
@@ -161,32 +192,19 @@ SHEET=target/debug/sheet examples/sample.sh /tmp/demo
 cargo run -p sheet-gtk -- /tmp/demo/sample.fods
 ```
 
-## Building
+## Reading further
 
-```sh
-cargo test
-```
-
-The corpus tests want a LibreOffice checkout, and skip with a notice without one:
-
-```sh
-SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
-```
-
-The GTK shell is not in `cargo test`'s default path — it is its own crate with system
-dependencies, and its own CI job:
-
-```sh
-cargo test -p sheet-gtk          # the widget-free half: geometry, and later keys
-```
-
-`sheet-tui` has no system dependencies, so it builds and tests everywhere `sheet-core` and
-`sheet-cli` do:
-
-```sh
-cargo test -p sheet-tui
-cargo test -p sheet-web    # the browser-free half: the keymap and the layout arithmetic
-```
+| Document | What |
+|---|---|
+| [`doc/plan.md`](doc/plan.md) | The requirements, the phases, and what each one has to prove |
+| [`doc/not-doing.md`](doc/not-doing.md) | The feature line — never, not yet, and where what exists stops |
+| [`doc/cli-parity.md`](doc/cli-parity.md) | Every core capability against the command that reaches it |
+| [`doc/cli-recipes.md`](doc/cli-recipes.md) | Worked scripts |
+| [`doc/small-group.md`](doc/small-group.md) | The 110 functions, from Part 4 §2.3.2 |
+| [`doc/ods-format.md`](doc/ods-format.md) | Clean-room notes on what LibreOffice actually does, cited `file:line` |
+| [`doc/gtk-shell.md`](doc/gtk-shell.md) | The GTK shell, milestone by milestone |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | The clean-room rule, and how to work on this |
+| `doc/OpenDocument-v1.4-schema.rng`, `doc/OpenDocument-v1.4-os-part4-formula.html` | The OASIS specifications this is built from |
 
 ## License
 
@@ -197,13 +215,21 @@ source. That is deliberate: a spreadsheet core is exactly the thing someone embe
 hosted service, and plain GPL would ask nothing of them.
 
 The repository is [REUSE](https://reuse.software) compliant — every file carries its
-copyright and license, machine-readably:
-
-```sh
-reuse lint
-```
+copyright and license, machine-readably (`reuse lint`).
 
 The two OASIS specifications under `doc/` are **not** AGPL and **not** open source. They are
 redistributed verbatim under the OASIS IPR Policy, which permits copying but forbids
 modification of any kind — including adding an SPDX header. They are marked with `.license`
 sidecar files for that reason; do not annotate them in place.
+
+## Trademarks
+
+LibreOffice is a registered trademark of [The Document
+Foundation](https://www.documentfoundation.org/). OpenDocument and ODF are trademarks of
+[OASIS](https://www.oasis-open.org/). GNOME is a trademark of the GNOME Foundation.
+
+This project is not affiliated with, endorsed by, or sponsored by any of them. LibreOffice is
+named here only to describe what this software does — which documents it reads, which
+implementation it is tested against, and how the two differ — and every such use is
+descriptive, never a claim of origin. No trademark is used in the name of this project, its
+binaries, its icon, or its packaging.
