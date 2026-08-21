@@ -121,6 +121,55 @@ pub const MAX_FORMATTED_CELLS: u64 = 1 << 16;
 /// rule for which wins — worth it when a file turns up that needs it.
 pub const MAX_TRACK_RUN: u32 = 1024;
 
+/// One calculated cell, as an explorer lists it ([`App::calculations`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Calculation {
+    pub sheet: usize,
+    pub sheet_name: String,
+    pub pos: Pos,
+    /// The formula in display form — `=SUM(B2:B4)`, what a formula bar shows.
+    pub formula: String,
+    /// What the cell shows now: the cached result with its number format applied.
+    pub value: String,
+    /// The functions it calls, outermost first. Empty for plain arithmetic, and for a
+    /// formula that will not parse.
+    pub functions: Vec<String>,
+}
+
+impl Calculation {
+    /// The cell as an address a user can type back in: `Sheet1.B2`, ODF's own spelling.
+    pub fn address(&self) -> String {
+        format!("{}.{}", self.sheet_name, a1::format(None, self.pos))
+    }
+
+    /// Whether a search finds this one — its sheet, address, formula or any function it
+    /// calls, case-insensitively, and everything when the needle is empty.
+    ///
+    /// Here rather than in each shell so that a dialog's search box and `--filter` cannot
+    /// answer the same question differently.
+    pub fn matches(&self, needle: &str) -> bool {
+        let needle = needle.trim().to_uppercase();
+        needle.is_empty()
+            || self.address().to_uppercase().contains(&needle)
+            || self.formula.to_uppercase().contains(&needle)
+            || self.functions.iter().any(|f| f.contains(&needle))
+    }
+}
+
+/// Which functions a set of calculations uses, commonest first and ties alphabetical —
+/// "what is this spreadsheet actually doing", which the per-cell list only implies.
+pub fn function_tally(calculations: &[Calculation]) -> Vec<(String, usize)> {
+    let mut tally: Vec<(String, usize)> = Vec::new();
+    for name in calculations.iter().flat_map(|calc| &calc.functions) {
+        match tally.iter_mut().find(|(n, _)| n == name) {
+            Some((_, count)) => *count += 1,
+            None => tally.push((name.clone(), 1)),
+        }
+    }
+    tally.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    tally
+}
+
 /// A rectangle of values, already resolved — what a renderer draws.
 ///
 /// Requesting rows or columns past the end of the sheet is normal, not an error: a user
@@ -857,10 +906,7 @@ impl App {
             for col in cols.clone() {
                 let pos = Pos::new(row, col);
                 let value = s.get(pos);
-                texts.push(match s.format(pos) {
-                    Some(format) => format.render(&value, state.doc.null_date),
-                    None => numfmt::general(&value, s.kind(pos), state.doc.null_date),
-                });
+                texts.push(render(s, pos, state.doc.null_date));
                 styles.push(s.style(pos).cloned());
                 cells.push(value);
             }
@@ -965,6 +1011,40 @@ impl App {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.formula(pos).map(str::to_owned))
+    }
+
+    /// Every calculated cell in the document, sheet by sheet and address by address.
+    ///
+    /// What a "where is this number coming from" question needs answered in one place: a
+    /// spreadsheet hides its formulas behind their results, and the only way to see them all
+    /// is a list of them. Plain arithmetic counts — `=[.A1]/2` calls nothing and is still a
+    /// calculation — so this is every formula cell rather than every cell calling a function,
+    /// and [`Calculation::functions`] is empty rather than absent for one.
+    ///
+    /// Filtering is the caller's: a dialog's search box and a `--filter` flag want different
+    /// matching, and neither wants the whole document re-read per keystroke.
+    pub fn calculations(&self) -> Vec<Calculation> {
+        let state = self.state.read().unwrap();
+        let null_date = state.doc.null_date;
+        state
+            .doc
+            .sheets
+            .iter()
+            .enumerate()
+            .flat_map(|(index, s)| {
+                s.formulas().map(move |(pos, formula)| Calculation {
+                    sheet: index,
+                    sheet_name: s.name.clone(),
+                    pos,
+                    // Display form, because that is the spelling a user reads in the formula
+                    // bar; one that will not parse is shown exactly as it is stored.
+                    formula: formula::display::to_display(formula)
+                        .unwrap_or_else(|_| formula.to_owned()),
+                    value: render(s, pos, null_date),
+                    functions: formula::funcs::used(formula).unwrap_or_default(),
+                })
+            })
+            .collect()
     }
 
     pub fn formula_count(&self, sheet: usize) -> Result<usize> {
@@ -1095,6 +1175,18 @@ pub struct EnterOutcome {
     /// and `changed` is what recalculating *would* have changed — the number a banner
     /// reports, and the reason it has to be offered rather than done.
     pub recalc: Option<Recalc>,
+}
+
+/// What one cell displays: its own number format applied, or the general one (§5.2).
+///
+/// One function because a viewport and a list of calculations must not disagree about what
+/// a cell reads as.
+fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
+    let value = sheet.get(pos);
+    match sheet.format(pos) {
+        Some(format) => format.render(&value, null_date),
+        None => numfmt::general(&value, sheet.kind(pos), null_date),
+    }
 }
 
 /// Whether a cell counts as a date or a time — its format if it has one and the format

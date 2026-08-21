@@ -579,6 +579,113 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
+    // --- calculations ---
+
+    /// The calculations dialog: every formula in the document, searchable, each row jumping
+    /// to the cell it names.
+    ///
+    /// A spreadsheet shows results and hides the formulas behind them, so the one question a
+    /// grid cannot answer is "what in here is computed, and out of what". Plain arithmetic is
+    /// listed beside function calls — `=A1/2` is as much a calculation as `=SUM(A1:A9)` — and
+    /// the search matches a function name as readily as an address, which is what makes it
+    /// also the answer to "where is TODAY used".
+    ///
+    /// The list is rebuilt per keystroke rather than filtered in place: `App::calculations`
+    /// walks the formulas already in memory, and a document with enough of them to notice
+    /// has bigger problems.
+    fn explore_calculations(self: &Rc<Self>) {
+        let search = gtk::SearchEntry::builder()
+            .placeholder_text("Search formulas, addresses, functions")
+            .build();
+        let summary = gtk::Label::builder().wrap(true).xalign(0.0).build();
+        summary.add_css_class("dim-label");
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        list.add_css_class("boxed-list");
+
+        let dialog = adw::Dialog::builder()
+            .title("Calculations")
+            .content_width(560)
+            .content_height(520)
+            .build();
+
+        let refresh: Rc<dyn Fn()> = {
+            let (list, summary, search) = (list.clone(), summary.clone(), search.clone());
+            let (app, grid, dialog) = (self.app.clone(), self.grid.clone(), dialog.clone());
+            Rc::new(move || {
+                while let Some(row) = list.first_child() {
+                    list.remove(&row);
+                }
+                let needle = search.text();
+                let found: Vec<_> = app
+                    .calculations()
+                    .into_iter()
+                    .filter(|calc| calc.matches(&needle))
+                    .collect();
+                for calc in &found {
+                    let row = adw::ActionRow::builder()
+                        .title(glib::markup_escape_text(&headline(calc)))
+                        .subtitle(glib::markup_escape_text(&format!(
+                            "{} = {}",
+                            calc.address(),
+                            calc.value
+                        )))
+                        .activatable(true)
+                        .build();
+                    row.connect_activated(glib::clone!(
+                        #[weak]
+                        grid,
+                        #[weak]
+                        dialog,
+                        #[strong(rename_to = sheet)]
+                        calc.sheet,
+                        #[strong(rename_to = pos)]
+                        calc.pos,
+                        move |_| {
+                            grid.set_sheet(sheet);
+                            grid.set_selection(keymap::Selection::at(pos));
+                            dialog.close();
+                        }
+                    ));
+                    list.append(&row);
+                }
+                summary.set_label(&tally(&found));
+            })
+        };
+        refresh();
+        search.connect_search_changed(glib::clone!(
+            #[strong]
+            refresh,
+            move |_| refresh()
+        ));
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        for widget in [
+            search.upcast_ref::<gtk::Widget>(),
+            summary.upcast_ref(),
+            list.upcast_ref(),
+        ] {
+            content.append(widget);
+        }
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .child(&content)
+            .build();
+        let view = adw::ToolbarView::builder().content(&scroller).build();
+        view.add_top_bar(&adw::HeaderBar::new());
+        dialog.set_child(Some(&view));
+        dialog.present(Some(&self.window));
+    }
+
     // --- sheets ---
 
     fn add_sheet(self: &Rc<Self>) {
@@ -730,6 +837,7 @@ impl Ui {
             ("redo", "Redo"),
             ("recalc", "Recalculate Now"),
             ("explain-formula", "Explain Formula"),
+            ("calculations", "Find Calculations"),
             ("zoom-in", "Zoom In"),
             ("zoom-out", "Zoom Out"),
             ("zoom-reset", "Normal Size"),
@@ -855,6 +963,39 @@ fn name_row(
     row
 }
 
+/// What a calculation's row says first: the friendly rendering of its formula when there is
+/// one, and the formula itself otherwise.
+///
+/// The friendly spelling because a list is read rather than edited — `Round(Value: A1;
+/// Digits: 2)` answers "what does this cell do" quicker than `=ROUND(A1;2)` does, and the
+/// address line underneath still names the cell to go and look at.
+fn headline(calc: &sheet_core::Calculation) -> String {
+    chrome::friendly_line(&calc.formula).unwrap_or_else(|| calc.formula.clone())
+}
+
+/// The line above the list: how many were found, and which functions they call.
+fn tally(found: &[sheet_core::Calculation]) -> String {
+    if found.is_empty() {
+        return "Nothing here is calculated. A cell starting with = is.".to_owned();
+    }
+    let counted = match found.len() {
+        1 => "1 calculation".to_owned(),
+        n => format!("{n} calculations"),
+    };
+    let functions = sheet_core::function_tally(found);
+    match functions.is_empty() {
+        true => counted,
+        false => format!(
+            "{counted} — {}",
+            functions
+                .iter()
+                .map(|(name, count)| format!("{name} ×{count}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 /// The row for a name, if the list already has one — names are case-insensitive, as they
 /// are everywhere else.
 fn row_named(list: &gtk::ListBox, name: &str) -> Option<adw::EntryRow> {
@@ -921,6 +1062,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| ui.grid.set_zoom(1.0)),
         ("autofit-all", &[][..], |ui| ui.grid.autofit_all()),
         ("names", &[][..], |ui| ui.manage_names()),
+        ("calculations", &["<Control><Shift>f"][..], |ui| ui.explore_calculations()),
         ("explain-formula", &["<Control><Shift>e"][..], |ui| ui.formula_bar.explain.popup()),
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
@@ -954,6 +1096,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
+    rest.append(Some("Calculations…"), Some("win.calculations"));
     rest.append(Some("Names…"), Some("win.names"));
     rest.append(Some("Explain Formula"), Some("win.explain-formula"));
     rest.append(Some("Recalculate Now"), Some("win.recalc"));
@@ -1034,4 +1177,43 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
         }
         window.close();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use sheet_core::{Calculation, Pos};
+
+    fn calc(formula: &str, functions: &[&str]) -> Calculation {
+        Calculation {
+            sheet: 0,
+            sheet_name: "Sheet1".to_owned(),
+            pos: Pos::new(0, 0),
+            formula: formula.to_owned(),
+            value: "1".to_owned(),
+            functions: functions.iter().map(|f| (*f).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn the_summary_counts_the_cells_and_names_the_functions() {
+        let found = [
+            calc("=SUM(A1:A9)", &["SUM"]),
+            calc("=ROUND(SUM(B1:B9);2)", &["ROUND", "SUM"]),
+        ];
+        assert_eq!(super::tally(&found), "2 calculations — SUM ×2, ROUND ×1");
+        // Arithmetic is a calculation with no functions in it, and one is not "1 calculations".
+        assert_eq!(super::tally(&found[..1]), "1 calculation — SUM ×1");
+        assert_eq!(super::tally(&[calc("=A1/2", &[])]), "1 calculation");
+        assert!(super::tally(&[]).starts_with("Nothing here is calculated"));
+    }
+
+    #[test]
+    fn a_row_reads_in_the_friendly_spelling_when_there_is_one() {
+        assert_eq!(
+            super::headline(&calc("=ROUND(A1;2)", &["ROUND"])),
+            "Round(Value: A1, Digits: 2)"
+        );
+        // A formula that will not parse is shown exactly as it is stored.
+        assert_eq!(super::headline(&calc("=SUM(", &[])), "=SUM(");
+    }
 }

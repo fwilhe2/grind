@@ -414,7 +414,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
 /// merely fail: an unqualified `A1` parses the same in both spellings, but `$Sheet1.$B$2`
 /// lexes as a quoted *name* rather than a reference, so a sheet-qualified formula came out as
 /// `$$'Sheet1.B2':B4` instead of erroring and falling back to the entry.
-fn friendly_line(text: &str) -> Option<String> {
+pub(crate) fn friendly_line(text: &str) -> Option<String> {
     if !text.starts_with('=') {
         return None;
     }

@@ -91,6 +91,11 @@ stops ratcheting.
 - `sheet_name` — `sheet info`, and any sheet-qualified address
 - `used_extent` — `sheet info`, and `sheet view` with no range
 - `names` — `sheet info`, and `sheet name <name>` for one
+- `calculations` — `sheet calculations`, one line per calculated cell (address, formula,
+  result, the functions it calls) plus a tally of which functions the document uses.
+  `--filter` narrows it by sheet, address, formula text or function name, through
+  `Calculation::matches` — the same rule the GTK shell's search box uses, so the two cannot
+  disagree about what a search finds.
 
 ## Not reachable, and why
 

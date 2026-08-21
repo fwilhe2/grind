@@ -383,6 +383,16 @@ enum Command {
         inline: bool,
     },
 
+    /// List every calculated cell in a document — its formula, its result, what it calls
+    ///
+    /// Plain arithmetic counts: =A1/2 calls no function and is still a calculation.
+    Calculations {
+        file: PathBuf,
+        /// Only cells whose sheet, address, formula or function names contain this
+        #[arg(long, value_name = "TEXT")]
+        filter: Option<String>,
+    },
+
     /// List the OpenFormula functions this build implements
     Functions {
         /// Print each one's signature, summary and specification section
@@ -779,6 +789,46 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 _ => format!("={}", sheet_core::formula::parse::parse(formula).say()?),
             };
             Ok(Report::Text(TextReport { lines: vec![line] }))
+        }
+
+        Command::Calculations { file, filter } => {
+            let app = load(file, cli)?;
+            let needle = filter.as_deref().unwrap_or_default();
+            let found: Vec<_> = app
+                .calculations()
+                .into_iter()
+                .filter(|calc| calc.matches(needle))
+                .collect();
+            let mut lines: Vec<String> = found
+                .iter()
+                .map(|calc| {
+                    format!(
+                        "{}\t{}\t{}\t{}",
+                        calc.address(),
+                        calc.formula,
+                        calc.value,
+                        calc.functions.join(" ")
+                    )
+                })
+                .collect();
+            let tally = sheet_core::function_tally(&found);
+            let counted = match found.len() {
+                1 => "1 calculation".to_owned(),
+                n => format!("{n} calculations"),
+            };
+            let summary = match tally.is_empty() {
+                true => counted,
+                false => format!(
+                    "{counted} — {}",
+                    tally
+                        .iter()
+                        .map(|(name, count)| format!("{name} ×{count}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            };
+            lines.push(summary);
+            Ok(Report::Text(TextReport { lines }))
         }
 
         Command::Functions { long, filter } => {

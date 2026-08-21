@@ -66,6 +66,37 @@ pub fn implemented() -> Vec<&'static str> {
 
 pub use catalog::{FuncInfo, catalog, category};
 
+/// Every function a formula calls, outermost first, each named once and upper-cased.
+///
+/// The names are what the formula *says*, not what this build implements: a document may
+/// call a function the evaluator does not have, and an explorer that hid those would hide
+/// exactly the ones worth finding. `None` when the formula will not parse.
+pub fn used(formula: &str) -> Option<Vec<String>> {
+    let mut names = Vec::new();
+    collect(&super::parse::parse(formula).ok()?, &mut names);
+    Some(names)
+}
+
+fn collect(expr: &Expr, names: &mut Vec<String>) {
+    match expr {
+        Expr::Call { name, args } => {
+            let name = name.to_uppercase();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+            args.iter().for_each(|arg| collect(arg, names));
+        }
+        Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
+            collect(inner, names)
+        }
+        Expr::Binary(_, left, right) => {
+            collect(left, names);
+            collect(right, names);
+        }
+        _ => {}
+    }
+}
+
 /// How many functions §2.3.2 E) enumerates. The conformance claim's denominator, and the
 /// only number a coverage report may compare against — checked against
 /// `doc/small-group.md` by `nothing_outside_the_small_group_gets_implemented`.
@@ -706,5 +737,31 @@ mod tests {
                 "{name} is listed but not implemented"
             );
         }
+    }
+
+    #[test]
+    fn used_finds_every_call_however_deep() {
+        assert_eq!(
+            super::used("=ROUND(SUM([.A1:.A9])/COUNT([.A1:.A9]);2)"),
+            Some(vec![
+                "ROUND".to_owned(),
+                "SUM".to_owned(),
+                "COUNT".to_owned()
+            ])
+        );
+        // Arithmetic calls nothing, a name is not a call, and one function twice is one
+        // answer.
+        assert_eq!(super::used("=[.A1]/2"), Some(Vec::new()));
+        assert_eq!(super::used("=expenses"), Some(Vec::new()));
+        assert_eq!(
+            super::used("=sum([.A1])+SUM([.B1])"),
+            Some(vec!["SUM".to_owned()])
+        );
+        // A function this build does not have is still one the document calls.
+        assert_eq!(
+            super::used("=WEBSERVICE(\"x\")"),
+            Some(vec!["WEBSERVICE".to_owned()])
+        );
+        assert_eq!(super::used("=SUM("), None);
     }
 }

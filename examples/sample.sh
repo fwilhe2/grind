@@ -173,6 +173,10 @@ say "fmt: the stored form, the display form a formula bar shows, and back"
 say "eval: what a formula would say at a cell, storing nothing"
 "$SHEET" eval "$book" B20 '=SUM([.B2:.B4])*2'
 
+say "calculations: everything the document computes, and what it calls to do it"
+"$SHEET" calculations "$book"
+"$SHEET" calculations "$book" --filter sum    # by function name, address, sheet or formula text
+
 say "functions: what this build implements"
 "$SHEET" functions | tail -1
 "$SHEET" functions --long --filter vlookup    # spec signature, friendly one, category, summary
