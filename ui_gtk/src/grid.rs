@@ -348,6 +348,11 @@ mod imp {
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
+    /// Slack added on top of a measured autofit width. The same text gets measured twice —
+    /// once unzoomed here, once at zoom when it is actually drawn — and Pango's own
+    /// sub-pixel rounding does not round the same way both times, so a width fit exactly to
+    /// the first measurement can be a pixel short of the second and trip the overflow rule.
+    const FIT_SLACK: f64 = 2.0;
     /// Space above and below it, which is what makes the default row taller than a line.
     const ROW_PAD: f64 = 8.0;
     /// How much sheet is measured for natural row heights. A row above the view still
@@ -1817,7 +1822,7 @@ mod imp {
                 }
             }
             layout.set_attributes(None);
-            let width = (width + 2.0 * PAD).max(MIN_TRACK);
+            let width = (width + 2.0 * PAD + FIT_SLACK).max(MIN_TRACK);
             let length = Some(style::mm_length(width / PX_PER_MM));
             if let Err(error) = app.set_col_width(sheet, col..col + 1, length) {
                 self.notice(Notice::Refused(error.to_string()));
