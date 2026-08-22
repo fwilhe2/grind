@@ -1064,8 +1064,14 @@ mod tests {
 
     #[test]
     fn the_page_can_be_told_which_document_to_open() {
-        assert_eq!(doc_param("?doc=sample.fods").as_deref(), Some("sample.fods"));
-        assert_eq!(doc_param("?x=1&doc=a%20b.ods").as_deref(), Some("a%20b.ods"));
+        assert_eq!(
+            doc_param("?doc=sample.fods").as_deref(),
+            Some("sample.fods")
+        );
+        assert_eq!(
+            doc_param("?x=1&doc=a%20b.ods").as_deref(),
+            Some("a%20b.ods")
+        );
         assert_eq!(doc_param(""), None);
         assert_eq!(doc_param("?doc="), None);
     }
