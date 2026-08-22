@@ -53,6 +53,14 @@ const PX_PER_MM: f64 = 96.0 / 25.4;
 /// a feature with its own UI rather than something to arrive at by dragging past the edge.
 const MIN_TRACK: f64 = 6.0;
 
+/// What a filter button is marked with. A glyph rather than a drawn triangle: the layout is
+/// already here for every other piece of text in the grid, and a path builder for one arrow
+/// is a second way of drawing.
+const CHEVRON: &str = "\u{25be}";
+
+/// The bar under a filtered field's chevron, in pixels.
+const UNDERLINE: f64 = 2.0;
+
 /// How far the view may be zoomed either way. Past these a cell is either unreadable or a
 /// single cell fills the window, and neither is a view of a spreadsheet.
 const ZOOM_RANGE: std::ops::RangeInclusive<f64> = 0.25..=4.0;
@@ -123,6 +131,18 @@ impl Grid {
     /// Fill down or right — the toolbar's twin of Ctrl+D / Ctrl+R.
     pub fn fill(&self, dir: Dir) {
         self.imp().fill(dir);
+    }
+
+    /// Filter the selection, or clear the filter the sheet already has (§9.4) — the
+    /// toolbar's twin of `sheet filter <range>` and `sheet filter --clear`.
+    pub fn toggle_filter(&self) {
+        self.imp().toggle_filter();
+    }
+
+    /// Whether the sheet has an autofilter, which is what the toolbar button labels itself
+    /// from: the same button clears one and creates one, so it has to say which.
+    pub fn has_filter(&self) -> bool {
+        self.imp().filter().is_some()
     }
 
     pub fn selection(&self) -> Selection {
@@ -420,6 +440,9 @@ mod imp {
         /// off-screen still reaches into the view and "is the neighbour empty" needs no
         /// second read. `None` when there is no document.
         cells: Option<sheet_core::Viewport>,
+        /// The sheet's autofilter (§9.4), read once for the same reason as `cells`: the
+        /// buttons pass asks about it per visible column, and that is one lock, not twelve.
+        filter: Option<sheet_core::Filter>,
     }
 
     pub struct Grid {
@@ -503,6 +526,9 @@ mod imp {
         /// The autocomplete popover, parented to this widget so it appears under the cell
         /// being typed into rather than at the formula bar.
         pub completion: OnceCell<crate::formula_ux::Completion>,
+        /// The autofilter dropdown (§9.4), parented here for the same reason: it belongs
+        /// under the header cell's button, which only this widget knows the position of.
+        pub filter_menu: OnceCell<std::rc::Rc<crate::filter_ui::FilterMenu>>,
     }
 
     /// A column or row being dragged wider.
@@ -562,6 +588,7 @@ mod imp {
                 glide: RefCell::new(None),
                 on_zoom: RefCell::new(Vec::new()),
                 completion: OnceCell::new(),
+                filter_menu: OnceCell::new(),
             }
         }
     }
@@ -625,6 +652,9 @@ mod imp {
             if let Some(completion) = self.completion.get() {
                 completion.dispose();
             }
+            if let Some(menu) = self.filter_menu.get() {
+                menu.dispose();
+            }
         }
 
         fn constructed(&self) {
@@ -638,6 +668,17 @@ mod imp {
             let _ = self
                 .completion
                 .set(crate::formula_ux::Completion::new(&*widget));
+
+            // The dropdown decides which values to keep; turning that into an undoable
+            // change is this widget's job, because it is the one holding the document.
+            let menu = crate::filter_ui::FilterMenu::new(&*widget);
+            menu.connect_apply(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |field, chosen| grid.imp().apply_filter(field, chosen)
+            ));
+            let _ = self.filter_menu.set(menu);
+
             self.editor.set_buffer(&self.buffer);
             // The caret moving is its own event: the completion and the signature hint are
             // both questions about where it is, not about what the text says.
@@ -746,11 +787,17 @@ mod imp {
                     grid.imp().pointer.set(Some((x, y)));
                     let geom = grid.imp().geom();
                     let (_, corner) = grid.imp().selection.get().rect();
-                    let cursor = match geom.hit(x, y) {
+                    let hit = geom.hit(x, y);
+                    let cursor = match hit {
                         Hit::ColEdge(_) => Some("col-resize"),
                         Hit::RowEdge(_) => Some("row-resize"),
                         _ if geom.fill_handle(corner.row, corner.col).contains(x, y) => {
                             Some("crosshair")
+                        }
+                        // A 14px control nobody has been told about needs the cursor to say
+                        // it is one, exactly like the resize boundaries above.
+                        _ if grid.imp().filter_button_under(&geom, hit, x, y).is_some() => {
+                            Some("pointer")
                         }
                         _ => None,
                     };
@@ -901,6 +948,7 @@ mod imp {
                 snapshot,
                 palette: self.palette(),
                 cells: self.read(&rows, &cols),
+                filter: self.filter(),
                 rows,
                 cols,
                 geom,
@@ -926,6 +974,9 @@ mod imp {
             // table look ruled rather than slightly darker.
             self.draw_borders(&frame);
             self.draw_cells(&frame);
+            // Over the text, because the button sits on top of the heading's right-hand end
+            // and the heading is what would otherwise run through it.
+            self.draw_filter_buttons(&frame);
             self.draw_active(&frame);
             self.draw_fill(&frame);
             self.draw_references(&frame);
@@ -980,6 +1031,17 @@ mod imp {
             // that size and clips, which is what an explicit height means.
             let mut heights = self.auto_heights();
             heights.extend(self.track_lengths(true));
+            // Last, so a filtered row is hidden whatever height it was given: zero, which
+            // `Sizes` keeps as a track that displaces nothing.
+            let sheet = self.sheet.get();
+            if let Some(app) = self.app.borrow().as_ref() {
+                heights.extend(
+                    app.hidden_rows(sheet)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|row| (row, 0.0)),
+                );
+            }
             let mut rows = Sizes::new(m.row_height, MAX_ROWS, heights).scaled(zoom);
             let mut cols = self.col_sizes().scaled(zoom);
             // A resize in progress is painted before it is stored, so the whole grid reflows
@@ -2031,6 +2093,137 @@ mod imp {
             }
         }
 
+        // --- the autofilter (§9.4) ---
+
+        /// The sheet's filter, if it has one.
+        pub fn filter(&self) -> Option<sheet_core::Filter> {
+            let app = self.app.borrow().clone()?;
+            app.filter(self.sheet.get()).ok().flatten()
+        }
+
+        /// The dropdown button in one cell, when that cell is a filtered range's heading and
+        /// the column is one the filter judges on.
+        ///
+        /// Two conditions, not one: the range spans whole rows, but a field only exists for
+        /// a column inside it, and a button over a column the filter cannot act on would be
+        /// a control that does nothing.
+        fn filter_button_at(
+            geom: &GridGeom,
+            filter: &sheet_core::Filter,
+            row: u32,
+            col: u32,
+        ) -> Option<(u32, Rect)> {
+            if row != filter.start.row || col < filter.start.col || col > filter.end.col {
+                return None;
+            }
+            Some((col - filter.start.col, geom.filter_button(row, col)?))
+        }
+
+        /// The filter button a point is actually on, if any — what both the press and the
+        /// cursor ask, so a button that looks clickable is one and vice versa.
+        pub fn filter_button_under(
+            &self,
+            geom: &GridGeom,
+            hit: Hit,
+            x: f64,
+            y: f64,
+        ) -> Option<(u32, Rect)> {
+            let Hit::Cell { row, col } = hit else {
+                return None;
+            };
+            let filter = self.filter()?;
+            if !filter.buttons {
+                return None;
+            }
+            Self::filter_button_at(geom, &filter, row, col).filter(|(_, b)| b.contains(x, y))
+        }
+
+        /// Toggle a filter over the selection — the toolbar's `win.filter`.
+        ///
+        /// Over a sheet that already has one this clears it, so the button is the on/off
+        /// switch its name implies; otherwise the selection becomes the range, with its first
+        /// row the heading, which is what a person selecting a table with its titles means.
+        pub fn toggle_filter(&self) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            if self.filter().is_some() {
+                if let Err(error) = app.set_filter(sheet, None) {
+                    self.notice(Notice::Refused(error.to_string()));
+                }
+                self.obj().queue_draw();
+                return;
+            }
+            let (start, mut end) = self.selection.get().rect();
+            // A single cell is a click, not a range: filter the used table around it rather
+            // than one cell, which could never hide anything.
+            if start == end
+                && let Ok((rows, cols)) = app.used_extent(sheet)
+            {
+                end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+            }
+            if end.row <= start.row {
+                return self.notice(Notice::Refused(
+                    "Select the rows to filter, including their headings".to_owned(),
+                ));
+            }
+            // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes
+            // the same one, so a document does not say which shell made it.
+            let filter = sheet_core::Filter::new("__Anonymous_Sheet_DB__0", start, end);
+            if let Err(error) = app.set_filter(sheet, Some(filter)) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Open the dropdown for one field, under its button.
+        fn open_filter_menu(&self, field: u32, at: Rect) {
+            let (Some(app), Some(menu), Some(filter)) = (
+                self.app.borrow().clone(),
+                self.filter_menu.get(),
+                self.filter(),
+            ) else {
+                return;
+            };
+            // The whole filtered column, not the visible part: a value scrolled off screen is
+            // still one of the column's values.
+            let col = filter.column(field);
+            let Ok(cells) = app.get_viewport(
+                self.sheet.get(),
+                filter.start.row..filter.end.row.saturating_add(1),
+                col..col.saturating_add(1),
+            ) else {
+                return;
+            };
+            let values = crate::filter_ui::field_values(&cells, &filter, field);
+            menu.open(at, field, &values, filter.keep.get(&field));
+        }
+
+        /// What the dropdown chose, as an undoable change. The whole filter is replaced
+        /// because that is the vocabulary `App::set_filter` has — one filter is one value
+        /// (`core/src/model.rs`), so a field's condition is edited by reading, changing and
+        /// writing it back.
+        fn apply_filter(&self, field: u32, chosen: crate::filter_ui::Chosen) {
+            let (Some(app), Some(mut filter)) = (self.app.borrow().clone(), self.filter()) else {
+                return;
+            };
+            match chosen {
+                // Every value kept is no condition at all, and storing it as one would write
+                // a set into the file that says nothing.
+                crate::filter_ui::Chosen::Clear => {
+                    filter.keep.remove(&field);
+                }
+                crate::filter_ui::Chosen::Keep(values) => {
+                    filter.keep.insert(field, values);
+                }
+            }
+            if let Err(error) = app.set_filter(self.sheet.get(), Some(filter)) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
         /// Double-clicking a row boundary: drop the explicit height and let the row fit
         /// itself again, which `autofit`'s doc comment explains.
         fn clear_height(&self, row: u32) {
@@ -2066,6 +2259,13 @@ mod imp {
                 // Clicking anywhere else stores the edit, which is what every spreadsheet
                 // does and what a user who clicks the next cell means.
                 self.commit(None);
+            }
+            // A filter button beats the cell under it, for the same reason the fill handle
+            // below does — and before the handle, because the two can overlap on a
+            // one-cell selection sitting in the heading row.
+            if let Some((field, button)) = self.filter_button_under(&self.geom(), hit, x, y) {
+                self.open_filter_menu(field, button);
+                return;
             }
             // The fill handle beats the cell under it, for the same reason a boundary beats
             // its header: a 7px target that loses is unreachable.
@@ -2743,6 +2943,87 @@ mod imp {
             let line = with_alpha(palette.lines, 1.0);
             snapshot.append_color(&line, &rect(0.0, geom.header_h - 1.0, width, 1.0));
             snapshot.append_color(&line, &rect(geom.header_w - 1.0, 0.0, 1.0, height));
+        }
+
+        /// The autofilter's dropdown buttons, one per field, in the range's heading row
+        /// (§9.4).
+        ///
+        /// The button's face is always the sheet's own background, never the cell's. A
+        /// heading is very often given a strong fill by the document — the sample's is solid
+        /// blue — and a button tinted to match it stops looking like a control at all. A
+        /// constant light chip with a border reads as one on any heading.
+        ///
+        /// Which leaves the *state* to the glyph rather than the fill: a filtered field gets
+        /// an accent chevron over an accent underline, an unfiltered one a plain chevron.
+        /// State has to survive being drawn on top of an accent-coloured heading, so it
+        /// cannot itself be "fill the chip with the accent" — that is the one combination
+        /// that disappears. "Which column is why rows are missing" is the question a filtered
+        /// sheet raises, and a gap in the row numbers alone cannot answer it: rows somebody
+        /// hid by hand look identical.
+        ///
+        /// `table:display-filter-buttons="false"` is honoured: the document asked for no
+        /// buttons, and the toolbar's Filter action still reaches the thing.
+        fn draw_filter_buttons(&self, f: &Frame) {
+            let Some(filter) = &f.filter else { return };
+            if !filter.buttons {
+                return;
+            }
+            let layout = self.layout();
+            layout.set_attributes(self.attrs(None).as_ref());
+            layout.set_width(-1);
+            layout.set_text(CHEVRON);
+            let (text_w, text_h) = layout.pixel_size();
+
+            for col in f.cols.clone() {
+                let Some((field, button)) =
+                    Self::filter_button_at(&f.geom, filter, filter.start.row, col)
+                else {
+                    continue;
+                };
+                let on = filter.keep.contains_key(&field);
+                let rounded =
+                    gsk::RoundedRect::from_rect(rect(button.x, button.y, button.w, button.h), 3.0);
+                f.snapshot.push_rounded_clip(&rounded);
+                f.snapshot.append_color(
+                    &f.palette.background,
+                    &rect(button.x, button.y, button.w, button.h),
+                );
+                // The filtered field's underline, inside the chip so the border keeps its
+                // edge — the mark that survives any heading colour behind it.
+                if on {
+                    f.snapshot.append_color(
+                        &f.palette.accent,
+                        &rect(
+                            button.x,
+                            button.y + button.h - UNDERLINE,
+                            button.w,
+                            UNDERLINE,
+                        ),
+                    );
+                }
+                f.snapshot.pop();
+                let edge = match on {
+                    true => f.palette.accent,
+                    false => f.palette.lines,
+                };
+                f.snapshot.append_border(&rounded, &[1.0; 4], &[edge; 4]);
+                draw_text(
+                    f.snapshot,
+                    &layout,
+                    match on {
+                        true => f.palette.accent,
+                        false => f.palette.foreground,
+                    },
+                    &button,
+                    button,
+                    text_w,
+                    // The glyph sits clear of the underline rather than on it.
+                    text_h,
+                    (Align::Center, VAlign::Middle),
+                    0.0,
+                );
+            }
+            layout.set_attributes(None);
         }
 
         /// While a boundary is being dragged, the size it is choosing — as the document

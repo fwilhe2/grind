@@ -78,7 +78,7 @@ CLI parity gaps.
 |---|---|---|
 | **Reordering sheets** | When a shell has somewhere to drag one to | A new sheet is appended and that is the whole vocabulary; `Action::InsertSheet` already carries an index, so a move is two actions in a batch when something can ask for one. |
 | **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes.md` already drives the import half from the shell. |
-| **Sort and filter** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. |
+| **Sort** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. Filtering is built (§9.4, `core/src/filter.rs`): a set of values compares for equality, which is the half of "sort and filter" that needs no collation. |
 | **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
 | **Freeze panes** | Phase 9 shells | Purely a view concern, and there is no view. |
 | **One chart type** | Phase 9 shells | Must round-trip through LibreOffice like everything else. |

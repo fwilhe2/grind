@@ -22,6 +22,7 @@ use std::sync::{Arc, RwLock};
 pub mod a1;
 pub mod action;
 pub mod build_info;
+pub mod filter;
 pub mod formula;
 pub mod grid;
 pub mod locale;
@@ -31,6 +32,7 @@ pub mod odf;
 pub mod style;
 
 pub use action::Action;
+pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
 pub use odf::Form;
 
@@ -1213,6 +1215,44 @@ impl App {
             .collect()
     }
 
+    /// Set — or with `None`, remove — a sheet's autofilter (§9.4).
+    ///
+    /// One filter per sheet, replaced rather than merged: a second filter over the same
+    /// sheet is not a thing ODF's `table:database-range` can say twice about one range, and
+    /// merging two would be inventing an answer.
+    ///
+    /// Which rows this hides is *not* stored — see [`crate::filter`] — so nothing else has
+    /// to be kept in step, and a value edit changes the hidden rows immediately.
+    pub fn set_filter(&self, sheet: usize, filter: Option<Filter>) -> Result<()> {
+        self.mutate(|state| {
+            let inverse = state
+                .doc
+                .apply(Action::SetFilter {
+                    sheet,
+                    filter: filter.map(Box::new),
+                })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// A sheet's autofilter, if it has one.
+    pub fn filter(&self, sheet: usize) -> Result<Option<Filter>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.filter().cloned())
+    }
+
+    /// The rows the filter hides, in order — what a shell leaves undrawn, and empty when
+    /// there is no filter.
+    pub fn hidden_rows(&self, sheet: usize) -> Result<Vec<u32>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.hidden_rows(state.doc.null_date))
+    }
+
     // --- history across processes ---
 
     /// The undo and redo stacks, for a shell that cannot stay running.
@@ -1279,7 +1319,7 @@ pub struct EnterOutcome {
 ///
 /// One function because a viewport and a list of calculations must not disagree about what
 /// a cell reads as.
-fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
+pub(crate) fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
     let value = sheet.get(pos);
     match sheet.format(pos) {
         Some(format) => format.render(&value, null_date),

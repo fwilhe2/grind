@@ -148,6 +148,18 @@ run set "$book" F2 '=biggest'
 # on stderr says out loud and `sheet recalc` turns into an error. Deleting is undoable: the
 # inverse carries the whole sheet, so the cells come back.
 
+# Which rows a filter hides is derived from the values, never stored — so it follows an
+# edit without anyone recomputing it, and the file's `table:visibility="filter"` marks are
+# written from the same answer a shell draws from.
+
+say "filter: keep a set of values in one column, hide the other rows"
+run filter "$book" A1:E4 A=North A=South
+"$SHEET" filter "$book"
+run filter "$book" --clear
+# Put it back, so the document this script leaves behind actually has one to look at: the
+# GTK shell draws a dropdown button in every heading cell of the range.
+run filter "$book" A1:E4 A=North A=South
+
 say "sheets: add, write across one, rename, and delete"
 run add "$book" Notes
 run set "$book" Notes.A1 'sales region count'

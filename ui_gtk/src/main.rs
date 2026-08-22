@@ -17,6 +17,7 @@
 //! a burst of changes into a single refresh.
 
 mod chrome;
+mod filter_ui;
 mod formatting;
 mod formula_ux;
 mod geom;
@@ -858,6 +859,7 @@ impl Ui {
             ("recalc", "Recalculate Now"),
             ("explain-formula", "Explain Formula"),
             ("calculations", "Find Calculations"),
+            ("filter", "Filter Rows"),
             ("zoom-in", "Zoom In"),
             ("zoom-out", "Zoom Out"),
             ("zoom-reset", "Normal Size"),
@@ -1119,6 +1121,11 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("fill-down", &[][..], |ui| ui.grid.fill(keymap::Dir::Down)),
         ("fill-right", &[][..], |ui| ui.grid.fill(keymap::Dir::Right)),
         ("copy-value", &[][..], |ui| ui.grid.copy_value()),
+        // Ctrl+Shift+L is the filter key both other spreadsheets use, and nothing in the
+        // grid's own key map claims it.
+        ("filter", &["<Control><Shift>l"][..], |ui| {
+            ui.grid.toggle_filter()
+        }),
         ("names", &[][..], |ui| ui.manage_names()),
         ("calculations", &["<Control><Shift>f"][..], |ui| {
             ui.explore_calculations()
