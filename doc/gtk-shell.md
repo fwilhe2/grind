@@ -481,14 +481,21 @@ does not expose the `css_changed` vfunc); the routine "Saved" toast is gone — 
 clearing is the confirmation. **Chrome**: the format strip became the Format page of a
 mode-switched tool row (`chrome::tools`) — Format · Calculate · View, plain linked toggles
 over a `gtk::Stack` (`AdwToggleGroup` is 1.7; the pin is 1.5), where Calculate holds
-Recalculate · Explain · Calculations… · Names… · Fill Down · Fill Right · Copy Value and
+Recalculate · Explain · Calculations… · Names… · Copy Value and
 View holds the zoom group, Fit Content
 and the Friendly Formulas toggle. The mode never switches itself: auto-appearing contextual
 tabs are the one ribbon behaviour deliberately not copied, being both the legally
 distinctive part of that design and the HIG's least favourite. Every button activates a
 `win.` action the window already owns, so the strip adds reachability, never capability.
 The primary menu slimmed to files · sheets · Keyboard Shortcuts · About, which is the HIG's
-idea of one.
+idea of one. **Fill**: the Fill Down / Fill Right buttons then left that row again, replaced
+by the convention every other spreadsheet has — a handle on the selection's bottom-right
+corner (`geom::GridGeom::fill_handle`), dragged in any of the four directions, outlining
+where it is pointing until the pointer is released (`keymap::fill_target` /
+`keymap::fill_rect`, both pure and tested). The source is the selection's edge facing the
+drag, which is what makes dragging *up* or *left* mean anything. Ctrl+D / Ctrl+R and the
+`win.fill-down` / `win.fill-right` actions behind them are untouched, so nothing became
+mouse-only.
 
 ## The gaps, written down
 

@@ -460,6 +460,11 @@ mod imp {
         /// A track being resized, in pixels — presentation state until the pointer is
         /// released, at which point it becomes one core write and one undo entry.
         pub resize: Cell<Option<Resize>>,
+        /// Whether the drag in progress started on the fill handle.
+        pub filling: Cell<bool>,
+        /// Where that drag is pointing ([`keymap::fill_target`]), painted as an outline
+        /// until the pointer is released and it becomes the fill.
+        pub fill_to: Cell<Option<(Dir, u32)>>,
         pub on_selection: RefCell<Vec<SelectionHook>>,
         pub on_notice: RefCell<Vec<NoticeHook>>,
         pub on_editing: RefCell<Vec<EditingHook>>,
@@ -534,6 +539,8 @@ mod imp {
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
                 resize: Cell::new(None),
+                filling: Cell::new(false),
+                fill_to: Cell::new(None),
                 on_selection: RefCell::new(Vec::new()),
                 on_notice: RefCell::new(Vec::new()),
                 on_editing: RefCell::new(Vec::new()),
@@ -723,6 +730,7 @@ mod imp {
                 move |_, _, _| {
                     grid.imp().drag.set(None);
                     grid.imp().commit_resize();
+                    grid.imp().commit_fill();
                 }
             ));
             widget.add_controller(drag);
@@ -736,9 +744,14 @@ mod imp {
                 widget,
                 move |_, x, y| {
                     grid.imp().pointer.set(Some((x, y)));
-                    let cursor = match grid.imp().geom().hit(x, y) {
+                    let geom = grid.imp().geom();
+                    let (_, corner) = grid.imp().selection.get().rect();
+                    let cursor = match geom.hit(x, y) {
                         Hit::ColEdge(_) => Some("col-resize"),
                         Hit::RowEdge(_) => Some("row-resize"),
+                        _ if geom.fill_handle(corner.row, corner.col).contains(x, y) => {
+                            Some("crosshair")
+                        }
                         _ => None,
                     };
                     grid.set_cursor_from_name(cursor);
@@ -914,6 +927,7 @@ mod imp {
             self.draw_borders(&frame);
             self.draw_cells(&frame);
             self.draw_active(&frame);
+            self.draw_fill(&frame);
             self.draw_references(&frame);
             snapshot.pop();
 
@@ -1780,6 +1794,55 @@ mod imp {
             self.obj().queue_draw();
         }
 
+        /// The end of a fill-handle drag: the selection replicated into the cells dragged
+        /// over, and the selection grown to cover them — the convention every spreadsheet
+        /// shares, and this shell's only fill that goes *up* or *left*.
+        ///
+        /// The source is the selection's edge facing the drag, and each line across that
+        /// edge keeps its own source, so dragging a row of formulas down replicates column
+        /// by column. Same `App::fill` and same one-undo-entry-per-line ceiling as
+        /// [`Self::fill`] above.
+        fn commit_fill(&self) {
+            self.filling.set(false);
+            let Some((dir, line)) = self.fill_to.take() else {
+                return;
+            };
+            let app = self.app.borrow().clone();
+            let Some(app) = app else { return };
+            let (start, end) = self.selection.get().rect();
+            let sheet = self.sheet.get();
+            let fill = |source: Pos, from: Pos, to: Pos| {
+                let _ = app.fill(sheet, source, from, to, RecalcMode::Document);
+            };
+            match dir {
+                Dir::Down | Dir::Up => {
+                    let (src, from, to) = match dir {
+                        // `line < start.row` here, so the subtraction cannot wrap.
+                        Dir::Up => (start.row, line, start.row - 1),
+                        _ => (end.row, end.row + 1, line),
+                    };
+                    for col in start.col..=end.col {
+                        fill(Pos::new(src, col), Pos::new(from, col), Pos::new(to, col));
+                    }
+                }
+                Dir::Right | Dir::Left => {
+                    let (src, from, to) = match dir {
+                        Dir::Left => (start.col, line, start.col - 1),
+                        _ => (end.col, end.col + 1, line),
+                    };
+                    for row in start.row..=end.row {
+                        fill(Pos::new(row, src), Pos::new(row, from), Pos::new(row, to));
+                    }
+                }
+            }
+            let (a, b) = keymap::fill_rect(start, end, dir, line);
+            self.set_selection(Selection {
+                anchor: a,
+                active: b,
+            });
+            self.obj().queue_draw();
+        }
+
         /// Read the clipboard and fill from the selection's top-left corner.
         ///
         /// Asynchronous because the clipboard is: the data may be owned by another process
@@ -2004,6 +2067,17 @@ mod imp {
                 // does and what a user who clicks the next cell means.
                 self.commit(None);
             }
+            // The fill handle beats the cell under it, for the same reason a boundary beats
+            // its header: a 7px target that loses is unreachable.
+            let (_, corner) = self.selection.get().rect();
+            if self
+                .geom()
+                .fill_handle(corner.row, corner.col)
+                .contains(x, y)
+            {
+                self.filling.set(true);
+                return;
+            }
             self.drag.set(Some(hit));
             // A press *on* a boundary is a resize rather than a selection — which is why
             // `Hit` distinguishes the two at all.
@@ -2025,6 +2099,17 @@ mod imp {
 
         /// Drag: extend from the anchor, in whatever the press started on.
         fn extend_to(&self, x: f64, y: f64) {
+            // A drag from the fill handle grows the *fill*, not the selection: it only
+            // outlines where it is pointing until the pointer is released.
+            if self.filling.get() {
+                let (start, end) = self.selection.get().rect();
+                if let Hit::Cell { row, col } = self.geom().hit(x, y) {
+                    self.fill_to
+                        .set(keymap::fill_target(start, end, Pos::new(row, col)));
+                    self.obj().queue_draw();
+                }
+                return;
+            }
             let Some(start) = self.drag.get() else { return };
             // A resize drag moves the boundary itself. The track's *leading* edge does not
             // move, so measuring against it is stable however far the pointer has gone.
@@ -2353,6 +2438,38 @@ mod imp {
                 .geom
                 .cell_rect(f.selection.active.row, f.selection.active.col);
             outline(f.snapshot, cell, f.palette.accent, 2.0);
+        }
+
+        /// The fill handle on the selection's bottom-right corner, and the rectangle a drag
+        /// from it is currently pointing at. Nothing while editing: the corner is where the
+        /// in-cell editor is, and a handle there would be a target for a click that means
+        /// "put the caret here".
+        fn draw_fill(&self, f: &Frame) {
+            if self.mode.get().is_editing() {
+                return;
+            }
+            let (start, end) = f.selection.rect();
+            if let Some((dir, line)) = self.fill_to.get() {
+                let (a, b) = keymap::fill_rect(start, end, dir, line);
+                let top_left = f.geom.cell_rect(a.row, a.col);
+                let bottom_right = f.geom.cell_rect(b.row, b.col);
+                outline(
+                    f.snapshot,
+                    Rect {
+                        x: top_left.x,
+                        y: top_left.y,
+                        w: bottom_right.x + bottom_right.w - top_left.x,
+                        h: bottom_right.y + bottom_right.h - top_left.y,
+                    },
+                    f.palette.accent,
+                    1.0,
+                );
+            }
+            let handle = f.geom.fill_handle(end.row, end.col);
+            f.snapshot.append_color(
+                &f.palette.accent,
+                &rect(handle.x, handle.y, handle.w, handle.h),
+            );
         }
 
         fn draw_lines(&self, f: &Frame) {

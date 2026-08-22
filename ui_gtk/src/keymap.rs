@@ -172,6 +172,38 @@ pub fn fill_span(first: u32, last: u32) -> Option<(u32, u32, u32)> {
     Some((first, next, last.max(next)))
 }
 
+/// Where a fill-handle drag is pointing, given the selection's rectangle and the cell under
+/// the pointer: which way to fill, and the last line to fill into.
+///
+/// **One axis at a time**, which is what every spreadsheet's handle does — a diagonal drag
+/// is read as whichever axis the pointer has left the selection furthest on, a tie going to
+/// the vertical because that is the direction a sheet grows. `None` while the pointer is
+/// still inside the selection: a drag that fills nothing.
+pub fn fill_target(start: Pos, end: Pos, at: Pos) -> Option<(Dir, u32)> {
+    // Horizontals first, because `max_by_key` keeps the *last* of equal keys — which is how
+    // the tie goes to the vertical.
+    let (distance, dir, line) = [
+        (at.col.saturating_sub(end.col), Dir::Right, at.col),
+        (start.col.saturating_sub(at.col), Dir::Left, at.col),
+        (at.row.saturating_sub(end.row), Dir::Down, at.row),
+        (start.row.saturating_sub(at.row), Dir::Up, at.row),
+    ]
+    .into_iter()
+    .max_by_key(|(distance, ..)| *distance)?;
+    (distance > 0).then_some((dir, line))
+}
+
+/// What a fill from `start`..`end` to `line` covers, source included — the outline a
+/// handle drag paints, and the selection it leaves behind.
+pub fn fill_rect(start: Pos, end: Pos, dir: Dir, line: u32) -> (Pos, Pos) {
+    match dir {
+        Dir::Down => (start, Pos::new(line, end.col)),
+        Dir::Up => (Pos::new(line, start.col), end),
+        Dir::Right => (start, Pos::new(end.row, line)),
+        Dir::Left => (Pos::new(start.row, line), end),
+    }
+}
+
 /// An anchor and an active cell — the whole of what a selection is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Selection {
@@ -440,6 +472,41 @@ mod tests {
         // One cell: it is the source, and the cell after it the one target.
         assert_eq!(fill_span(2, 2), Some((2, 3, 3)));
         assert_eq!(fill_span(0, 0), Some((0, 1, 1)));
+    }
+
+    /// The handle drag: one axis, the furthest one, and nothing while still inside.
+    #[test]
+    fn a_handle_drag_fills_the_axis_it_travelled_furthest_on() {
+        // B2:C3 selected.
+        let (start, end) = (Pos::new(1, 1), Pos::new(2, 2));
+        assert_eq!(
+            fill_target(start, end, Pos::new(6, 2)),
+            Some((Dir::Down, 6))
+        );
+        assert_eq!(
+            fill_target(start, end, Pos::new(1, 9)),
+            Some((Dir::Right, 9))
+        );
+        assert_eq!(fill_target(start, end, Pos::new(0, 1)), Some((Dir::Up, 0)));
+        assert_eq!(
+            fill_target(start, end, Pos::new(2, 0)),
+            Some((Dir::Left, 0))
+        );
+        // Diagonal: three rows down beats one column right.
+        assert_eq!(
+            fill_target(start, end, Pos::new(5, 3)),
+            Some((Dir::Down, 5))
+        );
+        assert_eq!(
+            fill_target(start, end, Pos::new(3, 6)),
+            Some((Dir::Right, 6))
+        );
+        // A tie goes to the vertical, and inside the selection nothing happens.
+        assert_eq!(
+            fill_target(start, end, Pos::new(4, 4)),
+            Some((Dir::Down, 4))
+        );
+        assert_eq!(fill_target(start, end, Pos::new(2, 1)), None);
     }
 
     #[test]

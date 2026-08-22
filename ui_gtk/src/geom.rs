@@ -182,6 +182,10 @@ pub struct GridGeom {
 /// How close to a boundary a pointer counts as being *on* it.
 const EDGE_GRAB: f64 = 4.0;
 
+/// The fill handle's side, in pixels — big enough to grab, small enough not to hide the
+/// cell corner it sits on.
+pub const HANDLE: f64 = 7.0;
+
 impl GridGeom {
     /// The row containing a content-space y, clamped to the sheet.
     pub fn row_at(&self, y: f64) -> u32 {
@@ -197,6 +201,20 @@ impl GridGeom {
             y: self.header_h + self.rows.offset_of(row) - self.scroll_y,
             w: self.cols.size_of(col),
             h: self.rows.size_of(row),
+        }
+    }
+
+    /// The fill handle's square, in **widget** space: centred on the bottom-right corner of
+    /// the cell a selection ends at, so it is grabbable from inside the selection and from
+    /// just outside it alike. Not [`Hit`]'s business — what is under a point here depends on
+    /// where the selection is, which this module deliberately knows nothing about.
+    pub fn fill_handle(&self, row: u32, col: u32) -> Rect {
+        let cell = self.cell_rect(row, col);
+        Rect {
+            x: cell.x + cell.w - HANDLE / 2.0,
+            y: cell.y + cell.h - HANDLE / 2.0,
+            w: HANDLE,
+            h: HANDLE,
         }
     }
 
@@ -396,6 +414,16 @@ mod tests {
         assert_eq!(g.hit(50.0 + 81.0, 10.0), Hit::ColEdge(0));
         // The sheet's left edge is not a boundary: there is no column to its left.
         assert_eq!(g.hit(50.0 + 1.0, 10.0), Hit::ColHeader(0));
+    }
+
+    /// The handle straddles the corner, and is nowhere near the middle of its cell.
+    #[test]
+    fn the_fill_handle_sits_on_the_selections_corner() {
+        let g = geom();
+        let h = g.fill_handle(0, 0);
+        assert!(h.contains(50.0 + 80.0 - 1.0, 24.0 + 20.0 - 1.0), "inside");
+        assert!(h.contains(50.0 + 80.0 + 1.0, 24.0 + 20.0 + 1.0), "outside");
+        assert!(!h.contains(50.0 + 40.0, 24.0 + 10.0), "cell centre");
     }
 
     /// A partially visible row is a visible row, and the range never runs past the sheet.
