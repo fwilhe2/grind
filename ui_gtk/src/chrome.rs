@@ -110,16 +110,17 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         .build();
     // Typing in the formula bar edits the cell, so the session has to exist before the
     // first character lands — but the focus stays here rather than jumping to the cell.
-    entry.connect_has_focus_notify(glib::clone!(
+    entry.connect_state_flags_changed(glib::clone!(
         #[weak]
         grid,
-        move |entry| {
-            if entry.has_focus() && !grid.is_editing() {
+        move |entry, _| {
+            if !typing_here(entry) {
+                return;
+            }
+            if !grid.is_editing() {
                 grid.begin_edit(false);
             }
-            if entry.has_focus() {
-                grid.set_caret(entry.position());
-            }
+            grid.set_caret(entry.position());
         }
     ));
     entry.connect_activate(glib::clone!(
@@ -290,7 +291,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
 
             // The caret is the focused editable's; when the formula bar does not have it,
             // the end of the text is where the typing is.
-            let caret = match entry.has_focus() {
+            let caret = match typing_here(&entry) {
                 true => byte_offset(&text, entry.position()),
                 false => grid.caret(),
             };
@@ -357,7 +358,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         #[strong]
         update,
         move |entry| {
-            if entry.has_focus() {
+            if typing_here(entry) {
                 grid.set_caret(entry.position());
             }
             update();
@@ -379,7 +380,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         #[weak]
         entry,
         move |stack| {
-            if stack.visible_child_name().as_deref() == Some("raw") && stack.has_focus() {
+            if stack.visible_child_name().as_deref() == Some("raw") && typing_here(stack) {
                 entry.grab_focus();
             }
         }
@@ -407,6 +408,22 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         friendly,
         refresh: Box::new(update),
     })
+}
+
+/// Whether the keyboard is in this entry — the question the formula bar asks three times:
+/// to open an edit when it is clicked into, to mirror its caret into the in-cell editor, and
+/// to decide whose caret the signature hint should read.
+///
+/// **Not `has_focus`.** A `gtk::Entry` is a wrapper around an internal `gtk::Text`, and that
+/// child is what actually takes the focus — so `has-focus` on the entry is never true, its
+/// `notify` never fires, and all three questions answered "no" for as long as they were
+/// asked that way. `FOCUS_WITHIN` is the flag GTK sets on the ancestors of the focus widget,
+/// which is what "the keyboard is in there" means for a composite widget.
+fn typing_here(widget: &impl IsA<gtk::Widget>) -> bool {
+    widget
+        .as_ref()
+        .state_flags()
+        .contains(gtk::StateFlags::FOCUS_WITHIN)
 }
 
 /// The one-line friendly rendering of what the shared buffer holds, or `None` when there is
