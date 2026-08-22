@@ -97,9 +97,28 @@ pub fn start() -> Result<(), JsValue> {
 
     UI.with(|slot| *slot.borrow_mut() = Some(ui.clone()));
 
+    // `?doc=<url>` opens that document at startup — the page's own address is the
+    // only way to point this shell at a file without a picker.
+    if let Ok(search) = window.location().search()
+        && let Some(url) = doc_param(&search)
+    {
+        spawn_local(ui.clone().fetch(url));
+    }
+
     ui.dom.surface.focus()?;
     ui.refresh();
     Ok(())
+}
+
+/// The `doc` parameter of a query string, still percent-encoded — which is the form
+/// `fetch` wants, so nothing here decodes it.
+fn doc_param(search: &str) -> Option<String> {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("doc="))
+        .filter(|url| !url.is_empty())
+        .map(str::to_owned)
 }
 
 /// Hand the page the cell size the viewport arithmetic assumes.
@@ -721,8 +740,46 @@ impl Ui {
             Ok(buffer) => buffer,
             Err(_) => return self.set_message(format!("Could not read {name}")),
         };
-        let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
-        match self.app.open_bytes(&name, &bytes) {
+        self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
+    }
+
+    /// A document named in the page's own URL — `?doc=sample.fods` — fetched and
+    /// opened as if it had been picked.
+    ///
+    /// The browser hands a page no path and no way to preload the file picker, so a
+    /// document that is *served next to the page* has no other way in. That is the
+    /// whole point: `scripts/run.sh web` puts the sample document in `dist/` and
+    /// prints the URL, which is how this shell gets demo data in front of it without
+    /// a picker and without a second open path — the bytes end up in
+    /// [`App::open_bytes`] either way.
+    async fn fetch(self: Rc<Self>, url: String) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let failed = || format!("Could not load {url}");
+        let response = match JsFuture::from(window.fetch_with_str(&url)).await {
+            Ok(response) => web_sys::Response::from(response),
+            Err(_) => return self.set_message(failed()),
+        };
+        if !response.ok() {
+            return self.set_message(format!("{url}: {} {}", response.status(), failed()));
+        }
+        let buffer = match response.array_buffer() {
+            Ok(promise) => JsFuture::from(promise).await,
+            Err(error) => Err(error),
+        };
+        let Ok(buffer) = buffer else {
+            return self.set_message(failed());
+        };
+        // The last path segment is the document's name — all a download needs, and
+        // the only thing a name is used for here.
+        let name = url.rsplit('/').next().unwrap_or(&url).to_owned();
+        self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
+    }
+
+    /// Bytes into the core, and the presentation state that a new document resets.
+    fn open(&self, name: String, bytes: &[u8]) {
+        match self.app.open_bytes(&name, bytes) {
             Ok(()) => {
                 *self.name.borrow_mut() = name.clone();
                 self.sheet.set(0);
@@ -1004,6 +1061,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_can_be_told_which_document_to_open() {
+        assert_eq!(
+            doc_param("?doc=sample.fods").as_deref(),
+            Some("sample.fods")
+        );
+        assert_eq!(
+            doc_param("?x=1&doc=a%20b.ods").as_deref(),
+            Some("a%20b.ods")
+        );
+        assert_eq!(doc_param(""), None);
+        assert_eq!(doc_param("?doc="), None);
+    }
 
     #[test]
     fn a_selection_is_a_rectangle_whichever_way_it_was_dragged() {
