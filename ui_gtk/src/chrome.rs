@@ -642,6 +642,24 @@ fn calculate_tools() -> gtk::Box {
             "win.names",
             "Name a range, or manage the names",
         ),
+        (
+            "go-bottom-symbolic",
+            "Fill Down",
+            "win.fill-down",
+            "Copy the selected cells down — into the rest of the selection, or one row (Ctrl+D)",
+        ),
+        (
+            "go-last-symbolic",
+            "Fill Right",
+            "win.fill-right",
+            "Copy the selected cells right — into the rest of the selection, or one column (Ctrl+R)",
+        ),
+        (
+            "edit-copy-symbolic",
+            "Copy Value",
+            "win.copy-value",
+            "Copy what the cells show, not the formulas behind them (Ctrl+Shift+C)",
+        ),
     ] {
         row.append(&tool_button(icon, label, action, tooltip));
     }

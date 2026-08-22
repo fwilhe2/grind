@@ -39,7 +39,7 @@ use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 use sheet_core::{App, Pos, a1};
 
 use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
-use crate::keymap::Selection;
+use crate::keymap::{Dir, Selection};
 
 /// Pixels to an ODF millimetre.
 ///
@@ -113,6 +113,16 @@ impl Grid {
     /// and row boundary in turn.
     pub fn autofit_all(&self) {
         self.imp().autofit_all();
+    }
+
+    /// The selection's calculated values on the clipboard, rather than its formulas.
+    pub fn copy_value(&self) {
+        self.imp().copy_value();
+    }
+
+    /// Fill down or right — the toolbar's twin of Ctrl+D / Ctrl+R.
+    pub fn fill(&self, dir: Dir) {
+        self.imp().fill(dir);
     }
 
     pub fn selection(&self) -> Selection {
@@ -1677,7 +1687,7 @@ mod imp {
         /// Put the selection's calculated values on the clipboard instead of their formulas
         /// — "Copy Value" (Ctrl+Shift+C), for pasting a result somewhere that should not
         /// follow the document if the source cell later changes.
-        fn copy_value(&self) {
+        pub fn copy_value(&self) {
             let app = self.app.borrow().clone();
             let Some(app) = app else { return };
             let Some((start, end)) = self.clamped_selection() else {
@@ -1720,41 +1730,47 @@ mod imp {
                 .join("\n")
         }
 
-        /// Extend the top row (`Dir::Down`) or left column (`Dir::Right`) of the selection
-        /// into the rest of it — Ctrl+D / Ctrl+R, the fill-handle drag's keyboard twin. Each
-        /// column (for `Down`) or row (for `Right`) keeps its own source, so a multi-column
-        /// Fill Down replicates column by column rather than one column's formula sideways.
+        /// Extend the selection's first row (`Dir::Down`) or first column (`Dir::Right`)
+        /// into the rest of it — Ctrl+D / Ctrl+R, the fill-handle drag's keyboard twin.
+        /// [`keymap::fill_span`] says which line is the source and which are the targets;
+        /// a single selected cell filling into the one after it is the common case. Each
+        /// column (for `Down`) or row (for `Right`) keeps its own source,
+        /// so a multi-column Fill Down replicates column by column rather than one column's
+        /// formula sideways.
         ///
         /// ponytail: one `App::fill` call, and one undo entry, per line — a Fill Down across
         /// five columns is five undo steps rather than one. The upgrade is a multi-source
         /// fill in the core; nothing here needs it until that is a common selection shape.
-        fn fill(&self, dir: Dir) {
+        pub fn fill(&self, dir: Dir) {
             let app = self.app.borrow().clone();
             let Some(app) = app else { return };
             let (start, end) = self.selection.get().rect();
-            if start == end {
-                return;
-            }
             let sheet = self.sheet.get();
             match dir {
                 Dir::Down => {
+                    let Some((src, from, to)) = keymap::fill_span(start.row, end.row) else {
+                        return;
+                    };
                     for col in start.col..=end.col {
                         let _ = app.fill(
                             sheet,
-                            Pos::new(start.row, col),
-                            Pos::new(start.row + 1, col),
-                            Pos::new(end.row, col),
+                            Pos::new(src, col),
+                            Pos::new(from, col),
+                            Pos::new(to, col),
                             RecalcMode::Document,
                         );
                     }
                 }
                 Dir::Right => {
+                    let Some((src, from, to)) = keymap::fill_span(start.col, end.col) else {
+                        return;
+                    };
                     for row in start.row..=end.row {
                         let _ = app.fill(
                             sheet,
-                            Pos::new(row, start.col),
-                            Pos::new(row, start.col + 1),
-                            Pos::new(row, end.col),
+                            Pos::new(row, src),
+                            Pos::new(row, from),
+                            Pos::new(row, to),
                             RecalcMode::Document,
                         );
                     }
