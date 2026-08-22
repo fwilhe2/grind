@@ -111,41 +111,48 @@ Named classes, the way loop B names its exclusions — not a tolerance:
 `FLOOR` is a fact about one specific `soffice` binary, not about the code: a LibreOffice
 point release can move a borderline formula (a stats function dividing by a hole-sized
 denominator, say) by exactly one, and the test has no way to tell that apart from a
-regression. So the version is pinned rather than left to `apt-get install`'s daily answer.
+regression. So the oracle is pinned rather than left to whatever a machine has installed.
 
-**The pin.** `ci/libreoffice-version` holds one line, an exact Ubuntu package version
-(`apt-cache madison libreoffice-calc` on `ubuntu:24.04` lists the candidates) —
-currently `4:24.2.7-0ubuntu0.24.04.6`. `.github/workflows/ci.yml`'s `roundtrip`, `loop_e`
-and `corpus` jobs run on `ubuntu-24.04` (not `-latest`, which floats) and install exactly
-that version. The Ubuntu release and the package version move together — a version string
-from `noble` does not exist on `jammy`.
+**The pin.** `ci/libreoffice-image` holds one line: a container image referenced by digest,
+currently `ghcr.io/fwilhe2/libreoffice@sha256:17d41ea8…` (LibreOffice 26.2.5.2 on Debian 13).
+A digest is the strongest pin available — it names bytes, not a version string whose
+contents a distribution can rebuild underneath it — and, unlike the Ubuntu package version
+this used to be, it means the same binary answers on a laptop, in CI, and on any OS with
+Docker.
 
-**Running it locally, at the same pin.** `scripts/soffice-tests.sh` runs the soffice-backed
-tests inside `ubuntu:24.04` with Docker, installing the same pinned package CI does, so a
-disagreement between "works for me" and a red CI run is reproducible rather than argued
-about:
+**How the pin reaches the tests.** Not through the Rust: `scripts/soffice-docker/soffice` is
+a shim that runs the pinned image, and anything with that directory first on `PATH` gets the
+pinned `soffice` from the plain `Command::new("soffice")` the tests already use. The
+container sees the host's temp directory at the same path, which is where every input is
+staged and every output collected, and nothing else — a converter that could reach the
+repository would be a worse oracle, not a better one. `.github/workflows/ci.yml`'s
+`roundtrip`, `loop_e` and `corpus` jobs pull the image and prepend that directory; the build
+itself stays on the runner, so the usual cargo caching still applies.
+
+**Running it locally, at the same pin.** `scripts/soffice-tests.sh` does the pull and the
+`PATH` prepend and then runs the soffice-backed tests, so a disagreement between "works for
+me" and a red CI run is reproducible rather than argued about:
 
 ```sh
-scripts/soffice-tests.sh                              # loop C (out) + loop E
+scripts/soffice-tests.sh                               # loop C (out) + loop E
 scripts/soffice-tests.sh --test loop_e -- --nocapture  # one test, extra args passed through
 ```
 
-First run pays for a Rust toolchain install and a `cargo build`; a named Docker volume keeps
-both across runs. Without Docker, loop E still runs against whatever `soffice` is on `PATH`
-— useful for iterating on the generator or the parser, not for reading `FLOOR` as a verdict,
-since a local LibreOffice can legitimately disagree with the pin by one or two formulas.
+Without Docker, loop E still runs against whatever `soffice` is on `PATH` — useful for
+iterating on the generator or the parser, not for reading `FLOOR` as a verdict, since a
+local LibreOffice can legitimately disagree with the pin by one or two formulas.
 
-**Upgrading the pin, safely.** A version bump is a deliberate, reviewable change, not
+**Upgrading the pin, safely.** An image bump is a deliberate, reviewable change, not
 something that happens by CI drifting under it:
 
-1. Pick a new version from `apt-cache madison libreoffice-calc` on the target Ubuntu release
-   (`docker run --rm ubuntu:24.04 bash -c 'apt-get update -qq && apt-cache madison
-   libreoffice-calc'`) and write it into `ci/libreoffice-version`.
-2. Run `scripts/soffice-tests.sh` locally — it now installs the *new* pin — and note where
-   `loop C` and loop E's scoreboard land.
+1. `docker pull ghcr.io/fwilhe2/libreoffice:latest`, take the digest it prints, and write
+   the full `name@sha256:…` into `ci/libreoffice-image`. A tag is not a pin; only the digest
+   goes in the file.
+2. Run `scripts/soffice-tests.sh` locally — it now uses the *new* pin — and note where
+   loop C and loop E's scoreboard land.
 3. If loop E's `matched` count changed, update `FLOOR` in `core/tests/loop_e.rs` and the
-   figure in this document's "The first run" section together with the version bump, in the
-   same commit. A `FLOOR` change with no version bump beside it is a regression, not routine
+   figure in this document's "The first run" section together with the image bump, in the
+   same commit. A `FLOOR` change with no image bump beside it is a regression, not routine
    maintenance — that is the whole point of pinning.
 4. Push and let the `roundtrip`/`loop_e`/`corpus` CI jobs confirm the same numbers away from
    this machine before merging.
@@ -168,10 +175,12 @@ one already written down in `doc/ods-format.md` §3.4.
 
 ## The first run, and what F2 inherits
 
-Seed `0x5EED`, 1000 formulas, on CI's `soffice`: **911 match, 89 disagree**, which is
-`FLOOR` in `core/tests/loop_e.rs`. (A developer machine's LibreOffice can land one formula
-either side of this — a borderline `AVERAGEIF`/`NPV`/`SUMIF` case moves by exactly one across
-a point release — so `FLOOR` is set from CI, not a local run.) The disagreements are not yet
+Seed `0x5EED`, 1000 formulas, on the pinned image: **913 match, 87 disagree**, which is
+`FLOOR` in `core/tests/loop_e.rs`. (It was 911 against the Ubuntu 24.04 package this used to
+pin — a borderline `AVERAGEIF`/`NPV`/`SUMIF` case moves by exactly one across a point
+release, which is why the pin is a digest and why the number is only meaningful beside one.
+Since the pin is now an image rather than a distribution package, a local run and a CI run
+are the same binary and should print the same figure.) The disagreements are not yet
 triaged, and they are not evenly spread — the recurring classes, for whoever picks up F2:
 
 - **A logical cell used as text.** `TRIM([.C2])` on a `office:value-type="boolean"` cell is
