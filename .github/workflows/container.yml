@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Container Image
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  # Push container images
+  packages: write
+
+jobs:
+  container-image:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME_ORG: fwilhe2
+      IMAGE_NAME: sheet
+      IMAGE_TAG: latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install qemu dependency for multi-arch build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Build Image
+        id: build_image
+        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3.0.2
+        with:
+          image: ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}
+          tags: ${{ env.IMAGE_TAG }}
+          platforms: linux/amd64, linux/arm64
+          containerfiles: |
+            ./Containerfile.distroless-cli
+
+      - name: Print Sheet Version
+        run: podman run -t --rm ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} /sheet --version
+
+      - name: Push To ghcr.io
+        id: push-to-ghcr
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3.0.0
+        with:
+          image: ${{ steps.build_image.outputs.image }}
+          tags: ${{ steps.build_image.outputs.tags }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
