@@ -103,10 +103,12 @@ SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
 for loops C and E; loops A and B want a LibreOffice source checkout (`SHEET_LO_CORPUS`) for
 its `sc/qa/unit/data` fixture corpus. CI's `corpus` job gets that with a blobless sparse
-clone of just that directory rather than the whole tree. Loop E's oracle version is pinned
-(`ci/libreoffice-version`, "Pinning LibreOffice" in `doc/differential-fuzz.md`) — its
-`FLOOR` is a fact about one `soffice` build, and `scripts/soffice-tests.sh` runs against that
-same pin locally, in Docker, rather than a developer machine's own install.
+clone of just that directory rather than the whole tree. The oracle is pinned to a container
+image by digest (`ci/libreoffice-image`, "Pinning LibreOffice" in `doc/differential-fuzz.md`)
+— loop E's `FLOOR` is a fact about one `soffice` build. `scripts/soffice-docker/soffice` is a
+shim that runs that image, so putting it first on `PATH` pins the oracle without any test
+knowing about Docker; `scripts/soffice-tests.sh` does that and runs loops C and E locally
+against exactly what CI uses.
 
 | Loop | Asserts | Where |
 |---|---|---|
@@ -123,10 +125,9 @@ loop A 358 read / 3 password-protected / 0 failed; loop B parse 75845/77061 (121
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions and gates CI in both. Loop E is at 911/1000 on CI's `soffice`
-at its default seed (a local LibreOffice can land one either side of this — `FLOOR` is set
-from CI, not a developer machine), with the untriaged disagreements classified in
-`doc/differential-fuzz.md`. All four
+Loop C is green both directions and gates CI in both. Loop E is at 913/1000 on the pinned
+image at its default seed (same binary locally and in CI, so the figure should match), with
+the untriaged disagreements classified in `doc/differential-fuzz.md`. All four
 loops now run in CI (`build`, `roundtrip`, `loop_e`, `corpus` jobs) rather than only where a
 developer's machine happens to have a LibreOffice checkout.
 

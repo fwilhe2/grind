@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# `soffice`, run out of the pinned container image (ci/libreoffice-image) instead of
+# whatever a machine happens to have installed. Put this directory first on `PATH` and every
+# test that shells out to `soffice` — loop C, loop E, the kb render check — talks to the pin
+# without knowing it; nothing in the Rust needs to learn about Docker. That is the whole
+# trick, and it is why the oracle is the same binary on a laptop and in CI.
+#
+# The container sees the host's temp directory at the same path, because that is where the
+# tests stage every input and collect every output (`Lab` in core/tests/roundtrip.rs and
+# loop_e.rs both build under `std::env::temp_dir()`). Nothing else is mounted: a converter
+# that could reach the repository would be a worse oracle, not a better one.
+set -euo pipefail
+
+image=$(cat "$(dirname "$(readlink -f "$0")")/../../ci/libreoffice-image")
+tmp=$(cd "${TMPDIR:-/tmp}" && pwd -P)
+
+exec docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    -v "$tmp:$tmp" \
+    -e "HOME=$tmp" \
+    -e "TMPDIR=$tmp" \
+    -w "$tmp" \
+    "$image" \
+    soffice "$@"

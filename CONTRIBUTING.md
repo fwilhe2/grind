@@ -83,7 +83,9 @@ Do not use the LibreOffice name or branding in anything user-facing.
 
 ## The three loops
 
-LibreOffice is how correctness is checked. `soffice` must be on `PATH` for loop C.
+LibreOffice is how correctness is checked. `soffice` must be on `PATH` for loop C —
+`scripts/soffice-tests.sh` puts the pinned one there for you (`ci/libreoffice-image`, a
+container image by digest; needs Docker), which is the version CI judges you by.
 
 | Loop | What | Where |
 |---|---|---|

@@ -37,12 +37,12 @@ use sheet_core::{CellValue, Pos};
 /// a run with either overridden prints its scoreboard and skips the ratchet.
 ///
 /// Unlike loop B's `FLOOR`, this one is also sensitive to *which* LibreOffice answered, so
-/// it is measured against a version pinned in `ci/libreoffice-version` rather than whatever
-/// `apt-get install libreoffice-calc` gives a developer's machine that day — see "Pinning
+/// it is measured against the container image pinned by digest in `ci/libreoffice-image`
+/// rather than whatever a developer's machine has installed that day — see "Pinning
 /// LibreOffice" in `doc/differential-fuzz.md` for the pin, `scripts/soffice-tests.sh` to run
-/// against it locally, and the upgrade procedure that keeps a version bump and a `FLOOR`
+/// against it locally, and the upgrade procedure that keeps an image bump and a `FLOOR`
 /// change in the same commit.
-const FLOOR: usize = 911;
+const FLOOR: usize = 913;
 
 const DEFAULT_SEED: u64 = 0x5EED;
 const DEFAULT_FORMULAS: usize = 1000;
