@@ -85,7 +85,9 @@ impl Sizes {
         sizes.reverse();
         sizes.sort_by_key(|(i, _)| *i);
         sizes.dedup_by_key(|(i, _)| *i);
-        sizes.retain(|(i, size)| *i < count && *size > 0.0);
+        // A zero is kept: that is a hidden track — a row a filter excludes (§9.4) — and it
+        // has to displace nothing rather than fall back to the default.
+        sizes.retain(|(i, size)| *i < count && *size >= 0.0);
         let mut run = Vec::with_capacity(sizes.len() + 1);
         let mut acc = 0.0;
         run.push(acc);
@@ -186,6 +188,12 @@ const EDGE_GRAB: f64 = 4.0;
 /// cell corner it sits on.
 pub const HANDLE: f64 = 7.0;
 
+/// What a filter button's side is clamped to. It tracks the cell's height rather than being
+/// a constant, so it grows with the zoom like everything else drawn in the grid; the floor
+/// is the smallest thing a pointer reliably hits and the ceiling stops a tall row from
+/// getting a button the size of a cell.
+const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
+
 impl GridGeom {
     /// The row containing a content-space y, clamped to the sheet.
     pub fn row_at(&self, y: f64) -> u32 {
@@ -216,6 +224,32 @@ impl GridGeom {
             w: HANDLE,
             h: HANDLE,
         }
+    }
+
+    /// The autofilter dropdown's square, in **widget** space: inset at the right-hand end of
+    /// a header-row cell, which is where every spreadsheet puts it.
+    ///
+    /// Like [`GridGeom::fill_handle`] and for the same reason, deliberately not [`Hit`]'s
+    /// business — *which* cells carry a button depends on the document's filter, and this
+    /// module knows nothing about the document.
+    ///
+    /// `None` when the cell cannot spare the room: a button wider than the cell it sits in
+    /// would cover the heading it belongs to, and an unhittable sliver is worse than
+    /// nothing.
+    pub fn filter_button(&self, row: u32, col: u32) -> Option<Rect> {
+        let cell = self.cell_rect(row, col);
+        let (min, max) = FILTER_BUTTON;
+        let size = (cell.h - 2.0).clamp(min, max);
+        // Room for the button and at least a little of the text it belongs beside.
+        if cell.h < min || cell.w < size * 2.0 {
+            return None;
+        }
+        Some(Rect {
+            x: cell.x + cell.w - size - 1.0,
+            y: cell.y + (cell.h - size) / 2.0,
+            w: size,
+            h: size,
+        })
     }
 
     /// The rows visible in a widget `height`, end-exclusive. A partially visible row at
@@ -424,6 +458,33 @@ mod tests {
         assert!(h.contains(50.0 + 80.0 - 1.0, 24.0 + 20.0 - 1.0), "inside");
         assert!(h.contains(50.0 + 80.0 + 1.0, 24.0 + 20.0 + 1.0), "outside");
         assert!(!h.contains(50.0 + 40.0, 24.0 + 10.0), "cell centre");
+    }
+
+    /// The dropdown sits at the cell's right-hand end, clear of the text, inside the cell —
+    /// and gives up rather than covering a cell too narrow to spare the room.
+    #[test]
+    fn the_filter_button_sits_at_the_right_end_of_its_cell() {
+        let g = geom();
+        let cell = g.cell_rect(0, 0);
+        let b = g.filter_button(0, 0).expect("an 80x20 cell has room");
+        assert!(
+            b.contains(cell.x + cell.w - 4.0, cell.y + cell.h / 2.0),
+            "inside"
+        );
+        assert!(
+            !b.contains(cell.x + 4.0, cell.y + cell.h / 2.0),
+            "not over the text"
+        );
+        assert!(
+            b.x >= cell.x && b.x + b.w <= cell.x + cell.w && b.y >= cell.y,
+            "within the cell: {b:?} in {cell:?}"
+        );
+
+        let narrow = GridGeom {
+            cols: Sizes::new(80.0, MAX_COLS, vec![(0, 12.0)]),
+            ..geom()
+        };
+        assert_eq!(narrow.filter_button(0, 0), None, "no room beside the text");
     }
 
     /// A partially visible row is a visible row, and the range never runs past the sheet.

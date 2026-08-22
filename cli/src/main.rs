@@ -335,6 +335,27 @@ enum Command {
         delete: bool,
     },
 
+    /// Filter rows by a set of values per column (§9.4)
+    ///
+    /// `sheet filter book.ods A1:F12 C=Desk C=Lamp` keeps the rows whose column C holds one
+    /// of those values and hides the rest. A value is matched against the cell's display
+    /// text, exactly; `C=` keeps the empty ones. With no range, prints each sheet's filter
+    /// and the rows it hides.
+    Filter {
+        file: PathBuf,
+        /// The filtered range, header row included: A1:F12, or Data.A1:F12. With --clear,
+        /// any address on the sheet whose filter is to go.
+        range: Option<String>,
+        /// A column and one value it keeps: C=Desk. Repeat for more values or more columns.
+        keep: Vec<String>,
+        /// Remove the filter instead
+        #[arg(long)]
+        clear: bool,
+        /// The range's first row is data rather than a heading
+        #[arg(long)]
+        no_header: bool,
+    },
+
     /// Append an empty sheet
     Add {
         file: PathBuf,
@@ -741,6 +762,66 @@ fn run(cli: &Cli) -> Result<Report, String> {
             // address — `a1::definition`, shared with the shells so the two cannot differ.
             let expression = a1::definition(&app, target).say()?;
             app.set_name(name, &expression).say()?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::Filter {
+            file,
+            range,
+            keep,
+            clear,
+            no_header,
+        } => {
+            let app = load(file, cli)?;
+            let Some(range) = range else {
+                if *clear {
+                    app.set_filter(0, None).say()?;
+                    return finish(&app, cli, file, true);
+                }
+                // Reading: what each sheet filters, and what that hides. 1-based rows,
+                // since this is a person reading.
+                return Ok(lines((0..app.sheet_count()).filter_map(|i| {
+                    let filter = app.filter(i).ok()??;
+                    let hidden = app.hidden_rows(i).unwrap_or_default();
+                    let name = app.sheet_name(i).unwrap_or_default();
+                    let rows: Vec<String> = hidden.iter().map(|r| (r + 1).to_string()).collect();
+                    Some((
+                        format!(
+                            "{}:{}",
+                            a1::format(Some(&name), filter.start),
+                            a1::format(None, filter.end)
+                        ),
+                        format!("hides {}", rows.join(",")),
+                    ))
+                })));
+            };
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+            if *clear {
+                app.set_filter(sheet, None).say()?;
+                return finish(&app, cli, file, true);
+            }
+            let mut filter = sheet_core::Filter::new(
+                // The name LibreOffice gives an autofilter nobody named.
+                "__Anonymous_Sheet_DB__0",
+                start,
+                end,
+            );
+            filter.contains_header = !no_header;
+            for item in keep {
+                let (column, value) = item
+                    .split_once('=')
+                    .ok_or_else(|| format!("{item}: expected COLUMN=VALUE"))?;
+                let (_, at, _) = single(&app, &format!("{column}1"))?;
+                if at.col < start.col || at.col > end.col {
+                    return Err(format!("{column} is outside {range}"));
+                }
+                filter
+                    .keep
+                    .entry(at.col - start.col)
+                    .or_default()
+                    .insert(value.to_owned());
+            }
+            app.set_filter(sheet, Some(filter)).say()?;
             finish(&app, cli, file, true)
         }
 

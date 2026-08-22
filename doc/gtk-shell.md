@@ -510,8 +510,17 @@ design accommodates them) · window-state persistence (needs a GSettings schema 
 post-packaging) · autosave · a manage-names dialog (the capability exists; `sheet name`
 reaches it) · merged-cell rendering (the model does not carry spans; cells render
 unmerged) · full grid accessibility · typing during a background recalc · locale argument
-separators. CSV, sort/filter, find/replace, the chart and print keep their existing
-not-doing rows and gates.
+separators · **moving over a filtered-out row**: the arrow keys still step onto a row the
+filter hides, which has no height, so the selection appears to stick until it passes the
+run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
+handing it the hidden set — worth doing the first time it annoys somebody, not before).
+CSV, sort, find/replace, the chart and print keep their existing not-doing rows and gates.
+
+**Filtering is built** (§9.4): the dropdown button in each heading cell of the range, a
+value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L on the tool strip to
+put a filter over the selection or clear it. Which rows that hides comes from the core and
+is never stored (`core/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
+draws those rows at zero height.
 
 M7 added four of its own, each named where it lives — three of them closed by M10 above.
 What is left: a border's *line style* is ignored, so `dashed` and

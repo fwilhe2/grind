@@ -64,6 +64,12 @@ pub enum Action {
         row: u32,
         height: Option<String>,
     },
+    /// A sheet's autofilter (§9.4), `None` removing it. Boxed because it is much the
+    /// largest variant here and every other one would grow to match.
+    SetFilter {
+        sheet: usize,
+        filter: Option<Box<crate::filter::Filter>>,
+    },
     /// A named expression (§5.11), `None` deleting it.
     ///
     /// Document-level rather than per-cell, which is the one thing that makes it unlike
@@ -174,6 +180,15 @@ impl Document {
                     height: previous,
                 })
             }
+            Action::SetFilter { sheet, filter } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.filter().cloned().map(Box::new);
+                s.set_filter(filter.map(|f| *f));
+                Some(Action::SetFilter {
+                    sheet,
+                    filter: previous,
+                })
+            }
             Action::SetName { name, expression } => {
                 let key = name.to_lowercase();
                 let previous = match expression {
@@ -262,6 +277,9 @@ impl Document {
             Action::SetColWidth { .. } | Action::SetRowHeight { .. } => {
                 self.edits.only_values = false
             }
+            // Not a cell either: `table:database-ranges` is its own element, and the
+            // `table:visibility` it implies sits on rows rather than cells.
+            Action::SetFilter { .. } => self.edits.only_values = false,
             Action::SetName { .. } => self.edits.only_values = false,
             // Not a cell either, and worse: adding or removing a sheet shifts every later
             // index, so the `(sheet, pos)` keys already in `cells` would name the wrong
@@ -284,7 +302,8 @@ impl Document {
             | Action::SetFormat { sheet, .. }
             | Action::SetStyle { sheet, .. }
             | Action::SetColWidth { sheet, .. }
-            | Action::SetRowHeight { sheet, .. } => self.sheet(*sheet).is_some(),
+            | Action::SetRowHeight { sheet, .. }
+            | Action::SetFilter { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names are document-level, so there is no sheet index to be wrong about.
             Action::SetName { .. } => true,
             // One past the end is where a sheet is appended, so an insert is checked with

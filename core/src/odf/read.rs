@@ -11,8 +11,9 @@
 //! and all mutation flows through the shared [`Builder`] — so there is no child-to-parent
 //! channel to get wrong, and no downcasting.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
+use crate::filter::Filter;
 use crate::formula::date;
 use crate::locale::Locale;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
@@ -95,6 +96,13 @@ pub struct Builder {
     /// `style:row-height` of the row being read, applied when the row ends because
     /// `table:number-rows-repeated` decides how many rows it is for.
     row_size: Option<String>,
+
+    // --- the autofilter (§9.4) ---
+    /// The `table:database-range` being read and the sheet it covers, until its element
+    /// ends. Here rather than in the context because its conditions are two levels down.
+    filter: Option<(usize, Filter)>,
+    /// The `table:filter-condition` being read: its field number and the values so far.
+    filter_values: (u32, BTreeSet<String>),
 }
 
 /// One cell of the buffered row. A struct rather than a tuple since the day it grew a
@@ -140,6 +148,8 @@ impl Builder {
             col_decl: 0,
             track_sizes: HashMap::new(),
             row_size: None,
+            filter: None,
+            filter_values: Default::default(),
         }
     }
 
@@ -351,6 +361,9 @@ impl Context<Builder> for Spreadsheet {
         if name.is(Ns::Table, "named-expressions") {
             return Some(Box::new(NamedExpressions));
         }
+        if name.is(Ns::Table, "database-ranges") {
+            return Some(Box::new(DatabaseRanges));
+        }
         if name.is(Ns::Table, "calculation-settings") {
             // `table:null-year` is an attribute here; `table:null-date` is a child element.
             if let Some(year) = attrs.get(Ns::Table, "null-year")
@@ -416,6 +429,117 @@ impl Context<Builder> for CalculationSettings {
             b.doc.null_date = days as i64;
         }
         Some(Box::new(super::context::Ignore))
+    }
+}
+
+/// `table:database-ranges` (§9.4) — the autofilters, one per sheet at most.
+///
+/// The range is addressed by name (`Sheet1.A1:Sheet1.F12`), so it is parsed with
+/// [`crate::a1`] and matched to a sheet here; the schema puts this element *after* the
+/// tables, so every sheet it can name already exists.
+struct DatabaseRanges;
+
+impl Context<Builder> for DatabaseRanges {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Table, "database-range") {
+            return None;
+        }
+        let address = attrs.get(Ns::Table, "target-range-address")?;
+        let reference = crate::a1::parse(address).ok()?;
+        let end = reference.end.clone().unwrap_or(reference.start.clone());
+        // A whole column or row as a filter range is not a shape LibreOffice writes, and
+        // guessing an extent for one would be inventing the filter's meaning.
+        let (start, end) = (cell_pos(&reference.start)?, cell_pos(&end)?);
+        let sheet = reference.start.sheet.as_deref()?;
+        let sheet = b
+            .doc
+            .sheets
+            .iter()
+            .position(|s| s.name.eq_ignore_ascii_case(sheet))?;
+        let mut filter = Filter::new(attrs.get(Ns::Table, "name").unwrap_or_default(), start, end);
+        // Both default to true (§9.4).
+        filter.contains_header = attrs.get(Ns::Table, "contains-header") != Some("false");
+        filter.buttons = attrs.get(Ns::Table, "display-filter-buttons") != Some("false");
+        b.filter = Some((sheet, filter));
+        Some(Box::new(DatabaseRange))
+    }
+}
+
+/// A `CellRef` as a position, when it names both axes.
+fn cell_pos(cell: &crate::formula::lex::CellRef) -> Option<Pos> {
+    Some(Pos::new(cell.row?.index, cell.col?.index))
+}
+
+struct DatabaseRange;
+
+impl Context<Builder> for DatabaseRange {
+    fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        // `table:filter` and `table:filter-and` are both just wrappers around the
+        // conditions this model keeps; `table:filter-or` is not, so it goes to `Ignore` and
+        // the range keeps its buttons and no conditions.
+        name.is(Ns::Table, "filter")
+            .then(|| Box::new(FilterAnd) as Ctx)
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if let Some((sheet, filter)) = b.filter.take()
+            && let Some(sheet) = b.doc.sheets.get_mut(sheet)
+        {
+            sheet.set_filter(Some(filter));
+        }
+    }
+}
+
+struct FilterAnd;
+
+impl Context<Builder> for FilterAnd {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Table, "filter-and") => Some(Box::new(FilterAnd)),
+            (Ns::Table, "filter-condition") => {
+                // Only a set of values. Anything else — `<`, `begins-with`, top-10 — is
+                // dropped rather than half-applied (see [`crate::filter`]).
+                if attrs.get(Ns::Table, "operator") != Some("=") {
+                    return None;
+                }
+                let field = attrs.get(Ns::Table, "field-number")?.parse().ok()?;
+                b.filter_values = (
+                    field,
+                    // A condition with no `filter-set-item` children is a single value,
+                    // and that is what `table:value` holds.
+                    [attrs.get(Ns::Table, "value").unwrap_or_default().to_owned()].into(),
+                );
+                Some(Box::new(FilterCondition { items: false }))
+            }
+            _ => None,
+        }
+    }
+}
+
+struct FilterCondition {
+    /// Whether any `filter-set-item` has been seen — the first one replaces the condition's
+    /// own `table:value` rather than joining it.
+    items: bool,
+}
+
+impl Context<Builder> for FilterCondition {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Table, "filter-set-item") {
+            if !std::mem::replace(&mut self.items, true) {
+                b.filter_values.1.clear();
+            }
+            b.filter_values
+                .1
+                .insert(attrs.get(Ns::Table, "value").unwrap_or_default().to_owned());
+        }
+        Some(Box::new(super::context::Ignore))
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let (field, values) = std::mem::take(&mut b.filter_values);
+        if let Some((_, filter)) = b.filter.as_mut() {
+            filter.keep.insert(field, values);
+        }
     }
 }
 

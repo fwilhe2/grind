@@ -43,6 +43,9 @@ stops ratcheting.
 - `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
 - `set_col_width` — `sheet width <columns> <length>` (and `--clear` to drop one)
 - `set_row_height` — `sheet height <rows> <length>` (and `--clear` to drop one)
+- `set_filter` — `sheet filter <range> COLUMN=VALUE…` (and `sheet filter --clear`)
+- `filter` — `sheet filter` with no range, which prints each sheet's filtered range
+- `hidden_rows` — the same listing's `hides` column, in 1-based row numbers
 - `set_name` — `sheet name <name> <address-or-=expression>`
 - `clear_name` — `sheet name <name> --delete`
 - `add_sheet` — `sheet add <name>`

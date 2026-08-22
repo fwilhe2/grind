@@ -171,6 +171,13 @@ pub struct Sheet {
     /// `style:row-height` per row — the twin of `col_widths`, same rules.
     #[serde(default)]
     row_heights: BTreeMap<u32, String>,
+    /// The sheet's autofilter, if it has one (`table:database-range`, §9.4).
+    ///
+    /// One per sheet rather than the list ODF allows: a second database range over the same
+    /// sheet is a data source or a second autofilter, and neither is something this build
+    /// can act on. Which rows it hides is *not* stored — see [`crate::filter`].
+    #[serde(default)]
+    filter: Option<crate::filter::Filter>,
 }
 
 impl Sheet {
@@ -184,7 +191,39 @@ impl Sheet {
             styles: BTreeMap::new(),
             col_widths: BTreeMap::new(),
             row_heights: BTreeMap::new(),
+            filter: None,
         }
+    }
+
+    /// The sheet's autofilter, or `None` when it has none (§9.4).
+    pub fn filter(&self) -> Option<&crate::filter::Filter> {
+        self.filter.as_ref()
+    }
+
+    /// Set or (with `None`) remove it. Replaces rather than merges, like every other
+    /// setter here: a filter is one value, and a shell that is changing one field of it
+    /// reads, edits and writes it back.
+    pub fn set_filter(&mut self, filter: Option<crate::filter::Filter>) {
+        self.filter = filter;
+    }
+
+    /// Every row the filter hides, in order — empty when there is no filter.
+    ///
+    /// `null_date` because matching is on what a cell *displays*, and a date cell cannot be
+    /// rendered without the epoch (Part 4 §3.4).
+    pub fn hidden_rows(&self, null_date: i64) -> Vec<u32> {
+        self.filter
+            .as_ref()
+            .map(|f| f.hidden_rows(self, null_date))
+            .unwrap_or_default()
+    }
+
+    /// Whether one row is hidden by the filter — the per-row question a writer and a
+    /// renderer both ask, without building the whole list.
+    pub fn row_hidden(&self, row: u32, null_date: i64) -> bool {
+        self.filter
+            .as_ref()
+            .is_some_and(|f| f.hides(self, row, null_date))
     }
 
     /// The column's width, or `None` when it is drawn at the shell's default.

@@ -659,6 +659,15 @@ fn calculate_tools() -> gtk::Box {
             "win.names",
             "Name a range, or manage the names",
         ),
+        // The obvious `funnel-symbolic` is not in Adwaita — a missing icon draws as a blank
+        // box, so this uses the same chevron the grid draws in a filtered heading cell.
+        (
+            "pan-down-symbolic",
+            "Filter",
+            "win.filter",
+            "Filter the selected rows by a column's values, or clear the filter \
+             (Ctrl+Shift+L)",
+        ),
         // No Fill Down / Fill Right buttons: the grid's fill handle is where a fill is
         // reached from, and Ctrl+D / Ctrl+R still work. The actions stay on the window.
         (

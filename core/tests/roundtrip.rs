@@ -26,6 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sheet_core::filter::Filter;
 use sheet_core::locale::Locale;
 use sheet_core::model::NumberKind;
 use sheet_core::numfmt::{Format, Kind, Map, Op, Part};
@@ -203,6 +204,15 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                     g.row_height(row)
                 ));
             }
+        }
+        // §9.4. Compared as the model rather than as XML, since the range address has
+        // several legal spellings and LO picks its own.
+        if w.filter() != g.filter() {
+            out.push(format!(
+                "{label}: sheet {i} filter was {:?}, back as {:?}",
+                w.filter(),
+                g.filter()
+            ));
         }
         let rows = w.used_rows().max(g.used_rows());
         let cols = w.used_cols().max(g.used_cols());
@@ -588,6 +598,27 @@ fn tracks() -> (String, Document) {
     ("tracks".to_owned(), doc)
 }
 
+/// An autofilter (§9.4): the range, the values it keeps, and the rows it therefore hides.
+fn filtered() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    for (row, product) in ["Product", "Chair", "Desk", "Lamp"].iter().enumerate() {
+        sheet.set(
+            Pos::new(row as u32, 0),
+            CellValue::Text((*product).to_owned()),
+        );
+    }
+    let mut filter = Filter::new("__Anonymous_Sheet_DB__0", Pos::new(0, 0), Pos::new(3, 0));
+    filter
+        .keep
+        .insert(0, ["Chair".to_owned(), "Desk".to_owned()].into());
+    sheet.set_filter(Some(filter));
+    ("filtered".to_owned(), doc)
+}
+
 fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
@@ -615,6 +646,7 @@ fn cases() -> Vec<(String, Document)> {
         formats(),
         styles(),
         tracks(),
+        filtered(),
         case(
             "numbers",
             &[

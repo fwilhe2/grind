@@ -70,6 +70,15 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     if source.form != form || !doc.edits.only_values {
         return None;
     }
+    // An edit a filter judges regenerates: it can change which rows are hidden, and
+    // `table:visibility` lives on the row rather than in the cell being spliced.
+    if doc.edits.cells.iter().any(|(i, pos)| {
+        doc.sheet(*i)
+            .and_then(Sheet::filter)
+            .is_some_and(|f| f.affects(*pos))
+    }) {
+        return None;
+    }
 
     // Which elements have to be rewritten. Every edited cell must sit in one the file
     // actually spelled — one that does not means regenerating, because a document half in
@@ -220,8 +229,69 @@ fn content(doc: &Document, form: Form) -> String {
         }
         out.push_str("   </table:named-expressions>\n");
     }
+    // §9.4, and `table-database-ranges` is `table-functions`' second member — so after the
+    // names, for the same schema reason. One range per sheet: [`Sheet::filter`].
+    database_ranges(&mut out, doc);
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     out
+}
+
+/// `table:database-ranges` (§9.4): every sheet's autofilter, as a range plus one
+/// set-of-values condition per filtered field.
+///
+/// `table:filter-condition` needs a `table:value` even when the set-items carry the values,
+/// so it gets the first of them — which is also what LibreOffice writes.
+fn database_ranges(out: &mut String, doc: &Document) {
+    let filters: Vec<_> = doc
+        .sheets
+        .iter()
+        .filter_map(|sheet| Some((sheet, sheet.filter()?)))
+        .collect();
+    if filters.is_empty() {
+        return;
+    }
+    out.push_str("   <table:database-ranges>\n");
+    for (sheet, filter) in filters {
+        // The reference serialiser, minus its brackets: `table:target-range-address` is the
+        // bracketless spelling of the same thing, dots and sheet-name quoting included, and
+        // the display form is not it (it drops the second end's dot).
+        let address = crate::a1::reference(Some(&sheet.name), filter.start, filter.end)
+            .to_string()
+            .trim_matches(['[', ']'])
+            .to_owned();
+        let _ = writeln!(
+            out,
+            "    <table:database-range table:name=\"{}\" table:target-range-address=\"{}\" \
+             table:contains-header=\"{}\" table:display-filter-buttons=\"{}\">",
+            esc(&filter.name),
+            esc(&address),
+            filter.contains_header,
+            filter.buttons
+        );
+        if !filter.keep.is_empty() {
+            out.push_str("     <table:filter>\n      <table:filter-and>\n");
+            for (field, values) in &filter.keep {
+                let first = values.iter().next().map(String::as_str).unwrap_or_default();
+                let _ = writeln!(
+                    out,
+                    "       <table:filter-condition table:field-number=\"{field}\" \
+                     table:operator=\"=\" table:value=\"{}\">",
+                    esc(first)
+                );
+                for value in values {
+                    let _ = writeln!(
+                        out,
+                        "        <table:filter-set-item table:value=\"{}\"/>",
+                        esc(value)
+                    );
+                }
+                out.push_str("       </table:filter-condition>\n");
+            }
+            out.push_str("      </table:filter-and>\n     </table:filter>\n");
+        }
+        out.push_str("    </table:database-range>\n");
+    }
+    out.push_str("   </table:database-ranges>\n");
 }
 
 /// The format a date cell gets when the document gives it none.
@@ -621,6 +691,12 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
         out.push_str("    <table:table-row><table:table-cell/></table:table-row>\n");
     }
 
+    // What the filter hides, written out as `table:visibility` (§9.4). Derived here rather
+    // than stored, so the attribute cannot drift from the conditions — see
+    // [`crate::filter`].
+    let hidden: std::collections::BTreeSet<u32> =
+        sheet.hidden_rows(null_date).into_iter().collect();
+
     let mut row = 0;
     while row < rows {
         let height = sheet.row_height(row);
@@ -628,20 +704,34 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
         // lever, and the difference between a 20-row sheet and 20 rows plus a megabyte of
         // nothing after one stray edit at row 50 000. A row of a different height stops the
         // run, or the height would spread down the sheet.
+        // A hidden row stops the run too, for the same reason a differently sized one does.
         let blank = (row..rows)
-            .take_while(|r| is_blank(sheet, *r, cols) && sheet.row_height(*r) == height)
+            .take_while(|r| {
+                is_blank(sheet, *r, cols)
+                    && sheet.row_height(*r) == height
+                    && hidden.contains(r) == hidden.contains(&row)
+            })
             .count() as u32;
         if blank > 0 {
             let _ = writeln!(
                 out,
-                "    <table:table-row{}{}><table:table-cell/></table:table-row>",
+                "    <table:table-row{}{}{}><table:table-cell/></table:table-row>",
                 pool.row_attr(height),
+                visibility(hidden.contains(&row)),
                 count(blank, "rows")
             );
             row += blank;
             continue;
         }
-        write_row(out, sheet, row, cols, null_date, pool);
+        write_row(
+            out,
+            sheet,
+            row,
+            cols,
+            null_date,
+            pool,
+            hidden.contains(&row),
+        );
         row += 1;
     }
 
@@ -660,11 +750,30 @@ fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
     })
 }
 
-fn write_row(out: &mut String, sheet: &Sheet, row: u32, cols: u32, null_date: i64, pool: &Pool) {
+/// `table:visibility` for a filtered-out row. `filter` rather than `collapse`: the row is
+/// hidden *by* the filter, and LibreOffice keeps the two apart (§9.4).
+fn visibility(hidden: bool) -> &'static str {
+    match hidden {
+        true => " table:visibility=\"filter\"",
+        false => "",
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_row(
+    out: &mut String,
+    sheet: &Sheet,
+    row: u32,
+    cols: u32,
+    null_date: i64,
+    pool: &Pool,
+    hidden: bool,
+) {
     let _ = write!(
         out,
-        "    <table:table-row{}>",
-        pool.row_attr(sheet.row_height(row))
+        "    <table:table-row{}{}>",
+        pool.row_attr(sheet.row_height(row)),
+        visibility(hidden)
     );
     // Trailing empty cells are simply not written: unmentioned is the same as empty
     // (§3.3), and the row is known non-blank so at least one cell survives.
