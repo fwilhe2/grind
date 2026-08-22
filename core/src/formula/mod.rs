@@ -15,5 +15,6 @@ pub mod funcs;
 pub mod lex;
 pub mod parse;
 pub mod serialize;
+pub mod shift;
 pub mod value;
 pub mod wildcard;

@@ -41,6 +41,12 @@ impl Drop for Sandbox {
 fn sheet(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_sheet"))
         .args(args)
+        // A developer's own `~/.config/sheet/locale` must not leak into a test that
+        // asserts specific separators — every test spawns through here, so this is the
+        // one place that needs to say so.
+        .env_remove("SHEET_LOCALE")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("HOME")
         .output()
         .expect("the binary runs")
 }

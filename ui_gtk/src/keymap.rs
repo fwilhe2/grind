@@ -94,6 +94,11 @@ pub enum Action {
     /// Copy, then empty what was copied.
     Cut,
     Paste,
+    /// Ctrl+Shift+C — a calculated cell's result rather than its formula.
+    CopyValue,
+    /// Ctrl+D / Ctrl+R — the selection's top row or left column, replicated into the rest
+    /// of the selection (`doc/gtk-shell.md`'s "extend a calculation").
+    Fill(Dir),
 }
 
 /// The key map. One table, no state.
@@ -143,10 +148,28 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
             'c' => Some(Action::Copy),
             'x' => Some(Action::Cut),
             'v' => Some(Action::Paste),
+            'd' => Some(Action::Fill(Dir::Down)),
+            'r' => Some(Action::Fill(Dir::Right)),
             _ => None,
         },
+        Key::Char(c) if mods.ctrl && mods.shift && c.eq_ignore_ascii_case(&'c') => {
+            Some(Action::CopyValue)
+        }
         _ => None,
     }
+}
+
+/// What a fill acts on along one axis, given the selection's first and last line on it:
+/// the line to copy *from*, and the first and last line to copy *into*.
+///
+/// The selection's first line is always the source — a selection more than one line deep
+/// fills into the rest of itself, and a selection exactly one line deep (a single cell being
+/// the common case) fills into the one line after it. Excel reads a single cell the other
+/// way round, copying the line *before* it; this one never reads a cell that was not
+/// selected, which is the promise "it fills what I picked" makes.
+pub fn fill_span(first: u32, last: u32) -> Option<(u32, u32, u32)> {
+    let next = first.checked_add(1)?;
+    Some((first, next, last.max(next)))
 }
 
 /// An anchor and an active cell — the whole of what a selection is.
@@ -385,6 +408,38 @@ mod tests {
                 Some(action)
             );
         }
+    }
+
+    #[test]
+    fn fill_and_copy_value_are_the_excel_and_calc_keys() {
+        assert_eq!(
+            action_for(Key::Char('d'), ctrl()),
+            Some(Action::Fill(Dir::Down))
+        );
+        assert_eq!(
+            action_for(Key::Char('r'), ctrl()),
+            Some(Action::Fill(Dir::Right))
+        );
+        let ctrl_shift = Mods {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            action_for(Key::Char('c'), ctrl_shift),
+            Some(Action::CopyValue)
+        );
+        // Plain Ctrl+C stays the formula-preserving copy.
+        assert_eq!(action_for(Key::Char('c'), ctrl()), Some(Action::Copy));
+    }
+
+    #[test]
+    fn the_selected_line_is_the_source_whatever_the_selection_is() {
+        // Three rows selected: the top one is the source, the other two the targets.
+        assert_eq!(fill_span(2, 4), Some((2, 3, 4)));
+        // One cell: it is the source, and the cell after it the one target.
+        assert_eq!(fill_span(2, 2), Some((2, 3, 3)));
+        assert_eq!(fill_span(0, 0), Some((0, 1, 1)));
     }
 
     #[test]

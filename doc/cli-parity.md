@@ -27,6 +27,9 @@ stops ratcheting.
 - `enter` — `sheet set` (the typing rule: `=` a formula, `'` text, empty clears, `--recalc`
   recalculates the document in the same undo step)
 - `enter_range` — `sheet paste <anchor> <tsv>`, or `-` to read the rows from stdin
+- `fill` — `sheet fill <source> <range>`, replicating one cell across a rectangle with its
+  relative references shifted and its absolute ones left alone — "extend a calculation into
+  the next cell"
 - `preview` — `sheet eval <address> <formula>`, which stores nothing and writes nothing
 - `set_cell` — not exposed directly: `sheet set` goes through `App::enter`, which is the
   typing rule every shell shares and which *replaces* whatever the cell held, formula
@@ -76,6 +79,8 @@ stops ratcheting.
 - `formula` — `sheet get --formula`
 - `input_text` — `sheet get --input`, which prints what an editor would show for the cell:
   the text that, given back to `sheet set`, leaves it exactly as it is
+- `value_text` — `sheet get --value`, a formula's calculated, formatted result rather than
+  its source — what "Copy Value" puts on the clipboard
 - `style_at` — `sheet style <cell> --show`, which prints the cell's styling under ODF's own
   attribute names. The read half of the read-merge-write a bold button is, since `set_style`
   replaces rather than merges.

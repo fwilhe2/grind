@@ -125,6 +125,9 @@ enum Command {
         /// Print what an editor would show: the text that, set again, changes nothing
         #[arg(long, conflicts_with = "formula")]
         input: bool,
+        /// Print a formula's calculated, formatted result rather than its source
+        #[arg(long, conflicts_with_all = ["formula", "input"])]
+        value: bool,
         /// Print the stored value rather than the formatted display text
         #[arg(long)]
         raw: bool,
@@ -172,6 +175,22 @@ enum Command {
         /// Tab-separated rows, one per line; "-" reads them from stdin
         #[arg(allow_hyphen_values = true)]
         rows: String,
+        /// Recalculate the document in the same undo step, unless that would spoil a cell
+        #[arg(long)]
+        recalc: bool,
+    },
+
+    /// Replicate one cell across a rectangle — extend a calculation the way a drag handle
+    /// or Ctrl+D/Ctrl+R does
+    ///
+    /// A formula's relative references shift by each target's offset from `source`; its
+    /// absolute ones (`$`) do not move. A plain value is copied as is.
+    Fill {
+        file: PathBuf,
+        /// The cell whose content is replicated, e.g. A1
+        source: String,
+        /// Where it lands, e.g. A2:A10 or B1:D1
+        address: String,
         /// Recalculate the document in the same undo step, unless that would spoil a cell
         #[arg(long)]
         recalc: bool,
@@ -434,6 +453,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             address,
             formula,
             input,
+            value,
             raw,
         } => {
             let app = load(file, cli)?;
@@ -453,6 +473,11 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 // unchanged — the same text, because it is the same rule.
                 return Ok(Report::Text(TextReport {
                     lines: vec![app.input_text(sheet, pos).say()?],
+                }));
+            }
+            if *value {
+                return Ok(Report::Text(TextReport {
+                    lines: vec![app.value_text(sheet, pos).say()?],
                 }));
             }
             Ok(Report::Cells(cells(
@@ -519,6 +544,19 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 .map(|line| line.split('\t').map(str::to_owned).collect())
                 .collect();
             let outcome = app.enter_range(sheet, pos, &rows, mode(*recalc)).say()?;
+            finish(&app, cli, file, outcome.cells > 0)
+        }
+
+        Command::Fill {
+            file,
+            source,
+            address,
+            recalc,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, from, _) = single(&app, source)?;
+            let (_, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
+            let outcome = app.fill(sheet, from, start, end, mode(*recalc)).say()?;
             finish(&app, cli, file, outcome.cells > 0)
         }
 

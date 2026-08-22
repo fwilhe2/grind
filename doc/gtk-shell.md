@@ -481,7 +481,8 @@ does not expose the `css_changed` vfunc); the routine "Saved" toast is gone — 
 clearing is the confirmation. **Chrome**: the format strip became the Format page of a
 mode-switched tool row (`chrome::tools`) — Format · Calculate · View, plain linked toggles
 over a `gtk::Stack` (`AdwToggleGroup` is 1.7; the pin is 1.5), where Calculate holds
-Recalculate · Explain · Calculations… · Names… and View holds the zoom group, Fit Content
+Recalculate · Explain · Calculations… · Names… · Fill Down · Fill Right · Copy Value and
+View holds the zoom group, Fit Content
 and the Friendly Formulas toggle. The mode never switches itself: auto-appearing contextual
 tabs are the one ribbon behaviour deliberately not copied, being both the legally
 distinctive part of that design and the HIG's least favourite. Every button activates a

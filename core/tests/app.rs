@@ -720,6 +720,50 @@ fn a_pasted_rectangle_lands_cell_by_cell_in_one_step() {
     assert!(!app.can_undo());
 }
 
+/// A fill shifts a formula's relative references and leaves its absolute ones fixed —
+/// "extend a calculation into the next cell", the same way Excel or Calc's Ctrl+D does.
+#[test]
+fn a_fill_shifts_relative_references_and_copies_plain_values() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    app.set_cell(0, p(0, 1), 10.0).unwrap();
+    app.enter(0, p(1, 0), "=[.A1]+[.$B$1]", RecalcMode::No)
+        .unwrap();
+    app.set_cell(0, p(1, 2), 99.0).unwrap();
+
+    // Fill A2 down through A3:A4, and sideways into C2 — one undo step.
+    let outcome = app
+        .fill(0, p(1, 0), p(2, 0), p(4, 0), RecalcMode::Document)
+        .unwrap();
+    assert_eq!(outcome.cells, 3);
+    assert_eq!(outcome.kind, Entered::Formula);
+    assert_eq!(
+        app.formula(0, p(2, 0)).unwrap().as_deref(),
+        Some("=[.A2]+[.$B$1]"),
+        "the relative axis moved, the absolute one did not"
+    );
+    // A3 = A2 + $B$1, and A2 itself now holds the filled formula's own result (11).
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(21.0));
+
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Empty);
+
+    let plain = app
+        .fill(0, p(1, 2), p(1, 3), p(1, 3), RecalcMode::No)
+        .unwrap();
+    assert_eq!(plain.kind, Entered::Number);
+    assert_eq!(app.get(0, p(1, 3)).unwrap(), CellValue::Number(99.0));
+}
+
+#[test]
+fn value_text_is_a_formulas_result_not_its_source() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 2.0).unwrap();
+    app.enter(0, p(0, 1), "=[.A1]*3", RecalcMode::No).unwrap();
+    assert_eq!(app.value_text(0, p(0, 1)).unwrap(), "6");
+    assert_eq!(app.input_text(0, p(0, 1)).unwrap(), "=A1*3");
+}
+
 /// What an editor shows and what pressing Enter means have to be inverses, or opening a
 /// cell and closing it again quietly changes the document. Every kind of cell, in one loop.
 #[test]

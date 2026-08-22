@@ -896,6 +896,9 @@ impl Ui {
             ("F4", "Cycle $ in a reference"),
             ("Escape", "Cancel edit"),
             ("<Control>c <Control>x <Control>v", "Copy, cut, paste"),
+            ("<Control><Shift>c", "Copy value"),
+            ("<Control>d", "Fill down"),
+            ("<Control>r", "Fill right"),
         ] {
             navigation.add_shortcut(
                 &gtk::ShortcutsShortcut::builder()
@@ -1110,6 +1113,12 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.grid.set_zoom(1.0)
         }),
         ("autofit-all", &[][..], |ui| ui.grid.autofit_all()),
+        // No accelerators: the grid's own key map already owns Ctrl+D, Ctrl+R and
+        // Ctrl+Shift+C, and a second binding for the same key is how one shortcut ends up
+        // doing two things. These exist so the tool strip can reach them.
+        ("fill-down", &[][..], |ui| ui.grid.fill(keymap::Dir::Down)),
+        ("fill-right", &[][..], |ui| ui.grid.fill(keymap::Dir::Right)),
+        ("copy-value", &[][..], |ui| ui.grid.copy_value()),
         ("names", &[][..], |ui| ui.manage_names()),
         ("calculations", &["<Control><Shift>f"][..], |ui| {
             ui.explore_calculations()
