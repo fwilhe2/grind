@@ -44,6 +44,11 @@ impl Document {
         let inverse = match action {
             Action::SetBlock { index, block } => {
                 let old = self.blocks.get(index)?.clone();
+                // R6: this block's element can be replaced in place. Both ids are recorded —
+                // an edit that also changes the id has retired the old element and created a
+                // new one, and the writer needs to know about both.
+                self.edits.blocks.insert(old.id);
+                self.edits.blocks.insert(block.id);
                 self.blocks[index] = *block;
                 Action::SetBlock {
                     index,
@@ -54,6 +59,9 @@ impl Document {
                 if index > self.blocks.len() {
                     return None;
                 }
+                // The sequence moved, so the file's structure and the model's no longer
+                // correspond — see `odf::source::Edits::structural`.
+                self.edits.structural = true;
                 self.blocks.insert(index, *block);
                 Action::RemoveBlock { index }
             }
@@ -61,6 +69,7 @@ impl Document {
                 if index >= self.blocks.len() {
                     return None;
                 }
+                self.edits.structural = true;
                 let old = self.blocks.remove(index);
                 Action::InsertBlock {
                     index,

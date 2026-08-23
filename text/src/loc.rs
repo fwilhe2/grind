@@ -220,7 +220,7 @@ fn outline_index(doc: &Document, path: &[u32]) -> Option<usize> {
 
 /// The outline path of the heading at `index`, or `None` if it is not a heading.
 ///
-/// [`outline_index`]'s inverse, and the reason `grind text outline` can print an address a
+/// The inverse of the walk above, and the reason `grind text outline` can print an address a
 /// user can type straight back in.
 pub fn outline_path(doc: &Document, index: usize) -> Option<Vec<u32>> {
     let mut counters: Vec<u32> = Vec::new();

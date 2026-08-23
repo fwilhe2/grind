@@ -173,6 +173,13 @@ pub struct Document {
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
+    /// The file this document was read from, and where its blocks are in it (R6).
+    ///
+    /// `None` for a document this program authored — there is no diff to preserve — and for
+    /// one read from a package, which is a zip.
+    pub source: Option<Box<crate::odf::source::Source>>,
+    /// What has changed since it was read. See [`crate::odf::source::Edits`].
+    pub edits: crate::odf::source::Edits,
 }
 
 impl Document {

@@ -39,10 +39,78 @@ pub use grind_core::Form;
 pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.text";
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
+    // R6 first: a document that came from a file and has only had block *contents* edited goes
+    // back as that file with those elements replaced. Everything else regenerates, which is
+    // always correct and is what this did before splicing existed.
+    if let Some(spliced) = splice(doc, form) {
+        return Ok(spliced);
+    }
     match form {
         Form::Flat => Ok(content(doc, form).into_bytes()),
         Form::Package => write_package(MIMETYPE, &content(doc, Form::Package)),
     }
+}
+
+/// The file this document was read from, with the edited blocks put back in place.
+///
+/// `None` means "not applicable, regenerate" — never "failed". Every condition below is a
+/// documented boundary of the trick rather than an error, and `odf::source` says why each one
+/// is where it is.
+fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
+    let source = doc.source.as_deref()?;
+    // Saving as the other form is a conversion, not an edit.
+    if source.form != form {
+        return None;
+    }
+    // The block sequence moved, so the file's structure and the model's no longer correspond.
+    if doc.edits.structural {
+        return None;
+    }
+
+    // Which elements have to be rewritten. Every edited block must sit in one the file
+    // actually spelled — one that does not means regenerating, because a document half in its
+    // original bytes and half not would lose the other half silently.
+    let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    for block in &doc.blocks {
+        if !doc.edits.blocks.contains(&block.id) {
+            continue;
+        }
+        let at = source.blocks.get(&block.id)?;
+        let mut out = String::new();
+        // No indentation: the bytes before the element are still the file's own, so the
+        // element goes back exactly where it started.
+        paragraph(&mut out, block, String::new(), &at.keep);
+        patches.push((at.range.clone(), out.trim_end().to_owned()));
+    }
+    // An edited block whose id the source knows but which no longer appears — a `SetBlock` that
+    // replaced the id — would leave a stale element behind. `structural` catches the sequence
+    // changing; this catches the identity changing without it.
+    if doc
+        .edits
+        .blocks
+        .iter()
+        .any(|id| source.blocks.contains_key(id) && !doc.blocks.iter().any(|b| b.id == *id))
+    {
+        return None;
+    }
+
+    // In file order, so the untouched stretches between are copied without seeking back.
+    // Elements do not overlap by construction — they are siblings — but a corrupted span would
+    // produce tangled bytes rather than an error, so refuse instead of trusting it.
+    patches.sort_by_key(|(range, _)| range.start);
+    if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(source.bytes.len());
+    let mut at = 0usize;
+    for (range, text) in patches {
+        out.extend_from_slice(source.bytes.get(at..range.start)?);
+        out.extend_from_slice(text.as_bytes());
+        at = range.end;
+    }
+    out.extend_from_slice(source.bytes.get(at..)?);
+    Some(out)
 }
 
 /// Which namespaces a document's content actually needs (§1.4).
@@ -122,7 +190,7 @@ fn body(out: &mut String, doc: &Document) {
             let _ = writeln!(out, "{}<text:list-item>", indent(open + 2));
         }
 
-        paragraph(out, block, indent(open + 3));
+        paragraph(out, block, indent(open + 3), "");
     }
 
     while open > 0 {
@@ -143,7 +211,12 @@ fn indent(depth: u32) -> String {
 }
 
 /// One `text:p` or `text:h`.
-fn paragraph(out: &mut String, block: &Block, indent: String) {
+///
+/// `keep` is the original element's unmanaged attributes when this is a splice — everything
+/// the file said that the model does not carry (`text:class-names`, `xml:id`, a vendor's own),
+/// put back verbatim so that replacing an element does not quietly drop half of it. Empty when
+/// regenerating, because then there is no original to keep anything from.
+fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str) {
     let (tag, extra) = match block.kind {
         BlockKind::Heading { level } => ("text:h", format!(" text:outline-level=\"{level}\"")),
         _ => ("text:p", String::new()),
@@ -155,10 +228,10 @@ fn paragraph(out: &mut String, block: &Block, indent: String) {
     // An empty paragraph is a real thing — it is how a document spaces itself — and is written
     // self-closed rather than skipped.
     if block.runs.is_empty() {
-        let _ = writeln!(out, "{indent}<{tag}{style}{extra}/>");
+        let _ = writeln!(out, "{indent}<{tag}{style}{extra}{keep}/>");
         return;
     }
-    let _ = write!(out, "{indent}<{tag}{style}{extra}>");
+    let _ = write!(out, "{indent}<{tag}{style}{extra}{keep}>");
     for run in &block.runs {
         self::run(out, run);
     }

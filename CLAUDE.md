@@ -20,8 +20,8 @@ has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0�
 
 The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
 (`grind text`) reads, writes and edits — `examples/sample-text.sh` builds a document out of
-every feature it has, through the CLI only. What it does **not** have: R6 splicing, a session
-(so no `undo` across invocations), tables, footnotes, fields, and any shell but the CLI.
+every feature it has, through the CLI only. What it does **not** have: a session (so no `undo`
+across invocations), loop C, tables, footnotes, fields, and any shell but the CLI.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -175,7 +175,7 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
-| `grind-text` | `text/` | The word processor (phase 10, S4–S6): the block model, `loc.rs` addressing, the ODT reader and writer, and `App`. **No R6 splicing yet**, so a `.fodt` does not live in git the way a `.fods` does |
+| `grind-text` | `text/` | The word processor (phase 10, S4–S6): the block model, `loc.rs` addressing, the ODT reader and writer, `App`, and R6 splicing — a `.fodt` lives in git the way a `.fods` does |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk`, `grind-tui`, `grind-web` | `ui_*/` | The shells |
 

@@ -6,6 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # What this does not do
 
+**Scope note.** This document was written for the spreadsheet in phase 7 and every unmarked
+row below is still about it. Phase 10 added a second application, and the word processor's own
+line lives in `doc/text-core.md` — element by element, with a test holding
+`grind_text::implemented()` to it. What is repeated here are the rows a *user* would notice,
+under "The word processor" in each section.
+
 Phase 7 opens by stopping. This is the list the project exists for: not a backlog, not a
 roadmap with the dates removed. A backlog is a promise; this is a boundary. Everything here
 is either **never**, or **not yet with a named gate**, and the difference is stated for each
@@ -66,6 +72,19 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Pivot tables** | Revisit *once*, later, as `plan.md` says — and only against a real use, because the honest version is an aggregation engine plus a UI plus a serialisation format. |
 | **More than one chart type** | One that round-trips proves the mechanism. The second is taste. |
 
+### The word processor
+
+The full list is `doc/text-core.md`; these are the ones worth stating twice.
+
+| Not doing | Because |
+|---|---|
+| **Sections and multi-column layout** | A section exists to give a run of content its own page geometry. It is layout, and whether there is ever a page model is `doc/suite.md`'s open fork |
+| **Text frames, a drawing canvas** | Positioned boxes with flow-around are a page-layout program |
+| **Generated indices** — six of `text-content`'s sixteen alternatives | Each is a derivation with its own numbering and update rules, over content nobody edits by hand. Read and preserved; never authored |
+| **Mail merge, forms, bibliography, master documents** | Each is a second product with its own data model |
+| **Authoring change tracking** | Already never for spreadsheets, and the reason is stronger here. **But it survives a splice** — R6 means an opened document keeps it, and refusing to *author* change tracking is not the same as destroying it |
+| **`.docx` writing** | The `doc/xlsx-import.md` asymmetry, for the same reason: one way in, never out |
+
 ---
 
 ## 2. Not yet
@@ -88,7 +107,18 @@ CLI parity gaps.
 | **Splicing a format or style change** | When a shell makes it the common edit | A new `style:style` has to be merged into the file's own `office:automatic-styles` — a second splice site and a pool. `sheet format` and `sheet style` regenerate. |
 | **`calcext:` on the way out** | No gate; R4 allows it, R2 outranks it | `calcext:value-type` is not valid against the ODF schema, so an item earns its place only with a measured LibreOffice behaviour that cannot be had any other way. Read and ignored today. |
 | **Incremental recalculation** | When a UI makes whole-document recalc feel slow | `eval.rs:16`. `graph.rs` is in the plan and unbuilt on purpose; recursion-with-memoisation is the topological order today. |
-| **Reading `.xlsx`** | **Phase 10** — `doc/xlsx-import.md` | Scheduled, by explicit decision: Excel is where other people's documents come from, and converting them today means driving a 400 MB office suite headless. One way in — writing `.xlsx` stays in §1. Read by its own filter rather than `calamine`, whose trade is written down in that plan. |
+| **Reading `.xlsx`** | **Phase 11** — `doc/xlsx-import.md` | Scheduled, by explicit decision: Excel is where other people's documents come from, and converting them today means driving a 400 MB office suite headless. One way in — writing `.xlsx` stays in §1. Read by its own filter rather than `calamine`, whose trade is written down in that plan. |
+
+### The word processor
+
+| Not yet | Owner | Gate |
+|---|---|---|
+| **Undo and redo across invocations** | A session file | `grind sheet --session` carries an undo stack between processes through `grind_sheet::Session`. Giving `grind text` the same means making `grind_text::Action` serialisable, which is a decision about the model rather than about the CLI. No shell can undo a text document either, so it is not a parity gap — `doc/cli-parity-text.md` records it |
+| **Splicing an insertion, a deletion or a move** | When it is the common edit | R6 splices *content* edits today: retyping a paragraph, restyling one, changing its kind. Changing the block **sequence** regenerates, because splicing that means deciding where new bytes go and with what indentation, for a diff no longer obviously smaller. `grind_sheet` draws the line in the same place — a cell that did not exist regenerates too |
+| **Tables in a text document** | S6+ | The element vocabulary is shared with the spreadsheet; the model is not — an ODT table cell holds *blocks*, not a value. And `doc/odt-format.md` §5 has an open `UNVERIFIED` question about whether `table:formula` in a Writer table is even OpenFormula |
+| **Footnotes, fields, a table of contents** | Somewhere to put one | A footnote's *content* models fine; its *placement* is the page model, which is the open fork |
+| **`style:parent-style-name`** | Before a shell shows formatting | Not followed, as for cells — but it matters far more here, because text documents are built on a named-style hierarchy and not following it loses most of a document's formatting rather than one number format |
+| **Any shell but the CLI** | R10, `doc/suite.md` S8–S10 | The terminal shell is next, then GTK, then the browser. A document type reachable from only one shell is the hole R10 exists to forbid |
 
 ---
 
@@ -119,6 +149,16 @@ the code, and this table is an index rather than a second source of truth.
 | **Loop C's `back` direction** | Skips formula-bearing documents. | `roundtrip.rs` |
 | **Named expressions** | One flat map, so a sheet-local name is visible document-wide. | `model.rs:258` |
 | **Renaming or deleting a sheet** | Formulas naming it are not rewritten, so they go stale and recalculate to an error. Visible rather than silent: every write warns, and `sheet recalc` counts it. | `App::rename_sheet` |
+
+### The word processor
+
+| Capability | Stops at | Where |
+|---|---|---|
+| **R6's diffable write** | *Content* edits to blocks the file already spells. Opening a document and saving it returns its bytes exactly; editing one paragraph changes one line; a structural change regenerates and loses what the model does not carry | `text/tests/diffable.rs` |
+| **Nested `text:span`** | Flattened on read, composing the style names into one. Lossy for the *names*, lossless for the rendering — and only reachable at all for a paragraph somebody edited, since R6 never rewrites one nobody touched | `doc/text-core.md` |
+| **Lists** | Flattened into the block sequence with a depth, so the `text:list` element's own style name and `text:continue-numbering` are not carried and are lost if that list is edited | `model::BlockKind` |
+| **Headings** | Read at any level — the schema's `positiveInteger` has no ceiling — and authored at 1–6 | `doc/text-core.md` |
+| **What LibreOffice actually does** | Unmeasured. `doc/odt-format.md` §5 is six named questions, all `UNVERIFIED`, and none of them may be implemented until one carries a citation | `doc/odt-format.md` §5 |
 
 The `ponytail:` comments are the full ledger and outnumber this table; these are the ones a
 *user* would notice.

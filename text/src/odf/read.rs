@@ -16,8 +16,9 @@
 
 use grind_core::odf::context::{Attrs, Context};
 use grind_core::odf::names::{Name, Ns};
+use grind_core::odf::xml::element_extent;
 
-use crate::model::{Block, BlockKind, Document, Run};
+use crate::model::{Block, BlockId, BlockKind, Document, Run};
 
 /// How deeply a list may nest before we stop counting.
 ///
@@ -54,12 +55,37 @@ impl Builder {
         }
     }
 
-    /// Start a block and make it current.
-    fn open(&mut self, kind: BlockKind, style: Option<String>) {
+    /// Start a block and make it current, returning its id so the caller can record where it
+    /// sat in the file (R6).
+    fn open(&mut self, kind: BlockKind, style: Option<String>) -> BlockId {
         let id = self.doc.next_id();
         let mut block = Block::new(id, kind);
         block.style = style;
         self.doc.blocks.push(block);
+        id
+    }
+
+    /// R6: remember where this block's element is, so a later save can replace it in place.
+    ///
+    /// Recorded only for the flat form — a package is a zip and has no diff to preserve — and
+    /// only when the extent actually resolves. A block with no span simply cannot be spliced,
+    /// which the writer treats as "regenerate" rather than as an error.
+    fn record(&mut self, id: BlockId, start_tag: std::ops::Range<usize>) {
+        let Some(source) = self.doc.source.as_deref() else {
+            return;
+        };
+        let Some(tag) = source.bytes.get(start_tag.clone()) else {
+            return;
+        };
+        let keep = super::source::kept_attributes(tag);
+        let Some(range) = element_extent(&source.bytes, start_tag) else {
+            return;
+        };
+        if let Some(source) = self.doc.source.as_deref_mut() {
+            source
+                .blocks
+                .insert(id, super::source::Block { range, keep });
+        }
     }
 
     /// Append text to the block being read, with whatever styling is open.
@@ -159,7 +185,8 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 0 => BlockKind::Paragraph,
                 depth => BlockKind::ListItem { depth },
             };
-            b.open(kind, style);
+            let id = b.open(kind, style);
+            b.record(id, attrs.span());
             Some(Box::new(Paragraph))
         }
         (Ns::Text, "h") => {
@@ -171,7 +198,8 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 .and_then(|v| v.trim().parse::<u32>().ok())
                 .filter(|n| *n > 0)
                 .unwrap_or(1);
-            b.open(BlockKind::Heading { level }, style);
+            let id = b.open(BlockKind::Heading { level }, style);
+            b.record(id, attrs.span());
             Some(Box::new(Paragraph))
         }
         (Ns::Text, "list") => Some(Box::new(List::new())),

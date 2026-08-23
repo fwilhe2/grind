@@ -93,7 +93,7 @@ pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
 ///
 /// The reader is tolerant by construction (§8), so handing it a spreadsheet produces an empty
 /// text document rather than an error — which is exactly wrong for a user who opened the
-/// wrong file. [`grind_core::kind`] is checked first, and the error names the app that does
+/// wrong file. [`kind`](fn@kind) is checked first, and the error names the app that does
 /// open it.
 pub fn open_bytes(name: &str, bytes: &[u8]) -> Result<Document> {
     match kind(bytes) {
