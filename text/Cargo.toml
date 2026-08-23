@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-text"
+version = "0.0.0"
+description = "An ODF-native word processor — the document model and ODT filters"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The [GENERIC] half: packaging, namespaces, the context stack, style primitives, `kind`.
+# Everything this crate adds is the office:text content model (doc/odt-format.md).
+grind-core = { path = "../core" }

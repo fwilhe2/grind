@@ -12,9 +12,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 ## What this is
 
-An ODF-native spreadsheet: one Rust core, native shells, a feature list that ends. Not a
-port of LibreOffice, contains none of its code. `README.md` has the pitch, `CONTRIBUTING.md`
-the contributor rules, `doc/plan.md` the phase plan and exit criteria.
+An ODF-native office **suite**: one shared core, one crate per document type, native shells,
+a feature list that ends. Not a port of LibreOffice, contains none of its code. `README.md`
+has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0–9,
+`doc/suite.md` phase 10 — the split into `grind-core` + `grind-sheet` + `grind-text`, the
+`grind <app> <verb>` CLI, and R8/R9/R10.
+
+The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
+(`grind text`) has a model, addressing and a reader; **no writer and no `App` yet**, so it is
+not a CLI command — a reader that cannot save is half a capability.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -40,6 +46,9 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/OpenDocument-v1.4-schema.rng` | ODF 1.4 Part 3 — content schema |
 | `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 Part 4 — OpenFormula semantics |
 | `doc/small-group.md` | The 110-function scope line, extracted from Part 4 §2.3.2 |
+| `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
+| `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
+| `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
 | `doc/cli-parity-sheet.md` | Every public `App` method and the CLI command reaching it |
 | `doc/gtk-shell.md` | Phase 9's GTK shell work plan — normative for that phase |
@@ -165,6 +174,7 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
+| `grind-text` | `text/` | The word processor (phase 10, S4): the block model, `loc.rs` addressing, the ODT reader. **No writer and no `App` yet** — S5 and S6 |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk`, `grind-tui`, `grind-web` | `ui_*/` | The shells |
 
@@ -208,6 +218,13 @@ before it can be answered.
   whenever a change can't be spliced (format/style edits, a package, a repeated row, …).
   `sheet/src/odf/write.rs` is the regenerating writer, minimal by intent, pooling formats and
   cell styles so equal ones share one automatic style.
+- **`text/src/model.rs`** — the text model. A body is a **flat sequence**, not a tree
+  (rng:16938): a heading does not contain what follows it, outline structure is implied by
+  `text:outline-level` alone, and lists are flattened into the sequence with a depth. Blocks
+  carry stable `BlockId`s because an index is invalidated by any insertion above it.
+- **`text/src/loc.rs`** — addressing, the `a1.rs` of that crate and its only 0↔1 conversion.
+  `p12`, `p12+40`, `p12:p20`, `#bookmark`, `§2.1.3`. The last two survive edits elsewhere in
+  the document, which is what makes them scriptable; `p12` does not.
 - **`sheet/src/formula/`** — the OpenFormula engine, built value model → lexer/parser/
   serializer → eval → functions, all cited to Part 4 by section. `value.rs` is the single
   point of failure for the value model, error set and §6.3 conversions. `eval.rs` recurses

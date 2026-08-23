@@ -25,6 +25,10 @@ pub enum Ns {
     /// `fo:` — the XSL-FO-compatible properties a style is mostly made of: fonts, colours,
     /// borders, alignment.
     Fo,
+    /// `xlink:` — W3C XLink, not an ODF namespace at all. Carries `xlink:href`, which is how
+    /// every document type spells "points at something": a hyperlink's target, an image's
+    /// file, an embedded object's path.
+    Xlink,
     /// LibreOffice's calc extension namespace. Recognised because it carries a legitimate
     /// alias for `office:value-type` (§9).
     Calcext,
@@ -37,6 +41,8 @@ pub const TEXT: &str = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
 pub const NUMBER: &str = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
 pub const STYLE: &str = "urn:oasis:names:tc:opendocument:xmlns:style:1.0";
 pub const FO: &str = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0";
+/// W3C, not OASIS — the one namespace here that ODF borrows rather than defines.
+pub const XLINK: &str = "http://www.w3.org/1999/xlink";
 pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
 
 impl Ns {
@@ -48,6 +54,7 @@ impl Ns {
             b if b == NUMBER.as_bytes() => Ns::Number,
             b if b == STYLE.as_bytes() => Ns::Style,
             b if b == FO.as_bytes() => Ns::Fo,
+            b if b == XLINK.as_bytes() => Ns::Xlink,
             b if b == CALCEXT.as_bytes() => Ns::Calcext,
             _ => Ns::Other,
         }

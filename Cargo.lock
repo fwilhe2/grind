@@ -919,6 +919,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-text"
+version = "0.0.0"
+dependencies = [
+ "grind-core",
+]
+
+[[package]]
 name = "grind-tui"
 version = "0.0.0"
 dependencies = [
