@@ -17,7 +17,7 @@
 //! text caret — the browser's own behaviour, which is the right one for an `<input>`
 //! and is why editing claims only the three keys that end an edit.
 
-use sheet_core::Pos;
+use grind_sheet::Pos;
 
 use crate::{MAX_COLS, MAX_ROWS};
 

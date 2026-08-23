@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Stamps the commit, tree cleanliness and build date into env vars every shell's
-//! `--version`/about dialog reads through [`sheet_core::build_info`]. One build script for
-//! the whole workspace, since every binary already depends on `sheet-core`.
+//! `--version`/about dialog reads through [`grind_core::build_info`]. One build script for
+//! the whole workspace, since every binary already depends on `grind-core`.
 
 use std::process::Command;
 
@@ -28,10 +28,10 @@ fn main() {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    println!("cargo:rustc-env=SHEET_BUILD_COMMIT={commit}");
+    println!("cargo:rustc-env=GRIND_BUILD_COMMIT={commit}");
     println!(
-        "cargo:rustc-env=SHEET_BUILD_TREE={}",
+        "cargo:rustc-env=GRIND_BUILD_TREE={}",
         if dirty { "dirty" } else { "clean" }
     );
-    println!("cargo:rustc-env=SHEET_BUILD_DATE={date}");
+    println!("cargo:rustc-env=GRIND_BUILD_DATE={date}");
 }

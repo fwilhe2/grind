@@ -27,10 +27,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
 
-use sheet_core::formula::eval::{Address, Engine};
-use sheet_core::formula::funcs;
-use sheet_core::formula::value::{FormulaError, Value};
-use sheet_core::{CellValue, Pos};
+use grind_sheet::formula::eval::{Address, Engine};
+use grind_sheet::formula::funcs;
+use grind_sheet::formula::value::{FormulaError, Value};
+use grind_sheet::{CellValue, Pos};
 
 /// Formulas that must keep agreeing with LibreOffice. Raise it when the scoreboard rises;
 /// never lower it for a code change. Meaningful only at the default seed and default count —
@@ -548,10 +548,10 @@ fn generated_formulas_agree_with_libreoffice() {
     let xml = document(&formulas);
 
     let lab = Lab::new();
-    let theirs = sheet_core::read_file(&lab.convert(&xml)).expect("re-reading LO's output");
+    let theirs = grind_sheet::read_file(&lab.convert(&xml)).expect("re-reading LO's output");
     // Our side reads the *same* file, so nothing here depends on the writer.
     let ours =
-        sheet_core::read_bytes("fuzz.fods", xml.as_bytes()).expect("reading our own document");
+        grind_sheet::read_bytes("fuzz.fods", xml.as_bytes()).expect("reading our own document");
     let mut engine = Engine::new(&ours);
     let sheet = &theirs.sheets[0];
 

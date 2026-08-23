@@ -17,8 +17,8 @@ use libadwaita::prelude::*;
 
 use gtk::glib;
 
-use sheet_core::formula::friendly;
-use sheet_core::{App, CellValue, Pos, a1};
+use grind_sheet::formula::friendly;
+use grind_sheet::{App, CellValue, Pos, a1};
 
 use crate::grid::{Grid, Notice};
 use crate::keymap::{Dir, Selection};
@@ -321,7 +321,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                     let text = grid.buffer().text().to_string();
                     // Errors included, which is half the value: a formula that will not
                     // parse says so before it is committed rather than after.
-                    let preview = match sheet_core::formula::display::from_display(&text) {
+                    let preview = match grind_sheet::formula::display::from_display(&text) {
                         Ok(canonical) => app
                             .preview(grid.sheet(), grid.selection().active, &canonical)
                             .map(|value| show_value(&value))
@@ -438,7 +438,7 @@ pub(crate) fn friendly_line(text: &str) -> Option<String> {
     if !text.starts_with('=') {
         return None;
     }
-    let canonical = sheet_core::formula::display::from_display(text).ok()?;
+    let canonical = grind_sheet::formula::display::from_display(text).ok()?;
     friendly::explain_inline(&canonical).ok()
 }
 
@@ -545,7 +545,7 @@ fn strip_brackets(expression: &str) -> &str {
 
 /// Whether a reference names a cell rather than a whole column or row — both axes present
 /// on both ends.
-fn is_a_cell(reference: &sheet_core::formula::lex::Reference) -> bool {
+fn is_a_cell(reference: &grind_sheet::formula::lex::Reference) -> bool {
     std::iter::once(&reference.start)
         .chain(reference.end.as_ref())
         .all(|end| end.row.is_some() && end.col.is_some())
@@ -946,7 +946,7 @@ fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
 }
 
 fn show(n: f64) -> String {
-    sheet_core::formula::value::format_number(n)
+    grind_sheet::formula::value::format_number(n)
 }
 
 #[cfg(test)]

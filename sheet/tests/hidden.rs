@@ -14,7 +14,7 @@ fn sample() -> PathBuf {
 
 #[test]
 fn libreoffice_collapsed_column_c_and_row_three() {
-    let doc = sheet_core::read_file(&sample()).expect("loads");
+    let doc = grind_sheet::read_file(&sample()).expect("loads");
     let sheet = doc.sheet(0).expect("one sheet");
 
     assert!(sheet.col_hidden(2), "column C");
@@ -35,9 +35,9 @@ fn libreoffice_collapsed_column_c_and_row_three() {
 /// and read back, spelled `table:visibility="collapse"`.
 #[test]
 fn hidden_tracks_survive_our_own_round_trip() {
-    let doc = sheet_core::read_file(&sample()).expect("loads");
-    let bytes = sheet_core::write_bytes(&doc, sheet_core::Form::Flat).expect("writes");
-    let back = sheet_core::read_bytes("out.fods", &bytes).expect("reads back");
+    let doc = grind_sheet::read_file(&sample()).expect("loads");
+    let bytes = grind_sheet::write_bytes(&doc, grind_sheet::Form::Flat).expect("writes");
+    let back = grind_sheet::read_bytes("out.fods", &bytes).expect("reads back");
     let sheet = back.sheet(0).expect("one sheet");
 
     assert_eq!(sheet.hidden_cols().collect::<Vec<_>>(), vec![2]);
@@ -55,7 +55,7 @@ fn hidden_tracks_survive_our_own_round_trip() {
 /// Hiding and unhiding through `App` — undo included — end to end.
 #[test]
 fn hide_and_unhide_through_app() {
-    let app = sheet_core::App::new();
+    let app = grind_sheet::App::new();
     app.open_bytes("book.fods", &std::fs::read(sample()).expect("read"))
         .expect("opens");
 

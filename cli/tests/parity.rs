@@ -12,7 +12,7 @@
 
 /// Both files are read at *compile* time, so this cannot pass by looking in the wrong place
 /// at runtime.
-const CORE: &str = include_str!("../../core/src/lib.rs");
+const CORE: &str = include_str!("../../sheet/src/lib.rs");
 const PARITY: &str = include_str!("../../doc/cli-parity.md");
 
 /// Every `pub fn` in `impl App`.

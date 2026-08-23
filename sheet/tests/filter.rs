@@ -5,7 +5,7 @@
 //! The autofilter against the document that asked for it: `samples/table.fods`, saved by
 //! LibreOffice with one column filtered.
 //!
-//! `sheet_core::filter` derives the hidden rows from the conditions rather than trusting
+//! `grind_sheet::filter` derives the hidden rows from the conditions rather than trusting
 //! the `table:visibility="filter"` attributes in the file — so the file's attributes are
 //! the oracle here, and this is the test that says the derivation agrees with LibreOffice.
 
@@ -34,7 +34,7 @@ fn marked_hidden(xml: &str) -> Vec<u32> {
 #[test]
 fn filter_matches_libreoffice() {
     let xml = std::fs::read_to_string(sample()).expect("sample");
-    let doc = sheet_core::read_file(&sample()).expect("loads");
+    let doc = grind_sheet::read_file(&sample()).expect("loads");
     let sheet = doc.sheet(0).expect("one sheet");
     let filter = sheet.filter().expect("the sample has an autofilter");
 
@@ -56,9 +56,9 @@ fn filter_matches_libreoffice() {
 /// being written and read back.
 #[test]
 fn a_filter_survives_our_own_round_trip() {
-    let doc = sheet_core::read_file(&sample()).expect("loads");
-    let bytes = sheet_core::write_bytes(&doc, sheet_core::Form::Flat).expect("writes");
-    let back = sheet_core::read_bytes("out.fods", &bytes).expect("reads back");
+    let doc = grind_sheet::read_file(&sample()).expect("loads");
+    let bytes = grind_sheet::write_bytes(&doc, grind_sheet::Form::Flat).expect("writes");
+    let back = grind_sheet::read_bytes("out.fods", &bytes).expect("reads back");
 
     assert_eq!(
         back.sheet(0).expect("one sheet").filter(),

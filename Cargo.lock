@@ -879,6 +879,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-core"
+version = "0.0.0"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "zip",
+]
+
+[[package]]
+name = "grind-sheet"
+version = "0.0.0"
+dependencies = [
+ "grind-core",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
 name = "gsk4"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1834,19 +1854,9 @@ name = "sheet-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "grind-sheet",
  "serde",
  "serde_json",
- "sheet-core",
-]
-
-[[package]]
-name = "sheet-core"
-version = "0.0.0"
-dependencies = [
- "quick-xml",
- "serde",
- "serde_json",
- "zip",
 ]
 
 [[package]]
@@ -1854,25 +1864,25 @@ name = "sheet-gtk"
 version = "0.0.0"
 dependencies = [
  "async-channel",
+ "grind-sheet",
  "gtk4",
  "libadwaita",
- "sheet-core",
 ]
 
 [[package]]
 name = "sheet-tui"
 version = "0.0.0"
 dependencies = [
+ "grind-sheet",
  "ratatui",
- "sheet-core",
 ]
 
 [[package]]
 name = "sheet-web"
 version = "0.0.0"
 dependencies = [
+ "grind-sheet",
  "js-sys",
- "sheet-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

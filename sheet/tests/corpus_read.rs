@@ -69,9 +69,9 @@ fn every_corpus_document_loads() {
     let mut encrypted = 0usize;
     let failures: Vec<_> = files
         .iter()
-        .filter_map(|path| match sheet_core::read_file(path) {
+        .filter_map(|path| match grind_sheet::read_file(path) {
             Ok(_) => None,
-            Err(sheet_core::Error::Encrypted) => {
+            Err(e) if e.is_encrypted() => {
                 encrypted += 1;
                 None
             }

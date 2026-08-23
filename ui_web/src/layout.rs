@@ -9,7 +9,7 @@
 //! deliberately small: *which* cell the pointer landed on is answered by the DOM
 //! (every cell carries its address, and a click reads it off the target), because
 //! hit-testing is something the platform already does. What is left is the part the
-//! platform cannot know — how many rows and columns to ask [`sheet_core::App::get_viewport`]
+//! platform cannot know — how many rows and columns to ask [`grind_sheet::App::get_viewport`]
 //! for, and how to keep the active cell on screen.
 //!
 //! ponytail: the grid is uniform — every column one width, every row one height —
@@ -18,7 +18,7 @@
 //! grew in M8; it is a real feature, not a rounding error, and it is written down
 //! in the README's gap list rather than half-built.
 
-use sheet_core::Pos;
+use grind_sheet::Pos;
 
 /// The size of one cell, in CSS pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]

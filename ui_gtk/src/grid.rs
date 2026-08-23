@@ -34,9 +34,9 @@ use std::sync::Arc;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
+use grind_sheet::{App, Pos, a1};
 use gtk::glib;
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
-use sheet_core::{App, Pos, a1};
 
 use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::{Dir, Selection};
@@ -433,16 +433,16 @@ mod tests {
 mod imp {
     use super::*;
 
+    use grind_sheet::formula::value::FormulaError;
+    use grind_sheet::{CellValue, Pos};
     use gtk::graphene;
     use gtk::gsk;
     use gtk::pango;
     use gtk::subclass::prelude::*;
-    use sheet_core::formula::value::FormulaError;
-    use sheet_core::{CellValue, Pos};
 
-    use sheet_core::RecalcMode;
-    use sheet_core::formula::display;
-    use sheet_core::style;
+    use grind_sheet::RecalcMode;
+    use grind_sheet::formula::display;
+    use grind_sheet::style;
 
     use crate::geom::{Hit, Rect};
     use crate::keymap::{self, Action, Dir, Extent, Key, Mods};
@@ -523,10 +523,10 @@ mod imp {
         /// Wider than `cols` by [`OVERFLOW_MARGIN`] either side, so a label anchored just
         /// off-screen still reaches into the view and "is the neighbour empty" needs no
         /// second read. `None` when there is no document.
-        cells: Option<sheet_core::Viewport>,
+        cells: Option<grind_sheet::Viewport>,
         /// The sheet's autofilter (§9.4), read once for the same reason as `cells`: the
         /// buttons pass asks about it per visible column, and that is one lock, not twelve.
-        filter: Option<sheet_core::Filter>,
+        filter: Option<grind_sheet::Filter>,
     }
 
     pub struct Grid {
@@ -1318,7 +1318,7 @@ mod imp {
             &self,
             rows: &std::ops::Range<u32>,
             cols: &std::ops::Range<u32>,
-        ) -> Option<sheet_core::Viewport> {
+        ) -> Option<grind_sheet::Viewport> {
             let app = self.app.borrow();
             let app = app.as_ref()?;
             let fetch = cols.start.saturating_sub(OVERFLOW_MARGIN)
@@ -1660,7 +1660,7 @@ mod imp {
         /// written for it last time.
         fn set_pending(&self, selection: Selection, span: Option<std::ops::Range<usize>>) {
             let (start, end) = selection.rect();
-            let text = display::reference_text(&sheet_core::a1::reference(None, start, end));
+            let text = display::reference_text(&grind_sheet::a1::reference(None, start, end));
             let span = span.unwrap_or_else(|| {
                 let caret = self.caret();
                 caret..caret
@@ -1953,7 +1953,7 @@ mod imp {
             app: &App,
             start: Pos,
             end: Pos,
-            get: impl Fn(&App, usize, Pos) -> sheet_core::Result<String>,
+            get: impl Fn(&App, usize, Pos) -> grind_sheet::Result<String>,
         ) -> String {
             let sheet = self.sheet.get();
             (start.row..=end.row)
@@ -2261,7 +2261,7 @@ mod imp {
         // --- the autofilter (§9.4) ---
 
         /// The sheet's filter, if it has one.
-        pub fn filter(&self) -> Option<sheet_core::Filter> {
+        pub fn filter(&self) -> Option<grind_sheet::Filter> {
             let app = self.app.borrow().clone()?;
             app.filter(self.sheet.get()).ok().flatten()
         }
@@ -2274,7 +2274,7 @@ mod imp {
         /// a control that does nothing.
         fn filter_button_at(
             geom: &GridGeom,
-            filter: &sheet_core::Filter,
+            filter: &grind_sheet::Filter,
             row: u32,
             col: u32,
         ) -> Option<(u32, Rect)> {
@@ -2335,7 +2335,7 @@ mod imp {
             }
             // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes
             // the same one, so a document does not say which shell made it.
-            let filter = sheet_core::Filter::new("__Anonymous_Sheet_DB__0", start, end);
+            let filter = grind_sheet::Filter::new("__Anonymous_Sheet_DB__0", start, end);
             if let Err(error) = app.set_filter(sheet, Some(filter)) {
                 self.notice(Notice::Refused(error.to_string()));
             }
@@ -2845,10 +2845,10 @@ mod imp {
             for (range, color) in
                 crate::theme::reference_colors(&text, crate::theme::is_dark(&f.palette))
             {
-                let Ok(reference) = sheet_core::a1::parse(&text[range.clone()]) else {
+                let Ok(reference) = grind_sheet::a1::parse(&text[range.clone()]) else {
                     continue;
                 };
-                let Ok((sheet, start, end)) = sheet_core::a1::resolve(&app, &reference) else {
+                let Ok((sheet, start, end)) = grind_sheet::a1::resolve(&app, &reference) else {
                     continue;
                 };
                 if sheet != self.sheet.get() {
@@ -2967,7 +2967,7 @@ mod imp {
                     let cell = f.geom.cell_rect(row, col);
                     for (edge, border) in style.borders.iter().enumerate() {
                         let Some((points, _, color)) =
-                            border.as_deref().and_then(sheet_core::style::border_parts)
+                            border.as_deref().and_then(grind_sheet::style::border_parts)
                         else {
                             continue;
                         };
@@ -3132,7 +3132,7 @@ mod imp {
                     snapshot.append_color(&wash, &rect(head.x, head.y, head.w, head.h));
                 }
                 layout.set_attributes(if selected { &bold } else { &plain }.as_ref());
-                layout.set_text(&sheet_core::formula::lex::column_name(col));
+                layout.set_text(&grind_sheet::formula::lex::column_name(col));
                 let (w, h) = layout.pixel_size();
                 draw_text(
                     snapshot,
@@ -3421,7 +3421,7 @@ mod imp {
     ///
     /// A size larger than the row's default grows the row rather than clipping — the tallest
     /// styled cell in a row is what [`imp::Grid::measure_rows`] takes its height from.
-    fn font(style: &sheet_core::style::CellStyle) -> Option<pango::AttrList> {
+    fn font(style: &grind_sheet::style::CellStyle) -> Option<pango::AttrList> {
         let attrs = pango::AttrList::new();
         let mut any = false;
         if let Some(weight) = style.font_weight.as_deref() {

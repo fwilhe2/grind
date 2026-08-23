@@ -2,58 +2,72 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading and writing OpenDocument.
+//! Reading and writing OpenDocument — the part that is the same for every document type.
+//! **\[GENERIC\]**
 //!
-//! `package`, `names` and `context` are format-agnostic (doc/ods-format.md marks them
-//! `[GENERIC]`); only `read` knows what a spreadsheet is. Text documents reuse the other
-//! three unchanged (§10).
+//! `doc/ods-format.md` marks its own sections `[GENERIC]` or `[ODS]`, and this module is the
+//! first set: §1 (packaging, both physical forms), §8 (the reading architecture) and §8.1
+//! (name resolution). None of it knows what a cell or a paragraph is.
+//!
+//! What each document type adds is a `read` and a `write` of its own, driven by
+//! [`context::parse`] over contexts it defines — `grind_sheet::odf` is the worked example, and
+//! §10 is the note that said this would happen.
 
 pub mod context;
 pub mod names;
 pub mod package;
-pub mod read;
-pub mod source;
-pub mod write;
 
-pub use write::Form;
+use std::path::Path;
 
-use crate::Result;
-use crate::model::Document;
-
-/// Read an ODF spreadsheet from bytes, in either the package (`.ods`) or flat (`.fods`)
-/// form — sniffed from the content, not from a file name.
-pub fn read(bytes: &[u8]) -> Result<Document> {
-    let content = package::content_xml(bytes)?;
-    let mut builder = read::Builder::new();
-    // R6: the flat form only, and installed *before* parsing, because the cell contexts
-    // record their spans into it as they go. A package is a zip and has no diff to preserve,
-    // so it is read without one and always regenerates — see `odf::source`.
-    if !package::is_package(bytes) {
-        builder.doc.source = Some(Box::new(source::Source::new(
-            write::Form::Flat,
-            content.clone(),
-        )));
-    }
-    // `styles.xml` first, so a named style defined there is already known when a cell in
-    // `content.xml` references it (doc/ods-format.md §5.1). It holds no cells, so nothing
-    // else about the document depends on the order. A part that will not parse costs the
-    // styles it carried and not the document — §9 tolerance, one level up.
-    if let Some(styles) = package::styles_xml(bytes) {
-        let _ = context::parse(
-            std::io::Cursor::new(styles),
-            Box::new(read::Root),
-            &mut builder,
-        );
-    }
-    context::parse(
-        std::io::Cursor::new(content),
-        Box::new(read::Root),
-        &mut builder,
-    )?;
-    Ok(builder.doc)
+/// Which physical form a document takes (doc/ods-format.md §1).
+///
+/// Reading sniffs the form from the bytes, because an extension is a hint from a filesystem
+/// rather than a fact about the data. Writing has to *choose* one, so this is the only place
+/// the distinction is an input rather than an observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Form {
+    /// A zip package — `.ods`, `.odt` (§1.1).
+    Package,
+    /// One flat XML file — `.fods`, `.fodt` (§1.2).
+    Flat,
 }
 
-/// Serialise a document in the requested physical form.
-pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
-    write::write(doc, form)
+impl Form {
+    /// The form a path's extension asks for, defaulting to the package form.
+    ///
+    /// A hint from a filesystem is the right input *here* and the wrong one for reading: a
+    /// caller writing to `report.fodt` has said which form it wants, whereas a caller reading
+    /// `report.xml` has said nothing at all.
+    pub fn from_path(path: &Path) -> Form {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some(ext)
+                if ext.eq_ignore_ascii_case("fods")
+                    || ext.eq_ignore_ascii_case("fodt")
+                    || ext.eq_ignore_ascii_case("fodp")
+                    || ext.eq_ignore_ascii_case("xml") =>
+            {
+                Form::Flat
+            }
+            _ => Form::Package,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_flat_extensions_are_the_f_prefixed_ones_and_bare_xml() {
+        for flat in ["a.fods", "a.fodt", "a.FODT", "a.xml"] {
+            assert_eq!(Form::from_path(Path::new(flat)), Form::Flat, "{flat}");
+        }
+        for package in ["a.ods", "a.odt", "a", "a.zip"] {
+            assert_eq!(
+                Form::from_path(Path::new(package)),
+                Form::Package,
+                "{package}"
+            );
+        }
+    }
 }

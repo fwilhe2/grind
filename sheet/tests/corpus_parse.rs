@@ -17,9 +17,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use sheet_core::formula::display::{from_display, to_display};
-use sheet_core::formula::lex::Token;
-use sheet_core::formula::parse::parse;
+use grind_sheet::formula::display::{from_display, to_display};
+use grind_sheet::formula::lex::Token;
+use grind_sheet::formula::parse::parse;
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
 
@@ -98,7 +98,7 @@ fn excused(formula: &str, message: &str) -> Option<&'static str> {
 /// Answered by re-lexing rather than by pattern-matching the text, so that a `)` inside a
 /// string or a sheet name cannot fake it.
 fn juxtaposed(formula: &str) -> bool {
-    let Ok(tokens) = sheet_core::formula::lex::lex(formula.trim_start_matches("of:=")) else {
+    let Ok(tokens) = grind_sheet::formula::lex::lex(formula.trim_start_matches("of:=")) else {
         return false;
     };
     tokens.windows(2).any(|pair| {
@@ -133,16 +133,16 @@ fn juxtaposed(formula: &str) -> bool {
 /// a reference. `App::set_name` refuses to create such a name, which is what keeps this to
 /// documents written elsewhere.
 fn ambiguous(canonical: &str, display: &str) -> Option<&'static str> {
-    let Ok(tokens) = sheet_core::formula::lex::lex(canonical.trim_start_matches('=')) else {
+    let Ok(tokens) = grind_sheet::formula::lex::lex(canonical.trim_start_matches('=')) else {
         return None;
     };
     let before = tokens
         .iter()
         .filter(|t| matches!(t, Token::Name(_)))
         .count();
-    let after = sheet_core::formula::display::spans(display)
+    let after = grind_sheet::formula::display::spans(display)
         .iter()
-        .filter(|s| s.kind == sheet_core::formula::display::TokenKind::Name)
+        .filter(|s| s.kind == grind_sheet::formula::display::TokenKind::Name)
         .count();
     // A name the scanner read as a reference is the collision, whichever way it then fails:
     // `DCOUNT(database1;…)` where `database1` is a defined name, and LibreOffice's own
@@ -175,7 +175,7 @@ fn every_corpus_formula_parses_and_survives_display_form() {
     let mut trip_excuses: BTreeMap<&str, usize> = BTreeMap::new();
     let mut trip_failures: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
     for path in &files {
-        let Ok(doc) = sheet_core::read_file(path) else {
+        let Ok(doc) = grind_sheet::read_file(path) else {
             continue; // loop A owns reading; a document it cannot open is its problem.
         };
         for sheet in &doc.sheets {

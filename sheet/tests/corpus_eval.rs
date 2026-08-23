@@ -17,9 +17,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use sheet_core::formula::eval::{Address, Engine};
-use sheet_core::formula::value::{FormulaError, Value};
-use sheet_core::{CellValue, Document};
+use grind_sheet::formula::eval::{Address, Engine};
+use grind_sheet::formula::value::{FormulaError, Value};
+use grind_sheet::{CellValue, Document};
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
 
@@ -155,7 +155,7 @@ fn recalculating_the_corpus_agrees_with_libreoffice() {
     let mut by_category: BTreeMap<String, Tally> = BTreeMap::new();
     let mut by_function: BTreeMap<String, Tally> = BTreeMap::new();
     for path in &files {
-        let Ok(doc) = sheet_core::read_file(path) else {
+        let Ok(doc) = grind_sheet::read_file(path) else {
             continue;
         };
         let tally = check(&doc, dump.as_deref() == Some(subject(path).as_str()));

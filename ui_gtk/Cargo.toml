@@ -15,7 +15,7 @@ name = "sheet-gtk"
 path = "src/main.rs"
 
 [dependencies]
-sheet-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
 # gtk4 is reached as `libadwaita::gtk`, so the two versions cannot drift apart.
 # The GNOME HIG widgets — banners, toasts, alert dialogs — are libadwaita's own.
 # v1_5 is the ubuntu-24.04 runtime, and every widget this shell uses exists there.

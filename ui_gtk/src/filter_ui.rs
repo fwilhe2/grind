@@ -6,8 +6,8 @@
 //!
 //! The core decides what a filter *means* (`core/src/filter.rs`); this decides only how it
 //! is picked. The one rule that matters here is that the values offered are the strings
-//! [`sheet_core::Filter::hides`] compares against — both come from `App`'s single `render`,
-//! reached through [`sheet_core::App::get_viewport`], so the list cannot offer a value that would then
+//! [`grind_sheet::Filter::hides`] compares against — both come from `App`'s single `render`,
+//! reached through [`grind_sheet::App::get_viewport`], so the list cannot offer a value that would then
 //! match nothing.
 //!
 //! Read from the **document**, never from what is drawn: a value whose rows the filter
@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use sheet_core::{Filter, Viewport};
+use grind_sheet::{Filter, Viewport};
 
 use crate::geom::Rect;
 
@@ -276,7 +276,7 @@ impl FilterMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sheet_core::{App, CellValue, Pos};
+    use grind_sheet::{App, CellValue, Pos};
 
     /// The list is the column's distinct display text — deduplicated, in the model's own
     /// order, and *including* the values the filter is currently hiding.
@@ -322,9 +322,12 @@ mod tests {
             one.keep.insert(0, [value.clone()].into());
             let hidden = one.hidden_rows(
                 // The sheet behind the app, read the same way the grid reads it.
-                &sheet_core::read_bytes("x.fods", &app.save_bytes(sheet_core::Form::Flat).unwrap())
-                    .unwrap()
-                    .sheets[0],
+                &grind_sheet::read_bytes(
+                    "x.fods",
+                    &app.save_bytes(grind_sheet::Form::Flat).unwrap(),
+                )
+                .unwrap()
+                .sheets[0],
                 0,
             );
             assert!(

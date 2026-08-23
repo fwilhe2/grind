@@ -33,18 +33,9 @@ pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.spreadsheet";
 
 const VERSION: &str = "1.4";
 
-/// Which physical form to write.
-///
-/// Reading sniffs the form from the bytes, because an extension is a hint rather than a
-/// fact. Writing has to *choose* one, so this is the only place the distinction is an
-/// input rather than an observation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Form {
-    /// `.ods` — a zip package.
-    Package,
-    /// `.fods` — one flat XML file.
-    Flat,
-}
+/// Which physical form to write. Generic to every document type, so it lives in `grind-core`
+/// (§1) and is re-exported here for the callers that always spelled it `write::Form`.
+pub use grind_core::Form;
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     // R6 first: a document that came from a file and has only had cells edited goes back as
@@ -999,7 +990,7 @@ fn esc(s: &str) -> String {
 
 /// The zip package (§1.1). Only the three entries that are actually required (§1.4).
 fn package(doc: &Document) -> Result<Vec<u8>> {
-    let zip = |e: zip::result::ZipError| Error::Package(e.to_string());
+    let zip = |e: zip::result::ZipError| Error::Odf(grind_core::Error::Package(e.to_string()));
     let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
 
     // `mimetype` must be first, stored uncompressed, raw bytes, no trailing newline —

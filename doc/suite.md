@@ -197,10 +197,10 @@ xlsx/          grind-xlsx       phase 11, unchanged plan
 | `odf/names.rs` | `(uri, local-name)` resolution, the `Ns` enum | Already `**[GENERIC]**`. `Ns` gains `Draw`, `Loext`, and whatever `doc/odt-format.md` proves necessary |
 | `odf/context.rs` | the element-context stack and its default-ignore driver | Already `**[GENERIC]**`, already generic over its sink `S`. Zero changes expected |
 | `locale.rs` | decimal point, grouping separator | Two characters. Nothing spreadsheet-specific ever touched it |
-| `numfmt/` | `number:*-style` parse and apply | ODF uses these outside spreadsheets — table cells inside a text document carry `office:value` and `style:data-style-name`, and date/time fields carry a data style. **Confirm against the Part 3 schema at S1** before moving it rather than trusting this paragraph |
+| ~~`numfmt/`~~ | `number:*-style` parse and apply | **Did not move at S1 — see "What S1 actually did".** It depends on `formula::date`, `formula::value::format_number` and `model::CellValue`, so what is generic is the *format model*, not the code that applies one to a cell |
 | half of `style.rs` | `Color`, `Border`, `length_mm`, `PALETTE`, the alignment enums, `EDGES` | These are `fo:` properties. A paragraph style and a cell style are made of the same vocabulary |
 | **new:** `kind.rs` | `fn kind(&[u8]) -> Option<DocumentKind>` | Sniffing whether bytes are a spreadsheet or a text document, from the package `mimetype` entry or the flat root's `office:mimetype` / body element. Needed by `grind info`, by every GUI's Open dialog, and by the cross-app handoff |
-| **new:** `editor.rs` | the `Editor` trait — see below | The half of `App` that is the same for every document type |
+| **new:** `observer.rs` | the `Observer` trait | The one part of the shell contract with nothing document-shaped in it: something changed, come and re-read it. The `Editor` trait it was meant to sit beside **was not built at S1** — see below |
 
 **Into `grind-sheet`:** `model.rs`, `grid.rs`, `action.rs`, `a1.rs`, `filter.rs`, `formula/`,
 `odf/read.rs`, `odf/write.rs`, `CellStyle`, and the spreadsheet `App`. Which is to say: almost
@@ -218,9 +218,43 @@ later can scaffold for itself."*
 all four loops stay green with byte-identical results and `kb.rs`'s R3/R6 percentages do not
 move by a digit. If any number changes, something was rewritten that should have been moved.
 
+### What S1 actually did
+
+Met: R6 retention came back **64 / 42 / 53 / 50 / 14 / 48 %**, digit for digit, and no test was
+lost — 189 spreadsheet unit tests became 183 plus the 6 that moved, with 7 new ones in
+`grind-core`. Two things in the plan above did not survive contact, both in the same direction,
+and both are recorded here rather than quietly taken.
+
+**`numfmt/` did not move.** The claim above was that ODF uses `number:*-style` outside
+spreadsheets and it should therefore be generic. That is still true of the *format model* and is
+not true of the module: it depends on `formula::date`, `formula::value::format_number` and
+`model::CellValue`, because most of it is not "what is a `number:currency-style`" but "render
+*this cell* with one". Splitting a 827-line module along a seam no second caller has pushed on
+is the guessing S1 exists not to do. It moves when `grind-text` asks for a data style — a table
+cell with an `office:value`, or a date field — and the question is then answered by a caller
+instead of by a paragraph.
+
+**The `Editor` trait was not built.** Writing it turned up a question the plan had not asked:
+*what error type does it speak?* Every failure `open_bytes` and `save_bytes` can actually
+produce is generic, so `grind_core::Error` is honest — but `App`'s inherent methods are typed in
+the spreadsheet's `Result`, so either the impl narrows them or the signatures change, and an
+associated `type Error` keeps both honest at the cost of the uniform `dyn Editor` that was half
+the point. **None of those can be chosen well against one implementation.** `grind-text`'s `App`
+is what decides it. Until then `grind_core::Observer` carries the part that was never in doubt,
+`core/src/observer.rs` records the open question where the next person will meet it, and the
+suite CLI dispatches on `kind` — a `match` in exactly one file, which is a smaller thing to
+undo than a wrong trait.
+
+The pattern both share is the one the plan already applied to `odf/source.rs`, and it is worth
+stating as a rule rather than as two anecdotes: **a seam is extracted when a second caller
+pulls on it, never when a document predicts it will.**
+
 ---
 
 ## The two `App`s, and the one shared trait
+<!-- Status: the two `App`s are the plan of record. The trait is deferred — see
+     "What S1 actually did" above for the question that has to be answered first. -->
+
 
 `App` today is spreadsheet-shaped to its bones: `get_viewport(sheet, rows, cols)`,
 `set_col_width`, `enter`, `recalc`, `calculations`. Three ways forward were considered:
@@ -739,7 +773,7 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | | Milestone | Exit criterion | Size |
 |---|---|---|---|
 | **S0** | **Names and the trademark note.** Run the two collision checks. Update `README.md`'s Trademarks section and this document's rejected list with whatever they return | The name survives both checks, or the runner-up is adopted here first | small |
-| **S1** | **Extract `grind-core`.** The mechanical split above, plus `kind.rs` and the `Editor` trait. No behaviour change | All four loops green with **byte-identical** results; `kb.rs`'s R3/R6 percentages unmoved; R8's guard test in place and passing | small |
+| **S1** | **Extract `grind-core`.** The mechanical split above, plus `kind.rs` and `Observer`. No behaviour change | **Done.** R6 percentages unmoved to the digit; no test lost; R8's guard (`core/tests/generic.rs`) passing. `numfmt/` and the `Editor` trait deferred with reasons — see "What S1 actually did" | small |
 | **S2** | **The `grind` CLI.** Three levels, suite-level verbs, the registry-driven parity ratchet, the full rename including env vars and the config-path fallback | Every existing CLI test passes under the new spelling; `parity.rs` reads a registry; `sample.sh` and `cli-recipes.md` updated and green | small |
 | **S3** | **`doc/odt-format.md` and `doc/text-core.md`.** The clean-room spec and the scope line, before any text code exists. Cited `file:line` throughout, per `CONTRIBUTING.md` | Both documents exist and are reviewable by someone who was not there. **This milestone is the clean-room gate and cannot be skipped or reordered** | medium |
 | **S4** | **The text model and reader.** `loc.rs`, `Block`/`Run`, block ids, contexts over the existing driver | **Loop A green** over every `.odt`/`.fodt` in LibreOffice's Writer test data. Values hand-checked on a subset | large |

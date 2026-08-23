@@ -42,7 +42,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sheet_core::{Document, Form, Pos};
+use grind_sheet::{Document, Form, Pos};
 
 /// The hand-written half of R7. Listed rather than globbed: the requirement is these eight,
 /// so a file going missing must fail rather than quietly shrink the run.
@@ -95,7 +95,7 @@ fn digest(doc: &Document) -> Vec<String> {
             for col in 0..sheet.used_cols() {
                 let pos = Pos::new(row, col);
                 let (value, formula) = (sheet.get(pos), sheet.formula(pos));
-                if !matches!(value, sheet_core::CellValue::Empty) || formula.is_some() {
+                if !matches!(value, grind_sheet::CellValue::Empty) || formula.is_some() {
                     out.push(format!(
                         "r{row}c{col} {value:?} {formula:?} {:?}",
                         sheet.kind(pos)
@@ -114,7 +114,8 @@ fn digest(doc: &Document) -> Vec<String> {
 /// `source` is how a test asks for the *regenerating* writer, and it is the path every
 /// document built in memory takes anyway.
 fn regenerating(dir: &str, name: &str) -> Document {
-    let mut doc = sheet_core::read_file(&data(dir, name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let mut doc =
+        grind_sheet::read_file(&data(dir, name)).unwrap_or_else(|e| panic!("{name}: {e}"));
     doc.source = None;
     doc
 }
@@ -125,7 +126,7 @@ fn every_required_document_reads_and_round_trips() {
         let path = data(dir, name);
         let doc = regenerating(dir, name);
         assert_eq!(
-            digest(&sheet_core::read_file(&path).unwrap()),
+            digest(&grind_sheet::read_file(&path).unwrap()),
             digest(&doc),
             "{name}: forgetting the source changed the document"
         );
@@ -133,9 +134,9 @@ fn every_required_document_reads_and_round_trips() {
         // Both forms, because the requirement is about ODF and not about flat XML. A
         // package is the same content model in a zip (§7.3).
         for form in [Form::Flat, Form::Package] {
-            let bytes = sheet_core::write_bytes(&doc, form)
+            let bytes = grind_sheet::write_bytes(&doc, form)
                 .unwrap_or_else(|e| panic!("{name} as {form:?}: {e}"));
-            let back = sheet_core::read_bytes(name, &bytes)
+            let back = grind_sheet::read_bytes(name, &bytes)
                 .unwrap_or_else(|e| panic!("{name} as {form:?}, reading back: {e}"));
             assert_eq!(
                 digest(&doc),
@@ -158,7 +159,7 @@ fn every_required_document_reads_and_round_trips() {
 /// worth making.
 #[test]
 fn a_document_of_formulas_with_no_cached_values_recalculates() {
-    let app = sheet_core::App::new();
+    let app = grind_sheet::App::new();
     app.open_file(&data("kb", "fizzbuzz.fods")).unwrap();
     assert_eq!(app.formula_count(0).unwrap(), 18);
     assert_eq!(
@@ -171,8 +172,8 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
     assert_eq!(app.used_extent(0).unwrap(), (18, 1));
     let played: Vec<String> = (0..18)
         .map(|row| match app.get(0, Pos::new(row, 0)).unwrap() {
-            sheet_core::CellValue::Text(t) => t,
-            sheet_core::CellValue::Number(n) => format!("{n}"),
+            grind_sheet::CellValue::Text(t) => t,
+            grind_sheet::CellValue::Number(n) => format!("{n}"),
             other => panic!("row {} is {other:?}", row + 1),
         })
         .collect();
@@ -212,7 +213,7 @@ fn everything_we_write_is_valid_odf() {
     for (from, name) in required() {
         let doc = regenerating(from, name);
         let path = dir.join(name);
-        sheet_core::write_file(&doc, &path).unwrap();
+        grind_sheet::write_file(&doc, &path).unwrap();
 
         match jing(&path) {
             None => {
@@ -259,7 +260,7 @@ fn a_written_document_carries_no_boilerplate() {
         ("samples", "table.fods", 40),
     ] {
         let doc = regenerating(dir, name);
-        let xml = String::from_utf8(sheet_core::write_bytes(&doc, Form::Flat).unwrap()).unwrap();
+        let xml = String::from_utf8(grind_sheet::write_bytes(&doc, Form::Flat).unwrap()).unwrap();
         let preamble = xml
             .split_once("<table:table-cell")
             .unwrap_or_else(|| panic!("{name}: wrote no cells"))
@@ -289,7 +290,7 @@ fn the_samples_measure_what_regenerating_still_loses() {
     for name in SAMPLES {
         let before = std::fs::metadata(data("samples", name)).unwrap().len();
         let doc = regenerating("samples", name);
-        let after = sheet_core::write_bytes(&doc, Form::Flat).unwrap().len() as u64;
+        let after = grind_sheet::write_bytes(&doc, Form::Flat).unwrap().len() as u64;
         eprintln!(
             "  {name:32} {before:>7} -> {after:>7} bytes  ({}% kept)",
             after * 100 / before
@@ -321,13 +322,13 @@ fn the_samples_measure_what_regenerating_still_loses() {
 fn setting_one_number_changes_one_element() {
     for (dir, name) in required() {
         let before = std::fs::read_to_string(data(dir, name)).unwrap();
-        let app = sheet_core::App::new();
+        let app = grind_sheet::App::new();
         app.open_file(&data(dir, name)).unwrap();
 
         // The first cell that holds a value. Not a fixed address: A1 is inside a repeated
         // *row* in `conditional-formatting.fods` and absent altogether from `fizzbuzz.fods`,
         // and both of those fall back by design. A cell with a value is one the file spelled.
-        let at = first_value(&sheet_core::read_file(&data(dir, name)).unwrap());
+        let at = first_value(&grind_sheet::read_file(&data(dir, name)).unwrap());
         app.set_cell(0, at, 42.0).unwrap();
         let after = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
 
@@ -344,10 +345,10 @@ fn setting_one_number_changes_one_element() {
         );
 
         // And it still reads back as the document it now is.
-        let back = sheet_core::read_bytes(name, after.as_bytes()).unwrap();
+        let back = grind_sheet::read_bytes(name, after.as_bytes()).unwrap();
         assert_eq!(
             back.sheet(0).unwrap().get(at),
-            sheet_core::CellValue::Number(42.0),
+            grind_sheet::CellValue::Number(42.0),
             "{name}: the spliced cell did not read back"
         );
     }
@@ -369,7 +370,7 @@ fn a_value_written_into_a_repeated_run_splits_only_that_element() {
         "the fixture no longer has the run this test is about"
     );
 
-    let app = sheet_core::App::new();
+    let app = grind_sheet::App::new();
     app.open_file(&data("samples", name)).unwrap();
     app.set_cell(0, Pos::new(2, 1), 99.0).unwrap(); // B3, the middle of a run of five
     let after = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
@@ -399,9 +400,9 @@ fn a_value_written_into_a_repeated_run_splits_only_that_element() {
 fn saving_an_unedited_document_changes_nothing_at_all() {
     for (dir, name) in required() {
         let before = std::fs::read(data(dir, name)).unwrap();
-        let doc = sheet_core::read_file(&data(dir, name)).unwrap();
+        let doc = grind_sheet::read_file(&data(dir, name)).unwrap();
         assert_eq!(
-            sheet_core::write_bytes(&doc, Form::Flat).unwrap(),
+            grind_sheet::write_bytes(&doc, Form::Flat).unwrap(),
             before,
             "{name}: an untouched document did not come back byte for byte"
         );
@@ -414,8 +415,8 @@ fn saving_an_unedited_document_changes_nothing_at_all() {
 /// untestable, and each of these is a boundary `odf::source` documents.
 #[test]
 fn what_cannot_be_spliced_regenerates() {
-    let doc = |edit: &dyn Fn(&sheet_core::App)| {
-        let app = sheet_core::App::new();
+    let doc = |edit: &dyn Fn(&grind_sheet::App)| {
+        let app = grind_sheet::App::new();
         app.open_file(&data("kb", "minimal-libreoffice.fods"))
             .unwrap();
         edit(&app);
@@ -433,8 +434,8 @@ fn what_cannot_be_spliced_regenerates() {
             0,
             Pos::new(0, 0),
             Pos::new(0, 0),
-            Some(sheet_core::numfmt::preset(
-                sheet_core::numfmt::Kind::Percentage,
+            Some(grind_sheet::numfmt::preset(
+                grind_sheet::numfmt::Kind::Percentage,
                 1,
                 false,
                 "",
@@ -498,7 +499,7 @@ fn changed_lines(before: &str, after: &str) -> (usize, usize) {
 /// document whose swatch labelled "navy" is not navy.
 #[test]
 fn the_default_palette_is_the_one_the_sample_document_uses() {
-    let app = sheet_core::App::new();
+    let app = grind_sheet::App::new();
     app.open_file(&data("samples", "custom-colors.fods"))
         .unwrap();
     let (rows, cols) = app.used_extent(0).unwrap();
@@ -507,10 +508,10 @@ fn the_default_palette_is_the_one_the_sample_document_uses() {
     for row in 0..rows {
         for col in 0..cols {
             let pos = Pos::new(row, col);
-            let sheet_core::CellValue::Text(label) = app.get(0, pos).unwrap() else {
+            let grind_sheet::CellValue::Text(label) = app.get(0, pos).unwrap() else {
                 continue;
             };
-            let Some(expected) = sheet_core::style::palette(&label) else {
+            let Some(expected) = grind_sheet::style::palette(&label) else {
                 continue; // the caption row, which names no colour
             };
             let background = app
@@ -527,7 +528,7 @@ fn the_default_palette_is_the_one_the_sample_document_uses() {
     }
     assert_eq!(
         found,
-        sheet_core::style::PALETTE.len(),
+        grind_sheet::style::PALETTE.len(),
         "the fixture stopped covering the whole palette"
     );
 }

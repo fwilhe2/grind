@@ -10,11 +10,11 @@
 
 use std::path::PathBuf;
 
-use sheet_core::model::NumberKind;
-use sheet_core::{CellValue, Pos, read_bytes};
+use grind_sheet::model::NumberKind;
+use grind_sheet::{CellValue, Pos, read_bytes};
 
 /// Wrap a `table:table` body in the smallest valid flat document.
-fn doc(body: &str) -> sheet_core::Document {
+fn doc(body: &str) -> grind_sheet::Document {
     let xml = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document
@@ -30,7 +30,7 @@ fn doc(body: &str) -> sheet_core::Document {
     read_bytes("test.fods", xml.as_bytes()).expect("fixture must parse")
 }
 
-fn cell(d: &sheet_core::Document, row: u32, col: u32) -> CellValue {
+fn cell(d: &grind_sheet::Document, row: u32, col: u32) -> CellValue {
     d.sheet(0).expect("one sheet").get(Pos::new(row, col))
 }
 
@@ -255,7 +255,7 @@ fn what_we_write_is_what_we_read() {
     // The half of loop C that needs no LibreOffice, and so runs everywhere: our own writer
     // and reader must agree on every value the model can hold. Catches a writer that
     // mangles whitespace, newlines or XML metacharacters on a machine with no `soffice`.
-    let mut d = sheet_core::Document::default();
+    let mut d = grind_sheet::Document::default();
     let sheet = d.sheet_mut(0).unwrap();
     for (row, value) in [
         text("plain"),
@@ -276,8 +276,8 @@ fn what_we_write_is_what_we_read() {
     }
     sheet.set_formula(Pos::new(0, 0), "of:=1+1".into());
 
-    for form in [sheet_core::Form::Flat, sheet_core::Form::Package] {
-        let bytes = sheet_core::write_bytes(&d, form).unwrap();
+    for form in [grind_sheet::Form::Flat, grind_sheet::Form::Package] {
+        let bytes = grind_sheet::write_bytes(&d, form).unwrap();
         let back = read_bytes("round-trip", &bytes).unwrap();
         let (a, b) = (d.sheet(0).unwrap(), back.sheet(0).unwrap());
         assert_eq!(a.used_rows(), b.used_rows(), "{form:?}");
@@ -476,7 +476,7 @@ fn a_real_libreoffice_file_lands_its_cells_where_the_xml_says() {
         return;
     };
     let path = root.join("fods/lookup_source.fods");
-    let d = sheet_core::read_file(&path).expect("must read");
+    let d = grind_sheet::read_file(&path).expect("must read");
 
     let data = d
         .sheets
@@ -507,11 +507,11 @@ fn a_real_formula_file_keeps_both_halves() {
         return;
     };
     let path = root.join("functions/mathematical/fods/sum.fods");
-    let Ok(d) = sheet_core::read_file(&path) else {
+    let Ok(d) = grind_sheet::read_file(&path) else {
         eprintln!("skipping: {} not present", path.display());
         return;
     };
-    let total: usize = d.sheets.iter().map(sheet_core::Sheet::formula_count).sum();
+    let total: usize = d.sheets.iter().map(grind_sheet::Sheet::formula_count).sum();
     assert!(total > 10, "expected many formulas, found {total}");
 
     let has_cached_value = d

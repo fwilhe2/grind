@@ -2,49 +2,38 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Cell styling — the `style:style` of family `table-cell` (doc/ods-format.md §5.1). **\[ODS\]**
+//! The styling vocabulary every document type is made of. **\[GENERIC\]**
 //!
-//! The other half of §5: a number format says how a *value* is spelled, this says how the
-//! cell looks around it. The two travel together on one `style:style` and are pooled
-//! together, which is why the writer keys its pool on the pair.
+//! ODF builds a cell style, a paragraph style and a text span style out of the *same* pieces:
+//! XSL-FO properties (`fo:font-weight`, `fo:color`, `fo:border-left`), ODF lengths, and
+//! `#rrggbb` colours. What differs per document type is which pieces a style carries and what
+//! element it hangs off — so the pieces live here and the structs live with their document
+//! type (`grind_sheet::style::CellStyle` is the worked example).
 //!
 //! **The values are ODF's own, kept verbatim.** `fo:font-weight` is `"bold"`, a border is
 //! `"0.5pt solid #000000"`, a colour is `"#ffff00"` — these are XSL-FO strings, and parsing
-//! them into a typed model would buy nothing until something *renders* them. Nothing does
-//! yet: no shell exists, and a CLI cannot show a border. What matters today is that a
-//! document keeps what it came with, and a string does that exactly. When a renderer needs
-//! a colour as three bytes, it parses one string in one place.
+//! them into a typed model would buy nothing until something *renders* them. What matters is
+//! that a document keeps what it came with, and a string does that exactly. When a renderer
+//! needs a colour as three bytes, it parses one string in one place.
 //!
-//! Validation therefore lives at the edge that has a user, not here: `sheet style` takes an
-//! enum for alignment and checks a colour's syntax, and a *document's* value is whatever the
-//! document said, because rejecting it would lose the cell rather than the attribute.
-//!
-//! Two things are deliberately not carried, both because LibreOffice does not give them
-//! back as written (§5.4, measured):
-//!
-//! * **`fo:font-family`**, which LO replaces with a `style:font-name` pointing into
-//!   `office:font-face-decls` — a second vocabulary, and one nothing can use until text is
-//!   drawn.
-//! * **Border widths are re-quantised** on the way through: `0.5pt` comes back `0.51pt`.
-//!   The string is kept as the document wrote it, and loop C compares widths numerically
-//!   rather than pretending the round trip is exact.
+//! Validation therefore lives at the edge that has a user, not here: a CLI takes an enum for
+//! alignment and checks a colour's syntax, and a *document's* value is whatever the document
+//! said, because rejecting it would lose the element rather than the attribute.
 
-use serde::{Deserialize, Serialize};
-
-/// Which edge a border is on. The array order in [`CellStyle::borders`].
+/// Which edge a border is on. The array order of a style's four border slots.
 pub const EDGES: [&str; 4] = ["left", "right", "top", "bottom"];
 
 /// The colours a shell offers by default, and the names a person may spell them by — the
 /// palette at <https://clrs.cc/>.
 ///
-/// A **default, never a limit**: ODF takes any `#rrggbb`, `CellStyle` keeps whatever the
-/// document said, and a shell may still ask for a colour that is not here. What this fixes is
-/// the two places a colour is *chosen* rather than read — a GUI's swatches and `sheet style
-/// --color` — for the same reason `numfmt::preset` lives in the core: a document coloured
-/// from one shell and one coloured from another should not need a second table to agree.
+/// A **default, never a limit**: ODF takes any `#rrggbb`, a style keeps whatever the document
+/// said, and a shell may still ask for a colour that is not here. What this fixes is the two
+/// places a colour is *chosen* rather than read — a GUI's swatches and a CLI's `--color` — so
+/// that a document coloured from one shell and one coloured from another do not need a second
+/// table to agree.
 ///
 /// The hexes are held against a real document rather than against this comment:
-/// `core/tests/data/samples/custom-colors.fods` is this palette as LibreOffice wrote it, with
+/// `sheet/tests/data/samples/custom-colors.fods` is this palette as LibreOffice wrote it, with
 /// each colour's name in the cell it fills, and a test reads it back.
 pub const PALETTE: [(&str, &str); 17] = [
     ("navy", "#001f3f"),
@@ -76,60 +65,12 @@ pub fn palette(name: &str) -> Option<&'static str> {
         .map(|(_, hex)| *hex)
 }
 
-/// How one cell looks. Every field is an ODF attribute value, and `None` means the
-/// attribute is absent — which is not the same as a value of `"none"`, the spelling ODF
-/// uses for "explicitly no border".
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct CellStyle {
-    /// `fo:font-weight` — `normal`, `bold`, or a hundreds number.
-    pub font_weight: Option<String>,
-    /// `fo:font-style` — `normal`, `italic`, `oblique`.
-    pub font_style: Option<String>,
-    /// `fo:font-size` — a length, e.g. `12pt`, or a percentage.
-    pub font_size: Option<String>,
-    /// `fo:color` — the text colour, `#rrggbb`.
-    pub color: Option<String>,
-    /// `fo:background-color` — `#rrggbb` or `transparent`.
-    pub background: Option<String>,
-    /// `fo:text-align`, on `style:paragraph-properties` rather than on the cell.
-    pub align: Option<String>,
-    /// `style:vertical-align` — `top`, `middle`, `bottom`, `automatic`.
-    pub vertical_align: Option<String>,
-    /// `fo:wrap-option` — `wrap` or `no-wrap`.
-    pub wrap: Option<String>,
-    /// `fo:border-{left,right,top,bottom}`, in [`EDGES`] order. The `fo:border` shorthand is
-    /// expanded into all four on the way in and collapsed back when they agree, because
-    /// that is what the shorthand *means* — keeping it as a fifth field would make two
-    /// spellings of one style unequal, and the pool would emit both.
-    pub borders: [Option<String>; 4],
-}
-
-impl CellStyle {
-    /// Nothing set at all — a cell style that is worth neither writing nor pooling.
-    pub fn is_plain(&self) -> bool {
-        *self == CellStyle::default()
-    }
-
-    /// The `fo:border` shorthand, when every edge agrees and is present.
-    pub fn uniform_border(&self) -> Option<&str> {
-        let first = self.borders[0].as_deref()?;
-        self.borders
-            .iter()
-            .all(|edge| edge.as_deref() == Some(first))
-            .then_some(first)
-    }
-
-    pub fn set_border(&mut self, value: Option<String>) {
-        self.borders = [value.clone(), value.clone(), value.clone(), value];
-    }
-}
-
 /// A border as its three parts — width in points, line style, colour.
 ///
 /// Not how a border is *stored*: this exists because LibreOffice re-quantises the width
-/// (§5.4), so anything comparing two borders across a round trip has to compare the number
-/// rather than the text. `None` for anything that is not the three-part form, including
-/// ODF's `"none"`.
+/// (doc/ods-format.md §5.4), so anything comparing two borders across a round trip has to
+/// compare the number rather than the text. `None` for anything that is not the three-part
+/// form, including ODF's `"none"`.
 pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
     let mut fields = border.split_whitespace();
     let width = fields.next()?;
@@ -141,8 +82,8 @@ pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
 
 /// An ODF length (`"2.258cm"`, `"0.889in"`, `"64pt"`) in millimetres.
 ///
-/// The one parser, in one place — column widths and row heights are stored as the strings
-/// the document wrote (see [`crate::model::Sheet::col_width`]), and everything that has to
+/// The one parser, in one place — a column width, a row height, a page margin and a paragraph
+/// indent are all stored as the strings the document wrote, and everything that has to
 /// *measure* one comes through here: a renderer laying out a grid, and loop C comparing a
 /// width across a round trip that respells `2.258cm` as `22.58mm`.
 ///
@@ -188,22 +129,6 @@ mod tests {
     }
 
     #[test]
-    fn the_border_shorthand_is_four_edges_that_agree() {
-        let mut style = CellStyle::default();
-        assert_eq!(style.uniform_border(), None);
-
-        style.set_border(Some("0.5pt solid #000000".into()));
-        assert_eq!(style.uniform_border(), Some("0.5pt solid #000000"));
-
-        // One edge differing is no longer the shorthand.
-        style.borders[1] = Some("1pt solid #ff0000".into());
-        assert_eq!(style.uniform_border(), None);
-        // Nor is a missing edge, which is not the same as an edge set to "none".
-        style.borders[1] = None;
-        assert_eq!(style.uniform_border(), None);
-    }
-
-    #[test]
     fn a_border_splits_into_a_width_a_style_and_a_colour() {
         assert_eq!(
             border_parts("0.51pt solid #000000"),
@@ -211,5 +136,13 @@ mod tests {
         );
         assert_eq!(border_parts("none"), None);
         assert_eq!(border_parts("0.5mm solid #000000"), None);
+    }
+
+    #[test]
+    fn a_palette_name_resolves_case_insensitively_and_nothing_else_does() {
+        assert_eq!(palette("navy"), Some("#001f3f"));
+        assert_eq!(palette(" Navy "), Some("#001f3f"));
+        assert_eq!(palette("#001f3f"), None, "a hex is kept, not looked up");
+        assert_eq!(palette("chartreuse"), None);
     }
 }

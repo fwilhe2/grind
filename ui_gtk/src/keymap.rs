@@ -17,7 +17,7 @@
 //! adds `Enter`, `Edit` and `Point`, and the signature grows a `mode` parameter then —
 //! `state.rs` in the plan owns that machine, and this one keeps the keys.
 
-use sheet_core::Pos;
+use grind_sheet::Pos;
 
 /// A key, as this shell cares about it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

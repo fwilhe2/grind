@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `sheet-web` — the browser shell over `sheet-core`.
+//! `sheet-web` — the browser shell over `grind-sheet`.
 //!
 //! A third kind of shell. `sheet-cli` and `sheet-tui` are Rust calling the core
 //! directly and `sheet-gtk` is Rust through GTK's bindings; this one is Rust
@@ -36,9 +36,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sheet_core::formula::{display, lex};
-use sheet_core::style::{CellStyle, EDGES};
-use sheet_core::{App, CellValue, Form, Observer, Pos, RecalcMode, a1};
+use grind_sheet::formula::{display, lex};
+use grind_sheet::style::{CellStyle, EDGES};
+use grind_sheet::{App, CellValue, Form, Observer, Pos, RecalcMode, a1};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{

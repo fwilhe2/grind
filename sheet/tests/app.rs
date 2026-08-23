@@ -8,7 +8,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use sheet_core::{App, CellValue, Entered, Observer, Pos, Recalc, RecalcMode};
+use grind_sheet::{App, CellValue, Entered, Observer, Pos, Recalc, RecalcMode};
 
 fn p(row: u32, col: u32) -> Pos {
     Pos::new(row, col)
@@ -250,7 +250,7 @@ fn recalc_counts_the_values_it_spoiled() {
     app.set_formula(0, p(1, 0), "=[.A1]*2").unwrap();
 
     // A cached value from elsewhere, for a function this build does not have.
-    let doc = app.save_bytes(sheet_core::Form::Flat).unwrap();
+    let doc = app.save_bytes(grind_sheet::Form::Flat).unwrap();
     let app = App::new();
     app.open_bytes("book.fods", &doc).unwrap();
     app.set_formula(0, p(2, 0), "=SUBTOTAL(9;[.A1:.A2])")
@@ -298,7 +298,7 @@ fn a_session_carries_history_between_apps() {
     let first = App::new();
     first.set_cell(0, p(0, 0), 1.0).unwrap();
     first.set_cell(0, p(0, 0), 2.0).unwrap();
-    let bytes = first.save_bytes(sheet_core::Form::Flat).unwrap();
+    let bytes = first.save_bytes(grind_sheet::Form::Flat).unwrap();
     let session = serde_json::to_string(&first.session()).unwrap();
 
     let second = App::new();
@@ -317,7 +317,7 @@ fn a_session_carries_history_between_apps() {
 #[test]
 fn a_session_naming_a_missing_sheet_fails_to_undo_rather_than_panicking() {
     let app = App::new();
-    let stale: sheet_core::Session = serde_json::from_str(
+    let stale: grind_sheet::Session = serde_json::from_str(
         r#"{"undo":[{"SetCell":{"sheet":9,"pos":{"row":0,"col":0},"value":"Empty"}}]}"#,
     )
     .unwrap();
@@ -788,7 +788,7 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
         // The one step a shell always takes: what an editor holds is display form, and
         // `enter` takes the canonical syntax the file stores.
         let typed = match shown.starts_with('=') {
-            true => sheet_core::formula::display::from_display(&shown).unwrap(),
+            true => grind_sheet::formula::display::from_display(&shown).unwrap(),
             false => shown.clone(),
         };
         app.enter(0, p(row, 0), &typed, RecalcMode::No).unwrap();
@@ -816,8 +816,8 @@ fn a_date_formatted_cell_is_edited_as_a_date_not_a_serial() {
         0,
         p(0, 0),
         p(0, 0),
-        Some(sheet_core::numfmt::preset(
-            sheet_core::numfmt::Kind::Date,
+        Some(grind_sheet::numfmt::preset(
+            grind_sheet::numfmt::Kind::Date,
             0,
             false,
             "",
@@ -866,8 +866,8 @@ fn a_style_reads_back_and_rides_in_the_viewport() {
         0,
         p(0, 0),
         p(0, 0),
-        Some(sheet_core::numfmt::preset(
-            sheet_core::numfmt::Kind::Percentage,
+        Some(grind_sheet::numfmt::preset(
+            grind_sheet::numfmt::Kind::Percentage,
             1,
             false,
             "",
@@ -875,7 +875,7 @@ fn a_style_reads_back_and_rides_in_the_viewport() {
     )
     .unwrap();
     let format = app.format_at(0, p(0, 0)).unwrap().unwrap();
-    assert_eq!(format.kind, sheet_core::numfmt::Kind::Percentage);
+    assert_eq!(format.kind, grind_sheet::numfmt::Kind::Percentage);
 
     let v = app.get_viewport(0, 0..2, 0..2).unwrap();
     let seen = v

@@ -5,7 +5,7 @@
 //! `sheet-gtk` — the GNOME shell, and phase 9's first one.
 //!
 //! A renderer and an event forwarder that owns nothing (doc/plan.md rule 1). All state is
-//! in `sheet-core`'s [`App`]; this crate holds a window, a grid that draws whatever
+//! in `grind-sheet`'s [`App`]; this crate holds a window, a grid that draws whatever
 //! [`App::get_viewport`] returns, and the keys and editing around it. If a field shows up
 //! here that is not a presentation concern, the core is missing something.
 //!
@@ -36,8 +36,8 @@ use libadwaita as adw;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
+use grind_sheet::{App, Form, Observer, a1};
 use gtk::{gio, glib};
-use sheet_core::{App, Form, Observer, a1};
 
 use grid::{Grid, Notice};
 
@@ -455,7 +455,7 @@ impl Ui {
                 // There is no `App::reset`, and there does not need to be: an empty document
                 // written and read back is one, through the same path a file takes.
                 let Ok(bytes) =
-                    sheet_core::write_bytes(&sheet_core::Document::default(), Form::Flat)
+                    grind_sheet::write_bytes(&grind_sheet::Document::default(), Form::Flat)
                 else {
                     return;
                 };
@@ -928,7 +928,7 @@ impl Ui {
             .website("https://github.com/fwilhe2/sheet")
             .license_type(gtk::License::Agpl30)
             .comments("An ODF-native spreadsheet.")
-            .debug_info(sheet_core::build_info::describe(
+            .debug_info(grind_sheet::build_info::describe(
                 "sheet-gtk",
                 env!("CARGO_PKG_VERSION"),
             ))
@@ -1004,7 +1004,7 @@ fn name_row(
 /// The friendly spelling because a list is read rather than edited — `Round(Value: A1;
 /// Digits: 2)` answers "what does this cell do" quicker than `=ROUND(A1;2)` does, and the
 /// address line underneath still names the cell to go and look at.
-fn headline(calc: &sheet_core::Calculation) -> String {
+fn headline(calc: &grind_sheet::Calculation) -> String {
     chrome::friendly_line(&calc.formula).unwrap_or_else(|| calc.formula.clone())
 }
 
@@ -1018,7 +1018,7 @@ fn counted(n: usize, one: &str, many: &str) -> String {
 }
 
 /// The line above the list: how many were found, and which functions they call.
-fn tally(found: &[sheet_core::Calculation]) -> String {
+fn tally(found: &[grind_sheet::Calculation]) -> String {
     if found.is_empty() {
         return "Nothing here is calculated. A cell starting with = is.".to_owned();
     }
@@ -1026,7 +1026,7 @@ fn tally(found: &[sheet_core::Calculation]) -> String {
         1 => "1 calculation".to_owned(),
         n => format!("{n} calculations"),
     };
-    let functions = sheet_core::function_tally(found);
+    let functions = grind_sheet::function_tally(found);
     match functions.is_empty() {
         true => counted,
         false => format!(
@@ -1241,7 +1241,7 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
 
 #[cfg(test)]
 mod tests {
-    use sheet_core::{Calculation, Pos};
+    use grind_sheet::{Calculation, Pos};
 
     fn calc(formula: &str, functions: &[&str]) -> Calculation {
         Calculation {

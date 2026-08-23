@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Event routing and rendering. Holds no spreadsheet state of its own — cells come from
-//! [`sheet_core::App::get_viewport`] every frame, exactly as `ui_gtk/src/grid.rs` reads it.
+//! [`grind_sheet::App::get_viewport`] every frame, exactly as `ui_gtk/src/grid.rs` reads it.
 //! The only fields here are presentation concerns: the active cell, the scroll offset, the
 //! editing mode and a status line.
 //!
@@ -24,8 +24,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use sheet_core::formula::{display, lex};
-use sheet_core::{App as CoreApp, Observer, Pos, RecalcMode};
+use grind_sheet::formula::{display, lex};
+use grind_sheet::{App as CoreApp, Observer, Pos, RecalcMode};
 
 use crate::keymap::{self, Action, Dir, Motion};
 
@@ -333,7 +333,7 @@ impl App {
         let found = match target.parse::<usize>() {
             Ok(n) if n >= 1 && n <= self.core.sheet_count() => Some(n - 1),
             Ok(_) => None,
-            Err(_) => sheet_core::a1::sheet(&self.core, target).ok(),
+            Err(_) => grind_sheet::a1::sheet(&self.core, target).ok(),
         };
         match found {
             Some(i) => {
@@ -347,7 +347,7 @@ impl App {
     }
 
     fn cmd_jump(&mut self, addr: &str) {
-        match sheet_core::a1::parse(addr).and_then(|r| sheet_core::a1::resolve(&self.core, &r)) {
+        match grind_sheet::a1::parse(addr).and_then(|r| grind_sheet::a1::resolve(&self.core, &r)) {
             Ok((sheet, start, _end)) => {
                 self.sheet = sheet;
                 self.active = start;
@@ -433,7 +433,7 @@ impl App {
         frame.render_widget(Paragraph::new(lines), grid_area);
 
         let sheet_name = self.core.sheet_name(self.sheet).unwrap_or_default();
-        let addr = sheet_core::a1::format(None, self.active);
+        let addr = grind_sheet::a1::format(None, self.active);
         let content = match &self.mode {
             Mode::Insert { buf, .. } => buf.iter().collect::<String>(),
             _ => self
@@ -538,7 +538,7 @@ mod tests {
         );
         assert_eq!(
             app.core.get(0, Pos::new(0, 0)).unwrap(),
-            sheet_core::CellValue::Empty
+            grind_sheet::CellValue::Empty
         );
     }
 
@@ -551,7 +551,7 @@ mod tests {
         assert!(matches!(app.mode, Mode::Normal));
         assert_eq!(
             app.core.get(0, Pos::new(0, 0)).unwrap(),
-            sheet_core::CellValue::Empty
+            grind_sheet::CellValue::Empty
         );
     }
 
@@ -576,7 +576,7 @@ mod tests {
         press(&mut app, KeyCode::Char('x'));
         assert_eq!(
             app.core.get(0, Pos::new(0, 0)).unwrap(),
-            sheet_core::CellValue::Empty
+            grind_sheet::CellValue::Empty
         );
         press(&mut app, KeyCode::Char('u'));
         assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), 5.0.into());

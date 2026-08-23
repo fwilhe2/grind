@@ -8,16 +8,16 @@
 
 /// The commit `HEAD` pointed at when this binary was built, `"unknown"` outside a git
 /// checkout (a source tarball, say).
-pub const COMMIT: &str = env!("SHEET_BUILD_COMMIT");
+pub const COMMIT: &str = env!("GRIND_BUILD_COMMIT");
 
 /// `"clean"` or `"dirty"` — whether `git status --porcelain` had anything to say.
-pub const TREE: &str = env!("SHEET_BUILD_TREE");
+pub const TREE: &str = env!("GRIND_BUILD_TREE");
 
 /// UTC build timestamp, `YYYY-MM-DDTHH:MM:SSZ`.
-pub const DATE: &str = env!("SHEET_BUILD_DATE");
+pub const DATE: &str = env!("GRIND_BUILD_DATE");
 
 /// `version` is the caller's own (`CARGO_PKG_VERSION`), since every shell is its own crate
-/// and this one built `sheet-core`, not them. For a caller (clap) that already prints its
+/// and this one built `grind-core`, not them. For a caller (clap) that already prints its
 /// own `name version` header; see [`describe`] for a standalone one.
 pub fn describe_version(version: &str) -> String {
     let profile = if cfg!(debug_assertions) {

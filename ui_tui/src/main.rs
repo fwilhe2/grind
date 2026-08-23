@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `sheet-tui` — a vi-style terminal shell over `sheet-core`.
+//! `sheet-tui` — a vi-style terminal shell over `grind-sheet`.
 //!
-//! Pure Rust, so it depends on `sheet-core` directly: no FFI, no bindings. The loop is
+//! Pure Rust, so it depends on `grind-sheet` directly: no FFI, no bindings. The loop is
 //! render → block on a key → route it to the core, and every capability it offers also
 //! exists in the CLI (doc/plan.md rule 4).
 //!
@@ -30,7 +30,7 @@ use ratatui::crossterm::terminal::{
 };
 
 use app::{App, RedrawFlag};
-use sheet_core::App as CoreApp;
+use grind_sheet::App as CoreApp;
 
 /// The ODF sheet limits, and the only bound `keymap::moved` clamps a plain move to.
 pub const MAX_ROWS: u32 = 1_048_576;
@@ -74,7 +74,7 @@ fn main() -> ExitCode {
     {
         println!(
             "sheet-tui {}",
-            sheet_core::build_info::describe_version(env!("CARGO_PKG_VERSION"))
+            grind_sheet::build_info::describe_version(env!("CARGO_PKG_VERSION"))
         );
         return ExitCode::SUCCESS;
     }

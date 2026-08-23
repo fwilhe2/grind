@@ -31,8 +31,8 @@
 
 use std::ops::Range;
 
-use sheet_core::formula::display::{self, TokenKind};
-use sheet_core::{Pos, a1};
+use grind_sheet::formula::display::{self, TokenKind};
+use grind_sheet::{Pos, a1};
 
 use crate::keymap::{self, Dir, Key, Mods, Motion};
 

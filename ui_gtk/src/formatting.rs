@@ -34,10 +34,10 @@ use libadwaita::prelude::*;
 
 use gtk::{gdk, glib};
 
-use sheet_core::App;
-use sheet_core::locale::Locale;
-use sheet_core::numfmt::{self, Kind};
-use sheet_core::style::{self, CellStyle};
+use grind_sheet::App;
+use grind_sheet::locale::Locale;
+use grind_sheet::numfmt::{self, Kind};
+use grind_sheet::style::{self, CellStyle};
 
 use crate::grid::{Grid, Notice};
 
@@ -592,7 +592,7 @@ impl Picker {
                     return;
                 };
                 let locale = match picker.locale.text().trim() {
-                    "" => sheet_core::locale::from_environment(),
+                    "" => grind_sheet::locale::from_environment(),
                     tag => match Locale::parse(tag) {
                         Some(locale) => Some(locale),
                         // A tag that is not a tag is a typo, not a format: say so and change

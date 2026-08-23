@@ -26,12 +26,12 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sheet_core::filter::Filter;
-use sheet_core::locale::Locale;
-use sheet_core::model::NumberKind;
-use sheet_core::numfmt::{Format, Kind, Map, Op, Part};
-use sheet_core::style::{self, CellStyle};
-use sheet_core::{CellValue, Document, Form, Pos, Sheet};
+use grind_sheet::filter::Filter;
+use grind_sheet::locale::Locale;
+use grind_sheet::model::NumberKind;
+use grind_sheet::numfmt::{Format, Kind, Map, Op, Part};
+use grind_sheet::style::{self, CellStyle};
+use grind_sheet::{CellValue, Document, Form, Pos, Sheet};
 
 const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
 
@@ -114,7 +114,7 @@ fn converted(out: &Path, input: &Path) -> Document {
         "LibreOffice produced no output for {}: it could not open what we wrote",
         input.display()
     );
-    sheet_core::read_file(&path).unwrap_or_else(|e| panic!("re-reading {}: {e}", path.display()))
+    grind_sheet::read_file(&path).unwrap_or_else(|e| panic!("re-reading {}: {e}", path.display()))
 }
 
 // --- comparison ------------------------------------------------------------------------
@@ -320,7 +320,7 @@ fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
 fn shown(sheet: &Sheet, pos: Pos, doc: &Document) -> String {
     match sheet.format(pos) {
         Some(format) => format.render(&sheet.get(pos), doc.null_date),
-        None => sheet_core::numfmt::general(&sheet.get(pos), sheet.kind(pos), doc.null_date),
+        None => grind_sheet::numfmt::general(&sheet.get(pos), sheet.kind(pos), doc.null_date),
     }
 }
 
@@ -346,8 +346,8 @@ fn case(name: &str, cells: &[(u32, u32, CellValue)]) -> (String, Document) {
 /// serial number where the document meant a date, the user sees 30347 instead of a date and
 /// the feature is not real.
 fn dates() -> (String, Document) {
-    let e = sheet_core::formula::date::DEFAULT_NULL_DATE;
-    let day = |y, m, d| sheet_core::formula::date::serial(y, m, d, e);
+    let e = grind_sheet::formula::date::DEFAULT_NULL_DATE;
+    let day = |y, m, d| grind_sheet::formula::date::serial(y, m, d, e);
 
     let mut doc = Document {
         sheets: vec![Sheet::new("Data")],
@@ -470,7 +470,7 @@ fn formats() -> (String, Document) {
         (CellValue::Number(-19.99), None, currency.clone()),
         (CellValue::Number(19.99), None, currency),
         (
-            CellValue::Number(sheet_core::formula::date::serial(2026, 8, 16, epoch)),
+            CellValue::Number(grind_sheet::formula::date::serial(2026, 8, 16, epoch)),
             Some(NumberKind::Date),
             date,
         ),
@@ -737,7 +737,7 @@ fn documents_we_write_survive_libreoffice() {
         .iter()
         .flat_map(|(name, doc)| {
             [(Form::Flat, "fods"), (Form::Package, "ods")].map(|(form, ext)| {
-                let bytes = sheet_core::write_bytes(doc, form).unwrap();
+                let bytes = grind_sheet::write_bytes(doc, form).unwrap();
                 // Distinct stems: LO names its output after the input's stem, so
                 // `x.ods` and `x.fods` would both convert onto `x.fods`.
                 let path = lab.input(&format!("{name}-{ext}.{ext}"), &bytes);
@@ -805,7 +805,7 @@ fn sample(root: &Path) -> Vec<PathBuf> {
         .iter()
         .filter_map(|path| {
             // Unreadable or encrypted: loop A owns that verdict, not this one.
-            let doc = sheet_core::read_file(path).ok()?;
+            let doc = grind_sheet::read_file(path).ok()?;
             let biggest = doc
                 .sheets
                 .iter()
@@ -854,8 +854,8 @@ fn libreoffice_documents_survive_our_writer() {
         .iter()
         .enumerate()
         .map(|(i, path)| {
-            let doc = sheet_core::read_file(path).unwrap();
-            let bytes = sheet_core::write_bytes(&doc, Form::Package).unwrap();
+            let doc = grind_sheet::read_file(path).unwrap();
+            let bytes = grind_sheet::write_bytes(&doc, Form::Package).unwrap();
             // Numbered: corpus stems are not unique across `ods/` and `fods/`.
             let staged = lab.input(&format!("{i:03}.ods"), &bytes);
             (path.clone(), doc, staged)
@@ -958,7 +958,7 @@ fn kb_documents_render_the_same_in_libreoffice() {
 
     let mut failures = Vec::new();
     for (name, path) in &staged {
-        let app = sheet_core::App::new();
+        let app = grind_sheet::App::new();
         app.open_file(path)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         app.recalc().unwrap_or_else(|e| panic!("{name}: {e}"));

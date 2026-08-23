@@ -18,18 +18,18 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use sheet_core::a1;
-use sheet_core::formula::lex::column_name;
-use sheet_core::numfmt;
-use sheet_core::style::{self, CellStyle};
-use sheet_core::{App, CellValue, Pos, RecalcMode, Session};
+use grind_sheet::a1;
+use grind_sheet::formula::lex::column_name;
+use grind_sheet::numfmt;
+use grind_sheet::style::{self, CellStyle};
+use grind_sheet::{App, CellValue, Pos, RecalcMode, Session};
 
 use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
 
 fn long_version() -> &'static str {
     use std::sync::OnceLock;
     static VERSION: OnceLock<String> = OnceLock::new();
-    VERSION.get_or_init(|| sheet_core::build_info::describe_version(env!("CARGO_PKG_VERSION")))
+    VERSION.get_or_init(|| grind_sheet::build_info::describe_version(env!("CARGO_PKG_VERSION")))
 }
 
 #[derive(Parser)]
@@ -242,7 +242,7 @@ enum Command {
         /// Locale for the decimal and grouping characters, e.g. de-DE. Defaults to
         /// $SHEET_LOCALE, then $XDG_CONFIG_HOME/sheet/locale, then none.
         #[arg(long, value_parser = locale)]
-        locale: Option<sheet_core::locale::Locale>,
+        locale: Option<grind_sheet::locale::Locale>,
         /// Print the format of one cell instead of setting one
         #[arg(long, conflicts_with_all = ["decimals", "grouping", "symbol", "locale"])]
         show: bool,
@@ -647,7 +647,11 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 style => Some(numfmt::preset(kind(style), *decimals, *grouping, symbol)),
             }
             .map(|format| {
-                format.in_locale(locale.clone().or_else(sheet_core::locale::from_environment))
+                format.in_locale(
+                    locale
+                        .clone()
+                        .or_else(grind_sheet::locale::from_environment),
+                )
             });
             let changed = app.set_format(sheet, start, end, format).say()?;
             finish(&app, cli, file, changed > 0)
@@ -841,7 +845,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 app.set_filter(sheet, None).say()?;
                 return finish(&app, cli, file, true);
             }
-            let mut filter = sheet_core::Filter::new(
+            let mut filter = grind_sheet::Filter::new(
                 // The name LibreOffice gives an autofilter nobody named.
                 "__Anonymous_Sheet_DB__0",
                 start,
@@ -934,15 +938,15 @@ fn run(cli: &Cli) -> Result<Report, String> {
             friendly,
             inline,
         } => {
-            use sheet_core::formula::display;
+            use grind_sheet::formula::display;
             let line = match (display, from_display, friendly) {
                 (true, _, _) => display::to_display(formula).say()?,
                 (_, true, _) => display::from_display(formula).say()?,
                 (_, _, true) if *inline => {
-                    sheet_core::formula::friendly::explain_inline(formula).say()?
+                    grind_sheet::formula::friendly::explain_inline(formula).say()?
                 }
-                (_, _, true) => sheet_core::formula::friendly::explain(formula).say()?,
-                _ => format!("={}", sheet_core::formula::parse::parse(formula).say()?),
+                (_, _, true) => grind_sheet::formula::friendly::explain(formula).say()?,
+                _ => format!("={}", grind_sheet::formula::parse::parse(formula).say()?),
             };
             Ok(Report::Text(TextReport { lines: vec![line] }))
         }
@@ -967,7 +971,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     )
                 })
                 .collect();
-            let tally = sheet_core::function_tally(&found);
+            let tally = grind_sheet::function_tally(&found);
             let counted = match found.len() {
                 1 => "1 calculation".to_owned(),
                 n => format!("{n} calculations"),
@@ -988,7 +992,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
         }
 
         Command::Functions { long, filter } => {
-            let names = sheet_core::formula::funcs::implemented();
+            let names = grind_sheet::formula::funcs::implemented();
             let matches = |name: &str| {
                 filter
                     .as_ref()
@@ -997,16 +1001,16 @@ fn run(cli: &Cli) -> Result<Report, String> {
             // The catalog is the same list with the spec's own summary and syntax beside
             // each name — what a GUI's autocomplete offers, so the two cannot disagree.
             let mut lines: Vec<String> = match long {
-                true => sheet_core::formula::funcs::catalog()
+                true => grind_sheet::formula::funcs::catalog()
                     .iter()
                     .filter(|info| matches(info.name))
                     .map(|info| {
                         // The friendly signature carries the alias in its head, so it is one
                         // column rather than two: `Present Value(Rate; Number Of Periods; …)`.
-                        let friendly = sheet_core::formula::friendly::signature(info.name)
+                        let friendly = grind_sheet::formula::friendly::signature(info.name)
                             .map(|(head, params)| format!("{head}({})", params.join("; ")))
                             .unwrap_or_else(|| info.name.to_owned());
-                        let category = sheet_core::formula::funcs::category(info);
+                        let category = grind_sheet::formula::funcs::category(info);
                         format!(
                             "{}\t{friendly}\t{category}\t{}\t§{}",
                             info.signature, info.brief, info.section
@@ -1020,13 +1024,13 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     .collect(),
             };
             lines.sort();
-            let beyond = sheet_core::formula::funcs::beyond_small_group();
+            let beyond = grind_sheet::formula::funcs::beyond_small_group();
             // Not "112 of 110": the Small Group is the conformance claim and the functions
             // moved in beside it are counted apart, or the line reads as broken arithmetic.
             let mut summary = format!(
                 "{} of the Small Group's {}",
                 names.len() - beyond.len(),
-                sheet_core::formula::funcs::SMALL_GROUP
+                grind_sheet::formula::funcs::SMALL_GROUP
             );
             if !beyond.is_empty() {
                 summary.push_str(&format!(
@@ -1058,8 +1062,8 @@ impl<T, E: std::fmt::Display> Say<T> for std::result::Result<T, E> {
 }
 
 /// A locale tag as a person types one — `de-DE`, or a bare `de`.
-fn locale(value: &str) -> Result<sheet_core::locale::Locale, String> {
-    sheet_core::locale::Locale::parse(value)
+fn locale(value: &str) -> Result<grind_sheet::locale::Locale, String> {
+    grind_sheet::locale::Locale::parse(value)
         .ok_or_else(|| format!("{value}: expected a language tag like de-DE"))
 }
 

@@ -150,9 +150,9 @@ pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
 pub fn reference_colors(text: &str, dark: bool) -> Vec<(std::ops::Range<usize>, gdk::RGBA)> {
     let palette = reference_palette(dark);
     let mut seen: Vec<&str> = Vec::new();
-    sheet_core::formula::display::spans(text)
+    grind_sheet::formula::display::spans(text)
         .into_iter()
-        .filter(|span| span.kind == sheet_core::formula::display::TokenKind::Ref)
+        .filter(|span| span.kind == grind_sheet::formula::display::TokenKind::Ref)
         .map(|span| {
             let source = &text[span.range.clone()];
             let index = seen.iter().position(|s| *s == source).unwrap_or_else(|| {

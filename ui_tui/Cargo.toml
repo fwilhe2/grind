@@ -15,11 +15,11 @@ name = "sheet-tui"
 path = "src/main.rs"
 
 [dependencies]
-sheet-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
 # crossterm is used through `ratatui::crossterm`, so the two can never drift apart.
 ratatui = "0.30"
 
-# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `sheet-core` is
+# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.
 [package.metadata.deb]
 name = "sheet-tui"

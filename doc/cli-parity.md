@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 This file is that rule made mechanical. Every public method of `App` appears below exactly
 once, with the command that reaches it or the reason it is not reachable. `cli/tests/parity.rs`
-reads `core/src/lib.rs` and this file and fails the build when they disagree — so adding a
+reads `sheet/src/lib.rs` and this file and fails the build when they disagree — so adding a
 capability to the core without exposing it breaks CI, and so does deleting a command that
 this file still claims.
 

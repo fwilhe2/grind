@@ -15,12 +15,12 @@ name = "sheet"
 path = "src/main.rs"
 
 [dependencies]
-sheet-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `sheet-core` is
+# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.
 [package.metadata.deb]
 name = "sheet-cli"

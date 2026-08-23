@@ -19,7 +19,7 @@ use std::ops::Range;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use sheet_core::formula::{friendly, funcs};
+use grind_sheet::formula::{friendly, funcs};
 
 use crate::geom::Rect;
 

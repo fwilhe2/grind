@@ -14,8 +14,8 @@
 //! to track a pending first key). One key does the same job here; upgrade if a document ever
 //! needs a literal `g` bound to something else.
 
+use grind_sheet::Pos;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
-use sheet_core::Pos;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {

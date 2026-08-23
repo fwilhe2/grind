@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 [workspace]
-members = ["core", "cli", "ui_gtk", "ui_tui", "ui_web"]
+members = ["core", "sheet", "cli", "ui_gtk", "ui_tui", "ui_web"]
 resolver = "3"
 
 [workspace.package]
