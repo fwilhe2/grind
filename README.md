@@ -178,6 +178,18 @@ that everything written validates against the OASIS RELAX NG schema.
 
 ## Building
 
+Install Rust via [rustup](https://rustup.rs/) rather than your distribution's package —
+this tracks current stable, which is what CI builds against. The GTK shell also needs
+GTK 4 and libadwaita development headers:
+
+```sh
+# Debian / Ubuntu
+sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
+
+# Fedora
+sudo dnf install -y gtk4-devel libadwaita-devel
+```
+
 ```sh
 cargo test                       # everything but the GTK shell
 cargo test -p sheet-gtk          # its widget-free half: geometry, keys, edit state
