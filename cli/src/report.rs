@@ -71,6 +71,14 @@ pub struct Cell {
 #[derive(Debug, Serialize)]
 pub struct DocumentReport {
     pub path: String,
+    /// What kind of document this is — `"spreadsheet"`, `"text document"`.
+    ///
+    /// Only `grind info` fills it in. Every other report comes from a command that already
+    /// named the kind by being under `grind sheet`, and printing it there would put a word
+    /// nobody asked for at the top of every `set`. Skipped in JSON when absent for the same
+    /// reason `stale` is: a field every consumer has to ignore is worse than no field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<&'static str>,
     pub changed: bool,
     pub written: bool,
     /// Formula cells whose cached value a recalculation would change — a document that
@@ -157,6 +165,9 @@ impl Report {
                 }
             }
             Report::Document(doc) => {
+                if let Some(kind) = doc.kind {
+                    println!("{kind}");
+                }
                 for sheet in &doc.sheets {
                     println!(
                         "{}\t{} rows\t{} cols\t{} formulas",

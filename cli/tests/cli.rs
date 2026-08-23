@@ -18,7 +18,7 @@ struct Sandbox(PathBuf);
 impl Sandbox {
     fn new(name: &str) -> Self {
         let dir = std::env::temp_dir().join(format!(
-            "sheet-cli-{name}-{}-{:?}",
+            "grind-cli-{name}-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -38,22 +38,41 @@ impl Drop for Sandbox {
     }
 }
 
-fn sheet(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_sheet"))
+/// Run `grind` with exactly these arguments — for the suite-level verbs, which sit at the top
+/// level and take no application name.
+fn grind(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_grind"))
         .args(args)
-        // A developer's own `~/.config/sheet/locale` must not leak into a test that
+        // A developer's own `~/.config/grind/locale` must not leak into a test that
         // asserts specific separators — every test spawns through here, so this is the
         // one place that needs to say so.
-        .env_remove("SHEET_LOCALE")
+        .env_remove("GRIND_LOCALE")
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("HOME")
         .output()
         .expect("the binary runs")
 }
 
-/// Run, require success, return stdout.
+/// Run `grind sheet …` — the spreadsheet application. Most of this file wants this one, so it
+/// prepends the app name rather than making every call site spell it.
+fn sheet(args: &[&str]) -> Output {
+    let mut argv = vec!["sheet"];
+    argv.extend_from_slice(args);
+    grind(&argv)
+}
+
+/// Run `grind sheet …`, require success, return stdout.
 fn ok(args: &[&str]) -> String {
-    let output = sheet(args);
+    succeeds(sheet(args), args)
+}
+
+/// The same for a suite-level verb — `grind info`, `grind convert` — which takes no
+/// application name because it works out the kind from the file.
+fn ok_top(args: &[&str]) -> String {
+    succeeds(grind(args), args)
+}
+
+fn succeeds(output: Output, args: &[&str]) -> String {
     assert!(
         output.status.success(),
         "{args:?} failed: {}",
@@ -84,7 +103,7 @@ fn a_new_document_has_one_empty_sheet() {
     ok(&["new", &s(&file)]);
     assert!(file.exists());
 
-    let json = ok(&["--format", "json", "info", &s(&file)]);
+    let json = ok_top(&["--format", "json", "info", &s(&file)]);
     assert_eq!(field(&json, "name"), "Sheet1");
     assert_eq!(field(&json, "rows"), "0");
     assert_eq!(field(&json, "cols"), "0");
@@ -364,7 +383,7 @@ fn the_sample_script_still_builds_its_document() {
     let output = Command::new("bash")
         .arg(&script)
         .arg(s(&dir.path("out")))
-        .env("SHEET", env!("CARGO_BIN_EXE_sheet"))
+        .env("GRIND", env!("CARGO_BIN_EXE_grind"))
         .output()
         .expect("bash runs");
     assert!(
@@ -550,7 +569,7 @@ fn a_named_range_can_be_defined_and_used_from_a_formula() {
 
     // Both survive the round trip through the file, which is the only thing that makes a
     // name worth having.
-    assert!(ok(&["info", &s(&file)]).contains("[$Sheet1.$A$1:.$A$4]"));
+    assert!(ok_top(&["info", &s(&file)]).contains("[$Sheet1.$A$1:.$A$4]"));
 
     // Redefining is not a second name — §5.11 names are case-consistent.
     ok(&["name", &s(&file), "SALES", "A1:A2"]);
@@ -558,7 +577,7 @@ fn a_named_range_can_be_defined_and_used_from_a_formula() {
     assert_eq!(ok(&["get", &s(&file), "C1"]).trim(), "30");
     assert_eq!(
         // Lines, not occurrences: `average` mentions `sales` in its own expression.
-        ok(&["info", &s(&file)])
+        ok_top(&["info", &s(&file)])
             .lines()
             .filter(|l| l.starts_with("sales\t"))
             .count(),
@@ -600,7 +619,7 @@ fn a_name_that_no_formula_could_mention_is_refused() {
             .success()
     );
     assert!(
-        ok(&["info", &s(&file)])
+        ok_top(&["info", &s(&file)])
             .lines()
             .all(|l| !l.starts_with("ok"))
     );
@@ -744,14 +763,14 @@ fn convert_moves_between_the_package_and_flat_forms() {
     ok(&["set", &s(&ods), "A1", "1.5"]);
     ok(&["set", &s(&ods), "B1", "text"]);
 
-    ok(&["convert", &s(&ods), &s(&fods)]);
+    ok_top(&["convert", &s(&ods), &s(&fods)]);
     assert!(
         std::fs::read(&fods).unwrap().starts_with(b"<?xml"),
         "flat form is XML"
     );
     assert_eq!(ok(&["view", &s(&fods), "A1:B1"]), "1.5\ttext\n");
 
-    ok(&["convert", &s(&fods), &s(&back)]);
+    ok_top(&["convert", &s(&fods), &s(&back)]);
     assert_eq!(
         std::fs::read(&back).unwrap()[..2],
         *b"PK",
@@ -860,7 +879,7 @@ fn a_sheet_can_be_added_renamed_and_deleted_from_the_cli() {
     assert!(!output.status.success(), "a duplicate name is refused");
 
     ok(&["remove", &s(&file), "Q3 Actuals"]);
-    let json = ok(&["--format", "json", "info", &s(&file)]);
+    let json = ok_top(&["--format", "json", "info", &s(&file)]);
     assert!(!json.contains("Q3 Actuals"), "gone from the file: {json}");
 
     let output = sheet(&["remove", &s(&file), "Sheet1"]);

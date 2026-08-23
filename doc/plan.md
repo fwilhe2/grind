@@ -41,12 +41,12 @@ a requirement nothing checks is a preference.
 | | Requirement | Checked by |
 |---|---|---|
 | **R1** | The implementation is **fully independent**, and implements ODF natively rather than translating another format. | `CONTRIBUTING.md`'s clean-room rule; `funcs::implemented()` against `doc/small-group.md` |
-| **R2** | Everything written **MUST be valid** against the ODF schema. | `jing -i doc/OpenDocument-v1.4-schema.rng`, in `core/tests/kb.rs` and over `examples/sample.sh`'s output in `cli/tests/cli.rs` |
+| **R2** | Everything written **MUST be valid** against the ODF schema. | `jing -i doc/OpenDocument-v1.4-schema.rng`, in `sheet/tests/kb.rs` and over `examples/sample.sh`'s output in `cli/tests/cli.rs` |
 | **R3** | Output **MUST carry minimal boilerplate** while staying compliant — nothing written that the document does not use. | the writer's own tests; a new document is 13 lines |
 | **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — nothing yet, because nothing needs it |
-| **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `core/tests/kb.rs`'s three LibreOffice-authored files |
-| **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | `core/tests/kb.rs`'s `setting_one_number_changes_one_element`, over all fourteen R7 documents |
-| **R7** | Two named corpora **MUST work**, and are vendored so the requirement cannot skip. Hand-written against the spec (`data/kb/`): `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`. LibreOffice-authored, `odslint-clean`-normalised (`data/samples/`): `Quarterly Sales Report` · `Sales Dashboard` · `conditional-formatting` · `custom-colors` · `spreadsheet` · `table`. All `.fods`. | `core/tests/kb.rs` |
+| **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `sheet/tests/kb.rs`'s three LibreOffice-authored files |
+| **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | `sheet/tests/kb.rs`'s `setting_one_number_changes_one_element`, over all fourteen R7 documents |
+| **R7** | Two named corpora **MUST work**, and are vendored so the requirement cannot skip. Hand-written against the spec (`data/kb/`): `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`. LibreOffice-authored, `odslint-clean`-normalised (`data/samples/`): `Quarterly Sales Report` · `Sales Dashboard` · `conditional-formatting` · `custom-colors` · `spreadsheet` · `table`. All `.fods`. | `sheet/tests/kb.rs` |
 
 Three consequences worth stating rather than discovering:
 
@@ -78,7 +78,7 @@ A spliced document keeps the bytes of the file it came from, and those bytes may
 valid — most of R7's are not. Re-deriving them to fix that is exactly what R6 forbids, so the
 two requirements would contradict each other under any other reading. The rule is therefore:
 **every element this build writes is schema-valid, and a document it merely edits is as
-conformant as the file it came from — no more and no less.** `core/tests/kb.rs` validates the
+conformant as the file it came from — no more and no less.** `sheet/tests/kb.rs` validates the
 *regenerating* writer for that reason, and drops `Document::source` to reach it.
 
 ### One reframing, then I'll stop
@@ -244,7 +244,7 @@ That's it for now. `ffi/`, `ui_*` come later, copied from `editor`'s working sha
 Empty crates now are scaffolding for later; later can scaffold for itself.
 
 ```
-core/src/
+sheet/src/
   grid.rs        the multi-type column store — the one hand-built data structure
   model.rs       Document, Sheet, Cell, CellValue, styles-by-reference
   action.rs      Action enum + inverse (undo/redo, command pattern)
@@ -473,7 +473,7 @@ built to avoid. Instead:
 **Exit:** opening each of R7's fourteen documents, setting one cell, and writing it back
 produces a diff of a **single element** against the original, and it still round-trips
 through LibreOffice (loop C). The fallback path is asserted directly rather than left to be
-inferred. **Done** — `core/tests/kb.rs`, and three things the plan above did not anticipate:
+inferred. **Done** — `sheet/tests/kb.rs`, and three things the plan above did not anticipate:
 
 - **A repeated cell is split, not skipped.** The first draft treated `number-columns-repeated`
   like `number-rows-repeated` and refused both. But LibreOffice writes a row of five empty

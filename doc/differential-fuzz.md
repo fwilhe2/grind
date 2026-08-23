@@ -37,7 +37,7 @@ Both established by probing `soffice` directly, not by reading anything:
 2. **An error's identity survives only in its display text.** `=1/0` returns as
    `office:value-type="string" office:string-value="" calcext:value-type="error"` with
    `<text:p>#DIV/0!</text:p>` — the value attribute is empty and the name is in the
-   paragraph, which the reader already keeps (`core/src/odf/read.rs`, the `cached_error`
+   paragraph, which the reader already keeps (`sheet/src/odf/read.rs`, the `cached_error`
    branch). Some errors come back as LO's internal code instead (`Err:502`), which §5.12 does
    not name, so any error agrees with those — loop B's rule, unchanged. An `=ERROR.TYPE(f)`
    companion cell was planned to recover the kind and is **not** needed: it doubles the
@@ -53,7 +53,7 @@ Both established by probing `soffice` directly, not by reading anything:
 oracle here is a 400 MB office suite whose startup dominates everything, and there is no
 coverage signal from it at all — so what pays is not a mutation loop but a **seeded grammar
 generator** plus batching: thousands of formulas in one document, one `soffice` invocation.
-Deterministic from `SHEET_FUZZ_SEED`, so a disagreement replays exactly.
+Deterministic from `GRIND_FUZZ_SEED`, so a disagreement replays exactly.
 
 Coverage-guided fuzzing *is* the right tool for a different target, and it needs no oracle at
 all: the lexer/parser/serializer, where the property is "never panics, and
@@ -150,7 +150,7 @@ something that happens by CI drifting under it:
    goes in the file.
 2. Run `scripts/soffice-tests.sh` locally — it now uses the *new* pin — and note where
    loop C and loop E's scoreboard land.
-3. If loop E's `matched` count changed, update `FLOOR` in `core/tests/loop_e.rs` and the
+3. If loop E's `matched` count changed, update `FLOOR` in `sheet/tests/loop_e.rs` and the
    figure in this document's "The first run" section together with the image bump, in the
    same commit. A `FLOOR` change with no image bump beside it is a regression, not routine
    maintenance — that is the whole point of pinning.
@@ -176,7 +176,7 @@ one already written down in `doc/ods-format.md` §3.4.
 ## The first run, and what F2 inherits
 
 Seed `0x5EED`, 1000 formulas, on the pinned image: **913 match, 87 disagree**, which is
-`FLOOR` in `core/tests/loop_e.rs`. (It was 911 against the Ubuntu 24.04 package this used to
+`FLOOR` in `sheet/tests/loop_e.rs`. (It was 911 against the Ubuntu 24.04 package this used to
 pin — a borderline `AVERAGEIF`/`NPV`/`SUMIF` case moves by exactly one across a point
 release, which is why the pin is a digest and why the number is only meaningful beside one.
 Since the pin is now an image rather than a distribution package, a local run and a CI run
@@ -201,7 +201,7 @@ nightly and a dev-dependency, so it lands on its own rather than inside this.
 ## Running it
 
 ```sh
-cargo test --test loop_e                       # needs soffice; skips with a notice without it
-SHEET_LOOP_E_DUMP=1 cargo test --test loop_e -- --nocapture   # print every disagreement
-SHEET_FUZZ_SEED=12345 SHEET_LOOP_E_FORMULAS=5000 cargo test --test loop_e
+cargo test -p grind-sheet --test loop_e                       # needs soffice; skips with a notice without it
+GRIND_LOOP_E_DUMP=1 cargo test -p grind-sheet --test loop_e -- --nocapture   # print every disagreement
+GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_FORMULAS=5000 cargo test -p grind-sheet --test loop_e
 ```

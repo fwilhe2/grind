@@ -9,4 +9,4 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/fwilhe2/sheet"
+repository = "https://github.com/fwilhe2/grind"

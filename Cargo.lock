@@ -879,6 +879,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-cli"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "grind-sheet",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "grind-core"
 version = "0.0.0"
 dependencies = [
@@ -896,6 +906,35 @@ dependencies = [
  "serde",
  "serde_json",
  "zip",
+]
+
+[[package]]
+name = "grind-sheet-gtk"
+version = "0.0.0"
+dependencies = [
+ "async-channel",
+ "grind-sheet",
+ "gtk4",
+ "libadwaita",
+]
+
+[[package]]
+name = "grind-tui"
+version = "0.0.0"
+dependencies = [
+ "grind-sheet",
+ "ratatui",
+]
+
+[[package]]
+name = "grind-web"
+version = "0.0.0"
+dependencies = [
+ "grind-sheet",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -1847,45 +1886,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
-]
-
-[[package]]
-name = "sheet-cli"
-version = "0.0.0"
-dependencies = [
- "clap",
- "grind-sheet",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sheet-gtk"
-version = "0.0.0"
-dependencies = [
- "async-channel",
- "grind-sheet",
- "gtk4",
- "libadwaita",
-]
-
-[[package]]
-name = "sheet-tui"
-version = "0.0.0"
-dependencies = [
- "grind-sheet",
- "ratatui",
-]
-
-[[package]]
-name = "sheet-web"
-version = "0.0.0"
-dependencies = [
- "grind-sheet",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

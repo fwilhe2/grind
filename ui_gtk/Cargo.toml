@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 [package]
-name = "sheet-gtk"
+name = "grind-sheet-gtk"
 version = "0.0.0"
 description = "An ODF-native spreadsheet — the GNOME shell"
 edition.workspace = true
@@ -11,7 +11,7 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "sheet-gtk"
+name = "grind-sheet-gtk"
 path = "src/main.rs"
 
 [dependencies]
@@ -35,14 +35,14 @@ async-channel = "2"
 # needs off the built binary (`libgtk-4-1`, `libadwaita-1-0`, …) rather than naming them
 # twice and letting the two lists drift.
 [package.metadata.deb]
-name = "sheet-gtk"
+name = "grind-sheet-gtk"
 maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
 section = "gnome"
 depends = "$auto"
 assets = [
-    ["target/release/sheet-gtk", "usr/bin/sheet-gtk", "755"],
+    ["target/release/grind-sheet-gtk", "usr/bin/grind-sheet-gtk", "755"],
     ["data/io.github.fwilhe2.Sheet.desktop", "usr/share/applications/", "644"],
     ["data/io.github.fwilhe2.Sheet.metainfo.xml", "usr/share/metainfo/", "644"],
     [
@@ -55,9 +55,9 @@ assets = [
 # Read by `cargo generate-rpm` (packaging.yml). It has no `$auto` equivalent, so the
 # shared-library names are spelled out — the same two libraries `depends` above discovers.
 [package.metadata.generate-rpm]
-name = "sheet-gtk"
+name = "grind-sheet-gtk"
 assets = [
-    { source = "target/release/sheet-gtk", dest = "/usr/bin/sheet-gtk", mode = "755" },
+    { source = "target/release/grind-sheet-gtk", dest = "/usr/bin/grind-sheet-gtk", mode = "755" },
     { source = "data/io.github.fwilhe2.Sheet.desktop", dest = "/usr/share/applications/io.github.fwilhe2.Sheet.desktop", mode = "644" },
     { source = "data/io.github.fwilhe2.Sheet.metainfo.xml", dest = "/usr/share/metainfo/io.github.fwilhe2.Sheet.metainfo.xml", mode = "644" },
     { source = "data/icons/hicolor/scalable/apps/io.github.fwilhe2.Sheet.svg", dest = "/usr/share/icons/hicolor/scalable/apps/io.github.fwilhe2.Sheet.svg", mode = "644" },

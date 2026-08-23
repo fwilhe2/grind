@@ -23,4 +23,4 @@ fi
 
 docker pull -q "$(cat ci/libreoffice-image)"
 export PATH="$PWD/scripts/soffice-docker:$PATH"
-exec cargo test -p sheet-core "${args[@]}"
+exec cargo test -p grind-sheet "${args[@]}"

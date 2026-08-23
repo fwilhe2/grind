@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 [package]
-name = "sheet-tui"
+name = "grind-tui"
 version = "0.0.0"
 description = "An ODF-native spreadsheet — the terminal shell"
 edition.workspace = true
@@ -11,7 +11,7 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "sheet-tui"
+name = "grind-tui"
 path = "src/main.rs"
 
 [dependencies]
@@ -22,14 +22,14 @@ ratatui = "0.30"
 # Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.
 [package.metadata.deb]
-name = "sheet-tui"
+name = "grind-tui"
 maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
 section = "utils"
-assets = [["target/release/sheet-tui", "usr/bin/sheet-tui", "755"]]
+assets = [["target/release/grind-tui", "usr/bin/grind-tui", "755"]]
 
 # Read by `cargo generate-rpm` (packaging.yml).
 [package.metadata.generate-rpm]
-name = "sheet-tui"
-assets = [{ source = "target/release/sheet-tui", dest = "/usr/bin/sheet-tui", mode = "755" }]
+name = "grind-tui"
+assets = [{ source = "target/release/grind-tui", dest = "/usr/bin/grind-tui", mode = "755" }]

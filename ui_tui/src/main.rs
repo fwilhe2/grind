@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `sheet-tui` — a vi-style terminal shell over `grind-sheet`.
+//! `grind-tui` — a vi-style terminal shell over `grind-sheet`.
 //!
 //! Pure Rust, so it depends on `grind-sheet` directly: no FFI, no bindings. The loop is
 //! render → block on a key → route it to the core, and every capability it offers also
@@ -38,9 +38,9 @@ pub const MAX_COLS: u32 = 16_384;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-const USAGE: &str = "usage: sheet-tui [file]
+const USAGE: &str = "usage: grind-tui [file]
 
-No file opens an empty document, like `sheet-gtk`.
+No file opens an empty document, like `grind-sheet-gtk`.
 
 Normal mode (vi-style):
   h j k l / arrows   move
@@ -73,7 +73,7 @@ fn main() -> ExitCode {
         .is_some_and(|a| a == "-V" || a == "--version")
     {
         println!(
-            "sheet-tui {}",
+            "grind-tui {}",
             grind_sheet::build_info::describe_version(env!("CARGO_PKG_VERSION"))
         );
         return ExitCode::SUCCESS;
@@ -84,7 +84,7 @@ fn main() -> ExitCode {
     if let Some(path) = &path
         && let Err(error) = core.open_file(path)
     {
-        eprintln!("sheet-tui: {}: {error}", path.display());
+        eprintln!("grind-tui: {}: {error}", path.display());
         return ExitCode::FAILURE;
     }
 
@@ -95,7 +95,7 @@ fn main() -> ExitCode {
     match run(core, redraw, path) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("sheet-tui: {error}");
+            eprintln!("grind-tui: {error}");
             ExitCode::FAILURE
         }
     }

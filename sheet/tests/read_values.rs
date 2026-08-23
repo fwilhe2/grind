@@ -460,7 +460,7 @@ fn a_document_with_no_sheets_is_empty_not_an_error() {
 // --- against a real LibreOffice-authored file ---
 
 fn corpus() -> Option<PathBuf> {
-    let root = PathBuf::from(std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| {
+    let root = PathBuf::from(std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| {
         "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data".to_owned()
     }));
     root.is_dir().then_some(root)
@@ -472,7 +472,7 @@ fn corpus() -> Option<PathBuf> {
 #[test]
 fn a_real_libreoffice_file_lands_its_cells_where_the_xml_says() {
     let Some(root) = corpus() else {
-        eprintln!("skipping: set SHEET_LO_CORPUS to run against the LibreOffice corpus");
+        eprintln!("skipping: set GRIND_LO_CORPUS to run against the LibreOffice corpus");
         return;
     };
     let path = root.join("fods/lookup_source.fods");

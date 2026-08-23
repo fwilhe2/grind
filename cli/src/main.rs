@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `sheet` — the CLI, and the parity ratchet.
+//! `grind` — the suite CLI, and the parity ratchet.
 //!
-//! Every capability the core has is reachable from here, and `doc/cli-parity.md` plus
+//! Every capability the core has is reachable from here, and `doc/cli-parity-sheet.md` plus
 //! `tests/parity.rs` make that a build failure rather than a promise. A subcommand is one
 //! `match` arm that drives [`App`]; anything longer than that belongs in the core.
 //!
@@ -22,7 +22,7 @@ use grind_sheet::a1;
 use grind_sheet::formula::lex::column_name;
 use grind_sheet::numfmt;
 use grind_sheet::style::{self, CellStyle};
-use grind_sheet::{App, CellValue, Pos, RecalcMode, Session};
+use grind_sheet::{App, CellValue, DocumentKind, Pos, RecalcMode, Session};
 
 use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
 
@@ -34,24 +34,21 @@ fn long_version() -> &'static str {
 
 #[derive(Parser)]
 #[command(
-    name = "sheet",
+    name = "grind",
     version,
     long_version = long_version(),
-    about = "Drive the ODF spreadsheet core from the shell",
-    long_about = "Drive the ODF spreadsheet core from the shell.\n\n\
-        Cells are addressed in ODF reference syntax without the brackets: A1, $B$7, \
-        A1:D20, Data.B2, 'Q3 Actuals'.A1:.C9. Without a sheet name the first sheet is \
-        meant.\n\n\
-        Formulas are stored verbatim in OpenFormula syntax, where a reference is bracketed \
-        and arguments are separated by ';' — sheet set book.ods A3 '=SUM([.A1:.A2])'. \
-        There is deliberately no translation from other spreadsheets' syntax.\n\n\
+    about = "Drive the ODF suite from the shell",
+    long_about = "Drive the ODF suite from the shell.\n\n\
+        Commands are grouped by the kind of document they act on — `grind sheet …` for \
+        spreadsheets — with a few verbs at the top level that work on any ODF document and \
+        decide what it is by reading it.\n\n\
         Each invocation loads the file, applies one command and writes it back. Pass \
         --session to carry undo history across invocations; without it every command starts \
         with empty history."
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Top,
 
     /// File holding undo history between invocations
     #[arg(long, global = true, value_name = "PATH")]
@@ -64,6 +61,33 @@ struct Cli {
     /// Apply the command and report the result, but write nothing to disk
     #[arg(long, global = true)]
     dry_run: bool,
+}
+
+/// The first level: which application, or a verb that needs no application.
+///
+/// A suite-level verb is one whose answer does not depend on knowing what is *in* the
+/// document — what kind it is, and moving it between the two physical forms. Everything else
+/// belongs to an app, because "set a cell" and "insert a paragraph" are not the same verb with
+/// a different noun (doc/suite.md, "The CLI").
+#[derive(Subcommand)]
+enum Top {
+    /// Spreadsheets — cells, formulas, sheets, number formats
+    Sheet {
+        #[command(subcommand)]
+        command: Command,
+    },
+
+    /// What a document is, and what is in it
+    ///
+    /// Works on any ODF document: the kind is read out of the file (the package `mimetype`
+    /// entry, or the flat root's `office:mimetype`) rather than guessed from its name.
+    Info { file: PathBuf },
+
+    /// Convert between the package and flat forms — `.ods` to `.fods` and back
+    ///
+    /// The form comes from the output extension. Never between document *kinds*: a
+    /// spreadsheet does not become a text document by being written differently.
+    Convert { file: PathBuf, out: PathBuf },
 }
 
 /// The formats `sheet format` can ask the core for — [`numfmt::preset`]'s vocabulary, with
@@ -240,7 +264,7 @@ enum Command {
         #[arg(long, default_value = "$")]
         symbol: String,
         /// Locale for the decimal and grouping characters, e.g. de-DE. Defaults to
-        /// $SHEET_LOCALE, then $XDG_CONFIG_HOME/sheet/locale, then none.
+        /// $GRIND_LOCALE, then $XDG_CONFIG_HOME/sheet/locale, then none.
         #[arg(long, value_parser = locale)]
         locale: Option<grind_sheet::locale::Locale>,
         /// Print the format of one cell instead of setting one
@@ -401,12 +425,6 @@ enum Command {
     /// Recalculate every formula in the document
     Recalc { file: PathBuf },
 
-    /// Rewrite a document in the form the output extension names (.fods flat, else package)
-    Convert { file: PathBuf, out: PathBuf },
-
-    /// Report sheets, extents, formula counts and named expressions
-    Info { file: PathBuf },
-
     /// Undo the last change recorded in the session
     Undo { file: PathBuf },
 
@@ -467,7 +485,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(message) => {
-            eprintln!("sheet: {message}");
+            eprintln!("grind: {message}");
             ExitCode::FAILURE
         }
     }
@@ -475,6 +493,49 @@ fn main() -> ExitCode {
 
 fn run(cli: &Cli) -> Result<Report, String> {
     match &cli.command {
+        Top::Sheet { command } => run_sheet(command, cli),
+
+        // --- suite-level: whatever the document is ---
+        Top::Info { file } => {
+            let kind = DocumentKind::Spreadsheet;
+            let app = open_as(file, kind, cli)?;
+            let mut report = document(&app, file, false, false, 0);
+            report.kind = Some(kind.label());
+            Ok(Report::Document(report))
+        }
+
+        Top::Convert { file, out } => {
+            let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
+            finish(&app, cli, out, true)
+        }
+    }
+}
+
+/// What kind of document a file holds, or a diagnostic naming what it is instead.
+///
+/// The whole point of doing this *before* opening: §8's reader is tolerant by construction, so
+/// handing it a document of the wrong kind produces an empty one rather than an error. A user
+/// who typed the wrong subcommand deserves to be told which one is right, not handed a
+/// spreadsheet with no cells in it.
+fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, String> {
+    let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    match grind_sheet::kind(&bytes) {
+        Some(kind) if kind == wanted => load(file, cli),
+        Some(kind) => Err(format!(
+            "{} is a {}{}",
+            file.display(),
+            kind.label(),
+            match kind.command() {
+                Some(command) => format!("; try `grind {command}`"),
+                None => String::new(),
+            }
+        )),
+        None => Err(format!("{}: not an OpenDocument file", file.display())),
+    }
+}
+
+fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
+    match command {
         Command::New { file, force } => {
             if file.exists() && !force {
                 return Err(format!("{} exists; pass --force", file.display()));
@@ -900,21 +961,11 @@ fn run(cli: &Cli) -> Result<Report, String> {
             if recalc.spoiled > 0 {
                 eprintln!(
                     "sheet: {} cell(s) became errors — a function this build does not \
-                     implement; undo to restore, or see `sheet functions`",
+                     implement; undo to restore, or see `grind sheet functions`",
                     recalc.spoiled
                 );
             }
             finish(&app, cli, file, recalc.changed > 0)
-        }
-
-        Command::Convert { file, out } => {
-            let app = load(file, cli)?;
-            finish(&app, cli, out, true)
-        }
-
-        Command::Info { file } => {
-            let app = load(file, cli)?;
-            Ok(Report::Document(document(&app, file, false, false, 0)))
         }
 
         Command::Undo { file } => {
@@ -1175,15 +1226,15 @@ fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, St
         };
     if stale.changed > 0 {
         eprintln!(
-            "sheet: {} formula cell(s) now disagree with their cached value — \
-             run `sheet recalc`{}",
+            "grind: {} formula cell(s) now disagree with their cached value — \
+             run `grind sheet recalc`{}",
             stale.changed,
             match stale.spoiled {
                 0 => String::new(),
                 n => format!(
                     ", though {n} of them would become errors — a name that is no longer \
                      defined, or a function this build does not implement; see \
-                     `sheet functions`"
+                     `grind sheet functions`"
                 ),
             }
         );
@@ -1230,6 +1281,7 @@ fn document(app: &App, file: &Path, changed: bool, written: bool, stale: usize) 
         .collect();
     DocumentReport {
         path: show_path(file),
+        kind: None,
         changed,
         written,
         stale,

@@ -89,14 +89,14 @@ container image by digest; needs Docker), which is the version CI judges you by.
 
 | Loop | What | Where |
 |---|---|---|
-| **A** — read tolerance | every `.ods`/`.fods` in LO's corpus loads without error | `core/tests/corpus_read.rs` |
+| **A** — read tolerance | every `.ods`/`.fods` in LO's corpus loads without error | `sheet/tests/corpus_read.rs` |
 | **B** — formula conformance | recalculate each of LO's 509 per-function fixtures, compare against the cached value in the file | phase 4 |
 | **C** — round-trip differential | write a document, convert it with `soffice --headless --convert-to`, read it back, assert semantic identity — and the reverse | phase 3 |
 
 Point them at a LibreOffice checkout:
 
 ```sh
-SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 ```
 
 Without it the corpus tests skip with a notice rather than failing, so `cargo test` still

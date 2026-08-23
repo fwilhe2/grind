@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `sheet-gtk` — the GNOME shell, and phase 9's first one.
+//! `grind-sheet-gtk` — the GNOME shell, and phase 9's first one.
 //!
 //! A renderer and an event forwarder that owns nothing (doc/plan.md rule 1). All state is
 //! in `grind-sheet`'s [`App`]; this crate holds a window, a grid that draws whatever
@@ -65,7 +65,7 @@ fn main() -> ExitCode {
     if let Some(path) = &path
         && let Err(error) = app.open_file(path)
     {
-        eprintln!("sheet-gtk: {}: {error}", path.display());
+        eprintln!("grind-sheet-gtk: {}: {error}", path.display());
         return ExitCode::FAILURE;
     }
 
@@ -929,7 +929,7 @@ impl Ui {
             .license_type(gtk::License::Agpl30)
             .comments("An ODF-native spreadsheet.")
             .debug_info(grind_sheet::build_info::describe(
-                "sheet-gtk",
+                "grind-sheet-gtk",
                 env!("CARGO_PKG_VERSION"),
             ))
             .build();
@@ -1233,7 +1233,7 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
 
         match result {
             Ok(()) => println!("{}", target.display()),
-            Err(error) => eprintln!("sheet-gtk: --render-to: {error}"),
+            Err(error) => eprintln!("grind-sheet-gtk: --render-to: {error}"),
         }
         window.close();
     });

@@ -99,25 +99,36 @@ impl Locale {
     }
 }
 
-/// The app's locale when nothing more specific says otherwise: `SHEET_LOCALE`, then the XDG
+/// The app's locale when nothing more specific says otherwise: `GRIND_LOCALE`, then the XDG
 /// config file, then none at all — the separators an unmarked format already uses. A CLI flag
 /// or a picker's own entry outranks this; a caller with one of those just skips calling it.
 pub fn from_environment() -> Option<Locale> {
-    std::env::var("SHEET_LOCALE")
+    std::env::var("GRIND_LOCALE")
         .ok()
         .and_then(|tag| Locale::parse(&tag))
         .or_else(from_config_file)
 }
 
-/// `$XDG_CONFIG_HOME/sheet/locale` (or `~/.config/sheet/locale`), a bare BCP 47 tag such as
+/// `$XDG_CONFIG_HOME/grind/locale` (or `~/.config/grind/locale`), a bare BCP 47 tag such as
 /// `de-DE` and nothing else — the one setting here doesn't need a config file format.
+///
+/// `sheet/locale` is read as a fallback, because the suite rename moved a path that was
+/// already on people's disks and silently forgetting a setting is a worse greeting than four
+/// lines of code. It is a fallback rather than an alias: the new path wins outright, so
+/// writing the new one is how you stop reading the old one.
+///
+/// ponytail: the fallback has no expiry. It should go once there has been a release under the
+/// new name for long enough that nobody is carrying the old path forward — and the honest
+/// trigger is a release, which this project has not had yet.
 fn from_config_file() -> Option<Locale> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| {
             std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
         })?;
-    let tag = std::fs::read_to_string(base.join("sheet/locale")).ok()?;
+    let tag = std::fs::read_to_string(base.join("grind/locale"))
+        .or_else(|_| std::fs::read_to_string(base.join("sheet/locale")))
+        .ok()?;
     Locale::parse(tag.trim())
 }
 
@@ -168,18 +179,18 @@ mod tests {
         // SAFETY: this test owns these two variables for its duration, restores them before
         // returning, and nothing else in this binary reads them.
         unsafe {
-            std::env::remove_var("SHEET_LOCALE");
+            std::env::remove_var("GRIND_LOCALE");
             std::env::set_var("XDG_CONFIG_HOME", &dir);
         }
         assert_eq!(from_environment(), Locale::parse("fr-FR"));
 
         unsafe {
-            std::env::set_var("SHEET_LOCALE", "de-DE");
+            std::env::set_var("GRIND_LOCALE", "de-DE");
         }
         assert_eq!(from_environment(), Locale::parse("de-DE"));
 
         unsafe {
-            std::env::remove_var("SHEET_LOCALE");
+            std::env::remove_var("GRIND_LOCALE");
             std::env::remove_var("XDG_CONFIG_HOME");
         }
         std::fs::remove_dir_all(&dir).ok();

@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `sheet-web` — the browser shell over `grind-sheet`.
+//! `grind-web` — the browser shell over `grind-sheet`.
 //!
-//! A third kind of shell. `sheet-cli` and `sheet-tui` are Rust calling the core
-//! directly and `sheet-gtk` is Rust through GTK's bindings; this one is Rust
+//! A third kind of shell. `grind-cli` and `grind-tui` are Rust calling the core
+//! directly and `grind-sheet-gtk` is Rust through GTK's bindings; this one is Rust
 //! compiled to `wasm32-unknown-unknown`, talking to the page through
 //! `wasm-bindgen`. The core is an ordinary Cargo dependency — there is no FFI
 //! layer, because the shell is Rust too.
@@ -49,7 +49,7 @@ use web_sys::{
 use keymap::{Action, Chord, Dir, Motion};
 
 /// The ODF sheet limits, and what a plain move clamps to — the same two numbers
-/// `sheet-tui` states, for the same reason.
+/// `grind-tui` states, for the same reason.
 pub const MAX_ROWS: u32 = 1_048_576;
 pub const MAX_COLS: u32 = 16_384;
 
@@ -85,7 +85,7 @@ pub fn start() -> Result<(), JsValue> {
     });
 
     // The core pushes, the shell never polls (doc/plan.md rule 3) — the same
-    // contract `sheet-tui` implements with a flag and `sheet-gtk` with observers.
+    // contract `grind-tui` implements with a flag and `grind-sheet-gtk` with observers.
     app.set_observer(Arc::new(Notifier(ui.pending.clone())));
 
     declare_cell_size(&document)?;
@@ -537,7 +537,7 @@ impl Ui {
     /// Store what the formula bar holds, then move on.
     ///
     /// The display-form → canonical → [`App::enter`] path, and the "stay open on a
-    /// bad formula" rule, are the same three lines `sheet-tui` and `sheet-gtk` run:
+    /// bad formula" rule, are the same three lines `grind-tui` and `grind-sheet-gtk` run:
     /// a formula is typed in A1 form and stored in ODF's, and the one place that
     /// conversion lives is the core.
     fn commit(&self, direction: Option<Dir>) -> Result<(), JsValue> {

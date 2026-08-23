@@ -12,7 +12,7 @@
 //! The number goes up and never down — [`FLOOR`] is the ratchet, and the scoreboard printed
 //! alongside it says which function to implement next.
 //!
-//!     SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+//!     GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -36,7 +36,7 @@ const FLOOR: usize = 13_320;
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(
-        std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
+        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
     );
     root.is_dir().then_some(root)
 }
@@ -136,7 +136,7 @@ fn recalculating_the_corpus_agrees_with_libreoffice() {
     let Some(root) = corpus_root() else {
         eprintln!(
             "skipping: no LibreOffice corpus at {DEFAULT_CORPUS}; \
-             set SHEET_LO_CORPUS to run loop B"
+             set GRIND_LO_CORPUS to run loop B"
         );
         return;
     };
@@ -147,8 +147,8 @@ fn recalculating_the_corpus_agrees_with_libreoffice() {
     assert!(!files.is_empty(), "corpus at {} is empty", root.display());
 
     // A work list is only useful if you can then look at one row of it:
-    //     SHEET_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture
-    let dump = std::env::var("SHEET_LOOP_B_DUMP")
+    //     GRIND_LOOP_B_DUMP=LOG cargo test --test corpus_eval -- --nocapture
+    let dump = std::env::var("GRIND_LOOP_B_DUMP")
         .ok()
         .map(|s| s.to_uppercase());
 

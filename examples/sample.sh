@@ -9,7 +9,7 @@
 # transaction pasted in after the fact, and a journal sheet that reaches back across to it.
 #
 #   examples/sample.sh [output-directory]        # default: ./sample
-#   SHEET=target/debug/sheet examples/sample.sh  # a binary other than the one on PATH
+#   GRIND=target/debug/grind examples/sample.sh  # a binary other than the one on PATH
 #
 # This is a living inventory, not a demo: `cli/tests/cli.rs` runs it and fails the build if
 # it stops working, and a feature that lands without a line here is a feature nobody can
@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-SHEET=${SHEET:-sheet}
+GRIND=${GRIND:-grind}
 out=${1:-sample}
 mkdir -p "$out"
 book="$out/sample.ods"
@@ -28,7 +28,12 @@ session="$out/session.json"
 rm -f "$book" "$session" "$out/sample.fods"
 
 say() { printf '\n=== %s\n' "$1"; }
-run() { "$SHEET" "$@" >/dev/null; }
+
+# The suite is one binary with an app under it, so every spreadsheet verb is `grind sheet
+# <verb>`. Wrapped in functions rather than a variable so a path with a space in it still
+# works, and so the two levels read as what they are.
+sheet() { "$GRIND" sheet "$@"; }
+run() { sheet "$@" >/dev/null; }
 
 # --- the document ------------------------------------------------------------------------
 
@@ -74,7 +79,7 @@ printf 'rent increase\nstarting July' | run set "$book" H2 -   # from stdin, new
 
 say "paste: tab-separated rows into a rectangle, in one undo step"
 printf 'Subscriptions\t45\nCharity\t25\n' | run paste "$book" A21 -
-"$SHEET" view "$book" A21:B22 --raw
+sheet view "$book" A21:B22 --raw
 
 say "formulas: OpenFormula syntax, stored verbatim"
 run set "$book" A8 'Total'
@@ -113,8 +118,8 @@ run set "$book" B19 '=ISTEXT([.A2])'                         # information
 say "fill: replicate a formula down a column, relative refs shifting and $ ones pinned"
 run fill "$book" D2 D3:D7
 run fill "$book" E2 E3:E7
-"$SHEET" get "$book" D5 --formula
-"$SHEET" get "$book" E5 --formula
+sheet get "$book" D5 --formula
+sheet get "$book" E5 --formula
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2
@@ -147,7 +152,7 @@ run height "$book" 1:1 8mm
 
 say "hide: a column or row by hand"
 run hide "$book" D
-"$SHEET" hide "$book"
+sheet hide "$book"
 # Left hidden, so the GTK shell's own marker over D has something to show and unhide.
 
 say "recalculate the whole document"
@@ -156,24 +161,24 @@ run recalc "$book"
 # --- reading it back ---------------------------------------------------------------------
 
 say "view: what a person sees"
-"$SHEET" view "$book" A1:H8
+sheet view "$book" A1:H8
 
 say "view --raw: what the file stores"
-"$SHEET" view "$book" B2:C4 --raw
+sheet view "$book" B2:C4 --raw
 
 say "get: one cell, its stored value, and its formula"
-"$SHEET" get "$book" B17
-"$SHEET" get "$book" B17 --raw
-"$SHEET" get "$book" B8 --formula
-"$SHEET" get "$book" B8 --input                              # what an editor would show
-"$SHEET" get "$book" G2 --input                               # and the ' that keeps 2091 text
+sheet get "$book" B17
+sheet get "$book" B17 --raw
+sheet get "$book" B8 --formula
+sheet get "$book" B8 --input                              # what an editor would show
+sheet get "$book" G2 --input                               # and the ' that keeps 2091 text
 
 # Setting a style replaces it, so "bold as well" is a read, a field and a write — which is
 # exactly what a toolbar's bold button does, and it needs this to read first.
 say "--show: how a cell looks, and how its value is spelled"
-"$SHEET" style "$book" A1 --show
-"$SHEET" format "$book" B16 --show                           # the flags that recreate it
-"$SHEET" width "$book" A:H                                    # only the columns that were sized
+sheet style "$book" A1 --show
+sheet format "$book" B16 --show                           # the flags that recreate it
+sheet width "$book" A:H                                    # only the columns that were sized
 
 # A name is what makes a formula say what it means: `SUM(budgeted)` rather than
 # `SUM([.B2:.B7])`. An address becomes a named *range*, written absolute and
@@ -182,11 +187,11 @@ say "--show: how a cell looks, and how its value is spelled"
 
 say "name: a named range, and an expression over it"
 run name "$book" budgeted B2:B7
-"$SHEET" name "$book" budgeted
+sheet name "$book" budgeted
 run name "$book" biggestBudget '=MAX(budgeted)'
 run set "$book" J1 '=SUM(budgeted)'
 run set "$book" J2 '=biggestBudget'
-"$SHEET" view "$book" J1:J2 --raw
+sheet view "$book" J1:J2 --raw
 
 # Which rows a filter hides is derived from the values, never stored — so it follows an
 # edit without anyone recomputing it, and the file's `table:visibility="filter"` marks are
@@ -194,7 +199,7 @@ run set "$book" J2 '=biggestBudget'
 
 say "filter: keep a set of values in one column, hide the other rows"
 run filter "$book" A1:H7 A=Groceries A=Transport
-"$SHEET" filter "$book"
+sheet filter "$book"
 run filter "$book" --clear
 # Put it back, so the document this script leaves behind actually has one to look at: the
 # GTK shell draws a dropdown button in every heading cell of the range.
@@ -210,44 +215,44 @@ run add "$book" Journal
 run set "$book" Journal.A1 'category count check'
 run set "$book" Journal.B1 '=COUNT([$Budget.$B$2:.$B$7])'
 run rename "$book" Journal Archive
-"$SHEET" view "$book" Archive.A1:B1 --raw
+sheet view "$book" Archive.A1:B1 --raw
 run --session "$session" remove "$book" Archive
 run --session "$session" undo "$book"
 
-say "info: sheets, extents, formula counts, named expressions"
-"$SHEET" info "$book"
+say "info: what kind of document it is, sheets, extents, formula counts, names"
+"$GRIND" info "$book"          # suite level: it reads the kind out of the file
 
 say "json: every command is machine-readable"
-"$SHEET" --format json get "$book" E2
+sheet --format json get "$book" E2
 
 say "fmt: the stored form, the display form a formula bar shows, and back"
-"$SHEET" fmt '=SUM([.A1:.A2])*-2^2'
-"$SHEET" fmt --display '=SUM([.A1:.A2])*-2^2'
-"$SHEET" fmt --from-display '=SUM(A1:A2)*-2^2'
-"$SHEET" fmt --friendly '=RATE([.A1];-100;1000;0;0;0.05)'   # read-only: full names, labelled args
-"$SHEET" fmt --friendly --inline '=RATE([.A1];-100;1000;0;0;0.05)'  # the same, on one line
+sheet fmt '=SUM([.A1:.A2])*-2^2'
+sheet fmt --display '=SUM([.A1:.A2])*-2^2'
+sheet fmt --from-display '=SUM(A1:A2)*-2^2'
+sheet fmt --friendly '=RATE([.A1];-100;1000;0;0;0.05)'   # read-only: full names, labelled args
+sheet fmt --friendly --inline '=RATE([.A1];-100;1000;0;0;0.05)'  # the same, on one line
 
 say "eval: what a formula would say at a cell, storing nothing"
-"$SHEET" eval "$book" B25 '=SUM([.B2:.B4])*2'
+sheet eval "$book" B25 '=SUM([.B2:.B4])*2'
 
 say "calculations: everything the document computes, and what it calls to do it"
-"$SHEET" calculations "$book"
-"$SHEET" calculations "$book" --filter sum    # by function name, address, sheet or formula text
+sheet calculations "$book"
+sheet calculations "$book" --filter sum    # by function name, address, sheet or formula text
 
 say "functions: what this build implements"
-"$SHEET" functions | tail -1
-"$SHEET" functions --long --filter vlookup    # spec signature, friendly one, category, summary
+sheet functions | tail -1
+sheet functions --long --filter vlookup    # spec signature, friendly one, category, summary
 
 # --- editing safely ----------------------------------------------------------------------
 
 say "dry run: apply and report, write nothing"
-"$SHEET" --dry-run set "$book" B2 0
+sheet --dry-run set "$book" B2 0
 
 say "session: undo across invocations"
 run --session "$session" set "$book" B2 0
-"$SHEET" --session "$session" get "$book" B2
+sheet --session "$session" get "$book" B2
 run --session "$session" undo "$book"
-"$SHEET" --session "$session" get "$book" B2
+sheet --session "$session" get "$book" B2
 run --session "$session" redo "$book"
 run --session "$session" undo "$book"
 
@@ -258,7 +263,7 @@ run clear "$book" A21:B22                                   # the pasted rows, i
 run clear "$book" B9 --formula-only
 
 say "convert: the same document as flat XML"
-run convert "$book" "$out/sample.fods"
+"$GRIND" convert "$book" "$out/sample.fods" >/dev/null   # suite level, like info
 
 # --- R6: a flat document edits in place ---------------------------------------------------
 # Editing a `.fods` rewrites the one element that changed and leaves every other byte alone,
@@ -280,9 +285,9 @@ printf 'changed lines: %s of %s\n' \
 # would lose good cached values to #NAME?.
 
 say "stale: the edit above invalidated a total, and said so"
-"$SHEET" get "$out/sample.fods" B8 --raw
+sheet get "$out/sample.fods" B8 --raw
 run recalc "$out/sample.fods"
-"$SHEET" get "$out/sample.fods" B8 --raw
+sheet get "$out/sample.fods" B8 --raw
 
 # What a GUI does on every commit, and what the CLI does only when asked: the edit and the
 # recalculation it causes land as one change, so one `undo` takes back both. It is skipped
@@ -291,6 +296,6 @@ run recalc "$out/sample.fods"
 
 say "set --recalc: the edit and its ripple, in one step"
 run set "$out/sample.fods" B2 2250 --recalc                 # a further adjustment
-"$SHEET" get "$out/sample.fods" B8 --raw
+sheet get "$out/sample.fods" B8 --raw
 
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

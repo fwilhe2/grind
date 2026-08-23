@@ -56,7 +56,7 @@ Ten capabilities the GUI needs and the core lacks. All shell-agnostic (the wasm 
 needs every one); each lands with its CLI command, parity row, `sample.sh` line and tests
 in one change.
 
-### C1. Addressing moves into the core (`core/src/a1.rs`)
+### C1. Addressing moves into the core (`sheet/src/a1.rs`)
 
 `cli/src/a1.rs` (bracket-wrap parse, `format`, `split_range`, `sheet_dot`,
 `as_definition`, `is_single`, `resolve`) moves down; the CLI re-exports, zero logic left.
@@ -64,7 +64,7 @@ The rule restates as: **the only 0↔1 conversion in the workspace is `core::a1`
 module every shell uses.** Free functions — no parity rows; listed in cli-parity's
 "Beyond `App`" section.
 
-### C2. Display-form formulas (`core/src/formula/display.rs`)
+### C2. Display-form formulas (`sheet/src/formula/display.rs`)
 
 - `to_display(canonical) -> Result<String>` — parse to AST, serialize with references
   bracketless: `[.B2]` → `B2`, `[$Data.$A$1]` → `$Data.$A$1`, `[.B:.B]` → `B:B`,
@@ -189,9 +189,9 @@ core when a second shell wants it.
 
 ---
 
-## Part II — the shell (`ui_gtk/`, crate `sheet-gtk`, binary `sheet-gtk`)
+## Part II — the shell (`ui_gtk/`, crate `grind-sheet-gtk`, binary `grind-sheet-gtk`)
 
-Dependencies: `sheet-core`, `libadwaita` (gtk4 reached as `libadwaita::gtk` so the two
+Dependencies: `grind-sheet`, `libadwaita` (gtk4 reached as `libadwaita::gtk` so the two
 cannot drift), `async-channel`. Imperative UI — no `.ui` files, no GResource. Pins chosen
 at implementation against the ubuntu-24.04 runtime (libadwaita 1.5 baseline; the ≥1.6
 accent API gets a CSS fallback). Files, each single-purpose:
@@ -420,7 +420,7 @@ lint`, the loops, parity.
 
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
-| M0 | Plan + CI prep — *done* | this document; CLAUDE.md/README rows; root `ci.yml` build job switches `--workspace` → named crates (`editor`'s system-libs trap); new `gtk.yml` (apt `libgtk-4-dev libadwaita-1-dev`, `cargo test -p sheet-gtk`, release artifact) | CI green before any shell code |
+| M0 | Plan + CI prep — *done* | this document; CLAUDE.md/README rows; root `ci.yml` build job switches `--workspace` → named crates (`editor`'s system-libs trap); new `gtk.yml` (apt `libgtk-4-dev libadwaita-1-dev`, `cargo test -p grind-sheet-gtk`, release artifact) | CI green before any shell code |
 | M1 | **Read-only grid** — *done* | `ui_gtk` skeleton, window + open (argv), grid widget, `geom.rs` + tests, ScrolledWindow, theme palette, overflow/`###`, alignment | open any corpus file; smooth scroll; layout matches LibreOffice by eye (unstyled) |
 | M2 | Core prep A — *done* | C1 a1-into-core, C2 display form + spans (corpus round-trip test), C3 `enter`, C4 `preview` + contract test, C5 `clear_range`, C6 `enter_range` — CLI + parity + sample.sh each | corpus display round-trip green; `sheet eval`, `set --recalc`, range `clear`, `paste` in sample.sh |
 | M3 | Selection + navigation — *done* | keymap.rs Ready mode, header click/drag selection, Ctrl+arrows, status-bar aggregates | keyboard-only navigation of a corpus file feels right |
@@ -519,7 +519,7 @@ CSV, sort, find/replace, the chart and print keep their existing not-doing rows 
 **Filtering is built** (§9.4): the dropdown button in each heading cell of the range, a
 value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L on the tool strip to
 put a filter over the selection or clear it. Which rows that hides comes from the core and
-is never stored (`core/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
+is never stored (`sheet/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
 draws those rows at zero height.
 
 **Hiding rows and columns by hand is built** (§5.4, `table:visibility="collapse"`) — the
@@ -549,7 +549,7 @@ something the model can write (`Grid::target`).
 2. Loop C green both directions, `widths` case included (needs `soffice`).
 3. `SHEET=target/debug/sheet examples/sample.sh /tmp/demo` exercises every new CLI
    surface.
-4. `cargo run -p sheet-gtk -- <densest sample>.fods`: open, scroll, edit, format, resize,
+4. `cargo run -p grind-sheet-gtk -- <densest sample>.fods`: open, scroll, edit, format, resize,
    save; reopen the saved file in LibreOffice — identical display.
    `--render-to <png>` after it draws one frame and exits, which is how a custom-drawn
    widget gets an output a machine can keep — `editor` §5's rule that every boundary wants

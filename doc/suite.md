@@ -87,7 +87,7 @@ which word won.
 | crate `sheet-cli` | `grind-cli`, binary `grind` |
 | crate `sheet-gtk` | `grind-sheet-gtk` |
 | crate `sheet-tui`, `sheet-web` | `grind-tui`, `grind-web` |
-| `SHEET_LO_CORPUS` | `GRIND_LO_CORPUS`, and **it now points at the checkout root** rather than at `sc/qa/unit/data`, because two apps need two corpora out of one clone |
+| `SHEET_LO_CORPUS` | `GRIND_LO_CORPUS`. It should also come to point at the **checkout root** rather than at `sc/qa/unit/data`, because two apps need two corpora out of one clone — deferred to S4, when there is a second corpus to find |
 | `SHEET_LOCALE`, `SHEET_REPO`, `SHEET_DEMO`, `SHEET_FUZZ_SEED`, `SHEET_LOOP_B_DUMP`, `SHEET_LOOP_E_DUMP`, `SHEET_LOOP_E_FORMULAS` | `GRIND_*`, same meanings |
 | `$XDG_CONFIG_HOME/sheet/locale` | `$XDG_CONFIG_HOME/grind/locale`, with the old path **read as a fallback** and a one-line deprecation note on stderr. Costs four lines; the alternative is silently forgetting a user's locale |
 | app ID `io.github.fwilhe2.Sheet` | unchanged — it is already per-app, and `io.github.fwilhe2.Text` slots in beside it |

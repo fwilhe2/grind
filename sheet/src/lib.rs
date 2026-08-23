@@ -35,7 +35,7 @@ pub mod style;
 /// and its `tests/generic.rs` fails the build if that stops being true (R8). These are
 /// ergonomics on this side of it: a shell that only edits spreadsheets says `grind_sheet::` for
 /// everything, and the split does not leak into it.
-pub use grind_core::{DocumentKind, Form, Observer, build_info, locale};
+pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
 pub use filter::Filter;

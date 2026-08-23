@@ -832,7 +832,7 @@ fn libreoffice_documents_survive_our_writer() {
         return;
     }
     let root = PathBuf::from(
-        std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
+        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
     );
     if !root.is_dir() {
         eprintln!(

@@ -4,10 +4,13 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# sheet
+# grind
 
-A spreadsheet that opens fast, does the parts you actually use, and keeps your files in a
+An office suite that opens fast, does the parts you actually use, and keeps your files in a
 format nobody owns.
+
+One spreadsheet today, `grind sheet`. A word processor, `grind text`, is being built beside
+it — [`doc/suite.md`](doc/suite.md) is the plan and its rules.
 
 ## Why this exists
 
@@ -55,7 +58,7 @@ excuse: [`doc/not-doing.md`](doc/not-doing.md).
 ## The window
 
 ```sh
-cargo run -p sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
+cargo run -p grind-sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
 ```
 
 GTK 4 and libadwaita — a GNOME application, keyboard first. Type in cells, type formulas in
@@ -87,19 +90,19 @@ Every capability lives in one Rust core; each front end is a window onto it that
 nothing. The rule — enforced by a test, not by intention — is that **anything a window can
 do, the command line can do**.
 
-**The command line** (`sheet`), which is the whole feature set:
+**The command line** (`grind`), which is the whole feature set:
 
 ```sh
-sheet new book.ods
-sheet set book.ods A1 1
-sheet set book.ods A2 2
-sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
-sheet recalc book.ods
-sheet format book.ods A3 currency --symbol '€' --grouping
-sheet style book.ods A1 --bold --background '#dddddd'
-sheet name book.ods total A1:A2           # a named range, so formulas say what they mean
-sheet calculations book.ods               # every computed cell, and what it calls
-sheet view book.ods A1:A3                 # tab-separated, pipes into anything
+grind sheet new book.ods
+grind sheet set book.ods A1 1
+grind sheet set book.ods A2 2
+grind sheet set book.ods A3 '=SUM([.A1:.A2])'   # OpenFormula syntax, stored verbatim
+grind sheet recalc book.ods
+grind sheet format book.ods A3 currency --symbol '€' --grouping
+grind sheet style book.ods A1 --bold --background '#dddddd'
+grind sheet name book.ods total A1:A2           # a named range, so formulas say what they mean
+grind sheet calculations book.ods               # every computed cell, and what it calls
+grind sheet view book.ods A1:A3                 # tab-separated, pipes into anything
 ```
 
 Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`,
@@ -108,23 +111,23 @@ Cells are addressed the way ODF references them, minus the brackets — `A1`, `$
 point a script — or an agent — at. [`doc/cli-recipes.md`](doc/cli-recipes.md) has worked
 examples: CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods` files.
 
-`sheet format`'s `--locale` decides the decimal and grouping characters (`1,234.50` vs.
-`1.234,50`). Leave it off and the app falls back to `$SHEET_LOCALE`, then
-`$XDG_CONFIG_HOME/sheet/locale` (a bare tag like `de-DE`, nothing else in the file), then no
+`grind sheet format`'s `--locale` decides the decimal and grouping characters (`1,234.50` vs.
+`1.234,50`). Leave it off and the app falls back to `$GRIND_LOCALE`, then
+`$XDG_CONFIG_HOME/grind/locale` (a bare tag like `de-DE`, nothing else in the file), then no
 locale at all. The GTK window's format picker uses the same fallback when its locale field is
 left blank.
 
-**The terminal** (`sheet-tui`, no system packages needed):
+**The terminal** (`grind-tui`, no system packages needed):
 
 ```sh
-cargo run -p sheet-tui -- book.ods
+cargo run -p grind-tui -- book.ods
 ```
 
 Vi-style modes: **Normal** navigates (`hjkl`/arrows, `g`/`G`, `Ctrl-f`/`Ctrl-b`), **Insert**
 (`i`/`a`/`c`) edits, `:` opens a command line (`:w`, `:q`, `:recalc`, or a bare address to
-jump). `sheet-tui --help` has the full key list.
+jump). `grind-tui --help` has the full key list.
 
-**The browser** (`sheet-web`, the same core as WebAssembly — no server, the document never
+**The browser** (`grind-web`, the same core as WebAssembly — no server, the document never
 leaves your machine):
 
 ```sh
@@ -192,13 +195,13 @@ sudo dnf install -y gtk4-devel libadwaita-devel
 
 ```sh
 cargo test                       # everything but the GTK shell
-cargo test -p sheet-gtk          # its widget-free half: geometry, keys, edit state
+cargo test -p grind-sheet-gtk          # its widget-free half: geometry, keys, edit state
 ```
 
 The corpus tests want a LibreOffice checkout and skip with a notice without one:
 
 ```sh
-SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 ```
 
 `examples/sample.sh` builds a document out of every feature this build has, through the CLI
@@ -206,8 +209,8 @@ and nothing else — which also makes it the most interesting thing to open in t
 
 ```sh
 cargo build
-SHEET=target/debug/sheet examples/sample.sh /tmp/demo
-cargo run -p sheet-gtk -- /tmp/demo/sample.fods
+GRIND=target/debug/grind examples/sample.sh /tmp/demo
+cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 ```
 
 ## Reading further
@@ -216,7 +219,7 @@ cargo run -p sheet-gtk -- /tmp/demo/sample.fods
 |---|---|
 | [`doc/plan.md`](doc/plan.md) | The requirements, the phases, and what each one has to prove |
 | [`doc/not-doing.md`](doc/not-doing.md) | The feature line — never, not yet, and where what exists stops |
-| [`doc/cli-parity.md`](doc/cli-parity.md) | Every core capability against the command that reaches it |
+| [`doc/cli-parity-sheet.md`](doc/cli-parity-sheet.md) | Every core capability against the command that reaches it |
 | [`doc/cli-recipes.md`](doc/cli-recipes.md) | Worked scripts |
 | [`doc/small-group.md`](doc/small-group.md) | The 110 functions, from Part 4 §2.3.2 |
 | [`doc/ods-format.md`](doc/ods-format.md) | Clean-room notes on what LibreOffice actually does, cited `file:line` |

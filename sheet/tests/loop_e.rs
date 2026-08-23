@@ -20,8 +20,8 @@
 //! a notice without one.
 //!
 //!     cargo test --test loop_e
-//!     SHEET_LOOP_E_DUMP=1 cargo test --test loop_e -- --nocapture
-//!     SHEET_FUZZ_SEED=12345 SHEET_LOOP_E_FORMULAS=5000 cargo test --test loop_e
+//!     GRIND_LOOP_E_DUMP=1 cargo test --test loop_e -- --nocapture
+//!     GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_FORMULAS=5000 cargo test --test loop_e
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -57,7 +57,7 @@ const FIRST_ROW: u32 = 11;
 // --- randomness -------------------------------------------------------------------------
 
 /// SplitMix64. Twenty lines for what a dependency would do, and the reason a disagreement
-/// replays exactly from `SHEET_FUZZ_SEED`.
+/// replays exactly from `GRIND_FUZZ_SEED`.
 struct Rng(u64);
 
 impl Rng {
@@ -534,15 +534,15 @@ fn generated_formulas_agree_with_libreoffice() {
         eprintln!("skipping loop E: no soffice on PATH");
         return;
     }
-    let seed = std::env::var("SHEET_FUZZ_SEED")
+    let seed = std::env::var("GRIND_FUZZ_SEED")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_SEED);
-    let count = std::env::var("SHEET_LOOP_E_FORMULAS")
+    let count = std::env::var("GRIND_LOOP_E_FORMULAS")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_FORMULAS);
-    let dump = std::env::var("SHEET_LOOP_E_DUMP").is_ok();
+    let dump = std::env::var("GRIND_LOOP_E_DUMP").is_ok();
 
     let formulas = formulas(seed, count);
     let xml = document(&formulas);

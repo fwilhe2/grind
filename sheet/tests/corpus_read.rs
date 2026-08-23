@@ -12,7 +12,7 @@
 //!
 //! Point it at a LibreOffice checkout:
 //!
-//!     SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+//!     GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +23,7 @@ const DIRS: [&str; 2] = ["ods", "fods"];
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(
-        std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
+        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
     );
     root.is_dir().then_some(root)
 }
@@ -50,7 +50,7 @@ fn every_corpus_document_loads() {
     let Some(root) = corpus_root() else {
         eprintln!(
             "skipping: no LibreOffice corpus at {DEFAULT_CORPUS}; \
-             set SHEET_LO_CORPUS to run loop A"
+             set GRIND_LO_CORPUS to run loop A"
         );
         return;
     };

@@ -32,7 +32,7 @@ never out.
 ## Decisions taken up front
 
 - **Import produces a `Document`, never a live translation layer.** The filter runs once,
-  end to end, and everything downstream is ODF. No Excel vocabulary reaches `sheet-core`.
+  end to end, and everything downstream is ODF. No Excel vocabulary reaches `grind-sheet`.
 - **Nothing is evaluated on import.** Excel's cached values are authoritative and are carried
   verbatim. A formula whose function this build does not implement still arrives with the
   number Excel computed, and `sheet recalc`'s existing `spoiled` counter is what warns before
@@ -84,7 +84,7 @@ The seven rules (`doc/plan.md`, `CONTRIBUTING.md`) and the seven requirements (R
 this phase as they bind every other. Where they say something specific:
 
 - **R1 — independence, ODF-native semantics.** The filter is a *producer of `Document`s*, and
-  a `Document` is ODF's model. Nothing Excel-shaped may appear in `sheet-core`: no format
+  a `Document` is ODF's model. Nothing Excel-shaped may appear in `grind-sheet`: no format
   code strings, no 1900 serials, no `!` sheet separator, no `,` argument separator. If the
   importer needs a core capability, the core gains it in ODF's own terms or not at all.
 - **R2 — everything written validates.** An imported document is written by *our* writer, so
@@ -115,7 +115,7 @@ this phase as they bind every other. Where they say something specific:
 core/     document model, ODF I/O, formula engine       (unchanged, knows nothing of Excel)
 cli/      the `sheet` binary                            optional dep: sheet-xlsx
 ui_gtk/   the GNOME shell                                optional dep: sheet-xlsx
-xlsx/     the import filter — crate `sheet-xlsx`         depends on sheet-core, zip, quick-xml
+xlsx/     the import filter — crate `sheet-xlsx`         depends on grind-sheet, zip, quick-xml
 ```
 
 ```
@@ -125,9 +125,9 @@ xlsx/src/
   workbook.rs   xl/workbook.xml — sheets, order, visibility, date system, defined names
   strings.rs    xl/sharedStrings.xml — the string table, rich-text runs flattened
   sheet.rs      xl/worksheets/*.xml — rows, cells, values, shared/array formula groups
-  formula.rs    Excel A1 expression → sheet_core::formula::Expr  (lexer + Pratt parser)
-  numfmt.rs     Excel format codes and built-in ids → sheet_core::numfmt::Format
-  styles.rs     xl/styles.xml + theme1.xml → sheet_core::style::CellStyle
+  formula.rs    Excel A1 expression → grind_sheet::formula::Expr  (lexer + Pratt parser)
+  numfmt.rs     Excel format codes and built-in ids → grind_sheet::numfmt::Format
+  styles.rs     xl/styles.xml + theme1.xml → grind_sheet::style::CellStyle
   dates.rs      the 1900 and 1904 systems, and the leap-year rule
   report.rs     what was carried, and what was not
 ```
@@ -141,7 +141,7 @@ the core already models in ODF's spelling, which is exactly why they live here.
 ```
 bytes ──► package ──► workbook ──► styles ──► sheets ──► Document + Report
                                                 │
-                                                └─ formula.rs → sheet_core::formula::Expr
+                                                └─ formula.rs → grind_sheet::formula::Expr
                                                                 → canonical text via Display
 ```
 
@@ -202,7 +202,7 @@ and so a new kind of loss is a compile-time decision rather than a new string so
 Two mechanisms, and they are not the same one:
 
 - **The GUI is a separate crate.** It is already optional by construction: `cargo build -p
-  sheet-cli` never compiles a line of GTK, and neither does `cargo test -p sheet-core`. The
+  grind-cli` never compiles a line of GTK, and neither does `cargo test -p grind-sheet`. The
   one gap is that bare `cargo build` / `cargo test` at the root walk every workspace member,
   which is why CI names crates explicitly. **Fix: `default-members = ["core", "cli"]` in the
   root manifest**, so the default commands skip the shells and `--workspace` still builds
@@ -222,9 +222,9 @@ sheet-xlsx = { path = "../xlsx", optional = true }
 
 | Command | core | cli | xlsx | gtk |
 |---|---|---|---|---|
-| `cargo build -p sheet-cli --no-default-features` | ✓ | ✓ | — | — |
-| `cargo build -p sheet-cli` | ✓ | ✓ | ✓ | — |
-| `cargo build -p sheet-gtk` | ✓ | — | — | ✓ |
+| `cargo build -p grind-cli --no-default-features` | ✓ | ✓ | — | — |
+| `cargo build -p grind-cli` | ✓ | ✓ | ✓ | — |
+| `cargo build -p grind-sheet-gtk` | ✓ | — | — | ✓ |
 | `cargo build` (with `default-members`) | ✓ | ✓ | ✓ | — |
 | `cargo build --workspace` | ✓ | ✓ | ✓ | ✓ |
 
@@ -233,7 +233,7 @@ variant and its match arm — so a build without it does not advertise a command
 only apologise. `cli/tests/parity.rs` keeps working because it tracks `App` methods, and the
 importer is not one; the *parity document* gains a "Beyond `App`" row saying so.
 
-**CI** gains one job that builds the matrix above and runs `cargo test -p sheet-cli
+**CI** gains one job that builds the matrix above and runs `cargo test -p grind-cli
 --no-default-features`, because "it still compiles without the feature" is exactly the kind
 of claim that rots silently.
 
@@ -298,7 +298,7 @@ claim, not a promise, and materialising it is refused by the same
 ### 3. Formulas (X2)
 
 `<f>` holds an Excel A1 expression. It is **parsed**, not rewritten with string surgery:
-`xlsx/src/formula.rs` lexes Excel's syntax and builds `sheet_core::formula::Expr` — the same
+`xlsx/src/formula.rs` lexes Excel's syntax and builds `grind_sheet::formula::Expr` — the same
 AST the ODF parser builds — and the existing `Display` prints the canonical form. So a
 translated formula is one our own parser could have produced, or it is not translated at all.
 
@@ -413,7 +413,7 @@ feature matrix.
 
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
-| X0 | **The seam** | `xlsx/` crate, feature flags, `default-members`, CI matrix job, `package.rs` + `workbook.xml` sheet list, `sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p sheet-cli --no-default-features` passes; the output validates with `jing -i` |
+| X0 | **The seam** | `xlsx/` crate, feature flags, `default-members`, CI matrix job, `package.rs` + `workbook.xml` sheet list, `sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i` |
 | X1 | **Values** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits |
 | X2 | **Formulas** | the Excel expression translator, shared-formula groups, `formula::shift` in the core, `_xlfn.`, 3-D refs, the exclusion classes | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class; the scoreboard prints like loop B's |
 | X3 | **Number formats** | built-ins by meaning, the code parser, sections → `style:map` | loop D compares **displayed text** per cell, which is loop C's rule for the same reason |
@@ -446,7 +446,7 @@ theirs = soffice --headless --convert-to ods <file>   → read with our own read
 compare(ours, theirs)
 ```
 
-The comparison is `core/tests/roundtrip.rs`'s existing semantic comparator, reused: values at
+The comparison is `sheet/tests/roundtrip.rs`'s existing semantic comparator, reused: values at
 15 significant digits (because that is all LibreOffice writes — `doc/ods-format.md` §3.4),
 formulas as canonical text, formats as **the text the cell displays**. The oracle's output is
 cached by content hash so a full run is one conversion per file, ever.
@@ -467,7 +467,7 @@ Three more checks, each cheap and each catching a different class of mistake:
    quietly stops counting is worse than no report.
 3. **Hand-built fixtures for the boundaries** that no corpus reliably contains: serial 59/60/61
    in both date systems, a shared-formula group crossing a sheet edge, a four-section format
-   code, a sheet name Excel allows and ODF does not.
+   code, a grind sheet name Excel allows and ODF does not.
 
 ---
 

@@ -57,7 +57,7 @@ dom.window.HTMLAnchorElement.prototype.click = function () {
 };
 
 // Instantiating the module runs `start()`, which wires the page up.
-require(path.join(here, ".smoke/sheet_web.js"));
+require(path.join(here, ".smoke/grind_web.js"));
 
 const byId = (id) => document.getElementById(id);
 const frame = () => new Promise((resolve) => dom.window.requestAnimationFrame(resolve));

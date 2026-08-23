@@ -21,15 +21,15 @@ Three facts the rest of the page leans on:
 ## Build a sheet from a CSV
 
 ```sh
-sheet new report.ods
+grind sheet new report.ods
 r=1
 while IFS=, read -r name n; do
-  sheet set report.ods "A$r" "$name" >/dev/null
-  sheet set report.ods "B$r" "$n"    >/dev/null
+  grind sheet set report.ods "A$r" "$name" >/dev/null
+  grind sheet set report.ods "B$r" "$n"    >/dev/null
   r=$((r + 1))
 done < data.csv
-sheet set report.ods "B$r" "=SUM([.B1:.B$((r - 1))])" >/dev/null
-sheet view report.ods
+grind sheet set report.ods "B$r" "=SUM([.B1:.B$((r - 1))])" >/dev/null
+grind sheet view report.ods
 ```
 
 ```
@@ -48,8 +48,8 @@ force a field like `007` or `-` to stay a string.
 games:
 
 ```sh
-git log -1 --format=%H | sheet set report.ods C1 - >/dev/null
-sheet set report.ods C2 - <<< "$(uname -sr)" >/dev/null
+git log -1 --format=%H | grind sheet set report.ods C1 - >/dev/null
+grind sheet set report.ods C2 - <<< "$(uname -sr)" >/dev/null
 ```
 
 ## Values back out
@@ -57,7 +57,7 @@ sheet set report.ods C2 - <<< "$(uname -sr)" >/dev/null
 `view` is tab-separated and nothing else, so `cut`, `awk` and `paste` work as usual:
 
 ```sh
-sheet view report.ods A1:B3 --raw | cut -f2 | paste -sd+ | bc     # 6
+grind sheet view report.ods A1:B3 --raw | cut -f2 | paste -sd+ | bc     # 6
 ```
 
 `view` and `get` print what the cell *displays* — its number format applied, so a date
@@ -65,8 +65,8 @@ prints as a date rather than as a five-digit serial. Pass `--raw` for the stored
 is what a script computing with the number wants:
 
 ```sh
-sheet view from-libreoffice.ods A1    # 08/16/2026, in the format the document carries
-sheet view from-libreoffice.ods A1 --raw   # 46250, the serial the file stores
+grind sheet view from-libreoffice.ods A1    # 08/16/2026, in the format the document carries
+grind sheet view from-libreoffice.ods A1 --raw   # 46250, the serial the file stores
 ```
 
 For anything that needs types rather than text, `--format json` carries `ref`, `value` (the
@@ -95,23 +95,23 @@ arguments — so a script assembling one is assembling text, not translating a d
 ```sh
 rate=0.0625 years=30 principal=350000
 
-sheet new loan.ods
+grind sheet new loan.ods
 for row in "1 rate $rate" "2 years $years" "3 principal $principal"; do
   set -- $row
-  sheet set loan.ods "A$1" "$2" >/dev/null
-  sheet set loan.ods "B$1" "$3" >/dev/null
+  grind sheet set loan.ods "A$1" "$2" >/dev/null
+  grind sheet set loan.ods "B$1" "$3" >/dev/null
 done
-sheet set loan.ods A4 payment >/dev/null
-sheet set loan.ods B4 '=PMT([.B1]/12;[.B2]*12;-[.B3])' >/dev/null
+grind sheet set loan.ods A4 payment >/dev/null
+grind sheet set loan.ods B4 '=PMT([.B1]/12;[.B2]*12;-[.B3])' >/dev/null
 
-sheet get loan.ods B4      # 2155.01020149237
+grind sheet get loan.ods B4      # 2155.01020149237
 ```
 
 `sheet fmt` parses a formula and prints it back normalised, which is the cheap way to check
 one a script built before it reaches a cell — it exits non-zero on a syntax error:
 
 ```sh
-sheet fmt '=SUM([.A1:.A2])*-2^2'     # =SUM([.A1:.A2])*-2^2
+grind sheet fmt '=SUM([.A1:.A2])*-2^2'     # =SUM([.A1:.A2])*-2^2
 ```
 
 ## Format a column
@@ -120,10 +120,10 @@ A number format is display only — the value underneath never moves, so a forma
 still sums:
 
 ```sh
-sheet format report.ods B2:B40 currency --symbol '€' --grouping >/dev/null
-sheet format report.ods C2:C40 percent --decimals 1 >/dev/null
-sheet format report.ods A2:A40 date >/dev/null
-sheet format report.ods B2:B40 general >/dev/null        # back to the plain value
+grind sheet format report.ods B2:B40 currency --symbol '€' --grouping >/dev/null
+grind sheet format report.ods C2:C40 percent --decimals 1 >/dev/null
+grind sheet format report.ods A2:A40 date >/dev/null
+grind sheet format report.ods B2:B40 general >/dev/null        # back to the plain value
 ```
 
 One command over a range is one undo step, and `A:A` works — it is clamped to the rows the
@@ -131,25 +131,25 @@ sheet actually uses. `date`, `datetime` and `time` are the ISO spellings; `numbe
 and `currency` take `--decimals`, `--grouping`, `--symbol` and `--locale`:
 
 ```sh
-sheet format report.ods B2:B40 currency --symbol '€' --grouping --locale de-DE   # 1.234,50 €
+grind sheet format report.ods B2:B40 currency --symbol '€' --grouping --locale de-DE   # 1.234,50 €
 ```
 
 A date a formula computes shows as its serial until the cell says otherwise, which is the
 one place this bites:
 
 ```sh
-sheet set report.ods A1 '=DATE(2026;8;16)' >/dev/null
-sheet get report.ods A1                                  # 46250
-sheet format report.ods A1 date >/dev/null
-sheet get report.ods A1                                  # 2026-08-16
+grind sheet set report.ods A1 '=DATE(2026;8;16)' >/dev/null
+grind sheet get report.ods A1                                  # 46250
+grind sheet format report.ods A1 date >/dev/null
+grind sheet get report.ods A1                                  # 2026-08-16
 ```
 
 ## Style a header row
 
 ```sh
-sheet style report.ods A1:E1 --bold --background '#dddddd' --align center \
+grind sheet style report.ods A1:E1 --bold --background '#dddddd' --align center \
       --border '0.5pt solid #000000' >/dev/null
-sheet style report.ods A1:E1 >/dev/null      # no options: plain again
+grind sheet style report.ods A1:E1 >/dev/null      # no options: plain again
 ```
 
 `style` *replaces* a cell's styling rather than adding to it, so one command says everything
@@ -195,9 +195,9 @@ sequence of invocations one transaction:
 ```sh
 sheet --session tx.json --dry-run set book.ods B4 5 >/dev/null || exit 1   # nothing written
 sheet --session tx.json set book.ods D1 '=1/0' >/dev/null
-sheet get book.ods D1                                    # #DIV/0!
+grind sheet get book.ods D1                                    # #DIV/0!
 sheet --session tx.json undo book.ods >/dev/null
-sheet get book.ods D1                                    # empty
+grind sheet get book.ods D1                                    # empty
 ```
 
 `--dry-run` applies the command and reports the result without touching the disk — the report
@@ -208,14 +208,14 @@ carries `"changed":true,"written":false`, which is how a script asks "would this
 `.fods` is one XML file, so it diffs. Convert on the way into review:
 
 ```sh
-for f in *.ods; do sheet convert "$f" "${f%.ods}.fods" >/dev/null; done
+for f in *.ods; do grind convert "$f" "${f%.ods}.fods" >/dev/null; done
 ```
 
 Or leave the `.ods` in place and teach git to read it, which makes `git diff` and `git log -p`
 show cell values:
 
 ```sh
-git config diff.ods.textconv 'sheet view'
+git config diff.ods.textconv 'grind sheet view'
 echo '*.ods diff=ods' >> .gitattributes
 ```
 

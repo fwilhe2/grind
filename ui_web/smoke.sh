@@ -16,7 +16,7 @@ set -euo pipefail
 profile="${1:-release}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$root/ui_web/.smoke"
-module="$root/target/wasm32-unknown-unknown/$profile/sheet_web.wasm"
+module="$root/target/wasm32-unknown-unknown/$profile/grind_web.wasm"
 
 if [ ! -f "$module" ]; then
     echo "missing $module — run: ui_web/build.sh $profile" >&2
@@ -24,7 +24,7 @@ if [ ! -f "$module" ]; then
 fi
 
 mkdir -p "$work"
-wasm-bindgen --target nodejs --no-typescript --out-dir "$work" --out-name sheet_web "$module"
+wasm-bindgen --target nodejs --no-typescript --out-dir "$work" --out-name grind_web "$module"
 
 # Pinned, and installed next to the shell rather than in the repo root: this is
 # test scaffolding, not something the app ships.

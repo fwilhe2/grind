@@ -12,7 +12,7 @@
 //!
 //! Point it at a LibreOffice checkout:
 //!
-//!     SHEET_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+//!     GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ const DIRS: [&str; 3] = ["functions", "ods", "fods"];
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(
-        std::env::var("SHEET_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
+        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
     );
     root.is_dir().then_some(root)
 }
@@ -155,7 +155,7 @@ fn every_corpus_formula_parses_and_survives_display_form() {
     let Some(root) = corpus_root() else {
         eprintln!(
             "skipping: no LibreOffice corpus at {DEFAULT_CORPUS}; \
-             set SHEET_LO_CORPUS to run loop B's parse half"
+             set GRIND_LO_CORPUS to run loop B's parse half"
         );
         return;
     };

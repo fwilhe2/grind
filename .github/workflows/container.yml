@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE_NAME_ORG: fwilhe2
-      IMAGE_NAME: sheet
+      IMAGE_NAME: grind
       IMAGE_TAG: latest
 
     steps:
@@ -42,7 +42,7 @@ jobs:
             ./Containerfile.distroless-cli
 
       - name: Print Sheet Version
-        run: podman run -t --rm ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} /sheet --version
+        run: podman run -t --rm ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} /grind --version
 
       - name: Push To ghcr.io
         id: push-to-ghcr

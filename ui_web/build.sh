@@ -46,7 +46,7 @@ if [ "$have" != "$wanted" ]; then
     exit 1
 fi
 
-cargo build -p sheet-web --target wasm32-unknown-unknown "${cargo_flags[@]}"
+cargo build -p grind-web --target wasm32-unknown-unknown "${cargo_flags[@]}"
 
 rm -rf "$dist"
 mkdir -p "$dist"
@@ -55,8 +55,8 @@ wasm-bindgen \
     --target web \
     --no-typescript \
     --out-dir "$dist" \
-    --out-name sheet_web \
-    "$root/target/wasm32-unknown-unknown/$profile/sheet_web.wasm"
+    --out-name grind_web \
+    "$root/target/wasm32-unknown-unknown/$profile/grind_web.wasm"
 
 # The page is static; it only ever needed the module next to it.
 cp "$root/ui_web/index.html" "$root/ui_web/style.css" "$dist/"

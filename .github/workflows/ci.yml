@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo clippy -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web --all-targets -- -D warnings
+      - run: cargo clippy -p grind-core -p grind-sheet -p grind-cli -p grind-tui -p grind-web --all-targets -- -D warnings
 
   docs:
     # The doc comments are this project's design record — `CLAUDE.md` sends a reader to them
@@ -37,7 +37,7 @@ jobs:
       RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo doc --no-deps -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web
+      - run: cargo doc --no-deps -p grind-core -p grind-sheet -p grind-cli -p grind-tui -p grind-web
 
   build:
     runs-on: ubuntu-latest
@@ -48,10 +48,10 @@ jobs:
       # workflow does.
       # `--locked`: `Cargo.lock` is committed, and a build that quietly updates it is a
       # build of something other than what the commit says.
-      - run: cargo build --locked -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web
+      - run: cargo build --locked -p grind-core -p grind-sheet -p grind-cli -p grind-tui -p grind-web
       # Loops A and B need a LibreOffice *checkout* for its corpus and skip without
       # one, so this job is the unit tests plus whatever else runs everywhere.
-      - run: cargo test -p sheet-core -p sheet-cli -p sheet-tui -p sheet-web
+      - run: cargo test -p grind-core -p grind-sheet -p grind-cli -p grind-tui -p grind-web
 
   roundtrip:
     # Loop C's "out" direction needs only the `soffice` binary — no corpus — so the
@@ -92,6 +92,6 @@ jobs:
       - run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
           git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data
-      - run: cargo test -p sheet-core --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
+      - run: cargo test -p grind-sheet --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
         env:
-          SHEET_LO_CORPUS: /tmp/lo-core/sc/qa/unit/data
+          GRIND_LO_CORPUS: /tmp/lo-core/sc/qa/unit/data

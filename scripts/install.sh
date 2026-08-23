@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-repo="${SHEET_REPO:-fwilhe2/sheet}"
+repo="${GRIND_REPO:-fwilhe2/grind}"
 format="${1:-}"
 if [ -z "$format" ]; then
     if command -v dpkg >/dev/null; then format=deb; else format=rpm; fi
