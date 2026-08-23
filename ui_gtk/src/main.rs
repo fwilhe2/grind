@@ -925,7 +925,7 @@ impl Ui {
             .application_icon(APP_ID)
             .developer_name("Florian Wilhelm")
             .version(env!("CARGO_PKG_VERSION"))
-            .website("https://github.com/fwilhe2/sheet")
+            .website("https://github.com/fwilhe2/grind")
             .license_type(gtk::License::Agpl30)
             .comments("An ODF-native spreadsheet.")
             .debug_info(grind_sheet::build_info::describe(
