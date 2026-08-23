@@ -378,14 +378,14 @@ fn the_sample_script_still_builds_its_document() {
     assert!(dir.path("out/sample.ods").exists());
     assert!(dir.path("out/sample.fods").exists());
     let book = s(&dir.path("out/sample.ods"));
-    assert_eq!(ok(&["get", &book, "B12"]).trim(), "2026-08-16");
-    assert_eq!(ok(&["get", &book, "B12", "--raw"]).trim(), "46250");
+    assert_eq!(ok(&["get", &book, "B17"]).trim(), "2026-08-16");
+    assert_eq!(ok(&["get", &book, "B17", "--raw"]).trim(), "46250");
     assert_eq!(
-        ok(&["get", &book, "B5", "--formula"]).trim(),
-        "=SUM([.B2:.B4])"
+        ok(&["get", &book, "B8", "--formula"]).trim(),
+        "=SUM([.B2:.B7])"
     );
     // A styled and formatted header, and a currency cell whose value is untouched.
-    assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1234.5");
+    assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
 
     // And it is valid ODF. The sample is the one document that uses every feature there
