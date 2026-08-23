@@ -86,3 +86,91 @@ fn is_encrypted<R: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<
     buf.windows(b"encryption-data".len())
         .any(|w| w == b"encryption-data")
 }
+
+/// The ODF version this build writes. One constant for every document type, because a package
+/// declares it in the manifest and each content part declares it again on its root.
+pub const VERSION: &str = "1.4";
+
+/// `META-INF/manifest.xml` for a minimal package: the document itself and `content.xml`.
+///
+/// Minimal by intent (§1.4) — a manifest lists what the package *holds*, and this writer holds
+/// two entries. Listing a `styles.xml` that is not there would be a lie a reader acts on.
+pub fn manifest(mimetype: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <manifest:manifest \
+         xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" \
+         manifest:version=\"{VERSION}\">\n\
+         \x20<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"{VERSION}\" \
+         manifest:media-type=\"{mimetype}\"/>\n\
+         \x20<manifest:file-entry manifest:full-path=\"content.xml\" \
+         manifest:media-type=\"text/xml\"/>\n\
+         </manifest:manifest>\n"
+    )
+}
+
+/// Wrap a `content.xml` as a package (§1.1). **\[GENERIC\]** — the only thing that varies
+/// between document types is the media type string.
+///
+/// `mimetype` goes first, **stored uncompressed**, raw bytes, no trailing newline: readers
+/// sniff it at a fixed offset before parsing any XML, so this is not somewhere to be creative.
+pub fn write_package(mimetype: &str, content: &str) -> Result<Vec<u8>> {
+    use std::io::Write as _;
+
+    let zip = |e: zip::result::ZipError| Error::Package(e.to_string());
+    let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    w.start_file("mimetype", stored).map_err(zip)?;
+    w.write_all(mimetype.as_bytes())?;
+
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    w.start_file("META-INF/manifest.xml", deflated)
+        .map_err(zip)?;
+    w.write_all(manifest(mimetype).as_bytes())?;
+
+    w.start_file("content.xml", deflated).map_err(zip)?;
+    w.write_all(content.as_bytes())?;
+
+    Ok(w.finish().map_err(zip)?.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// §1.1's fixed-offset contract, which is the whole reason `mimetype` is written the way
+    /// it is: a reader identifies the document *without unzipping anything*, so the entry has
+    /// to be first, stored, and carry no extra field. Get any of the three wrong and the file
+    /// is still a valid zip that nothing recognises.
+    #[test]
+    fn the_package_starts_with_an_uncompressed_mimetype_entry() {
+        const MEDIA: &str = "application/vnd.oasis.opendocument.text";
+        let bytes = write_package(MEDIA, "<x/>").expect("writes");
+
+        assert_eq!(&bytes[..4], b"PK\x03\x04");
+        // Local header is 30 bytes, then the name, then the raw media type.
+        assert_eq!(
+            &bytes[8..10],
+            &[0, 0],
+            "mimetype must be stored, not deflated"
+        );
+        assert_eq!(
+            &bytes[28..30],
+            &[0, 0],
+            "mimetype entry must carry no extra field"
+        );
+        assert_eq!(&bytes[30..38], b"mimetype");
+        assert_eq!(&bytes[38..38 + MEDIA.len()], MEDIA.as_bytes());
+    }
+
+    #[test]
+    fn a_written_package_reads_its_own_content_back() {
+        let bytes =
+            write_package("application/vnd.oasis.opendocument.text", "<x/>").expect("writes");
+        assert!(is_package(&bytes));
+        assert_eq!(content_xml(&bytes).expect("has content.xml"), b"<x/>");
+    }
+}

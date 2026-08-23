@@ -9,9 +9,11 @@
 //! `super::names` the way `grind_sheet::odf` does. What is left here is the only part that
 //! knows what a paragraph is.
 //!
-//! The writer is S5 and is not here yet; `doc/suite.md` has the order and the reason for it.
+//! R6's retain-and-splice is not here yet: this writer regenerates, which is always correct
+//! and is what the spreadsheet did until phase 8.
 
 pub mod read;
+pub mod write;
 
 /// The generic modules, re-exported so this crate's reader reaches them by one path.
 pub use grind_core::odf::{Form, context, names, package};
@@ -41,4 +43,9 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
     )?;
     builder.doc.reindex_bookmarks();
     Ok(builder.doc)
+}
+
+/// Serialise a document in the requested physical form.
+pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
+    write::write(doc, form)
 }

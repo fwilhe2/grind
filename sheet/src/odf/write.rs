@@ -17,21 +17,23 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
-use std::io::{Cursor, Write as _};
 use std::sync::LazyLock;
 
 use super::names::{FO, NUMBER, OFFICE, STYLE, TABLE, TEXT};
+// Packaging, the manifest, the ODF version and XML escaping are the same for every document
+// type (§1.1, §1.3), so they live in `grind-core` and are reached here by the names this
+// file always used.
+use crate::Result;
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
-use crate::{Error, Result};
+use grind_core::odf::package::{VERSION, write_package};
+use grind_core::odf::xml::esc;
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
 /// form (§1.1), so it is not somewhere to be creative.
 pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.spreadsheet";
-
-const VERSION: &str = "1.4";
 
 /// Which physical form to write. Generic to every document type, so it lives in `grind-core`
 /// (§1) and is re-exported here for the callers that always spelled it `write::Form`.
@@ -46,7 +48,7 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     }
     match form {
         Form::Flat => Ok(content(doc, form).into_bytes()),
-        Form::Package => package(doc),
+        Form::Package => Ok(write_package(MIMETYPE, &content(doc, Form::Package))?),
     }
 }
 
@@ -975,59 +977,6 @@ fn paragraph(line: &str) -> String {
     out
 }
 
-/// Escape for both text and attribute values, dropping characters XML cannot represent.
-///
-/// The drop is not paranoia: values arrive from documents we did not write, and a control
-/// character that is legal in a Rust `String` has no encoding in XML 1.0 at all — emitting
-/// one produces a file no parser will read back, including ours.
-fn esc(s: &str) -> String {
-    let clean: String = s
-        .chars()
-        .filter(|c| matches!(*c, '\t' | '\n' | '\r' | ' '..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..))
-        .collect();
-    quick_xml::escape::escape(&clean).into_owned()
-}
-
-/// The zip package (§1.1). Only the three entries that are actually required (§1.4).
-fn package(doc: &Document) -> Result<Vec<u8>> {
-    let zip = |e: zip::result::ZipError| Error::Odf(grind_core::Error::Package(e.to_string()));
-    let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
-
-    // `mimetype` must be first, stored uncompressed, raw bytes, no trailing newline —
-    // readers sniff it at a fixed offset before parsing any XML (§1.1).
-    let stored =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    w.start_file("mimetype", stored).map_err(zip)?;
-    w.write_all(MIMETYPE.as_bytes())?;
-
-    let deflated = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-    w.start_file("META-INF/manifest.xml", deflated)
-        .map_err(zip)?;
-    w.write_all(manifest().as_bytes())?;
-
-    w.start_file("content.xml", deflated).map_err(zip)?;
-    w.write_all(content(doc, Form::Package).as_bytes())?;
-
-    Ok(w.finish().map_err(zip)?.into_inner())
-}
-
-/// §1.3. Lists the package root and every part actually present — a part in the zip but
-/// missing here is rejected or ignored by LO's package layer, and the converse is worse.
-fn manifest() -> String {
-    format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-         <manifest:manifest \
-         xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" \
-         manifest:version=\"{VERSION}\">\n\
-         \x20<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"{VERSION}\" \
-         manifest:media-type=\"{MIMETYPE}\"/>\n\
-         \x20<manifest:file-entry manifest:full-path=\"content.xml\" \
-         manifest:media-type=\"text/xml\"/>\n\
-         </manifest:manifest>\n"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1213,7 +1162,7 @@ mod tests {
 
     #[test]
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
-        let bytes = package(&Document::default()).unwrap();
+        let bytes = write_package(MIMETYPE, &content(&Document::default(), Form::Package)).unwrap();
         // Readers sniff this at a fixed offset without unzipping anything (§1.1): local
         // header is 30 bytes, then the name, then the raw media type. Compression method
         // (offset 8) must be 0 = stored, and the extra-field length (offset 28) zero.

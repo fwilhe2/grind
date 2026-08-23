@@ -18,9 +18,8 @@
 //!   rather than extracted, because ODF defines no evaluator tier for text — which is exactly
 //!   why [`implemented`] is checked against it by `tests/scope.rs` rather than trusted.
 //!
-//! **Where this build is.** S4: the model, addressing and the reader. No writer yet (S5), no
-//! `App` yet (S6). `grind text` is therefore not a CLI command — a reader with no writer is
-//! half a capability, and shipping the verb before it can save would be a feature that lies.
+//! **Where this build is.** S4–S5: the model, addressing, the reader and a regenerating
+//! writer. No R6 splicing yet, and no `App` (S6).
 
 pub mod loc;
 pub mod model;
@@ -71,6 +70,18 @@ pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
 
 pub fn read_file(path: &Path) -> Result<Document> {
     read_bytes(&path.display().to_string(), &std::fs::read(path)?)
+}
+
+/// Serialise a document. See [`Form`].
+pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
+    odf::write(doc, form)
+}
+
+/// Write a document, choosing the form from the extension — `.fodt` flat, anything else the
+/// package form ([`Form::from_path`]).
+pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
+    std::fs::write(path, write_bytes(doc, Form::from_path(path))?)?;
+    Ok(())
 }
 
 /// Read a document, refusing one that is not a text document.

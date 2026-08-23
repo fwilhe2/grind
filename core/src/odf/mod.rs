@@ -16,6 +16,7 @@
 pub mod context;
 pub mod names;
 pub mod package;
+pub mod xml;
 
 use std::path::Path;
 
