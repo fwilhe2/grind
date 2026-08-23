@@ -320,6 +320,20 @@ enum Command {
         clear: bool,
     },
 
+    /// Hide — or with `--unhide`, show — a column or a row, or a run of them (§5.4)
+    ///
+    /// `sheet hide book.ods B:D` hides columns B through D; `sheet hide book.ods 3:7` hides
+    /// rows 3 through 7 — the same spec `width`/`height` take, disambiguated the same way.
+    /// With no track, prints every column and row hidden by hand, across every sheet.
+    Hide {
+        file: PathBuf,
+        /// A column or a run of them (B, B:D, Data.B:D), or a row or a run (3, 3:7, Data.3:7)
+        tracks: Option<String>,
+        /// Show it again instead of hiding it
+        #[arg(long)]
+        unhide: bool,
+    },
+
     /// Define, redefine or delete a named range or expression (§5.11)
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.
@@ -729,6 +743,33 @@ fn run(cli: &Cli) -> Result<Report, String> {
             let changed = app
                 .set_row_height(sheet, range, (!length.is_empty()).then_some(length))
                 .say()?;
+            finish(&app, cli, file, changed > 0)
+        }
+
+        Command::Hide {
+            file,
+            tracks,
+            unhide,
+        } => {
+            let app = load(file, cli)?;
+            let Some(spec) = tracks else {
+                let mut hidden = Vec::new();
+                for i in 0..app.sheet_count() {
+                    let name = app.sheet_name(i).unwrap_or_default();
+                    for col in app.hidden_cols(i).unwrap_or_default() {
+                        hidden.push((format!("{name}.{}", column_name(col)), "column".to_owned()));
+                    }
+                    for row in app.manually_hidden_rows(i).unwrap_or_default() {
+                        hidden.push((format!("{name}.{}", row + 1), "row".to_owned()));
+                    }
+                }
+                return Ok(lines(hidden.into_iter()));
+            };
+            let (sheet, range, is_cols) = hide_tracks(&app, spec)?;
+            let changed = match is_cols {
+                true => app.set_col_hidden(sheet, range, !unhide).say()?,
+                false => app.set_row_hidden(sheet, range, !unhide).say()?,
+            };
             finish(&app, cli, file, changed > 0)
         }
 
@@ -1254,6 +1295,25 @@ fn tracks(app: &App, spec: &str) -> Result<(usize, Pos, Pos), String> {
         false => format!("{spec}:{spec}"),
     };
     a1::resolve(app, &a1::parse(&spec).say()?).say()
+}
+
+/// [`tracks`], plus which axis the spec named — a whole-column reference (`B`, `B:D`) has
+/// no row of its own to be a whole one, and a whole-row reference is the same the other way
+/// round, which is what `hide` needs to know and `width`/`height` do not, since each of
+/// those already commits to one axis by its own name.
+fn hide_tracks(app: &App, spec: &str) -> Result<(usize, std::ops::Range<u32>, bool), String> {
+    let full = match spec.contains(':') {
+        true => spec.to_owned(),
+        false => format!("{spec}:{spec}"),
+    };
+    let reference = a1::parse(&full).say()?;
+    let is_cols = reference.start.col.is_some() && reference.start.row.is_none();
+    let (sheet, start, end) = a1::resolve(app, &reference).say()?;
+    let range = match is_cols {
+        true => start.col..end.col + 1,
+        false => start.row..end.row + 1,
+    };
+    Ok((sheet, range, is_cols))
 }
 
 /// `key<TAB>value` lines, the shape every `--show` prints in.

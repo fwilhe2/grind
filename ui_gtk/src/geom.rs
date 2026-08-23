@@ -56,6 +56,12 @@ pub enum Hit {
     ColEdge(u32),
     /// The boundary at the *bottom* edge of this row, in the row header.
     RowEdge(u32),
+    /// The marker over a run of columns hidden by hand, `(from, to)` half-open — what a
+    /// click unhides, standing where the run collapsed to nothing between the two headers
+    /// that still show.
+    HiddenCols(u32, u32),
+    /// The row twin of [`Hit::HiddenCols`].
+    HiddenRows(u32, u32),
     Corner,
 }
 
@@ -167,6 +173,34 @@ impl Sizes {
         sizes.push((index, size));
         Self::new(self.default, self.count, sizes)
     }
+
+    /// Whether this track is a hidden one — zero size, kept explicitly rather than falling
+    /// back to the default (see [`Sizes::new`]).
+    pub fn is_hidden(&self, index: u32) -> bool {
+        self.size_of(index) == 0.0
+    }
+
+    /// The maximal contiguous run of hidden tracks containing `index`, half-open — or
+    /// `None` when `index` is not itself hidden.
+    ///
+    /// A linear walk in both directions rather than a binary search either side, because a
+    /// document hides a handful of tracks at a time (§5.4) and this is never asked about
+    /// anything else — [`GridGeom::hit`] only calls it once it already knows `index` is
+    /// hidden.
+    pub fn hidden_run(&self, index: u32) -> Option<(u32, u32)> {
+        if !self.is_hidden(index) {
+            return None;
+        }
+        let mut from = index;
+        while from > 0 && self.is_hidden(from - 1) {
+            from -= 1;
+        }
+        let mut to = index + 1;
+        while to < self.count && self.is_hidden(to) {
+            to += 1;
+        }
+        Some((from, to))
+    }
 }
 
 /// Everything needed to place a cell: the header band, the two axes' sizes, and where the
@@ -193,6 +227,11 @@ pub const HANDLE: f64 = 7.0;
 /// is the smallest thing a pointer reliably hits and the ceiling stops a tall row from
 /// getting a button the size of a cell.
 const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
+
+/// A hidden run's marker's width (columns) or height (rows), in **widget** space — a run
+/// collapses to a single point, so this is drawn *and* grabbed straddling it, the same way
+/// [`EDGE_GRAB`] carves a boundary's hit zone out of the header on either side.
+pub const HIDDEN_MARKER: f64 = 6.0;
 
 impl GridGeom {
     /// The row containing a content-space y, clamped to the sheet.
@@ -250,6 +289,31 @@ impl GridGeom {
             w: size,
             h: size,
         })
+    }
+
+    /// Where a hidden run of columns is drawn and grabbed, in **widget** space: a narrow
+    /// bar straddling the boundary the run collapsed to, the full height of the column
+    /// header. `from` is the run's first hidden index — [`Sizes::offset_of`] gives the same
+    /// pixel for every index in the run, since none of them displace anything.
+    pub fn hidden_col_marker(&self, from: u32) -> Rect {
+        let x = self.header_w + self.cols.offset_of(from) - self.scroll_x;
+        Rect {
+            x: x - HIDDEN_MARKER / 2.0,
+            y: 0.0,
+            w: HIDDEN_MARKER,
+            h: self.header_h,
+        }
+    }
+
+    /// The row twin of [`GridGeom::hidden_col_marker`].
+    pub fn hidden_row_marker(&self, from: u32) -> Rect {
+        let y = self.header_h + self.rows.offset_of(from) - self.scroll_y;
+        Rect {
+            x: 0.0,
+            y: y - HIDDEN_MARKER / 2.0,
+            w: self.header_w,
+            h: HIDDEN_MARKER,
+        }
     }
 
     /// The rows visible in a widget `height`, end-exclusive. A partially visible row at
@@ -322,12 +386,21 @@ impl GridGeom {
             (false, true) => {
                 let col = self.cols.at(content_x);
                 // Within grabbing distance of this column's right edge, or of the previous
-                // column's — a boundary belongs to the column left of it.
+                // column's — a boundary belongs to the column left of it. Either side, a
+                // hidden run sitting right at that boundary beats a plain resize: there is
+                // nothing of the run left to grab, so the boundary is the only way back to
+                // it.
                 let left = self.cols.offset_of(col);
                 if left + self.cols.size_of(col) - content_x <= EDGE_GRAB {
-                    Hit::ColEdge(col)
+                    match self.cols.hidden_run(col + 1) {
+                        Some((from, to)) => Hit::HiddenCols(from, to),
+                        None => Hit::ColEdge(col),
+                    }
                 } else if col > 0 && content_x - left <= EDGE_GRAB {
-                    Hit::ColEdge(col - 1)
+                    match self.cols.hidden_run(col - 1) {
+                        Some((from, to)) => Hit::HiddenCols(from, to),
+                        None => Hit::ColEdge(col - 1),
+                    }
                 } else {
                     Hit::ColHeader(col)
                 }
@@ -336,9 +409,15 @@ impl GridGeom {
                 let row = self.rows.at(content_y);
                 let top = self.rows.offset_of(row);
                 if top + self.rows.size_of(row) - content_y <= EDGE_GRAB {
-                    Hit::RowEdge(row)
+                    match self.rows.hidden_run(row + 1) {
+                        Some((from, to)) => Hit::HiddenRows(from, to),
+                        None => Hit::RowEdge(row),
+                    }
                 } else if row > 0 && content_y - top <= EDGE_GRAB {
-                    Hit::RowEdge(row - 1)
+                    match self.rows.hidden_run(row - 1) {
+                        Some((from, to)) => Hit::HiddenRows(from, to),
+                        None => Hit::RowEdge(row - 1),
+                    }
                 } else {
                     Hit::RowHeader(row)
                 }
@@ -630,5 +709,96 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A single hidden track is its own one-track run, and is not confused with its
+    /// (visible) neighbours.
+    #[test]
+    fn a_hidden_track_is_a_run_of_one() {
+        let s = Sizes::new(80.0, 100, vec![(2, 0.0)]);
+        assert!(!s.is_hidden(1));
+        assert!(s.is_hidden(2));
+        assert!(!s.is_hidden(3));
+        assert_eq!(s.hidden_run(2), Some((2, 3)));
+        assert_eq!(s.hidden_run(1), None, "column 1 is not hidden at all");
+    }
+
+    /// Several hidden tracks in a row are one run, found the same way from any index
+    /// inside it — which is what lets `hit` name the same run whichever side of the
+    /// collapsed boundary the pointer approaches from.
+    #[test]
+    fn a_run_of_several_hidden_tracks_is_found_from_any_index_in_it() {
+        let s = Sizes::new(80.0, 100, vec![(2, 0.0), (3, 0.0), (4, 0.0)]);
+        for i in 2..5 {
+            assert_eq!(s.hidden_run(i), Some((2, 5)), "from index {i}");
+        }
+        assert_eq!(s.hidden_run(1), None);
+        assert_eq!(s.hidden_run(5), None);
+    }
+
+    /// The point in the sheet's own space where column C is hidden — both this and the
+    /// widget-space tests below are the fact that column C occupies zero pixels: B and D
+    /// touch, and the touching point is where the marker and its hit zone sit.
+    #[test]
+    fn hidden_columns_collapse_the_gap_between_their_neighbours() {
+        let s = Sizes::new(80.0, 100, vec![(2, 0.0)]);
+        assert_eq!(s.offset_of(2), 160.0, "B ends at 160");
+        assert_eq!(s.offset_of(3), 160.0, "D starts at the same pixel");
+        assert_eq!(s.size_of(2), 0.0);
+    }
+
+    /// A click right on a hidden run's collapsed boundary hits the marker rather than a
+    /// resize edge, whichever of the two touching (visible) columns `at()` would otherwise
+    /// have named — the whole reason `Hit::HiddenCols` exists rather than overloading
+    /// `ColEdge`.
+    #[test]
+    fn a_hidden_column_run_is_hit_from_either_side_of_its_collapsed_boundary() {
+        let g = GridGeom {
+            cols: Sizes::new(80.0, MAX_COLS, vec![(2, 0.0)]),
+            ..geom()
+        };
+        let boundary = g.header_w + 160.0; // B (0,1) ends, D (3) starts, both at 160.
+        assert_eq!(
+            g.hit(boundary - 1.0, 10.0),
+            Hit::HiddenCols(2, 3),
+            "from B's side"
+        );
+        assert_eq!(
+            g.hit(boundary + 1.0, 10.0),
+            Hit::HiddenCols(2, 3),
+            "from D's side"
+        );
+        // Well inside a normal column, nothing has changed.
+        assert_eq!(g.hit(g.header_w + 10.0, 10.0), Hit::ColHeader(0));
+    }
+
+    /// The row twin of the column test above.
+    #[test]
+    fn a_hidden_row_run_is_hit_from_either_side_of_its_collapsed_boundary() {
+        let g = GridGeom {
+            rows: Sizes::new(20.0, MAX_ROWS, vec![(1, 0.0), (2, 0.0)]),
+            ..geom()
+        };
+        let boundary = g.header_h + 20.0; // Row 0 ends, row 3 starts, both at 20.
+        assert_eq!(g.hit(10.0, boundary - 1.0), Hit::HiddenRows(1, 3));
+        assert_eq!(g.hit(10.0, boundary + 1.0), Hit::HiddenRows(1, 3));
+    }
+
+    /// The marker sits exactly on the collapsed boundary, spanning the header band on the
+    /// axis perpendicular to the run.
+    #[test]
+    fn hidden_run_markers_sit_on_the_collapsed_boundary() {
+        let g = GridGeom {
+            cols: Sizes::new(80.0, MAX_COLS, vec![(2, 0.0)]),
+            rows: Sizes::new(20.0, MAX_ROWS, vec![(1, 0.0)]),
+            ..geom()
+        };
+        let col_marker = g.hidden_col_marker(2);
+        assert_eq!(col_marker.x + col_marker.w / 2.0, g.header_w + 160.0);
+        assert_eq!((col_marker.y, col_marker.h), (0.0, g.header_h));
+
+        let row_marker = g.hidden_row_marker(1);
+        assert_eq!(row_marker.y + row_marker.h / 2.0, g.header_h + 20.0);
+        assert_eq!((row_marker.x, row_marker.w), (0.0, g.header_w));
     }
 }

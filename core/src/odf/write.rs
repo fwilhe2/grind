@@ -662,26 +662,30 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
 
 fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     let cols = sheet.used_cols().max(1);
-    // A sized track past the last value still has to be declared, or the layout is lost —
-    // widening an empty column is a perfectly ordinary thing to do.
-    let declared = cols.max(last(sheet.col_widths()));
-    let rows = sheet.used_rows().max(last(sheet.row_heights()));
+    // A sized or hidden track past the last value still has to be declared, or the layout
+    // is lost — widening or hiding an empty column is a perfectly ordinary thing to do.
+    let declared = cols
+        .max(last(sheet.col_widths()))
+        .max(last_index(sheet.hidden_cols()));
+    let rows = cols_or_rows_extent(sheet, null_date);
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
     // Both the column block and the row block are mandatory, even for an all-empty sheet
     // (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring columns
-    // of equal width are one declaration, which is what the reader's repeat handling reads
-    // back and what keeps a sheet's declarations to a handful.
+    // of equal width and hidden state are one declaration, which is what the reader's
+    // repeat handling reads back and what keeps a sheet's declarations to a handful.
     let mut col = 0;
     while col < declared {
         let width = sheet.col_width(col);
+        let hidden = sheet.col_hidden(col);
         let run = (col..declared)
-            .take_while(|c| sheet.col_width(*c) == width)
+            .take_while(|c| sheet.col_width(*c) == width && sheet.col_hidden(*c) == hidden)
             .count() as u32;
         let _ = writeln!(
             out,
-            "    <table:table-column{}{}/>",
+            "    <table:table-column{}{}{}/>",
             pool.col_attr(width),
+            collapse(hidden),
             count(run, "columns")
         );
         col += run;
@@ -691,11 +695,21 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
         out.push_str("    <table:table-row><table:table-cell/></table:table-row>\n");
     }
 
-    // What the filter hides, written out as `table:visibility` (§9.4). Derived here rather
-    // than stored, so the attribute cannot drift from the conditions — see
-    // [`crate::filter`].
-    let hidden: std::collections::BTreeSet<u32> =
+    // What the filter hides, written out as `table:visibility="filter"` (§9.4). Derived
+    // here rather than stored, so the attribute cannot drift from the conditions — see
+    // [`crate::filter`]. Rows hidden by hand are stored, and write `"collapse"` instead —
+    // LibreOffice keeps the two spellings apart, and a row that is both wins `"collapse"`,
+    // the more structural of the two.
+    let filtered: std::collections::BTreeSet<u32> =
         sheet.hidden_rows(null_date).into_iter().collect();
+    let manual: std::collections::BTreeSet<u32> = sheet.manually_hidden_rows().collect();
+    let visibility = |row: u32| -> &'static str {
+        match (manual.contains(&row), filtered.contains(&row)) {
+            (true, _) => " table:visibility=\"collapse\"",
+            (false, true) => " table:visibility=\"filter\"",
+            (false, false) => "",
+        }
+    };
 
     let mut row = 0;
     while row < rows {
@@ -709,7 +723,7 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
             .take_while(|r| {
                 is_blank(sheet, *r, cols)
                     && sheet.row_height(*r) == height
-                    && hidden.contains(r) == hidden.contains(&row)
+                    && visibility(*r) == visibility(row)
             })
             .count() as u32;
         if blank > 0 {
@@ -717,30 +731,37 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
                 out,
                 "    <table:table-row{}{}{}><table:table-cell/></table:table-row>",
                 pool.row_attr(height),
-                visibility(hidden.contains(&row)),
+                visibility(row),
                 count(blank, "rows")
             );
             row += blank;
             continue;
         }
-        write_row(
-            out,
-            sheet,
-            row,
-            cols,
-            null_date,
-            pool,
-            hidden.contains(&row),
-        );
+        write_row(out, sheet, row, cols, null_date, pool, visibility(row));
         row += 1;
     }
 
     out.push_str("   </table:table>\n");
 }
 
+/// The row extent: the last used row, the last sized one, and the last one hidden by hand
+/// or by the filter — any of which has to be declared even past the sheet's used content.
+fn cols_or_rows_extent(sheet: &Sheet, null_date: i64) -> u32 {
+    sheet
+        .used_rows()
+        .max(last(sheet.row_heights()))
+        .max(last_index(sheet.manually_hidden_rows()))
+        .max(last_index(sheet.hidden_rows(null_date).into_iter()))
+}
+
 /// One past the last track a sparse size table mentions.
 fn last<'a>(sizes: impl Iterator<Item = (u32, &'a str)>) -> u32 {
     sizes.map(|(i, _)| i.saturating_add(1)).max().unwrap_or(0)
+}
+
+/// One past the last track a plain index list mentions — [`last`]'s twin for hidden tracks.
+fn last_index(indices: impl Iterator<Item = u32>) -> u32 {
+    indices.map(|i| i.saturating_add(1)).max().unwrap_or(0)
 }
 
 fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
@@ -750,11 +771,11 @@ fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
     })
 }
 
-/// `table:visibility` for a filtered-out row. `filter` rather than `collapse`: the row is
-/// hidden *by* the filter, and LibreOffice keeps the two apart (§9.4).
-fn visibility(hidden: bool) -> &'static str {
+/// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
+/// this is the only spelling it ever needs (§5.4).
+fn collapse(hidden: bool) -> &'static str {
     match hidden {
-        true => " table:visibility=\"filter\"",
+        true => " table:visibility=\"collapse\"",
         false => "",
     }
 }
@@ -767,13 +788,13 @@ fn write_row(
     cols: u32,
     null_date: i64,
     pool: &Pool,
-    hidden: bool,
+    visibility: &'static str,
 ) {
     let _ = write!(
         out,
         "    <table:table-row{}{}>",
         pool.row_attr(sheet.row_height(row)),
-        visibility(hidden)
+        visibility
     );
     // Trailing empty cells are simply not written: unmentioned is the same as empty
     // (§3.3), and the row is known non-blank so at least one cell survives.

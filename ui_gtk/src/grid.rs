@@ -301,10 +301,50 @@ fn selection_for_hit(hit: crate::geom::Hit) -> Selection {
             anchor: Pos::new(row, MAX_COLS - 1),
             active: Pos::new(row, 0),
         },
+        // Never actually reached: `Grid::press` unhides on this hit and returns before a
+        // selection is ever asked for. Kept total anyway, the same shape as a header's.
+        Hit::HiddenCols(from, _) => Selection {
+            anchor: Pos::new(MAX_ROWS - 1, from),
+            active: Pos::new(0, from),
+        },
+        Hit::HiddenRows(from, _) => Selection {
+            anchor: Pos::new(from, MAX_COLS - 1),
+            active: Pos::new(from, 0),
+        },
         Hit::Corner => Selection {
             anchor: Pos::new(MAX_ROWS - 1, MAX_COLS - 1),
             active: Pos::new(0, 0),
         },
+    }
+}
+
+/// What a right-click on a header hides: `is_cols`, and the half-open run. Not a header at
+/// all gives `None`, which is the whole gate on the menu appearing. Free of the widget for
+/// the same reason [`selection_for_hit`] is.
+///
+/// A header inside `selection` hides the *whole* selected run — several headers dragged
+/// over and then hidden in one go is the ordinary gesture — and one outside it hides just
+/// itself, the same "click somewhere else, act on just that" rule the fill handle and the
+/// filter button already follow.
+fn hide_range_for_hit(selection: Selection, hit: crate::geom::Hit) -> Option<(bool, u32, u32)> {
+    use crate::geom::Hit;
+    let (start, end) = selection.rect();
+    match hit {
+        Hit::ColHeader(col) | Hit::ColEdge(col) => {
+            let whole = start.row == 0 && end.row == MAX_ROWS - 1;
+            match whole && (start.col..=end.col).contains(&col) {
+                true => Some((true, start.col, end.col + 1)),
+                false => Some((true, col, col + 1)),
+            }
+        }
+        Hit::RowHeader(row) | Hit::RowEdge(row) => {
+            let whole = start.col == 0 && end.col == MAX_COLS - 1;
+            match whole && (start.row..=end.row).contains(&row) {
+                true => Some((false, start.row, end.row + 1)),
+                false => Some((false, row, row + 1)),
+            }
+        }
+        _ => None,
     }
 }
 
@@ -343,6 +383,50 @@ mod tests {
             active: selection_for_hit(Hit::RowHeader(7)).active,
         };
         assert_eq!(dragged.rect(), (Pos::new(4, 0), Pos::new(7, MAX_COLS - 1)));
+    }
+
+    /// Right-clicking a header outside the current selection hides just that one track.
+    #[test]
+    fn right_clicking_an_unselected_header_hides_only_it() {
+        let selection = Selection::at(Pos::new(0, 0));
+        assert_eq!(
+            hide_range_for_hit(selection, Hit::ColHeader(3)),
+            Some((true, 3, 4))
+        );
+        assert_eq!(
+            hide_range_for_hit(selection, Hit::RowHeader(5)),
+            Some((false, 5, 6))
+        );
+    }
+
+    /// Right-clicking a header that is part of a multi-track selection hides the whole
+    /// selected run in one step, not just the header clicked.
+    #[test]
+    fn right_clicking_a_selected_header_hides_the_whole_run() {
+        let selection = Selection {
+            anchor: selection_for_hit(Hit::ColHeader(2)).anchor,
+            active: selection_for_hit(Hit::ColHeader(5)).active,
+        };
+        assert_eq!(
+            hide_range_for_hit(selection, Hit::ColHeader(4)),
+            Some((true, 2, 6)),
+            "col 4 is inside the 2..=5 selection"
+        );
+        assert_eq!(
+            hide_range_for_hit(selection, Hit::ColHeader(9)),
+            Some((true, 9, 10)),
+            "col 9 is outside it, so only col 9 is hidden"
+        );
+    }
+
+    /// Right-clicking anything other than a header does not offer to hide anything.
+    #[test]
+    fn right_clicking_a_cell_offers_nothing_to_hide() {
+        let selection = Selection::at(Pos::new(0, 0));
+        assert_eq!(
+            hide_range_for_hit(selection, Hit::Cell { row: 1, col: 1 }),
+            None
+        );
     }
 }
 
@@ -529,6 +613,15 @@ mod imp {
         /// The autofilter dropdown (§9.4), parented here for the same reason: it belongs
         /// under the header cell's button, which only this widget knows the position of.
         pub filter_menu: OnceCell<std::rc::Rc<crate::filter_ui::FilterMenu>>,
+        /// The right-click "Hide" menu for a column or row header (§5.4) — one button, built
+        /// once and relabelled/repositioned on each open rather than rebuilt, the same
+        /// reuse `filter_menu` gets for a heavier reason.
+        pub hide_menu: OnceCell<gtk::Popover>,
+        pub hide_button: OnceCell<gtk::Button>,
+        /// What the menu is currently open over: columns or rows, and the half-open range
+        /// its button hides — read back when the button is clicked, since the click handler
+        /// is wired once rather than once per opening.
+        pub hide_target: Cell<Option<(bool, u32, u32)>>,
     }
 
     /// A column or row being dragged wider.
@@ -589,6 +682,9 @@ mod imp {
                 on_zoom: RefCell::new(Vec::new()),
                 completion: OnceCell::new(),
                 filter_menu: OnceCell::new(),
+                hide_menu: OnceCell::new(),
+                hide_button: OnceCell::new(),
+                hide_target: Cell::new(None),
             }
         }
     }
@@ -655,6 +751,9 @@ mod imp {
             if let Some(menu) = self.filter_menu.get() {
                 menu.dispose();
             }
+            if let Some(menu) = self.hide_menu.get() {
+                menu.unparent();
+            }
         }
 
         fn constructed(&self) {
@@ -678,6 +777,36 @@ mod imp {
                 move |field, chosen| grid.imp().apply_filter(field, chosen)
             ));
             let _ = self.filter_menu.set(menu);
+
+            // The right-click "Hide" menu (§5.4): one flat button, relabelled and
+            // repositioned per opening rather than rebuilt — `hide_target` is what the
+            // click handler, wired once here, reads to know which run it is hiding.
+            let hide_button = gtk::Button::new();
+            hide_button.add_css_class("flat");
+            hide_button.connect_clicked(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_| {
+                    let imp = grid.imp();
+                    if let Some((is_cols, from, to)) = imp.hide_target.take() {
+                        match is_cols {
+                            true => imp.hide_cols(from, to),
+                            false => imp.hide_rows(from, to),
+                        }
+                    }
+                    if let Some(menu) = imp.hide_menu.get() {
+                        menu.popdown();
+                    }
+                }
+            ));
+            let hide_menu = gtk::Popover::builder()
+                .child(&hide_button)
+                .has_arrow(true)
+                .position(gtk::PositionType::Bottom)
+                .build();
+            hide_menu.set_parent(&*widget);
+            let _ = self.hide_button.set(hide_button);
+            let _ = self.hide_menu.set(hide_menu);
 
             self.editor.set_buffer(&self.buffer);
             // The caret moving is its own event: the completion and the signature hint are
@@ -776,6 +905,25 @@ mod imp {
             ));
             widget.add_controller(drag);
 
+            // Right-click a column or row header to hide it (§5.4) — the one context menu
+            // this shell has, and deliberately narrow: it only fires over a header, where
+            // "hide" is the only thing a right click could mean.
+            let secondary = gtk::GestureClick::new();
+            secondary.set_button(gtk::gdk::BUTTON_SECONDARY);
+            secondary.connect_pressed(glib::clone!(
+                #[weak(rename_to = grid)]
+                widget,
+                move |_, _, x, y| {
+                    let imp = grid.imp();
+                    let hit = imp.geom().hit(x, y);
+                    let selection = imp.selection.get();
+                    if let Some((is_cols, from, to)) = hide_range_for_hit(selection, hit) {
+                        imp.open_hide_menu(x, y, is_cols, from, to);
+                    }
+                }
+            ));
+            widget.add_controller(secondary);
+
             // The pointer says what a press would do before it happens, which is the only
             // thing that makes a 4px target discoverable. Its position is also remembered,
             // because that is what a Ctrl+wheel zoom anchors on.
@@ -791,6 +939,7 @@ mod imp {
                     let cursor = match hit {
                         Hit::ColEdge(_) => Some("col-resize"),
                         Hit::RowEdge(_) => Some("row-resize"),
+                        Hit::HiddenCols(_, _) | Hit::HiddenRows(_, _) => Some("pointer"),
                         _ if geom.fill_handle(corner.row, corner.col).contains(x, y) => {
                             Some("crosshair")
                         }
@@ -983,6 +1132,7 @@ mod imp {
             snapshot.pop();
 
             self.draw_headers(&frame);
+            self.draw_hidden_markers(&frame);
             self.draw_resize_hint(&frame);
             // Last, and only while editing: a real child widget, drawn over its cell.
             if self.editor.is_visible() {
@@ -1016,11 +1166,20 @@ mod imp {
 
         /// The columns, unzoomed — what a natural height is measured against.
         fn col_sizes(&self) -> Sizes {
-            Sizes::new(
-                self.metrics.get().col_width,
-                MAX_COLS,
-                self.track_lengths(false),
-            )
+            let mut widths = self.track_lengths(false);
+            // Last, so a column hidden by hand is hidden whatever width it was given: zero,
+            // which `Sizes` keeps as a track that displaces nothing — the column twin of
+            // what filtering already does to a row's height in `geom` below.
+            let sheet = self.sheet.get();
+            if let Some(app) = self.app.borrow().as_ref() {
+                widths.extend(
+                    app.hidden_cols(sheet)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|col| (col, 0.0)),
+                );
+            }
+            Sizes::new(self.metrics.get().col_width, MAX_COLS, widths)
         }
 
         fn geom(&self) -> GridGeom {
@@ -1031,12 +1190,18 @@ mod imp {
             // that size and clips, which is what an explicit height means.
             let mut heights = self.auto_heights();
             heights.extend(self.track_lengths(true));
-            // Last, so a filtered row is hidden whatever height it was given: zero, which
-            // `Sizes` keeps as a track that displaces nothing.
+            // Last, so a filtered or manually hidden row is hidden whatever height it was
+            // given: zero, which `Sizes` keeps as a track that displaces nothing.
             let sheet = self.sheet.get();
             if let Some(app) = self.app.borrow().as_ref() {
                 heights.extend(
                     app.hidden_rows(sheet)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|row| (row, 0.0)),
+                );
+                heights.extend(
+                    app.manually_hidden_rows(sheet)
                         .unwrap_or_default()
                         .into_iter()
                         .map(|row| (row, 0.0)),
@@ -2237,6 +2402,71 @@ mod imp {
             self.obj().queue_draw();
         }
 
+        /// Clicking a hidden run's marker: show the whole run again, in one undo step.
+        fn unhide_cols(&self, from: u32, to: u32) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            if let Err(error) = app.set_col_hidden(sheet, from..to, false) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// The row twin of [`Self::unhide_cols`].
+        fn unhide_rows(&self, from: u32, to: u32) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            if let Err(error) = app.set_row_hidden(sheet, from..to, false) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Hide a run of columns or rows by hand, from their header's right-click menu.
+        fn hide_cols(&self, from: u32, to: u32) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            if let Err(error) = app.set_col_hidden(sheet, from..to, true) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// The row twin of [`Self::hide_cols`].
+        fn hide_rows(&self, from: u32, to: u32) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            if let Err(error) = app.set_row_hidden(sheet, from..to, true) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Pop the "Hide" menu up at the click point, over the run [`hide_range_for_hit`]
+        /// worked out.
+        fn open_hide_menu(&self, x: f64, y: f64, is_cols: bool, from: u32, to: u32) {
+            let (Some(menu), Some(button)) = (self.hide_menu.get(), self.hide_button.get()) else {
+                return;
+            };
+            self.hide_target.set(Some((is_cols, from, to)));
+            button.set_label(match (is_cols, to - from > 1) {
+                (true, true) => "Hide Columns",
+                (true, false) => "Hide Column",
+                (false, true) => "Hide Rows",
+                (false, false) => "Hide Row",
+            });
+            menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            menu.popup();
+        }
+
         /// Press: a cell, or a whole column or row from its header.
         fn press(&self, x: f64, y: f64, extend: bool) {
             let hit = self.geom().hit(x, y);
@@ -2259,6 +2489,20 @@ mod imp {
                 // Clicking anywhere else stores the edit, which is what every spreadsheet
                 // does and what a user who clicks the next cell means.
                 self.commit(None);
+            }
+            // A click on a hidden run's marker unhides it outright — like a double-click on
+            // a boundary, it has one unambiguous meaning of its own rather than starting a
+            // selection.
+            match hit {
+                Hit::HiddenCols(from, to) => {
+                    self.unhide_cols(from, to);
+                    return;
+                }
+                Hit::HiddenRows(from, to) => {
+                    self.unhide_rows(from, to);
+                    return;
+                }
+                _ => {}
             }
             // A filter button beats the cell under it, for the same reason the fill handle
             // below does — and before the handle, because the two can overlap on a
@@ -2943,6 +3187,50 @@ mod imp {
             let line = with_alpha(palette.lines, 1.0);
             snapshot.append_color(&line, &rect(0.0, geom.header_h - 1.0, width, 1.0));
             snapshot.append_color(&line, &rect(geom.header_w - 1.0, 0.0, 1.0, height));
+        }
+
+        /// A run of columns or rows hidden by hand (§5.4): a thin accent bar standing where
+        /// the run collapsed to nothing, between the two headers that still show either
+        /// side of it — the one visible trace of the run, and clicking it unhides the whole
+        /// thing (`Grid::press`).
+        ///
+        /// Only *manually* hidden tracks get a mark here — a row the filter hides has its
+        /// own dropdown already saying why (`draw_filter_buttons`'s doc comment), and giving
+        /// it a second, different-looking control would be two ways to ask the same
+        /// question.
+        fn draw_hidden_markers(&self, f: &Frame) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            let cols: std::collections::BTreeSet<u32> = app
+                .hidden_cols(sheet)
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let rows: std::collections::BTreeSet<u32> = app
+                .manually_hidden_rows(sheet)
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+
+            // One mark per run, at its first hidden index — every other index in the run
+            // shares the same collapsed offset, so drawing all of them would stack the same
+            // bar on itself.
+            for col in f.cols.clone() {
+                if cols.contains(&col) && (col == 0 || !cols.contains(&(col - 1))) {
+                    let bar = f.geom.hidden_col_marker(col);
+                    f.snapshot
+                        .append_color(&f.palette.accent, &rect(bar.x, bar.y, bar.w, bar.h));
+                }
+            }
+            for row in f.rows.clone() {
+                if rows.contains(&row) && (row == 0 || !rows.contains(&(row - 1))) {
+                    let bar = f.geom.hidden_row_marker(row);
+                    f.snapshot
+                        .append_color(&f.palette.accent, &rect(bar.x, bar.y, bar.w, bar.h));
+                }
+            }
         }
 
         /// The autofilter's dropdown buttons, one per field, in the range's heading row

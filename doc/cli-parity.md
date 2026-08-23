@@ -43,6 +43,8 @@ stops ratcheting.
 - `set_format` — `sheet format` (and `sheet format <range> general` to clear one)
 - `set_col_width` — `sheet width <columns> <length>` (and `--clear` to drop one)
 - `set_row_height` — `sheet height <rows> <length>` (and `--clear` to drop one)
+- `set_col_hidden` — `sheet hide <columns>` (and `--unhide` to show it again)
+- `set_row_hidden` — `sheet hide <rows>` (and `--unhide` to show it again)
 - `set_filter` — `sheet filter <range> COLUMN=VALUE…` (and `sheet filter --clear`)
 - `filter` — `sheet filter` with no range, which prints each sheet's filtered range
 - `hidden_rows` — the same listing's `hides` column, in 1-based row numbers
@@ -94,6 +96,9 @@ stops ratcheting.
   sized column. A column the document never sized prints nothing, because ODF's own answer
   there is "whatever the application's default is".
 - `row_heights` — `sheet height <rows>` with no length, the same shape
+- `hidden_cols` — `sheet hide` with no track, which lists every column and row hidden by
+  hand across every sheet
+- `manually_hidden_rows` — the same listing's rows
 - `formula_count` — `sheet info`
 - `sheet_count` — `sheet info`
 - `sheet_name` — `sheet info`, and any sheet-qualified address

@@ -105,6 +105,11 @@ run width "$book" A:A 4cm
 run width "$book" E:E 3.5cm
 run height "$book" 1:1 8mm
 
+say "hide: a column or row by hand"
+run hide "$book" D
+"$SHEET" hide "$book"
+# Left hidden, so the GTK shell's own marker over D has something to show and unhide.
+
 say "recalculate the whole document"
 run recalc "$book"
 

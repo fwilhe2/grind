@@ -804,6 +804,69 @@ impl App {
         })
     }
 
+    /// Hide — or with `hidden: false`, show — a run of columns by hand (§5.4's
+    /// `table:visibility="collapse"`). Same shape as [`App::set_col_width`]: a range because
+    /// selecting several headers and hiding them is one gesture and one undo step, and
+    /// bounded by [`MAX_TRACK_RUN`] for the same reason.
+    pub fn set_col_hidden(&self, sheet: usize, cols: Range<u32>, hidden: bool) -> Result<usize> {
+        if cols.len() as u64 > u64::from(MAX_TRACK_RUN) {
+            return Err(Error::TooLarge(cols.len() as u64));
+        }
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let updates = cols
+                .filter(|col| {
+                    state
+                        .doc
+                        .sheet(sheet)
+                        .is_some_and(|s| s.col_hidden(*col) != hidden)
+                })
+                .map(|col| Action::SetColHidden { sheet, col, hidden })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
+        })
+    }
+
+    /// The row twin of [`App::set_col_hidden`].
+    pub fn set_row_hidden(&self, sheet: usize, rows: Range<u32>, hidden: bool) -> Result<usize> {
+        if rows.len() as u64 > u64::from(MAX_TRACK_RUN) {
+            return Err(Error::TooLarge(rows.len() as u64));
+        }
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let updates = rows
+                .filter(|row| {
+                    state
+                        .doc
+                        .sheet(sheet)
+                        .is_some_and(|s| s.row_manually_hidden(*row) != hidden)
+                })
+                .map(|row| Action::SetRowHidden { sheet, row, hidden })
+                .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
+        })
+    }
+
+    /// Every column hidden by hand, in order — what a shell draws at zero width and offers
+    /// to unhide.
+    pub fn hidden_cols(&self, sheet: usize) -> Result<Vec<u32>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.hidden_cols().collect())
+    }
+
+    /// The row twin of [`App::hidden_cols`] — distinct from [`App::hidden_rows`], which is
+    /// what the *filter* hides rather than what a person hid directly.
+    pub fn manually_hidden_rows(&self, sheet: usize) -> Result<Vec<u32>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.manually_hidden_rows().collect())
+    }
+
     /// A track size as it will be stored: bounded, and a length something can measure.
     fn track_size(&self, tracks: u64, size: Option<String>) -> Result<Option<String>> {
         if tracks > u64::from(MAX_TRACK_RUN) {

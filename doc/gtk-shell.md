@@ -510,8 +510,8 @@ design accommodates them) · window-state persistence (needs a GSettings schema 
 post-packaging) · autosave · a manage-names dialog (the capability exists; `sheet name`
 reaches it) · merged-cell rendering (the model does not carry spans; cells render
 unmerged) · full grid accessibility · typing during a background recalc · locale argument
-separators · **moving over a filtered-out row**: the arrow keys still step onto a row the
-filter hides, which has no height, so the selection appears to stick until it passes the
+separators · **moving over a filtered-out or manually hidden row**: the arrow keys still
+step onto a row that has no height, so the selection appears to stick until it passes the
 run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
 handing it the hidden set — worth doing the first time it annoys somebody, not before).
 CSV, sort, find/replace, the chart and print keep their existing not-doing rows and gates.
@@ -521,6 +521,20 @@ value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L on the to
 put a filter over the selection or clear it. Which rows that hides comes from the core and
 is never stored (`core/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
 draws those rows at zero height.
+
+**Hiding rows and columns by hand is built** (§5.4, `table:visibility="collapse"`) — the
+persisted twin of the filter above, and orthogonal to it: `Sheet::hidden_cols`/
+`Sheet::row_manually_hidden` in the core, `App::set_col_hidden`/`set_row_hidden`/
+`hidden_cols`/`manually_hidden_rows`, and `sheet hide`/`--unhide` on the CLI. Right-clicking
+a column or row header (`Grid`'s one context menu, `ui_gtk/src/grid.rs`) hides it, or the
+whole run under a header selection. `Grid::col_sizes`/`geom` fold the hidden set into
+`Sizes` the same zero-width-track trick the filter already used for rows, so a hidden
+column or row draws nothing and displaces nothing. The one thing filtering did not need: a
+hidden run collapses its two neighbours' headers together, so `geom::Hit` gained
+`HiddenCols`/`HiddenRows` for the marker standing at that collapsed boundary
+(`Sizes::hidden_run`, tested headless in `geom.rs` — no display needed to prove a click
+there finds the right run from either side) — a thin accent bar, clickable to unhide the
+whole run in one step.
 
 M7 added four of its own, each named where it lives — three of them closed by M10 above.
 What is left: a border's *line style* is ignored, so `dashed` and
