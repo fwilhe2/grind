@@ -64,6 +64,18 @@ pub enum Action {
         row: u32,
         height: Option<String>,
     },
+    /// A column hidden or shown by hand (`table:visibility="collapse"`, §5.4).
+    SetColHidden {
+        sheet: usize,
+        col: u32,
+        hidden: bool,
+    },
+    /// The row twin of [`Action::SetColHidden`].
+    SetRowHidden {
+        sheet: usize,
+        row: u32,
+        hidden: bool,
+    },
     /// A sheet's autofilter (§9.4), `None` removing it. Boxed because it is much the
     /// largest variant here and every other one would grow to match.
     SetFilter {
@@ -180,6 +192,26 @@ impl Document {
                     height: previous,
                 })
             }
+            Action::SetColHidden { sheet, col, hidden } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.col_hidden(col);
+                s.set_col_hidden(col, hidden);
+                Some(Action::SetColHidden {
+                    sheet,
+                    col,
+                    hidden: previous,
+                })
+            }
+            Action::SetRowHidden { sheet, row, hidden } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.row_manually_hidden(row);
+                s.set_row_hidden(row, hidden);
+                Some(Action::SetRowHidden {
+                    sheet,
+                    row,
+                    hidden: previous,
+                })
+            }
             Action::SetFilter { sheet, filter } => {
                 let s = self.sheet_mut(sheet)?;
                 let previous = s.filter().cloned().map(Box::new);
@@ -277,6 +309,12 @@ impl Document {
             Action::SetColWidth { .. } | Action::SetRowHeight { .. } => {
                 self.edits.only_values = false
             }
+            // Not a cell either, and for the same reason: `table:visibility="collapse"` is
+            // an attribute on the row/column element itself, not something a cell splice
+            // touches.
+            Action::SetColHidden { .. } | Action::SetRowHidden { .. } => {
+                self.edits.only_values = false
+            }
             // Not a cell either: `table:database-ranges` is its own element, and the
             // `table:visibility` it implies sits on rows rather than cells.
             Action::SetFilter { .. } => self.edits.only_values = false,
@@ -303,6 +341,8 @@ impl Document {
             | Action::SetStyle { sheet, .. }
             | Action::SetColWidth { sheet, .. }
             | Action::SetRowHeight { sheet, .. }
+            | Action::SetColHidden { sheet, .. }
+            | Action::SetRowHidden { sheet, .. }
             | Action::SetFilter { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names are document-level, so there is no sheet index to be wrong about.
             Action::SetName { .. } => true,

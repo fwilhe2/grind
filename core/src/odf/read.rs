@@ -96,6 +96,10 @@ pub struct Builder {
     /// `style:row-height` of the row being read, applied when the row ends because
     /// `table:number-rows-repeated` decides how many rows it is for.
     row_size: Option<String>,
+    /// `table:visibility="collapse"` on the row being read — a person hid it by hand,
+    /// as opposed to `"filter"`, which this build treats as the filter's business and
+    /// re-derives rather than trusts (see [`crate::filter`]).
+    row_hidden: bool,
 
     // --- the autofilter (§9.4) ---
     /// The `table:database-range` being read and the sheet it covers, until its element
@@ -148,6 +152,7 @@ impl Builder {
             col_decl: 0,
             track_sizes: HashMap::new(),
             row_size: None,
+            row_hidden: false,
             filter: None,
             filter_values: Default::default(),
         }
@@ -212,7 +217,13 @@ impl Builder {
 
     /// Claim `repeat` columns for a `table:table-column` declaration, recording the default
     /// cell style it gives them.
-    fn declare_columns(&mut self, style: Option<String>, width: Option<&str>, repeat: u32) {
+    fn declare_columns(
+        &mut self,
+        style: Option<String>,
+        width: Option<&str>,
+        hidden: bool,
+        repeat: u32,
+    ) {
         let end = self.col_decl.saturating_add(repeat).min(MAX_COLS);
         // A column that names no default style still has to occupy its slots, or every
         // later declaration lands on the wrong column.
@@ -222,12 +233,16 @@ impl Builder {
                 slot.clone_from(&style);
             }
         }
-        if let Some(width) = width
-            && repeat <= MAX_TRACK_RUN
+        if repeat <= MAX_TRACK_RUN
             && let Some(sheet) = self.doc.sheets.get_mut(self.sheet)
         {
             for col in self.col_decl..end {
-                sheet.set_col_width(col, Some(width.to_owned()));
+                if let Some(width) = width {
+                    sheet.set_col_width(col, Some(width.to_owned()));
+                }
+                if hidden {
+                    sheet.set_col_hidden(col, true);
+                }
             }
         }
         self.col_decl = end;
@@ -252,9 +267,11 @@ impl Builder {
             source.rows.insert((self.sheet, self.row), spans);
         }
 
-        // A height applies to the row whether or not it holds anything — an empty row a
-        // document made tall is still tall.
-        if let Some(height) = self.row_size.take()
+        // A height (or a hidden flag) applies to the row whether or not it holds anything —
+        // an empty row a document made tall, or hid, is still tall, or hidden.
+        let height = self.row_size.take();
+        let hidden = std::mem::take(&mut self.row_hidden);
+        if (height.is_some() || hidden)
             && repeat <= MAX_TRACK_RUN
             && let Some(sheet) = self.doc.sheets.get_mut(self.sheet)
         {
@@ -263,7 +280,12 @@ impl Builder {
                 if row >= MAX_ROWS {
                     break;
                 }
-                sheet.set_row_height(row, Some(height.clone()));
+                if let Some(height) = &height {
+                    sheet.set_row_height(row, Some(height.clone()));
+                }
+                if hidden {
+                    sheet.set_row_hidden(row, true);
+                }
             }
         }
 
@@ -559,6 +581,10 @@ impl Context<Builder> for Table {
                     .get(Ns::Table, "style-name")
                     .and_then(|name| b.track_sizes.get(name))
                     .cloned();
+                // Only `"collapse"` means hidden by hand — `"filter"` is the filter's own
+                // spelling of a fact this build recomputes rather than trusts (see
+                // [`crate::filter`]), so it is read here and then ignored.
+                b.row_hidden = attrs.get(Ns::Table, "visibility") == Some("collapse");
                 let repeat = attrs.count(Ns::Table, "number-rows-repeated", MAX_ROWS);
                 b.row_repeat = repeat;
                 Some(Box::new(Row { repeat }))
@@ -573,8 +599,10 @@ impl Context<Builder> for Table {
                     .get(Ns::Table, "style-name")
                     .and_then(|name| b.track_sizes.get(name))
                     .cloned();
+                // A column has no filter, so `table:visibility` on one is always by hand.
+                let hidden = attrs.get(Ns::Table, "visibility") == Some("collapse");
                 let repeat = attrs.count(Ns::Table, "number-columns-repeated", MAX_COLS);
-                b.declare_columns(style, width.as_deref(), repeat);
+                b.declare_columns(style, width.as_deref(), hidden, repeat);
                 Some(Box::new(super::context::Ignore))
             }
             (Ns::Table, "table-column-group" | "table-header-columns" | "table-columns") => {

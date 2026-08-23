@@ -7,7 +7,7 @@
 //! Positions are **0-based** everywhere in the core. Only the CLI is 1-based, and
 //! it converts in exactly one place (doc/plan.md, phase 6).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -171,6 +171,16 @@ pub struct Sheet {
     /// `style:row-height` per row — the twin of `col_widths`, same rules.
     #[serde(default)]
     row_heights: BTreeMap<u32, String>,
+    /// Columns hidden by hand (`table:visibility="collapse"`, §5.4) — a column has no
+    /// filter, so this is the only way one goes dark.
+    #[serde(default)]
+    hidden_cols: BTreeSet<u32>,
+    /// Rows hidden by hand, the row twin of `hidden_cols`. Kept apart from
+    /// [`Sheet::hidden_rows`], which answers a different question — what the *filter*
+    /// currently hides — so the two stay distinguishable instead of being merged into one
+    /// set that can no longer say which reason applied.
+    #[serde(default)]
+    manually_hidden_rows: BTreeSet<u32>,
     /// The sheet's autofilter, if it has one (`table:database-range`, §9.4).
     ///
     /// One per sheet rather than the list ODF allows: a second database range over the same
@@ -191,6 +201,8 @@ impl Sheet {
             styles: BTreeMap::new(),
             col_widths: BTreeMap::new(),
             row_heights: BTreeMap::new(),
+            hidden_cols: BTreeSet::new(),
+            manually_hidden_rows: BTreeSet::new(),
             filter: None,
         }
     }
@@ -259,6 +271,43 @@ impl Sheet {
 
     pub fn row_heights(&self) -> impl Iterator<Item = (u32, &str)> {
         self.row_heights.iter().map(|(r, h)| (*r, h.as_str()))
+    }
+
+    /// Whether this column is hidden by hand.
+    pub fn col_hidden(&self, col: u32) -> bool {
+        self.hidden_cols.contains(&col)
+    }
+
+    /// Set or clear a column's manual hidden state.
+    pub fn set_col_hidden(&mut self, col: u32, hidden: bool) {
+        match hidden {
+            true => self.hidden_cols.insert(col),
+            false => self.hidden_cols.remove(&col),
+        };
+    }
+
+    /// Every column hidden by hand, in order.
+    pub fn hidden_cols(&self) -> impl Iterator<Item = u32> + '_ {
+        self.hidden_cols.iter().copied()
+    }
+
+    /// Whether this row is hidden by hand — distinct from [`Sheet::row_hidden`], which is
+    /// the filter's answer to a related but separate question.
+    pub fn row_manually_hidden(&self, row: u32) -> bool {
+        self.manually_hidden_rows.contains(&row)
+    }
+
+    /// Set or clear a row's manual hidden state.
+    pub fn set_row_hidden(&mut self, row: u32, hidden: bool) {
+        match hidden {
+            true => self.manually_hidden_rows.insert(row),
+            false => self.manually_hidden_rows.remove(&row),
+        };
+    }
+
+    /// Every row hidden by hand, in order.
+    pub fn manually_hidden_rows(&self) -> impl Iterator<Item = u32> + '_ {
+        self.manually_hidden_rows.iter().copied()
     }
 
     pub fn formula(&self, pos: Pos) -> Option<&str> {
