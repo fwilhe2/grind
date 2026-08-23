@@ -34,6 +34,9 @@ pub enum Report {
     /// every command would carry the difference.
     CellStyle(Box<CellStyleReport>),
     Text(TextReport),
+    /// A text document's shape — `grind info` over a `.odt`, and every `grind text` command
+    /// that writes.
+    TextDocument(TextDocumentReport),
 }
 
 /// `get` and `view`.
@@ -137,6 +140,28 @@ pub struct TextReport {
     pub lines: Vec<String>,
 }
 
+/// What a text document is and what is in it.
+///
+/// A separate variant rather than fields bolted onto [`DocumentReport`]: a spreadsheet has
+/// sheets and a text document has an outline, and a struct carrying both with one half always
+/// empty is a shape that lies to whichever consumer reads it second.
+#[derive(Debug, Serialize)]
+pub struct TextDocumentReport {
+    pub path: String,
+    /// Present only for `grind info`, for the reason [`DocumentReport::kind`] gives.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<&'static str>,
+    pub changed: bool,
+    pub written: bool,
+    pub blocks: usize,
+    pub words: usize,
+    pub characters: usize,
+    pub headings: usize,
+    pub bookmarks: Vec<String>,
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
 impl Report {
     pub fn print(&self, format: Format) {
         match format {
@@ -195,6 +220,26 @@ impl Report {
                 for line in &text.lines {
                     println!("{line}");
                 }
+            }
+            Report::TextDocument(doc) => {
+                if let Some(kind) = doc.kind {
+                    println!("{kind}");
+                }
+                println!(
+                    "{} blocks\t{} headings\t{} words\t{} characters",
+                    doc.blocks, doc.headings, doc.words, doc.characters
+                );
+                for name in &doc.bookmarks {
+                    println!("#{name}");
+                }
+                println!(
+                    "{}{}{}{}{}",
+                    doc.path,
+                    if doc.changed { "" } else { "  (no change)" },
+                    if doc.written { "" } else { "  (not written)" },
+                    if doc.can_undo { "  undo" } else { "" },
+                    if doc.can_redo { "  redo" } else { "" },
+                );
             }
         }
     }

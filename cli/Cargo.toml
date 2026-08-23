@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

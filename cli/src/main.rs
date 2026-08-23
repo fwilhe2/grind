@@ -23,8 +23,305 @@ use grind_sheet::formula::lex::column_name;
 use grind_sheet::numfmt;
 use grind_sheet::style::{self, CellStyle};
 use grind_sheet::{App, CellValue, DocumentKind, Pos, RecalcMode, Session};
+use grind_text::App as TextApp;
 
-use report::{Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextReport};
+use report::{
+    Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextDocumentReport,
+    TextReport,
+};
+
+// ---------------------------------------------------------------------------
+// grind text
+// ---------------------------------------------------------------------------
+
+/// Open a text document, refusing one that is not.
+fn open_text(file: &Path) -> Result<TextApp, String> {
+    let app = TextApp::new();
+    app.open_file(file)
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok(app)
+}
+
+/// Resolve one address against the document.
+fn at(app: &TextApp, address: &str) -> Result<usize, String> {
+    let loc = grind_text::loc::parse(address).map_err(|e| e.to_string())?;
+    app.resolve(&loc).map_err(|e| e.to_string())
+}
+
+/// Resolve a range of blocks. A **heading** address alone means its whole section, which is
+/// what makes `grind text move report.fodt §3.2 §1` mean what a person expects — the extent is
+/// computed from outline levels, because the document stores no such container.
+fn span(app: &TextApp, address: &str) -> Result<std::ops::Range<usize>, String> {
+    if !address.contains(':')
+        && let Ok(index) = at(app, address)
+        && let Some(section) = app.section(index)
+    {
+        return Ok(section);
+    }
+    let range = grind_text::loc::parse_range(address).map_err(|e| e.to_string())?;
+    app.resolve_range(&range).map_err(|e| e.to_string())
+}
+
+/// The block kind two flags describe. Neither means a paragraph.
+fn kind_of(heading: Option<u32>, list: Option<u32>) -> Result<grind_text::BlockKind, String> {
+    match (heading, list) {
+        (Some(0), _) => Err("headings start at level 1".to_owned()),
+        (Some(level), _) => Ok(grind_text::BlockKind::Heading { level }),
+        (_, Some(0)) => Err("list items start at depth 1".to_owned()),
+        (_, Some(depth)) => Ok(grind_text::BlockKind::ListItem { depth }),
+        (None, None) => Ok(grind_text::BlockKind::Paragraph),
+    }
+}
+
+/// A plain list of lines, which is most of what `grind text` prints.
+fn text_lines(lines: Vec<String>) -> Result<Report, String> {
+    Ok(Report::Text(TextReport { lines }))
+}
+
+fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
+    match command {
+        TextCommand::New { file, force } => {
+            if file.exists() && !force {
+                return Err(format!("{} exists; pass --force", file.display()));
+            }
+            finish_text(&TextApp::new(), cli, file, true)
+        }
+
+        TextCommand::View { file, range, marks } => {
+            let app = open_text(file)?;
+            let blocks = match range {
+                Some(range) => span(&app, range)?,
+                None => 0..app.block_count(),
+            };
+            let view = app.get_viewport(blocks);
+            text_lines(
+                view.iter()
+                    .map(|b| match marks {
+                        false => b.text.clone(),
+                        true => format!(
+                            "{}\t{}\t{}",
+                            grind_text::loc::format(b.index),
+                            describe_kind(&b.kind),
+                            b.text
+                        ),
+                    })
+                    .collect(),
+            )
+        }
+
+        TextCommand::Get { file, at: address } => {
+            let app = open_text(file)?;
+            let index = at(&app, address)?;
+            text_lines(vec![app.input_text(index).map_err(|e| e.to_string())?])
+        }
+
+        TextCommand::Set {
+            file,
+            at: address,
+            text,
+        } => {
+            let app = open_text(file)?;
+            let index = at(&app, address)?;
+            app.set_text(index, &read_stdin_if_dash(text)?)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::Insert {
+            file,
+            at: address,
+            text,
+            after,
+            heading,
+            list,
+        } => {
+            let app = open_text(file)?;
+            let index = match address {
+                Some(address) => at(&app, address)? + usize::from(*after),
+                // No address appends, which is what building a document from a script does
+                // most of the time.
+                None => app.block_count(),
+            };
+            app.insert(index, kind_of(*heading, *list)?, &read_stdin_if_dash(text)?)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::Delete { file, range } => {
+            let app = open_text(file)?;
+            let blocks = span(&app, range)?;
+            let removed = app.delete(blocks).map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, removed > 0)
+        }
+
+        TextCommand::Move { file, range, to } => {
+            let app = open_text(file)?;
+            let blocks = span(&app, range)?;
+            let landing = at(&app, to)?;
+            let moved = app
+                .move_blocks(blocks, landing)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, moved > 0)
+        }
+
+        TextCommand::Style { file, range, style } => {
+            let app = open_text(file)?;
+            let blocks = span(&app, range)?;
+            let changed = app
+                .set_style(blocks, style.clone())
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, changed > 0)
+        }
+
+        TextCommand::Kind {
+            file,
+            at: address,
+            heading,
+            list,
+        } => {
+            let app = open_text(file)?;
+            let index = at(&app, address)?;
+            app.set_kind(index, kind_of(*heading, *list)?)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::Outline { file, filter } => {
+            let app = open_text(file)?;
+            let needle = filter.as_deref().unwrap_or("").to_lowercase();
+            text_lines(
+                app.outline()
+                    .into_iter()
+                    .filter(|h| {
+                        needle.is_empty()
+                            || h.text.to_lowercase().contains(&needle)
+                            || h.address().contains(&needle)
+                    })
+                    .map(|h| format!("{}\t{}\t{}", h.address(), h.level, h.text))
+                    .collect(),
+            )
+        }
+
+        TextCommand::Formatting { file } => {
+            let app = open_text(file)?;
+            text_lines(
+                app.formatting()
+                    .into_iter()
+                    .map(|b| {
+                        format!(
+                            "{}\t{}\t{}",
+                            grind_text::loc::format(b.index),
+                            b.style.as_deref().unwrap_or("(direct)"),
+                            b.text
+                        )
+                    })
+                    .collect(),
+            )
+        }
+
+        TextCommand::Find { file, needle } => {
+            let app = open_text(file)?;
+            text_lines(
+                app.find(needle)
+                    .into_iter()
+                    .map(|m| format!("{}\t{}", m.address(), m.text))
+                    .collect(),
+            )
+        }
+
+        TextCommand::Replace {
+            file,
+            needle,
+            replacement,
+        } => {
+            let app = open_text(file)?;
+            let changed = app
+                .replace(needle, replacement)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, changed > 0)
+        }
+
+        TextCommand::Name {
+            file,
+            name,
+            at: address,
+            delete,
+        } => {
+            let app = open_text(file)?;
+            let Some(name) = name else {
+                return text_lines(
+                    app.bookmarks()
+                        .into_iter()
+                        .map(|(name, index)| format!("#{name}\t{}", grind_text::loc::format(index)))
+                        .collect(),
+                );
+            };
+            let target = match (delete, address) {
+                (true, _) => None,
+                (false, Some(address)) => Some(at(&app, address)?),
+                (false, None) => {
+                    // Reading one back, rather than setting it — the same shape `grind sheet
+                    // name <name>` has.
+                    let index = app
+                        .bookmarks()
+                        .into_iter()
+                        .find(|(n, _)| n == name)
+                        .map(|(_, index)| index)
+                        .ok_or_else(|| format!("no bookmark named {name}"))?;
+                    return text_lines(vec![format!(
+                        "#{name}\t{}",
+                        grind_text::loc::format(index)
+                    )]);
+                }
+            };
+            let changed = app.set_bookmark(name, target).map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, changed)
+        }
+
+        TextCommand::Words { file } => {
+            let app = open_text(file)?;
+            Ok(Report::TextDocument(text_document(
+                &app, file, false, false,
+            )))
+        }
+    }
+}
+
+fn describe_kind(kind: &grind_text::BlockKind) -> String {
+    match kind {
+        grind_text::BlockKind::Paragraph => "p".to_owned(),
+        grind_text::BlockKind::Heading { level } => format!("h{level}"),
+        grind_text::BlockKind::ListItem { depth } => format!("li{depth}"),
+    }
+}
+
+/// Save if anything changed, then report — `finish`'s twin for text documents.
+fn finish_text(app: &TextApp, cli: &Cli, file: &Path, changed: bool) -> Result<Report, String> {
+    let written = changed && !cli.dry_run;
+    if written {
+        app.save_file(file).map_err(|e| e.to_string())?;
+    }
+    Ok(Report::TextDocument(text_document(
+        app, file, changed, written,
+    )))
+}
+
+fn text_document(app: &TextApp, file: &Path, changed: bool, written: bool) -> TextDocumentReport {
+    let counts = app.counts();
+    TextDocumentReport {
+        path: show_path(file),
+        kind: None,
+        changed,
+        written,
+        blocks: counts.blocks,
+        words: counts.words,
+        characters: counts.characters,
+        headings: counts.headings,
+        bookmarks: app.bookmarks().into_iter().map(|(name, _)| name).collect(),
+        can_undo: app.can_undo(),
+        can_redo: app.can_redo(),
+    }
+}
 
 fn long_version() -> &'static str {
     use std::sync::OnceLock;
@@ -77,6 +374,16 @@ enum Top {
         command: Command,
     },
 
+    /// Text documents — paragraphs, headings, lists, outlines
+    ///
+    /// Blocks are addressed by position (p12), by an offset within one (p12+40), by a range
+    /// (p12:p20), by a bookmark (#intro) or by outline path (§2.1.3, or s2.1.3). The last two
+    /// survive edits elsewhere in the document, which p12 does not.
+    Text {
+        #[command(subcommand)]
+        command: TextCommand,
+    },
+
     /// What a document is, and what is in it
     ///
     /// Works on any ODF document: the kind is read out of the file (the package `mimetype`
@@ -123,6 +430,163 @@ enum VAlign {
     Top,
     Middle,
     Bottom,
+}
+
+/// `grind text` — the word processor.
+///
+/// Deliberately narrower than `grind sheet`, and `doc/text-core.md` is why: the scope line for
+/// a text document was invented rather than extracted from a normative tier, so every verb
+/// here has to earn its place rather than mirror one that exists for cells.
+#[derive(Subcommand)]
+enum TextCommand {
+    /// Create an empty document
+    New {
+        file: PathBuf,
+        /// Overwrite the file if it already exists
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Print the document as plain text, one block per line
+    View {
+        file: PathBuf,
+        /// Blocks to print, e.g. p2 or p2:p9; defaults to the whole document
+        range: Option<String>,
+        /// Prefix each line with its address and kind
+        #[arg(long)]
+        marks: bool,
+    },
+
+    /// Print one block
+    Get {
+        file: PathBuf,
+        /// Block address, e.g. p3, #intro or §2.1
+        at: String,
+    },
+
+    /// Replace a block's text, keeping its kind and its style
+    ///
+    /// Bookmarks on the block are kept: an anchor is a position, not content.
+    Set {
+        file: PathBuf,
+        /// Block address, e.g. p3, #intro or §2.1
+        at: String,
+        /// The new text; "-" reads it from stdin
+        #[arg(allow_hyphen_values = true)]
+        text: String,
+    },
+
+    /// Insert a block before an address, or at the end
+    Insert {
+        file: PathBuf,
+        /// Where it goes; omit to append to the end of the document
+        at: Option<String>,
+        /// The text; "-" reads it from stdin
+        #[arg(long, allow_hyphen_values = true, default_value = "")]
+        text: String,
+        /// Insert after the address rather than before it
+        #[arg(long)]
+        after: bool,
+        /// Make it a heading at this outline level
+        #[arg(long, value_name = "LEVEL", conflicts_with = "list")]
+        heading: Option<u32>,
+        /// Make it a list item at this nesting depth
+        #[arg(long, value_name = "DEPTH", num_args = 0..=1, default_missing_value = "1")]
+        list: Option<u32>,
+    },
+
+    /// Delete a block or a range of them
+    Delete {
+        file: PathBuf,
+        /// Blocks to delete, e.g. p3 or p3:p7
+        range: String,
+    },
+
+    /// Move a range of blocks so that it starts at an address
+    ///
+    /// The whole point of §2.1.3 addressing: `grind text move report.fodt §3.2 §1` relocates a
+    /// section, and the section's extent is computed from outline levels.
+    Move {
+        file: PathBuf,
+        /// Blocks to move, e.g. p3:p7 — or a heading address, which moves its whole section
+        range: String,
+        /// Where they land, e.g. p1
+        to: String,
+    },
+
+    /// Set or clear the named paragraph style of a range of blocks
+    Style {
+        file: PathBuf,
+        /// Blocks, e.g. p3 or p3:p7
+        range: String,
+        /// The style name, e.g. Heading_20_1; omit to clear
+        #[arg(long)]
+        style: Option<String>,
+    },
+
+    /// Change what kind of block this is — paragraph, heading or list item
+    Kind {
+        file: PathBuf,
+        /// Block address
+        at: String,
+        /// Outline level for a heading
+        #[arg(long, value_name = "LEVEL", conflicts_with = "list")]
+        heading: Option<u32>,
+        /// Nesting depth for a list item
+        #[arg(long, value_name = "DEPTH", num_args = 0..=1, default_missing_value = "1")]
+        list: Option<u32>,
+    },
+
+    /// Print every heading, its level and the address that finds it again
+    ///
+    /// The spreadsheet's `calculations` for prose: a long document hides its shape behind its
+    /// text, and the only way to see it is a list.
+    Outline {
+        file: PathBuf,
+        /// Only headings whose text or address contains this
+        #[arg(long)]
+        filter: Option<String>,
+    },
+
+    /// Print every block carrying a style of its own
+    ///
+    /// "Why is this paragraph different?" — answered in one place, which is the thing no
+    /// mainstream word processor does.
+    Formatting { file: PathBuf },
+
+    /// Print every occurrence of some text, with the address of each
+    Find {
+        file: PathBuf,
+        #[arg(allow_hyphen_values = true)]
+        needle: String,
+    },
+
+    /// Replace every occurrence of some text
+    Replace {
+        file: PathBuf,
+        #[arg(allow_hyphen_values = true)]
+        needle: String,
+        #[arg(allow_hyphen_values = true)]
+        replacement: String,
+    },
+
+    /// Put a bookmark on a block, list them, or delete one
+    ///
+    /// A bookmark is the named-range analogue: an anchor that moves with the text, so #intro
+    /// keeps meaning the same place after an edit above it.
+    Name {
+        file: PathBuf,
+        /// The bookmark name; omit to list them all
+        name: Option<String>,
+        /// Where it goes
+        at: Option<String>,
+        /// Remove it instead
+        #[arg(long)]
+        delete: bool,
+    },
+
+    /// Count blocks, headings, words and characters
+    Words { file: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -494,20 +958,64 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Result<Report, String> {
     match &cli.command {
         Top::Sheet { command } => run_sheet(command, cli),
+        Top::Text { command } => run_text(command, cli),
 
         // --- suite-level: whatever the document is ---
-        Top::Info { file } => {
-            let kind = DocumentKind::Spreadsheet;
-            let app = open_as(file, kind, cli)?;
-            let mut report = document(&app, file, false, false, 0);
-            report.kind = Some(kind.label());
-            Ok(Report::Document(report))
-        }
+        //
+        // These two are the reason `grind_core::kind` exists. Everything else in this file
+        // knows which application it is under; these have to work it out, and they do it by
+        // reading the file rather than by trusting its name.
+        Top::Info { file } => match document_kind(file)? {
+            DocumentKind::Spreadsheet => {
+                let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
+                let mut report = document(&app, file, false, false, 0);
+                report.kind = Some(DocumentKind::Spreadsheet.label());
+                Ok(Report::Document(report))
+            }
+            DocumentKind::Text => {
+                let app = open_text(file)?;
+                let mut report = text_document(&app, file, false, false);
+                report.kind = Some(DocumentKind::Text.label());
+                Ok(Report::TextDocument(report))
+            }
+            kind => Err(unsupported(file, Some(kind))),
+        },
 
-        Top::Convert { file, out } => {
-            let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
-            finish(&app, cli, out, true)
-        }
+        Top::Convert { file, out } => match document_kind(file)? {
+            DocumentKind::Spreadsheet => {
+                let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
+                finish(&app, cli, out, true)
+            }
+            DocumentKind::Text => {
+                let app = open_text(file)?;
+                finish_text(&app, cli, out, true)
+            }
+            kind => Err(unsupported(file, Some(kind))),
+        },
+    }
+}
+
+/// What kind of document a file holds, read from its bytes.
+fn document_kind(file: &Path) -> Result<DocumentKind, String> {
+    let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    grind_sheet::kind(&bytes).ok_or_else(|| unsupported(file, None))
+}
+
+/// The diagnostic for a document this build has no application for — and, when there is one,
+/// the command that would have worked. Telling a user what to type instead is most of the
+/// value of knowing the kind at all.
+fn unsupported(file: &Path, kind: Option<DocumentKind>) -> String {
+    match kind {
+        Some(kind) => format!(
+            "{} is a {}{}",
+            file.display(),
+            kind.label(),
+            match kind.command() {
+                Some(command) => format!("; try `grind {command}`"),
+                None => ", which this build does not open".to_owned(),
+            }
+        ),
+        None => format!("{}: not an OpenDocument file", file.display()),
     }
 }
 

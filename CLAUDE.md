@@ -19,8 +19,9 @@ has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0�
 `grind <app> <verb>` CLI, and R8/R9/R10.
 
 The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
-(`grind text`) has a model, addressing and a reader; **no writer and no `App` yet**, so it is
-not a CLI command — a reader that cannot save is half a capability.
+(`grind text`) reads, writes and edits — `examples/sample-text.sh` builds a document out of
+every feature it has, through the CLI only. What it does **not** have: R6 splicing, a session
+(so no `undo` across invocations), tables, footnotes, fields, and any shell but the CLI.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -50,7 +51,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
 | `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
-| `doc/cli-parity-sheet.md` | Every public `App` method and the CLI command reaching it |
+| `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
 | `doc/gtk-shell.md` | Phase 9's GTK shell work plan — normative for that phase |
 | `doc/not-doing.md` | The feature line as a product document |
 
@@ -99,9 +100,9 @@ cargo build && GRIND=target/debug/grind examples/sample.sh /tmp/demo
 cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 ```
 
-`examples/sample.sh` builds a document out of **every feature this build supports**, through
-the CLI only, and `cli/tests/cli.rs` runs it — a feature without a line there is invisible.
-Add one when adding a capability.
+`examples/sample.sh` and `examples/sample-text.sh` build a document out of **every feature
+this build supports**, through the CLI only, and `cli/tests/cli.rs` runs both — a feature
+without a line there is invisible. Add one when adding a capability.
 
 The corpus tests need a LibreOffice checkout and skip with a notice without one:
 
@@ -174,7 +175,7 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
-| `grind-text` | `text/` | The word processor (phase 10, S4): the block model, `loc.rs` addressing, the ODT reader. **No writer and no `App` yet** — S5 and S6 |
+| `grind-text` | `text/` | The word processor (phase 10, S4–S6): the block model, `loc.rs` addressing, the ODT reader and writer, and `App`. **No R6 splicing yet**, so a `.fodt` does not live in git the way a `.fods` does |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk`, `grind-tui`, `grind-web` | `ui_*/` | The shells |
 

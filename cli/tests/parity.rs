@@ -19,15 +19,24 @@
 /// Every application, its core's crate root, and the document that has to account for it.
 ///
 /// Read at *compile* time, so this cannot pass by looking in the wrong place at runtime.
-/// `grind-text` joins it at S6, when its `App` and `doc/cli-parity-text.md` exist.
-const APPS: [App; 1] = [App {
-    name: "sheet",
-    core: include_str!("../../sheet/src/lib.rs"),
-    core_path: "sheet/src/lib.rs",
-    parity: include_str!("../../doc/cli-parity-sheet.md"),
-    parity_path: "doc/cli-parity-sheet.md",
-    least: 12,
-}];
+const APPS: [App; 2] = [
+    App {
+        name: "sheet",
+        core: include_str!("../../sheet/src/lib.rs"),
+        core_path: "sheet/src/lib.rs",
+        parity: include_str!("../../doc/cli-parity-sheet.md"),
+        parity_path: "doc/cli-parity-sheet.md",
+        least: 12,
+    },
+    App {
+        name: "text",
+        core: include_str!("../../text/src/lib.rs"),
+        core_path: "text/src/lib.rs",
+        parity: include_str!("../../doc/cli-parity-text.md"),
+        parity_path: "doc/cli-parity-text.md",
+        least: 12,
+    },
+];
 
 struct App {
     name: &'static str,

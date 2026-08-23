@@ -901,3 +901,64 @@ fn undoing_a_deleted_sheet_from_a_session_restores_its_cells() {
     ok(&["--session", &s(&session), "undo", &s(&file)]);
     assert_eq!(ok(&["get", &s(&file), "Data.B2"]).trim(), "kept");
 }
+
+/// The text sample's twin of the test above, and the same rule: a feature without a line in
+/// `examples/sample-text.sh` is a feature nobody can see.
+#[test]
+fn the_text_sample_script_still_builds_its_document() {
+    let dir = Sandbox::new("sample-text");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the workspace root");
+
+    let output = Command::new("bash")
+        .arg(root.join("examples/sample-text.sh"))
+        .arg(s(&dir.path("out")))
+        .env("GRIND", env!("CARGO_BIN_EXE_grind"))
+        .output()
+        .expect("bash runs");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Both forms exist, and the document reads back as the one the script described.
+    assert!(dir.path("out/sample.fodt").exists());
+    assert!(dir.path("out/sample.odt").exists());
+    let doc = s(&dir.path("out/sample.fodt"));
+
+    // The move happened: the appendix is now the first section.
+    let outline = ok_top(&["text", "outline", &doc]);
+    let first = outline.lines().next().expect("a heading");
+    assert!(first.ends_with("Appendix"), "{outline}");
+
+    // The bookmark still names the block it was put on, after a section moved above it.
+    assert_eq!(
+        ok_top(&["text", "get", &doc, "#addresses"]).trim(),
+        "Addresses"
+    );
+
+    // Spaces XML would have collapsed came back.
+    assert!(
+        ok_top(&["text", "view", &doc]).contains("columns:    one    two    three"),
+        "a run of spaces survived the round trip"
+    );
+
+    // And it is valid ODF, held against the same schema `sample.fods` is.
+    let schema = root.join("doc/OpenDocument-v1.4-schema.rng");
+    match Command::new("jing")
+        .arg("-i")
+        .arg(&schema)
+        .arg(&doc)
+        .output()
+    {
+        Ok(out) => assert!(
+            out.status.success(),
+            "sample.fodt is not valid ODF:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        ),
+        Err(_) => eprintln!("skipping: no `jing` on PATH; schema validity unchecked"),
+    }
+}
