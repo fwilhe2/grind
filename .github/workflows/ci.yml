@@ -14,7 +14,7 @@ jobs:
 
   fmt:
     # `rustfmt.toml` is only worth having if something checks it: the whole workspace,
-    # `ui_gtk` included, because formatting compiles nothing and needs no GTK.
+    # `ui_sheet_gtk` included, because formatting compiles nothing and needs no GTK.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -22,7 +22,7 @@ jobs:
 
   clippy:
     # Warnings are errors here, which is the only setting that keeps a lint list at zero.
-    # `ui_gtk` is linted by the shells' own workflow, where the GTK packages are.
+    # `ui_sheet_gtk` is linted by the shells' own workflow, where the GTK packages are.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Named crates rather than --workspace: `ui_gtk` needs GTK4 and libadwaita
+      # Named crates rather than --workspace: `ui_sheet_gtk` needs GTK4 and libadwaita
       # development packages, which this job does not install and the shells' own
       # workflow does.
       # `--locked`: `Cargo.lock` is committed, and a build that quietly updates it is a

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Vi-style Normal-mode key handling, as a pure function — the same shape as
-//! `ui_gtk/src/keymap.rs`: key plus modifiers in, an [`Action`] out, no ratatui `Frame` or
+//! `ui_sheet_gtk/src/keymap.rs`: key plus modifiers in, an [`Action`] out, no ratatui `Frame` or
 //! terminal handle anywhere near it, so the whole map unit-tests with no terminal attached.
 //!
 //! `KeyCode`/`KeyModifiers` are used directly rather than through a shell-local `Key` enum —
@@ -81,7 +81,7 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers) -> Option<Action> {
 
 /// Apply a motion, clamped to the sheet's own limits — [`super::MAX_ROWS`]/[`super::MAX_COLS`]
 /// for a plain move, `extent` (the used region) for the row/sheet edges, matching
-/// `ui_gtk/src/keymap.rs`'s `moved`.
+/// `ui_sheet_gtk/src/keymap.rs`'s `moved`.
 pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
     let page = page.max(1);
     match motion {

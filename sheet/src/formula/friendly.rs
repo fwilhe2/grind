@@ -15,7 +15,7 @@
 //! which `explain`'s output does not attempt to be unambiguous about.
 //!
 //! Parameter names come from the catalog's `Syntax:` line, split the same way
-//! `ui_gtk`'s `signature_markup` splits it: every parameter's declaration is separated by
+//! `ui_sheet_gtk`'s `signature_markup` splits it: every parameter's declaration is separated by
 //! exactly one `;`, however deeply its optionality brackets it, so a naive split still lines
 //! up one part per parameter. Multi-line layout only ever unfolds a [`Expr::Call`] that is
 //! itself the whole expression or a bare argument of another call — a call buried inside an

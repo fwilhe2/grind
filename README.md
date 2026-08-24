@@ -128,7 +128,7 @@ grind sheet view book.ods A1:A3                 # tab-separated, pipes into anyt
 Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`,
 `Data.B2`, `'Q3 Actuals'.A1:.C9`. `--format json` makes every command machine-readable and
 `--session` carries undo across invocations, which together make this a reasonable thing to
-point a script — or an agent — at. [`doc/cli-recipes.md`](doc/cli-recipes.md) has worked
+point a script — or an agent — at. [`doc/cli-recipes-sheet.md`](doc/cli-recipes-sheet.md) has worked
 examples: CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods` files.
 
 `grind sheet format`'s `--locale` decides the decimal and grouping characters (`1,234.50` vs.
@@ -235,12 +235,12 @@ The corpus tests want a LibreOffice checkout and skip with a notice without one:
 GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
 ```
 
-`examples/sample.sh` builds a document out of every feature this build has, through the CLI
+`examples/sample-sheet.sh` builds a document out of every feature this build has, through the CLI
 and nothing else — which also makes it the most interesting thing to open in the window:
 
 ```sh
 cargo build
-GRIND=target/debug/grind examples/sample.sh /tmp/demo
+GRIND=target/debug/grind examples/sample-sheet.sh /tmp/demo
 cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 ```
 
@@ -251,10 +251,10 @@ cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 | [`doc/plan.md`](doc/plan.md) | The requirements, the phases, and what each one has to prove |
 | [`doc/not-doing.md`](doc/not-doing.md) | The feature line — never, not yet, and where what exists stops |
 | [`doc/cli-parity-sheet.md`](doc/cli-parity-sheet.md) | Every core capability against the command that reaches it |
-| [`doc/cli-recipes.md`](doc/cli-recipes.md) | Worked scripts |
+| [`doc/cli-recipes-sheet.md`](doc/cli-recipes-sheet.md) | Worked scripts |
 | [`doc/small-group.md`](doc/small-group.md) | The 110 functions, from Part 4 §2.3.2 |
 | [`doc/ods-format.md`](doc/ods-format.md) | Clean-room notes on what LibreOffice actually does, cited `file:line` |
-| [`doc/gtk-shell.md`](doc/gtk-shell.md) | The spreadsheet's GTK shell, milestone by milestone |
+| [`doc/sheet-shell.md`](doc/sheet-shell.md) | The spreadsheet's GTK shell, milestone by milestone |
 | [`doc/text-shell.md`](doc/text-shell.md) | The word processor's windows — what they do, and what they deliberately do not |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | The clean-room rule, and how to work on this |
 | `doc/OpenDocument-v1.4-schema.rng`, `doc/OpenDocument-v1.4-os-part4-formula.html` | The OASIS specifications this is built from |

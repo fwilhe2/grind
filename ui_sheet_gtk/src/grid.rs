@@ -1613,7 +1613,7 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        // --- pointing (doc/gtk-shell.md's formula UX) ---
+        // --- pointing (doc/sheet-shell.md's formula UX) ---
 
         /// Where the caret is, as a byte offset into the buffer.
         ///
@@ -2636,7 +2636,7 @@ mod imp {
             }
         }
 
-        /// The a11y floor (`doc/gtk-shell.md`): a custom-drawn grid has no other way to tell
+        /// The a11y floor (`doc/sheet-shell.md`): a custom-drawn grid has no other way to tell
         /// assistive technology the selection moved, so every move speaks the cell's address
         /// and, if it has one, its display text.
         fn announce_active_cell(&self, pos: Pos) {

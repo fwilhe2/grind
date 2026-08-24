@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Build a text document that uses **every feature this build supports**, through the CLI and
-# nothing else. `examples/sample.sh` is this script's spreadsheet twin, and the rule is the
+# nothing else. `examples/sample-sheet.sh` is this script's spreadsheet twin, and the rule is the
 # same one: a feature that lands without a line here is a feature nobody can see.
 #
 #   examples/sample-text.sh [output-directory]        # default: ./sample

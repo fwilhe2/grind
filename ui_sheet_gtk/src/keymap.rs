@@ -6,7 +6,7 @@
 //!
 //! **No GTK types.** The widget translates a `gdk::Key` into [`Key`] and hands it over, so
 //! everything decidable about navigation unit-tests with no display and no compositor
-//! (doc/gtk-shell.md, the same rule `geom.rs` follows). A second shell needs this logic
+//! (doc/sheet-shell.md, the same rule `geom.rs` follows). A second shell needs this logic
 //! unchanged, which is the other reason it is not written inline in an event handler.
 //!
 //! The selection is **presentation state**: an anchor and an active cell, and nothing else.
@@ -97,7 +97,7 @@ pub enum Action {
     /// Ctrl+Shift+C — a calculated cell's result rather than its formula.
     CopyValue,
     /// Ctrl+D / Ctrl+R — the selection's top row or left column, replicated into the rest
-    /// of the selection (`doc/gtk-shell.md`'s "extend a calculation").
+    /// of the selection (`doc/sheet-shell.md`'s "extend a calculation").
     Fill(Dir),
 }
 

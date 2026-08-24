@@ -524,7 +524,7 @@ fn a_deleted_sheet_survives_a_session_round_trip() {
     );
 }
 
-// --- the typing rule, and what a shell needs behind it (doc/gtk-shell.md C3–C6) ---
+// --- the typing rule, and what a shell needs behind it (doc/sheet-shell.md C3–C6) ---
 
 /// Every branch of `enter`'s interpretation, including the two that exist so that a string
 /// can be typed at all.

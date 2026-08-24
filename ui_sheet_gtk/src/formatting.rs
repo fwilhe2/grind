@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The format strip — M7's formatting UI (doc/gtk-shell.md).
+//! The format strip — M7's formatting UI (doc/sheet-shell.md).
 //!
 //! **It maps 1:1 onto the core's vocabulary and adds nothing.** Every toggle here is one
 //! field of `style::CellStyle`, and the number-format menu offers exactly the parameters

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Event routing and rendering. Holds no spreadsheet state of its own — cells come from
-//! [`grind_sheet::App::get_viewport`] every frame, exactly as `ui_gtk/src/grid.rs` reads it.
+//! [`grind_sheet::App::get_viewport`] every frame, exactly as `ui_sheet_gtk/src/grid.rs` reads it.
 //! The only fields here are presentation concerns: the active cell, the scroll offset, the
 //! editing mode and a status line.
 //!
@@ -171,7 +171,7 @@ impl App {
         }
     }
 
-    /// Display form goes back to canonical here, exactly as `ui_gtk/src/grid.rs`'s `commit`
+    /// Display form goes back to canonical here, exactly as `ui_sheet_gtk/src/grid.rs`'s `commit`
     /// does — the one step between what an editor holds and what `App::enter` takes. A
     /// formula that will not parse, or a value the core rejects, does **not** commit: Insert
     /// mode stays open with the typed text intact, because silently storing `=SUM(B2` as text

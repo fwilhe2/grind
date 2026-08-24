@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The GTK shell — phase 9's native shell, planned
 
-This is the work plan for `ui_gtk/`, phase 9's first shell, and the document that holds it
+This is the work plan for `ui_sheet_gtk/`, phase 9's first shell, and the document that holds it
 to the rules once building starts. It is a plan with decisions in it, not a wish list: the
 open questions were closed before writing (formula syntax, recalculation policy, widths),
 and each milestone names the check that ends it. The worked example is
@@ -53,7 +53,7 @@ start: in the core, or in widget-free modules that unit-test with no display.
 ## Part I — core work first
 
 Ten capabilities the GUI needs and the core lacks. All shell-agnostic (the wasm shell
-needs every one); each lands with its CLI command, parity row, `sample.sh` line and tests
+needs every one); each lands with its CLI command, parity row, `sample-sheet.sh` line and tests
 in one change.
 
 ### C1. Addressing moves into the core (`sheet/src/a1.rs`)
@@ -189,7 +189,7 @@ core when a second shell wants it.
 
 ---
 
-## Part II — the shell (`ui_gtk/`, crate `grind-sheet-gtk`, binary `grind-sheet-gtk`)
+## Part II — the shell (`ui_sheet_gtk/`, crate `grind-sheet-gtk`, binary `grind-sheet-gtk`)
 
 Dependencies: `grind-sheet`, `libadwaita` (gtk4 reached as `libadwaita::gtk` so the two
 cannot drift), `async-channel`. Imperative UI — no `.ui` files, no GResource. Pins chosen
@@ -421,10 +421,10 @@ lint`, the loops, parity.
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
 | M0 | Plan + CI prep — *done* | this document; CLAUDE.md/README rows; root `ci.yml` build job switches `--workspace` → named crates (`editor`'s system-libs trap); new `gtk.yml` (apt `libgtk-4-dev libadwaita-1-dev`, `cargo test -p grind-sheet-gtk`, release artifact) | CI green before any shell code |
-| M1 | **Read-only grid** — *done* | `ui_gtk` skeleton, window + open (argv), grid widget, `geom.rs` + tests, ScrolledWindow, theme palette, overflow/`###`, alignment | open any corpus file; smooth scroll; layout matches LibreOffice by eye (unstyled) |
-| M2 | Core prep A — *done* | C1 a1-into-core, C2 display form + spans (corpus round-trip test), C3 `enter`, C4 `preview` + contract test, C5 `clear_range`, C6 `enter_range` — CLI + parity + sample.sh each | corpus display round-trip green; `sheet eval`, `set --recalc`, range `clear`, `paste` in sample.sh |
+| M1 | **Read-only grid** — *done* | `ui_sheet_gtk` skeleton, window + open (argv), grid widget, `geom.rs` + tests, ScrolledWindow, theme palette, overflow/`###`, alignment | open any corpus file; smooth scroll; layout matches LibreOffice by eye (unstyled) |
+| M2 | Core prep A — *done* | C1 a1-into-core, C2 display form + spans (corpus round-trip test), C3 `enter`, C4 `preview` + contract test, C5 `clear_range`, C6 `enter_range` — CLI + parity + sample-sheet.sh each | corpus display round-trip green; `sheet eval`, `set --recalc`, range `clear`, `paste` in sample-sheet.sh |
 | M3 | Selection + navigation — *done* | keymap.rs Ready mode, header click/drag selection, Ctrl+arrows, status-bar aggregates | keyboard-only navigation of a corpus file feels right |
-| M4 | Editing v1 + chrome — *done* | `state.rs` Enter/Edit, in-cell editor + formula bar (shared buffer), commit/cancel, undo/redo, auto-recalc + banners, Delete, sheet tabs (+ undo toast), name-box navigation, save/save-as/close-confirm | the values and formulas of `examples/sample.sh` are typeable by hand in the GUI; its formats and styles wait for M7 |
+| M4 | Editing v1 + chrome — *done* | `state.rs` Enter/Edit, in-cell editor + formula bar (shared buffer), commit/cancel, undo/redo, auto-recalc + banners, Delete, sheet tabs (+ undo toast), name-box navigation, save/save-as/close-confirm | the values and formulas of `examples/sample-sheet.sh` are typeable by hand in the GUI; its formats and styles wait for M7 |
 | M5 | Clipboard — *done* | copy TSV / paste TSV via `gdk::Clipboard`, cut = copy + `clear_range`, `enter_range` under it | copy in the GUI → paste into LibreOffice, and back |
 | M6 | Formula UX — *done* | Point mode, F4, Tab memory, span coloring (day-one `gtk::Text` attributes spike), autocomplete (C9 lands here, core-first), signature hints, live preview | `=SUM(` + drag B2:B4 + `)` + Enter → colored, previewed, committed; one Ctrl+Z reverts edit + ripple |
 | M7 | Styles + formatting UI — *done* | C7 getters (`style_at`, `format_at`, `sheet style\|format --show`) + C8 viewport styles, styled grid rendering (background, borders, weight/slant/size, both alignments, wrap), the format strip (`formatting.rs`), whose colour buttons offer `style::PALETTE` — the clrs.cc palette, in the core so `sheet style --color navy` writes the same attribute — with a dialog behind *Custom…* and *Automatic* to remove the colour | GUI- and CLI-formatted documents identical for the same operations — both build their `Format` from `numfmt::preset` and their `CellStyle` field by field, and `Format::preset_params`/`is_preset` are in the core so neither shell derives "how many decimals is this" for itself |
@@ -432,7 +432,7 @@ lint`, the loops, parity.
 | M9 | Packaging & polish — *done* | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
 | M10 | Row auto-height & zoom — *done* | a row without a height of its own is measured from what is in it; Ctrl+wheel and Ctrl+`+`/`-`/`0` scale the view; the in-cell editor draws in the cell's font | a wrapped cell and a 28pt cell are drawn whole; the grid at 1.6× is the same grid, bigger, editor included |
 
-M9 landed as: `ui_gtk/data/` carries the `.desktop` file, an AppStream metainfo document and a
+M9 landed as: `ui_sheet_gtk/data/` carries the `.desktop` file, an AppStream metainfo document and a
 scalable icon, none built by anything — this is a pure Cargo workspace, so there is no build
 system to register them with yet; a shortcuts dialog (`gtk::ShortcutsWindow`, built from the
 same `actions()` table the window wires up plus `keymap.rs`'s own vocabulary, so it cannot
@@ -441,7 +441,7 @@ own — `gtk::FileDialog`'s "Recent" section already reads `GtkRecentManager`, s
 only call `RecentManager::add_item`; and the a11y floor — `Grid::announce_active_cell`, hung
 off the same `set_selection` choke-point everything else about a moved selection already goes
 through, speaking the cell's address and, if it has one, its display text via
-`gtk::Accessible::announce` (GTK 4.14, which is why `ui_gtk/Cargo.toml`'s `gtk4` feature moved
+`gtk::Accessible::announce` (GTK 4.14, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature moved
 from `v4_12`). The flatpak manifest is the one item named "stretch" in the plan and was
 skipped — nothing here needs it before the packaging files above have a build system to sit
 in.
@@ -526,7 +526,7 @@ draws those rows at zero height.
 persisted twin of the filter above, and orthogonal to it: `Sheet::hidden_cols`/
 `Sheet::row_manually_hidden` in the core, `App::set_col_hidden`/`set_row_hidden`/
 `hidden_cols`/`manually_hidden_rows`, and `sheet hide`/`--unhide` on the CLI. Right-clicking
-a column or row header (`Grid`'s one context menu, `ui_gtk/src/grid.rs`) hides it, or the
+a column or row header (`Grid`'s one context menu, `ui_sheet_gtk/src/grid.rs`) hides it, or the
 whole run under a header selection. `Grid::col_sizes`/`geom` fold the hidden set into
 `Sizes` the same zero-width-track trick the filter already used for rows, so a hidden
 column or row draws nothing and displaces nothing. The one thing filtering did not need: a
@@ -547,7 +547,7 @@ something the model can write (`Grid::target`).
 1. `cargo test` — all suites, including the corpus display round-trip and the preview
    contract test; `cargo clippy --workspace --all-targets` clean; `reuse lint` clean.
 2. Loop C green both directions, `widths` case included (needs `soffice`).
-3. `SHEET=target/debug/sheet examples/sample.sh /tmp/demo` exercises every new CLI
+3. `SHEET=target/debug/sheet examples/sample-sheet.sh /tmp/demo` exercises every new CLI
    surface.
 4. `cargo run -p grind-sheet-gtk -- <densest sample>.fods`: open, scroll, edit, format, resize,
    save; reopen the saved file in LibreOffice — identical display.

@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 What the GTK and browser shells for `grind text` do, what they deliberately do not, and what
 building them proved about the layout decision. Normative for those two milestones the way
-`doc/gtk-shell.md` is for phase 9; `doc/suite.md` is still normative for the phase around
+`doc/sheet-shell.md` is for phase 9; `doc/suite.md` is still normative for the phase around
 them.
 
 Both shells are **minimal on purpose**. `doc/suite.md` sizes S9 as "large" and describes a
@@ -102,7 +102,7 @@ a pixel or two in where a line breaks. No input method: a character arrives as a
 `KeyboardEvent.key`, so dead keys compose and CJK candidate windows do not. No outline dialog
 and no go-to-address field — the two things the GTK shell has that this one does not, and the
 first candidates when it grows. Both panes exist in one page and one is `hidden`; the
-spreadsheet's own gap list in `doc/gtk-shell.md` still applies to the other one.
+spreadsheet's own gap list in `doc/sheet-shell.md` still applies to the other one.
 
 ## How to see them
 

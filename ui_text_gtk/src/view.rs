@@ -4,7 +4,7 @@
 
 //! The document view: a custom widget that draws blocks and a caret, and owns neither.
 //!
-//! `ui_gtk/src/grid.rs`'s counterpart, one document type over. Every paint asks
+//! `ui_sheet_gtk/src/grid.rs`'s counterpart, one document type over. Every paint asks
 //! [`App::get_viewport`] for the blocks that fall on screen and [`App::layout_block`] for
 //! their lines, draws them, and throws both away (doc/plan.md rule 1). The only state here is
 //! presentation: where the caret is, and what column it is trying to keep while moving by
@@ -190,7 +190,7 @@ mod imp {
 
     impl ObjectImpl for Doc {
         // The four properties `GtkScrollable` requires, overridden by hand for the reason
-        // `ui_gtk/src/grid.rs` gives: the `Properties` derive's spelling has churned between
+        // `ui_sheet_gtk/src/grid.rs` gives: the `Properties` derive's spelling has churned between
         // gtk4-rs releases and this shape does not move.
         fn properties() -> &'static [glib::ParamSpec] {
             static PROPERTIES: std::sync::OnceLock<Vec<glib::ParamSpec>> =
@@ -797,7 +797,7 @@ mod imp {
             adjustment.set_value(flow.follow(adjustment.value(), page, target));
         }
 
-        /// The a11y floor (`doc/gtk-shell.md`, M9): a custom-drawn document has no other way
+        /// The a11y floor (`doc/sheet-shell.md`, M9): a custom-drawn document has no other way
         /// to tell assistive technology that the caret moved, so every move speaks the
         /// block's address and its text.
         fn announce(&self) {

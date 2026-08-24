@@ -4,7 +4,7 @@
 
 //! Where each block sits down the page, as pure arithmetic. **No GTK types.**
 //!
-//! `ui_gtk/src/geom.rs`'s counterpart, and it exists for the same reason: a custom-drawn
+//! `ui_sheet_gtk/src/geom.rs`'s counterpart, and it exists for the same reason: a custom-drawn
 //! widget's layout decisions are the part most worth testing and the part hardest to test
 //! through a display, so they live in a module that has never heard of one.
 //!

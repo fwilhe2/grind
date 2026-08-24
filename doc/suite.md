@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 This is the work plan for turning one ODF-native spreadsheet into an ODF-native **suite**, and
 the document that holds it to the rules once building starts. It is normative for **phase 10**
-the way `doc/gtk-shell.md` is for phase 9 and `doc/xlsx-import.md` is for what is now phase 11.
+the way `doc/sheet-shell.md` is for phase 9 and `doc/xlsx-import.md` is for what is now phase 11.
 
 It answers five questions, in this order because each one constrains the next:
 
@@ -92,11 +92,32 @@ which word won.
 | `$XDG_CONFIG_HOME/sheet/locale` | `$XDG_CONFIG_HOME/grind/locale`, with the old path **read as a fallback** and a one-line deprecation note on stderr. Costs four lines; the alternative is silently forgetting a user's locale |
 | app ID `io.github.fwilhe2.Sheet` | unchanged — it is already per-app, and `io.github.fwilhe2.Text` slots in beside it |
 
+**The second half of the rename, finished after S10.** S0 renamed everything that carried the
+*old product's* name. What it left alone was everything that was spreadsheet-specific and
+simply did not say so, because at the time there was nothing else for it to be confused with.
+Once the word processor had a sample script, a shell document and a window of its own, the
+unqualified names were the ambiguous ones:
+
+| Was | Becomes | Its counterpart |
+|---|---|---|
+| `ui_gtk/` | `ui_sheet_gtk/` | `ui_text_gtk/` |
+| `examples/sample.sh` | `examples/sample-sheet.sh` | `examples/sample-text.sh` |
+| `doc/gtk-shell.md` | `doc/sheet-shell.md` | `doc/text-shell.md` |
+| `doc/cli-recipes.md` | `doc/cli-recipes-sheet.md` | `doc/cli-parity-sheet.md`'s spelling |
+| `scripts/run.sh gtk` | `scripts/run.sh sheet-gtk` | `scripts/run.sh text-gtk` |
+
+Deliberately left alone: `doc/small-group.md` (Part 4's own term for the tier, and renaming it
+would break the citation), `doc/differential-fuzz.md` and `doc/xlsx-import.md` (each names a
+technique or a format that is unambiguous on its own), and every `GRIND_*` variable — loops B
+and E are the spreadsheet's, and the loop letters are already labelled per application in
+`CLAUDE.md`'s table. `ui_tui/` and `ui_web/` keep their names because they hold *both*
+document types; the split is inside them, in `src/sheet/` and `src/text/`.
+
 **No `sheet` compatibility alias.** A multi-call binary preserving the old spelling was
 considered and dropped: nothing has been released, so the only scripts that break are in this
-repository (`examples/sample.sh`, `doc/cli-recipes.md`, `cli/tests/cli.rs`), and carrying a
-second name forever to protect zero users is exactly the kind of accretion `doc/not-doing.md`
-exists to refuse.
+repository (`examples/sample-sheet.sh`, `doc/cli-recipes-sheet.md`, `cli/tests/cli.rs`), and
+carrying a second name forever to protect zero users is exactly the kind of accretion
+`doc/not-doing.md` exists to refuse.
 
 ---
 
@@ -180,7 +201,7 @@ sheet/         grind-sheet      the spreadsheet: model, ODS I/O, formula engine
 text/          grind-text       the word processor: model, ODT I/O
 cli/           grind-cli        the `grind` binary — one subtree per app
 ui_common/     grind-ui         shared GTK plumbing (extracted on evidence — S9 did not)
-ui_gtk/        grind-sheet-gtk  the spreadsheet's window (kept its directory name)
+ui_sheet_gtk/  grind-sheet-gtk  the spreadsheet's window
 ui_text_gtk/   grind-text-gtk   the word processor's window
 ui_tui/        grind-tui        both document types, one binary, dispatching on kind
 ui_web/        grind-web        both document types, one bundle, dispatching on kind
@@ -389,7 +410,7 @@ Global flags stay global and stay where they are: `--format json`, `--session`, 
 
 **`grind sheet`** is today's command set, verbatim, one level down: `new get view set paste fill
 eval clear format style width height hide name filter add rename remove recalc calculations fmt`.
-No verb changes meaning. `doc/cli-recipes.md` gains one word per line and nothing else.
+No verb changes meaning. `doc/cli-recipes-sheet.md` gains one word per line and nothing else.
 
 **`grind text`** — the proposed verb set, with each one's spreadsheet analogue named, because a
 verb with no analogue is a verb that needs justifying:
@@ -438,14 +459,15 @@ which is precisely how a suite turns back into LibreOffice.
 
 ### What breaks
 
-`examples/sample.sh` (`$SHEET` → `$GRIND`, `sheet X` → `grind sheet X`), `cli/tests/cli.rs`,
-`cli/tests/parity.rs`, `doc/cli-recipes.md`, `README.md`, `CLAUDE.md`, all five workflow files,
+`examples/sample-sheet.sh` (`$SHEET` → `$GRIND`, `sheet X` → `grind sheet X`),
+`cli/tests/cli.rs`, `cli/tests/parity.rs`, `doc/cli-recipes-sheet.md`, `README.md`,
+`CLAUDE.md`, all five workflow files,
 `Containerfile.distroless-cli`, and both `[package.metadata.*]` asset blocks. Every one of them
 is a mechanical substitution, and every one of them is caught by CI if missed.
 
 A second sample script arrives with S6: **`examples/sample-text.sh`**, which builds a document
 out of every text feature the build supports, through the CLI and nothing else, run by
-`cli/tests/cli.rs` and validated against the schema. The rule that made `sample.sh` valuable —
+`cli/tests/cli.rs` and validated against the schema. The rule that made `sample-sheet.sh` valuable —
 *a feature without a line there is invisible* — applies unchanged.
 
 ---
@@ -506,8 +528,8 @@ The shared GTK crate is extracted **at S9, when the second GTK shell exists and 
 not at S1 on speculation. **S9 built the second shell and did not extract it**: what the minimal
 text shell actually copied is the observer bridge, the `--render-to` harness and the
 window-close latch, and three small pieces are not yet a seam. The list below stands as the
-expected contents when it is. Expected contents, all of which `ui_gtk/` already has in a form the
-second shell will want verbatim:
+expected contents when it is — all of which `ui_sheet_gtk/` already has in a form the second
+shell will want verbatim:
 
 theme tokens and the "every colour comes from the theme" rule · the observer bridge
 (`async-channel` into the main loop) · `gtk::FileDialog` wrapping and `RecentManager` ·
@@ -573,7 +595,7 @@ of it needs a page model, and none of it needs a font.
 **`grind-web` gets the text document at S10**, after both native shells, for the reason phase 9
 gave: the wasm shell is rule 5's honest test, and it is most valuable once there is something
 proven to port. One bundle, dispatching on `grind_core::kind`. Its existing gaps list in
-`doc/gtk-shell.md` grows a text section — gaps are allowed, absence is not (R10).
+`doc/sheet-shell.md` grows a text section — gaps are allowed, absence is not (R10).
 
 ---
 
@@ -788,14 +810,14 @@ makes it scriptable.
 
 ## Milestones
 
-Phase 10, in `doc/gtk-shell.md`'s shape: numbered milestones, each with an exit criterion, none
+Phase 10, in `doc/sheet-shell.md`'s shape: numbered milestones, each with an exit criterion, none
 started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom.
 
 | | Milestone | Exit criterion | Size |
 |---|---|---|---|
 | **S0** | **Names and the trademark note.** Run the two collision checks. Update `README.md`'s Trademarks section and this document's rejected list with whatever they return | **Repo renamed to `fwilhe2/grind`** (GitHub redirects the old URL), description updated, every in-tree reference moved. **The two checks below have still not been run** — no `/usr/bin/grind` exists locally, and that is the whole of the evidence so far | small |
 | **S1** | **Extract `grind-core`.** The mechanical split above, plus `kind.rs` and `Observer`. No behaviour change | **Done.** R6 percentages unmoved to the digit; no test lost; R8's guard (`core/tests/generic.rs`) passing. `numfmt/` and the `Editor` trait deferred with reasons — see "What S1 actually did" | small |
-| **S2** | **The `grind` CLI.** Three levels, suite-level verbs, the registry-driven parity ratchet, the full rename including env vars and the config-path fallback | Every existing CLI test passes under the new spelling; `parity.rs` reads a registry; `sample.sh` and `cli-recipes.md` updated and green | small |
+| **S2** | **The `grind` CLI.** Three levels, suite-level verbs, the registry-driven parity ratchet, the full rename including env vars and the config-path fallback | Every existing CLI test passes under the new spelling; `parity.rs` reads a registry; `sample-sheet.sh` and `cli-recipes-sheet.md` updated and green | small |
 | **S3** | **`doc/odt-format.md` and `doc/text-core.md`.** The clean-room spec and the scope line, before any text code exists | **Done.** Every structural claim cites the vendored RELAX NG by line; §5 (what LibreOffice does) is entirely `UNVERIFIED` and may not be implemented until it carries a citation | medium |
 | **S4** | **The text model and reader.** `loc.rs`, `Block`/`Run`, block ids, contexts over the existing driver | **Done.** `implemented()` checked against `doc/text-core.md` by `text/tests/scope.rs`, and **loop A green over Writer's corpus**: 1763 documents, 1755 read, 0 failed, nothing special-cased. `GRIND_LO_CORPUS` now names the checkout **root**, so one clone serves both applications | large |
 | **S5** | **The text writer, R6 splicing, loop C.** Both forms | **Done.** Writer in both forms; `package`/`manifest`/`esc`/`VERSION` extracted to `grind-core` now that a second caller pulls on them, with the sheet's R6 figures unmoved as proof it was a move; **R6 splicing works** — an unedited save returns the bytes exactly and editing one paragraph changes one line (`text/tests/diffable.rs`). Splicing is content edits only; a structural change regenerates, by one stated rule. **Loop C green both directions**, 0 differences, and it found a real writer bug on its first run (a literal tab or newline came back as a space) plus the fact that the pinned oracle had no Writer in it, since fixed by rebuilding the image — `doc/odt-format.md` §5b | large |
@@ -803,7 +825,7 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | **S7** | **The layout decision, executed.** Path A as recommended; Path B behind its gate | **Partly done, and the decision is reopened — `doc/text-layout.md`.** What landed and is correct under every path: the caret *edits* — `insert_text`, `erase`, `split_block`, `join_block` — and offset addressing (`#intro+5`, not only `p12+40`), each on the CLI per R9, with typing spliced so one keystroke is one line of `git diff`. What is provisional: the Path A *decision* itself, and the three documents recording it. S7 does not exit until `doc/text-layout.md` closes | A: medium · B: very large · C: large |
 | **L1** | **The line breaker, in `grind-core`.** `Metrics`, `Fragment`, `Layout`, UAX #14 via `unicode-linebreak`, and `Fixed` for the CLI and every test | **Done.** `core/src/layout.rs`, tested against a synthetic one-unit-per-character provider so breaking is exactly assertable with no font anywhere. R8-clean: the input is `(text, TextStyle)` fragments and no document type's vocabulary appears | medium |
 | **L2** | **Caret operations defined in terms of a line**, on `grind_text::App` and on the CLI | **Done.** `layout_block`, `caret_x`, `caret_line` (crossing block boundaries), `caret_line_bounds`; `grind text view --width` and `grind text caret --down/--home/--end`. Rule 4 has an answer for Down-arrow for the first time | medium |
-| **L3** | **The spreadsheet adopts the same engine.** `ui_gtk`'s row auto-height measurement moves onto `Metrics`, so one line breaker serves both applications | One engine, two callers, and `ui_gtk` implements `Metrics` over Pango once — which is what makes `doc/text-layout.md`'s decision 3 load-bearing rather than aspirational, and the first test of injection against a real shaping engine | medium |
+| **L3** | **The spreadsheet adopts the same engine.** `ui_sheet_gtk`'s row auto-height measurement moves onto `Metrics`, so one line breaker serves both applications | One engine, two callers, and `ui_sheet_gtk` implements `Metrics` over Pango once — which is what makes `doc/text-layout.md`'s decision 3 load-bearing rather than aspirational, and the first test of injection against a real shaping engine | medium |
 | **S8** | **The terminal text shell.** `grind-tui` opens both types off `grind_core::kind`; vi-modal over blocks; `:outline`, `:style`, bare-`loc` jumps. **Before the GTK shell, on purpose** — it is the cheapest complete editor and the sharpest test of the layout decision | **Done.** One binary, both types, dispatched on the file's bytes and refusing a `--sheet`/`--text` that disagrees with them. `ui_tui/src/text/` is the shell and `Cells` is the whole of its layout contribution — about twenty lines answering "how wide is this, in terminal columns", with breaking and every line-motion coming from the core. `cargo test -p grind-tui` covers both keymaps, the cell metrics and the rendering, 41 tests with no terminal attached | medium |
 | **S9** | **The GTK text shell.** Its own `doc/text-shell.md`. Extract `grind-ui` here | **Done, minimally.** `grind-text-gtk` opens, draws, navigates by line, edits at the caret, saves and undoes; `--render-to` produces an assertable frame; `cargo test -p grind-text-gtk` covers `geom`/`keymap` everywhere and the widget where there is a display; the a11y floor matches M9's. **`grind-ui` was not extracted** — `doc/suite.md` says to do it on evidence and one minimal shell is not evidence of which seam to cut; the three pieces that were copied are named in `doc/text-shell.md`. Packaging (`.desktop`, metainfo, icon) waits for S11, which does all five packages at once | large |
 | **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | **Done, minimally.** `grind-web` is `sheet/` + `text/` + a shell that dispatches on `grind_core::kind`, mirroring `grind-tui`'s shape; it opens, edits and saves a `.fodt` with no path anywhere; `ui_web/smoke.js` drives both panes in jsdom and checks the handover both ways; the gap list is in `doc/text-shell.md` | medium |

@@ -156,8 +156,9 @@ grind sheet style report.ods A1:E1 >/dev/null      # no options: plain again
 that cell should look like. Fonts are deliberately absent — LibreOffice rewrites a font
 family into a reference nothing here follows yet.
 
-[`examples/sample.sh`](../examples/sample.sh) builds a document using every feature at once,
-and is run by the test suite, so it is always a working example of the current CLI.
+[`examples/sample-sheet.sh`](../examples/sample-sheet.sh) builds a document using every
+feature at once, and is run by the test suite, so it is always a working example of the
+current CLI.
 
 ## Gate a repository's spreadsheets in CI
 

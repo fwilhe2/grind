@@ -4,7 +4,7 @@
 
 //! Every colour the document view draws, resolved from the running theme in one place.
 //!
-//! `ui_gtk/src/theme.rs`'s rule, unchanged and worth repeating: **nothing here is a
+//! `ui_sheet_gtk/src/theme.rs`'s rule, unchanged and worth repeating: **nothing here is a
 //! literal.** A custom-drawn widget has to pick its own colours, and the failure mode is a
 //! page that stays white in a dark theme. The whole palette is rebuilt whenever the style
 //! changes.

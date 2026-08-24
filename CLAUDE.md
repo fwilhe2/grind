@@ -60,7 +60,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-layout.md` | **Where layout lives — decided, Path C.** Normative for it, including the five answers at its end (RTL out, `Layout` in `grind-core`, the CLI's unit). Outranks `doc/suite.md`'s fork section, which is the record of an argument rather than the answer |
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
-| `doc/gtk-shell.md` | Phase 9's GTK shell work plan — normative for that phase |
+| `doc/sheet-shell.md` | Phase 9's work plan for the **spreadsheet's** GTK shell — normative for that phase |
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/not-doing.md` | The feature line as a product document |
 
@@ -119,11 +119,11 @@ cargo test -p grind-tui                   # both keymaps, `Cells`, and rendering
 ```
 
 ```sh
-cargo build && GRIND=target/debug/grind examples/sample.sh /tmp/demo
+cargo build && GRIND=target/debug/grind examples/sample-sheet.sh /tmp/demo
 cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 ```
 
-`examples/sample.sh` and `examples/sample-text.sh` build a document out of **every feature
+`examples/sample-sheet.sh` and `examples/sample-text.sh` build a document out of **every feature
 this build supports**, through the CLI only, and `cli/tests/cli.rs` runs both — a feature
 without a line there is invisible. Add one when adding a capability.
 
@@ -194,7 +194,7 @@ bug in the code, not the loop.
 Shared Core / Native Shell (see
 [fwilhe2/editor](https://github.com/fwilhe2/editor)'s `doc/shared-core-native-shell.md`).
 All state and logic in `core/`; every shell is a renderer and event forwarder owning
-nothing. `cli/` exists so capabilities cannot hide in a UI; `ui_gtk/` is held to the same
+nothing. `cli/` exists so capabilities cannot hide in a UI; `ui_sheet_gtk/` is held to the same
 rule by `cli/tests/parity.rs`.
 
 Rules that are cheap now, expensive to break later:
@@ -219,7 +219,7 @@ rather than a guest:
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
 | `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-cli` | `cli/` | The `grind` binary |
-| `grind-sheet-gtk` | `ui_gtk/` | The spreadsheet's GTK shell |
+| `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns |
@@ -282,11 +282,12 @@ before it can be answered.
   syntax layered on top of the same lexer/parser, not a second grammar. All 110 Small Group
   functions are implemented; `funcs::implemented()` is checked against `doc/small-group.md`
   by a test, which is the anti-bloat rule made mechanical.
-- **`ui_gtk/`** — the GNOME shell (phase 9, `doc/gtk-shell.md` is normative here). Owns no
-  data — every paint reads `App::get_viewport` and throws it away. Custom `gtk::Widget`
-  drawing in `snapshot()`, not `GtkColumnView`. `geom.rs` holds all layout arithmetic and no
-  GTK types, so it's unit-testable with no display. Every colour comes from the theme, never
-  a literal, except the reference palette and a colour the document itself chose.
+- **`ui_sheet_gtk/`** — the spreadsheet's GNOME shell (phase 9, `doc/sheet-shell.md` is
+  normative here). Owns no data — every paint reads `App::get_viewport` and throws it away.
+  Custom `gtk::Widget` drawing in `snapshot()`, not `GtkColumnView`. `geom.rs` holds all
+  layout arithmetic and no GTK types, so it's unit-testable with no display. Every colour
+  comes from the theme, never a literal, except the reference palette and a colour the
+  document itself chose.
 - **`cli/`** — `main.rs` (clap, one arm per subcommand) + `report.rs`. A subcommand is a few
   lines driving `App`; anything longer belongs in the core. `doc/cli-parity-sheet.md` +
   `cli/tests/parity.rs` are the parity ratchet: every public `App` method needs a reaching
@@ -329,7 +330,7 @@ green both directions), the OpenFormula engine (all 110 Small Group functions, d
 expressions), number formats and cell styling, the CLI (with the parity ratchet), sheet
 add/rename/delete, `doc/not-doing.md` (the product stop-line), and R6's diffable writer.
 
-**Phase 9 (the shells) is done through M9**, planned in `doc/gtk-shell.md`. Done: M0–M8 — CI
+**Phase 9 (the shells) is done through M9**, planned in `doc/sheet-shell.md`. Done: M0–M8 — CI
 split, the read-only grid, core prep (`a1`, `formula::display`, `enter`/`preview`/
 `clear_range`/`enter_range`), selection/navigation, editing (in-cell editor + formula bar,
 undo/redo, spoilage banner), clipboard, formula UX (point mode, autocomplete, signature
@@ -339,12 +340,12 @@ M10 adds row auto-height (a row without a height of its own is measured from wha
 so a wrapped cell and an oversized font are drawn whole) and zoom (Ctrl+wheel,
 Ctrl+`+`/`-`/`0`) — one factor in `Grid::geom`, with nothing measured ever stored zoomed.
 
-**M9** brought packaging under `ui_gtk/data/` (`.desktop`, AppStream metainfo, a scalable
+**M9** brought packaging under `ui_sheet_gtk/data/` (`.desktop`, AppStream metainfo, a scalable
 icon — nothing builds or installs them yet, since this is a pure Cargo workspace), a
 `gtk::ShortcutsWindow` built from the same accelerator table the window wires up, recent
 files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section already reads,
 so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
-selection move, which is why `ui_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
+selection move, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
 manifest was the one "stretch" item and was skipped. `.github/workflows/packaging.yml` builds
 `.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for both `grind-cli` and
 `grind-sheet-gtk`, reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in
@@ -356,7 +357,7 @@ arrives from the file picker as bytes (`App::open_bytes`) and leaves as a downlo
 `wasm32-unknown-unknown` and a version-matched `wasm-bindgen-cli`), checked without a browser
 by `ui_web/smoke.sh` (jsdom) and by `cargo test -p grind-web` (keymap + layout arithmetic).
 Its spreadsheet gaps, on purpose: point mode, styling controls, column widths, and a uniform
-grid; its document pane's are in `doc/text-shell.md`. `doc/gtk-shell.md`'s "The gaps, written
+grid; its document pane's are in `doc/text-shell.md`. `doc/sheet-shell.md`'s "The gaps, written
 down" section is the up-to-date list of everything deferred by decision in phase 9.
 
 **Phase 10 (the suite) is done through S10**, planned in `doc/suite.md` — every cell of R10's
@@ -398,6 +399,6 @@ found one core bug (an empty paragraph laid out one *unit* tall, since fixed in
 `App::caret_line` takes one width and one provider for a motion that may cross into a block set
 in a different face.
 
-**What remains of the layout work is L3**: `ui_gtk`'s row auto-height measurement moves onto
+**What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
 is where `grind-text-gtk` gets its `.desktop` file, its metainfo, its icon and its packages.

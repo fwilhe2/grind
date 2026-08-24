@@ -21,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 grind-core = { path = "../core" }
 grind-text = { path = "../text" }
-# The same two toolkit versions `ui_gtk` pins, for the same reasons — see its `Cargo.toml`.
+# The same two toolkit versions `ui_sheet_gtk` pins, for the same reasons — see its `Cargo.toml`.
 # Nothing here may drift from that shell: cargo unifies them into one crate either way.
 libadwaita = { version = "0.7", features = ["v1_5"] }
 gtk4 = { version = "0.9", features = ["v4_14"] }

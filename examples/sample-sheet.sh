@@ -8,8 +8,8 @@
 # numbers, but shaped the way a real one is: a category table with a running total, a
 # transaction pasted in after the fact, and a journal sheet that reaches back across to it.
 #
-#   examples/sample.sh [output-directory]        # default: ./sample
-#   GRIND=target/debug/grind examples/sample.sh  # a binary other than the one on PATH
+#   examples/sample-sheet.sh [output-directory]        # default: ./sample
+#   GRIND=target/debug/grind examples/sample-sheet.sh  # a binary other than the one on PATH
 #
 # This is a living inventory, not a demo: `cli/tests/cli.rs` runs it and fails the build if
 # it stops working, and a feature that lands without a line here is a feature nobody can

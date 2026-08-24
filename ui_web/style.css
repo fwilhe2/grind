@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 /* Colours come from the platform (`Canvas`, `AccentColor`, …) rather than a palette
    of literals, so light and dark follow the reader's own setting — the same rule
-   `ui_gtk` follows with the GTK theme. A colour the *document* chose is written
+   `ui_sheet_gtk` follows with the GTK theme. A colour the *document* chose is written
    inline by the shell and outranks everything here. */
 :root {
   color-scheme: light dark;

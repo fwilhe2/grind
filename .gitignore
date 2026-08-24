@@ -4,7 +4,7 @@
 
 /target
 
-# `examples/sample.sh` with no argument writes here.
+# `examples/sample-sheet.sh` and `examples/sample-text.sh` with no argument write here.
 /sample
 
 # The browser shell's build output, and the jsdom scaffolding its smoke test

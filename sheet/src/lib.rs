@@ -1344,7 +1344,7 @@ impl App {
     }
 }
 
-/// Whether an edit recalculates the document behind it (doc/gtk-shell.md C3).
+/// Whether an edit recalculates the document behind it (doc/sheet-shell.md C3).
 ///
 /// An enum rather than a bool because the useful third answer — recalculate only what
 /// depends on the cell that changed — is what `eval.rs`'s `ponytail:` note is about, and it
@@ -1408,7 +1408,7 @@ fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
     }
 }
 
-/// The typing rule: what a string a user typed means (doc/gtk-shell.md C3).
+/// The typing rule: what a string a user typed means (doc/sheet-shell.md C3).
 ///
 /// One [`Action::SetFormula`] whatever the answer, because every one of these outcomes also
 /// has to *remove* whatever formula the cell held — typing `5` over `=SUM(A1:A4)` replaces
@@ -1460,7 +1460,7 @@ fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Actio
     }
     // A cell already known to hold a date or a time (by format or by `NumberKind`, see
     // `date_kind`) accepts its own ISO spelling back — `input_text`'s exact inverse, not a
-    // general "anything that looks like a date is a date" rule (doc/gtk-shell.md C3 defers
+    // general "anything that looks like a date is a date" rule (doc/sheet-shell.md C3 defers
     // that on purpose).
     if let Some(kind) = doc.sheet(sheet).and_then(|s| date_kind(s, pos)) {
         let parsed = match kind {

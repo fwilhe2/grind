@@ -14,7 +14,7 @@
 //!
 //! ponytail: the grid is uniform — every column one width, every row one height —
 //! so the document's own `col_widths`/`row_heights` are read by nobody here. The
-//! upgrade is a prefix-sum over those runs, the same shape `ui_gtk/src/geom.rs`
+//! upgrade is a prefix-sum over those runs, the same shape `ui_sheet_gtk/src/geom.rs`
 //! grew in M8; it is a real feature, not a rounding error, and it is written down
 //! in the README's gap list rather than half-built.
 

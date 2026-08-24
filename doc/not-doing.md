@@ -37,7 +37,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Macros and Basic** | A scripting host is a second product with a second security model. A document that computes is the goal; a document that *executes* is not. |
 | **Extensions** | An extension API freezes the core's internals into a contract. The core is 18 months old and the shape is still moving. |
 | **OLE embedding** | Embedding another application's document means hosting another application. |
-| **Change tracking** | Per-cell revision history is a data model of its own, layered under every mutation. Version control over `.fods` covers the real need — see `doc/cli-recipes.md`. |
+| **Change tracking** | Per-cell revision history is a data model of its own, layered under every mutation. Version control over `.fods` covers the real need — see `doc/cli-recipes-sheet.md`. |
 | **Database ranges and data sources** | `table:database-range` is read past and dropped. A spreadsheet that is a database client is a different program. |
 | **Scenarios, goal seek, solver** | Three separate optimisation UIs over the same evaluator. The evaluator is the asset; the UIs are not. |
 | **Sparklines** | A chart in a cell, with its own layout model, for a chart nobody reads. |
@@ -96,7 +96,7 @@ CLI parity gaps.
 | Not yet | Owner | Gate |
 |---|---|---|
 | **Reordering sheets** | When a shell has somewhere to drag one to | A new sheet is appended and that is the whole vocabulary; `Action::InsertSheet` already carries an index, so a move is two actions in a batch when something can ask for one. |
-| **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes.md` already drives the import half from the shell. |
+| **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes-sheet.md` already drives the import half from the shell. |
 | **Sort** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. Filtering is built (§9.4, `sheet/src/filter.rs`): a set of values compares for equality, which is the half of "sort and filter" that needs no collation. |
 | **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
 | **Freeze panes** | Phase 9 shells | Purely a view concern, and there is no view. |
@@ -142,10 +142,10 @@ the code, and this table is an index rather than a second source of truth.
 | **Border widths** | Compared numerically in loop C, because LibreOffice re-quantises them (`0.5pt` → `0.51pt`). | `style.rs` |
 | **Border line styles, on screen** | Read, written and round-tripped; *drawn* solid, so `dashed` and `double` look like `solid`. The width and colour are honoured, which is what carries the meaning of a ruled table. | `grid.rs`'s `draw_borders` |
 | **Wrapped text, on screen** | Wraps inside its own cell and clips at the row height, because every row is one line tall until the model carries heights. A font size larger than the row clips for the same reason. | `grid.rs`'s `draw_cells` |
-| **The in-cell editor's font** | The widget's, not the cell's — a bold cell is edited in a regular weight. `gtk::Text` is a real child widget, and restyling it per cell is a second font path for the duration of one edit. | `doc/gtk-shell.md` M7 |
+| **The in-cell editor's font** | The widget's, not the cell's — a bold cell is edited in a regular weight. `gtk::Text` is a real child widget, and restyling it per cell is a second font path for the duration of one edit. | `doc/sheet-shell.md` M7 |
 | **Formatting a whole column** | Formats the column's *used* part. A real column default is `table:default-cell-style-name`, which the reader honours on the way in and the model cannot yet write. | `Grid::target` |
 | **The default colour palette** | Seventeen named colours (<https://clrs.cc/>, `style::PALETTE`) offered by a shell's swatches and `sheet style --color`. A *default, not a limit*: any `#rrggbb` is still accepted, a GUI's *Custom…* opens a colour dialog, and a document's own colour is kept whatever it is. What is deliberately absent is a *user-editable* palette, which needs settings a shell does not have yet. | `style.rs` |
-| **The format picker's vocabulary** | Exactly `numfmt::preset`'s parameters, which is what makes GUI- and CLI-formatted documents identical. A document's format that is outside it — `DD.MM.YYYY`, a two-branch currency — is kept, rendered, and reported as one the picker cannot build (`Format::is_preset`) rather than silently replaced. | `ui_gtk/src/formatting.rs` |
+| **The format picker's vocabulary** | Exactly `numfmt::preset`'s parameters, which is what makes GUI- and CLI-formatted documents identical. A document's format that is outside it — `DD.MM.YYYY`, a two-branch currency — is kept, rendered, and reported as one the picker cannot build (`Format::is_preset`) rather than silently replaced. | `ui_sheet_gtk/src/formatting.rs` |
 | **`NOW` / `TODAY`** | UTC, not the host's local time. | `date.rs:283` |
 | **String comparison** | Code-point order after case folding, not locale collation. §6.4.9 permits it. | `eval.rs:503` |
 | **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `CLAUDE.md` |

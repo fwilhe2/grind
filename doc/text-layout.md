@@ -326,7 +326,7 @@ R8 is satisfied because line breaking over styled text mentions no document type
 its input is a flat sequence of `(text, TextStyle)` fragments, which a paragraph's runs and a
 wrapped cell's display text both produce. `core/src/layout.rs`.
 
-**And the spreadsheet adopts it.** `ui_gtk` M10's row auto-height already measures wrapped
+**And the spreadsheet adopts it.** `ui_sheet_gtk` M10's row auto-height already measures wrapped
 text, so today there is a line breaker in the GTK shell that the word processor was about to
 duplicate. One engine, two applications — which is an argument for Path C this document did not
 count when recommending it, and the strongest available evidence that the abstraction is real
@@ -342,7 +342,7 @@ character is one unit wide makes line breaking exactly assertable with no font a
 A terminal shell wants `unicode-width` rather than a naive count, for CJK and combining marks.
 That belongs in the shell, which implements the trait itself — the core stays free of it.
 
-### 5. `ui_gtk`'s wrap measurement **moves onto the trait**
+### 5. `ui_sheet_gtk`'s wrap measurement **moves onto the trait**
 
 The GTK shell implements `Metrics` over Pango once, and both its grid and (at S9) its text view
 use it. This is what makes question 3's answer load-bearing rather than aspirational, and it is

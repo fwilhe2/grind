@@ -369,7 +369,7 @@ fn formatting_an_absurd_rectangle_fails_instead_of_trying() {
     );
 }
 
-/// `examples/sample.sh` is the inventory of what this build can do, and an inventory that
+/// `examples/sample-sheet.sh` is the inventory of what this build can do, and an inventory that
 /// is not run is a wish list. Running it here means a feature that stops working, or a
 /// command that changes its flags, fails the build rather than the next reader.
 #[test]
@@ -378,7 +378,7 @@ fn the_sample_script_still_builds_its_document() {
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("the workspace root")
-        .join("examples/sample.sh");
+        .join("examples/sample-sheet.sh");
 
     let output = Command::new("bash")
         .arg(&script)
@@ -423,7 +423,7 @@ fn the_sample_script_still_builds_its_document() {
         Err(_) => eprintln!("skipping: no `jing` on PATH; schema validity unchecked"),
         Ok(out) => assert!(
             out.status.success(),
-            "examples/sample.sh writes invalid ODF:\n{}",
+            "examples/sample-sheet.sh writes invalid ODF:\n{}",
             String::from_utf8_lossy(&out.stdout)
         ),
     }

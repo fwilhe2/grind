@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 The plan for checking our function implementations against LibreOffice on inputs **nobody
 wrote a fixture for**, and the document that holds it to the rules. Normative for this work
-the way `doc/gtk-shell.md` is for phase 9.
+the way `doc/sheet-shell.md` is for phase 9.
 
 ## What it adds that loop B does not
 

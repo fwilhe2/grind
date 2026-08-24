@@ -28,7 +28,7 @@ jobs:
       - run: cargo install cargo-generate-rpm --locked
       - run: cargo build --release -p grind-cli -p grind-sheet-gtk -p grind-tui
       - run: cargo generate-rpm -p cli
-      - run: cargo generate-rpm -p ui_gtk
+      - run: cargo generate-rpm -p ui_sheet_gtk
       - run: cargo generate-rpm -p ui_tui
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

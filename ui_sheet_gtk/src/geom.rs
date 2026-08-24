@@ -6,7 +6,7 @@
 //!
 //! **No GTK types.** This is the shell's pixel arithmetic as pure functions, which is what
 //! makes it the part of a GUI that unit-tests with no display, no compositor and no CI
-//! runner that has either (doc/gtk-shell.md, following `editor`'s widget-free keymap).
+//! runner that has either (doc/sheet-shell.md, following `editor`'s widget-free keymap).
 //! Everything the grid widget knows about layout it asks this module.
 //!
 //! Two coordinate spaces, and mixing them is the bug this module exists to prevent:

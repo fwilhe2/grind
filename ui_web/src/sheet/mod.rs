@@ -58,7 +58,7 @@ fn declare_cell_size(document: &Document) -> Result<(), JsValue> {
 
 /// The selected rectangle: where the selection started and where it is now.
 ///
-/// The same two-`Pos` shape `ui_gtk/src/keymap.rs` uses, and it is two rather than a
+/// The same two-`Pos` shape `ui_sheet_gtk/src/keymap.rs` uses, and it is two rather than a
 /// rectangle so that extending with Shift knows which corner is pinned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Selection {
@@ -435,7 +435,7 @@ impl Ui {
         self.dom.formula.focus()?;
         // Focusing an `<input>` selects it in some browsers, and the caret belongs
         // after what is there or the next keystroke deletes the seed — the same trap
-        // `ui_gtk`'s `Grid::begin` documents, in a different toolkit.
+        // `ui_sheet_gtk`'s `Grid::begin` documents, in a different toolkit.
         let end = text.chars().count() as u32;
         self.dom.formula.set_selection_range(end, end)?;
         self.set_message(String::new());

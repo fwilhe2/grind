@@ -8,7 +8,7 @@
 //! that everyone has an opinion about, everyone notices when it is wrong, and no display is
 //! needed to check. The widget turns the answer into GTK calls.
 //!
-//! The modes are Excel's, by name (doc/gtk-shell.md):
+//! The modes are Excel's, by name (doc/sheet-shell.md):
 //!
 //! * **Ready** — the grid has the keys. A printable character starts an edit seeded with it,
 //!   F2 and a double-click start one seeded with the cell, everything else navigates.

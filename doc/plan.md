@@ -41,7 +41,7 @@ a requirement nothing checks is a preference.
 | | Requirement | Checked by |
 |---|---|---|
 | **R1** | The implementation is **fully independent**, and implements ODF natively rather than translating another format. | `CONTRIBUTING.md`'s clean-room rule; `funcs::implemented()` against `doc/small-group.md` |
-| **R2** | Everything written **MUST be valid** against the ODF schema. | `jing -i doc/OpenDocument-v1.4-schema.rng`, in `sheet/tests/kb.rs` and over `examples/sample.sh`'s output in `cli/tests/cli.rs` |
+| **R2** | Everything written **MUST be valid** against the ODF schema. | `jing -i doc/OpenDocument-v1.4-schema.rng`, in `sheet/tests/kb.rs` and over `examples/sample-sheet.sh`'s output in `cli/tests/cli.rs` |
 | **R3** | Output **MUST carry minimal boilerplate** while staying compliant — nothing written that the document does not use. | the writer's own tests; a new document is 13 lines |
 | **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — nothing yet, because nothing needs it |
 | **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `sheet/tests/kb.rs`'s three LibreOffice-authored files |

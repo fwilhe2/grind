@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What a keystroke means, as a pure function — the same shape as
-//! `ui_gtk/src/keymap.rs` and `ui_tui/src/keymap.rs`, and for the same reason: this
+//! `ui_sheet_gtk/src/keymap.rs` and `ui_tui/src/keymap.rs`, and for the same reason: this
 //! is the part everyone has an opinion about and nobody needs a browser to check.
 //!
 //! A browser key arrives as a *string* (`"a"`, `"ArrowLeft"`, `"F2"`), so there is no
@@ -12,7 +12,7 @@
 //! `primary` flag, resolved by the caller, so this file never asks what it is
 //! running on.
 //!
-//! The two-mode split `ui_gtk/src/state.rs` documents (Enter vs Edit) is *not* here.
+//! The two-mode split `ui_sheet_gtk/src/state.rs` documents (Enter vs Edit) is *not* here.
 //! This shell edits in one place, the formula bar, and an arrow key there moves the
 //! text caret — the browser's own behaviour, which is the right one for an `<input>`
 //! and is why editing claims only the three keys that end an edit.
@@ -169,7 +169,7 @@ fn step(from: Pos, dir: Dir, by: u32) -> Pos {
     }
 }
 
-/// Where the cursor goes after a commit — `ui_gtk`'s `state::after_commit` without
+/// Where the cursor goes after a commit — `ui_sheet_gtk`'s `state::after_commit` without
 /// the tab-column memory, which needs a run of Tabs to be worth anything and is one
 /// more thing to keep in step across three shells.
 pub fn after_commit(from: Pos, direction: Option<Dir>) -> Pos {

@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # The xlsx import filter — phase 10, planned
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
-building starts. It is normative for this phase the way `doc/gtk-shell.md` is for phase 9.
+building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
 
 **The decision it records.** `doc/not-doing.md` §2 has carried one row since phase 7:
 *"Reading `.xlsx` — never scheduled, always allowed"*. It is now scheduled. The reason is
@@ -114,7 +114,7 @@ this phase as they bind every other. Where they say something specific:
 ```
 core/     document model, ODF I/O, formula engine       (unchanged, knows nothing of Excel)
 cli/      the `sheet` binary                            optional dep: sheet-xlsx
-ui_gtk/   the GNOME shell                                optional dep: sheet-xlsx
+ui_sheet_gtk/   the GNOME shell                                optional dep: sheet-xlsx
 xlsx/     the import filter — crate `sheet-xlsx`         depends on grind-sheet, zip, quick-xml
 ```
 

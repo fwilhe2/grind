@@ -9,7 +9,7 @@
 //! [`App::get_viewport`] returns, and the keys and editing around it. If a field shows up
 //! here that is not a presentation concern, the core is missing something.
 //!
-//! `doc/gtk-shell.md` is the plan and the running record of what is built. Milestones 1, 3
+//! `doc/sheet-shell.md` is the plan and the running record of what is built. Milestones 1, 3
 //! and 4 are here: a document opens, draws, navigates, and can be edited and saved.
 //!
 //! **The core pushes; this never polls** (rule 3). `App`'s observer is a channel sender —

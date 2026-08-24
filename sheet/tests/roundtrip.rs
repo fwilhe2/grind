@@ -933,7 +933,7 @@ fn expected_render_gap(name: &str, sheet: usize, pos: Pos) -> bool {
 /// the raw `CellValue` LO's own recalculation happens to produce.
 ///
 /// **Not** a claim that a shell shows this the instant it opens one of these files. Neither
-/// side auto-recalculates on open: `ui_gtk::main`'s `open_file` never calls `App::recalc`,
+/// side auto-recalculates on open: `ui_sheet_gtk::main`'s `open_file` never calls `App::recalc`,
 /// only F9/"Recalculate Now" does, and `a_document_of_formulas_with_no_cached_values_
 /// recalculates` (`kb.rs`) documents LibreOffice doing the same — `fizzbuzz.fods` is blank
 /// in both until something recalculates it. `soffice --convert-to`, which is what builds the

@@ -5,7 +5,7 @@
 //! Which key means what, as a pure function. **No GTK types.**
 //!
 //! The widget turns a `gdk::Key` into [`Key`] and hands it over, so every navigation and
-//! editing decision unit-tests with no display — the rule `ui_gtk/src/keymap.rs` follows and
+//! editing decision unit-tests with no display — the rule `ui_sheet_gtk/src/keymap.rs` follows and
 //! the reason both shells' keyboards are testable at all.
 //!
 //! **Nothing here does arithmetic**, which is the difference from the spreadsheet's map and

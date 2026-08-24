@@ -5,13 +5,13 @@
 #
 # Build a shell and run it on the sample document — the "see it working" loop.
 #
-#   scripts/run.sh gtk|text-gtk|tui|web [document]
+#   scripts/run.sh sheet-gtk|text-gtk|tui|web [document]
 #
-# `gtk` is the spreadsheet's window and `text-gtk` the word processor's — two binaries
-# because a `.desktop` file's MimeType= is per application (doc/suite.md). `tui` and
-# `web` are one shell each and open whichever document type they are given.
+# `sheet-gtk` is the spreadsheet's window and `text-gtk` the word processor's — two
+# binaries because a `.desktop` file's MimeType= is per application (doc/suite.md).
+# `tui` and `web` are one shell each and open whichever document type they are given.
 #
-# With no document it builds one with `examples/sample.sh` — or `examples/sample-text.sh`
+# With no document it builds one with `examples/sample-sheet.sh` — or `examples/sample-text.sh`
 # for the word processor — which uses every feature this build supports, so whatever was
 # just changed is on screen somewhere. The
 # document goes to $GRIND_DEMO (default /tmp/grind-demo) and is rebuilt every run:
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-shell="${1:-gtk}"
+shell="${1:-sheet-gtk}"
 demo="${GRIND_DEMO:-/tmp/grind-demo}"
 port="${PORT:-8000}"
 
@@ -38,14 +38,14 @@ if [ -z "$document" ]; then
             document="$demo/sample.fodt"
             ;;
         *)
-            GRIND="$root/target/debug/grind" "$root/examples/sample.sh" "$demo" >/dev/null
+            GRIND="$root/target/debug/grind" "$root/examples/sample-sheet.sh" "$demo" >/dev/null
             document="$demo/sample.fods"
             ;;
     esac
 fi
 
 case "$shell" in
-    gtk)
+    sheet-gtk)
         exec cargo run -p grind-sheet-gtk -- "$document"
         ;;
     text-gtk)
@@ -61,7 +61,7 @@ case "$shell" in
         exec python3 -m http.server --directory "$root/ui_web/dist" "$port"
         ;;
     *)
-        echo "usage: $(basename "$0") gtk|text-gtk|tui|web [document]" >&2
+        echo "usage: $(basename "$0") sheet-gtk|text-gtk|tui|web [document]" >&2
         exit 2
         ;;
 esac
