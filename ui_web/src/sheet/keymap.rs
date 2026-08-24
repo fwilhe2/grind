@@ -19,7 +19,7 @@
 
 use grind_sheet::Pos;
 
-use crate::{MAX_COLS, MAX_ROWS};
+use super::{MAX_COLS, MAX_ROWS};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {

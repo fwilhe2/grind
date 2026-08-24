@@ -179,9 +179,9 @@ core/          grind-core       [GENERIC] — nothing here knows what a cell or 
 sheet/         grind-sheet      the spreadsheet: model, ODS I/O, formula engine
 text/          grind-text       the word processor: model, ODT I/O
 cli/           grind-cli        the `grind` binary — one subtree per app
-ui_common/     grind-ui         shared GTK plumbing (extracted at S9, not before)
-ui_sheet_gtk/  grind-sheet-gtk
-ui_text_gtk/   grind-text-gtk
+ui_common/     grind-ui         shared GTK plumbing (extracted on evidence — S9 did not)
+ui_gtk/        grind-sheet-gtk  the spreadsheet's window (kept its directory name)
+ui_text_gtk/   grind-text-gtk   the word processor's window
 ui_tui/        grind-tui        both document types, one binary, dispatching on kind
 ui_web/        grind-web        both document types, one bundle, dispatching on kind
 xlsx/          grind-xlsx       phase 11, unchanged plan
@@ -461,7 +461,7 @@ the window is the real product and the rest is a demo. The matrix is full:
 | | `grind` (CLI) | `grind-tui` | GTK | `grind-web` |
 |---|---|---|---|---|
 | **sheet** | done | done | done | done, with named gaps |
-| **text** | S6 | S8 | S9 | S10 |
+| **text** | S6 | S8 | S9 — minimal, gaps in `doc/text-shell.md` | S10 — minimal, same list |
 | *slides* | *reserved* | *reserved* | *reserved* | *reserved* |
 
 **Full does not mean identical.** `ui_web` already ships deliberate spreadsheet gaps — no point
@@ -503,7 +503,10 @@ worse tool for exactly the person who wants a suite in a terminal.
 ### `grind-ui`, extracted on evidence
 
 The shared GTK crate is extracted **at S9, when the second GTK shell exists and shows the seam** —
-not at S1 on speculation. Expected contents, all of which `ui_gtk/` already has in a form the
+not at S1 on speculation. **S9 built the second shell and did not extract it**: what the minimal
+text shell actually copied is the observer bridge, the `--render-to` harness and the
+window-close latch, and three small pieces are not yet a seam. The list below stands as the
+expected contents when it is. Expected contents, all of which `ui_gtk/` already has in a form the
 second shell will want verbatim:
 
 theme tokens and the "every colour comes from the theme" rule · the observer bridge
@@ -802,8 +805,8 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | **L2** | **Caret operations defined in terms of a line**, on `grind_text::App` and on the CLI | **Done.** `layout_block`, `caret_x`, `caret_line` (crossing block boundaries), `caret_line_bounds`; `grind text view --width` and `grind text caret --down/--home/--end`. Rule 4 has an answer for Down-arrow for the first time | medium |
 | **L3** | **The spreadsheet adopts the same engine.** `ui_gtk`'s row auto-height measurement moves onto `Metrics`, so one line breaker serves both applications | One engine, two callers, and `ui_gtk` implements `Metrics` over Pango once — which is what makes `doc/text-layout.md`'s decision 3 load-bearing rather than aspirational, and the first test of injection against a real shaping engine | medium |
 | **S8** | **The terminal text shell.** `grind-tui` opens both types off `grind_core::kind`; vi-modal over blocks; `:outline`, `:style`, bare-`loc` jumps. **Before the GTK shell, on purpose** — it is the cheapest complete editor and the sharpest test of the layout decision | **Done.** One binary, both types, dispatched on the file's bytes and refusing a `--sheet`/`--text` that disagrees with them. `ui_tui/src/text/` is the shell and `Cells` is the whole of its layout contribution — about twenty lines answering "how wide is this, in terminal columns", with breaking and every line-motion coming from the core. `cargo test -p grind-tui` covers both keymaps, the cell metrics and the rendering, 41 tests with no terminal attached | medium |
-| **S9** | **The GTK text shell.** Its own `doc/text-shell.md`, milestone by milestone, mirroring `doc/gtk-shell.md`. Extract `grind-ui` here | The shell opens, edits and saves; `--render-to` produces an assertable frame; `cargo test -p grind-text-gtk` covers the display-free half; the a11y floor matches M9's | large |
-| **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | `grind-web` opens and saves a `.fodt` with no path anywhere; `ui_web/smoke.sh` covers it; its gap list names what it does not do | medium |
+| **S9** | **The GTK text shell.** Its own `doc/text-shell.md`. Extract `grind-ui` here | **Done, minimally.** `grind-text-gtk` opens, draws, navigates by line, edits at the caret, saves and undoes; `--render-to` produces an assertable frame; `cargo test -p grind-text-gtk` covers `geom`/`keymap` everywhere and the widget where there is a display; the a11y floor matches M9's. **`grind-ui` was not extracted** — `doc/suite.md` says to do it on evidence and one minimal shell is not evidence of which seam to cut; the three pieces that were copied are named in `doc/text-shell.md`. Packaging (`.desktop`, metainfo, icon) waits for S11, which does all five packages at once | large |
+| **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | **Done, minimally.** `grind-web` is `sheet/` + `text/` + a shell that dispatches on `grind_core::kind`, mirroring `grind-tui`'s shape; it opens, edits and saves a `.fodt` with no path anywhere; `ui_web/smoke.js` drives both panes in jsdom and checks the handover both ways; the gap list is in `doc/text-shell.md` | medium |
 | **S11** | **Package the suite.** Meta-package, two desktop entries, four mime types, AppStream, icons, the container, cross-app handoff, README rewritten as a suite pitch | `packaging.yml` produces all five packages; `reuse lint` green; `doc/shell-matrix.md` full and green (R10); double-clicking a `.fodt` opens the text app on a clean machine | medium |
 
 Then **phase 11 — xlsx import**, `doc/xlsx-import.md` unchanged but for its number and the

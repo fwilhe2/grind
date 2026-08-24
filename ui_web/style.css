@@ -21,12 +21,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   box-sizing: border-box;
 }
 
+/* `hidden` means gone. Spelled out because the elements this shell hides set their
+   own `display`, and an author's `display: flex` outranks the UA stylesheet's rule
+   for `[hidden]` — which is how a pane that has been "hidden" stays on screen. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
-  /* Three fixed bars and one scrolling grid: the grid is the only thing that may
-     grow, which is what keeps the viewport arithmetic honest. */
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  /* Fixed bars and one scrolling pane: the pane is the only thing that may grow,
+     which is what keeps the viewport arithmetic honest. A column rather than fixed
+     grid rows, because which pane is showing — the grid or the document — changes
+     how many children there are, and a row template would then size the wrong one. */
+  display: flex;
+  flex-direction: column;
   height: 100dvh;
   font: 14px/1.4 system-ui, sans-serif;
   background: Canvas;
@@ -34,6 +43,7 @@ body {
 }
 
 .bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -77,8 +87,83 @@ button {
 }
 
 .surface {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   outline: none;
+}
+
+/* --- the document pane ---------------------------------------------------
+   Structure only. Every font, line height and indent is written inline by the
+   shell from the face that measured the text (ui_web/src/text/mod.rs), because
+   a font declared in two places is a font that will be declared differently in
+   two places — and here that would put the caret in the wrong column. */
+
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  background: Canvas;
+}
+
+.flow {
+  max-width: var(--measure, 640px);
+  margin: 2rem auto;
+  /* A word processor is not a UI: the reader's own text settings decide nothing
+     here, because what is on screen has to be what would be printed. */
+  color: CanvasText;
+}
+
+.block {
+  margin: 0 0 var(--block-gap, 14px);
+}
+
+/* Collapsed against the gap the block above already left — the same rule the GTK
+   shell's flow applies, so a document has one shape in both. */
+.h {
+  margin-top: calc(var(--heading-gap, 24px) - var(--block-gap, 14px));
+}
+
+.li {
+  position: relative;
+  list-style: none;
+}
+
+.li::before {
+  content: "\2022";
+  position: absolute;
+  margin-left: -0.9em;
+  opacity: 0.55;
+}
+
+.line {
+  /* The core decided where this line ends; the browser must not decide again. */
+  white-space: pre;
+}
+
+/* Between two pieces of text rather than at a measured x, so the browser places it
+   against its own kerning. `width: 0` plus a border, so it takes no room. */
+.caret {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+  border-left: 2px solid AccentColor;
+  margin-right: -2px;
+  animation: blink 1.1s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
 }
 
 .grid {

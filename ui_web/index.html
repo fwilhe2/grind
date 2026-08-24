@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>grind sheet</title>
+    <title>grind</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -28,10 +28,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <span id="name" class="name"></span>
       <!-- Hidden because the toolbar button is the affordance; the picker is the
            browser's own, and the only way a page may read a file. -->
-      <input id="file-input" type="file" accept=".ods,.fods,.xml" hidden />
+      <input
+        id="file-input"
+        type="file"
+        accept=".ods,.fods,.odt,.fodt,.xml"
+        hidden
+      />
     </header>
 
-    <div class="bar formula-bar">
+    <div id="formula-bar" class="bar formula-bar">
       <span id="address" class="address">A1</span>
       <input
         id="formula"
@@ -51,6 +56,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </thead>
         <tbody id="body"></tbody>
       </table>
+    </main>
+
+    <!--
+      The document pane. One `<div>` per laid-out *line*, because the core breaks the
+      lines and the page draws what it was told — see ui_web/src/text/mod.rs. tabindex,
+      because a div holds no keyboard otherwise.
+    -->
+    <main id="page" class="page" tabindex="0" hidden>
+      <article id="flow" class="flow"></article>
     </main>
 
     <footer class="bar status">

@@ -12,13 +12,15 @@
 //
 // jsdom has no layout engine — every rectangle it reports is zero — so the shell
 // falls back to its metric guards and the viewport is one cell. That is enough to
-// exercise everything except how things look.
+// exercise everything except how things look. It has no canvas either, which is
+// what the text pane measures with; that falls back the same way, so line breaking
+// here is plausible rather than accurate, and nothing below asserts a width.
 //
 // Run it through ui_web/smoke.sh, which builds the pieces it needs.
 
 const fs = require("fs");
 const path = require("path");
-const { JSDOM } = require("jsdom");
+const { JSDOM, VirtualConsole } = require("jsdom");
 
 const here = __dirname;
 const html = fs
@@ -26,7 +28,21 @@ const html = fs
   // The page loads the ES module build; this harness requires the node one below.
   .replace(/<script type="module">[\s\S]*?<\/script>/, "");
 
-const dom = new JSDOM(html, { pretendToBeVisual: true, url: "http://localhost/" });
+// jsdom shouts "Not implemented" through its own console for every browser API it
+// does not have — `canvas.getContext` is the one this shell asks for. The shell
+// already treats a missing canvas as "measure it yourself" and carries on, so the
+// stack trace is noise in front of the checks. Anything else still comes through.
+const virtualConsole = new VirtualConsole();
+virtualConsole.sendTo(console, { omitJSDOMErrors: true });
+virtualConsole.on("jsdomError", (error) => {
+  if (!/not implemented/i.test(error.message)) console.error(error);
+});
+
+const dom = new JSDOM(html, {
+  pretendToBeVisual: true,
+  url: "http://localhost/",
+  virtualConsole,
+});
 
 // The generated glue type-checks values with `instanceof Window`, `instanceof
 // HTMLButtonElement` and so on, so every DOM constructor has to be a real global.
@@ -72,6 +88,24 @@ const press = (key, modifiers = {}) =>
     new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers })
   );
 
+// The document pane has its own keyboard: it holds the caret, and every key it
+// claims is answered by grind-text rather than by the page.
+const typeInDoc = (text) => {
+  for (const key of text) pressInDoc(key);
+};
+
+const pressInDoc = (key, modifiers = {}) =>
+  byId("page").dispatchEvent(
+    new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers })
+  );
+
+// What the document pane is showing, block by block — the same rule as `shown()`:
+// read the page, never the core, because the page is what a reader sees.
+const blocks = () =>
+  [...document.querySelectorAll("#flow .block")].map((block) =>
+    [...block.querySelectorAll(".line")].map((line) => line.textContent).join("")
+  );
+
 // Typing into the formula bar the way a user does: the key opens the edit and
 // seeds it, and the rest goes in as text, each keystroke firing `input`.
 const type = (text) => {
@@ -112,6 +146,19 @@ const FODS = `<?xml version="1.0" encoding="UTF-8"?>
       <table:table-row><table:table-cell office:value-type="string"><text:p>from a file</text:p></table:table-cell></table:table-row>
     </table:table>
   </office:spreadsheet></office:body>
+</office:document>`;
+
+// A minimal flat text document, so the text pane is fed a real file too. Its
+// kind is read from the bytes, which is why it can be told apart from the
+// spreadsheet above without looking at either name.
+const FODT = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:body><office:text>
+    <text:h text:outline-level="1">Title</text:h>
+    <text:p>One paragraph.</text:p>
+  </office:text></office:body>
 </office:document>`;
 
 (async () => {
@@ -191,6 +238,58 @@ const FODS = `<?xml version="1.0" encoding="UTF-8"?>
   check("opening a document works with no filesystem", shown(), "from a file");
   check("and the sheet's own name is shown", byId("summary").textContent.startsWith("Opened"), true);
   check("the name travels with it", byId("name").textContent, "opened.fods");
+
+  // --- the word processor -------------------------------------------------
+  //
+  // R10: every document type reaches every shell. One bundle, and which pane is
+  // showing is decided by `grind_core::kind` from the bytes — never the name.
+  const openFile = async (name, content) => {
+    const file = new File([content], name, { type: "text/xml" });
+    Object.defineProperty(byId("file-input"), "files", { value: [file], configurable: true });
+    byId("file-input").dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    await frame();
+    await frame();
+  };
+
+  await openFile("notes.fodt", FODT);
+  check("a text document opens the document pane", byId("page").hidden, false);
+  check("and puts the grid away", byId("surface").hidden, true);
+  check("the formula bar goes with the grid", byId("formula-bar").hidden, true);
+  check("the document is drawn from the core", blocks(), ["Title", "One paragraph."]);
+
+  // Typing: every key is `App::insert_text`, and the caret is an element in the line.
+  pressInDoc("ArrowDown");
+  pressInDoc("End");
+  typeInDoc(" More.");
+  await frame();
+  check("typing reaches the core", blocks(), ["Title", "One paragraph. More."]);
+  check("the caret is in the document", document.querySelectorAll("#caret").length, 1);
+
+  // Enter splits a block and Backspace at the front joins it back — the two edits
+  // that make a flat sequence of blocks behave like one flow of text.
+  pressInDoc("Enter");
+  await frame();
+  check("Enter splits a block", blocks().length, 3);
+  pressInDoc("Backspace");
+  await frame();
+  check("Backspace at the front joins it back", blocks(), ["Title", "One paragraph. More."]);
+
+  // The chrome's shortcuts work in both panes and reach the core that is showing.
+  pressInDoc("z", { ctrlKey: true });
+  await frame();
+  check("Ctrl+Z undoes in whichever document is open", blocks().length, 3);
+
+  byId("save").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  await frame();
+  check("saving names the download after the document", downloads.at(-1).name, "notes.fodt");
+  const written = await downloads.at(-1).text();
+  check("and writes a flat text document", written.includes("office:text"), true);
+
+  // Back to a spreadsheet: the same bundle, the same buttons, the other pane.
+  await openFile("again.fods", FODS);
+  check("a spreadsheet brings the grid back", byId("surface").hidden, false);
+  check("and the document pane goes away", byId("page").hidden, true);
+  check("with the sheet drawn again", shown(), "from a file");
 
   // A repaint that changes nothing must still be safe — a resize borrows the same
   // message it writes back.

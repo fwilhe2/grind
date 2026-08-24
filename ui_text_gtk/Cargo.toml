@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-text-gtk"
+version = "0.0.0"
+description = "An ODF-native word processor — the GNOME shell"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "grind-text-gtk"
+path = "src/main.rs"
+
+# A second binary rather than a mode of `grind-sheet-gtk`, because a `.desktop` file's
+# `MimeType=` is how a desktop associates an application with a file type and one entry
+# claiming both spreadsheets and text documents is what makes "Open With" useless
+# (`doc/suite.md`, "One binary per document type — for GTK only").
+[dependencies]
+grind-core = { path = "../core" }
+grind-text = { path = "../text" }
+# The same two toolkit versions `ui_gtk` pins, for the same reasons — see its `Cargo.toml`.
+# Nothing here may drift from that shell: cargo unifies them into one crate either way.
+libadwaita = { version = "0.7", features = ["v1_5"] }
+gtk4 = { version = "0.9", features = ["v4_14"] }
+async-channel = "2"

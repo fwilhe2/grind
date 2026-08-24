@@ -5,7 +5,7 @@
 [package]
 name = "grind-web"
 version = "0.0.0"
-description = "An ODF-native spreadsheet — the browser shell"
+description = "An ODF-native office suite — the browser shell"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -17,7 +17,9 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
 wasm-bindgen = "0.2"
 # Reading a picked file is a promise, and it is the only async thing here.
 wasm-bindgen-futures = "0.4"
@@ -29,9 +31,12 @@ js-sys = "0.3"
 version = "0.3"
 features = [
   "Blob",
+  "CanvasRenderingContext2d",
   "BlobPropertyBag",
   "CssStyleDeclaration",
   "Document",
+  "DomRect",
+  "DomStringMap",
   "Element",
   "Event",
   "EventTarget",
@@ -39,6 +44,7 @@ features = [
   "FileList",
   "HtmlAnchorElement",
   "HtmlButtonElement",
+  "HtmlCanvasElement",
   "HtmlElement",
   "HtmlInputElement",
   "KeyboardEvent",
@@ -46,6 +52,8 @@ features = [
   "MouseEvent",
   "Node",
   "Response",
+  "Text",
+  "TextMetrics",
   "Url",
   "WheelEvent",
   "Window",

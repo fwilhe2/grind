@@ -15,11 +15,14 @@ jobs:
       # The shell's testable half is the widget-free modules — geometry, keys, the
       # edit state machine — and none of them need a display, so nothing here wants
       # a compositor.
-      - run: cargo test -p grind-sheet-gtk --all-targets
+      #
+      # Both GTK shells, in one job: they need the same packages, and a second job would
+      # install them twice to say the same thing.
+      - run: cargo test -p grind-sheet-gtk -p grind-text-gtk --all-targets
       # The lint and doc gates the `ci` workflow runs for every other crate. They live here
-      # because they compile the shell, and compiling it needs the packages above.
-      - run: cargo clippy -p grind-sheet-gtk --all-targets -- -D warnings
-      - run: cargo doc --no-deps -p grind-sheet-gtk
+      # because they compile the shells, and compiling them needs the packages above.
+      - run: cargo clippy -p grind-sheet-gtk -p grind-text-gtk --all-targets -- -D warnings
+      - run: cargo doc --no-deps -p grind-sheet-gtk -p grind-text-gtk
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo build --release -p grind-sheet-gtk
+      - run: cargo build --release -p grind-sheet-gtk -p grind-text-gtk

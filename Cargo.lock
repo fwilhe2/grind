@@ -928,6 +928,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-text-gtk"
+version = "0.0.0"
+dependencies = [
+ "async-channel",
+ "grind-core",
+ "grind-text",
+ "gtk4",
+ "libadwaita",
+]
+
+[[package]]
 name = "grind-tui"
 version = "0.0.0"
 dependencies = [
@@ -942,7 +953,9 @@ dependencies = [
 name = "grind-web"
 version = "0.0.0"
 dependencies = [
+ "grind-core",
  "grind-sheet",
+ "grind-text",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",

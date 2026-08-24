@@ -53,7 +53,9 @@ specifications, and uses LibreOffice as an oracle and a test corpus.
 
 ## Where it is
 
-**Phases 0–8 done, phase 9 (the shells) in progress.** It reads and writes ODF spreadsheets
+**Phases 0–9 done; phase 10 — the suite — through S10.** The word processor now reaches every
+shell it has (CLI, terminal, GTK, browser), the last two minimally and with their gaps written
+down. It reads and writes ODF spreadsheets
 in both forms, `.ods` and flat `.fods`. All 361 documents in LibreOffice's own Calc test
 corpus load — the three it declines are password-protected — and documents written here
 survive a round trip through LibreOffice unchanged, checked on every push.
@@ -66,11 +68,18 @@ widths and row heights.
 No fonts yet, and the list of what is deliberately missing is a document rather than an
 excuse: [`doc/not-doing.md`](doc/not-doing.md).
 
-## The window
+## The windows
 
 ```sh
 cargo run -p grind-sheet-gtk -- book.ods        # or a .fods; with no file, an empty document
+cargo run -p grind-text-gtk -- report.fodt      # or a .odt; the word processor
 ```
+
+Two applications rather than one with a mode, because that is how a desktop associates a file
+type with an application. The word processor's window is **minimal on purpose** — it opens,
+draws, moves by line, types, saves and undoes, and has an outline and a go-to-address box for
+`p12` / `#intro` / `§2.1.3`. What it does not do is a document rather than a surprise:
+[`doc/text-shell.md`](doc/text-shell.md).
 
 GTK 4 and libadwaita — a GNOME application, keyboard first. Type in cells, type formulas in
 the A1 form you already know (with point mode, autocomplete and a signature hint as you go),
@@ -155,8 +164,10 @@ cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' C
 python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
 ```
 
-Open, edit, formulas, undo, sheets, save as a download. No point mode, no styling controls,
-one column width for everything.
+Open, edit, formulas, undo, sheets, save as a download — **and it opens both document types
+too**, in one bundle, deciding which from the file's own bytes. Spreadsheet gaps: no point
+mode, no styling controls, one column width for everything. Document gaps:
+[`doc/text-shell.md`](doc/text-shell.md).
 
 ## Your files stay yours
 
@@ -199,7 +210,7 @@ that everything written validates against the OASIS RELAX NG schema.
 ## Building
 
 Install Rust via [rustup](https://rustup.rs/) rather than your distribution's package —
-this tracks current stable, which is what CI builds against. The GTK shell also needs
+this tracks current stable, which is what CI builds against. The GTK shells also need
 GTK 4 and libadwaita development headers:
 
 ```sh
@@ -211,8 +222,8 @@ sudo dnf install -y gtk4-devel libadwaita-devel
 ```
 
 ```sh
-cargo test                       # everything but the GTK shell
-cargo test -p grind-sheet-gtk          # its widget-free half: geometry, keys, edit state
+cargo test                       # everything but the GTK shells
+cargo test -p grind-sheet-gtk -p grind-text-gtk   # their widget-free halves: geometry, keys
 ```
 
 The corpus tests want a LibreOffice checkout and skip with a notice without one:
@@ -240,7 +251,8 @@ cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 | [`doc/cli-recipes.md`](doc/cli-recipes.md) | Worked scripts |
 | [`doc/small-group.md`](doc/small-group.md) | The 110 functions, from Part 4 §2.3.2 |
 | [`doc/ods-format.md`](doc/ods-format.md) | Clean-room notes on what LibreOffice actually does, cited `file:line` |
-| [`doc/gtk-shell.md`](doc/gtk-shell.md) | The GTK shell, milestone by milestone |
+| [`doc/gtk-shell.md`](doc/gtk-shell.md) | The spreadsheet's GTK shell, milestone by milestone |
+| [`doc/text-shell.md`](doc/text-shell.md) | The word processor's windows — what they do, and what they deliberately do not |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | The clean-room rule, and how to work on this |
 | `doc/OpenDocument-v1.4-schema.rng`, `doc/OpenDocument-v1.4-os-part4-formula.html` | The OASIS specifications this is built from |
 

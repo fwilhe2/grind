@@ -19,14 +19,16 @@ has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0�
 `grind <app> <verb>` CLI, and R8/R9/R10.
 
 The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
-(`grind text`) is done through S8: it reads, writes, edits by block *and by caret*, lays text
-out, and **has a terminal shell** — `grind-tui` opens both document types in one binary.
+(`grind text`) is done through S10: it reads, writes, edits by block *and by caret*, lays text
+out, and **has all three shells** — `grind-tui` opens both document types in one binary,
+`grind-text-gtk` is its window, and `grind-web`'s one bundle holds both panes. The two GUI
+shells are deliberately *minimal*; `doc/text-shell.md` lists what they do and do not do.
 `examples/sample-text.sh` builds a document out of every feature it has, through the CLI only.
 Loops A and C are both green. **Line layout lives in `grind-core`** (`doc/text-layout.md`,
 decided on Path C), so `j`/`k`/Home/End mean one thing in every shell and the CLI can answer
 them; a shell supplies only font metrics. What it does **not** have: a session (so no `undo`
-across invocations), tables, footnotes, fields, style definitions, RTL layout, pages, and any
-GUI.
+across invocations), tables, footnotes, fields, style definitions, RTL layout, pages, and — in
+any shell — a *selection*, so no copy, cut or paste of text.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -59,6 +61,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
 | `doc/gtk-shell.md` | Phase 9's GTK shell work plan — normative for that phase |
+| `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -89,13 +92,17 @@ cargo run -p grind-cli -- sheet view book.ods A1:A2
 cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
 ```
 
-`grind-sheet-gtk` needs `libgtk-4-dev` + `libadwaita-1-dev`, and is **not** in
-`cargo build --workspace`'s path — built and run on its own:
+The two GTK shells need `libgtk-4-dev` + `libadwaita-1-dev`, and are **not** in
+`cargo build --workspace`'s path — built and run on their own:
 
 ```sh
 cargo run -p grind-sheet-gtk -- book.ods                  # .ods or .fods; no file = empty document
 cargo run -p grind-sheet-gtk -- book.fods --render-to /tmp/grid.png   # one frame, then exit
 cargo test -p grind-sheet-gtk                             # geom.rs, no display needed
+
+cargo run -p grind-text-gtk -- report.fodt                # the word processor's window
+cargo run -p grind-text-gtk -- report.fodt --render-to /tmp/page.png
+cargo test -p grind-text-gtk   # geom + keymap always; the widget tests skip with no display
 ```
 
 `--render-to` is how a custom-drawn widget gets an assertable output (a refactor is proved
@@ -201,9 +208,11 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
-| `grind-text` | `text/` | The word processor (phase 10, S4–S7): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. No layout of any kind yet — `doc/text-layout.md` is the open decision on whether it belongs here |
+| `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-cli` | `cli/` | The `grind` binary |
-| `grind-sheet-gtk`, `grind-web` | `ui_gtk/`, `ui_web/` | The spreadsheet's GTK and wasm shells |
+| `grind-sheet-gtk` | `ui_gtk/` | The spreadsheet's GTK shell |
+| `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
+| `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
@@ -330,13 +339,14 @@ arrives from the file picker as bytes (`App::open_bytes`) and leaves as a downlo
 (`App::save_bytes`), with no path anywhere. Built by `ui_web/build.sh` (needs
 `wasm32-unknown-unknown` and a version-matched `wasm-bindgen-cli`), checked without a browser
 by `ui_web/smoke.sh` (jsdom) and by `cargo test -p grind-web` (keymap + layout arithmetic).
-Its gaps, on purpose: point mode, styling controls, column widths, and a uniform grid.
-`doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of everything
-deferred by decision in this phase.
+Its spreadsheet gaps, on purpose: point mode, styling controls, column widths, and a uniform
+grid; its document pane's are in `doc/text-shell.md`. `doc/gtk-shell.md`'s "The gaps, written
+down" section is the up-to-date list of everything deferred by decision in phase 9.
 
-**Phase 10 (the suite) is done through S6, and S7 is half done and half reopened**, planned in
-`doc/suite.md`. S1–S6 split `grind-core` out, built the `grind` CLI, wrote the two normative
-text documents, and gave the word processor its model, reader, writer, R6 splicing and `App`.
+**Phase 10 (the suite) is done through S10**, planned in `doc/suite.md` — every cell of R10's
+shell matrix is now filled, some of them minimally and every gap named. S1–S6 split
+`grind-core` out, built the `grind` CLI, wrote the two normative text documents, and gave the
+word processor its model, reader, writer, R6 splicing and `App`.
 
 S7 landed the *caret edits* — `insert_text`, `erase`, `split_block`, `join_block`, plus an
 offset axis on `Loc` so `#intro+5` is as good as `p12+40` and survives an edit above it where
@@ -348,12 +358,10 @@ What S7 also did was close the layout fork on Path A, and that was **reopened im
 The objection: `CLAUDE.md`'s own architecture rule puts all logic in the core, and line layout
 is not rendering — Down-arrow, Home/End, click-to-caret and selection extents are every one of
 them defined in terms of a *line*, so Path A hands a piece of the editing model to three shells
-that will disagree, and leaves the CLI unable to answer Down-arrow at all. **`doc/text-layout.md`
-is the open decision**, it separates two questions `doc/suite.md` had fused (line layout vs.
-pagination), and it recommends a third path: line layout in the core with font metrics injected
-through a `Metrics` trait the shell implements, pagination still gated. **Do not start S8 until
-it closed on **Path C**: line layout in `grind-core` (`core/src/layout.rs`), font metrics
-injected through a `Metrics` trait, pagination still gated, RTL excluded by explicit decision.
+that will disagree, and leaves the CLI unable to answer Down-arrow at all. `doc/text-layout.md`
+separates two questions `doc/suite.md` had fused (line layout vs. pagination), and it **closed
+on Path C**: line layout in `grind-core` (`core/src/layout.rs`), font metrics injected through
+a `Metrics` trait, pagination still gated, RTL excluded by explicit decision.
 L1 and L2 built it and gave `grind_text::App` the caret operations defined in terms of a line —
 `layout_block`, `caret_x`, `caret_line`, `caret_line_bounds` — each reachable from the CLI
 (`grind text view --width`, `grind text caret --down/--home/--end`).
@@ -362,6 +370,18 @@ L1 and L2 built it and gave `grind_text::App` the caret operations defined in te
 types, dispatched on the file's bytes. It is the payoff of Path C and the proof of it — the
 shell implements `Metrics` in terminal cells (`ui_tui/src/text/mod.rs`, about twenty lines using
 `unicode-width`) and gets line breaking, `j`/`k` by wrapped line, Home/End and hit-testing from
-the core. **L3 is what remains of the layout work**: `ui_gtk`'s row auto-height measurement
-moves onto the same trait, so one breaker serves both applications and the abstraction is tested
-against Pango. Then S9 (the GTK text shell) and S10 (the browser).
+the core. **S9 and S10 are done, minimally** (`doc/text-shell.md`): `grind-text-gtk` is the word
+processor's window — a custom widget drawing from `App::layout_block`, Pango behind `Metrics`,
+typing through `GtkIMMulticontext`, an outline dialog and a go-to-address popover for `p12` /
+`#intro` / `§2.1.3`, and a banner offering to hand a spreadsheet to `grind-sheet-gtk`. The
+browser shell gained a second pane the same way `grind-tui` gained a second mode, dispatching
+on `grind_core::kind`, with the canvas as a third `Metrics`. Three implementations of that
+trait now exist and the engine needed no change, which is Path C's evidence. Building them
+found one core bug (an empty paragraph laid out one *unit* tall, since fixed in
+`grind_text::lay_out`) and one core limitation, written down rather than worked around:
+`App::caret_line` takes one width and one provider for a motion that may cross into a block set
+in a different face.
+
+**What remains of the layout work is L3**: `ui_gtk`'s row auto-height measurement moves onto
+the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
+is where `grind-text-gtk` gets its `.desktop` file, its metainfo, its icon and its packages.

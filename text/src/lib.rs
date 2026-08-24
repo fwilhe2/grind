@@ -1055,7 +1055,7 @@ fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, Option<Strin
 /// changes.
 fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
     let style = grind_core::style::TextStyle::default();
-    let fragments: Vec<layout::Fragment<'_>> = block
+    let mut fragments: Vec<layout::Fragment<'_>> = block
         .runs
         .iter()
         .map(|run| layout::Fragment {
@@ -1063,6 +1063,18 @@ fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
             style: &style,
         })
         .collect();
+    // An empty paragraph is still one line tall, and the only way to say how tall that is
+    // is to hand the provider a fragment to answer about: `wrap` takes its height from the
+    // fragments it was given, so with none it has nothing to ask and falls back to one unit.
+    // Invisible where a unit *is* a line — the CLI's `Fixed`, a terminal cell — and the
+    // difference between an empty paragraph and a one-pixel gap in a shell that draws
+    // pixels.
+    if fragments.is_empty() {
+        fragments.push(layout::Fragment {
+            text: "",
+            style: &style,
+        });
+    }
     layout::wrap(&fragments, width, metrics)
 }
 

@@ -375,6 +375,34 @@ fn a_block_wraps_into_lines_at_a_width() {
     assert!(app.layout_block(9, 10.0, &M).is_err(), "no such block");
 }
 
+/// An empty paragraph is a line of the provider's own height, not of nothing.
+///
+/// Found by the GTK shell, where the difference is visible: `wrap` takes a line's height
+/// from the fragments it was handed, and a block with no runs has none — so the height it
+/// fell back to was one unit, which is a correct line in a terminal and a one-pixel gap on a
+/// screen. `Tall` below is what makes the difference assertable at all.
+#[test]
+fn an_empty_block_is_still_one_line_of_the_metrics_own_height() {
+    struct Tall;
+    impl grind_text::Metrics for Tall {
+        fn advances(&self, text: &str, _: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+            for (index, _) in text.chars().enumerate() {
+                out.push((index + 1) as f32);
+            }
+        }
+        fn line_height(&self, _: &grind_core::style::TextStyle) -> f32 {
+            17.0
+        }
+    }
+
+    let app = app(&["", "text"]);
+    for block in 0..2 {
+        let layout = app.layout_block(block, 10.0, &Tall).expect("lays out");
+        assert_eq!(layout.lines().len(), 1, "block {block}");
+        assert_eq!(layout.height(), 17.0, "block {block}");
+    }
+}
+
 #[test]
 fn down_and_up_move_by_line_and_keep_the_goal_column() {
     let app = app(&["the cat sat on the mat"]);
