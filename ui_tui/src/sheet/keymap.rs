@@ -14,6 +14,7 @@
 //! to track a pending first key). One key does the same job here; upgrade if a document ever
 //! needs a literal `g` bound to something else.
 
+use super::{MAX_COLS, MAX_ROWS};
 use grind_sheet::Pos;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -78,7 +79,7 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers) -> Option<Action> {
     }
 }
 
-/// Apply a motion, clamped to the sheet's own limits — [`crate::MAX_ROWS`]/[`crate::MAX_COLS`]
+/// Apply a motion, clamped to the sheet's own limits — [`super::MAX_ROWS`]/[`super::MAX_COLS`]
 /// for a plain move, `extent` (the used region) for the row/sheet edges, matching
 /// `ui_gtk/src/keymap.rs`'s `moved`.
 pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
@@ -94,7 +95,7 @@ pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
 }
 
 fn step(from: Pos, dir: Dir, by: u32) -> Pos {
-    let (rows, cols) = (crate::MAX_ROWS - 1, crate::MAX_COLS - 1);
+    let (rows, cols) = (MAX_ROWS - 1, MAX_COLS - 1);
     match dir {
         Dir::Left => Pos::new(from.row, from.col.saturating_sub(by)),
         Dir::Right => Pos::new(from.row, (from.col + by).min(cols)),
@@ -176,8 +177,8 @@ mod tests {
         assert_eq!(step(Pos::new(0, 0), Dir::Left, 1), Pos::new(0, 0));
         assert_eq!(step(Pos::new(0, 0), Dir::Up, 1), Pos::new(0, 0));
         assert_eq!(
-            step(Pos::new(crate::MAX_ROWS - 1, 0), Dir::Down, 1),
-            Pos::new(crate::MAX_ROWS - 1, 0)
+            step(Pos::new(MAX_ROWS - 1, 0), Dir::Down, 1),
+            Pos::new(MAX_ROWS - 1, 0)
         );
     }
 

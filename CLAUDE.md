@@ -19,13 +19,14 @@ has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0�
 `grind <app> <verb>` CLI, and R8/R9/R10.
 
 The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
-(`grind text`) is done through S7: it reads, writes, edits by block *and by caret*
-(`type`/`erase`/`split`/`join`), and `examples/sample-text.sh` builds a document out of every
-feature it has, through the CLI only. Loops A and C are both green. What it does **not** have:
-a session (so no `undo` across invocations), tables, footnotes, fields, style definitions, and
-any shell but the CLI. **And no layout at all** — where layout lives is the project's open
-decision, `doc/text-layout.md`, reopened after S7 closed it on Path A. Pagination is gated
-under every option there; whether *line* layout belongs in the core is what is being decided.
+(`grind text`) is done through S8: it reads, writes, edits by block *and by caret*, lays text
+out, and **has a terminal shell** — `grind-tui` opens both document types in one binary.
+`examples/sample-text.sh` builds a document out of every feature it has, through the CLI only.
+Loops A and C are both green. **Line layout lives in `grind-core`** (`doc/text-layout.md`,
+decided on Path C), so `j`/`k`/Home/End mean one thing in every shell and the CLI can answer
+them; a shell supplies only font metrics. What it does **not** have: a session (so no `undo`
+across invocations), tables, footnotes, fields, style definitions, RTL layout, pages, and any
+GUI.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -54,7 +55,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
 | `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
 | `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
-| `doc/text-layout.md` | **Where layout lives — the open decision.** Normative for it, and it outranks `doc/suite.md`'s fork section, which is now the record of an argument rather than the answer |
+| `doc/text-layout.md` | **Where layout lives — decided, Path C.** Normative for it, including the five answers at its end (RTL out, `Layout` in `grind-core`, the CLI's unit). Outranks `doc/suite.md`'s fork section, which is the record of an argument rather than the answer |
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
 | `doc/gtk-shell.md` | Phase 9's GTK shell work plan — normative for that phase |
@@ -99,6 +100,16 @@ cargo test -p grind-sheet-gtk                             # geom.rs, no display 
 
 `--render-to` is how a custom-drawn widget gets an assertable output (a refactor is proved
 one when the PNG comes back byte-identical). Not a user feature.
+
+`grind-tui` is the terminal shell and needs no system packages. **One binary, both document
+types**, chosen by `grind_core::kind` from the file's bytes:
+
+```sh
+cargo run -p grind-tui -- book.fods       # the spreadsheet
+cargo run -p grind-tui -- report.fodt     # the word processor
+cargo run -p grind-tui -- --text          # a new document, empty
+cargo test -p grind-tui                   # both keymaps, `Cells`, and rendering via TestBackend
+```
 
 ```sh
 cargo build && GRIND=target/debug/grind examples/sample.sh /tmp/demo
@@ -192,7 +203,8 @@ rather than a guest:
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
 | `grind-text` | `text/` | The word processor (phase 10, S4–S7): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. No layout of any kind yet — `doc/text-layout.md` is the open decision on whether it belongs here |
 | `grind-cli` | `cli/` | The `grind` binary |
-| `grind-sheet-gtk`, `grind-tui`, `grind-web` | `ui_*/` | The shells |
+| `grind-sheet-gtk`, `grind-web` | `ui_gtk/`, `ui_web/` | The spreadsheet's GTK and wasm shells |
+| `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
 which asserts the manifest names no document-type crate and that no source dispatches on
@@ -340,5 +352,16 @@ that will disagree, and leaves the CLI unable to answer Down-arrow at all. **`do
 is the open decision**, it separates two questions `doc/suite.md` had fused (line layout vs.
 pagination), and it recommends a third path: line layout in the core with font metrics injected
 through a `Metrics` trait the shell implements, pagination still gated. **Do not start S8 until
-it closes** — the answer decides whether the terminal shell is a pure renderer or is writing a
-line breaker of its own.
+it closed on **Path C**: line layout in `grind-core` (`core/src/layout.rs`), font metrics
+injected through a `Metrics` trait, pagination still gated, RTL excluded by explicit decision.
+L1 and L2 built it and gave `grind_text::App` the caret operations defined in terms of a line —
+`layout_block`, `caret_x`, `caret_line`, `caret_line_bounds` — each reachable from the CLI
+(`grind text view --width`, `grind text caret --down/--home/--end`).
+
+**S8 is done: `grind-tui` is a word processor as well as a spreadsheet.** One binary, both
+types, dispatched on the file's bytes. It is the payoff of Path C and the proof of it — the
+shell implements `Metrics` in terminal cells (`ui_tui/src/text/mod.rs`, about twenty lines using
+`unicode-width`) and gets line breaking, `j`/`k` by wrapped line, Home/End and hit-testing from
+the core. **L3 is what remains of the layout work**: `ui_gtk`'s row auto-height measurement
+moves onto the same trait, so one breaker serves both applications and the abstraction is tested
+against Pango. Then S9 (the GTK text shell) and S10 (the browser).

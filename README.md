@@ -17,9 +17,11 @@ pages today.** It shows a document as one reflowed column. Page size, margins, h
 and page breaks are read, kept and written back untouched — they are just never *drawn* as
 pages, and printing goes through the platform. Plenty of people will say that makes it a
 rich-text editor rather than a word processor, and today they are right. Pagination has a named
-gate rather than a refusal ([`doc/not-doing.md`](doc/not-doing.md) §2), and the larger question
-underneath it — how much of layout belongs in the shared core rather than in each UI — is being
-decided in the open in [`doc/text-layout.md`](doc/text-layout.md).
+gate rather than a refusal ([`doc/not-doing.md`](doc/not-doing.md) §2). The larger question
+underneath it — how much of layout belongs in the shared core rather than in each UI — was
+decided in the open in [`doc/text-layout.md`](doc/text-layout.md): **line** layout lives in the
+core, so `j`, `k`, Home and End mean the same thing in every front end and the command line can
+answer them too; each front end supplies only font metrics. Pages stay out.
 
 ## Why this exists
 
@@ -126,15 +128,21 @@ examples: CSV import, a PMT model, a CI gate on error cells, git diffs of `.ods`
 locale at all. The GTK window's format picker uses the same fallback when its locale field is
 left blank.
 
-**The terminal** (`grind-tui`, no system packages needed):
+**The terminal** (`grind-tui`, no system packages needed) — **and it opens both document
+types**, deciding which from the file's own bytes rather than its name:
 
 ```sh
-cargo run -p grind-tui -- book.ods
+cargo run -p grind-tui -- book.ods      # the spreadsheet
+cargo run -p grind-tui -- report.fodt   # the word processor
+cargo run -p grind-tui -- --text        # a new document, empty
 ```
 
-Vi-style modes: **Normal** navigates (`hjkl`/arrows, `g`/`G`, `Ctrl-f`/`Ctrl-b`), **Insert**
-(`i`/`a`/`c`) edits, `:` opens a command line (`:w`, `:q`, `:recalc`, or a bare address to
-jump). `grind-tui --help` has the full key list.
+Vi-style modes in both: **Normal** navigates (`hjkl`/arrows, `g`/`G`, `Ctrl-f`/`Ctrl-b`),
+**Insert** edits, `:` opens a command line (`:w`, `:q`, or a bare address to jump). In the word
+processor `j` and `k` move by *wrapped line* rather than by paragraph, `i`/`a`/`o` start typing,
+`x`/`X`/`J` erase a character, delete a block and join two — and the address you can type at
+`:` is `p12`, `#bookmark` or `§2.1.3`, which keeps meaning the same place after an edit
+somewhere else. `grind-tui --help` has the full key list.
 
 **The browser** (`grind-web`, the same core as WebAssembly — no server, the document never
 leaves your machine):

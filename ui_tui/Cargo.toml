@@ -5,7 +5,7 @@
 [package]
 name = "grind-tui"
 version = "0.0.0"
-description = "An ODF-native spreadsheet — the terminal shell"
+description = "An ODF-native office suite — the terminal shell"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -15,9 +15,13 @@ name = "grind-tui"
 path = "src/main.rs"
 
 [dependencies]
+# One binary, both document types: `grind_core::kind` decides which shell runs (R10).
+grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
 # crossterm is used through `ratatui::crossterm`, so the two can never drift apart.
 ratatui = "0.30"
+unicode-width = "0.2.2"
 
 # Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.

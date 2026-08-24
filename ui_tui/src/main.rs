@@ -2,22 +2,28 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-tui` — a vi-style terminal shell over `grind-sheet`.
+//! `grind-tui` — a vi-style terminal shell over the suite.
 //!
-//! Pure Rust, so it depends on `grind-sheet` directly: no FFI, no bindings. The loop is
-//! render → block on a key → route it to the core, and every capability it offers also
-//! exists in the CLI (doc/plan.md rule 4).
+//! **One binary, both document types** (`doc/suite.md`, R10 and S8). Which shell runs is
+//! decided by [`grind_core::kind()`] reading the *bytes*, never the file name, because a
+//! spreadsheet does not become a document by being called one. `.ods`/`.fods` opens
+//! [`sheet`], `.odt`/`.fodt` opens [`text`], and an empty invocation opens whichever
+//! `--text` or `--sheet` asks for.
+//!
+//! Pure Rust, so it depends on the two core crates directly: no FFI, no bindings. The loop is
+//! render → block on a key → route it to the core, and every capability it offers also exists
+//! in the CLI (doc/plan.md rule 4).
 //!
 //! The terminal is global state this process borrows. Raw mode and the alternate screen must
 //! be handed back on *every* exit path — normal quit, error, or panic — or the user is left
-//! with a shell that no longer echoes. [`restore_terminal`] and the panic hook are for that,
-//! the same shape as `editor`'s `ui_tui/src/main.rs`.
+//! with a shell that no longer echoes. [`restore_terminal`] and the panic hook are for that.
 
 mod app;
-mod keymap;
+mod sheet;
+mod text;
 
 use std::io::{self, Stdout};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -29,70 +35,93 @@ use ratatui::crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 
-use app::{App, RedrawFlag};
-use grind_sheet::App as CoreApp;
-
-/// The ODF sheet limits, and the only bound `keymap::moved` clamps a plain move to.
-pub const MAX_ROWS: u32 = 1_048_576;
-pub const MAX_COLS: u32 = 16_384;
+use app::RedrawFlag;
+use grind_core::DocumentKind;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-const USAGE: &str = "usage: grind-tui [file]
+const USAGE: &str = "usage: grind-tui [--sheet|--text] [file]
 
-No file opens an empty document, like `grind-sheet-gtk`.
+The document type is read out of the file, not guessed from its name. With no file,
+--sheet (the default) or --text says which to start empty.
 
-Normal mode (vi-style):
+Normal mode, both types (vi-style):
   h j k l / arrows   move
-  Ctrl+f / Ctrl+b     page down / up
-  0 / $               start / end of row
-  g / G               A1 / the last used cell
-  i, a                edit the cell, keeping its text
-  c                   edit the cell, starting empty
-  x                   clear the cell
-  u / Ctrl+r          undo / redo
-  :                   command line
+  Ctrl+f / Ctrl+b    page down / up
+  0 / $              start / end of the line
+  g / G              start / end of the document
+  u / Ctrl+r         undo / redo
+  :                  command line
 
-Insert mode:
-  Enter    commit and move down
-  Esc      cancel
+Spreadsheet:
+  i, a  edit the cell   c  edit from empty   x  clear the cell
+  :w [file]  :q  :q!  :wq / :x  :recalc  :sheet <name>  :<address>
 
-Command line:
-  :w [file]   :q   :q!   :wq / :x   :recalc   :sheet <name>   :<address>
+Word processor:
+  i  type here   a  type after   o  new paragraph below
+  x  erase a character   X  delete the block   J  join with the next
+  :w [file]  :q  :q!  :wq / :x  :outline  :words  :h <level>  :style [name]
+  :<address>  — p12, p12+40, #bookmark or \u{a7}2.1.3
 ";
 
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let arg = args.next();
-    if arg.as_deref().is_some_and(|a| a == "-h" || a == "--help") {
-        print!("{USAGE}");
-        return ExitCode::SUCCESS;
+    let mut kind: Option<DocumentKind> = None;
+    let mut path: Option<PathBuf> = None;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print!("{USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "-V" | "--version" => {
+                println!(
+                    "grind-tui {}",
+                    grind_core::build_info::describe_version(env!("CARGO_PKG_VERSION"))
+                );
+                return ExitCode::SUCCESS;
+            }
+            "--sheet" => kind = Some(DocumentKind::Spreadsheet),
+            "--text" => kind = Some(DocumentKind::Text),
+            other if other.starts_with('-') => {
+                eprintln!("grind-tui: unknown option {other}");
+                return ExitCode::FAILURE;
+            }
+            other => path = Some(PathBuf::from(other)),
+        }
     }
-    if arg
-        .as_deref()
-        .is_some_and(|a| a == "-V" || a == "--version")
-    {
-        println!(
-            "grind-tui {}",
-            grind_sheet::build_info::describe_version(env!("CARGO_PKG_VERSION"))
-        );
-        return ExitCode::SUCCESS;
-    }
-    let path = arg.map(PathBuf::from);
 
-    let core = Arc::new(CoreApp::new());
-    if let Some(path) = &path
-        && let Err(error) = core.open_file(path)
-    {
-        eprintln!("grind-tui: {}: {error}", path.display());
-        return ExitCode::FAILURE;
-    }
+    // A file decides for itself. `--sheet`/`--text` only answer the empty case, and disagreeing
+    // with the file is an error rather than a silent override — opening a spreadsheet as a
+    // document would show an empty one, which is exactly the confusion `kind` exists to stop.
+    let kind = match &path {
+        Some(path) => match sniff(path) {
+            Ok(found) => {
+                if let Some(asked) = kind
+                    && asked != found
+                {
+                    eprintln!(
+                        "grind-tui: {} is a {}, not a {}",
+                        path.display(),
+                        describe(found),
+                        describe(asked)
+                    );
+                    return ExitCode::FAILURE;
+                }
+                found
+            }
+            Err(error) => {
+                eprintln!("grind-tui: {}: {error}", path.display());
+                return ExitCode::FAILURE;
+            }
+        },
+        None => kind.unwrap_or(DocumentKind::Spreadsheet),
+    };
 
-    let redraw = Arc::new(RedrawFlag::default());
-    core.set_observer(redraw.clone());
-    redraw.raise(); // paint the first frame before waiting for input
-
-    match run(core, redraw, path) {
+    let result = match kind {
+        DocumentKind::Text => run_text(path),
+        _ => run_sheet(path),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("grind-tui: {error}");
@@ -101,30 +130,103 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(core: Arc<CoreApp>, redraw: Arc<RedrawFlag>, path: Option<PathBuf>) -> io::Result<()> {
+/// What kind of document a file holds, read from its bytes.
+fn sniff(path: &Path) -> io::Result<DocumentKind> {
+    let bytes = std::fs::read(path)?;
+    grind_core::kind(&bytes).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "not an ODF spreadsheet or text document",
+        )
+    })
+}
+
+fn describe(kind: DocumentKind) -> &'static str {
+    match kind {
+        DocumentKind::Spreadsheet => "spreadsheet",
+        DocumentKind::Text => "text document",
+        _ => "document",
+    }
+}
+
+fn run_sheet(path: Option<PathBuf>) -> io::Result<()> {
+    let core = Arc::new(grind_sheet::App::new());
+    if let Some(path) = &path {
+        core.open_file(path)
+            .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    }
+    let redraw = Arc::new(RedrawFlag::default());
+    core.set_observer(redraw.clone());
+    redraw.raise(); // paint the first frame before waiting for input
+
     let mut terminal = setup_terminal()?;
-    // Run the loop, then restore unconditionally — including when it returned an error,
-    // which must not reach the user through a raw-mode terminal.
-    let result = event_loop(&mut terminal, core, redraw, path);
+    let result = event_loop(
+        &mut terminal,
+        &redraw,
+        &mut sheet::app::App::new(core, redraw.clone(), path),
+    );
     restore_terminal();
     result
 }
 
-fn event_loop(
-    terminal: &mut Tui,
-    core: Arc<CoreApp>,
-    redraw: Arc<RedrawFlag>,
-    path: Option<PathBuf>,
-) -> io::Result<()> {
-    let mut app = App::new(core, redraw.clone(), path);
+fn run_text(path: Option<PathBuf>) -> io::Result<()> {
+    let core = Arc::new(grind_text::App::new());
+    if let Some(path) = &path {
+        core.open_file(path)
+            .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    }
+    let redraw = Arc::new(RedrawFlag::default());
+    core.set_observer(redraw.clone());
+    redraw.raise();
 
-    while !app.should_quit() {
+    let mut terminal = setup_terminal()?;
+    let result = event_loop(
+        &mut terminal,
+        &redraw,
+        &mut text::app::App::new(core, redraw.clone(), path),
+    );
+    restore_terminal();
+    result
+}
+
+/// What the loop needs of a shell — and all either of them has in common.
+///
+/// Three methods rather than a shared widget: a grid and a flow have no rendering in common,
+/// and `doc/suite.md` rejects a generic `App<D: Document>` for the same reason. This is the
+/// event loop's shape, not an abstraction over documents.
+trait Shell {
+    fn draw(&mut self, frame: &mut ratatui::Frame<'_>);
+    fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent);
+    fn should_quit(&self) -> bool;
+}
+
+macro_rules! shell {
+    ($t:ty) => {
+        impl Shell for $t {
+            fn draw(&mut self, frame: &mut ratatui::Frame<'_>) {
+                <$t>::draw(self, frame);
+            }
+            fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent) {
+                <$t>::on_key(self, key);
+            }
+            fn should_quit(&self) -> bool {
+                <$t>::should_quit(self)
+            }
+        }
+    };
+}
+
+shell!(sheet::app::App);
+shell!(text::app::App);
+
+fn event_loop<S: Shell>(terminal: &mut Tui, redraw: &RedrawFlag, shell: &mut S) -> io::Result<()> {
+    while !shell.should_quit() {
         if redraw.take() {
-            terminal.draw(|frame| app.draw(frame))?;
+            terminal.draw(|frame| shell.draw(frame))?;
         }
         // Block until something happens; a TUI has no reason to spin.
         match event::read()? {
-            Event::Key(key) => app.on_key(key),
+            Event::Key(key) => shell.on_key(key),
             Event::Resize(_, _) => redraw.raise(),
             _ => {}
         }

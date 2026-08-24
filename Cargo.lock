@@ -931,8 +931,11 @@ dependencies = [
 name = "grind-tui"
 version = "0.0.0"
 dependencies = [
+ "grind-core",
  "grind-sheet",
+ "grind-text",
  "ratatui",
+ "unicode-width",
 ]
 
 [[package]]
