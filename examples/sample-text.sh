@@ -59,6 +59,9 @@ run insert "$doc" --text 'Nothing to see here yet.'
 say "spaces that XML would otherwise collapse, kept by re-encoding them as text:s"
 run insert "$doc" --text 'columns:    one    two    three'
 
+say "and the other two: a tab and a newline become text:tab and text:line-break"
+run insert "$doc" --text "$(printf 'name\tvalue\nsecond line')"
+
 say "text read from stdin, for the case where it is longer than a shell argument wants"
 printf 'A paragraph piped in, so a script can write prose without quoting it.' \
     | run insert "$doc" --text -

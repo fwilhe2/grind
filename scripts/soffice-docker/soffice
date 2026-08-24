@@ -18,7 +18,15 @@ set -euo pipefail
 image=$(cat "$(dirname "$(readlink -f "$0")")/../../ci/libreoffice-image")
 tmp=$(cd "${TMPDIR:-/tmp}" && pwd -P)
 
+# `label=disable`: on an SELinux-enforcing host (Fedora, RHEL) the bind mount below is labelled
+# for the host and a container process may read it but not write to it, so `soffice` cannot
+# create its own `UserInstallation` profile and dies with "User installation could not be
+# completed" — every loop C and loop E test then fails for a reason that has nothing to do with
+# the code. The alternative, `-v "$tmp:$tmp:z"`, relabels the host's whole temp directory as a
+# side effect of running a test, which is not a trade a test harness gets to make. A no-op where
+# SELinux is not enforcing, which includes CI.
 exec docker run --rm \
+    --security-opt label=disable \
     --user "$(id -u):$(id -g)" \
     -v "$tmp:$tmp" \
     -e "HOME=$tmp" \

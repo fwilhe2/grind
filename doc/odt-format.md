@@ -22,8 +22,9 @@ text document uses, and the observations about real files that the schema does n
 2. LibreOffice may be **read** and **cited by `file:line`**, never copied. A fact learned that
    way goes here before it reaches code.
 3. **A claim with no citation is marked `UNVERIFIED` and may not be implemented.** That marker
-   is the whole value of this document — it separates what is known from what is assumed, and
-   §5 below is currently all assumption.
+   is the whole value of this document — it separates what is known from what is assumed. §5
+   is the assumptions; §5a and §5b are what loops A and C have since **measured**, and two of
+   §5's questions are struck through because §5b answers them.
 
 Line numbers are for the vendored `OpenDocument-v1.4-schema.rng` at the revision in this
 repository.
@@ -160,6 +161,13 @@ because XML collapses whitespace and a document that round-trips through naive t
 indentation. `Attrs::count` in `grind_core::odf::context` already exists for exactly this
 shape of attribute and applies unchanged.
 
+The trap is **wider than spaces**, and §5b is where that was measured rather than guessed:
+`text:tab` and `text:line-break` are the same mechanism for the other two whitespace
+characters, and a tab or a newline written as itself in character data comes back from
+LibreOffice as one space. So the rule is not "re-encode space runs" but *every* piece of
+significant whitespace is an element — three elements, one reader expansion, one writer
+re-encoding.
+
 **`text:span` nests.** Its content is `paragraph-content-or-hyperlink`, so a span inside a
 span inside a hyperlink is legal and appears in real files. A model of flat runs must
 therefore *flatten on read* — composing the style stack down each branch — or carry the tree.
@@ -222,18 +230,19 @@ decided before S4 rather than discovered at S8.
 
 ## 5. What LibreOffice actually does — UNVERIFIED
 
-**Nothing in this section has been checked.** It is the list of questions a text reader will
-run into, written down so the answers land here with citations rather than in code as
-folklore. `doc/ods-format.md` §§5.4, 6 and 9 are what this section should look like once it
-has been done, and until then **no item below may be implemented**.
+**Nothing in this section has been checked** except where a row is struck through, which means
+§5b answers it. It is the list of questions a text reader will run into, written down so the
+answers land here with citations rather than in code as folklore. `doc/ods-format.md` §§5.4, 6
+and 9 are what this section should look like once it has been done, and until then **no
+unanswered item below may be implemented**.
 
 | Question | Why it matters | How to settle it |
 |---|---|---|
 | Do ODT table cells use OpenFormula in `table:formula`, or a vendor dialect? | Decides whether `grind-text` can reuse the whole formula engine or must treat a table formula as opaque text | Write a Writer table with a sum, save `.fodt`, read the attribute. Cite the filter that produced it |
-| Which `text:` elements does Writer write for a plain document? | The gap between "the schema permits" and "real files contain" is where §5.4's spreadsheet equivalent lives | Author a document with each construct in `doc/text-core.md`, save, diff |
+| ~~Which `text:` elements does Writer write for a plain document?~~ | The gap between "the schema permits" and "real files contain" is where §5.4's spreadsheet equivalent lives | **Partly answered — §5b** |
 | Does Writer re-quantise paragraph measurements the way it re-quantises border widths? | Loop C compares round-tripped values; a re-quantised `fo:text-indent` needs the same numeric comparison borders got | Round-trip a document with known indents through `soffice --convert-to` |
 | How is `fo:font-family` handled? | `doc/ods-format.md` §5.4 measured that LO rewrites it into an `office:font-face-decls` reference. Fonts matter *far* more in a text document than in a spreadsheet | Same method as the spreadsheet measurement, which is already cited there |
-| What does Writer do with a `text:s` run of one? | Decides whether the writer's re-encoding round-trips byte-identically or merely semantically | Round-trip a document with leading spaces |
+| ~~What does Writer do with a `text:s` run of one?~~ | Decides whether the writer's re-encoding round-trips byte-identically or merely semantically | **Answered — §5b** |
 | Is `text:soft-page-break` preserved, dropped, or recomputed on save? | It is a layout artifact in a content file; if LO recomputes it, loop C has to ignore it | Round-trip and diff |
 
 ---
@@ -279,6 +288,123 @@ is one LibreOffice's own harness expects *not* to import.
 
 ---
 
+## 5b. What loop C measured — VERIFIED
+
+The second measured section, and the one that checks the **writer**. Loop C
+(`text/tests/roundtrip.rs`) writes a document, has LibreOffice convert it, reads the result
+back, and asserts it is the same document — then does it the other way round, starting from a
+Writer-authored file out of `sw/qa`.
+
+```
+loop C (text, out):  14 documents (7 cases x 2 physical forms), 0 differences
+loop C (text, back): 20 documents, 5095 blocks,                 0 differences
+```
+
+Measured against LibreOffice 26.2.5.2, the same version as the pin — but **not** the pinned
+image; see "the oracle" at the end of this section.
+
+### The bug it found in the first run
+
+**A tab or a newline inside a run's text was written as itself, and came back as a space.**
+The model has had `Run::Tab` and `Run::Break` since S4, so *structured* tabs were fine — but a
+paragraph whose text merely *contained* `\t`, which is what `grind text set` produces, wrote the
+character literally. XML character data is whitespace, and an ODF consumer collapses a run of it
+to one space, so the user's tab was silently gone.
+
+This is §3.3's trap, and the point is that the reasoning behind `text:s` had been done and then
+*not carried across the other two characters it applies to* — which is exactly the kind of gap
+that survives a self-consistent round trip, because our own reader was collapsing nothing.
+`odf::write::characters` re-encodes all three now.
+
+`\r` and `\r\n` are both written as one `text:line-break` and therefore read back as `\n`. That
+is not a choice: XML line-ending normalisation (XML 1.0 §2.11) hands a parser's caller `\n` for
+either, so writing anything else would only be a lie about what a reader will see.
+
+### A Writer document cannot be empty
+
+The degenerate document — `grind text new` and nothing else — comes back holding **one empty
+paragraph**. Writer's model has no body without a paragraph in it.
+
+Loop C allows for exactly that and nothing more, and
+`a_document_with_no_blocks_comes_back_holding_one` pins the fact, so the allowance goes red if
+LibreOffice ever stops doing it. An allowance that nothing checks is indistinguishable from a
+bug.
+
+### What happens to a `text:style-name`
+
+Six cases, measured together because only the contrast makes the rule legible:
+
+| What the document says | Comes back as | |
+|---|---|---|
+| A name LibreOffice itself defines (`Quotations`) | `Quotations` | kept |
+| `office:styles`, with a property | `NamedWith` | kept |
+| `office:styles`, with no properties at all | `NamedBare` | kept |
+| `office:automatic-styles`, with a property | **`P1`** | formatting kept, *name* renumbered |
+| `office:automatic-styles`, with no properties | `Standard` | dropped |
+| Declared nowhere | `Standard` | dropped |
+
+So the rule is not "LibreOffice mangles style names". It is ODF's own distinction applied
+exactly: a **named** style is an identity and keeps its name; an **automatic** style is
+anonymous direct formatting by definition, so its name is not identity and LibreOffice
+renumbers it into its own sequence; a name that resolves to nothing is not formatting at all and
+goes.
+
+**The last row is this build's gap**, and it is loop C's one documented loosening for text —
+the comparison checks structure and text but not style names. The writer is minimal by intent
+(R3) and emits no `office:styles`, and the model carries a style's *name* but never its
+properties (`doc/text-core.md`), so a **regenerated** document refers to styles that are not
+there: `grind text style p1 --style Mine` on a document this build authored means nothing to
+LibreOffice. R6 keeps that off the common path — a document *read from a file* splices, so its
+own `office:styles` is still in the bytes and its names still resolve — but a document authored
+from nothing carries no formatting out.
+
+### Two of §5's questions, answered
+
+**A `text:s` run of one round-trips byte-identically.** `<text:s/>` comes back `<text:s/>` and
+`<text:s text:c="2"/>` comes back `<text:s text:c="2"/>`, so the convention this writer follows
+— keep the first space of a run literal, encode the rest — is LibreOffice's own and the
+re-encoding is not merely semantic.
+
+**What Writer writes for a plain document**, beyond what it was given: a `text:sequence-decls`
+block of five `text:sequence-decl`s, a `text:style-name` on *every* paragraph and heading
+(`Standard`, `Heading_20_1`, `P1`, …), a `text:style-name` on every `text:list`, an
+`office:automatic-styles` holding a `style:page-layout`, and an `office:master-styles`. On a
+`text:a` it also adds `xlink:type="simple"`, `text:style-name="Internet_20_link"` and
+`text:visited-style-name`. All of it is inert to our reader — §8's default-ignore — which is why
+the round trip is clean despite the file coming back several times the size it went in.
+
+### What loop C does not cover, and why
+
+The comparison is **structure and text**: block count, each block's kind (paragraph, heading
+with its level, list item with its depth), each block's plain text, and the set of bookmark
+names. It is not a formatting comparison, because there is no formatting in the model to
+compare yet — see the style rule above. When the writer learns to declare styles, the
+comparison gains a column and the last row of that table goes red.
+
+### The oracle: the pin is Calc-only
+
+**`ci/libreoffice-image` cannot serve `grind-text`.** Its `share/registry/` holds `calc.xcd`
+and no `writer.xcd`, so that build imports a `.fodt` *as a spreadsheet* and has no `fodt` export
+filter to convert one back with. The figures above therefore come from a full LibreOffice
+26.2.5.2 — the same version as the pin, but not the same install.
+
+Rather than hard-code a skip or drop the pin, `oracle_ready` in `text/tests/roundtrip.rs`
+**probes the capability by doing it**: convert a one-paragraph document, and see whether output
+appears. Against a Calc-only `soffice` the four soffice-backed tests skip with a notice; against
+a full one they run. So loop C for text is wired into CI's `roundtrip` and `corpus` jobs today
+and starts running there, with no change to any file, the day the image is rebuilt with Writer
+in it. **That rebuild is the outstanding item** — until it happens, loop C for text is a local
+check rather than a CI gate.
+
+A second, unrelated finding on the way there: the shim that runs the pinned image
+(`scripts/soffice-docker/soffice`) could not write to its own bind mount on an SELinux-enforcing
+host, so `soffice` could not create its `UserInstallation` profile and **every** loop C and
+loop E test failed on Fedora and RHEL for a reason unconnected to the code. Fixed with
+`--security-opt label=disable`, which is scoped to the container; the alternative, `:z`,
+relabels the host's whole temp directory as a side effect of running a test.
+
+---
+
 ## 6. What the reader gets for free
 
 Worth stating, because it is the return on the architecture and it means S4 is smaller than it
@@ -304,4 +430,5 @@ looks:
 1. **ODF 1.4 Part 3** — `doc/OpenDocument-v1.4-schema.rng`, cited by line throughout.
 2. **`doc/ods-format.md`** — §§1, 8, 8.1, 10 apply here unchanged and are not restated.
 3. **LibreOffice** — as an oracle and a corpus, never as a source. §5 is where its
-   observations will land, each cited `file:line`.
+   observations will land, each cited `file:line`; §5a and §5b are the ones the loops have
+   already measured, cited by the test that measures them.

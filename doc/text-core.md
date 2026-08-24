@@ -116,6 +116,7 @@ rather than a structural one.
 | **`office:annotation` — comments** | Genuinely used, and arguably in. Decided with evidence rather than now: it needs an author, a date and a threading model, and guessing which of those matter is how a feature arrives half-built |
 | **Markdown import** | A one-way filter at the edge, exactly like `.xlsx` (`doc/xlsx-import.md`), allowed by the same argument — it produces an ODF document and no foreign vocabulary reaches the core |
 | **`style:parent-style-name`** | Followed properly, which the spreadsheet reader does not do either (`doc/not-doing.md` §3). It matters **more** here: text documents are built on a named-style hierarchy, so not following it loses most of a document's formatting rather than one number format. **Decide before S4 ships, not after** |
+| **Style *definitions* — reading `office:styles` and writing it back** | The model carries a style's name and not its properties, so a regenerated document refers to styles that are not there and LibreOffice drops the reference outright (`doc/odt-format.md` §5b). Gated with the row above, because both are the same question — what a style *is* in this model — and answering one without the other gets a half-formatted document. Until then it is loop C's one named loosening |
 
 ---
 
@@ -156,6 +157,19 @@ The boundary is honest and stated: what is preserved is what is *not edited*. Re
 a new paragraph in a document that has none, a conversion between forms, a style change — drops
 what the model does not carry, exactly as it does for spreadsheets, and `doc/not-doing.md` §2
 already carries that row.
+
+**Loop C measured what that costs for styles, and it is sharper than the general rule.** The
+model carries a paragraph or span style's *name* and never its properties, and the writer emits
+no `office:styles` at all (R3). LibreOffice **drops a `text:style-name` that resolves to
+nothing** — see `doc/odt-format.md` §5b for the six-case measurement — so a style name in a
+document this build *regenerated* is not merely unformatted, it is gone. `grind text style p1
+--style Mine` on a document authored from nothing means nothing to LibreOffice.
+
+R6 is what keeps that off the common path: a document read from a file splices, so its own
+`office:styles` is still in the bytes and its names still resolve. The gap is real for authored
+documents, it is loop C's one documented loosening for text, and closing it means carrying
+style *definitions* — a feature, gated below beside `style:parent-style-name`, not a bug in the
+writer.
 
 ---
 

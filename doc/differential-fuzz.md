@@ -122,7 +122,11 @@ Docker.
 
 **How the pin reaches the tests.** Not through the Rust: `scripts/soffice-docker/soffice` is
 a shim that runs the pinned image, and anything with that directory first on `PATH` gets the
-pinned `soffice` from the plain `Command::new("soffice")` the tests already use. The
+pinned `soffice` from the plain `Command::new("soffice")` the tests already use. The shim passes
+`--security-opt label=disable`, because on an SELinux-enforcing host (Fedora, RHEL) a container
+may read the bind mount below but not write to it, so `soffice` cannot create its own
+`UserInstallation` profile and every loop C and loop E test fails for a reason unconnected to
+the code. The
 container sees the host's temp directory at the same path, which is where every input is
 staged and every output collected, and nothing else — a converter that could reach the
 repository would be a worse oracle, not a better one. `.github/workflows/ci.yml`'s
@@ -141,6 +145,16 @@ scripts/soffice-tests.sh --test loop_e -- --nocapture  # one test, extra args pa
 Without Docker, loop E still runs against whatever `soffice` is on `PATH` — useful for
 iterating on the generator or the parser, not for reading `FLOOR` as a verdict, since a
 local LibreOffice can legitimately disagree with the pin by one or two formulas.
+
+**The pin is Calc-only, and that is now a gap.** Its `share/registry/` holds `calc.xcd` and no
+`writer.xcd`, so it imports a `.fodt` *as a spreadsheet* and has no `fodt` export filter —
+`grind-text`'s loop C cannot use it (`doc/odt-format.md` §5b). Rather than drop the pin or
+hard-code a skip, `oracle_ready` in `text/tests/roundtrip.rs` probes the capability by
+converting a one-paragraph document and skips with a notice if nothing comes out; it is already
+wired into the `roundtrip` and `corpus` CI jobs. **Rebuilding the image with Writer in it turns
+loop C for text into a CI gate with no file changed**, and is the one outstanding item. When it
+is rebuilt, follow the upgrade steps below — a new image is a new digest, and loop E's `FLOOR`
+has to be re-read against it even though nothing about Calc was meant to change.
 
 **Upgrading the pin, safely.** An image bump is a deliberate, reviewable change, not
 something that happens by CI drifting under it:

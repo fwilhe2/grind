@@ -15,10 +15,12 @@
 //!
 //! Two things this writer has to get right that a naive one does not:
 //!
-//! * **Spaces are re-encoded as `text:s`.** XML collapses runs of whitespace, so a paragraph
-//!   written with its spaces literal comes back with them gone. `doc/odt-format.md` §3.3 calls
+//! * **Whitespace is re-encoded as elements.** XML character data is whitespace, and an ODF
+//!   consumer collapses a run of it to one space — so a paragraph written with its spaces,
+//!   tabs and newlines literal comes back with all three gone. `doc/odt-format.md` §3.3 calls
 //!   this the `table:number-columns-repeated` trap in a new costume, and it is: the reader
-//!   expands, the writer re-encodes, and neither half is optional.
+//!   expands, the writer re-encodes into `text:s`, `text:tab` and `text:line-break`, and
+//!   neither half is optional.
 //! * **A list is reconstructed from block depths.** The model flattens `text:list` into the
 //!   block sequence (`crate::model::BlockKind`), so writing folds the depths back into nesting
 //!   — opening an element where the depth rises and closing where it falls.
@@ -250,7 +252,7 @@ fn run(out: &mut String, run: &Run) {
             if let Some(style) = style {
                 let _ = write!(out, "<text:span text:style-name=\"{}\">", esc(style));
             }
-            spaced(out, text);
+            characters(out, text);
             if style.is_some() {
                 out.push_str("</text:span>");
             }
@@ -266,39 +268,74 @@ fn run(out: &mut String, run: &Run) {
     }
 }
 
-/// Text with its space runs encoded as `text:s`.
+/// Character data, with every piece of significant whitespace written as the element ODF has
+/// for it.
 ///
-/// **The whole reason this function exists**: XML collapses whitespace, so `a    b` written
-/// literally reads back as `a b`. ODF's answer is `text:s` with a count (rng:8408), and the
-/// convention every implementation follows is that the *first* space of a run stays literal
-/// and the rest become the element — which keeps ordinary prose, where runs are one space
-/// long, entirely free of markup.
+/// **The whole reason this function exists**: XML character data is whitespace, and an ODF
+/// consumer collapses a run of it to one space. So `a    b`, a tab and a newline written
+/// literally all read back as a single space, and the text the user typed is gone. ODF's
+/// answers are `text:s` with a count (rng:8408), `text:tab` and `text:line-break`, and this is
+/// where a paragraph's text is translated into them.
 ///
-/// A leading space has no first space to keep, so the whole run is encoded; otherwise a reader
-/// that trims leading whitespace would eat it.
-fn spaced(out: &mut String, text: &str) {
+/// The convention every implementation follows for spaces is that the *first* of a run stays
+/// literal and the rest become the element, which keeps ordinary prose — where runs are one
+/// space long — entirely free of markup. A space with no character data in front of it inside
+/// this run has nothing to anchor it, so the whole run is encoded instead; that covers a
+/// leading space and a space following a `text:tab`, both of which a reader would otherwise
+/// trim.
+///
+/// `\r` and `\r\n` both become one `text:line-break`, and so read back as `\n`. That is not
+/// this writer choosing: XML line-ending normalisation says a parser hands `\n` back for either
+/// (XML 1.0 §2.11), so writing anything else would only be a lie about what a reader will see.
+///
+/// Loop C is what turned the tab and the line break from theory into code — the model has had
+/// [`Run::Tab`] and [`Run::Break`] since S4, but a tab *character* inside a [`Run::Text`] was
+/// written literally, and LibreOffice handed it back as a space.
+fn characters(out: &mut String, text: &str) {
+    // Whether literal character data has been written since the last element. A space needs
+    // something in front of it to survive; markup does not count.
+    let mut anchored = false;
     let mut rest = text;
-    let mut at_start = true;
-    while let Some(i) = rest.find(' ') {
-        let (before, tail) = rest.split_at(i);
-        out.push_str(&esc(before));
-        let spaces = tail.chars().take_while(|c| *c == ' ').count();
 
-        // Keep one literal space unless we are at the very start of the run of text, where
-        // there is nothing in front of it to anchor it.
-        let literal = usize::from(!(at_start && before.is_empty()));
-        for _ in 0..literal {
-            out.push(' ');
+    while let Some(i) = rest.find([' ', '\t', '\n', '\r']) {
+        let (before, tail) = rest.split_at(i);
+        if !before.is_empty() {
+            out.push_str(&esc(before));
+            anchored = true;
         }
-        match spaces - literal {
-            0 => {}
-            1 => out.push_str("<text:s/>"),
-            n => {
-                let _ = write!(out, "<text:s text:c=\"{n}\"/>");
+        let eaten = match tail.as_bytes()[0] {
+            b' ' => {
+                let spaces = tail.bytes().take_while(|c| *c == b' ').count();
+                let literal = usize::from(anchored);
+                for _ in 0..literal {
+                    out.push(' ');
+                }
+                match spaces - literal {
+                    0 => {}
+                    1 => out.push_str("<text:s/>"),
+                    n => {
+                        let _ = write!(out, "<text:s text:c=\"{n}\"/>");
+                    }
+                }
+                spaces
             }
-        }
-        rest = &tail[spaces..];
-        at_start = false;
+            b'\t' => {
+                out.push_str("<text:tab/>");
+                1
+            }
+            // `\r\n` is one line ending, not two.
+            b'\r' => {
+                out.push_str("<text:line-break/>");
+                1 + usize::from(tail.as_bytes().get(1) == Some(&b'\n'))
+            }
+            _ => {
+                out.push_str("<text:line-break/>");
+                1
+            }
+        };
+        rest = &tail[eaten..];
+        anchored = false;
     }
+
     out.push_str(&esc(rest));
 }

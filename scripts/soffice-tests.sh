@@ -13,14 +13,20 @@
 #
 #   scripts/soffice-tests.sh                               # loop C + loop E, pinned version
 #   scripts/soffice-tests.sh --test loop_e -- --nocapture  # one test, extra args passed on
+#
+# Note: with no arguments this runs *both* applications' loop C, because both `grind-sheet` and
+# `grind-text` have a `roundtrip` target. The pinned image is currently Calc-only, so the text
+# one skips its soffice-backed half with a notice — see `oracle_ready` in
+# text/tests/roundtrip.rs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 args=("$@")
 if [ ${#args[@]} -eq 0 ]; then
+    # No `-p`: loop C belongs to both applications, and loop E only exists in `grind-sheet`.
     args=(--test roundtrip --test loop_e)
 fi
 
 docker pull -q "$(cat ci/libreoffice-image)"
 export PATH="$PWD/scripts/soffice-docker:$PATH"
-exec cargo test -p grind-sheet "${args[@]}"
+exec cargo test "${args[@]}"
