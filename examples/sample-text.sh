@@ -117,6 +117,21 @@ run erase "$doc" '#typed+0:#typed+7'
 say "style: a named paragraph style over a range"
 run style "$doc" p2 --style 'Text_20_body'
 
+# The other half of "styled", and a different thing: `style` names a style the *document*
+# defines, `format` sets the properties directly. Only the second survives a document this
+# build authored from nothing, because it needs no declaration it cannot write —
+# doc/text-core.md's Styles section is the whole of that split.
+say "format: direct character formatting over a span of characters"
+run format "$doc" 'p2+0:p2+7' --bold
+run format "$doc" 'p2+8:p2+16' --italic --color navy
+run format "$doc" 'p4+0:p4+11' --font Georgia --size 13pt --underline
+
+say "format --show: what a toolbar reads before it writes"
+text format "$doc" 'p2+0:p2+7' --show
+
+say "and over a mixed span, only what every character agrees about — here, nothing"
+text format "$doc" 'p2+0:p2+17' --show
+
 say "name: a bookmark, which is the named-range analogue"
 run name "$doc" addresses '§1.2'
 

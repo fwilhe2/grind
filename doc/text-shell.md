@@ -44,13 +44,21 @@ character cells (`unicode-width`), Pango, and the browser's canvas — and none 
 a change to the engine. The GTK shell's is about forty lines, the browser's about thirty.
 
 **A shell may choose the face, and that is what makes headings work.** `grind_text::lay_out`
-measures every run with the *default* character style, because a run's style is a name and
-style definitions are not read yet (`doc/text-core.md`). A shell that drew a heading larger
-than it measured it would put every caret in that heading in the wrong place. Neither shell
-does: it knows the block's kind, so it hands the core a provider already set to *that block's*
-font, and the core does arithmetic in whatever unit it is answered in. The heading scale is
-the same six numbers in both (`HEADING_SCALE`), so a document has one shape in both windows —
-and there is a test in `ui_web` that says so.
+measured every run with the *default* character style when these shells were written, because a
+run carried a style *name* and nothing else (`doc/text-core.md`). A shell that drew a heading
+larger than it measured it would put every caret in that heading in the wrong place. Neither
+shell does: it knows the block's kind, so it hands the core a provider already set to *that
+block's* font, and the core does arithmetic in whatever unit it is answered in. The heading
+scale is the same six numbers in both (`HEADING_SCALE`), so a document has one shape in both
+windows — and there is a test in `ui_web` that says so.
+
+> Half of that has since been fixed in the core rather than in a shell: a run now carries direct
+> formatting, so `lay_out` projects each run's `CharStyle` into the four metric properties and
+> hands *those* to the provider, per fragment. A bold word is measured bold without a shell
+> knowing. The block-level half is unchanged and still the shell's — a heading is a *paragraph*
+> style, and the paragraph family is still gated. **Neither shell has been updated to draw what
+> the core now measures**, so a bold run in a file laid out correctly is still painted plain;
+> that is the toolbar work, not a second layout decision.
 
 **An empty paragraph was one unit tall.** `layout::wrap` takes a line's height from the
 fragments it was given, and a block with no runs has none, so the height fell back to `1.0` —
@@ -74,11 +82,16 @@ the other unless it says so, and everything here is reachable from the CLI (R9).
 
 **Both shells.** No selection — no shift-click, no shift-arrow, no copy, cut or paste;
 `App::erase` takes two carets and nothing yet produces the second. No find/replace UI
-(`grind text find`/`replace` exist). No styling UI: no bold, no italic, no named-style picker
-— the model carries a run's style *name* and this build reads no style definitions, so a UI
-would be offering to write something LibreOffice will not read back (`doc/text-core.md`). No
-lists UI: a list item read from a file draws with its bullet and its indent, and nothing
-creates or renests one. No tables, footnotes, fields or images, because the core has none. No
+(`grind text find`/`replace` exist). **No styling UI — and the reason has changed.** It used to
+be that the model carried a run's style *name* and nothing else, so a bold button would have
+been offering to write something LibreOffice will not read back. That is no longer true: a run
+carries direct formatting, `App::set_char_style` writes it, `App::char_style` reads what a span
+agrees about, and `grind text format` reaches both (`doc/text-core.md`). What is missing is the
+*shell* half — the toolbar, and the selection it would apply to, which is the first gap in this
+paragraph and the one that blocks this one. A named-style picker stays out for the original
+reason. No lists UI: a list item read from a file draws with its bullet and its indent, and
+nothing creates or renests one. No tables, footnotes, fields or images, because the core has
+none. No
 pages, no print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are
 measured per run rather than per line, so a line with several tabs drifts from where a word
 processor would put them.

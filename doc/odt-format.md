@@ -226,6 +226,12 @@ text documents are built on a named-style hierarchy — `Text_20_body` inheritin
 `Standard` is the ordinary case, not an edge one. Whatever the reader does about it has to be
 decided before S4 rather than discovered at S8.
 
+**Decided:** a parent is *read and kept, never resolved*. An automatic text style's
+`style:parent-style-name` becomes the run's style name, so the hierarchy is preserved as a
+reference and not flattened into properties. The reader resolves an automatic style's own
+`style:text-properties` into direct formatting and nothing else — see `doc/text-core.md`'s
+Styles section for the line between a generated name and a document's own.
+
 ---
 
 ## 5. What LibreOffice actually does — UNVERIFIED
@@ -241,7 +247,7 @@ unanswered item below may be implemented**.
 | Do ODT table cells use OpenFormula in `table:formula`, or a vendor dialect? | Decides whether `grind-text` can reuse the whole formula engine or must treat a table formula as opaque text | Write a Writer table with a sum, save `.fodt`, read the attribute. Cite the filter that produced it |
 | ~~Which `text:` elements does Writer write for a plain document?~~ | The gap between "the schema permits" and "real files contain" is where §5.4's spreadsheet equivalent lives | **Partly answered — §5b** |
 | Does Writer re-quantise paragraph measurements the way it re-quantises border widths? | Loop C compares round-tripped values; a re-quantised `fo:text-indent` needs the same numeric comparison borders got | Round-trip a document with known indents through `soffice --convert-to` |
-| How is `fo:font-family` handled? | `doc/ods-format.md` §5.4 measured that LO rewrites it into an `office:font-face-decls` reference. Fonts matter *far* more in a text document than in a spreadsheet | Same method as the spreadsheet measurement, which is already cited there |
+| ~~How is `fo:font-family` handled?~~ | `doc/ods-format.md` §5.4 measured that LO rewrites it into an `office:font-face-decls` reference. Fonts matter *far* more in a text document than in a spreadsheet | **Answered — §5b** |
 | ~~What does Writer do with a `text:s` run of one?~~ | Decides whether the writer's re-encoding round-trips byte-identically or merely semantically | **Answered — §5b** |
 | Is `text:soft-page-break` preserved, dropped, or recomputed on save? | It is a layout artifact in a content file; if LO recomputes it, loop C has to ignore it | Round-trip and diff |
 
@@ -352,14 +358,21 @@ goes.
 
 **The last row is this build's gap**, and it is loop C's one documented loosening for text —
 the comparison checks structure and text but not style names. The writer is minimal by intent
-(R3) and emits no `office:styles`, and the model carries a style's *name* but never its
+(R3) and emits no `office:styles`, and the model carries a **named** style's name but never its
 properties (`doc/text-core.md`), so a **regenerated** document refers to styles that are not
 there: `grind text style p1 --style Mine` on a document this build authored means nothing to
 LibreOffice. R6 keeps that off the common path — a document *read from a file* splices, so its
 own `office:styles` is still in the bytes and its names still resolve — but a document authored
 from nothing carries no formatting out.
 
-### Two of §5's questions, answered
+**The fourth row is what this build now uses**, and it is the reason a formatting UI is
+possible at all. An automatic style is anonymous by ODF's own definition, so nothing is lost
+when its generated name changes — the *properties* are the fact. That is exactly what the reader
+does with one (resolve it onto the run, forget the name) and what the writer does in reverse
+(pool the properties, hand out a fresh `T1`, `T2`, …), which is why `grind text format p1+0:p1+4
+--bold` survives a regenerate where `--style Mine` does not.
+
+### Three of §5's questions, answered
 
 **A `text:s` run of one round-trips byte-identically.** `<text:s/>` comes back `<text:s/>` and
 `<text:s text:c="2"/>` comes back `<text:s text:c="2"/>`, so the convention this writer follows
@@ -374,13 +387,53 @@ block of five `text:sequence-decl`s, a `text:style-name` on *every* paragraph an
 `text:visited-style-name`. All of it is inert to our reader — §8's default-ignore — which is why
 the round trip is clean despite the file coming back several times the size it went in.
 
-### What loop C does not cover, and why
+**`fo:font-family` comes back as a `style:font-name` reference, and a bare family comes back
+quoted.** Two separate rewrites, measured together on a document written with
+`fo:font-family="Cambria"`:
 
-The comparison is **structure and text**: block count, each block's kind (paragraph, heading
-with its level, list item with its depth), each block's plain text, and the set of bookmark
-names. It is not a formatting comparison, because there is no formatting in the model to
-compare yet — see the style rule above. When the writer learns to declare styles, the
-comparison gains a column and the last row of that table goes red.
+```xml
+<!-- what we wrote -->
+<style:style style:name="T1" style:family="text">
+ <style:text-properties fo:font-family="Cambria"/></style:style>
+
+<!-- what came back -->
+<style:font-face style:name="Cambria" svg:font-family="Cambria"/>
+<style:style style:name="T1" style:family="text">
+ <style:text-properties style:font-name="Cambria"/></style:style>
+```
+
+The same rewrite `doc/ods-format.md` §5.4 measured for cells, and the reason the *spreadsheet*
+carries no font at all. A text document has to draw text, so the reader resolves the
+indirection instead of declining it: `style:font-name` is looked up in `office:font-face-decls`
+and the model holds the family. The family's **quoting** is the second half — a name containing
+a space comes back `'Liberation Serif'`, because `fo:font-family` is an XSL-FO font *list* and
+the quotes are the list's syntax rather than part of the name. So the reader strips them and the
+writer puts them back, the same decode/re-encode trade `text:s` gets, and a comma-separated list
+is left exactly as written.
+
+**A character style covering a whole paragraph is hoisted onto the paragraph.** Given two
+paragraphs both set in Cambria — the first with one span over all of it, the second with a plain
+word between two Cambria ones — LibreOffice returns the first with **no `text:span` at all** and
+a `style:family="paragraph"` automatic style carrying `style:font-name="Cambria"`, and returns
+the second's spans untouched. Nothing is lost from the *document*; the formatting moved to a
+place this build reads only a name from (`doc/text-core.md` gates the paragraph family). It is
+the single largest source of apparent formatting loss over the corpus, because most real
+paragraphs are uniform. Pinned by
+`a_character_style_over_a_whole_paragraph_is_hoisted_into_it`.
+
+### What loop C compares, and what it does not
+
+The comparison is **structure, text and direct character formatting**: block count, each block's
+kind (paragraph, heading with its level, list item with its depth), each block's plain text, the
+set of bookmark names, and — in the **out** direction — the `CharStyle` of every character.
+Per character rather than per run, because a run is a serialisation detail and LibreOffice is
+free to split or merge spans; what must survive is *which characters are bold*.
+
+Style **names** are not compared in either direction: see the style rule above. Formatting is
+not compared in the **back** direction either, and that is the hoist immediately above rather
+than a second loosening — a regenerated document has lost its `office:styles`, so LibreOffice
+reorganises what is left and most paragraphs hoist. When the writer learns to declare styles and
+the reader to read paragraph properties, both exclusions go and the comparison is total.
 
 ### The oracle: the pin had no Writer in it, and now does
 

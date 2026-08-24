@@ -29,10 +29,18 @@
 //! supplies font metrics through [`Metrics`] and nothing else. Pagination is still gated, and
 //! layout is left-to-right only by explicit decision.
 //!
+//! **Character formatting is direct formatting** ([`style`]). A run carries the properties an
+//! `office:automatic-styles` entry set on it — bold, italic, a family, a size, a colour — and
+//! [`App::set_char_style`] writes them back as a generated `style:style` that LibreOffice reads
+//! (loop C compares it, in the "out" direction, character by character). What a run does *not*
+//! carry is what a **named** style means: `Emphasis` stays a name, because the name is the
+//! document's own vocabulary and resolving it would throw structure away to draw it.
+//!
 //! **What it does not have.** A session, so no `undo` across CLI invocations; tables,
-//! footnotes and fields; style *definitions*, so a style name this build writes does not
-//! survive LibreOffice, and every run therefore measures with the default character style;
-//! pages; and any shell but the CLI.
+//! footnotes and fields; style *definitions*, so a style **name** this build writes does not
+//! survive LibreOffice, and a run carrying only one measures with the default; paragraph-level
+//! properties, which is why LibreOffice hoisting a uniform paragraph's font out of its runs
+//! reads here as formatting lost; pages.
 
 pub mod action;
 pub mod loc;
@@ -884,10 +892,12 @@ impl App {
                 .doc
                 .block(index)
                 .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
-            let start = (index == from.block).then_some(from.offset).unwrap_or(0);
-            let end = (index == to.block)
-                .then_some(to.offset)
-                .unwrap_or_else(|| block.len());
+            let start = if index == from.block { from.offset } else { 0 };
+            let end = if index == to.block {
+                to.offset
+            } else {
+                block.len()
+            };
             for props in spanned(block, start, end) {
                 common = Some(match common {
                     Some(so_far) => so_far.common(&props),
@@ -916,10 +926,12 @@ impl App {
             let mut batch = Vec::new();
             for index in from.block..=to.block {
                 let mut block = block_at(state, index)?;
-                let start = (index == from.block).then_some(from.offset).unwrap_or(0);
-                let end = (index == to.block)
-                    .then_some(to.offset)
-                    .unwrap_or_else(|| block.len());
+                let start = if index == from.block { from.offset } else { 0 };
+                let end = if index == to.block {
+                    to.offset
+                } else {
+                    block.len()
+                };
                 let Some(runs) = restyled(&block, start, end, style) else {
                     continue;
                 };

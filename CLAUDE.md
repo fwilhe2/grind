@@ -173,8 +173,13 @@ loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 re
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `GRIND_LOOP_B_DUMP=LOG cargo test -p grind-sheet --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions for the sheet and for text (14 documents out, 20 corpus
-documents / 5095 blocks back, 0 differences) and gates CI in all four. `ci/libreoffice-image`
+Loop C is green both directions for the sheet and for text (16 documents out, 20 corpus
+documents / 5095 blocks back, 0 differences) and gates CI in all four. The text loop compares
+structure, text, bookmarks and — **out only** — the character formatting of every character;
+formatting is excluded on the way back because LibreOffice hoists a character style covering a
+whole paragraph onto the paragraph, which is measured rather than assumed
+(`a_character_style_over_a_whole_paragraph_is_hoisted_into_it`, `doc/odt-format.md` §5b).
+`ci/libreoffice-image`
 was a Calc-only LibreOffice when the text loop was written, so `oracle_ready` in
 `text/tests/roundtrip.rs` probes whether the `soffice` on `PATH` can convert a text document at
 all rather than assuming it; the image has since been rebuilt with Writer, and that half started
@@ -217,7 +222,7 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
-| `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
+| `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
@@ -252,10 +257,16 @@ before it can be answered.
 - **`core/src/kind.rs`** — which document type some bytes are, decided *before* parsing,
   because §8's reader is tolerant by construction and would hand back an empty document
   rather than an error. Sniffed from content, never from the file name.
-- **`core/src/style.rs`** / **`sheet/src/style.rs`** — the split: the `fo:` primitives, ODF
-  lengths, three-part borders and `PALETTE` (the clrs.cc colours, a default a shell offers and
+- **`core/src/style.rs`** / **`sheet/src/style.rs`** / **`text/src/style.rs`** — the split: the
+  `fo:` primitives, ODF lengths, three-part borders, `TextStyle` (the four properties that
+  change how *wide* text is) and `PALETTE` (the clrs.cc colours, a default a shell offers and
   never a limit) are generic; `CellStyle` — which of those pieces a *cell* carries — is the
-  spreadsheet's. ODF values kept verbatim in both.
+  spreadsheet's, and `CharStyle` — which a *run of text* carries — is the word processor's. ODF
+  values kept verbatim in all three, with one named exception (`fo:font-family`'s XSL-FO
+  quoting, decoded on read and re-encoded on write). `CharStyle` is **direct** formatting only:
+  an `office:automatic-styles` entry is resolved onto the run and its generated name forgotten,
+  an `office:styles` name is kept as a name and never resolved — `doc/text-core.md`'s Styles
+  section is that line and why it is there.
 - **`sheet/src/odf/`** — the reader. Tolerance is structural: an unrecognised element gets
   `Ignore` for its whole subtree, so unknown content is inert by construction rather than by
   special-casing. Dispatch is on `(namespace-uri, local-name)`, never prefixes.
@@ -398,6 +409,23 @@ found one core bug (an empty paragraph laid out one *unit* tall, since fixed in
 `grind_text::lay_out`) and one core limitation, written down rather than worked around:
 `App::caret_line` takes one width and one provider for a motion that may cross into a block set
 in a different face.
+
+**After S10, character formatting landed in the core** — the half of a rich-text editor that is
+not a shell. A `Run` carries a `CharStyle` (`text/src/style.rs`): bold, italic, underline,
+strike, family, size, colour, highlight, all ODF values verbatim. The reader resolves an
+`office:automatic-styles` text style onto the run and forgets its generated name; the writer
+pools distinct formattings back into `T1`, `T2`, … and declares them, so a formatting edit
+survives a regenerate where a style *name* does not. `App::set_char_style` replaces (one
+`Action::Batch`, one Ctrl+Z) and `App::char_style` reports what a span agrees about, which is
+what a toolbar reads before it writes; `grind text format <range>` reaches both (R9). `lay_out`
+now measures each run with its own metrics, so a bold word is measured bold. Loop C compares it
+character by character on the way out, and `doc/odt-format.md` §5b gained three measured
+LibreOffice facts: the `style:font-name` rewrite, the font-family requoting, and the paragraph
+hoist.
+
+**The shell half is not built.** No GTK toolbar, no selection to apply one to, and neither GUI
+shell *draws* the formatting the core now measures — the gap list in `doc/text-shell.md` is the
+up-to-date statement of that, and selection is the piece everything else waits on.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which

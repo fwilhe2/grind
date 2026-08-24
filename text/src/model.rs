@@ -68,6 +68,12 @@ pub enum BlockKind {
 /// read and re-encoded on write** (`doc/odt-format.md` §3.3), the same treatment
 /// `table:number-columns-repeated` gets, and for the same reason — it is a correctness trap
 /// rather than an optimisation.
+// `Run::Text` is much bigger than `Run::Tab` since it started carrying a [`CharStyle`], and
+// boxing something would fix that. Deliberately not done: a paragraph is text runs with the
+// occasional tab in it, so the big variant *is* the common case, and the trade on offer is an
+// allocation per run of prose in exchange for a smaller tab. `split_runs` and `coalesce` clone
+// runs constantly, which is exactly where that allocation would land.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Run {
     /// Character data, with the styling that applies to it.

@@ -289,8 +289,10 @@ mod tests {
     /// distinction ODF makes and this model keeps.
     #[test]
     fn an_explicit_none_is_not_a_line_and_is_still_a_value() {
-        let mut style = CharStyle::default();
-        style.underline = Some("none".into());
+        let mut style = CharStyle {
+            underline: Some("none".into()),
+            ..CharStyle::default()
+        };
         assert!(!style.is_underlined());
         assert!(!style.is_plain(), "the attribute is still there to write");
 
@@ -375,9 +377,12 @@ mod tests {
             }
             .attributes()
         };
+        // The apostrophes are XML-escaped on the way into the attribute, which is what
+        // LibreOffice writes too — `svg:font-family="&apos;Liberation Sans&apos;"` is verbatim
+        // out of a Writer document.
         assert_eq!(
             quoted("Liberation Serif"),
-            " fo:font-family=\"'Liberation Serif'\""
+            format!(" fo:font-family=\"{}\"", esc("'Liberation Serif'"))
         );
         assert_eq!(quoted("Georgia"), " fo:font-family=\"Georgia\"");
         assert_eq!(quoted(list), format!(" fo:font-family=\"{}\"", esc(list)));
