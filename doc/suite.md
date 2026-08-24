@@ -645,10 +645,21 @@ retention per document is what gives the phase a number to beat.
 
 ---
 
-## The layout fork
+## The layout fork — **decided: Path A**
 
-**This is the product decision this document cannot make, and everything from S7 onward depends
-on it.** Both branches are real; they lead to different programs.
+**This was the product decision this document could not make, and everything from S7 onward
+depended on it.** Both branches were real; they lead to different programs. It was taken at S7
+as recommended below, and the two paths are kept here rather than pruned because the argument
+is what a future reopening has to beat.
+
+**What being decided means, concretely.** Pagination moved to `doc/not-doing.md` §2 — *not yet,
+with a named gate* — rather than being deleted or left implicit; `README.md` says what the
+program is not, before it says what it is; and the core gained no layout, no font metrics and
+no new dependency. What it gained instead is the part of an editor that is *not* layout: the
+caret. `grind_text::App`'s `insert_text`, `erase`, `split_block` and `join_block` are the four
+operations a cursor performs, in the core because three shells would otherwise each answer
+"what happens when you press Return at the end of a heading?" separately and disagree. Wrapping
+belongs to whichever shell is drawing, and that is the whole of Path A's cost to the core.
 
 ### Path A — continuous flow, no page model *(recommended)*
 
@@ -779,7 +790,7 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | **S4** | **The text model and reader.** `loc.rs`, `Block`/`Run`, block ids, contexts over the existing driver | **Done.** `implemented()` checked against `doc/text-core.md` by `text/tests/scope.rs`, and **loop A green over Writer's corpus**: 1763 documents, 1755 read, 0 failed, nothing special-cased. `GRIND_LO_CORPUS` now names the checkout **root**, so one clone serves both applications | large |
 | **S5** | **The text writer, R6 splicing, loop C.** Both forms | **Done.** Writer in both forms; `package`/`manifest`/`esc`/`VERSION` extracted to `grind-core` now that a second caller pulls on them, with the sheet's R6 figures unmoved as proof it was a move; **R6 splicing works** — an unedited save returns the bytes exactly and editing one paragraph changes one line (`text/tests/diffable.rs`). Splicing is content edits only; a structural change regenerates, by one stated rule. **Loop C green both directions**, 0 differences, and it found a real writer bug on its first run (a literal tab or newline came back as a space) plus the fact that the pinned oracle had no Writer in it, since fixed by rebuilding the image — `doc/odt-format.md` §5b | large |
 | **S6** | **`grind_text::App` and CLI parity.** Every verb in the table above; `examples/sample-text.sh` | **Done.** `doc/cli-parity-text.md` green through the registry (R9); the sample script runs in `cli/tests/cli.rs` and its output is schema-checked. `undo`/`redo` are documented as not reachable — no session for text yet, and the reason is named | medium |
-| **S7** | **The layout decision, executed.** Path A as recommended; Path B behind its gate | Path A: text renders as a continuous flow in the shell with no core dependency added. Path B: loop D exists and stands at a stated floor | A: medium · B: very large |
+| **S7** | **The layout decision, executed.** Path A as recommended; Path B behind its gate | **Done — Path A.** Pagination is in `doc/not-doing.md` §2 behind loop D at a stated floor, `README.md` carries the honest label first, and the core gained **no** layout, font metrics or dependency. What it gained is the caret: `insert_text`, `erase`, `split_block`, `join_block` and offset addressing (`#intro+5`, not only `p12+40`), each on the CLI per R9. Typing splices, so one keystroke is one line of `git diff`. The half of the criterion that needs a shell — "renders as a continuous flow" — is S8's to show, and S8 is now a pure shell because of this | A: medium · B: very large |
 | **S8** | **The terminal text shell.** `grind-tui` opens both types off `grind_core::kind`; vi-modal over blocks; `:outline`, `:style`, bare-`loc` jumps. **Before the GTK shell, on purpose** — it is the cheapest complete editor and the sharpest test of S7's choice | Both types open in one binary; the editing model, block addressing and undo granularity are exercised end to end with no font metrics anywhere; `cargo test -p grind-tui` covers the keymap and the wrap arithmetic | medium |
 | **S9** | **The GTK text shell.** Its own `doc/text-shell.md`, milestone by milestone, mirroring `doc/gtk-shell.md`. Extract `grind-ui` here | The shell opens, edits and saves; `--render-to` produces an assertable frame; `cargo test -p grind-text-gtk` covers the display-free half; the a11y floor matches M9's | large |
 | **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | `grind-web` opens and saves a `.fodt` with no path anywhere; `ui_web/smoke.sh` covers it; its gap list names what it does not do | medium |

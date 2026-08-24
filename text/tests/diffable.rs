@@ -115,6 +115,53 @@ fn editing_one_paragraph_changes_one_line() {
     }
 }
 
+/// R6 for a **keystroke**, which is the version of it that has to hold once a shell exists.
+///
+/// `set_text` above is what a script does; typing is what a person does, and if a single
+/// character cost a regenerated document then differentiator #1 would be true only of
+/// batch editing. It splices for the same reason `set_text` does — [`grind_text::App`]'s
+/// caret edits are `SetBlock` actions underneath — and this is what says so out loud.
+#[test]
+fn typing_one_character_changes_one_line() {
+    let app = open(RICH.as_bytes());
+    let at = app
+        .resolve_caret(&grind_text::loc::parse("p2+5").expect("parses"))
+        .expect("resolves");
+    app.insert_text(at, "X").expect("types");
+
+    let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
+    let (removed, added) = changed_lines(RICH, &out);
+    assert_eq!(removed.len(), 1, "removed: {removed:#?}");
+    assert_eq!(added.len(), 1, "added: {added:#?}");
+    assert!(added[0].contains("FirstX paragraph."), "{added:#?}");
+    // And the surrounding attributes survive, same as any other splice.
+    assert!(added[0].contains("xml:id=\"p1\""), "{added:#?}");
+}
+
+/// Erasing across a block boundary removes a block, so it is **structural** and regenerates —
+/// the same stated rule `inserting_a_block_regenerates_rather_than_splicing` records. Worth its
+/// own test because "backspace at the front of a paragraph" is the commonest way a user reaches
+/// a structural edit without meaning to, and a reader of the R6 figures should know it costs
+/// the whole file rather than one line.
+#[test]
+fn erasing_across_a_block_boundary_regenerates() {
+    let app = open(RICH.as_bytes());
+    let (from, to) = app
+        .resolve_caret_range(&grind_text::loc::parse_range("p2+16:p3+0").expect("parses"))
+        .expect("resolves");
+    app.erase(from, to).expect("erases");
+
+    let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
+    let (removed, _) = changed_lines(RICH, &out);
+    assert!(
+        removed.len() > 1,
+        "a structural change regenerates; splicing it would be the surprise: {removed:#?}"
+    );
+    // Regenerating is not licence to lose anything the reader kept, though — the blocks
+    // outside the edit are still there.
+    assert!(out.contains("Second paragraph."), "{out}");
+}
+
 /// The load-bearing half of the splice: a replaced element keeps the attributes the model does
 /// not model. Dropping `xml:id` and `text:class-names` because the writer re-derived the start
 /// tag would be a worse bug than a large diff.

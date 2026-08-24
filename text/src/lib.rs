@@ -18,9 +18,17 @@
 //!   rather than extracted, because ODF defines no evaluator tier for text — which is exactly
 //!   why [`implemented`] is checked against it by `tests/scope.rs` rather than trusted.
 //!
-//! **Where this build is.** S4–S6: the model, addressing, the reader, a regenerating writer
-//! and the `App` the CLI drives. No R6 splicing yet — this writer regenerates, so a `.fodt`
-//! does not yet live in git the way a `.fods` does.
+//! **Where this build is.** S4–S7: the model, addressing, the reader, the writer in both forms
+//! with R6 splicing (a `.fodt` lives in git the way a `.fods` does), loop C green both
+//! directions, the `App` the CLI drives, and the caret-level edits a continuous-flow editor is
+//! made of — [`App::insert_text`], [`App::erase`], [`App::split_block`], [`App::join_block`].
+//!
+//! **What it does not have.** A session, so no `undo` across CLI invocations; tables,
+//! footnotes and fields; style *definitions*, so a style name this build writes does not
+//! survive LibreOffice; and any shell but the CLI. **No layout**, and that is a decision rather
+//! than a gap: `doc/suite.md`'s layout fork was settled on Path A, so page geometry is read,
+//! preserved and round-tripped but never rendered as pages, and the wrapping belongs to
+//! whichever shell is drawing.
 
 pub mod action;
 pub mod loc;
@@ -29,7 +37,7 @@ pub mod odf;
 
 pub use action::Action;
 pub use grind_core::{DocumentKind, Error, Form, Observer, Result, kind};
-pub use loc::Loc;
+pub use loc::{Caret, Loc, Target};
 pub use model::{Block, BlockId, BlockKind, Document, Run};
 
 use std::ops::Range;
@@ -331,6 +339,20 @@ impl App {
         loc::resolve_range(&state.doc, range).map_err(|e| Error::Xml(e.to_string()))
     }
 
+    /// Resolve an address to a [`Caret`] — a block *and* an offset within it, which is what
+    /// `p12+40` names and what the caret-level edits take.
+    pub fn resolve_caret(&self, at: &Loc) -> Result<Caret> {
+        let state = self.state.read().unwrap();
+        loc::resolve_caret(&state.doc, at).map_err(|e| Error::Xml(e.to_string()))
+    }
+
+    /// Resolve a range of *characters*, as [`App::erase`] takes it. An end with no offset of
+    /// its own means the end of its block, so a bare `p3` is all of p3's text.
+    pub fn resolve_caret_range(&self, range: &loc::Range) -> Result<(Caret, Caret)> {
+        let state = self.state.read().unwrap();
+        loc::resolve_caret_range(&state.doc, range).map_err(|e| Error::Xml(e.to_string()))
+    }
+
     /// The blocks belonging to the heading at `index` — itself, plus everything up to the next
     /// heading at the same level or higher. `None` if it is not a heading.
     ///
@@ -444,6 +466,194 @@ impl App {
                     index,
                     block: Box::new(block),
                 },
+            )
+        })
+    }
+
+    /// Insert text at a caret — **what typing does.**
+    ///
+    /// The first of the four caret-level edits (`insert_text`, [`App::erase`],
+    /// [`App::split_block`], [`App::join_block`]) that a continuous-flow editor is built out of.
+    /// [`App::set_text`] replaces a whole block, which is what a *script* does; these four are
+    /// what a *cursor* does, and they are in the core rather than in a shell because the
+    /// terminal, GTK and web shells would otherwise each write their own and disagree
+    /// (`doc/suite.md` S7).
+    ///
+    /// The inserted text takes the style and hyperlink of **the run at the caret, preferring
+    /// the one to its left** — typing at the end of a bold word continues in bold, which is
+    /// what every editor does and what a person expects. At the front of a block there is
+    /// nothing to the left, so the run to the right decides.
+    ///
+    /// ponytail: that rule carries a `text:a` too, so typing at the end of a link extends the
+    /// link. Right often enough to be the default and wrong often enough to want an override;
+    /// the override is a shell-level decision and there is no shell yet to make it.
+    pub fn insert_text(&self, at: Caret, text: &str) -> Result<()> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.mutate(|state| {
+            let mut block = block_at(state, at.block)?;
+            let offset = at.offset.min(block.len());
+            let (mut runs, tail) = model::split_runs(&block.runs, offset);
+            let (style, href) = caret_formatting(&runs, &tail);
+            runs.push(Run::Text {
+                text: text.to_owned(),
+                style,
+                href,
+            });
+            runs.extend(tail);
+            model::coalesce(&mut runs);
+            block.runs = runs;
+            Self::commit(
+                state,
+                Action::SetBlock {
+                    index: at.block,
+                    block: Box::new(block),
+                },
+            )
+        })
+    }
+
+    /// Erase the characters between two carets — **what a selection and a Delete key do.**
+    ///
+    /// Crossing a block boundary is the interesting case and the reason this is one method
+    /// rather than three: erasing from the middle of p3 to the middle of p5 leaves *one* block,
+    /// keeping p3's kind and style, and it is one [`Action::Batch`] and therefore one undo step.
+    /// A shell doing it as "erase, erase, delete, join" would get four, and the fourth Ctrl+Z
+    /// would be the one that surprised somebody.
+    ///
+    /// **Bookmarks inside the erased span survive, collapsed to the caret** — the same stance
+    /// [`App::set_text`] takes, because an anchor is a position rather than content and losing
+    /// `#intro` by rewriting the sentence around it would make the address useless. A block that
+    /// ceases to exist entirely does take its anchors with it, exactly as [`App::delete`] does:
+    /// there is no longer a position for them to be at.
+    ///
+    /// Returns the number of characters removed, counting each block boundary that closed up as
+    /// one — the same arithmetic [`Document::text`] uses when it joins blocks with a newline.
+    pub fn erase(&self, from: Caret, to: Caret) -> Result<usize> {
+        self.mutate(|state| {
+            if to < from {
+                return Err(Error::Xml("that range runs backwards".to_owned()));
+            }
+            let mut first = block_at(state, from.block)?;
+            let last = block_at(state, to.block)?;
+            let start = from.offset.min(first.len());
+            let end = to.offset.min(last.len());
+            if from.block == to.block && start == end {
+                return Ok(0);
+            }
+
+            let anchors = |runs: Vec<Run>| {
+                runs.into_iter()
+                    .filter(|run| matches!(run, Run::Bookmark { .. }))
+            };
+            let (mut runs, rest) = model::split_runs(&first.runs, start);
+            let removed;
+            if from.block == to.block {
+                let (cut, tail) = model::split_runs(&rest, end - start);
+                removed = end - start;
+                runs.extend(anchors(cut));
+                runs.extend(tail);
+            } else {
+                let (cut, tail) = model::split_runs(&last.runs, end);
+                // The tail of the first block, the whole of everything between, the head of the
+                // last, and one for each newline that closed up.
+                removed = (first.len() - start)
+                    + state.doc.blocks[from.block + 1..to.block]
+                        .iter()
+                        .map(Block::len)
+                        .sum::<usize>()
+                    + end
+                    + (to.block - from.block);
+                runs.extend(anchors(rest));
+                runs.extend(anchors(cut));
+                runs.extend(tail);
+            }
+            model::coalesce(&mut runs);
+            first.runs = runs;
+
+            let mut batch = vec![Action::SetBlock {
+                index: from.block,
+                block: Box::new(first),
+            }];
+            // Each removal shifts the rest down, so the same index removes the next one.
+            batch.extend((from.block..to.block).map(|_| Action::RemoveBlock {
+                index: from.block + 1,
+            }));
+            Self::commit(state, Action::Batch(batch))?;
+            Ok(removed)
+        })
+    }
+
+    /// Split a block at a caret — **what the Return key does.**
+    ///
+    /// The second half keeps the first's kind and style, so Return inside a list item makes
+    /// another list item at the same depth and Return inside a paragraph makes another
+    /// paragraph. **One exception: a heading split at its very end becomes a body paragraph**,
+    /// because a heading followed by an empty heading is never what anybody meant, and every
+    /// word processor there has ever been does this. Splitting a heading in the *middle* does
+    /// make two headings, which is how a title gets divided.
+    pub fn split_block(&self, at: Caret) -> Result<()> {
+        self.mutate(|state| {
+            let mut block = block_at(state, at.block)?;
+            let offset = at.offset.min(block.len());
+            let (mut head, mut tail) = model::split_runs(&block.runs, offset);
+            model::coalesce(&mut head);
+            model::coalesce(&mut tail);
+
+            let id = state.doc.next_id();
+            let mut second = Block::new(id, block.kind.clone());
+            second.style = block.style.clone();
+            second.runs = tail;
+            if second.is_empty() && matches!(block.kind, BlockKind::Heading { .. }) {
+                second.kind = BlockKind::Paragraph;
+                // The heading's style went with the heading; a body paragraph wearing
+                // `Heading_20_1` would look like a heading and not be one.
+                second.style = None;
+            }
+            block.runs = head;
+
+            Self::commit(
+                state,
+                Action::Batch(vec![
+                    Action::SetBlock {
+                        index: at.block,
+                        block: Box::new(block),
+                    },
+                    Action::InsertBlock {
+                        index: at.block + 1,
+                        block: Box::new(second),
+                    },
+                ]),
+            )
+        })
+    }
+
+    /// Join a block with the one after it — **what Backspace at the front of a block does.**
+    ///
+    /// [`App::split_block`]'s inverse in effect though not in mechanism, and the survivor is
+    /// the *first* block: its kind and style win, which is why backspacing at the front of a
+    /// paragraph that follows a heading pulls the text up into the heading rather than
+    /// demoting the heading.
+    pub fn join_block(&self, index: usize) -> Result<()> {
+        self.mutate(|state| {
+            let mut block = block_at(state, index)?;
+            let next = state
+                .doc
+                .block(index + 1)
+                .cloned()
+                .ok_or_else(|| Error::Xml(format!("nothing follows {}", loc::format(index))))?;
+            block.runs.extend(next.runs);
+            model::coalesce(&mut block.runs);
+            Self::commit(
+                state,
+                Action::Batch(vec![
+                    Action::SetBlock {
+                        index,
+                        block: Box::new(block),
+                    },
+                    Action::RemoveBlock { index: index + 1 },
+                ]),
             )
         })
     }
@@ -699,6 +909,21 @@ impl App {
 
     pub fn can_redo(&self) -> bool {
         !self.state.read().unwrap().redo.is_empty()
+    }
+}
+
+/// The style and hyperlink newly typed text should take, given the runs on either side of the
+/// caret.
+///
+/// **Prefer the left.** Typing continues what you just typed, so the run before the caret
+/// decides; at the front of a block there is nothing before it and the run after decides
+/// instead. A caret next to a tab, a break or a bookmark carries no formatting of its own, so
+/// the search is for the nearest *text* run and stops at the first thing that is not one.
+fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, Option<String>) {
+    let neighbour = head.last().or_else(|| tail.first());
+    match neighbour {
+        Some(Run::Text { style, href, .. }) => (style.clone(), href.clone()),
+        _ => (None, None),
     }
 }
 

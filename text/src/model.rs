@@ -100,6 +100,102 @@ impl Run {
             Run::Bookmark { .. } => "",
         }
     }
+
+    /// How many characters it contributes — what a `p12+40` offset counts against.
+    pub fn len(&self) -> usize {
+        self.text().chars().count()
+    }
+
+    /// Whether it contributes no characters at all. True of every bookmark: an anchor is a
+    /// position rather than content.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Split a run sequence at a character offset, cutting a run in half if the offset lands
+/// inside one.
+///
+/// The primitive under every caret-level edit: typing, erasing and splitting a block are all
+/// "cut here, put something between the halves". Only a [`Run::Text`] can be cut — [`Run::Tab`]
+/// and [`Run::Break`] are one character each and atomic, so no integer offset lands inside one.
+///
+/// **A zero-width run exactly at the offset goes to the second half.** That is a real decision
+/// and it only shows up for bookmarks: `#intro` at the front of a paragraph anchors the text
+/// after it, so when that paragraph is split the anchor follows the words it names rather than
+/// staying behind on an empty stub.
+pub fn split_runs(runs: &[Run], offset: usize) -> (Vec<Run>, Vec<Run>) {
+    let mut head = Vec::new();
+    let mut tail = Vec::new();
+    let mut pos = 0;
+    for run in runs {
+        let len = run.len();
+        if pos + len <= offset && !(len == 0 && pos == offset) {
+            head.push(run.clone());
+        } else if pos >= offset {
+            tail.push(run.clone());
+        } else if let Run::Text { text, style, href } = run {
+            let cut = text
+                .char_indices()
+                .nth(offset - pos)
+                .map_or(text.len(), |(i, _)| i);
+            head.push(Run::Text {
+                text: text[..cut].to_owned(),
+                style: style.clone(),
+                href: href.clone(),
+            });
+            tail.push(Run::Text {
+                text: text[cut..].to_owned(),
+                style: style.clone(),
+                href: href.clone(),
+            });
+        } else {
+            // Unreachable for the reason above, and a `tail` push rather than a panic because a
+            // model invariant is not worth taking a word processor down over.
+            tail.push(run.clone());
+        }
+        pos += len;
+    }
+    (head, tail)
+}
+
+/// Merge adjacent text runs that agree about their formatting, and drop empty ones.
+///
+/// `grid.rs`'s `normalize()`, for prose. Every edit that splices runs together leaves
+/// fragments — an empty half from a cut at a boundary, or two neighbours that were one run a
+/// moment ago — and without this a paragraph typed one character at a time would accumulate
+/// one `<text:span>` per keystroke. Canonical runs also keep R6's diffs small, because the
+/// bytes spliced back into the file are the bytes the same text would have been written as if
+/// it had never been edited.
+pub fn coalesce(runs: &mut Vec<Run>) {
+    runs.retain(|run| !matches!(run, Run::Text { text, .. } if text.is_empty()));
+    let mut i = 1;
+    while i < runs.len() {
+        let joined = match (&runs[i - 1], &runs[i]) {
+            (
+                Run::Text {
+                    text: a,
+                    style: sa,
+                    href: ha,
+                },
+                Run::Text {
+                    text: b,
+                    style: sb,
+                    href: hb,
+                },
+            ) if sa == sb && ha == hb => Some(format!("{a}{b}")),
+            _ => None,
+        };
+        match joined {
+            Some(text) => {
+                runs.remove(i);
+                if let Run::Text { text: into, .. } = &mut runs[i - 1] {
+                    *into = text;
+                }
+            }
+            None => i += 1,
+        }
+    }
 }
 
 /// One block: a paragraph, a heading, or a list item.
@@ -133,7 +229,7 @@ impl Block {
     /// How many characters [`Block::text`] would produce — what an offset in `loc.rs` counts
     /// against.
     pub fn len(&self) -> usize {
-        self.runs.iter().map(|r| r.text().chars().count()).sum()
+        self.runs.iter().map(Run::len).sum()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -322,6 +418,118 @@ mod tests {
         block.runs.push(Run::Tab);
         assert_eq!(block.len(), 5, "four characters and a tab, not six bytes");
         assert_eq!(block.text(), "über\t");
+    }
+
+    fn styled(text: &str, style: Option<&str>) -> Run {
+        Run::Text {
+            text: text.to_owned(),
+            style: style.map(str::to_owned),
+            href: None,
+        }
+    }
+
+    /// The offsets that matter are the ones at a seam: 0, the end, and exactly on a boundary
+    /// between two runs. Everything between them is the same arithmetic.
+    #[test]
+    fn a_split_cuts_a_text_run_and_never_an_atomic_one() {
+        let runs = vec![styled("ab", None), Run::Tab, styled("cd", None)];
+        for (offset, head, tail) in [
+            (0, "", "ab\tcd"),
+            (1, "a", "b\tcd"),
+            (2, "ab", "\tcd"),
+            // 3 is *after* the tab: an offset cannot land inside a one-character run.
+            (3, "ab\t", "cd"),
+            (5, "ab\tcd", ""),
+            // Past the end clamps rather than panicking — a caret outlives the text under it.
+            (99, "ab\tcd", ""),
+        ] {
+            let (a, b) = split_runs(&runs, offset);
+            let joined = |runs: Vec<Run>| runs.iter().map(Run::text).collect::<String>();
+            assert_eq!(
+                (joined(a), joined(b)),
+                (head.to_owned(), tail.to_owned()),
+                "at {offset}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_split_keeps_each_halfs_formatting() {
+        let runs = vec![styled("plain", None), styled("bold", Some("B"))];
+        let (head, tail) = split_runs(&runs, 7);
+        assert_eq!(head, vec![styled("plain", None), styled("bo", Some("B"))]);
+        assert_eq!(tail, vec![styled("ld", Some("B"))]);
+    }
+
+    #[test]
+    fn a_bookmark_at_the_split_point_follows_the_text_it_anchors() {
+        // `#intro` sits at offset 0 and names what comes after it, so splitting at 0 must not
+        // leave it behind on the empty stub. Everything *before* the offset still stays.
+        let mark = Run::Bookmark {
+            name: "intro".to_owned(),
+        };
+        let runs = vec![mark.clone(), styled("hello", None)];
+        assert_eq!(split_runs(&runs, 0).0, vec![]);
+        assert_eq!(
+            split_runs(&runs, 0).1,
+            vec![mark.clone(), styled("hello", None)]
+        );
+        // At the end of the text it is behind the offset and stays in the first half.
+        assert_eq!(split_runs(&runs, 5).0, vec![mark, styled("hello", None)]);
+    }
+
+    #[test]
+    fn coalescing_merges_what_agrees_and_leaves_what_does_not() {
+        let mut runs = vec![
+            styled("", None),
+            styled("a", None),
+            styled("b", None),
+            styled("c", Some("B")),
+            styled("d", Some("B")),
+            Run::Tab,
+            styled("e", None),
+        ];
+        coalesce(&mut runs);
+        assert_eq!(
+            runs,
+            vec![
+                styled("ab", None),
+                styled("cd", Some("B")),
+                Run::Tab,
+                styled("e", None),
+            ],
+            "empty dropped, like formatting merged, a tab still a boundary"
+        );
+
+        // A hyperlink is part of what "agrees": two runs with the same style and different
+        // targets are two links, not one.
+        let mut runs = vec![
+            Run::Text {
+                text: "a".to_owned(),
+                style: None,
+                href: Some("x".to_owned()),
+            },
+            Run::Text {
+                text: "b".to_owned(),
+                style: None,
+                href: Some("y".to_owned()),
+            },
+        ];
+        let before = runs.clone();
+        coalesce(&mut runs);
+        assert_eq!(runs, before);
+    }
+
+    #[test]
+    fn coalescing_never_drops_a_bookmark() {
+        // It is empty by every measure this function has, and it is the one empty thing that
+        // must survive.
+        let mut runs = vec![Run::Bookmark {
+            name: "here".to_owned(),
+        }];
+        let before = runs.clone();
+        coalesce(&mut runs);
+        assert_eq!(runs, before);
     }
 
     #[test]

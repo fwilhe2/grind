@@ -12,6 +12,17 @@ format nobody owns.
 One spreadsheet today, `grind sheet`. A word processor, `grind text`, is being built beside
 it — [`doc/suite.md`](doc/suite.md) is the plan and its rules.
 
+**And one thing said first, because it decides whether this is for you: `grind text` has no
+pages.** It shows a document as one reflowed column. Page size, margins, headers, footers and
+page breaks are read, kept and written back untouched — they are just never *drawn* as pages,
+and printing goes through the platform. Plenty of people will say that makes it a rich-text
+editor rather than a word processor, and they will be partly right. It was a deliberate fork
+rather than a shortcut: a real page model means line breaking, font metrics, widow and orphan
+control and footnote placement, which is the thirty-years-of-edge-cases problem this project
+exists to avoid. It has a way back in — a named gate in
+[`doc/not-doing.md`](doc/not-doing.md) §2 — and until something walks through it, this is what
+the program is.
+
 ## Why this exists
 
 LibreOffice is great. It is the reason OpenDocument is a real format and not a standards

@@ -62,6 +62,27 @@ fn span(app: &TextApp, address: &str) -> Result<std::ops::Range<usize>, String> 
     app.resolve_range(&range).map_err(|e| e.to_string())
 }
 
+/// Resolve one address to a caret — a block *and* an offset within it, which is what `p3+12`
+/// names and what the caret-level verbs take.
+fn caret_at(app: &TextApp, address: &str) -> Result<grind_text::Caret, String> {
+    let loc = grind_text::loc::parse(address).map_err(|e| e.to_string())?;
+    app.resolve_caret(&loc).map_err(|e| e.to_string())
+}
+
+/// Resolve a range of **characters**, as `erase` takes it.
+///
+/// Deliberately not [`span`]: there, a bare heading address means the heading's whole *section*,
+/// because the verbs that take one relocate and delete structure. `erase` removes characters,
+/// so a bare address there means that one block's text and a heading is not special. Two verbs
+/// spelled the same and meaning different things would be worse than two functions.
+fn caret_span(
+    app: &TextApp,
+    address: &str,
+) -> Result<(grind_text::Caret, grind_text::Caret), String> {
+    let range = grind_text::loc::parse_range(address).map_err(|e| e.to_string())?;
+    app.resolve_caret_range(&range).map_err(|e| e.to_string())
+}
+
 /// The block kind two flags describe. Neither means a paragraph.
 fn kind_of(heading: Option<u32>, list: Option<u32>) -> Result<grind_text::BlockKind, String> {
     match (heading, list) {
@@ -124,6 +145,39 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             let index = at(&app, address)?;
             app.set_text(index, &read_stdin_if_dash(text)?)
                 .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::Type {
+            file,
+            at: address,
+            text,
+        } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            let text = read_stdin_if_dash(text)?;
+            app.insert_text(caret, &text).map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, !text.is_empty())
+        }
+
+        TextCommand::Erase { file, range } => {
+            let app = open_text(file)?;
+            let (from, to) = caret_span(&app, range)?;
+            let removed = app.erase(from, to).map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, removed > 0)
+        }
+
+        TextCommand::Split { file, at: address } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            app.split_block(caret).map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::Join { file, at: address } => {
+            let app = open_text(file)?;
+            let index = at(&app, address)?;
+            app.join_block(index).map_err(|e| e.to_string())?;
             finish_text(&app, cli, file, true)
         }
 
@@ -474,6 +528,51 @@ enum TextCommand {
         /// The new text; "-" reads it from stdin
         #[arg(allow_hyphen_values = true)]
         text: String,
+    },
+
+    /// Insert text at a caret, without disturbing the rest of the block
+    ///
+    /// What typing does. `set` replaces a whole block, which is what a script wants; this is
+    /// what a cursor wants, and the CLI has it because rule 4 says a shell may not have a verb
+    /// the CLI does not. The text takes the formatting of the run at the caret.
+    Type {
+        file: PathBuf,
+        /// Where it goes, e.g. p3+12 — an address with no offset means the front of its block
+        at: String,
+        /// The text; "-" reads it from stdin
+        #[arg(allow_hyphen_values = true)]
+        text: String,
+    },
+
+    /// Erase a range of characters, leaving the blocks that hold them
+    ///
+    /// `delete` removes blocks; this removes text. A range that crosses a block boundary
+    /// closes the boundary up, leaving one block that keeps the first one's kind and style —
+    /// one undo step, however many blocks it spanned.
+    Erase {
+        file: PathBuf,
+        /// Characters, e.g. p3+12:p3+20 — a bare address is that block's whole text
+        range: String,
+    },
+
+    /// Split a block in two at a caret
+    ///
+    /// The Return key. The second half keeps the first's kind and style, except that a heading
+    /// split at its very end leaves a body paragraph behind it.
+    Split {
+        file: PathBuf,
+        /// Where to cut, e.g. p3+12
+        at: String,
+    },
+
+    /// Join a block with the one after it
+    ///
+    /// The Backspace key, seen from the block above it. The first block's kind and style are
+    /// the ones that survive.
+    Join {
+        file: PathBuf,
+        /// The first of the two, e.g. p3
+        at: String,
     },
 
     /// Insert a block before an address, or at the end

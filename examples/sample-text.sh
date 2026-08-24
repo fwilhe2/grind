@@ -83,6 +83,37 @@ run kind "$doc" p2
 say "delete: by range"
 run delete "$doc" p2
 
+# --- editing at a caret ------------------------------------------------------------------------
+#
+# What a cursor does, as opposed to what a script does. The CLI has these because rule 4 has no
+# exception for the operations that feel like they belong to a UI — and because a shell that had
+# them and the CLI did not would be a bug.
+
+say "type: characters at a caret — find prints an address you can hand straight back"
+run insert "$doc" --text 'One keystroke is line of git diff.'
+run type "$doc" "$(text find "$doc" 'line of' | cut -f1)" 'one '
+
+# An offset composes with *any* spelling of a block, and that is the whole reason it is a
+# separate part of an address rather than part of the p12 spelling: #typed+3 means the same
+# place next week, and p15+3 stops meaning it the moment anything is inserted above. The
+# argument that makes §2.1 worth having, one level further down.
+say "a bookmark turns a caret into one that survives an edit above it"
+run name "$doc" typed "$(text find "$doc" 'One keystroke' | cut -f1)"
+# Typing at the anchor puts the text *before* it, so the anchor stays attached to the words it
+# named rather than to a character count. #typed is now seven characters in.
+run type "$doc" '#typed+0' 'Proof: '
+
+say "split: the Return key — a block cut in two at an offset"
+# Seven characters in, which is where the anchor now sits: the cut leaves "Proof: " behind and
+# #typed follows its own text down into the second half.
+run split "$doc" '#typed+7'
+
+say "join: the Backspace key — and the first block's kind is the one that survives"
+run join "$doc" "$(text find "$doc" 'Proof: ' | cut -f1)"
+
+say "erase: characters rather than blocks, so the block itself stays behind"
+run erase "$doc" '#typed+0:#typed+7'
+
 say "style: a named paragraph style over a range"
 run style "$doc" p2 --style 'Text_20_body'
 

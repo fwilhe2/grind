@@ -48,6 +48,27 @@ what a person expects.
 - `replace` — `grind text replace <needle> <replacement>`, one undo step for the whole document
 - `set_bookmark` — `grind text name <name> <at>`, and `--delete` to remove one
 
+## Editing at a caret
+
+The four operations a cursor performs, as opposed to the ones a script performs. They are in
+the core rather than in a shell because the terminal, GTK and web shells would otherwise each
+answer "what happens when you press Return at the end of a heading?" separately and disagree
+(`doc/suite.md` S7); they are on the CLI because rule 4 does not make an exception for the
+operations that feel like they belong to a UI.
+
+- `insert_text` — `grind text type <at> <text>`, or `-` for stdin. The text takes the style and
+  hyperlink of the run at the caret, preferring the one to its left. One `SetBlock` underneath,
+  so a keystroke splices: one character changed is one line of `git diff`
+  (`text/tests/diffable.rs`)
+- `erase` — `grind text erase <range>`, where the range is characters — `p3+12:p3+20`, or a bare
+  address for a whole block's text. Crossing a block boundary closes it up and leaves one block
+  carrying the first one's kind and style, in **one** undo step; a bookmark inside the erased
+  span survives, collapsed to the caret, and one whose whole block goes does not
+- `split_block` — `grind text split <at>`. The Return key. The second half keeps the first's
+  kind and style, except that a heading split at its very end leaves a body paragraph
+- `join_block` — `grind text join <at>`. The Backspace key, named from the block above it. The
+  first block's kind and style are what survive
+
 ## History
 
 - `undo` — not exposed: **no session yet.** Each invocation loads the file, applies one command
@@ -77,7 +98,12 @@ what a person expects.
   the text that, given back to `grind text set`, leaves it exactly as it is
 - `resolve` — every command that takes an address; it is what turns `#intro` or `§2.1` into a
   block, against the document as it now is
-- `resolve_range` — every command that takes a range
+- `resolve_range` — every command that takes a range of blocks
+- `resolve_caret` — every command that takes a caret: `type`, `split`. It is what makes `p3+12`
+  mean something, having been a spelling `loc` parsed and nothing consumed until S7
+- `resolve_caret_range` — `grind text erase <range>`. A second resolver rather than a flag on
+  the first, because an end with no offset of its own means the **end** of its block here and
+  the start of it there, and `p3` has to mean the span a person would point at
 - `section` — the same commands, for a bare heading address: `grind text delete §3.2` removes
   the section rather than the heading line. Computed from outline levels, because the body has
   no such container

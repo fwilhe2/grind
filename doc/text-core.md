@@ -37,9 +37,11 @@ Two consequences that decide most of the table below:
 
 **Structure over layout.** Anything that exists to control where content lands on a *page* —
 sections, columns, frames, page sequences — is out or gated, because it is only meaningful
-once there is a page model, and whether there is ever a page model is `doc/suite.md`'s open
-fork. Anything that describes what content *is* — a heading, a list item, an emphasis — is in,
-because it is true regardless of how it is drawn.
+once there is a page model, and `doc/suite.md`'s layout fork was settled on **Path A: there is
+none**. Anything that describes what content *is* — a heading, a list item, an emphasis — is
+in, because it is true regardless of how it is drawn. That split was a hedge while the fork was
+open; now it is the shape of the program, and pagination has a named gate in
+`doc/not-doing.md` §2 rather than an open question.
 
 **Generated content is not content.** A table of contents, an index and a bibliography are
 *derived* from the document. Authoring one means owning the derivation, the numbering, and the
@@ -103,6 +105,27 @@ ceiling (`doc/odt-format.md` §3.2), so tolerance means level 9 loads. Authoring
 because that is where every outline UI stops and an unbounded level is a numbering feature
 rather than a structural one.
 
+### What editing means here, and what it does not
+
+This list is elements, and elements are only half of a scope line for an *editor*. The other
+half is the set of operations, and S7 fixed it at six: replace a block (`set_text`), and the
+four a cursor performs — insert text at a caret, erase a span of characters, split a block,
+join two. `move`, `kind`, `style` and `name` are the block-level verbs on top.
+
+Six is a deliberate number. Every one of them is a question with exactly one defensible answer
+that has to be given *once*, in the core, because three shells asking it separately would
+disagree: what formatting does typed text take (the run at the caret, preferring the left);
+what happens to a bookmark inside an erased span (it survives, collapsed to the caret — an
+anchor is a position, not content); what does Return at the end of a heading produce (a body
+paragraph, and only at the *end*). `doc/plan.md` rule 4 then puts each on the CLI, which is
+what stops any of them becoming a UI's private behaviour.
+
+**What is not in that set, and is not a gap:** anything requiring a *selection model*. A
+caret is two numbers and belongs in the core; a selection is a shell's idea of what a user is
+pointing at, and `erase(from, to)` takes the two carets rather than an object called Selection
+for that reason. Also not in it: layout of any kind. Path A puts wrapping in the shell, so
+there is no `wrap_width`, no measurement and no font anywhere below a shell.
+
 ---
 
 ## Not yet — inside the line, unbuilt, with the gate that owns it
@@ -110,8 +133,8 @@ rather than a structural one.
 | Not yet | Gate |
 |---|---|
 | **`table:table` in a text document** | S6 or later. The *element vocabulary* is shared with the spreadsheet; the model is not — an ODT table cell holds **blocks**, not a value. And `doc/odt-format.md` §5 has an open UNVERIFIED question about whether `table:formula` in a Writer table is even OpenFormula |
-| **`text:note` — footnotes and endnotes** | When there is somewhere to put one. A footnote's *content* is ordinary blocks and models fine; a footnote's *placement* is the page model, which is the open fork |
-| **Fields** (`text:page-number`, `text:date`, `text:title`, `text:file-name`) | A small named set, when something can display one. `text:page-number` needs pages, which is the fork again |
+| **`text:note` — footnotes and endnotes** | When there is somewhere to put one. A footnote's *content* is ordinary blocks and models fine; a footnote's *placement* is the page model, which Path A does not have (`doc/suite.md`, fork decided). A continuous view can still show one — inline, or at the end of the flow — so this waits for a shell rather than for pages |
+| **Fields** (`text:page-number`, `text:date`, `text:title`, `text:file-name`) | A small named set, when something can display one. `text:page-number` is the one that Path A cannot answer at all, and it stays out with the rest of pagination |
 | **`text:table-of-content`** | Read and preserved from the start (R6). *Authoring* one needs heading numbering and an update policy |
 | **`office:annotation` — comments** | Genuinely used, and arguably in. Decided with evidence rather than now: it needs an author, a date and a threading model, and guessing which of those matter is how a feature arrives half-built |
 | **Markdown import** | A one-way filter at the edge, exactly like `.xlsx` (`doc/xlsx-import.md`), allowed by the same argument — it produces an ODF document and no foreign vocabulary reaches the core |
@@ -126,7 +149,7 @@ Additions to `doc/not-doing.md` §1, and each one is a boundary rather than a ba
 
 | Not doing | Because |
 |---|---|
-| **`text:section`, multi-column layout** | A section exists to give a run of content its own page geometry. It is layout, and it is the fork |
+| **`text:section`, multi-column layout** | A section exists to give a run of content its own page geometry. It is layout, and Path A has none — see pagination's named gate in `doc/not-doing.md` §2 |
 | **Text frames as layout boxes** | Positioned boxes with flow-around are a page-layout program |
 | **A drawing canvas** (`shape` beyond an anchored image) | Shapes, connectors and their layout model are a different application — the same line `doc/not-doing.md` already draws for spreadsheets |
 | **Generated indices** — illustration, table, object, user, alphabetical, bibliography | Six of `text-content`'s sixteen alternatives. Each is a derivation with its own numbering and update rules, for content nobody edits by hand. Read and preserved; never authored |

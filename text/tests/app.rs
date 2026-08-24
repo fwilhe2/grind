@@ -105,6 +105,245 @@ fn every_edit_undoes_and_redoes_in_one_step() {
     assert!(!app.can_undo());
 }
 
+// --- the caret-level edits (S7) -------------------------------------------------------------
+//
+// The four operations a continuous-flow editor is made of, and the reason they are in the core
+// rather than in a shell: three shells writing their own would disagree about the answers
+// below, and `doc/plan.md` rule 4 means the CLI has to be able to do them anyway.
+
+/// Turn an address into a caret the way every caller does — through `loc`, which is the only
+/// place a 1-based `p12+40` becomes indices.
+fn caret(app: &App, address: &str) -> grind_text::Caret {
+    app.resolve_caret(&loc::parse(address).expect("parses"))
+        .expect("resolves")
+}
+
+#[test]
+fn typing_puts_characters_at_a_caret() {
+    let app = app(&["hello world"]);
+    app.insert_text(caret(&app, "p1+5"), ",").expect("types");
+    assert_eq!(text(&app), "hello, world");
+
+    // The two ends, which is where an off-by-one would show.
+    app.insert_text(caret(&app, "p1+0"), ">> ").expect("types");
+    let end = app.input_text(0).expect("reads").chars().count();
+    app.insert_text(
+        app.resolve_caret(&loc::parse(&format!("p1+{end}")).unwrap())
+            .expect("resolves"),
+        "!",
+    )
+    .expect("types");
+    assert_eq!(text(&app), ">> hello, world!");
+
+    // Three keystrokes, three undo steps — typing is not batched, because the granularity a
+    // shell wants (a word? a pause?) is a shell's decision and it can only coarsen what the
+    // core gives it, never refine it.
+    assert!(app.undo() && app.undo() && app.undo());
+    assert_eq!(text(&app), "hello world");
+}
+
+#[test]
+fn typed_text_takes_the_formatting_of_the_run_at_the_caret() {
+    // "plain" then "bold" in a span, which is what reading `<text:span>` produces.
+    let app = App::new();
+    app.insert(0, BlockKind::Paragraph, "").expect("inserts");
+    let styled = |text: &str, style: Option<&str>| grind_text::Run::Text {
+        text: text.to_owned(),
+        style: style.map(str::to_owned),
+        href: None,
+    };
+    let doc = |app: &App| {
+        let bytes = app.save_bytes(Form::Flat).expect("saves");
+        String::from_utf8(bytes).expect("utf-8")
+    };
+
+    // Build the two runs by writing and reading back, so the test drives the real path.
+    let mut d = grind_text::Document::new();
+    let id = d.next_id();
+    let mut block = grind_text::Block::new(id, BlockKind::Paragraph);
+    block.runs = vec![styled("plain", None), styled("bold", Some("T1"))];
+    d.blocks.push(block);
+    let bytes = grind_text::write_bytes(&d, Form::Flat).expect("writes");
+    app.open_bytes("doc", &bytes).expect("opens");
+    assert_eq!(text(&app), "plainbold");
+
+    // Inside the styled run: styled. `T1` appearing twice would mean the run was fragmented.
+    app.insert_text(caret(&app, "p1+7"), "XX").expect("types");
+    assert_eq!(text(&app), "plainboXXld");
+    assert_eq!(doc(&app).matches("T1").count(), 1, "one span, not three");
+
+    // At the boundary between them the left wins: typing continues what you just typed.
+    let app2 = App::new();
+    app2.open_bytes("doc", &bytes).expect("opens");
+    app2.insert_text(caret(&app2, "p1+5"), "YY").expect("types");
+    assert_eq!(app2.formatting().len(), 1);
+    assert!(
+        doc(&app2).contains("plainYY"),
+        "the plain run absorbed it: {}",
+        doc(&app2)
+    );
+
+    // At the very front there is nothing to the left, so the run to the right decides.
+    let app3 = App::new();
+    app3.open_bytes("doc", &bytes).expect("opens");
+    app3.insert_text(caret(&app3, "p1+0"), "ZZ").expect("types");
+    assert!(doc(&app3).contains("ZZplain"), "{}", doc(&app3));
+}
+
+#[test]
+fn erasing_within_one_block_removes_exactly_the_span() {
+    let app = app(&["hello, world"]);
+    let (from, to) = app
+        .resolve_caret_range(&loc::parse_range("p1+5:p1+7").expect("parses"))
+        .expect("resolves");
+    assert_eq!(app.erase(from, to).expect("erases"), 2);
+    assert_eq!(text(&app), "helloworld");
+
+    // A bare address is the whole block's text — the block stays, empty. `delete` is the verb
+    // that removes a block; `erase` only ever removes characters.
+    let (from, to) = app
+        .resolve_caret_range(&loc::parse_range("p1").expect("parses"))
+        .expect("resolves");
+    app.erase(from, to).expect("erases");
+    assert_eq!(app.block_count(), 1);
+    assert_eq!(text(&app), "");
+
+    assert!(app.undo() && app.undo());
+    assert_eq!(text(&app), "hello, world");
+}
+
+#[test]
+fn erasing_across_blocks_leaves_one_and_undoes_in_a_single_step() {
+    let app = app(&["first line", "middle", "last line"]);
+    app.set_kind(0, BlockKind::Heading { level: 1 }).expect("h");
+
+    let (from, to) = app
+        .resolve_caret_range(&loc::parse_range("p1+5:p3+4").expect("parses"))
+        .expect("resolves");
+    // " line" + "\n" + "middle" + "\n" + "last" — the two closed-up boundaries count one each.
+    assert_eq!(app.erase(from, to).expect("erases"), 5 + 1 + 6 + 1 + 4);
+    assert_eq!(app.block_count(), 1);
+    // "first" and the " line" left at the end of p3, which is a coincidence worth naming so
+    // nobody reads it as the erase having done nothing.
+    assert_eq!(text(&app), "first line");
+    assert_eq!(
+        app.get_viewport(0..1).get(0).expect("there").kind,
+        BlockKind::Heading { level: 1 },
+        "the survivor is the first block, so its kind wins"
+    );
+
+    // One step, whatever it took internally — four Ctrl+Z would be the surprise.
+    assert!(app.undo());
+    assert_eq!(text(&app), "first line\nmiddle\nlast line");
+}
+
+#[test]
+fn erasing_keeps_an_anchor_it_passes_over_but_not_one_whose_block_is_gone() {
+    let app = app(&["hello there", "middle", "tail end"]);
+    app.set_bookmark("inner", Some(0)).expect("marks");
+    app.set_bookmark("doomed", Some(1)).expect("marks");
+
+    // `inner` is at offset 0 of p1, inside the span being erased: it survives, collapsed to
+    // the caret, exactly as `set_text` keeps one through a rewrite.
+    let (from, to) = app
+        .resolve_caret_range(&loc::parse_range("p1+0:p3+4").expect("parses"))
+        .expect("resolves");
+    app.erase(from, to).expect("erases");
+    assert_eq!(text(&app), " end");
+
+    let names: Vec<String> = app.bookmarks().into_iter().map(|(n, _)| n).collect();
+    assert_eq!(
+        names,
+        vec!["inner".to_owned()],
+        "the anchor in a surviving block stays; the one whose block ceased to exist does not, \
+         which is what `delete` already does"
+    );
+}
+
+#[test]
+fn splitting_and_joining_are_the_return_and_backspace_keys() {
+    let app = app(&["one sentence. two sentence."]);
+    app.split_block(caret(&app, "p1+14")).expect("splits");
+    assert_eq!(text(&app), "one sentence. \ntwo sentence.");
+    assert_eq!(app.block_count(), 2);
+
+    // Joining puts it back, and the first block's kind is the one that survives.
+    app.join_block(0).expect("joins");
+    assert_eq!(text(&app), "one sentence. two sentence.");
+    assert_eq!(app.block_count(), 1);
+
+    // Each is one undo step even though each is two actions.
+    assert!(app.undo() && app.undo());
+    assert_eq!(text(&app), "one sentence. two sentence.");
+
+    // Nothing follows the last block, so there is nothing to join it to.
+    assert!(app.join_block(app.block_count() - 1).is_err());
+    assert!(app.split_block(caret(&app, "p1+0")).is_ok(), "at the front");
+    assert_eq!(text(&app), "\none sentence. two sentence.");
+}
+
+#[test]
+fn return_at_the_end_of_a_heading_starts_a_paragraph_and_in_the_middle_does_not() {
+    let app = app(&["Chapter One"]);
+    app.set_kind(0, BlockKind::Heading { level: 2 }).expect("h");
+    app.set_style(0..1, Some("Heading_20_2".into())).expect("s");
+
+    let end = caret(&app, "p1+11");
+    app.split_block(end).expect("splits");
+    let view = app.get_viewport(0..2);
+    assert_eq!(
+        view.get(1).expect("there").kind,
+        BlockKind::Paragraph,
+        "a heading followed by an empty heading is never what anyone meant"
+    );
+    assert_eq!(
+        view.get(1).expect("there").style,
+        None,
+        "and it does not keep the heading's style either"
+    );
+
+    // In the middle it is a title being divided, so both halves stay headings.
+    app.undo();
+    app.split_block(caret(&app, "p1+8")).expect("splits");
+    let view = app.get_viewport(0..2);
+    assert_eq!(
+        view.get(1).expect("there").kind,
+        BlockKind::Heading { level: 2 }
+    );
+    assert_eq!(
+        view.get(1).expect("there").style.as_deref(),
+        Some("Heading_20_2")
+    );
+
+    // A list item is the other way round: Return at the end of one continues the list.
+    let list = self::app(&["item"]);
+    list.set_kind(0, BlockKind::ListItem { depth: 2 })
+        .expect("li");
+    list.split_block(caret(&list, "p1+4")).expect("splits");
+    assert_eq!(
+        list.get_viewport(0..2).get(1).expect("there").kind,
+        BlockKind::ListItem { depth: 2 }
+    );
+}
+
+#[test]
+fn a_caret_edit_past_the_end_is_an_error_rather_than_a_panic() {
+    let app = app(&["a"]);
+    let past = grind_text::Caret {
+        block: 9,
+        offset: 0,
+    };
+    assert!(app.insert_text(past, "x").is_err());
+    assert!(app.erase(past, past).is_err());
+    assert!(app.split_block(past).is_err());
+    assert!(app.join_block(9).is_err());
+    // Backwards is refused too, rather than quietly erasing nothing.
+    let here = |offset| grind_text::Caret { block: 0, offset };
+    assert!(app.erase(here(1), here(0)).is_err());
+    assert_eq!(text(&app), "a");
+    assert_eq!(undo_all(&app), 1, "no failure reached the undo stack");
+}
+
 #[test]
 fn a_paragraph_becomes_a_heading_and_the_outline_follows() {
     let app = app(&["Title", "prose", "Part", "more"]);

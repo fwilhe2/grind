@@ -19,10 +19,13 @@ has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0�
 `grind <app> <verb>` CLI, and R8/R9/R10.
 
 The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
-(`grind text`) reads, writes and edits — `examples/sample-text.sh` builds a document out of
-every feature it has, through the CLI only. What it does **not** have: a session (so no `undo`
-across invocations), loop C, tables, footnotes, fields, and any shell but the CLI. Loop A is
-green over Writer's 1763-document corpus.
+(`grind text`) is done through S7: it reads, writes, edits by block *and by caret*
+(`type`/`erase`/`split`/`join`), and `examples/sample-text.sh` builds a document out of every
+feature it has, through the CLI only. Loops A and C are both green. What it does **not** have:
+a session (so no `undo` across invocations), tables, footnotes, fields, style definitions, and
+any shell but the CLI. **And no pages** — the layout fork is decided (Path A), so page geometry
+is read, preserved and round-tripped but never rendered, wrapping belongs to the shell, and
+pagination sits in `doc/not-doing.md` §2 behind loop D at a stated floor.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -186,7 +189,7 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
-| `grind-text` | `text/` | The word processor (phase 10, S4–S6): the block model, `loc.rs` addressing, the ODT reader and writer, `App`, and R6 splicing — a `.fodt` lives in git the way a `.fods` does |
+| `grind-text` | `text/` | The word processor (phase 10, S4–S7): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. No layout: Path A puts wrapping in the shell |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk`, `grind-tui`, `grind-web` | `ui_*/` | The shells |
 
@@ -234,9 +237,13 @@ before it can be answered.
   (rng:16938): a heading does not contain what follows it, outline structure is implied by
   `text:outline-level` alone, and lists are flattened into the sequence with a depth. Blocks
   carry stable `BlockId`s because an index is invalidated by any insertion above it.
+  `split_runs`/`coalesce` are the run surgery every caret edit is built on — the `grid.rs`
+  `normalize()` of this crate.
 - **`text/src/loc.rs`** — addressing, the `a1.rs` of that crate and its only 0↔1 conversion.
-  `p12`, `p12+40`, `p12:p20`, `#bookmark`, `§2.1.3`. The last two survive edits elsewhere in
-  the document, which is what makes them scriptable; `p12` does not.
+  A `Loc` is a `Target` (`p12`, `#bookmark`, `§2.1.3`) plus an optional character `offset`, and
+  the offset is a separate axis *on purpose*: `#intro+5` and `§2.1+0` are addresses, not just
+  `p12+40`. The named targets survive edits elsewhere in the document, which is what makes a
+  caret scriptable; `p12` does not.
 - **`sheet/src/formula/`** — the OpenFormula engine, built value model → lexer/parser/
   serializer → eval → functions, all cited to Part 4 by section. `value.rs` is the single
   point of failure for the value model, error set and §6.3 conversions. `eval.rs` recurses
@@ -313,3 +320,15 @@ by `ui_web/smoke.sh` (jsdom) and by `cargo test -p grind-web` (keymap + layout a
 Its gaps, on purpose: point mode, styling controls, column widths, and a uniform grid.
 `doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of everything
 deferred by decision in this phase.
+
+**Phase 10 (the suite) is done through S7**, planned in `doc/suite.md`. S1–S6 split
+`grind-core` out, built the `grind` CLI, wrote the two normative text documents, and gave the
+word processor its model, reader, writer, R6 splicing and `App`. **S7 settled the layout fork
+on Path A**: no page model, ever, unless loop D exists and stands at a stated floor
+(`doc/not-doing.md` §2). What Path A cost the core is not layout but the *caret* —
+`insert_text`, `erase`, `split_block`, `join_block`, plus an offset that composes with every
+spelling of an address, so `#intro+5` is as good as `p12+40` and survives an edit above it
+where `p12+40` does not. Each has a CLI verb (`type`, `erase`, `split`, `join`) because rule 4
+has no exception for operations that feel like a UI's. S8 is next and is a *pure* shell — the
+terminal word processor, before the GTK one, because it is the cheapest complete editor and
+the sharpest test of S7's choice.
