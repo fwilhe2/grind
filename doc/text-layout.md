@@ -6,10 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Where layout lives — the decision `grind text` turns on
 
-> **Status: open.** `doc/suite.md`'s fork was closed on Path A at S7 and **reopened
-> immediately**, on an objection that is stronger than the argument that closed it. Nothing in
-> this document is settled. `doc/suite.md`'s S7 row, `doc/not-doing.md`'s pagination gate and
-> `README.md`'s paragraph all point here and are provisional until it is.
+> **Status: DECIDED — Path C.** `doc/suite.md`'s fork was closed on Path A at S7, reopened
+> immediately on the objection below, and settled on **Path C: line layout in the core, font
+> metrics injected, pagination gated.** The five open questions are answered in "The decision"
+> at the end, and those answers are as normative as the path itself. This document outranks
+> `doc/suite.md`'s fork section, which is now the record of an argument rather than the answer.
 
 This is the largest single decision left in the project. It decides what `grind text` *is*,
 how much of it exists in `core/`, whether the terminal shell is possible, and roughly whether
@@ -110,10 +111,22 @@ one question it cannot answer itself: *how wide is this text?*
 /// cells, GTK in Pango units, the browser in CSS pixels. The core does arithmetic against a
 /// `width` supplied by the same shell in the same unit, and never invents one.
 pub trait Metrics {
-    fn advance(&self, text: &str, style: &TextStyle) -> f32;
+    /// The cumulative advance after each character of `text` — one value per character,
+    /// the last being the whole string's width.
+    fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>);
     fn line_height(&self, style: &TextStyle) -> f32;
 }
 ```
+
+**Cumulative advances rather than a single width, and it matters.** An earlier sketch here had
+`advance(&str) -> f32`, which forces the core to measure prefix after prefix to find a break
+and re-measure to place a caret. Asking for the whole array in one call is what a shaping
+engine naturally produces — Pango, the browser and a fixed-width terminal all answer it in one
+pass — it is correct across kerning and ligatures because the provider sees the entire string,
+and it means **everything after wrapping is metric-free**: the `Layout` carries the x of every
+caret position, so hit-testing, `x_at` and caret movement are array lookups with no font in
+sight. That is what makes a `Layout` a plain value a shell can hold, and it is why cost 1 below
+is a solved problem rather than a mitigation.
 
 The core then owns, once, for every shell:
 
@@ -144,16 +157,17 @@ and nothing else is.
 
 Four real costs, none of which the "one small crate" framing above should be allowed to hide.
 
-### 1. An advance is not additive
+### 1. An advance is not additive — solved by the trait's shape
 
-`advance("a") + advance("b") != advance("ab")` — kerning and ligatures see to that. So the core
-must measure **candidate prefixes**, never sum per-character widths.
+`advance("a") + advance("b") != advance("ab")` — kerning and ligatures see to that. Summing
+per-character widths is therefore wrong, and measuring prefix after prefix to avoid summing is
+slow.
 
-Mitigation, and it is cheap: for each line, binary-search the break opportunities for the last
-prefix that fits. That is O(log k) `advance` calls per line rather than O(n), and the shell's
-provider memoises. This is a solved shape, but it does mean `Metrics` takes a `&str` rather
-than a character, and that a naive implementation of the trait is a performance bug rather than
-a correctness one.
+`advances()` above dissolves both: **one call per fragment**, the provider sees the whole
+string and so applies its own kerning and shaping, and the core receives the cumulative array
+it needs for wrapping *and* for caret placement. The residual inaccuracy is kerning **across a
+fragment boundary**, which is a boundary between two different character styles — where
+kerning is arguably wrong anyway. Named, and accepted.
 
 ### 2. Bidirectional text
 
@@ -268,26 +282,84 @@ medium-plus milestone before any text shell exists, its line breaking will be vi
 than Pango's for non-Latin scripts, and the bidi question below has to be answered first rather
 than discovered.
 
+*(Chosen. See "The decision" at the end — bidi is answered by excluding RTL explicitly, which
+is the trade that makes the second objection survivable.)*
+
 ---
 
-## Before committing to anything — the questions to answer
+## The decision
 
-Not rhetorical. Each is cheap to answer and expensive to get wrong.
+**Path C**, with the five open questions answered as follows. These are as normative as the
+path; each is a boundary, and changing one is a product decision rather than a ticket.
 
-1. **Bidi: in, or gated?** Take `unicode-bidi` at L1, or LTR-only with a written gate? Sizing
-   this is the single highest-value hour available.
-2. **Licenses.** `unicode-linebreak`, `unicode-bidi`: confirm MIT/Apache-2.0 and add to
-   `REUSE.toml` accounting. `doc/suite.md` asserts the font stack is MIT/Apache; that claim has
-   not been checked against the actual crates.
-3. **Does `Layout` live in `grind-core` or `grind-text`?** R8 says no document type's
-   vocabulary reaches the core. Line breaking over styled runs is arguably generic — a
-   spreadsheet cell wraps too, and `ui_gtk` M10's row auto-height already measures wrapped
-   text. If so, this is `grind-core` and the spreadsheet gets it for free, which is an argument
-   for C that this document has not otherwise counted.
-4. **What unit does the CLI use?** `grind text view --width 72` with a one-unit-per-character
-   `Metrics` is the obvious answer and makes rule 4 satisfiable. Confirm that is enough.
-5. **Does `ui_gtk`'s existing wrap measurement move onto the same trait?** If yes, the
-   spreadsheet and the word processor share one line breaker and question 3 answers itself.
+### 1. Bidi — **out, explicitly, with a gate**
+
+Layout is **left-to-right only.** `unicode-bidi` is not taken, UAX #9 is not implemented, and a
+document containing right-to-left text lays out as though it were LTR — which is *wrong for
+that document*, not merely unstyled.
+
+This is a deliberate Pareto call, and the reason it is affordable is R6: **an RTL document is
+still read, preserved byte-for-byte, and written back correctly.** Only the *view* is wrong,
+and only for documents this build was never going to render well anyway. Refusing to lay out
+RTL is not the same as destroying it, which is the same distinction `doc/not-doing.md` already
+draws for change tracking.
+
+`style:writing-mode` (rng:2864) is preserved and never consulted. The gate for reopening: a
+real RTL document somebody wants to edit, at which point `unicode-bidi` goes in at L1's seam
+and the caret-movement question — logical or visual — gets answered then rather than guessed
+now. Recorded as a row in `doc/not-doing.md` §2.
+
+### 2. Licenses — **checked, not assumed**
+
+`unicode-linebreak` **0.1.5 is Apache-2.0** (verified in the crate's own `Cargo.toml`, not
+inferred), implements UAX #14 against Unicode 15.0, and is compatible with AGPL-3.0-or-later.
+It is a pure table crate: no font, no I/O, no unsafe dependency tree. That is one dependency
+added to `grind-core`, and it is neutral plumbing by this project's own ladder — a Unicode
+algorithm, not ODF semantics.
+
+`doc/suite.md`'s claim that the *font* stack (`rustybuzz`, `fontdb`, `cosmic-text`) is
+MIT/Apache remains unverified, and stays unverified: Path C does not take it.
+
+### 3. `Layout` lives in **`grind-core`**, and the spreadsheet uses it
+
+R8 is satisfied because line breaking over styled text mentions no document type's vocabulary:
+its input is a flat sequence of `(text, TextStyle)` fragments, which a paragraph's runs and a
+wrapped cell's display text both produce. `core/src/layout.rs`.
+
+**And the spreadsheet adopts it.** `ui_gtk` M10's row auto-height already measures wrapped
+text, so today there is a line breaker in the GTK shell that the word processor was about to
+duplicate. One engine, two applications — which is an argument for Path C this document did not
+count when recommending it, and the strongest available evidence that the abstraction is real
+rather than invented for one caller.
+
+### 4. The CLI measures **one unit per character**
+
+`grind text view --width 72` uses a fixed-width `Metrics`, which makes every line operation
+answerable from the CLI and rule 4 satisfiable for the first time. The core ships that provider
+(`layout::Fixed`) because it is also what every test uses: a synthetic provider where each
+character is one unit wide makes line breaking exactly assertable with no font anywhere.
+
+A terminal shell wants `unicode-width` rather than a naive count, for CJK and combining marks.
+That belongs in the shell, which implements the trait itself — the core stays free of it.
+
+### 5. `ui_gtk`'s wrap measurement **moves onto the trait**
+
+The GTK shell implements `Metrics` over Pango once, and both its grid and (at S9) its text view
+use it. This is what makes question 3's answer load-bearing rather than aspirational, and it is
+the migration that proves injection works against a real shaping engine.
+
+### What this changes in the plan
+
+`doc/suite.md`'s milestone list gains L1–L2 **before** S8, because the terminal shell is only a
+pure renderer if the engine it renders exists first. That reordering is the main scheduling
+consequence, and it is the point: S8 was going to discover this.
+
+### What stays gated, unchanged
+
+Pagination. `doc/not-doing.md` §2, loop D at a stated floor. Path C is line layout and nothing
+more — page boxes, widows, orphans, headers, footers and footnote placement are all still out,
+and the exit criterion for *this* work is agreement between shells, not agreement with
+LibreOffice.
 
 ---
 

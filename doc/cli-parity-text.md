@@ -69,6 +69,26 @@ operations that feel like they belong to a UI.
 - `join_block` — `grind text join <at>`. The Backspace key, named from the block above it. The
   first block's kind and style are what survive
 
+## Layout
+
+`doc/text-layout.md`, decided on Path C: line breaking and every caret operation defined in
+terms of a *line* live in `grind_core::layout`, and the shell supplies font metrics through the
+`Metrics` trait. The CLI's provider measures **one unit per character**, which is what makes
+this section possible at all — before it, rule 4 had no answer for Down-arrow, because the CLI
+had no width and therefore no lines.
+
+- `layout_block` — `grind text view --width <columns>`, which prints what any shell would draw
+  at that width. Without `--width` a block is one line, which is what `view` always printed
+- `caret_line` — `grind text caret <at> --down <n>`, negative to go up. Crosses block
+  boundaries, so down from the last line of a paragraph lands on the first line of the next;
+  at the document's own top or bottom it stops rather than erroring
+- `caret_line_bounds` — `grind text caret <at> --home` / `--end`. The **visual** line's ends,
+  not the paragraph's, which is the whole difference between an editor and a `set_text` front
+  end
+- `caret_x` — `grind text caret`, which computes the goal column from it before moving. A shell
+  holds that value across a run of Down keystrokes so the caret returns to the column it
+  started in; a single CLI invocation has no run to remember, so it measures fresh
+
 ## History
 
 - `undo` — not exposed: **no session yet.** Each invocation loads the file, applies one command

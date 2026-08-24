@@ -146,3 +146,28 @@ mod tests {
         assert_eq!(palette("chartreuse"), None);
     }
 }
+
+/// The text properties that decide how *wide* a piece of text is.
+///
+/// The metrics half of a character style, and nothing else: no colour, no underline, no
+/// background — those change how text looks and not how much room it takes, so a layout engine
+/// has no use for them. Values are ODF's own and verbatim, exactly as everywhere else in this
+/// module; the shell's [`crate::layout::Metrics`] implementation is what turns
+/// `Some("10.5pt")` into a number, because only it knows what unit it is answering in.
+///
+/// Deliberately **not** a document type's style struct. `grind_sheet::style::CellStyle` carries
+/// these four fields among a dozen others and can hand one of these out; a text run's character
+/// style will do the same once style *definitions* are read (`doc/text-core.md` — until then a
+/// run measures with the default, which is the one honest thing to do with a style name whose
+/// properties nobody has looked up).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TextStyle {
+    /// `fo:font-family`, or `style:font-name` resolved through `office:font-face-decls`.
+    pub font_family: Option<String>,
+    /// `fo:font-size` — an ODF length, e.g. `"10pt"`.
+    pub font_size: Option<String>,
+    /// `fo:font-weight` — `normal`, `bold`, or a number.
+    pub font_weight: Option<String>,
+    /// `fo:font-style` — `normal`, `italic`, `oblique`.
+    pub font_style: Option<String>,
+}

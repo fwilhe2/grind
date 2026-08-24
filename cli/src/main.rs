@@ -83,6 +83,30 @@ fn caret_span(
     app.resolve_caret_range(&range).map_err(|e| e.to_string())
 }
 
+/// One block's text, broken into lines at `width` — what `view --width` prints.
+///
+/// The CLI measures one unit per character (`grind_text::Fixed`), so a width of 72 is 72
+/// characters. Good enough to be useful and honest about what it is: a terminal shell wants
+/// `unicode-width` for CJK and combining marks, and implements `Metrics` itself.
+fn wrapped(app: &TextApp, index: usize, width: u32) -> Result<Vec<String>, String> {
+    let text: Vec<char> = app
+        .input_text(index)
+        .map_err(|e| e.to_string())?
+        .chars()
+        .collect();
+    let layout = app
+        .layout_block(index, width as f32, &grind_text::Fixed)
+        .map_err(|e| e.to_string())?;
+    Ok(layout
+        .lines()
+        .iter()
+        // A trailing space or newline is *on* the line it ended, which is right for a caret and
+        // wrong for printing, so the printer trims what the model deliberately keeps.
+        .map(|line| text[line.start..line.end].iter().collect::<String>())
+        .map(|line| line.trim_end().to_owned())
+        .collect())
+}
+
 /// The block kind two flags describe. Neither means a paragraph.
 fn kind_of(heading: Option<u32>, list: Option<u32>) -> Result<grind_text::BlockKind, String> {
     match (heading, list) {
@@ -108,26 +132,83 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             finish_text(&TextApp::new(), cli, file, true)
         }
 
-        TextCommand::View { file, range, marks } => {
+        TextCommand::View {
+            file,
+            range,
+            marks,
+            width,
+        } => {
             let app = open_text(file)?;
             let blocks = match range {
                 Some(range) => span(&app, range)?,
                 None => 0..app.block_count(),
             };
             let view = app.get_viewport(blocks);
-            text_lines(
-                view.iter()
-                    .map(|b| match marks {
-                        false => b.text.clone(),
-                        true => format!(
+            let mut lines = Vec::new();
+            for block in view.iter() {
+                // Without --width a block is one line, which is what `view` has always printed.
+                // With it, the core breaks the block and the CLI prints what any shell would
+                // draw at that width — the same engine, measured one unit per character.
+                let pieces = match width {
+                    None => vec![block.text.clone()],
+                    Some(width) => wrapped(&app, block.index, *width)?,
+                };
+                for (n, piece) in pieces.into_iter().enumerate() {
+                    lines.push(match marks {
+                        false => piece,
+                        // Only the first line of a block carries its address, so the marks stay
+                        // one-per-block and a wrapped block reads as a block.
+                        true if n == 0 => format!(
                             "{}\t{}\t{}",
-                            grind_text::loc::format(b.index),
-                            describe_kind(&b.kind),
-                            b.text
+                            grind_text::loc::format(block.index),
+                            describe_kind(&block.kind),
+                            piece
                         ),
-                    })
-                    .collect(),
-            )
+                        true => format!("\t\t{piece}"),
+                    });
+                }
+            }
+            text_lines(lines)
+        }
+
+        TextCommand::Caret {
+            file,
+            at: address,
+            down,
+            home,
+            end,
+            width,
+        } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            let width = *width as f32;
+            let moved = if *home || *end {
+                let (start, finish) = app
+                    .caret_line_bounds(caret, width, &grind_text::Fixed)
+                    .map_err(|e| e.to_string())?;
+                match home {
+                    true => start,
+                    false => finish,
+                }
+            } else {
+                // The goal column is the caret's own x, because a single move from a script has
+                // no run of keystrokes to remember one from.
+                let goal = app
+                    .caret_x(caret, width, &grind_text::Fixed)
+                    .map_err(|e| e.to_string())?;
+                app.caret_line(
+                    caret,
+                    down.unwrap_or(0) as isize,
+                    goal,
+                    width,
+                    &grind_text::Fixed,
+                )
+                .map_err(|e| e.to_string())?
+            };
+            text_lines(vec![grind_text::loc::format_offset(
+                moved.block,
+                moved.offset,
+            )])
         }
 
         TextCommand::Get { file, at: address } => {
@@ -509,6 +590,34 @@ enum TextCommand {
         /// Prefix each line with its address and kind
         #[arg(long)]
         marks: bool,
+        /// Wrap at this many characters, the way a shell would at its own width
+        #[arg(long, value_name = "COLUMNS")]
+        width: Option<u32>,
+    },
+
+    /// Move a caret by lines, or to the ends of its line, and print where it lands
+    ///
+    /// Down-arrow, Up-arrow, Home and End — from a script. Every one of them is defined in
+    /// terms of a *line*, so every one needs a width; the CLI measures one unit per character,
+    /// which is why `--width 40` means forty characters. That layout lives in the core is what
+    /// makes this answerable here at all rather than only inside a GUI
+    /// (`doc/text-layout.md`).
+    Caret {
+        file: PathBuf,
+        /// Where the caret is now, e.g. p3+12, #intro+5 or §2.1
+        at: String,
+        /// Move down this many lines (negative moves up)
+        #[arg(long, allow_negative_numbers = true, value_name = "LINES")]
+        down: Option<i32>,
+        /// Move to the start of the caret's own line
+        #[arg(long, conflicts_with_all = ["down", "end"])]
+        home: bool,
+        /// Move to the end of the caret's own line
+        #[arg(long, conflicts_with_all = ["down", "home"])]
+        end: bool,
+        /// Wrap at this many characters; without it the block is one line
+        #[arg(long, value_name = "COLUMNS", default_value = "0")]
+        width: u32,
     },
 
     /// Print one block

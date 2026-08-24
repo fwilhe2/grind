@@ -128,6 +128,23 @@ run replace "$doc" 'rather the point' 'the point'
 
 # --- reading ---------------------------------------------------------------------------------
 
+# --- layout ------------------------------------------------------------------------------------
+#
+# The line breaker is in the core (doc/text-layout.md, Path C), so the CLI can answer questions
+# that are defined in terms of a line — which is exactly what a GUI's arrow keys ask. The CLI
+# measures one unit per character; a GTK shell asks Pango and gets different numbers from the
+# same engine.
+
+say "view --width: the core breaks the lines, the CLI just prints them"
+text view "$doc" '§2.2' --width 46
+
+say "caret --down: the Down arrow, from a script"
+text caret "$doc" 'p12+4' --down 1 --width 46
+
+say "caret --home / --end: the visual line's ends, not the paragraph's"
+text caret "$doc" 'p12+50' --home --width 46
+text caret "$doc" 'p12+50' --end --width 46
+
 say "outline: every heading, its level, and the address that finds it again"
 text outline "$doc"
 

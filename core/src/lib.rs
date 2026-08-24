@@ -24,6 +24,7 @@ use std::fmt;
 
 pub mod build_info;
 pub mod kind;
+pub mod layout;
 pub mod locale;
 pub mod observer;
 pub mod odf;

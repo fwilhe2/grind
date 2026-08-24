@@ -23,12 +23,16 @@
 //! directions, the `App` the CLI drives, and the caret-level edits a continuous-flow editor is
 //! made of — [`App::insert_text`], [`App::erase`], [`App::split_block`], [`App::join_block`].
 //!
+//! **Layout lives in `grind_core::layout`** and this crate drives it — `doc/text-layout.md`,
+//! decided on Path C. Line breaking, and every caret operation defined in terms of a line, are
+//! in the core so that three shells cannot disagree about where Down-arrow goes; the shell
+//! supplies font metrics through [`Metrics`] and nothing else. Pagination is still gated, and
+//! layout is left-to-right only by explicit decision.
+//!
 //! **What it does not have.** A session, so no `undo` across CLI invocations; tables,
 //! footnotes and fields; style *definitions*, so a style name this build writes does not
-//! survive LibreOffice; and any shell but the CLI. **No layout**, and that is a decision rather
-//! than a gap: `doc/suite.md`'s layout fork was settled on Path A, so page geometry is read,
-//! preserved and round-tripped but never rendered as pages, and the wrapping belongs to
-//! whichever shell is drawing.
+//! survive LibreOffice, and every run therefore measures with the default character style;
+//! pages; and any shell but the CLI.
 
 pub mod action;
 pub mod loc;
@@ -36,6 +40,7 @@ pub mod model;
 pub mod odf;
 
 pub use action::Action;
+pub use grind_core::layout::{self, Fixed, Layout, Metrics};
 pub use grind_core::{DocumentKind, Error, Form, Observer, Result, kind};
 pub use loc::{Caret, Loc, Target};
 pub use model::{Block, BlockId, BlockKind, Document, Run};
@@ -442,6 +447,116 @@ impl App {
             .iter()
             .filter_map(|(name, id)| Some((name.clone(), state.doc.index_of(*id)?)))
             .collect()
+    }
+
+    // --- layout ---
+    //
+    // `doc/text-layout.md`, decided: the engine is `grind_core::layout` and these four methods
+    // are how a shell reaches it. Every one of them exists because the operation it names is
+    // defined in terms of a *line* — and a line is an output of layout, not a thing in the
+    // document, so leaving them to the shells would have been three implementations that
+    // disagree. The shell brings a width and a `Metrics`; nothing about a font is stored here.
+
+    /// Break one block into lines at `width`, in whatever unit `metrics` answers in.
+    ///
+    /// The result is a plain value carrying the x of every caret position, so a shell paints
+    /// from it and throws it away — the same contract [`App::get_viewport`] offers for content.
+    /// A `width` of zero or less means do not wrap.
+    pub fn layout_block(&self, index: usize, width: f32, metrics: &dyn Metrics) -> Result<Layout> {
+        let state = self.state.read().unwrap();
+        let block = state
+            .doc
+            .block(index)
+            .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
+        Ok(lay_out(block, width, metrics))
+    }
+
+    /// The x of a caret within its line — what a shell remembers as the **goal column** while
+    /// the user holds Down, so that walking through a short line and out the other side comes
+    /// back to the column it started in.
+    ///
+    /// Passed back into [`App::caret_line`] rather than stored, because it is a property of a
+    /// *run of keystrokes* and not of the document.
+    pub fn caret_x(&self, at: Caret, width: f32, metrics: &dyn Metrics) -> Result<f32> {
+        Ok(self.layout_block(at.block, width, metrics)?.x_at(at.offset))
+    }
+
+    /// Move a caret `delta` lines — **the Down and Up arrows**, and Page Down with a bigger
+    /// number.
+    ///
+    /// Crosses block boundaries: down from the last line of a paragraph lands on the first line
+    /// of the next, which is the behaviour that makes a document one flow rather than a list of
+    /// boxes. At the very top or bottom it stops rather than erroring, because a caret that
+    /// cannot move is not a failure — it is the end of the document.
+    pub fn caret_line(
+        &self,
+        at: Caret,
+        delta: isize,
+        goal_x: f32,
+        width: f32,
+        metrics: &dyn Metrics,
+    ) -> Result<Caret> {
+        let state = self.state.read().unwrap();
+        let blocks = state.doc.blocks.len();
+        let mut block = at.block;
+        let mut layout = lay_out(
+            state
+                .doc
+                .block(block)
+                .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(block))))?,
+            width,
+            metrics,
+        );
+        let mut offset = at.offset.min(layout.len());
+        let step = if delta < 0 { -1 } else { 1 };
+
+        for _ in 0..delta.unsigned_abs() {
+            if let Some(next) = layout.step(offset, step, goal_x) {
+                offset = next;
+                continue;
+            }
+            // Off the end of this block's lines: carry into the neighbour, landing on the line
+            // nearest the one we left.
+            let next = match step > 0 {
+                true if block + 1 < blocks => block + 1,
+                false if block > 0 => block - 1,
+                // The document's own top or bottom. Stay put.
+                _ => break,
+            };
+            block = next;
+            layout = lay_out(&state.doc.blocks[block], width, metrics);
+            let line = match step > 0 {
+                true => 0,
+                false => layout.lines().len().saturating_sub(1),
+            };
+            offset = layout.offset_at(line, goal_x);
+        }
+        Ok(Caret { block, offset })
+    }
+
+    /// The two ends of the caret's own line — **Home and End**.
+    ///
+    /// On a wrapped line these are the *visual* ends, not the paragraph's, which is the whole
+    /// difference between a text editor and a `set_text` front end. Returned as a pair because
+    /// they are one layout apart and a shell asking for one usually wants the other.
+    pub fn caret_line_bounds(
+        &self,
+        at: Caret,
+        width: f32,
+        metrics: &dyn Metrics,
+    ) -> Result<(Caret, Caret)> {
+        let layout = self.layout_block(at.block, width, metrics)?;
+        let line = layout.lines()[layout.line_at(at.offset)];
+        Ok((
+            Caret {
+                block: at.block,
+                offset: line.start,
+            },
+            Caret {
+                block: at.block,
+                offset: line.end,
+            },
+        ))
     }
 
     // --- editing ---
@@ -925,6 +1040,30 @@ fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, Option<Strin
         Some(Run::Text { style, href, .. }) => (style.clone(), href.clone()),
         _ => (None, None),
     }
+}
+
+/// Break one block into lines.
+///
+/// The whole of this crate's contribution to layout: turn runs into [`layout::Fragment`]s and
+/// hand them over. One fragment per run, so the character offsets a [`Caret`] counts and the
+/// ones the layout reports are the same numbers — a bookmark contributes an empty fragment and
+/// therefore no offset, exactly as it contributes no text.
+///
+/// **Every run measures with the default character style**, because a `Run`'s style is a *name*
+/// and this build does not read style definitions (`doc/text-core.md`). The seam is right and
+/// the lookup is missing; when definitions arrive, this function resolves them and nothing else
+/// changes.
+fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
+    let style = grind_core::style::TextStyle::default();
+    let fragments: Vec<layout::Fragment<'_>> = block
+        .runs
+        .iter()
+        .map(|run| layout::Fragment {
+            text: run.text(),
+            style: &style,
+        })
+        .collect();
+    layout::wrap(&fragments, width, metrics)
 }
 
 /// A clone of one block, or an error naming the address a user typed.
