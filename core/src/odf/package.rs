@@ -47,7 +47,13 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
         .by_name("content.xml")
         .map_err(|e| Error::Package(format!("no content.xml in package: {e}")))?;
     let mut out = Vec::with_capacity(file.size() as usize);
-    file.read_to_end(&mut out)?;
+    // **Not `?`.** Decompressing a zip entry reports a corrupt one — a bad CRC-32, a truncated
+    // deflate stream — as an `io::Error`, and letting that convert into [`Error::Io`] would say
+    // "the filesystem failed" about a file that was read from disk perfectly and is simply
+    // damaged inside. Loop A found this: a fuzzer's corrupt `.odt` came back as `io: Invalid
+    // checksum`, which is true of no filesystem anywhere.
+    file.read_to_end(&mut out)
+        .map_err(|e| Error::Package(format!("content.xml will not decompress: {e}")))?;
     Ok(out)
 }
 

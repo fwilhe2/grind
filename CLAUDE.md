@@ -21,7 +21,8 @@ has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0�
 The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
 (`grind text`) reads, writes and edits — `examples/sample-text.sh` builds a document out of
 every feature it has, through the CLI only. What it does **not** have: a session (so no `undo`
-across invocations), loop C, tables, footnotes, fields, and any shell but the CLI.
+across invocations), loop C, tables, footnotes, fields, and any shell but the CLI. Loop A is
+green over Writer's 1763-document corpus.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -107,15 +108,16 @@ without a line there is invisible. Add one when adding a capability.
 The corpus tests need a LibreOffice checkout and skip with a notice without one:
 
 ```sh
-GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
 ```
 
 ## The loops
 
 Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
-for loops C and E; loops A and B want a LibreOffice source checkout (`GRIND_LO_CORPUS`) for
-its `sc/qa/unit/data` fixture corpus. CI's `corpus` job gets that with a blobless sparse
-clone of just that directory rather than the whole tree. The oracle is pinned to a container
+for loops C and E; loops A and B want a LibreOffice source checkout (`GRIND_LO_CORPUS`, the
+**checkout root** — Calc's corpus is at `sc/qa/unit/data` and Writer's at `sw/qa`, and one
+clone serves both). CI's `corpus` job gets that with a blobless sparse clone of just those two
+directories rather than the whole tree. The oracle is pinned to a container
 image by digest (`ci/libreoffice-image`, "Pinning LibreOffice" in `doc/differential-fuzz.md`)
 — loop E's `FLOOR` is a fact about one `soffice` build. `scripts/soffice-docker/soffice` is a
 shim that runs that image, so putting it first on `PATH` pins the oracle without any test
@@ -125,6 +127,7 @@ against exactly what CI uses.
 | Loop | Asserts | Where |
 |---|---|---|
 | **A** — read tolerance | every `.ods`/`.fods` loads without error | `sheet/tests/corpus_read.rs` |
+| **A** — read tolerance, text | every `.odt`/`.fodt` in `sw/qa` loads without error | `text/tests/corpus_read.rs` |
 | **B** — formula conformance | parse / display round-trip / evaluate-matches-cached-value | `sheet/tests/corpus_parse.rs`, `corpus_eval.rs` |
 | **C** — round-trip differential | write → `soffice --convert-to` → read back → identical, and reverse | `sheet/tests/roundtrip.rs` |
 | **E** — generated differential | formulas generated from the catalog's signatures, evaluated by us and by LO | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
@@ -133,7 +136,8 @@ against exactly what CI uses.
 validates the writer against the schema (`jing -i`) and measures R3/R6.
 
 Current scoreboard (see each test's own comments for what each column means and why):
-loop A 358 read / 3 password-protected / 0 failed; loop B parse 75845/77061 (1216 named
+loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
+4 password-protected / 4 independently confirmed non-documents / 0 failed; loop B parse 75845/77061 (1216 named
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `GRIND_LOOP_B_DUMP=LOG cargo test -p grind-sheet --test corpus_eval -- --nocapture` for the scoreboard).

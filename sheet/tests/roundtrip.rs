@@ -33,7 +33,12 @@ use grind_sheet::numfmt::{Format, Kind, Map, Op, Part};
 use grind_sheet::style::{self, CellStyle};
 use grind_sheet::{CellValue, Document, Form, Pos, Sheet};
 
-const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
+const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
+
+/// Calc's test data, under the checkout root. `GRIND_LO_CORPUS` names the **root**
+/// rather than this directory, because the suite's two applications need two corpora out
+/// of one clone — Writer's lives at `sw/qa`.
+const CORPUS: &str = "sc/qa/unit/data";
 
 /// How many corpus documents the "back" direction takes. Each soffice conversion is
 /// seconds, so this is a sample rather than the whole corpus — loop A already reads all
@@ -832,8 +837,9 @@ fn libreoffice_documents_survive_our_writer() {
         return;
     }
     let root = PathBuf::from(
-        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
-    );
+        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CHECKOUT.to_owned()),
+    )
+    .join(CORPUS);
     if !root.is_dir() {
         eprintln!(
             "skipping loop C (back): no LibreOffice corpus at {}",

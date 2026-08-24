@@ -96,7 +96,7 @@ container image by digest; needs Docker), which is the version CI judges you by.
 Point them at a LibreOffice checkout:
 
 ```sh
-GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
 ```
 
 Without it the corpus tests skip with a notice rather than failing, so `cargo test` still

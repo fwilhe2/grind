@@ -12,19 +12,25 @@
 //!
 //! Point it at a LibreOffice checkout:
 //!
-//!     GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+//!     GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
 
 use std::path::{Path, PathBuf};
 
-const DEFAULT_CORPUS: &str = "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data";
+const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
+
+/// Calc's test data, under the checkout root. `GRIND_LO_CORPUS` names the **root**
+/// rather than this directory, because the suite's two applications need two corpora out
+/// of one clone — Writer's lives at `sw/qa`.
+const CORPUS: &str = "sc/qa/unit/data";
 
 /// Loop A reads these two; `functions/` belongs to Loop B (phase 4).
 const DIRS: [&str; 2] = ["ods", "fods"];
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(
-        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CORPUS.to_owned()),
-    );
+        std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CHECKOUT.to_owned()),
+    )
+    .join(CORPUS);
     root.is_dir().then_some(root)
 }
 
@@ -49,8 +55,8 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
 fn every_corpus_document_loads() {
     let Some(root) = corpus_root() else {
         eprintln!(
-            "skipping: no LibreOffice corpus at {DEFAULT_CORPUS}; \
-             set GRIND_LO_CORPUS to run loop A"
+            "skipping: no LibreOffice checkout at {DEFAULT_CHECKOUT}; \
+             set GRIND_LO_CORPUS to its root to run loop A"
         );
         return;
     };

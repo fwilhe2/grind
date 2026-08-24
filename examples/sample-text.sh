@@ -13,8 +13,11 @@
 # `cli/tests/cli.rs` runs it and fails the build if it stops working.
 #
 # What it deliberately cannot show, because nothing can do it yet: undo and redo (no session
-# for text — see doc/cli-parity-text.md), tables, footnotes, fields, and a .fodt that survives
-# an edit as a one-line diff (R6 splicing is not built for text).
+# for text — see doc/cli-parity-text.md), tables, footnotes and fields.
+#
+# What it cannot show because a script is the wrong medium: R6. Editing one paragraph of this
+# document changes one line of `git diff`, and opening it to read changes nothing at all —
+# `text/tests/diffable.rs` is where that is held.
 
 set -euo pipefail
 

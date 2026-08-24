@@ -14,3 +14,7 @@ repository.workspace = true
 # The [GENERIC] half: packaging, namespaces, the context stack, style primitives, `kind`.
 # Everything this crate adds is the office:text content model (doc/odt-format.md).
 grind-core = { path = "../core" }
+
+[dev-dependencies]
+# Loop A matches on `grind_core::Error::Encrypted` directly — the one documented loosening.
+grind-core = { path = "../core" }

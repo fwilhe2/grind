@@ -82,16 +82,24 @@ jobs:
 
   corpus:
     # Loops A and B, and loop C's "back" direction, want LibreOffice's own test-fixture
-    # corpus (sc/qa/unit/data) rather than the whole LibreOffice source tree — the tree is
-    # tens of gigabytes of history the corpus tests never touch. A blobless, sparse clone
-    # fetches only that one directory's current blobs.
+    # corpora rather than the whole LibreOffice source tree — the tree is tens of gigabytes
+    # of history the corpus tests never touch. A blobless, sparse clone fetches only those
+    # directories' current blobs.
+    #
+    # Two of them now: Calc's at sc/qa/unit/data and Writer's at sw/qa. GRIND_LO_CORPUS names
+    # the checkout **root** so one clone serves both, and each test appends its own subpath.
+    # sw/qa is much larger and mostly *not* ODF, which is why loop A for text filters by
+    # extension rather than trusting the directory.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker pull -q "$(cat ci/libreoffice-image)" && echo "$PWD/scripts/soffice-docker" >> "$GITHUB_PATH"
       - run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
-          git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data
+          git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data sw/qa
       - run: cargo test -p grind-sheet --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
         env:
-          GRIND_LO_CORPUS: /tmp/lo-core/sc/qa/unit/data
+          GRIND_LO_CORPUS: /tmp/lo-core
+      - run: cargo test -p grind-text --test corpus_read -- --nocapture
+        env:
+          GRIND_LO_CORPUS: /tmp/lo-core

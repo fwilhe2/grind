@@ -201,7 +201,7 @@ cargo test -p grind-sheet-gtk          # its widget-free half: geometry, keys, e
 The corpus tests want a LibreOffice checkout and skip with a notice without one:
 
 ```sh
-GRIND_LO_CORPUS=/path/to/libreoffice/core/sc/qa/unit/data cargo test
+GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
 ```
 
 `examples/sample.sh` builds a document out of every feature this build has, through the CLI

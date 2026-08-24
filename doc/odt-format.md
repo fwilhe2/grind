@@ -238,6 +238,47 @@ has been done, and until then **no item below may be implemented**.
 
 ---
 
+## 5a. What loop A measured — VERIFIED
+
+The first section of this document that is not a claim. Loop A (`text/tests/corpus_read.rs`)
+was pointed at LibreOffice's Writer corpus, `sw/qa`, and read everything in it.
+
+```
+1763 documents, 1755 read, 4 password-protected, 4 not documents at all, 0 failed
+```
+
+**Tolerance held by construction, with no file special-cased.** That is §8's claim and this is
+the first evidence for it in a second document type: 1,755 real Writer documents — two decades
+of regression fixtures in `sw/qa/extras/` — loaded through a reader that models ten elements.
+
+The four that are not documents are named in the test with the reason for each, and **each was
+confirmed by a parser that is not ours** before being written down, because "our reader rejects
+it" is not evidence that a file is bad:
+
+| File | Independent verdict |
+|---|---|
+| `forcepoint-dtor-1.odt` | `zipfile`: bad CRC-32 for `content.xml`. LibreOffice files it under `sw/qa/core/data/odt/**fail**/` |
+| `CVE-2012-4233-1.odt` | Not a zip and not XML — 9021 bytes of binary noise, a fuzzed crash reproducer |
+| `forcepoint108.fodt` | `xml.etree`: mismatched tag at line 66 |
+| `threadedException.fodt` | `xml.etree`: unbound namespace prefix at line 403 |
+
+Refusing these is correct and is not a tolerance failure. §8's tolerance is about
+*unrecognised* content; `Error::Xml` is the separate **structural** case (§8.2), and a
+container that will not decompress is `Error::Package`.
+
+**A finding worth keeping.** The first of those four came back as `Error::Io` — "the filesystem
+failed" — because `zip` reports a bad CRC-32 as an `io::Error` and `content_xml` let it convert.
+It is now `Error::Package`, which is what a caller needs in order to tell "I could not read the
+file" from "the file is damaged". Loop A found that within a minute of first running, over a
+document type it was not even testing: `content_xml` is shared, so the spreadsheet had the same
+wrong answer.
+
+**`sw/qa/core/data/odt/` has `pass/`, `fail/` and `indeterminate/` subdirectories** — a
+convention worth knowing before reading any result from that corpus, since a file under `fail/`
+is one LibreOffice's own harness expects *not* to import.
+
+---
+
 ## 6. What the reader gets for free
 
 Worth stating, because it is the return on the architecture and it means S4 is smaller than it

@@ -459,10 +459,15 @@ fn a_document_with_no_sheets_is_empty_not_an_error() {
 
 // --- against a real LibreOffice-authored file ---
 
+/// Calc's test data. `GRIND_LO_CORPUS` names the checkout **root** rather than this
+/// directory, because the suite's two applications need two corpora out of one clone —
+/// Writer's lives at `sw/qa`.
 fn corpus() -> Option<PathBuf> {
-    let root = PathBuf::from(std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| {
-        "/home/florian/code/github.com/LibreOffice/core/sc/qa/unit/data".to_owned()
-    }));
+    let root = PathBuf::from(
+        std::env::var("GRIND_LO_CORPUS")
+            .unwrap_or_else(|_| "/home/florian/code/github.com/LibreOffice/core".to_owned()),
+    )
+    .join("sc/qa/unit/data");
     root.is_dir().then_some(root)
 }
 
