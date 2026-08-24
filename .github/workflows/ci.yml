@@ -67,10 +67,10 @@ jobs:
     # version was only ever on Ubuntu.
     #
     # No `-p`: both `grind-sheet` and `grind-text` have a `roundtrip` target and both are loop C.
-    # **The pinned image is Calc-only** — its `share/registry/` holds `calc.xcd` and no
-    # `writer.xcd` — so the text target's soffice-backed half detects that and skips with a
-    # notice rather than failing (`oracle_ready` in `text/tests/roundtrip.rs`). It starts running
-    # here, with no change to this file, the day the image is rebuilt with Writer in it.
+    # Both gate. The pinned image was Calc-only when the text half was written, so that half
+    # probes the oracle's capability rather than assuming it (`oracle_ready` in
+    # `text/tests/roundtrip.rs`); the image now carries Writer, so the probe passes and the
+    # tests run — which happened with no change to this file.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -107,8 +107,8 @@ jobs:
         env:
           GRIND_LO_CORPUS: /tmp/lo-core
       # Loop A for text, and loop C's "back" direction for text — which needs both the corpus
-      # and a `soffice`. See the note in the `roundtrip` job: the pinned image is Calc-only, so
-      # the soffice-backed half of that target skips with a notice until the image gains Writer.
+      # and a `soffice`. See the note in the `roundtrip` job for why that half probes the
+      # oracle's capability before using it.
       - run: cargo test -p grind-text --test corpus_read --test roundtrip -- --nocapture
         env:
           GRIND_LO_CORPUS: /tmp/lo-core

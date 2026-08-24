@@ -15,9 +15,10 @@
 #   scripts/soffice-tests.sh --test loop_e -- --nocapture  # one test, extra args passed on
 #
 # Note: with no arguments this runs *both* applications' loop C, because both `grind-sheet` and
-# `grind-text` have a `roundtrip` target. The pinned image is currently Calc-only, so the text
-# one skips its soffice-backed half with a notice — see `oracle_ready` in
-# text/tests/roundtrip.rs.
+# `grind-text` have a `roundtrip` target. The pinned image carries Calc and Writer, so both run.
+# Loop C's "back" direction also wants a LibreOffice checkout and skips without one:
+#
+#   GRIND_LO_CORPUS=/path/to/libreoffice/core scripts/soffice-tests.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

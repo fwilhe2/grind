@@ -378,15 +378,17 @@ fn have_soffice() -> bool {
 
 /// Is there a `soffice` on `PATH`, and can it handle *text* documents?
 ///
-/// The second half is not paranoia. **The oracle this project pins is Calc-only.**
-/// `ci/libreoffice-image`'s `share/registry/` holds `calc.xcd` and no `writer.xcd`, so that
-/// build imports a `.fodt` as a *spreadsheet* and has no `fodt` export filter to convert one
-/// back with — every test below would fail against it for a reason that has nothing to do with
-/// this code. A full LibreOffice of the same version (26.2.5.2) converts all of them.
+/// The second half is not paranoia, and it earned its place: the image this project pinned
+/// when these tests were written was **Calc-only**. Its `share/registry/` held `calc.xcd` and
+/// no `writer.xcd`, so it imported a `.fodt` as a *spreadsheet* and had no `fodt` export filter
+/// to convert one back with, and every test below failed for a reason that had nothing to do
+/// with this code. The pin was rebuilt with Writer in it and now converts all of them, so this
+/// probe reports ready in CI and the tests gate — exactly the transition detecting the
+/// capability was meant to make, with no line of this file changed to make it.
 ///
-/// So: probe once, and skip with a notice rather than going red. The moment the pinned image is
-/// rebuilt with Writer in it, these tests start running in CI with no change here — which is
-/// the point of detecting the capability instead of hard-coding the skip.
+/// It stays because a developer's own `soffice` is not the pin: a `libreoffice-calc` package
+/// with no `libreoffice-writer` beside it is a normal thing to have installed, and the honest
+/// answer there is a notice rather than a failure.
 ///
 /// Probed by *doing* the thing rather than by inspecting the install, because "which filters
 /// are registered" is a question about a LibreOffice build's internals and "did it convert my
@@ -405,8 +407,9 @@ fn oracle_ready(what: &str) -> bool {
     });
     if !ready {
         eprintln!(
-            "skipping loop C (text, {what}): no soffice on PATH, or one that cannot convert a \
-             text document — the pinned image (ci/libreoffice-image) is Calc-only"
+            "skipping loop C (text, {what}): no soffice on PATH, or one with no Writer in it. \
+             The pinned oracle (ci/libreoffice-image) has both — scripts/soffice-tests.sh runs \
+             against it"
         );
     }
     ready

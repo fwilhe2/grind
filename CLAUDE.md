@@ -142,13 +142,13 @@ loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 re
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `GRIND_LOOP_B_DUMP=LOG cargo test -p grind-sheet --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions for the sheet and gates CI in both; loop C for text is also
-green both directions (14 documents out, 20 corpus documents / 5095 blocks back, 0 differences)
-but **does not gate CI yet** — `ci/libreoffice-image` is a Calc-only LibreOffice, so
-`oracle_ready` in `text/tests/roundtrip.rs` probes whether the `soffice` on `PATH` can convert a
-text document at all and skips with a notice when it cannot. It is wired into the `roundtrip`
-and `corpus` jobs and starts gating, with no file changed, once that image is rebuilt with
-Writer in it. Loop E is at 913/1000 on the pinned
+Loop C is green both directions for the sheet and for text (14 documents out, 20 corpus
+documents / 5095 blocks back, 0 differences) and gates CI in all four. `ci/libreoffice-image`
+was a Calc-only LibreOffice when the text loop was written, so `oracle_ready` in
+`text/tests/roundtrip.rs` probes whether the `soffice` on `PATH` can convert a text document at
+all rather than assuming it; the image has since been rebuilt with Writer, and that half started
+gating with no file changed. The probe stays for a developer whose own `soffice` has no Writer.
+Loop E is at 913/1000 on the pinned
 image at its default seed (same binary locally and in CI, so the figure should match), with
 the untriaged disagreements classified in `doc/differential-fuzz.md`. All four
 loops now run in CI (`build`, `roundtrip`, `loop_e`, `corpus` jobs) rather than only where a

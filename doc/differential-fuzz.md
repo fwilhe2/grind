@@ -114,7 +114,8 @@ denominator, say) by exactly one, and the test has no way to tell that apart fro
 regression. So the oracle is pinned rather than left to whatever a machine has installed.
 
 **The pin.** `ci/libreoffice-image` holds one line: a container image referenced by digest,
-currently `ghcr.io/fwilhe2/libreoffice@sha256:17d41ea8…` (LibreOffice 26.2.5.2 on Debian 13).
+currently `ghcr.io/fwilhe2/libreoffice@sha256:adb88646…` (LibreOffice 26.2.5.2 on Debian 13,
+Calc **and** Writer).
 A digest is the strongest pin available — it names bytes, not a version string whose
 contents a distribution can rebuild underneath it — and, unlike the Ubuntu package version
 this used to be, it means the same binary answers on a laptop, in CI, and on any OS with
@@ -146,15 +147,21 @@ Without Docker, loop E still runs against whatever `soffice` is on `PATH` — us
 iterating on the generator or the parser, not for reading `FLOOR` as a verdict, since a
 local LibreOffice can legitimately disagree with the pin by one or two formulas.
 
-**The pin is Calc-only, and that is now a gap.** Its `share/registry/` holds `calc.xcd` and no
-`writer.xcd`, so it imports a `.fodt` *as a spreadsheet* and has no `fodt` export filter —
-`grind-text`'s loop C cannot use it (`doc/odt-format.md` §5b). Rather than drop the pin or
-hard-code a skip, `oracle_ready` in `text/tests/roundtrip.rs` probes the capability by
-converting a one-paragraph document and skips with a notice if nothing comes out; it is already
-wired into the `roundtrip` and `corpus` CI jobs. **Rebuilding the image with Writer in it turns
-loop C for text into a CI gate with no file changed**, and is the one outstanding item. When it
-is rebuilt, follow the upgrade steps below — a new image is a new digest, and loop E's `FLOOR`
-has to be re-read against it even though nothing about Calc was meant to change.
+**The pin serves both applications, and did not always.** The first image was Calc-only: its
+`share/registry/` held `calc.xcd` and no `writer.xcd`, so it imported a `.fodt` *as a
+spreadsheet* and had no `fodt` export filter, and `grind-text`'s loop C could not use it
+(`doc/odt-format.md` §5b). Rather than drop the pin or hard-code a skip, `oracle_ready` in
+`text/tests/roundtrip.rs` probed the capability by converting a one-paragraph document and
+skipped with a notice when nothing came out. The image was then rebuilt with Writer in it —
+`sha256:adb88646…`, same LibreOffice 26.2.5.2 on the same Debian 13 — and **loop C for text
+started gating CI with no file changed**, which is what detecting a capability buys over
+hard-coding a skip. The probe stays for the developer whose own `soffice` has no Writer.
+
+That bump was run through the four steps below, and it is the worked example of why step 3
+exists: nothing about Calc was meant to change, and loop E was re-read anyway. It came back at
+**913, unchanged to the formula**, so `FLOOR` did not move — which is the evidence that the
+rebuild added Writer and disturbed nothing else, and is not something anyone could have
+asserted without running it.
 
 **Upgrading the pin, safely.** An image bump is a deliberate, reviewable change, not
 something that happens by CI drifting under it:

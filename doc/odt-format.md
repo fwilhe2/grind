@@ -300,8 +300,9 @@ loop C (text, out):  14 documents (7 cases x 2 physical forms), 0 differences
 loop C (text, back): 20 documents, 5095 blocks,                 0 differences
 ```
 
-Measured against LibreOffice 26.2.5.2, the same version as the pin — but **not** the pinned
-image; see "the oracle" at the end of this section.
+Measured against LibreOffice 26.2.5.2. First measured against a full install of that version
+rather than the pinned image, which had no Writer in it; re-measured against the pin once it was
+rebuilt, with the same figures. See "the oracle" at the end of this section.
 
 ### The bug it found in the first run
 
@@ -381,20 +382,26 @@ names. It is not a formatting comparison, because there is no formatting in the 
 compare yet — see the style rule above. When the writer learns to declare styles, the
 comparison gains a column and the last row of that table goes red.
 
-### The oracle: the pin is Calc-only
+### The oracle: the pin had no Writer in it, and now does
 
-**`ci/libreoffice-image` cannot serve `grind-text`.** Its `share/registry/` holds `calc.xcd`
-and no `writer.xcd`, so that build imports a `.fodt` *as a spreadsheet* and has no `fodt` export
-filter to convert one back with. The figures above therefore come from a full LibreOffice
-26.2.5.2 — the same version as the pin, but not the same install.
+**`ci/libreoffice-image` could not serve `grind-text`.** The image these figures were first
+measured against held `calc.xcd` and no `writer.xcd` in its `share/registry/`, so that build
+imported a `.fodt` *as a spreadsheet* and had no `fodt` export filter to convert one back with.
+The figures therefore came from a full LibreOffice 26.2.5.2 — the same version as the pin, but
+not the same install.
 
 Rather than hard-code a skip or drop the pin, `oracle_ready` in `text/tests/roundtrip.rs`
 **probes the capability by doing it**: convert a one-paragraph document, and see whether output
-appears. Against a Calc-only `soffice` the four soffice-backed tests skip with a notice; against
-a full one they run. So loop C for text is wired into CI's `roundtrip` and `corpus` jobs today
-and starts running there, with no change to any file, the day the image is rebuilt with Writer
-in it. **That rebuild is the outstanding item** — until it happens, loop C for text is a local
-check rather than a CI gate.
+appears. Against a Calc-only `soffice` the four soffice-backed tests skipped with a notice;
+against a full one they ran.
+
+The image has since been rebuilt with Writer in it
+(`sha256:adb88646…`), and loop C for text **began gating CI's `roundtrip` and `corpus` jobs
+without a line of any file changing** — which is the whole argument for detecting a capability
+over hard-coding a skip. Every figure in this section now comes from the pin itself, and
+`FLOOR` in `sheet/tests/loop_e.rs` was re-read against the new image as the upgrade procedure
+demands: 913, unchanged, so the rebuild added Writer and moved nothing else. The probe stays,
+because a developer with `libreoffice-calc` and no `libreoffice-writer` is a normal thing to be.
 
 A second, unrelated finding on the way there: the shim that runs the pinned image
 (`scripts/soffice-docker/soffice`) could not write to its own bind mount on an SELinux-enforcing
