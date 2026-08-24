@@ -24,12 +24,33 @@ SPDX-License-Identifier = "MIT"
 
 # The sample corpus: LibreOffice-authored documents normalised by `odslint-clean`, from
 # https://github.com/fwilhe2/office-in-git, vendored at d01d7f6 (2026-07-21). Upstream
-# states no license; the author is the same person and set them MIT here, matching the
-# corpus above. Declared rather than annotated for the same reason.
+# states no license; the author is the same person and puts them under **CC0-1.0** here.
+# Declared rather than annotated for the same reason.
+#
+# CC0 rather than the code's AGPL, and rather than the MIT they carried before: these are
+# *data*. A test document is a fixture to be copied into a bug report, a minimal
+# reproduction or somebody else's ODF implementation's test suite, and neither copyleft nor
+# an attribution clause is a sensible thing to attach to that. The corpus above stays MIT
+# because its upstream repository states MIT — a vendored copy does not get to restate
+# somebody else's terms, even when the somebody is the same person.
 [[annotations]]
 path = "sheet/tests/data/samples/**"
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
-SPDX-License-Identifier = "MIT"
+SPDX-License-Identifier = "CC0-1.0"
+
+# The Writer fixtures: documents written in LibreOffice Writer, with the light formatting a
+# real document has — a title, a subtitle, two heading levels, a couple of character spans,
+# an edited default paragraph style, an empty paragraph, and a `text:s`. Both forms of the
+# same document, so the package reader and the flat reader can be held to the same answer
+# (`text/tests/libreoffice.rs`).
+#
+# CC0 for the reason above, and declared rather than annotated for the reason above that: a
+# header inside the XML would change the document under test, and the `.odt` is a zip with a
+# thumbnail in it that must come back byte for byte.
+[[annotations]]
+path = "text/tests/data/**"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "CC0-1.0"
 
 # Vendored OASIS specifications. Their terms forbid modifying the documents at all,
 # so these are marked by .license sidecars rather than by headers; the entries here

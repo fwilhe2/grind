@@ -204,8 +204,11 @@ Four loops, all of them running in CI, none of them grading their own homework:
 | **C** | what we write, LibreOffice reads back unchanged — and the reverse |
 | **E** | formulas generated from the function catalog, evaluated by us and by LibreOffice, compared |
 
-Plus eight named documents that must always load, vendored in the repository, and a check
-that everything written validates against the OASIS RELAX NG schema.
+Plus eight named documents that must always load, vendored in the repository, a small set of
+documents LibreOffice Writer wrote — in both forms of the same file, so the package reader and
+the flat reader are held to one answer — and a check that everything written validates against
+the OASIS RELAX NG schema. Those fixtures are CC0: a test document is data, and the point of
+one is that anybody can take it.
 
 ## Building
 

@@ -158,6 +158,15 @@ against exactly what CI uses.
 `sheet/tests/kb.rs` is the fourth check and never skips: R7's vendored documents. It also
 validates the writer against the schema (`jing -i`) and measures R3/R6.
 
+`text/tests/libreoffice.rs` is its counterpart for text and never skips either: documents
+LibreOffice Writer actually wrote, vendored in `text/tests/data/` in **both forms** of the same
+file. Everything there is globbed rather than listed, so adding a Writer document is dropping a
+file in — it must load, an untouched flat save must return its bytes exactly, and the package
+and flat readers must agree. It is also where the price of the package boundary is written
+down: saving a `.odt` regenerates it, so `styles.xml`, `settings.xml`, `meta.xml` and the
+thumbnail are lost on a plain open-and-save (`text/src/odf/source.rs` states the rule; the test
+states the cost).
+
 Current scoreboard (see each test's own comments for what each column means and why):
 loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
 4 password-protected / 4 independently confirmed non-documents / 0 failed; loop B parse 75845/77061 (1216 named
@@ -305,6 +314,13 @@ reuse annotate --copyright "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>" \
 `doc/OpenDocument-v1.4-*` in place** — they're OASIS specs redistributed verbatim under terms
 that forbid modification; they carry `.license` sidecar files instead. Anything *derived*
 from them (`doc/small-group.md`) carries the OASIS copyright alongside ours.
+
+**Test documents are data, not code.** The fixtures this project authored are **CC0-1.0** —
+`sheet/tests/data/samples/**` and `text/tests/data/**` — declared in `REUSE.toml` rather than
+annotated, because a header inside the XML would change the document under test. AGPL on a
+fixture makes no sense: the point of one is that it can be copied into a bug report or into
+somebody else's ODF test suite. `sheet/tests/data/kb/**` stays MIT — its upstream repository
+states MIT, and a vendored copy does not restate somebody else's terms.
 
 ## Where the work is
 

@@ -29,7 +29,13 @@
 //!   indentation, for a diff that is no longer obviously smaller. The document regenerates,
 //!   loudly and by one named rule. `grind_sheet` draws its line in the same place: a cell that
 //!   did not exist regenerates too.
-//! * **Only the flat form.** A `.odt` is a zip, and a zip has no diff to preserve.
+//! * **Only the flat form.** A `.odt` is a zip, and a zip has no diff to preserve. What that
+//!   costs is measured rather than assumed, in `text/tests/libreoffice.rs`: a real Writer
+//!   package comes back as three entries instead of nine, so `styles.xml`, `settings.xml`,
+//!   `meta.xml` and the thumbnail are lost on a plain open-and-save. The same document loses
+//!   nothing in the flat form, which makes this the *container's* limitation and not the
+//!   model's — and the fix is this same trick one level up: keep the archive, replace one
+//!   entry in it.
 //!
 //! Both fall back to regenerating the whole document, which is always correct — it is what the
 //! writer did before any of this existed.
