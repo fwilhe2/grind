@@ -36,13 +36,16 @@ use libadwaita as adw;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use grind_sheet::{App, Form, Observer, a1};
+use grind_sheet::{App, DocumentKind, Form, Observer, a1};
 use gtk::{gio, glib};
 
 use grid::{Grid, Notice};
 
 /// The reverse-DNS identity GNOME keys a window, its icon and its settings on.
 const APP_ID: &str = "io.github.fwilhe2.Sheet";
+
+/// What this shell edits. The one input `save_name` needs beyond the form.
+const KIND: DocumentKind = DocumentKind::Spreadsheet;
 
 fn main() -> ExitCode {
     let app = Arc::new(App::new());
@@ -388,8 +391,8 @@ impl Ui {
     fn save_as(self: &Rc<Self>) {
         let dialog = gtk::FileDialog::builder()
             .title("Save As")
-            .filters(&spreadsheet_filters())
-            .initial_name(document_name(self.path.borrow().as_deref()))
+            .filters(&spreadsheet_save_filters())
+            .initial_name(save_name(self.path.borrow().as_deref()))
             .build();
         dialog.save(
             Some(&self.window),
@@ -1170,16 +1173,33 @@ fn primary_menu() -> gio::Menu {
 /// another program (`CONTRIBUTING.md`).
 ///
 /// One filter, both extensions: packaged and flat are the same document to everyone but the
-/// writer, so a dialog that makes the user pick between them is asking a question that has
-/// no answer at the point it is asked.
+/// writer, so an *open* dialog that makes the user pick between them is asking a question that
+/// has no answer at the point it is asked.
 fn spreadsheet_filters() -> gio::ListStore {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("OpenDocument Spreadsheet"));
-    filter.add_pattern("*.ods");
     filter.add_pattern("*.fods");
+    filter.add_pattern("*.ods");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
+    filters
+}
+
+/// Saving is the other case: the question *does* have an answer there, and `doc/flat-first.md`
+/// is that answer. Two filters rather than one, flat first, so the default selection writes the
+/// form that diffs and choosing the package is one deliberate click away.
+fn spreadsheet_save_filters() -> gio::ListStore {
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    for (name, pattern) in [
+        ("OpenDocument Spreadsheet (flat XML)", "*.fods"),
+        ("OpenDocument Spreadsheet (package)", "*.ods"),
+    ] {
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some(name));
+        filter.add_pattern(pattern);
+        filters.append(&filter);
+    }
     filters
 }
 
@@ -1207,6 +1227,19 @@ fn document_name(path: Option<&Path>) -> String {
         || "Untitled".to_owned(),
         |name| name.to_string_lossy().into_owned(),
     )
+}
+
+/// What the Save As dialog puts in its name field for a document with no path yet.
+///
+/// `doc/flat-first.md`: an unnamed document gets the flat extension, so the one keystroke a
+/// user is most likely *not* to change writes a file that diffs. A document that already has a
+/// path keeps its own name and therefore its own form — this build never converts a document
+/// behind somebody's back.
+fn save_name(path: Option<&Path>) -> String {
+    match path {
+        Some(_) => document_name(path),
+        None => format!("Untitled.{}", Form::Flat.extension(KIND)),
+    }
 }
 
 /// Draw one frame to a PNG and quit — the smoke path behind `--render-to`.
@@ -1275,5 +1308,22 @@ mod tests {
         );
         // A formula that will not parse is shown exactly as it is stored.
         assert_eq!(super::headline(&calc("=SUM(", &[])), "=SUM(");
+    }
+
+    /// `doc/flat-first.md`, at the one keystroke that matters: the name a Save As dialog offers
+    /// for a document that has never been saved. A document that already has a path keeps it,
+    /// so nothing is ever converted behind somebody's back.
+    #[test]
+    fn an_unnamed_document_is_offered_the_flat_extension() {
+        use std::path::Path;
+        assert_eq!(super::save_name(None), "Untitled.fods");
+        assert_eq!(
+            super::save_name(Some(Path::new("/tmp/book.ods"))),
+            "book.ods"
+        );
+        assert_eq!(
+            super::save_name(Some(Path::new("/tmp/book.fods"))),
+            "book.fods"
+        );
     }
 }

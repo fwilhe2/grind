@@ -779,6 +779,45 @@ fn convert_moves_between_the_package_and_flat_forms() {
     assert_eq!(ok(&["view", &s(&back), "A1:B1"]), "1.5\ttext\n");
 }
 
+/// `doc/flat-first.md`: naming `.ods` or `.odt` asks for a package and gets one; naming
+/// anything else — a bare stem most of all — gets flat XML, because the whole point of R6's
+/// diffable writer is lost the moment the file it applies to is a zip.
+///
+/// Both applications, and the extensionless case in both, because this is a *product* default
+/// rather than a spreadsheet one and a suite that applied it to half its document types would
+/// be worse than one that did not apply it at all.
+#[test]
+fn a_name_that_does_not_ask_for_a_package_gets_flat_xml() {
+    let dir = Sandbox::new("flat-first");
+    let zip = |path: &Path| std::fs::read(path).unwrap()[..2] == *b"PK";
+
+    for (app, stem, package) in [
+        ("sheet", "book", "book.ods"),
+        ("text", "report", "report.odt"),
+    ] {
+        let bare = dir.path(stem);
+        let named = dir.path(package);
+        succeeds(grind(&[app, "new", &s(&bare)]), &["new", stem]);
+        succeeds(grind(&[app, "new", &s(&named)]), &["new", package]);
+
+        assert!(!zip(&bare), "{stem}: a name asking for nothing is flat");
+        assert!(zip(&named), "{package}: a name asking for a package is one");
+        // And both are still documents of the right kind, read back through the sniffer that
+        // never looks at the name.
+        for path in [&bare, &named] {
+            let report = succeeds(grind(&["--format", "json", "info", &s(path)]), &["info"]);
+            assert!(
+                report.contains(match app {
+                    "sheet" => "spreadsheet",
+                    _ => "text document",
+                }),
+                "{}: {report}",
+                s(path)
+            );
+        }
+    }
+}
+
 #[test]
 fn clear_empties_a_cell_and_can_keep_the_computed_value() {
     let dir = Sandbox::new("clear");

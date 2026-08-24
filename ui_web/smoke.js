@@ -220,12 +220,15 @@ const FODT = `<?xml version="1.0" encoding="UTF-8"?>
   check("Delete clears the selection", shown(), "");
 
   // Saving: the bytes the core produced, not the download the browser refuses to
-  // perform. `.ods` by default, so what comes out is a zip.
+  // perform. Flat by default (doc/flat-first.md), so what comes out is XML rather
+  // than a zip — the one place in this file that would notice the decision changing.
   byId("save").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   await frame();
-  check("saving names the download", downloads.at(-1).name, "untitled.ods");
-  const saved = new Uint8Array(await downloads.at(-1).arrayBuffer());
-  check("and produces a real ODF package", [saved[0], saved[1]], [0x50, 0x4b]);
+  check("saving names the download", downloads.at(-1).name, "untitled.fods");
+  const saved = new TextDecoder().decode(await downloads.at(-1).arrayBuffer());
+  check("and produces flat ODF, not a zip", saved.slice(0, 5), "<?xml");
+  check("which says what kind of document it is",
+        saved.includes("opendocument.spreadsheet"), true);
 
   // Rule 5, end to end: a document arrives as bytes and there is no path anywhere.
   // Node's `File`, not jsdom's: jsdom's has no `arrayBuffer()`, which is the one

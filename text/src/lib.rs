@@ -105,8 +105,8 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
     odf::write(doc, form)
 }
 
-/// Write a document, choosing the form from the extension — `.fodt` flat, anything else the
-/// package form ([`Form::from_path`]).
+/// Write a document, choosing the form from the extension — `.odt` the package,
+/// **anything else flat** ([`Form::from_path`], `doc/flat-first.md`).
 pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
     std::fs::write(path, write_bytes(doc, Form::from_path(path))?)?;
     Ok(())

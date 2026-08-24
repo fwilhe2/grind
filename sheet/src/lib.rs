@@ -1710,8 +1710,8 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
     odf::write(doc, form)
 }
 
-/// Write a document, choosing the form from the extension — `.fods` flat, anything else
-/// the package form ([`Form::from_path`]).
+/// Write a document, choosing the form from the extension — `.ods` the package,
+/// **anything else flat** ([`Form::from_path`], `doc/flat-first.md`).
 ///
 /// The only place in the codebase where a file extension decides anything: reading sniffs
 /// the form from the bytes, but writing has to pick one, and the name the user typed is

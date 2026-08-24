@@ -611,6 +611,10 @@ enum VAlign {
 #[derive(Subcommand)]
 enum TextCommand {
     /// Create an empty document
+    ///
+    /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
+    /// write a zip, anything else — including a name with no extension at all — writes one XML
+    /// file that git diff can read (doc/flat-first.md).
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists
@@ -875,6 +879,10 @@ enum TextCommand {
 #[derive(Subcommand)]
 enum Command {
     /// Create an empty document
+    ///
+    /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
+    /// write a zip, anything else — including a name with no extension at all — writes one XML
+    /// file that git diff can read (doc/flat-first.md).
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists

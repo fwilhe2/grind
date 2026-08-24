@@ -206,7 +206,9 @@ carries `"changed":true,"written":false`, which is how a script asks "would this
 
 ## Flat files for git
 
-`.fods` is one XML file, so it diffs. Convert on the way into review:
+`.fods` is one XML file, so it diffs — and it is what you get unless you ask for otherwise
+(`doc/flat-first.md`). `grind sheet new book.fods` and `grind sheet new book` both write flat
+XML; only `book.ods` writes a zip. Convert an existing package on the way into review:
 
 ```sh
 for f in *.ods; do grind convert "$f" "${f%.ods}.fods" >/dev/null; done

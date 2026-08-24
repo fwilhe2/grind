@@ -40,11 +40,14 @@ use web_sys::{
     Document, Event, File, HtmlAnchorElement, HtmlButtonElement, HtmlElement, HtmlInputElement,
 };
 
-/// What a document nobody has opened is downloaded as — one per document type. The package
-/// forms rather than the flat ones, because they are what every other application opens
-/// without being told.
-const UNTITLED_SHEET: &str = "untitled.ods";
-const UNTITLED_TEXT: &str = "untitled.odt";
+/// What a document nobody has opened is downloaded as — one per document type.
+///
+/// The **flat** forms, per `doc/flat-first.md`: a download nobody named is exactly the case
+/// that decision covers, and a browser download is the likeliest thing to land straight in a
+/// repository. Every other application opens flat ODF too; it is only less familiar, which is
+/// a reason to lead with it rather than a reason to hide it.
+const UNTITLED_SHEET: &str = "untitled.fods";
+const UNTITLED_TEXT: &str = "untitled.fodt";
 
 thread_local! {
     /// The live shell, so an animation-frame callback can find its way back. The page owns
@@ -451,18 +454,14 @@ pub(crate) fn element<T: JsCast>(document: &Document, id: &str) -> Result<T, JsV
         .map_err(|_| JsValue::from_str(&format!("#{id} is not the element this shell expects")))
 }
 
-/// Which ODF form a name asks for. Anything that is not flat XML is a package, which is also
-/// the right answer for a name with no extension at all.
+/// Which ODF form a name asks for — the core's rule, not a second one.
+///
+/// This used to spell the extension list itself, which meant `doc/flat-first.md` would have had
+/// to be implemented twice and could have been implemented differently. A browser has no
+/// filesystem (rule 5), but it does have `Path`, and a download's file *name* is exactly the
+/// input `Form::from_path` takes.
 pub(crate) fn form_of(name: &str) -> Form {
-    match name
-        .rsplit('.')
-        .next()
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("fods") | Some("fodt") | Some("xml") => Form::Flat,
-        _ => Form::Package,
-    }
+    Form::from_path(std::path::Path::new(name))
 }
 
 pub(crate) fn js(error: impl std::fmt::Display) -> JsValue {
@@ -589,6 +588,8 @@ mod tests {
         assert_eq!(form_of("report.fodt"), Form::Flat);
         assert_eq!(form_of("book.ods"), Form::Package);
         assert_eq!(form_of("report.odt"), Form::Package);
-        assert_eq!(form_of("book"), Form::Package);
+        // A name that asks for nothing gets the form that diffs — `doc/flat-first.md`, decided
+        // once in `Form::from_path` and reached from here rather than restated.
+        assert_eq!(form_of("book"), Form::Flat);
     }
 }

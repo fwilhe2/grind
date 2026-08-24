@@ -177,6 +177,12 @@ lives in git the way a source file does, and opening a document to look at it is
 commit. A new file is thirteen lines rather than five hundred, because it carries only the
 boilerplate it uses.
 
+And that is the **default**, not a setting to find: in doubt this suite writes the flat form,
+because the property above is worth nothing if the file it applies to is a zip. Save dialogs
+lead with `.fods` / `.fodt`, a new document is flat, and naming `book.ods` is how you ask for a
+package — no document is ever converted behind your back. [`doc/flat-first.md`](doc/flat-first.md)
+is the decision and what it costs.
+
 Strictness on the way out, tolerance on the way in: everything written is valid ODF, and
 everything LibreOffice writes reads — unknown elements and attributes included, kept intact
 rather than dropped.
