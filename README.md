@@ -12,16 +12,14 @@ format nobody owns.
 One spreadsheet today, `grind sheet`. A word processor, `grind text`, is being built beside
 it — [`doc/suite.md`](doc/suite.md) is the plan and its rules.
 
-**And one thing said first, because it decides whether this is for you: `grind text` has no
-pages.** It shows a document as one reflowed column. Page size, margins, headers, footers and
-page breaks are read, kept and written back untouched — they are just never *drawn* as pages,
-and printing goes through the platform. Plenty of people will say that makes it a rich-text
-editor rather than a word processor, and they will be partly right. It was a deliberate fork
-rather than a shortcut: a real page model means line breaking, font metrics, widow and orphan
-control and footnote placement, which is the thirty-years-of-edge-cases problem this project
-exists to avoid. It has a way back in — a named gate in
-[`doc/not-doing.md`](doc/not-doing.md) §2 — and until something walks through it, this is what
-the program is.
+**And one thing said plainly, because it decides whether this is for you: `grind text` has no
+pages today.** It shows a document as one reflowed column. Page size, margins, headers, footers
+and page breaks are read, kept and written back untouched — they are just never *drawn* as
+pages, and printing goes through the platform. Plenty of people will say that makes it a
+rich-text editor rather than a word processor, and today they are right. Pagination has a named
+gate rather than a refusal ([`doc/not-doing.md`](doc/not-doing.md) §2), and the larger question
+underneath it — how much of layout belongs in the shared core rather than in each UI — is being
+decided in the open in [`doc/text-layout.md`](doc/text-layout.md).
 
 ## Why this exists
 

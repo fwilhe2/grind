@@ -23,9 +23,9 @@ The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
 (`type`/`erase`/`split`/`join`), and `examples/sample-text.sh` builds a document out of every
 feature it has, through the CLI only. Loops A and C are both green. What it does **not** have:
 a session (so no `undo` across invocations), tables, footnotes, fields, style definitions, and
-any shell but the CLI. **And no pages** — the layout fork is decided (Path A), so page geometry
-is read, preserved and round-tripped but never rendered, wrapping belongs to the shell, and
-pagination sits in `doc/not-doing.md` §2 behind loop D at a stated floor.
+any shell but the CLI. **And no layout at all** — where layout lives is the project's open
+decision, `doc/text-layout.md`, reopened after S7 closed it on Path A. Pagination is gated
+under every option there; whether *line* layout belongs in the core is what is being decided.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -54,6 +54,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
 | `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
 | `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
+| `doc/text-layout.md` | **Where layout lives — the open decision.** Normative for it, and it outranks `doc/suite.md`'s fork section, which is now the record of an argument rather than the answer |
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
 | `doc/gtk-shell.md` | Phase 9's GTK shell work plan — normative for that phase |
@@ -189,7 +190,7 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
-| `grind-text` | `text/` | The word processor (phase 10, S4–S7): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. No layout: Path A puts wrapping in the shell |
+| `grind-text` | `text/` | The word processor (phase 10, S4–S7): the block model, `loc.rs` addressing and carets, the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. No layout of any kind yet — `doc/text-layout.md` is the open decision on whether it belongs here |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk`, `grind-tui`, `grind-web` | `ui_*/` | The shells |
 
@@ -321,14 +322,23 @@ Its gaps, on purpose: point mode, styling controls, column widths, and a uniform
 `doc/gtk-shell.md`'s "The gaps, written down" section is the up-to-date list of everything
 deferred by decision in this phase.
 
-**Phase 10 (the suite) is done through S7**, planned in `doc/suite.md`. S1–S6 split
-`grind-core` out, built the `grind` CLI, wrote the two normative text documents, and gave the
-word processor its model, reader, writer, R6 splicing and `App`. **S7 settled the layout fork
-on Path A**: no page model, ever, unless loop D exists and stands at a stated floor
-(`doc/not-doing.md` §2). What Path A cost the core is not layout but the *caret* —
-`insert_text`, `erase`, `split_block`, `join_block`, plus an offset that composes with every
-spelling of an address, so `#intro+5` is as good as `p12+40` and survives an edit above it
-where `p12+40` does not. Each has a CLI verb (`type`, `erase`, `split`, `join`) because rule 4
-has no exception for operations that feel like a UI's. S8 is next and is a *pure* shell — the
-terminal word processor, before the GTK one, because it is the cheapest complete editor and
-the sharpest test of S7's choice.
+**Phase 10 (the suite) is done through S6, and S7 is half done and half reopened**, planned in
+`doc/suite.md`. S1–S6 split `grind-core` out, built the `grind` CLI, wrote the two normative
+text documents, and gave the word processor its model, reader, writer, R6 splicing and `App`.
+
+S7 landed the *caret edits* — `insert_text`, `erase`, `split_block`, `join_block`, plus an
+offset axis on `Loc` so `#intro+5` is as good as `p12+40` and survives an edit above it where
+`p12+40` does not. Each has a CLI verb (`type`, `erase`, `split`, `join`) because rule 4 has no
+exception for operations that feel like a UI's. **All of that is correct under every option in
+`doc/text-layout.md` and none of it is at risk.**
+
+What S7 also did was close the layout fork on Path A, and that was **reopened immediately**.
+The objection: `CLAUDE.md`'s own architecture rule puts all logic in the core, and line layout
+is not rendering — Down-arrow, Home/End, click-to-caret and selection extents are every one of
+them defined in terms of a *line*, so Path A hands a piece of the editing model to three shells
+that will disagree, and leaves the CLI unable to answer Down-arrow at all. **`doc/text-layout.md`
+is the open decision**, it separates two questions `doc/suite.md` had fused (line layout vs.
+pagination), and it recommends a third path: line layout in the core with font metrics injected
+through a `Metrics` trait the shell implements, pagination still gated. **Do not start S8 until
+it closes** — the answer decides whether the terminal shell is a pure renderer or is writing a
+line breaker of its own.
