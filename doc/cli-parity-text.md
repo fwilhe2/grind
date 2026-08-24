@@ -43,6 +43,11 @@ what a person expects.
   makes it a paragraph. This is how a document gets its structure: the outline is implied by
   `text:outline-level` and nothing else
 - `set_style` — `grind text style <range> --style <name>` (and no `--style` to clear one)
+- `set_char_style` — `grind text format <range> [--bold --italic --underline --strike --font
+  --size --color --background]`, and no options to make the span plain again. The *direct*
+  character formatting, which is what a toolbar's B and I write; it **replaces** rather than
+  adds, for the reason `grind sheet style` does — a read, one field and a write is a UI that
+  cannot drift from a script
 - `move_blocks` — `grind text move <range> <to>`, which is the verb `§2.1.3` addressing exists
   for
 - `replace` — `grind text replace <needle> <replacement>`, one undo step for the whole document
@@ -131,6 +136,9 @@ had no width and therefore no lines.
   `--filter` narrows it. The spreadsheet's `calculations` for prose
 - `formatting` — `grind text formatting`, every block carrying a style of its own. "Why is this
   paragraph different?", answered in one place
+- `char_style` — `grind text format <range> --show`, one `property<TAB>value` line per property
+  the span agrees about. What a toolbar reads before it writes, and the reason a mixed selection
+  shows neither state: agreement is the answer, not the first character's opinion
 - `find` — `grind text find <needle>`, with a `p12+40` address per hit
 - `counts` — `grind text words` — blocks, headings, words, characters
 - `bookmarks` — `grind text name` with no name, which lists them all; and `grind text name

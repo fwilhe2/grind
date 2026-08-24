@@ -18,6 +18,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::style::CharStyle;
+
 /// A block's identity, stable across insertions above it.
 ///
 /// The one piece of machinery the spreadsheet did not need. A cell is addressed by where it
@@ -71,12 +73,20 @@ pub enum Run {
     /// Character data, with the styling that applies to it.
     Text {
         text: String,
-        /// The composed `text:style-name`, outermost first, joined by a space.
+        /// The composed **named** `text:style-name`s, outermost first, joined by a space.
         ///
         /// `text:span` nests, and this model is flat, so reading composes the stack down each
         /// branch (`doc/text-core.md`). Lossy for the *names* and lossless for the rendering;
         /// acceptable only because R6 never rewrites a paragraph nobody edited.
+        ///
+        /// Only names this build does not interpret reach here. A span whose style is a
+        /// generated *automatic* one is resolved into [`Run::Text::props`] instead and its name
+        /// forgotten, because that name is a serialisation detail rather than the document's
+        /// own vocabulary — see [`crate::style`] for the whole of that argument.
         style: Option<String>,
+        /// The direct character formatting that applies to this run, composed from every
+        /// automatic style open over it.
+        props: CharStyle,
         /// `xlink:href`, when this run sits inside a `text:a`.
         href: Option<String>,
     },
@@ -91,6 +101,28 @@ pub enum Run {
 }
 
 impl Run {
+    /// Unformatted character data — no style name, no direct formatting, no link.
+    ///
+    /// What a script's text is, and therefore what most of this crate builds: `set_text`,
+    /// `insert`, and every test that does not care about styling.
+    pub fn plain(text: impl Into<String>) -> Self {
+        Run::Text {
+            text: text.into(),
+            style: None,
+            props: CharStyle::default(),
+            href: None,
+        }
+    }
+
+    /// The direct character formatting on this run, if it can carry any. A tab, a break and a
+    /// bookmark cannot, and answer with nothing rather than with a default nobody set.
+    pub fn props(&self) -> Option<&CharStyle> {
+        match self {
+            Run::Text { props, .. } => Some(props),
+            _ => None,
+        }
+    }
+
     /// The characters this run contributes to the paragraph's plain text.
     pub fn text(&self) -> &str {
         match self {
@@ -134,7 +166,13 @@ pub fn split_runs(runs: &[Run], offset: usize) -> (Vec<Run>, Vec<Run>) {
             head.push(run.clone());
         } else if pos >= offset {
             tail.push(run.clone());
-        } else if let Run::Text { text, style, href } = run {
+        } else if let Run::Text {
+            text,
+            style,
+            props,
+            href,
+        } = run
+        {
             let cut = text
                 .char_indices()
                 .nth(offset - pos)
@@ -142,11 +180,13 @@ pub fn split_runs(runs: &[Run], offset: usize) -> (Vec<Run>, Vec<Run>) {
             head.push(Run::Text {
                 text: text[..cut].to_owned(),
                 style: style.clone(),
+                props: props.clone(),
                 href: href.clone(),
             });
             tail.push(Run::Text {
                 text: text[cut..].to_owned(),
                 style: style.clone(),
+                props: props.clone(),
                 href: href.clone(),
             });
         } else {
@@ -176,14 +216,16 @@ pub fn coalesce(runs: &mut Vec<Run>) {
                 Run::Text {
                     text: a,
                     style: sa,
+                    props: pa,
                     href: ha,
                 },
                 Run::Text {
                     text: b,
                     style: sb,
+                    props: pb,
                     href: hb,
                 },
-            ) if sa == sb && ha == hb => Some(format!("{a}{b}")),
+            ) if sa == sb && pa == pb && ha == hb => Some(format!("{a}{b}")),
             _ => None,
         };
         match joined {
@@ -248,10 +290,10 @@ impl Block {
     /// `grind text formatting` looks for.
     pub fn is_styled(&self) -> bool {
         self.style.is_some()
-            || self
-                .runs
-                .iter()
-                .any(|r| matches!(r, Run::Text { style: Some(_), .. }))
+            || self.runs.iter().any(|r| match r {
+                Run::Text { style, props, .. } => style.is_some() || !props.is_plain(),
+                _ => false,
+            })
     }
 }
 
@@ -357,6 +399,7 @@ mod tests {
             block.runs.push(Run::Text {
                 text: (*text).to_owned(),
                 style: None,
+                props: Default::default(),
                 href: None,
             });
             d.blocks.push(block);
@@ -413,6 +456,7 @@ mod tests {
         block.runs.push(Run::Text {
             text: "über".to_owned(),
             style: None,
+            props: Default::default(),
             href: None,
         });
         block.runs.push(Run::Tab);
@@ -424,6 +468,7 @@ mod tests {
         Run::Text {
             text: text.to_owned(),
             style: style.map(str::to_owned),
+            props: Default::default(),
             href: None,
         }
     }
@@ -507,11 +552,13 @@ mod tests {
             Run::Text {
                 text: "a".to_owned(),
                 style: None,
+                props: Default::default(),
                 href: Some("x".to_owned()),
             },
             Run::Text {
                 text: "b".to_owned(),
                 style: None,
+                props: Default::default(),
                 href: Some("y".to_owned()),
             },
         ];
@@ -541,6 +588,7 @@ mod tests {
         block.runs.push(Run::Text {
             text: "hello".to_owned(),
             style: None,
+            props: Default::default(),
             href: None,
         });
         assert_eq!(block.text(), "hello");

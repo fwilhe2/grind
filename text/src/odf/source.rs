@@ -46,6 +46,23 @@ use std::ops::Range;
 use grind_core::odf::Form;
 
 use crate::model::BlockId;
+use crate::style::CharStyle;
+
+/// An automatic text style the source file already declares: its name, what it inherits from,
+/// and what it sets.
+///
+/// Kept so that a **formatting** edit can splice like any other. The writer names the character
+/// styles it emits (`T1`, `T2`, …), and a spliced paragraph refers to names that have to exist
+/// in bytes the splice does not touch — so an edit whose formatting the file already has a name
+/// for reuses that name and splices, and one that needs a *new* declaration regenerates. That
+/// is the same line `grind_sheet` draws for a cell style the file has no entry for, and it is
+/// why `<style:style>` never has to be spliced into `office:automatic-styles`.
+#[derive(Clone, Debug)]
+pub struct TextStyle {
+    pub name: String,
+    pub parent: Option<String>,
+    pub props: CharStyle,
+}
 
 /// The bytes a document was read from, plus where its blocks are in them.
 #[derive(Clone, Debug)]
@@ -62,6 +79,25 @@ pub struct Source {
     /// (`crate::model::BlockId`): an index is invalidated by every insertion above it, and this
     /// map has to outlive exactly those edits.
     pub blocks: HashMap<BlockId, Block>,
+    /// The automatic character styles the file declares, in the order it declares them. See
+    /// [`TextStyle`] for why a splice needs them.
+    pub styles: Vec<TextStyle>,
+}
+
+impl Source {
+    /// The name this file already uses for exactly this formatting, if it has one.
+    ///
+    /// **Parentless only.** The writer emits a character style that inherits from nothing and
+    /// puts any named style in a span *around* it, so reusing one that inherits would apply its
+    /// parent twice — once as the outer span and once through the inheritance — and the second
+    /// read would compose the name into itself. A style with a parent is left alone and the
+    /// edit regenerates, which is the safe half of a choice that only costs bytes.
+    pub fn style_named(&self, props: &CharStyle) -> Option<&str> {
+        self.styles
+            .iter()
+            .find(|style| style.parent.is_none() && style.props == *props)
+            .map(|style| style.name.as_str())
+    }
 }
 
 /// One block element of the source file.
@@ -129,6 +165,7 @@ impl Source {
             form,
             bytes,
             blocks: HashMap::new(),
+            styles: Vec::new(),
         }
     }
 }

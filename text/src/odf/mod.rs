@@ -48,6 +48,7 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
         Box::new(read::Root),
         &mut builder,
     )?;
+    builder.publish_styles();
     builder.doc.reindex_bookmarks();
     // Reading is not editing: a document just opened has no changes to splice.
     builder.doc.edits = source::Edits::default();

@@ -14,11 +14,14 @@
 //! all mutation flows through the shared [`Builder`] — the same rule `grind_sheet::odf::read`
 //! follows, so there is no child-to-parent channel to get wrong and no downcasting.
 
+use std::collections::HashMap;
+
 use grind_core::odf::context::{Attrs, Context};
 use grind_core::odf::names::{Name, Ns};
 use grind_core::odf::xml::element_extent;
 
 use crate::model::{Block, BlockId, BlockKind, Document, Run};
+use crate::style::{self, CharStyle};
 
 /// How deeply a list may nest before we stop counting.
 ///
@@ -28,15 +31,43 @@ use crate::model::{Block, BlockId, BlockKind, Document, Run};
 /// has to keep the *number* honest.
 const MAX_LIST_DEPTH: u32 = 64;
 
+/// How many `style:style` definitions a document may contribute before we stop collecting.
+///
+/// The same rule [`MAX_LIST_DEPTH`] follows on a different axis: never trust the file to be
+/// sane. A crafted document declaring a million one-attribute styles is otherwise a map that
+/// grows without bound while nothing in the body ever refers to any of them. Far above what a
+/// real document reaches — a two-hundred-page Writer file lands in the low thousands.
+const MAX_STYLES: usize = 100_000;
+
 /// Everything the contexts share: the document under construction, and the style stack.
 pub struct Builder {
     pub doc: Document,
-    /// The `text:style-name`s currently open, outermost first.
+    /// The **named** `text:style-name`s currently open, outermost first.
     ///
     /// `text:span` nests and the model is flat, so this is the composition
     /// `doc/text-core.md` describes: a run takes the whole stack, joined, rather than the
     /// innermost name. Lossy for the names, lossless for the rendering.
-    spans: Vec<String>,
+    ///
+    /// A span whose name is an *automatic* style contributes an entry here too, so that the
+    /// stack stays parallel with [`Builder::props`] and popping is symmetric — but its entry is
+    /// the automatic style's `style:parent-style-name`, or nothing. The generated name itself
+    /// never survives, because it means nothing outside the file that generated it
+    /// ([`crate::style`]).
+    spans: Vec<Option<String>>,
+    /// The direct formatting of each open span, in the same order — one entry per entry of
+    /// [`Builder::spans`], already composed with everything outside it, so the innermost is
+    /// what a run takes.
+    props: Vec<CharStyle>,
+    /// Every `style:style` of family `text` this document declares, by name.
+    ///
+    /// Populated before the body, because ODF puts `office:font-face-decls`,
+    /// `office:styles` and `office:automatic-styles` ahead of `office:body` in both physical
+    /// forms — so a single pass has every definition in hand by the time a span refers to one.
+    styles: HashMap<String, TextFamily>,
+    /// `office:font-face-decls`: a `style:name` to the family it stands for. The indirection
+    /// LibreOffice writes instead of `fo:font-family`, resolved on the way in so that the model
+    /// carries the fact rather than the reference.
+    fonts: HashMap<String, String>,
     /// The `xlink:href` of the `text:a` currently open, if any. Not a stack: the schema gives
     /// `text:a` `paragraph-content` rather than `paragraph-content-or-hyperlink`
     /// (rng:16453), so a hyperlink cannot nest inside a hyperlink.
@@ -45,13 +76,83 @@ pub struct Builder {
     list_depth: u32,
 }
 
+/// One `style:style` of family `text`, as the document declared it.
+struct TextFamily {
+    /// Whether it came from `office:automatic-styles`. Automatic means generated, which is why
+    /// it may be resolved away and a named one may not — [`crate::style`] makes the argument.
+    automatic: bool,
+    parent: Option<String>,
+    props: CharStyle,
+}
+
 impl Builder {
     pub fn new() -> Self {
         Builder {
             doc: Document::new(),
             spans: Vec::new(),
+            props: Vec::new(),
+            styles: HashMap::new(),
+            fonts: HashMap::new(),
             href: None,
             list_depth: 0,
+        }
+    }
+
+    /// Open a `text:span`, resolving its style name into a name the model keeps and the
+    /// formatting the model applies.
+    ///
+    /// The one place `doc/text-core.md`'s line between a *generated* style and a *named* one is
+    /// drawn. A name nothing declares is kept as a name: an unknown style is a fact about the
+    /// document, and inventing formatting for it would be worse than carrying it inert.
+    fn open_span(&mut self, name: Option<&str>) {
+        let mut props = self.props.last().cloned().unwrap_or_default();
+        let kept = match name.and_then(|name| self.styles.get(name).map(|s| (name, s))) {
+            Some((_, style)) if style.automatic => {
+                props.layer(&style.props);
+                style.parent.clone()
+            }
+            // A declared *named* style: its properties are the document's own vocabulary and
+            // stay behind the name. Nothing is layered, which is what keeps `Emphasis` a
+            // structural fact rather than an italic that has forgotten why.
+            Some((name, _)) => Some(name.to_owned()),
+            None => name.map(str::to_owned),
+        };
+        self.spans.push(kept.filter(|name| !name.is_empty()));
+        self.props.push(props);
+    }
+
+    fn close_span(&mut self) {
+        self.spans.pop();
+        self.props.pop();
+    }
+
+    /// Record a style definition, if it is one this model has somewhere to put.
+    fn declare(&mut self, name: String, style: TextFamily) {
+        if self.styles.len() < MAX_STYLES {
+            self.styles.insert(name, style);
+        }
+    }
+
+    /// Hand the automatic character styles to the source, so that a formatting edit can splice
+    /// by reusing a name the file already spells (`super::source::TextStyle`).
+    ///
+    /// Called once, after parsing: a `HashMap` has no order and a splice needs a stable one, so
+    /// the list is sorted by name rather than left to iteration order — two saves of the same
+    /// document must produce the same bytes.
+    pub fn publish_styles(&mut self) {
+        let mut styles: Vec<super::source::TextStyle> = self
+            .styles
+            .iter()
+            .filter(|(_, style)| style.automatic && !style.props.is_plain())
+            .map(|(name, style)| super::source::TextStyle {
+                name: name.clone(),
+                parent: style.parent.clone(),
+                props: style.props.clone(),
+            })
+            .collect();
+        styles.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Some(source) = self.doc.source.as_deref_mut() {
+            source.styles = styles;
         }
     }
 
@@ -96,7 +197,9 @@ impl Builder {
         if text.is_empty() {
             return;
         }
-        let style = (!self.spans.is_empty()).then(|| self.spans.join(" "));
+        let names: Vec<&str> = self.spans.iter().flatten().map(String::as_str).collect();
+        let style = (!names.is_empty()).then(|| names.join(" "));
+        let props = self.props.last().cloned().unwrap_or_default();
         let href = self.href.clone();
         let Some(block) = self.doc.blocks.last_mut() else {
             // Character data outside any block. Real files have it — it is the indentation
@@ -107,9 +210,11 @@ impl Builder {
         if let Some(Run::Text {
             text: last,
             style: last_style,
+            props: last_props,
             href: last_href,
         }) = block.runs.last_mut()
             && *last_style == style
+            && *last_props == props
             && *last_href == href
         {
             last.push_str(text);
@@ -118,6 +223,7 @@ impl Builder {
         block.runs.push(Run::Text {
             text: text.to_owned(),
             style,
+            props,
             href,
         });
     }
@@ -146,8 +252,117 @@ impl Context<Builder> for Root {
                 Some(Box::new(Root))
             }
             (Ns::Office, "body") => Some(Box::new(Body)),
+            // Both style containers, and the flag is the whole difference between them:
+            // automatic styles are generated and may be resolved into direct formatting,
+            // named ones are the document's vocabulary and keep their names.
+            (Ns::Office, "automatic-styles") => Some(Box::new(Styles { automatic: true })),
+            (Ns::Office, "styles") => Some(Box::new(Styles { automatic: false })),
+            (Ns::Office, "font-face-decls") => Some(Box::new(FontFaces)),
             _ => None,
         }
+    }
+}
+
+/// `office:font-face-decls` — `style:font-name` to a real family (§5.2 of the spreadsheet's
+/// notes, and the reason `grind_sheet::style::CellStyle` deliberately carries no font at all).
+///
+/// Resolved here so that the model holds `"Georgia"` rather than `"F1"`, which is what makes a
+/// font reachable from a shell without teaching every shell about a second vocabulary.
+struct FontFaces;
+
+impl Context<Builder> for FontFaces {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "font-face")
+            && let Some(declared) = attrs.get(Ns::Style, "name")
+        {
+            // `svg:font-family` is where ODF puts it; `fo:font-family` appears in files from
+            // producers that treated the two as interchangeable, and reading both costs a line.
+            if let Some(family) = attrs
+                .get(Ns::Svg, "font-family")
+                .or_else(|| attrs.get(Ns::Fo, "font-family"))
+                && b.fonts.len() < MAX_STYLES
+            {
+                b.fonts
+                    .insert(declared.to_owned(), style::unquote_family(family));
+            }
+        }
+        None
+    }
+}
+
+/// `office:automatic-styles` or `office:styles` — the `style:style` declarations.
+///
+/// Only family `text` is collected. A paragraph or table style is a `None` here and therefore
+/// an `Ignore` subtree, exactly as any other unmodelled element is: the block's own
+/// `text:style-name` is kept verbatim and never resolved (`doc/text-core.md` gates that).
+struct Styles {
+    automatic: bool,
+}
+
+impl Context<Builder> for Styles {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Style, "style") || attrs.get(Ns::Style, "family") != Some("text") {
+            return None;
+        }
+        Some(Box::new(TextStyleDef {
+            automatic: self.automatic,
+            name: attrs.get(Ns::Style, "name").map(str::to_owned),
+            parent: attrs.get(Ns::Style, "parent-style-name").map(str::to_owned),
+            props: CharStyle::default(),
+        }))
+    }
+}
+
+/// One `style:style style:family="text"`, gathering its `style:text-properties`.
+struct TextStyleDef {
+    automatic: bool,
+    name: Option<String>,
+    parent: Option<String>,
+    props: CharStyle,
+}
+
+impl Context<Builder> for TextStyleDef {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Style, "text-properties") {
+            return None;
+        }
+        // `style:font-name` is LibreOffice's spelling and `fo:font-family` the schema's plain
+        // one; a document may use either and this build stores the family in both cases.
+        let family = attrs
+            .get(Ns::Fo, "font-family")
+            .map(style::unquote_family)
+            .or_else(|| {
+                attrs
+                    .get(Ns::Style, "font-name")
+                    .and_then(|n| b.fonts.get(n).cloned())
+            });
+        self.props = CharStyle {
+            font_family: family,
+            font_size: attrs.get(Ns::Fo, "font-size").map(str::to_owned),
+            font_weight: attrs.get(Ns::Fo, "font-weight").map(str::to_owned),
+            font_style: attrs.get(Ns::Fo, "font-style").map(str::to_owned),
+            underline: attrs
+                .get(Ns::Style, "text-underline-style")
+                .map(str::to_owned),
+            line_through: attrs
+                .get(Ns::Style, "text-line-through-style")
+                .map(str::to_owned),
+            color: attrs.get(Ns::Fo, "color").map(str::to_owned),
+            background: attrs.get(Ns::Fo, "background-color").map(str::to_owned),
+        };
+        None
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let Some(name) = self.name.take() else { return };
+        b.declare(
+            name,
+            TextFamily {
+                automatic: self.automatic,
+                parent: self.parent.take(),
+                props: std::mem::take(&mut self.props),
+            },
+        );
     }
 }
 
@@ -273,8 +488,7 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
     match (name.ns, name.local.as_str()) {
         (Ns::Text, "span") => {
             // The style stack, not the innermost name: spans nest and the model is flat.
-            b.spans
-                .push(attrs.get(Ns::Text, "style-name").unwrap_or("").to_owned());
+            b.open_span(attrs.get(Ns::Text, "style-name"));
             Some(Box::new(Span))
         }
         (Ns::Text, "a") => {
@@ -324,7 +538,7 @@ impl Context<Builder> for Span {
     }
 
     fn end(&mut self, b: &mut Builder) {
-        b.spans.pop();
+        b.close_span();
     }
 }
 

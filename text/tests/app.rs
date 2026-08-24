@@ -150,6 +150,7 @@ fn typed_text_takes_the_formatting_of_the_run_at_the_caret() {
     let styled = |text: &str, style: Option<&str>| grind_text::Run::Text {
         text: text.to_owned(),
         style: style.map(str::to_owned),
+        props: Default::default(),
         href: None,
     };
     let doc = |app: &App| {
@@ -641,4 +642,155 @@ fn an_edit_past_the_end_is_an_error_rather_than_a_panic() {
         "a failed edit must not reach the undo stack"
     );
     assert_eq!(text(&app), "");
+}
+
+// --- character formatting -------------------------------------------------------------
+
+fn bold() -> grind_text::CharStyle {
+    let mut style = grind_text::CharStyle::default();
+    style.set_bold(true);
+    style
+}
+
+/// The shape a toolbar drives: read what is there, change one field, write the whole thing
+/// back. The same contract `grind_sheet::App::set_style` offers, so a shell that has learned
+/// one has learned both.
+#[test]
+fn formatting_a_span_leaves_its_neighbours_alone() {
+    let app = app(&["one two three"]);
+    let (from, to) = (caret(&app, "p1+4"), caret(&app, "p1+7"));
+    assert_eq!(app.set_char_style(from, to, &bold()).expect("styles"), 1);
+
+    assert_eq!(text(&app), "one two three", "formatting is not content");
+    assert!(app.char_style(from, to).expect("reads").is_bold());
+    assert!(
+        !app.char_style(caret(&app, "p1+0"), caret(&app, "p1+3"))
+            .expect("reads")
+            .is_bold(),
+        "the word before it is untouched"
+    );
+    // Over the whole paragraph nothing is agreed, which is what a toolbar shows for a mixed
+    // selection — neither on nor off.
+    assert!(
+        app.char_style(caret(&app, "p1+0"), caret(&app, "p1+13"))
+            .expect("reads")
+            .is_plain()
+    );
+
+    // Setting *replaces*, so an empty style is "plain again" rather than a no-op.
+    assert_eq!(
+        app.set_char_style(from, to, &grind_text::CharStyle::default())
+            .expect("clears"),
+        1
+    );
+    assert!(app.char_style(from, to).expect("reads").is_plain());
+}
+
+/// One `Action::Batch` across however many blocks it touched, so formatting a section is one
+/// Ctrl+Z — the property that makes a toolbar usable and a shell unable to get wrong.
+#[test]
+fn formatting_across_blocks_is_one_undo_step() {
+    let app = app(&["first", "second", "third"]);
+    let changed = app
+        .set_char_style(caret(&app, "p1+2"), caret(&app, "p3+2"), &bold())
+        .expect("styles");
+    assert_eq!(changed, 3, "every block the span touched");
+
+    assert!(app.undo(), "one step takes all three back");
+    for address in ["p1+2", "p2+2", "p3+2"] {
+        let at = caret(&app, address);
+        assert!(
+            app.char_style(at, at).expect("reads").is_plain(),
+            "{address}"
+        );
+    }
+    assert_eq!(undo_all(&app), 3, "and the three inserts that built it");
+}
+
+/// A caret is an empty span, and what it reports is what the *next keystroke* will look like —
+/// the run to its left. Anything else and a toolbar would show one thing while typing produced
+/// another.
+#[test]
+fn a_caret_reports_the_formatting_the_next_keystroke_will_take() {
+    let app = app(&["one two"]);
+    app.set_char_style(caret(&app, "p1+4"), caret(&app, "p1+7"), &bold())
+        .expect("styles");
+
+    let at = |address: &str| {
+        let c = caret(&app, address);
+        app.char_style(c, c).expect("reads")
+    };
+    assert!(!at("p1+4").is_bold(), "at the front, the run to the left");
+    assert!(at("p1+5").is_bold(), "inside it");
+    assert!(at("p1+7").is_bold(), "at the very end, still the left run");
+
+    app.insert_text(caret(&app, "p1+7"), "!").expect("types");
+    assert!(
+        at("p1+8").is_bold(),
+        "so typing at the end of a bold word continues bold"
+    );
+}
+
+/// The property the whole feature rests on: direct formatting is written as a generated
+/// `style:style` and read back as the same properties, in both physical forms.
+#[test]
+fn direct_formatting_survives_a_save_and_a_load() {
+    let app = app(&["one two three"]);
+    let mut style = bold();
+    style.font_family = Some("Georgia".to_owned());
+    style.font_size = Some("14pt".to_owned());
+    style.color = Some("#001f3f".to_owned());
+    app.set_char_style(caret(&app, "p1+4"), caret(&app, "p1+7"), &style)
+        .expect("styles");
+
+    for form in [Form::Flat, Form::Package] {
+        let bytes = app.save_bytes(form).expect("saves");
+        let back = App::new();
+        back.open_bytes("doc", &bytes).expect("opens");
+        assert_eq!(text(&back), text(&app), "{form:?}");
+        assert_eq!(
+            back.char_style(caret(&back, "p1+4"), caret(&back, "p1+7"))
+                .expect("reads"),
+            style,
+            "{form:?}"
+        );
+        assert!(
+            back.char_style(caret(&back, "p1+0"), caret(&back, "p1+3"))
+                .expect("reads")
+                .is_plain(),
+            "{form:?}: and the plain part stayed plain"
+        );
+    }
+}
+
+/// R6: a formatting edit whose style the file already declares splices like any other, so one
+/// bold word is one line of `git diff` rather than a regenerated document.
+#[test]
+fn reusing_a_style_the_file_already_has_still_splices() {
+    // Two paragraphs, the second already bold — so the file declares a bold text style.
+    let app = app(&["one two", "three four"]);
+    app.set_char_style(caret(&app, "p2+0"), caret(&app, "p2+5"), &bold())
+        .expect("styles");
+    let bytes = app.save_bytes(Form::Flat).expect("saves");
+
+    let opened = App::new();
+    opened.open_bytes("doc.fodt", &bytes).expect("opens");
+    opened
+        .set_char_style(caret(&opened, "p1+0"), caret(&opened, "p1+3"), &bold())
+        .expect("styles");
+    let after = opened.save_bytes(Form::Flat).expect("saves");
+
+    let before = String::from_utf8(bytes).expect("utf-8");
+    let after = String::from_utf8(after).expect("utf-8");
+    let changed = before
+        .lines()
+        .zip(after.lines())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        before.lines().count(),
+        after.lines().count(),
+        "no new lines"
+    );
+    assert_eq!(changed, 1, "one paragraph edited, one line different");
 }

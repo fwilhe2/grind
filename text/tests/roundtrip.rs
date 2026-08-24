@@ -30,14 +30,36 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use grind_text::model::{Block, BlockKind, Document, Run};
-use grind_text::{Form, odf};
+use grind_text::{CharStyle, Form, odf};
 
 fn text(s: &str) -> Run {
     Run::Text {
         text: s.to_owned(),
         style: None,
+        props: Default::default(),
         href: None,
     }
+}
+
+fn styled(s: &str, props: CharStyle) -> Run {
+    Run::Text {
+        text: s.to_owned(),
+        style: None,
+        props,
+        href: None,
+    }
+}
+
+fn bold() -> CharStyle {
+    let mut style = CharStyle::default();
+    style.set_bold(true);
+    style
+}
+
+fn italic() -> CharStyle {
+    let mut style = CharStyle::default();
+    style.set_italic(true);
+    style
 }
 
 /// Build a document from `(kind, runs)` pairs.
@@ -195,6 +217,7 @@ fn tabs_breaks_bookmarks_and_links_survive() {
             Run::Text {
                 text: "the docs".to_owned(),
                 style: None,
+                props: Default::default(),
                 href: Some("https://example.invalid/a?b=1&c=2".to_owned()),
             },
             Run::Tab,
@@ -202,6 +225,7 @@ fn tabs_breaks_bookmarks_and_links_survive() {
             Run::Text {
                 text: "emphasised".to_owned(),
                 style: Some("Emph".to_owned()),
+                props: Default::default(),
                 href: None,
             },
         ],
@@ -253,6 +277,7 @@ fn the_output_carries_only_the_boilerplate_it_needs() {
         vec![Run::Text {
             text: "x".to_owned(),
             style: None,
+            props: Default::default(),
             href: Some("https://x/".to_owned()),
         }],
     )]);
@@ -444,6 +469,59 @@ fn allowing_libreoffices_paragraph<'a>(want: &Document, got: &'a Document) -> &'
     if gained_one { &[] } else { &got.blocks }
 }
 
+/// Whether a comparison holds the two documents to the same *formatting*, or only to the same
+/// structure and text.
+///
+/// The two directions of loop C can be held to different standards here, and the difference is
+/// **measured rather than assumed** — see
+/// [`a_character_style_over_a_whole_paragraph_is_hoisted_into_it`].
+///
+/// * **out**, [`Styling::Compared`]: we build the document, so it has exactly the automatic
+///   styles the writer emitted and nothing else. Every property has to survive LibreOffice.
+/// * **back**, [`Styling::Ignored`]: the document handed to LibreOffice was *regenerated*, so
+///   its `office:styles` is gone — and LibreOffice then reorganises what is left, most visibly
+///   by hoisting a character style that covers a whole paragraph into that paragraph's own
+///   automatic style. This build models a paragraph style by name only (`doc/text-core.md`
+///   gates definitions), so the formatting comes back on a paragraph nobody is reading it from.
+///   The same reason style **names** are not compared in either direction, which this loop has
+///   always documented.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Styling {
+    Compared,
+    Ignored,
+}
+
+/// Where two blocks' **direct character formatting** differs, character by character.
+///
+/// Compared per character rather than per run because a run is a serialisation detail:
+/// LibreOffice is free to split `bold` into two spans or merge two adjacent identical ones, and
+/// neither changes what the document says. What must survive is *which characters are bold*.
+///
+/// Unlike a style **name**, this is compared strictly and is not part of the loop's documented
+/// loosening. That is the whole point of resolving automatic styles into properties: a name has
+/// nowhere to resolve in a regenerated document and formatting does not need one.
+fn formatting_differences(want: &Block, got: &Block) -> Vec<String> {
+    let (w, g) = (per_character(want), per_character(got));
+    for (at, (w, g)) in w.iter().zip(&g).enumerate() {
+        if w != g {
+            return vec![format!("character {at} was {w:?}, back as {g:?}")];
+        }
+    }
+    Vec::new()
+}
+
+/// One block's formatting, one entry per character it contains.
+fn per_character(block: &Block) -> Vec<CharStyle> {
+    block
+        .runs
+        .iter()
+        .flat_map(|run| {
+            let props = run.props().cloned().unwrap_or_default();
+            std::iter::repeat_n(props, run.len())
+        })
+        .collect()
+}
+
 /// Every way two documents differ, as sentences. Not `assert_eq!` on the whole document: the
 /// interesting output is *which block* moved, and a `Debug` dump of two hundred paragraphs is
 /// not something anyone reads.
@@ -452,7 +530,7 @@ fn allowing_libreoffices_paragraph<'a>(want: &Document, got: &'a Document) -> &'
 /// loop's one documented loosening — see
 /// [`a_style_name_the_document_does_not_declare_does_not_survive`] for the measurement behind
 /// it and the test that keeps it honest.
-fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
+fn differences(label: &str, want: &Document, got: &Document, styling: Styling) -> Vec<String> {
     let mut out = Vec::new();
     let got_blocks = allowing_libreoffices_paragraph(want, got);
 
@@ -476,6 +554,11 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 w.text(),
                 g.text()
             ));
+        }
+        if styling == Styling::Compared {
+            for line in formatting_differences(w, g) {
+                out.push(format!("{label}: block {i} {line}"));
+            }
         }
         if out.len() > 20 {
             out.push(format!("{label}: ... and more"));
@@ -586,6 +669,53 @@ fn cases() -> Vec<(String, Document)> {
         ),
     ];
 
+    // Direct character formatting, which has no name of its own in ODF: it is a generated
+    // `style:style` in `office:automatic-styles` plus a `text:span` referring to it, and this
+    // is the case that proves both halves of that reach LibreOffice and come back.
+    all.push((
+        "formatting".to_owned(),
+        build(vec![
+            (
+                BlockKind::Paragraph,
+                vec![
+                    text("plain then "),
+                    styled("bold", bold()),
+                    text(" then "),
+                    styled("italic", italic()),
+                    text(" then plain again"),
+                ],
+            ),
+            (
+                BlockKind::Paragraph,
+                vec![
+                    // Every property at once, on one run, so a lost attribute is a named
+                    // failure rather than a document that merely looks different.
+                    styled(
+                        "everything",
+                        CharStyle {
+                            font_family: Some("Liberation Serif".to_owned()),
+                            font_size: Some("14pt".to_owned()),
+                            font_weight: Some("bold".to_owned()),
+                            font_style: Some("italic".to_owned()),
+                            underline: Some("solid".to_owned()),
+                            line_through: Some("solid".to_owned()),
+                            color: Some("#001f3f".to_owned()),
+                            background: Some("#ffdc00".to_owned()),
+                        },
+                    ),
+                    // The same formatting twice must pool into one declaration, and still be
+                    // two runs with a plain one between them.
+                    text(" and "),
+                    styled("bold again", bold()),
+                ],
+            ),
+            (
+                BlockKind::Heading { level: 1 },
+                vec![text("a heading with "), styled("emphasis", italic())],
+            ),
+        ]),
+    ));
+
     all.push((
         "inline".to_owned(),
         build(vec![
@@ -601,6 +731,7 @@ fn cases() -> Vec<(String, Document)> {
                         style: None,
                         // An ampersand in a URL is escaped once, not twice, and LibreOffice is
                         // the only judge of that which counts.
+                        props: Default::default(),
                         href: Some("https://example.invalid/a?b=1&c=2".to_owned()),
                     },
                     text(" then"),
@@ -635,7 +766,7 @@ fn every_case_survives_our_own_round_trip() {
         for form in [Form::Flat, Form::Package] {
             let bytes = odf::write(&doc, form).unwrap_or_else(|e| panic!("{name}: {e}"));
             let back = odf::read(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let failures = differences(&name, &doc, &back);
+            let failures = differences(&name, &doc, &back, Styling::Compared);
             assert!(
                 failures.is_empty(),
                 "{name} ({form:?}): {failures:#?}\n--- wrote ---\n{}",
@@ -673,7 +804,12 @@ fn documents_we_write_survive_libreoffice() {
     let mut failures = Vec::new();
     for (doc, path) in &staged {
         let label = path.file_name().unwrap().to_str().unwrap();
-        failures.extend(differences(label, doc, &converted(&out, path)));
+        failures.extend(differences(
+            label,
+            doc,
+            &converted(&out, path),
+            Styling::Compared,
+        ));
     }
 
     for f in &failures {
@@ -813,6 +949,63 @@ fn a_style_name_this_build_wrote_does_not_survive() {
     );
 }
 
+/// **A character style that covers a whole paragraph is hoisted into the paragraph.** That is
+/// why the "back" direction passes [`Styling::Ignored`], and it is a fact about LibreOffice
+/// rather than a licence to stop checking.
+///
+/// Two paragraphs, both set in Cambria and nothing else. The first has one span over all of it;
+/// the second has a plain word between two Cambria ones, so no single style covers it.
+/// LibreOffice moves the first paragraph's font onto a `style:family="paragraph"` automatic
+/// style and leaves no `text:span` at all, and leaves the second's spans exactly where they
+/// were. The formatting is not lost from the *document* — it moved somewhere this build reads
+/// only a name from (`doc/text-core.md` gates paragraph style definitions), so a run-level
+/// comparison sees it vanish.
+///
+/// Which is exactly what happens to a real Writer document: most paragraphs are uniform, so
+/// most of them hoist. The day this build reads style definitions, this goes red, the
+/// [`Styling`] distinction disappears and both directions compare formatting.
+#[test]
+fn a_character_style_over_a_whole_paragraph_is_hoisted_into_it() {
+    if !oracle_ready("hoist") {
+        return;
+    }
+    let font = CharStyle {
+        font_family: Some("Cambria".to_owned()),
+        ..CharStyle::default()
+    };
+    let doc = build(vec![
+        (
+            BlockKind::Paragraph,
+            vec![styled("all of it is Cambria", font.clone())],
+        ),
+        (
+            BlockKind::Paragraph,
+            vec![
+                styled("Cambria ", font.clone()),
+                text("plain "),
+                styled("Cambria", font.clone()),
+            ],
+        ),
+    ]);
+
+    let lab = Lab::new("hoist");
+    let bytes = grind_text::write_bytes(&doc, Form::Flat).expect("writes");
+    let path = lab.input("hoist.fodt", &bytes);
+    let back = converted(&lab.convert(std::slice::from_ref(&path)), &path);
+
+    assert_eq!(
+        per_character(&back.blocks[0]),
+        vec![CharStyle::default(); doc.blocks[0].len()],
+        "a uniform paragraph came back with nothing on its runs — it went onto the paragraph"
+    );
+    assert_eq!(
+        per_character(&back.blocks[1]),
+        per_character(&doc.blocks[1]),
+        "and a mixed one came back exactly as it went, which is what makes the first a hoist \
+         rather than a loss"
+    );
+}
+
 // --- direction "back": LibreOffice -> ours -> LibreOffice -> ours -------------------------
 
 /// Corpus documents to push back out through the writer.
@@ -908,7 +1101,12 @@ fn libreoffice_documents_survive_our_writer() {
     let mut failures = Vec::new();
     for (original, doc, path) in &staged {
         let label = original.file_name().unwrap().to_str().unwrap();
-        failures.extend(differences(label, doc, &converted(&out, path)));
+        failures.extend(differences(
+            label,
+            doc,
+            &converted(&out, path),
+            Styling::Ignored,
+        ));
     }
 
     for f in failures.iter().take(30) {

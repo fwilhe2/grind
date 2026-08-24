@@ -38,12 +38,14 @@ pub mod action;
 pub mod loc;
 pub mod model;
 pub mod odf;
+pub mod style;
 
 pub use action::Action;
 pub use grind_core::layout::{self, Fixed, Layout, Metrics};
 pub use grind_core::{DocumentKind, Error, Form, Observer, Result, kind};
 pub use loc::{Caret, Loc, Target};
 pub use model::{Block, BlockId, BlockKind, Document, Run};
+pub use style::CharStyle;
 
 use std::ops::Range;
 use std::path::Path;
@@ -138,9 +140,43 @@ pub struct BlockView {
     pub style: Option<String>,
     /// The block's plain text.
     pub text: String,
+    /// The block's content split into runs of uniform formatting, in order — the same pieces
+    /// [`App::layout_block`] measures, so a shell that draws bold text can walk both together.
+    ///
+    /// Present here rather than behind a getter of its own because **reads go through
+    /// `get_viewport`** (`doc/plan.md` rule 1): a shell drawing a paragraph needs its text and
+    /// how that text is formatted at the same moment, and two calls would be two moments.
+    pub runs: Vec<RunView>,
     /// Whether anything about this block is *directly* formatted rather than inherited from
     /// its named style — what `grind text formatting` lists.
     pub styled: bool,
+}
+
+/// One run of uniformly formatted characters, as a reader sees it.
+///
+/// A projection of [`model::Run`] and not the run itself: a tab and a line break are one
+/// character each here, so the offsets a shell counts are the offsets a [`Caret`] counts, and a
+/// bookmark contributes nothing at all because it is a position rather than content.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunView {
+    /// Where this run starts, in characters from the beginning of the block.
+    pub start: usize,
+    /// Its characters. `\t` for a `text:tab` and `\n` for a `text:line-break`.
+    pub text: String,
+    /// The direct character formatting on it.
+    pub props: CharStyle,
+    /// The named character style it carries, which this build does not interpret
+    /// ([`crate::style`]).
+    pub style: Option<String>,
+    /// `xlink:href`, when the run is inside a link.
+    pub href: Option<String>,
+}
+
+impl RunView {
+    /// One past its last character.
+    pub fn end(&self) -> usize {
+        self.start + self.text.chars().count()
+    }
 }
 
 impl Viewport {
@@ -308,6 +344,7 @@ impl App {
                 kind: block.kind.clone(),
                 style: block.style.clone(),
                 text: block.text(),
+                runs: run_views(block),
                 styled: block.is_styled(),
             })
             .collect();
@@ -569,11 +606,7 @@ impl App {
             // losing an anchor because its sentence was rewritten would make `#intro` useless.
             block.runs.retain(|r| matches!(r, Run::Bookmark { .. }));
             if !text.is_empty() {
-                block.runs.push(Run::Text {
-                    text: text.to_owned(),
-                    style: None,
-                    href: None,
-                });
+                block.runs.push(Run::plain(text));
             }
             Self::commit(
                 state,
@@ -610,10 +643,11 @@ impl App {
             let mut block = block_at(state, at.block)?;
             let offset = at.offset.min(block.len());
             let (mut runs, tail) = model::split_runs(&block.runs, offset);
-            let (style, href) = caret_formatting(&runs, &tail);
+            let (style, props, href) = caret_formatting(&runs, &tail);
             runs.push(Run::Text {
                 text: text.to_owned(),
                 style,
+                props,
                 href,
             });
             runs.extend(tail);
@@ -779,11 +813,7 @@ impl App {
             let id = state.doc.next_id();
             let mut block = Block::new(id, kind);
             if !text.is_empty() {
-                block.runs.push(Run::Text {
-                    text: text.to_owned(),
-                    style: None,
-                    href: None,
-                });
+                block.runs.push(Run::plain(text));
             }
             Self::commit(
                 state,
@@ -829,6 +859,81 @@ impl App {
                     block: Box::new(block),
                 },
             )
+        })
+    }
+
+    /// The character formatting over a span — **what a toolbar shows.**
+    ///
+    /// Whatever every character between the two carets agrees about, and nothing else: a range
+    /// that is bold throughout reads as bold, and one that is half bold reads as neither. That
+    /// is what makes a toggle button predictable over a mixed selection, and it is decided here
+    /// rather than in a shell so that three shells cannot decide it three ways.
+    ///
+    /// An **empty** span — the two carets equal, which is what a bare cursor is — reports the
+    /// formatting of the run at the caret, **preferring the one to its left**. The same rule
+    /// [`App::insert_text`] uses to decide what typed text looks like, and necessarily so: the
+    /// toolbar has to show what the next keystroke will produce.
+    pub fn char_style(&self, from: Caret, to: Caret) -> Result<CharStyle> {
+        let state = self.state.read().unwrap();
+        if to < from {
+            return Err(Error::Xml("that range runs backwards".to_owned()));
+        }
+        let mut common: Option<CharStyle> = None;
+        for index in from.block..=to.block {
+            let block = state
+                .doc
+                .block(index)
+                .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
+            let start = (index == from.block).then_some(from.offset).unwrap_or(0);
+            let end = (index == to.block)
+                .then_some(to.offset)
+                .unwrap_or_else(|| block.len());
+            for props in spanned(block, start, end) {
+                common = Some(match common {
+                    Some(so_far) => so_far.common(&props),
+                    None => props,
+                });
+            }
+        }
+        Ok(common.unwrap_or_default())
+    }
+
+    /// Replace the character formatting of every character between two carets — **bold,
+    /// italic, a font, a size.**
+    ///
+    /// **Replaces rather than adds**, which is `grind_sheet::App::set_style`'s contract and is
+    /// what makes a toolbar a read, one field and a write: an empty [`CharStyle`] is "plain
+    /// again". Named character styles are untouched, because they are the document's own
+    /// vocabulary and this method is about direct formatting ([`crate::style`]).
+    ///
+    /// One [`Action::Batch`], so formatting a section is one Ctrl+Z. Returns how many blocks
+    /// changed.
+    pub fn set_char_style(&self, from: Caret, to: Caret, style: &CharStyle) -> Result<usize> {
+        self.mutate(|state| {
+            if to < from {
+                return Err(Error::Xml("that range runs backwards".to_owned()));
+            }
+            let mut batch = Vec::new();
+            for index in from.block..=to.block {
+                let mut block = block_at(state, index)?;
+                let start = (index == from.block).then_some(from.offset).unwrap_or(0);
+                let end = (index == to.block)
+                    .then_some(to.offset)
+                    .unwrap_or_else(|| block.len());
+                let Some(runs) = restyled(&block, start, end, style) else {
+                    continue;
+                };
+                block.runs = runs;
+                batch.push(Action::SetBlock {
+                    index,
+                    block: Box::new(block),
+                });
+            }
+            let changed = batch.len();
+            if changed > 0 {
+                Self::commit(state, Action::Batch(batch))?;
+            }
+            Ok(changed)
         })
     }
 
@@ -1034,11 +1139,13 @@ impl App {
 /// decides; at the front of a block there is nothing before it and the run after decides
 /// instead. A caret next to a tab, a break or a bookmark carries no formatting of its own, so
 /// the search is for the nearest *text* run and stops at the first thing that is not one.
-fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, Option<String>) {
+fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, Option<String>) {
     let neighbour = head.last().or_else(|| tail.first());
     match neighbour {
-        Some(Run::Text { style, href, .. }) => (style.clone(), href.clone()),
-        _ => (None, None),
+        Some(Run::Text {
+            style, props, href, ..
+        }) => (style.clone(), props.clone(), href.clone()),
+        _ => (None, CharStyle::default(), None),
     }
 }
 
@@ -1049,18 +1156,28 @@ fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, Option<Strin
 /// ones the layout reports are the same numbers — a bookmark contributes an empty fragment and
 /// therefore no offset, exactly as it contributes no text.
 ///
-/// **Every run measures with the default character style**, because a `Run`'s style is a *name*
-/// and this build does not read style definitions (`doc/text-core.md`). The seam is right and
-/// the lookup is missing; when definitions arrive, this function resolves them and nothing else
-/// changes.
+/// **Each run measures with its own direct formatting**, projected into the four properties
+/// that change how wide text is (`crate::style::CharStyle::metrics`). So a bold word is
+/// measured bold and the caret lands where the ink does — which only became true when runs
+/// started carrying properties rather than a style *name*, and is the reason they do.
+///
+/// A run carrying only a **named** character style still measures with the default, because
+/// this build does not read style definitions (`doc/text-core.md`). The seam is unchanged: when
+/// definitions arrive, they are resolved into the same `TextStyle` and nothing here moves.
 fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
-    let style = grind_core::style::TextStyle::default();
+    let default = grind_core::style::TextStyle::default();
+    let styles: Vec<grind_core::style::TextStyle> = block
+        .runs
+        .iter()
+        .map(|run| run.props().map(CharStyle::metrics).unwrap_or_default())
+        .collect();
     let mut fragments: Vec<layout::Fragment<'_>> = block
         .runs
         .iter()
-        .map(|run| layout::Fragment {
+        .zip(&styles)
+        .map(|(run, style)| layout::Fragment {
             text: run.text(),
-            style: &style,
+            style,
         })
         .collect();
     // An empty paragraph is still one line tall, and the only way to say how tall that is
@@ -1072,10 +1189,98 @@ fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
     if fragments.is_empty() {
         fragments.push(layout::Fragment {
             text: "",
-            style: &style,
+            style: &default,
         });
     }
     layout::wrap(&fragments, width, metrics)
+}
+
+/// The formatting of every run that `start..end` touches, in order.
+///
+/// An **empty** range reports one formatting rather than none: the run at the caret, preferring
+/// the one to its left, which is [`caret_formatting`]'s rule and has to be the same rule.
+fn spanned(block: &Block, start: usize, end: usize) -> Vec<CharStyle> {
+    if start == end {
+        // Cut where the caret is and ask the same question `insert_text` asks, through the
+        // same primitive — two spellings of "the run at the caret" would eventually disagree,
+        // and the disagreement would be a toolbar lying about the next keystroke.
+        let (head, tail) = model::split_runs(&block.runs, start);
+        let (_, props, _) = caret_formatting(&head, &tail);
+        return vec![props];
+    }
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    for run in &block.runs {
+        let len = run.len();
+        if let Some(props) = run.props()
+            && at < end
+            && at + len > start
+        {
+            out.push(props.clone());
+        }
+        at += len;
+    }
+    out
+}
+
+/// This block's runs with `start..end` restyled, or `None` when that changes nothing.
+///
+/// Built on [`model::split_runs`] twice, which is the same surgery every caret edit is: cut at
+/// both ends, rewrite the middle, put the three back together. A run half inside the span is
+/// split by construction, so a bold word inside a plain sentence is exactly the characters that
+/// were asked for.
+fn restyled(block: &Block, start: usize, end: usize, style: &CharStyle) -> Option<Vec<Run>> {
+    let len = block.len();
+    let (start, end) = (start.min(len), end.min(len));
+    if start >= end {
+        return None;
+    }
+    let (head, rest) = model::split_runs(&block.runs, start);
+    let (mut middle, tail) = model::split_runs(&rest, end - start);
+    if middle
+        .iter()
+        .all(|run| run.props().is_none_or(|props| props == style))
+    {
+        return None;
+    }
+    for run in &mut middle {
+        if let Run::Text { props, .. } = run {
+            *props = style.clone();
+        }
+    }
+    let mut runs = head;
+    runs.extend(middle);
+    runs.extend(tail);
+    model::coalesce(&mut runs);
+    Some(runs)
+}
+
+/// One block's runs, as a reader sees them.
+///
+/// Bookmarks are dropped rather than carried as empty runs: they contribute no characters, and
+/// a shell walking runs alongside a [`Layout`] would otherwise have to know to skip them.
+fn run_views(block: &Block) -> Vec<RunView> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    for run in &block.runs {
+        let len = run.len();
+        if len == 0 {
+            continue;
+        }
+        let (style, href) = match run {
+            Run::Text { style, href, .. } => (style.clone(), href.clone()),
+            _ => (None, None),
+        };
+        out.push(RunView {
+            start,
+            text: run.text().to_owned(),
+            props: run.props().cloned().unwrap_or_default(),
+            style,
+            href,
+        });
+        start += len;
+    }
+    out
 }
 
 /// A clone of one block, or an error naming the address a user typed.

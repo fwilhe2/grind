@@ -106,6 +106,7 @@ mod tests {
         block.runs.push(Run::Text {
             text: text.to_owned(),
             style: None,
+            props: Default::default(),
             href: None,
         });
         block

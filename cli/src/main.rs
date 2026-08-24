@@ -337,6 +337,42 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             )
         }
 
+        TextCommand::Format {
+            file,
+            range,
+            show,
+            bold,
+            italic,
+            underline,
+            strike,
+            font,
+            size,
+            color,
+            background,
+        } => {
+            let app = open_text(file)?;
+            let (from, to) = caret_span(&app, range)?;
+            if *show {
+                let style = app.char_style(from, to).map_err(|e| e.to_string())?;
+                return text_lines(describe_char_style(&style));
+            }
+            let mut style = grind_text::CharStyle {
+                font_family: font.clone(),
+                font_size: size.clone(),
+                color: color.clone(),
+                background: background.clone(),
+                ..grind_text::CharStyle::default()
+            };
+            style.set_bold(*bold);
+            style.set_italic(*italic);
+            style.set_underlined(*underline);
+            style.set_struck(*strike);
+            let changed = app
+                .set_char_style(from, to, &style)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, changed > 0)
+        }
+
         TextCommand::Formatting { file } => {
             let app = open_text(file)?;
             text_lines(
@@ -754,6 +790,45 @@ enum TextCommand {
         /// Only headings whose text or address contains this
         #[arg(long)]
         filter: Option<String>,
+    },
+
+    /// Set how a span of characters looks — bold, italic, a font, a size
+    ///
+    /// The *direct* formatting, which is what a toolbar's B and I buttons write. Replaces
+    /// rather than adds, so `grind text format p3` with no options makes that paragraph plain
+    /// again — and `--show` is how a shell reads the current formatting first, which is what
+    /// makes "bold as well" one command after another. Named character styles are untouched:
+    /// they are the document's own vocabulary and `grind text style` is where they live.
+    Format {
+        file: PathBuf,
+        /// Characters, e.g. p3+12:p3+20 — or a bare address for a whole block
+        range: String,
+        /// Print the formatting of the range instead of setting any
+        #[arg(long, conflicts_with_all = [
+            "bold", "italic", "underline", "strike", "font", "size", "color", "background",
+        ])]
+        show: bool,
+        #[arg(long)]
+        bold: bool,
+        #[arg(long)]
+        italic: bool,
+        #[arg(long)]
+        underline: bool,
+        /// Strike the text through
+        #[arg(long)]
+        strike: bool,
+        /// Font family, e.g. Georgia
+        #[arg(long, value_name = "FAMILY")]
+        font: Option<String>,
+        /// Font size, e.g. 14pt
+        #[arg(long)]
+        size: Option<String>,
+        /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
+        #[arg(long, value_parser = color)]
+        color: Option<String>,
+        /// Highlight behind the text: a palette name, #rrggbb, or "transparent"
+        #[arg(long, value_parser = color)]
+        background: Option<String>,
     },
 
     /// Print every block carrying a style of its own
@@ -2108,6 +2183,29 @@ fn single(app: &App, address: &str) -> Result<(usize, Pos, Pos), String> {
 /// One cell rather than a rectangle, because the answer for a rectangle is either "they
 /// agree" or a list, and a caller that wants the list already has `sheet view`. It reads and
 /// writes nothing, so no `finish` and no `stale` warning.
+/// `grind text format --show`, as lines: one `property<TAB>value` per property that is set,
+/// and nothing at all for a plain span.
+///
+/// The values are ODF's own, unchanged — `bold`, `12pt`, `#001f3f` — because that is what the
+/// model carries and re-spelling them here would invent a second vocabulary for a shell to
+/// parse. Properties the span does not agree about are absent, which is the same answer a
+/// toolbar shows over a mixed selection (`grind_text::App::char_style`).
+fn describe_char_style(style: &grind_text::CharStyle) -> Vec<String> {
+    [
+        ("font", &style.font_family),
+        ("size", &style.font_size),
+        ("weight", &style.font_weight),
+        ("style", &style.font_style),
+        ("underline", &style.underline),
+        ("strike", &style.line_through),
+        ("color", &style.color),
+        ("background", &style.background),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.as_ref().map(|value| format!("{name}\t{value}")))
+    .collect()
+}
+
 fn shown(
     app: &App,
     file: &Path,

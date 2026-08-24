@@ -28,11 +28,12 @@
 use std::fmt::Write as _;
 
 use grind_core::Result;
-use grind_core::odf::names::{OFFICE, TEXT, XLINK};
+use grind_core::odf::names::{FO, OFFICE, STYLE, TEXT, XLINK};
 use grind_core::odf::package::{VERSION, write_package};
 use grind_core::odf::xml::esc;
 
 use crate::model::{Block, BlockKind, Document, Run};
+use crate::style::CharStyle;
 
 pub use grind_core::Form;
 
@@ -68,6 +69,10 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     if doc.edits.structural {
         return None;
     }
+    // Every character style the document now needs, under the name this *file* gives it. A
+    // formatting the file has no name for cannot be spliced, because the declaration would have
+    // to go somewhere these patches do not reach.
+    let pool = Pool::spliced(doc, source)?;
 
     // Which elements have to be rewritten. Every edited block must sit in one the file
     // actually spelled — one that does not means regenerating, because a document half in its
@@ -81,7 +86,7 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         let mut out = String::new();
         // No indentation: the bytes before the element are still the file's own, so the
         // element goes back exactly where it started.
-        paragraph(&mut out, block, String::new(), &at.keep);
+        paragraph(&mut out, block, String::new(), &at.keep, &pool);
         patches.push((at.range.clone(), out.trim_end().to_owned()));
     }
     // An edited block whose id the source knows but which no longer appears — a `SetBlock` that
@@ -118,18 +123,95 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
 /// Which namespaces a document's content actually needs (§1.4).
 struct Used {
     xlink: bool,
+    /// `style:` and `fo:`, which arrive together: the only thing this writer puts in either is
+    /// a `style:style` full of `fo:` properties, so one flag covers both.
+    styles: bool,
 }
 
 impl Used {
-    fn of(doc: &Document) -> Self {
+    fn of(doc: &Document, pool: &Pool) -> Self {
         Used {
             xlink: doc.blocks.iter().any(|b| {
                 b.runs
                     .iter()
                     .any(|r| matches!(r, Run::Text { href: Some(_), .. }))
             }),
+            styles: !pool.is_empty(),
         }
     }
+}
+
+/// The character styles a document's runs need, each under the name it will be written with.
+///
+/// ODF has no way to put formatting on a run directly: `fo:font-weight` lives on a
+/// `style:style`, and a `text:span` refers to it by name. So writing direct formatting means
+/// **inventing names**, and this is where they are invented — `grind_sheet::odf::write`'s cell
+/// style pool, for prose, and pooling for the same reason: two runs that are bold in the same
+/// way must share one declaration, or a document of a thousand bold words carries a thousand
+/// identical styles.
+///
+/// A style here **never inherits**. A run that also carries a named style gets a span for the
+/// name wrapped around the span for the formatting, rather than an automatic style whose parent
+/// is the name — see [`crate::odf::source::Source::style_named`] for what that keeps true.
+#[derive(Default)]
+struct Pool {
+    /// Formatting to the name it is written under, in the order names were handed out.
+    entries: Vec<(CharStyle, String)>,
+}
+
+impl Pool {
+    /// Every distinct formatting in the document, named `T1`, `T2`, … in the order it first
+    /// appears — so that saving one document twice produces the same bytes.
+    fn of(doc: &Document) -> Self {
+        let mut pool = Pool::default();
+        for props in props_of(doc) {
+            if pool.name(props).is_none() {
+                let name = format!("T{}", pool.entries.len() + 1);
+                pool.entries.push((props.clone(), name));
+            }
+        }
+        pool
+    }
+
+    /// The same pool built entirely out of names `source` already declares — `None` when the
+    /// document needs a formatting the file has no name for, which is a regenerate.
+    ///
+    /// Splicing replaces block elements and nothing else, so a name it refers to has to already
+    /// be in the bytes around them. Rather than splicing a second site inside
+    /// `office:automatic-styles` — a *second* fragile offset, for an edit that is rare — the
+    /// writer takes the honest fallback the spreadsheet takes for a cell style the file has no
+    /// entry for.
+    fn spliced(doc: &Document, source: &super::source::Source) -> Option<Self> {
+        let mut pool = Pool::default();
+        for props in props_of(doc) {
+            if pool.name(props).is_some() {
+                continue;
+            }
+            let name = source.style_named(props)?;
+            pool.entries.push((props.clone(), name.to_owned()));
+        }
+        Some(pool)
+    }
+
+    fn name(&self, props: &CharStyle) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|(style, _)| style == props)
+            .map(|(_, name)| name.as_str())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+/// Every non-plain run formatting in the document, in document order.
+fn props_of(doc: &Document) -> impl Iterator<Item = &CharStyle> {
+    doc.blocks
+        .iter()
+        .flat_map(|block| block.runs.iter())
+        .filter_map(Run::props)
+        .filter(|props| !props.is_plain())
 }
 
 /// The `content.xml` payload, which in the flat form is the whole document.
@@ -138,7 +220,8 @@ fn content(doc: &Document, form: Form) -> String {
         Form::Flat => "office:document",
         Form::Package => "office:document-content",
     };
-    let used = Used::of(doc);
+    let pool = Pool::of(doc);
+    let used = Used::of(doc, &pool);
 
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     let _ = write!(
@@ -149,20 +232,46 @@ fn content(doc: &Document, form: Form) -> String {
     if used.xlink {
         let _ = write!(out, " xmlns:xlink=\"{XLINK}\"");
     }
+    // `style:` and `fo:` only in one that formats something.
+    if used.styles {
+        let _ = write!(out, " xmlns:style=\"{STYLE}\" xmlns:fo=\"{FO}\"");
+    }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
     }
     out.push_str(">\n");
+    automatic_styles(&mut out, &pool);
     out.push_str(" <office:body>\n  <office:text>\n");
-    body(&mut out, doc);
+    body(&mut out, doc, &pool);
     out.push_str("  </office:text>\n </office:body>\n");
     let _ = writeln!(out, "</{root}>");
     out
 }
 
+/// The `office:automatic-styles` block — one `style:style` per distinct run formatting.
+///
+/// Ahead of `office:body`, which the schema requires and a single-pass reader depends on: a
+/// span refers to a name, and the name has to be declared by the time it does.
+fn automatic_styles(out: &mut String, pool: &Pool) {
+    if pool.is_empty() {
+        return;
+    }
+    out.push_str(" <office:automatic-styles>\n");
+    for (props, name) in &pool.entries {
+        let _ = writeln!(
+            out,
+            "  <style:style style:name=\"{}\" style:family=\"text\">",
+            esc(name)
+        );
+        let _ = writeln!(out, "   <style:text-properties{}/>", props.attributes());
+        out.push_str("  </style:style>\n");
+    }
+    out.push_str(" </office:automatic-styles>\n");
+}
+
 /// The blocks, with `text:list` nesting folded back in from their depths.
-fn body(out: &mut String, doc: &Document) {
+fn body(out: &mut String, doc: &Document, pool: &Pool) {
     // How many `text:list` elements are currently open. The model is flat and the file is
     // not, so this counter *is* the reconstruction: a depth rise opens elements, a fall closes
     // them, and the end of the document closes whatever is left.
@@ -192,7 +301,7 @@ fn body(out: &mut String, doc: &Document) {
             let _ = writeln!(out, "{}<text:list-item>", indent(open + 2));
         }
 
-        paragraph(out, block, indent(open + 3), "");
+        paragraph(out, block, indent(open + 3), "", pool);
     }
 
     while open > 0 {
@@ -218,7 +327,7 @@ fn indent(depth: u32) -> String {
 /// the file said that the model does not carry (`text:class-names`, `xml:id`, a vendor's own),
 /// put back verbatim so that replacing an element does not quietly drop half of it. Empty when
 /// regenerating, because then there is no original to keep anything from.
-fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str) {
+fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str, pool: &Pool) {
     let (tag, extra) = match block.kind {
         BlockKind::Heading { level } => ("text:h", format!(" text:outline-level=\"{level}\"")),
         _ => ("text:p", String::new()),
@@ -235,24 +344,41 @@ fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str) {
     }
     let _ = write!(out, "{indent}<{tag}{style}{extra}{keep}>");
     for run in &block.runs {
-        self::run(out, run);
+        self::run(out, run, pool);
     }
     let _ = writeln!(out, "</{tag}>");
 }
 
-fn run(out: &mut String, run: &Run) {
+fn run(out: &mut String, run: &Run, pool: &Pool) {
     match run {
-        Run::Text { text, style, href } => {
-            // A hyperlink wraps its text; a span wraps it inside that. Reading composed the
-            // style names into one string, so writing emits one span — see
+        Run::Text {
+            text,
+            style,
+            props,
+            href,
+        } => {
+            // Three nested wrappers, outermost first: the link, the document's own style name,
+            // and this build's generated one for the direct formatting. Reading composed the
+            // style names into one string, so writing emits one span for them — see
             // `doc/text-core.md`'s flattening decision, and what it costs.
+            //
+            // The generated span goes *inside* the named one rather than inheriting from it,
+            // which is what keeps a round trip from composing a name into itself
+            // (`crate::odf::source::Source::style_named`).
             if let Some(href) = href {
                 let _ = write!(out, "<text:a xlink:href=\"{}\">", esc(href));
             }
             if let Some(style) = style {
                 let _ = write!(out, "<text:span text:style-name=\"{}\">", esc(style));
             }
+            let direct = pool.name(props);
+            if let Some(name) = direct {
+                let _ = write!(out, "<text:span text:style-name=\"{}\">", esc(name));
+            }
             characters(out, text);
+            if direct.is_some() {
+                out.push_str("</text:span>");
+            }
             if style.is_some() {
                 out.push_str("</text:span>");
             }
