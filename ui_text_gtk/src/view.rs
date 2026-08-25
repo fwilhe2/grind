@@ -1270,18 +1270,70 @@ mod tests {
     use grind_text::BlockKind;
     use imp::{caption_height, image_size, picture_of, texture_of};
 
-    /// A widget with a document in it and a size to lay it out at — **or `None` where there
-    /// is no display**, which is where CI runs (`.github/workflows/gtk.yml` installs the GTK
-    /// packages and no compositor, on purpose).
+    /// **Every case that needs a widget, in one test, on one thread — on purpose.**
     ///
-    /// Everything decidable without a display is in `geom.rs` and `keymap.rs` and is tested
-    /// unconditionally. What needs one is the part that asks Pango to measure, so this skips
-    /// with a notice rather than pretending — the same rule the corpus loops follow.
-    fn shell(paragraphs: &[&str]) -> Option<(Doc, Arc<App>)> {
+    /// GTK may be initialised exactly once, and only ever used from the thread that did it.
+    /// Rust's test harness gives every `#[test]` a thread of its own — *even at
+    /// `--test-threads=1`* — so seven `#[test]`s over a widget is one that runs and six that
+    /// panic with "Attempted to initialize GTK from two different threads". That is a property
+    /// of the harness rather than of anything here, and it is what turned the `gtk` CI job red.
+    ///
+    /// So the cases below are ordinary functions and this is their only entry point. Each
+    /// names itself as it starts, because a panic inside one would otherwise only say which
+    /// *test* failed, and there is now exactly one.
+    ///
+    /// **Where there is no display it skips**, which is where CI runs
+    /// (`.github/workflows/gtk.yml` installs the GTK packages and no compositor, on purpose).
+    /// Everything decidable without a display is in `geom.rs`, `keymap.rs` and `imp`'s own
+    /// tests, and runs unconditionally.
+    #[test]
+    fn the_widget() {
         if gtk::init().is_err() {
-            eprintln!("no display — skipping the widget tests");
-            return None;
+            eprintln!("no display — skipping the widget cases");
+            return;
         }
+        for (name, case) in CASES {
+            eprintln!("  widget case: {name}");
+            case();
+        }
+    }
+
+    /// The cases, in the order they run. A new one is added here and nowhere else — a
+    /// function with `#[test]` on it would be a second thread and would take GTK down with it.
+    const CASES: &[(&str, fn())] = &[
+        (
+            "typing, Enter and Backspace reach the document",
+            typing_enter_and_backspace_reach_the_document,
+        ),
+        (
+            "Shift extends a selection and typing replaces it",
+            shift_extends_a_selection_and_typing_replaces_it,
+        ),
+        (
+            "dragging the mouse selects text",
+            dragging_the_mouse_selects_text,
+        ),
+        (
+            "a Title style is drawn in a larger face than the body",
+            a_title_style_is_drawn_in_a_larger_face_than_the_body,
+        ),
+        (
+            "a picture with a caption reserves room for both",
+            a_picture_with_a_caption_reserves_room_for_both,
+        ),
+        (
+            "a block that is only an image is sized from the picture",
+            a_block_that_is_only_an_image_is_sized_from_the_picture_not_a_line_of_text,
+        ),
+        (
+            "Down moves by a wrapped line, not by a block",
+            down_moves_by_a_wrapped_line_not_by_a_block,
+        ),
+    ];
+
+    /// A widget with a document in it and a size to lay it out at. Only ever called from
+    /// [`the_widget`], which has already decided there is a display to build one on.
+    fn shell(paragraphs: &[&str]) -> (Doc, Arc<App>) {
         let app = Arc::new(App::new());
         for (index, text) in paragraphs.iter().enumerate() {
             app.insert(index, BlockKind::Paragraph, text)
@@ -1291,7 +1343,7 @@ mod tests {
         // Unparented widgets have no size, and a caret motion measured at a width of zero
         // wraps every paragraph one character to the line.
         doc.allocate(600, 400, -1, None);
-        Some((doc, app))
+        (doc, app)
     }
 
     fn text(app: &App) -> String {
@@ -1305,11 +1357,8 @@ mod tests {
     /// The shell's whole editing surface, driven the way the input method and the key
     /// controller drive it. What this proves is the wiring: every one of these is a core
     /// call, and getting the caret wrong afterwards is this file's own bug.
-    #[test]
     fn typing_enter_and_backspace_reach_the_document() {
-        let Some((doc, app)) = shell(&["hello world"]) else {
-            return;
-        };
+        let (doc, app) = shell(&["hello world"]);
         let imp = doc.imp();
         imp.move_caret(
             Caret {
@@ -1348,11 +1397,8 @@ mod tests {
     /// Shift+arrow grows a selection from wherever the caret started, and typing over one
     /// replaces it — the two behaviours every other editor's Shift key has, neither of which
     /// existed before this file grew an anchor.
-    #[test]
     fn shift_extends_a_selection_and_typing_replaces_it() {
-        let Some((doc, app)) = shell(&["hello world"]) else {
-            return;
-        };
+        let (doc, app) = shell(&["hello world"]);
         let imp = doc.imp();
         imp.move_caret(
             Caret {
@@ -1407,11 +1453,8 @@ mod tests {
     /// A mouse selects by dragging: the press plants the anchor, and the drag's own updates
     /// move the caret without disturbing it — the two halves `GestureDrag` was wired to
     /// drive, exercised here without one.
-    #[test]
     fn dragging_the_mouse_selects_text() {
-        let Some((doc, _app)) = shell(&["hello world"]) else {
-            return;
-        };
+        let (doc, _app) = shell(&["hello world"]);
         let imp = doc.imp();
         let (layout, _, _) = imp.measured(0).expect("the block lays out");
         let flow = imp.flow(f64::from(doc.width()));
@@ -1456,11 +1499,8 @@ mod tests {
     /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes
     /// a heading bigger than the body, keyed off the block's *name* instead of its kind
     /// because `Title` is `BlockKind::Paragraph` with nothing else to tell it apart.
-    #[test]
     fn a_title_style_is_drawn_in_a_larger_face_than_the_body() {
-        let Some((doc, app)) = shell(&["Report", "body text"]) else {
-            return;
-        };
+        let (doc, app) = shell(&["Report", "body text"]);
         app.set_style(0..1, Some("Title".to_owned()))
             .expect("sets the style");
         let imp = doc.imp();
@@ -1487,11 +1527,8 @@ mod tests {
     /// the flow reserving room under it for the caption, wrapped to the column. This is the
     /// real shape `doc/odt-format.md`'s "An inserted image is a frame inside a frame" reads,
     /// and the bug this pins is the caption vanishing rather than the picture.
-    #[test]
     fn a_picture_with_a_caption_reserves_room_for_both() {
-        let Some((doc, app)) = shell(&[""]) else {
-            return;
-        };
+        let (doc, app) = shell(&[""]);
         app.insert_image(
             Caret {
                 block: 0,
@@ -1535,11 +1572,8 @@ mod tests {
 
     /// A block that is only an image is drawn as one — decoded, scaled to fit the column, and
     /// tall enough in the flow that nothing after it overlaps.
-    #[test]
     fn a_block_that_is_only_an_image_is_sized_from_the_picture_not_a_line_of_text() {
-        let Some((doc, app)) = shell(&[""]) else {
-            return;
-        };
+        let (doc, app) = shell(&[""]);
         app.insert_image(
             Caret {
                 block: 0,
@@ -1586,13 +1620,10 @@ mod tests {
     /// The test S9 exists for, and the GTK half of `doc/text-layout.md`'s payoff: Down is
     /// not "the next block", it is the next *line*, and the answer comes from the core —
     /// measured in pixels through Pango here and in cells in the terminal.
-    #[test]
     fn down_moves_by_a_wrapped_line_not_by_a_block() {
         let long = "the cat sat on the mat and then it slept for a very long time indeed \
                     while the rain kept on falling outside the window all afternoon";
-        let Some((doc, app)) = shell(&[long, "after"]) else {
-            return;
-        };
+        let (doc, app) = shell(&[long, "after"]);
         let imp = doc.imp();
         let (layout, faces, kind) = imp.measured(0).expect("the block lays out");
         assert!(
