@@ -113,7 +113,7 @@ impl Doc {
 mod imp {
     use super::*;
 
-    use grind_core::layout::Layout;
+    use grind_core::layout::{Layout, Line};
     use grind_text::{BlockKind, loc};
     use gtk::graphene;
     use gtk::pango;
@@ -423,20 +423,17 @@ mod imp {
                         text.len()
                     };
                     for line in layout.lines() {
-                        let from_x = start.max(line.start);
-                        let to_x = end.min(line.end);
-                        if from_x >= to_x {
-                            continue;
+                        if let Some((left, width)) = selection_span(&layout, line, start, end) {
+                            snapshot.append_color(
+                                &palette.selection,
+                                &rect(
+                                    x + f64::from(left),
+                                    y + f64::from(line.top),
+                                    f64::from(width),
+                                    f64::from(line.height),
+                                ),
+                            );
                         }
-                        snapshot.append_color(
-                            &palette.selection,
-                            &rect(
-                                x + f64::from(layout.x_at(from_x)),
-                                y + f64::from(line.top),
-                                f64::from(layout.x_at(to_x) - layout.x_at(from_x)),
-                                f64::from(line.height),
-                            ),
-                        );
                     }
                 }
 
@@ -983,6 +980,36 @@ mod imp {
         }
     }
 
+    /// The highlighted band's left edge and width for one line of a selection spanning
+    /// `start..end` (both block-relative character offsets), or `None` where the line has
+    /// nothing selected on it.
+    ///
+    /// `Layout::x_at` resolves an offset sitting exactly at a soft break to **the next
+    /// line's** start (`grind_core::layout::Line::line_at`'s own doc comment) — the right
+    /// convention for a caret walking off a wrapped line, and the wrong one for *this* line's
+    /// own right edge: asking it for `line.end` on every line but the last would silently
+    /// hand back 0, collapsing every one of them to a zero-width band. `Line::width` is that
+    /// same distance with no such ambiguity, so it stands in whenever the selection reaches
+    /// all the way to this line's own end.
+    fn selection_span(
+        layout: &Layout,
+        line: &Line,
+        start: usize,
+        end: usize,
+    ) -> Option<(f32, f32)> {
+        let from_x = start.max(line.start);
+        let to_x = end.min(line.end);
+        if from_x >= to_x {
+            return None;
+        }
+        let left = layout.x_at(from_x);
+        let right = match to_x == line.end {
+            true => line.width,
+            false => layout.x_at(to_x),
+        };
+        Some((left, right - left))
+    }
+
     /// How far a block's text is indented — a list's nesting, and nothing else.
     fn indent_of(kind: &BlockKind) -> f64 {
         match kind {
@@ -1081,6 +1108,37 @@ mod imp {
                 line_at_y(&layout, 500.0),
                 layout.lines().len() - 1,
                 "below it"
+            );
+        }
+
+        /// The bug a screenshot found: a selection spanning a soft line break (a `text:tab`
+        /// and `text:line-break` inside one paragraph both force one — `p12` typed as
+        /// `printf 'name\tvalue\nsecond line'` is exactly this) drew every line but the
+        /// selection's *last* as a zero-width band, because `Layout::x_at(line.end)`
+        /// resolves that boundary offset to the **next** line rather than this one's own
+        /// right edge.
+        #[test]
+        fn a_selection_ending_at_a_soft_break_still_highlights_that_lines_own_width() {
+            let style = TextStyle::default();
+            let layout = wrap(
+                &[Fragment {
+                    text: "name\tvalue\nsecond line",
+                    style: &style,
+                }],
+                1000.0,
+                &Fixed,
+            );
+            assert_eq!(
+                layout.lines().len(),
+                2,
+                "the line break forces a second visual line"
+            );
+            let first = &layout.lines()[0];
+            let (_, width) = selection_span(&layout, first, 0, layout.len())
+                .expect("the whole block, including its first line, is selected");
+            assert!(
+                width > 0.0,
+                "the first line's own highlight must not collapse to zero"
             );
         }
 
