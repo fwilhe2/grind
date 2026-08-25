@@ -36,7 +36,7 @@ pub enum Motion {
     SheetEnd,
 }
 
-/// What a Normal-mode key asks the shell to do.
+/// What a Normal- or Visual-mode key asks the shell to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Move(Motion),
@@ -44,19 +44,47 @@ pub enum Action {
     Insert,
     /// `c` — start editing from empty.
     Change,
-    /// `x` — empty the cell, the typing rule's own "empty input clears it" (`App::enter`).
+    /// `x` — empty the cell, or the whole selection in Visual mode: the typing rule's own
+    /// "empty input clears it" (`App::enter`), over a rectangle.
     Clear,
     Undo,
     Redo,
     /// `:` — open the command line.
     Command,
+    /// `v` — start selecting a rectangle, or stop. The terminal's answer to dragging one out,
+    /// and what every verb over a *range* needs before it can exist.
+    Visual,
+    /// `y` — copy the selection into the register as tab-separated text; `p` puts it back.
+    Yank,
+    Put,
+    /// A marker key over the selection: `*` bold, `/` italic — **the same two keys the word
+    /// processor's Visual mode uses** (`crate::text::keymap`), because one suite should not
+    /// have two vocabularies for emphasis.
+    Bold,
+    Italic,
+    /// `-` — back to no styling at all.
+    Plain,
+    /// `Esc` — leave Visual mode, changing nothing.
+    Escape,
 }
 
 /// The key map. One table, no state — `None` means the shell does not claim the key.
-pub fn normal_action(code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+///
+/// `visual` says whether a rectangle is being dragged out, and changes only what the keys that
+/// need a range mean.
+pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<Action> {
     let ctrl = mods.contains(KeyModifiers::CONTROL);
     let by = |dir| Some(Action::Move(Motion::By(dir)));
     match code {
+        KeyCode::Char('v') => Some(Action::Visual),
+        KeyCode::Esc => Some(Action::Escape),
+        KeyCode::Char('y') => Some(Action::Yank),
+        KeyCode::Char('p') => Some(Action::Put),
+        // Formatting only binds once there is something to format, so `*` and `-` stay
+        // available to whatever wants them next.
+        KeyCode::Char('*') if visual => Some(Action::Bold),
+        KeyCode::Char('/') if visual => Some(Action::Italic),
+        KeyCode::Char('-') if visual => Some(Action::Plain),
         KeyCode::Char('h') | KeyCode::Left => by(Dir::Left),
         KeyCode::Char('l') | KeyCode::Right => by(Dir::Right),
         KeyCode::Char('k') | KeyCode::Up => by(Dir::Up),
@@ -69,7 +97,7 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers) -> Option<Action> {
         KeyCode::Char('$') | KeyCode::End => Some(Action::Move(Motion::RowEnd)),
         KeyCode::Char('g') => Some(Action::Move(Motion::SheetStart)),
         KeyCode::Char('G') => Some(Action::Move(Motion::SheetEnd)),
-        KeyCode::Char('x') => Some(Action::Clear),
+        KeyCode::Char('x') | KeyCode::Char('d') => Some(Action::Clear),
         KeyCode::Char('i') | KeyCode::Char('a') => Some(Action::Insert),
         KeyCode::Char('c') => Some(Action::Change),
         KeyCode::Char('u') => Some(Action::Undo),
@@ -117,41 +145,47 @@ mod tests {
             ('j', KeyCode::Down, Dir::Down),
         ] {
             let want = Some(Action::Move(Motion::By(dir)));
-            assert_eq!(normal_action(KeyCode::Char(ch), KeyModifiers::NONE), want);
-            assert_eq!(normal_action(arrow, KeyModifiers::NONE), want);
+            assert_eq!(
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, false),
+                want
+            );
+            assert_eq!(normal_action(arrow, KeyModifiers::NONE, false), want);
         }
     }
 
     #[test]
     fn ctrl_f_and_b_page_like_vi() {
         assert_eq!(
-            normal_action(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            normal_action(KeyCode::Char('f'), KeyModifiers::CONTROL, false),
             Some(Action::Move(Motion::Page(Dir::Down)))
         );
         assert_eq!(
-            normal_action(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            normal_action(KeyCode::Char('b'), KeyModifiers::CONTROL, false),
             Some(Action::Move(Motion::Page(Dir::Up)))
         );
         // Unmodified 'f'/'b' are not bound to anything.
-        assert_eq!(normal_action(KeyCode::Char('f'), KeyModifiers::NONE), None);
+        assert_eq!(
+            normal_action(KeyCode::Char('f'), KeyModifiers::NONE, false),
+            None
+        );
     }
 
     #[test]
     fn insert_change_and_clear() {
         assert_eq!(
-            normal_action(KeyCode::Char('i'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('i'), KeyModifiers::NONE, false),
             Some(Action::Insert)
         );
         assert_eq!(
-            normal_action(KeyCode::Char('a'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('a'), KeyModifiers::NONE, false),
             Some(Action::Insert)
         );
         assert_eq!(
-            normal_action(KeyCode::Char('c'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('c'), KeyModifiers::NONE, false),
             Some(Action::Change)
         );
         assert_eq!(
-            normal_action(KeyCode::Char('x'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('x'), KeyModifiers::NONE, false),
             Some(Action::Clear)
         );
     }
@@ -159,15 +193,15 @@ mod tests {
     #[test]
     fn undo_redo_and_command_line() {
         assert_eq!(
-            normal_action(KeyCode::Char('u'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('u'), KeyModifiers::NONE, false),
             Some(Action::Undo)
         );
         assert_eq!(
-            normal_action(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            normal_action(KeyCode::Char('r'), KeyModifiers::CONTROL, false),
             Some(Action::Redo)
         );
         assert_eq!(
-            normal_action(KeyCode::Char(':'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char(':'), KeyModifiers::NONE, false),
             Some(Action::Command)
         );
     }
@@ -225,6 +259,38 @@ mod tests {
         let extent = (0, 0);
         for motion in [Motion::SheetEnd, Motion::RowEnd] {
             assert_eq!(moved(Pos::new(0, 0), motion, extent, 1), Pos::new(0, 0));
+        }
+    }
+
+    /// The keys a *range* needs, and the rule that keeps them out of the way until there is
+    /// one — the same rule the word processor's map follows, on the same two markers.
+    #[test]
+    fn the_formatting_keys_only_bind_once_something_is_selected() {
+        for (ch, action) in [
+            ('*', Action::Bold),
+            ('/', Action::Italic),
+            ('-', Action::Plain),
+        ] {
+            assert_eq!(
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, true),
+                Some(action),
+                "{ch}"
+            );
+            assert_eq!(
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, false),
+                None,
+                "{ch} means nothing without a selection"
+            );
+        }
+        for visual in [false, true] {
+            assert_eq!(
+                normal_action(KeyCode::Char('v'), KeyModifiers::NONE, visual),
+                Some(Action::Visual)
+            );
+            assert_eq!(
+                normal_action(KeyCode::Char('y'), KeyModifiers::NONE, visual),
+                Some(Action::Yank)
+            );
         }
     }
 }

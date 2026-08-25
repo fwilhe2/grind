@@ -50,18 +50,32 @@ Normal mode, both types (vi-style):
   Ctrl+f / Ctrl+b    page down / up
   0 / $              start / end of the line
   g / G              start / end of the document
+  v                  select — Visual mode, a rectangle or a run of text
+  y / p              yank the selection / put it back
   u / Ctrl+r         undo / redo
   :                  command line
 
+Visual mode — one notation for emphasis, whichever document it is:
+  *  bold       /  italic       -  no formatting
+  ~  strikethrough      _  underline        (the word processor only)
+  d / x  delete or clear what is selected   Esc  stop selecting
+
 Spreadsheet:
-  i, a  edit the cell   c  edit from empty   x  clear the cell
-  :w [file]  :q  :q!  :wq / :x  :recalc  :sheet <name>  :<address>
+  i, a  edit the cell   c  edit from empty   x  clear the cell or selection
+  :bold  :italic  :wrap  :border  :plain
+  :align l|c|r   :color <name|#rrggbb>   :fill <name|#rrggbb>
+  :format general|int|number [n]|percent|currency|date|time|datetime   :general
+  :sheet <name>  :sheet-new  :sheet-rename <name>  :sheet-delete
+  :w [file]  :q  :q!  :wq / :x  :recalc  :<address>
 
 Word processor:
   i  type here   a  type after   o  new paragraph below
   x  erase a character   X  delete the block   J  join with the next
-  :w [file]  :q  :q!  :wq / :x  :outline  :words  :h <level>  :style [name]
-  :<address>  — p12, p12+40, #bookmark or \u{a7}2.1.3
+  Markdown as you type: **bold**  *italic*  __underline__  ~~struck~~
+                        '# ' a heading (to '###### '), '- ' a list item
+  :color <name>  :highlight <name>  :plain  :h <level>  :li [depth]  :style [name]
+  :find <text>   :s/old/new/   :outline  :words
+  :w [file]  :q  :q!  :wq / :x  :<address>  — p12, p12+40, #bookmark or \u{a7}2.1.3
 ";
 
 fn main() -> ExitCode {

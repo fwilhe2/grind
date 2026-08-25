@@ -32,7 +32,7 @@ pub enum Motion {
     DocEnd,
 }
 
-/// What a Normal-mode key asks the shell to do.
+/// What a Normal- or Visual-mode key asks the shell to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Move(Motion),
@@ -41,7 +41,7 @@ pub enum Action {
     Append,
     /// `o` — a new paragraph below this block, and start typing in it.
     OpenBelow,
-    /// `x` — erase the character at the caret.
+    /// `x` — erase the character at the caret, or the selection in Visual mode.
     EraseChar,
     /// `X` — delete the whole block.
     DeleteBlock,
@@ -51,10 +51,32 @@ pub enum Action {
     Redo,
     /// `:` — open the command line.
     Command,
+    /// `v` — start selecting, or stop. The terminal's answer to Shift+arrow, and what every
+    /// verb over a *range* needs before it can exist.
+    Visual,
+    /// `y` — copy the selection into the register; `p` puts it back.
+    Yank,
+    Put,
+    /// A marker key over a selection: `*` bold, `_` underline, `~` strikethrough, `/` italic.
+    ///
+    /// **The same notation `markdown.rs` recognises while typing**, on one key — a terminal has
+    /// no toolbar, so the toolbar's vocabulary is the notation. (`/` rather than a lone `*`
+    /// for italic: one asterisk is bold's own key here, and doubling a keystroke to mean
+    /// *less* emphasis reads backwards.)
+    Emphasise(crate::text::markdown::Emphasis),
+    /// `-` over a selection: back to no formatting at all.
+    Plain,
+    /// `Esc` — leave Visual mode without doing anything to what was selected.
+    Escape,
 }
 
 /// The key map. One table, no state — `None` means the shell does not claim the key.
-pub fn normal_action(code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+///
+/// `visual` says whether a selection is being dragged out, and changes only what the keys that
+/// need a range mean: everything else is the same key in both modes, which is what makes
+/// Visual feel like Normal with a highlight rather than like a different editor.
+pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<Action> {
+    use crate::text::markdown::Emphasis;
     let ctrl = mods.contains(KeyModifiers::CONTROL);
     let go = |motion| Some(Action::Move(motion));
     match code {
@@ -70,10 +92,21 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers) -> Option<Action> {
         KeyCode::Char('$') | KeyCode::End => go(Motion::LineEnd),
         KeyCode::Char('g') => go(Motion::DocStart),
         KeyCode::Char('G') => go(Motion::DocEnd),
+        KeyCode::Char('v') => Some(Action::Visual),
+        KeyCode::Esc => Some(Action::Escape),
+        // The formatting keys only mean formatting when there is something to format;
+        // otherwise `*` and `-` are ordinary characters nobody has claimed in Normal mode.
+        KeyCode::Char('*') if visual => Some(Action::Emphasise(Emphasis::Bold)),
+        KeyCode::Char('/') if visual => Some(Action::Emphasise(Emphasis::Italic)),
+        KeyCode::Char('_') if visual => Some(Action::Emphasise(Emphasis::Underline)),
+        KeyCode::Char('~') if visual => Some(Action::Emphasise(Emphasis::Strike)),
+        KeyCode::Char('-') if visual => Some(Action::Plain),
+        KeyCode::Char('y') => Some(Action::Yank),
+        KeyCode::Char('p') => Some(Action::Put),
         KeyCode::Char('i') => Some(Action::Insert),
         KeyCode::Char('a') => Some(Action::Append),
         KeyCode::Char('o') => Some(Action::OpenBelow),
-        KeyCode::Char('x') => Some(Action::EraseChar),
+        KeyCode::Char('x') | KeyCode::Char('d') => Some(Action::EraseChar),
         KeyCode::Char('X') => Some(Action::DeleteBlock),
         KeyCode::Char('J') => Some(Action::Join),
         KeyCode::Char('u') => Some(Action::Undo),
@@ -103,8 +136,11 @@ mod tests {
             ('j', KeyCode::Down, Motion::Line(1)),
         ] {
             let want = Some(Action::Move(motion));
-            assert_eq!(normal_action(KeyCode::Char(ch), KeyModifiers::NONE), want);
-            assert_eq!(normal_action(arrow, KeyModifiers::NONE), want);
+            assert_eq!(
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, false),
+                want
+            );
+            assert_eq!(normal_action(arrow, KeyModifiers::NONE, false), want);
         }
     }
 
@@ -114,11 +150,11 @@ mod tests {
     #[test]
     fn vertical_is_lines_and_horizontal_is_characters() {
         assert_eq!(
-            normal_action(KeyCode::Char('j'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('j'), KeyModifiers::NONE, false),
             Some(Action::Move(Motion::Line(1)))
         );
         assert_eq!(
-            normal_action(KeyCode::Char('l'), KeyModifiers::NONE),
+            normal_action(KeyCode::Char('l'), KeyModifiers::NONE, false),
             Some(Action::Move(Motion::Char(1)))
         );
     }
@@ -126,15 +162,18 @@ mod tests {
     #[test]
     fn paging_is_a_line_motion_with_a_bigger_number() {
         assert_eq!(
-            normal_action(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            normal_action(KeyCode::Char('f'), KeyModifiers::CONTROL, false),
             Some(Action::Move(Motion::Line(PAGE)))
         );
         assert_eq!(
-            normal_action(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            normal_action(KeyCode::Char('b'), KeyModifiers::CONTROL, false),
             Some(Action::Move(Motion::Line(-PAGE)))
         );
         // Unmodified, they are not bound.
-        assert_eq!(normal_action(KeyCode::Char('f'), KeyModifiers::NONE), None);
+        assert_eq!(
+            normal_action(KeyCode::Char('f'), KeyModifiers::NONE, false),
+            None
+        );
     }
 
     #[test]
@@ -150,15 +189,56 @@ mod tests {
             (':', Action::Command),
         ] {
             assert_eq!(
-                normal_action(KeyCode::Char(ch), KeyModifiers::NONE),
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, false),
                 Some(action),
                 "{ch}"
             );
         }
         assert_eq!(
-            normal_action(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            normal_action(KeyCode::Char('r'), KeyModifiers::CONTROL, false),
             Some(Action::Redo)
         );
+    }
+
+    /// The keys a *range* needs, and the rule that keeps them out of the way until there is
+    /// one: `*` and `-` are formatting in Visual mode and nothing at all in Normal, so they
+    /// stay available to whatever wants them next.
+    #[test]
+    fn the_formatting_keys_only_bind_once_something_is_selected() {
+        use crate::text::markdown::Emphasis;
+        for (ch, emphasis) in [
+            ('*', Emphasis::Bold),
+            ('/', Emphasis::Italic),
+            ('_', Emphasis::Underline),
+            ('~', Emphasis::Strike),
+        ] {
+            assert_eq!(
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, true),
+                Some(Action::Emphasise(emphasis)),
+                "{ch}"
+            );
+            assert_eq!(
+                normal_action(KeyCode::Char(ch), KeyModifiers::NONE, false),
+                None,
+                "{ch} means nothing without a selection"
+            );
+        }
+        assert_eq!(
+            normal_action(KeyCode::Char('-'), KeyModifiers::NONE, true),
+            Some(Action::Plain)
+        );
+        // `v` and Esc are the same key in both modes: one starts a selection, the other drops
+        // it, and neither depends on which mode asked.
+        for visual in [false, true] {
+            assert_eq!(
+                normal_action(KeyCode::Char('v'), KeyModifiers::NONE, visual),
+                Some(Action::Visual)
+            );
+            assert_eq!(
+                normal_action(KeyCode::Esc, KeyModifiers::NONE, visual),
+                Some(Action::Escape)
+            );
+        }
     }
 
     /// `i` and `a` are different here and the same in the spreadsheet's map, because a cell has
@@ -166,8 +246,8 @@ mod tests {
     #[test]
     fn i_and_a_differ_because_a_paragraph_has_a_caret() {
         assert_ne!(
-            normal_action(KeyCode::Char('i'), KeyModifiers::NONE),
-            normal_action(KeyCode::Char('a'), KeyModifiers::NONE)
+            normal_action(KeyCode::Char('i'), KeyModifiers::NONE, false),
+            normal_action(KeyCode::Char('a'), KeyModifiers::NONE, false)
         );
     }
 }

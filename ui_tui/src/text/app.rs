@@ -32,10 +32,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use grind_text::{App as CoreApp, BlockKind, Caret};
+use grind_text::style::CharStyle;
+use grind_text::{App as CoreApp, BlockKind, BlockView, Caret};
 
 use super::Cells;
 use super::keymap::{self, Action, Motion};
+use super::markdown::{self, Emphasis};
 use crate::app::RedrawFlag;
 
 /// Room for `p12 h1 ` down the left, so a reader can see the structure the outline is made of.
@@ -43,8 +45,13 @@ const GUTTER: u16 = 8;
 
 enum Mode {
     Normal,
+    /// Selecting, from an anchor the caret is being dragged away from — vi's own Visual, and
+    /// this shell's answer to Shift+arrow.
+    Visual,
     Insert,
-    Command { buf: String },
+    Command {
+        buf: String,
+    },
 }
 
 pub struct App {
@@ -62,6 +69,12 @@ pub struct App {
     width: f32,
     height: usize,
     mode: Mode,
+    /// Where a Visual-mode selection started. The caret is its other end.
+    anchor: Option<Caret>,
+    /// What `y` copied, as plain text. A register rather than the system clipboard: a
+    /// terminal cannot reach one without a protocol the host may not speak, and vi's own
+    /// register is the convention every reader of this shell already has.
+    register: String,
     status: String,
     quit: bool,
 }
@@ -81,6 +94,8 @@ impl App {
             width: 60.0,
             height: 20,
             mode: Mode::Normal,
+            anchor: None,
+            register: String::new(),
             status: String::new(),
             quit: false,
         }
@@ -97,7 +112,7 @@ impl App {
         }
         self.redraw.raise();
         match self.mode {
-            Mode::Normal => self.on_normal_key(key.code, key.modifiers),
+            Mode::Normal | Mode::Visual => self.on_normal_key(key.code, key.modifiers),
             Mode::Insert => self.on_insert_key(key.code),
             Mode::Command { .. } => self.on_command_key(key.code),
         }
@@ -106,23 +121,217 @@ impl App {
     // --- Normal mode ---
 
     fn on_normal_key(&mut self, code: KeyCode, mods: KeyModifiers) {
-        let Some(action) = keymap::normal_action(code, mods) else {
+        let visual = matches!(self.mode, Mode::Visual);
+        let Some(action) = keymap::normal_action(code, mods, visual) else {
             return;
         };
         match action {
             Action::Move(motion) => self.go(motion),
-            Action::Insert => self.mode = Mode::Insert,
+            Action::Insert => self.begin_insert(),
             Action::Append => {
                 self.go(Motion::Char(1));
-                self.mode = Mode::Insert;
+                self.begin_insert();
             }
             Action::OpenBelow => self.open_below(),
-            Action::EraseChar => self.erase_forward(),
+            // Over a selection the erase keys mean the selection, which is what makes `v`
+            // worth having: `d` is "delete this", not "delete one character".
+            Action::EraseChar => {
+                if !self.erase_selection() {
+                    self.erase_forward();
+                }
+            }
             Action::DeleteBlock => self.delete_block(),
             Action::Join => self.join(),
             Action::Undo => self.history(self.core.undo(), "nothing to undo"),
             Action::Redo => self.history(self.core.redo(), "nothing to redo"),
             Action::Command => self.mode = Mode::Command { buf: String::new() },
+            Action::Visual => self.toggle_visual(),
+            Action::Yank => self.yank(),
+            Action::Put => self.put(),
+            Action::Emphasise(emphasis) => self.emphasise_selection(emphasis),
+            Action::Plain => self.set_selection_style(&CharStyle::default(), "plain"),
+            Action::Escape => {
+                self.anchor = None;
+                self.status.clear();
+                self.mode = Mode::Normal;
+            }
+        }
+    }
+
+    fn begin_insert(&mut self) {
+        self.anchor = None;
+        self.mode = Mode::Insert;
+    }
+
+    // --- Visual mode ---
+
+    fn toggle_visual(&mut self) {
+        match self.mode {
+            Mode::Visual => {
+                self.anchor = None;
+                self.mode = Mode::Normal;
+            }
+            _ => {
+                self.anchor = Some(self.caret);
+                self.mode = Mode::Visual;
+            }
+        }
+        self.status.clear();
+    }
+
+    /// The selection, in document order — `None` when the anchor is where the caret is, which
+    /// is what "nothing selected" *is* rather than a second state to keep in step.
+    pub fn selection(&self) -> Option<(Caret, Caret)> {
+        let anchor = self.anchor?;
+        if anchor == self.caret {
+            return None;
+        }
+        Some(
+            match (anchor.block, anchor.offset) <= (self.caret.block, self.caret.offset) {
+                true => (anchor, self.caret),
+                false => (self.caret, anchor),
+            },
+        )
+    }
+
+    /// Erase whatever is selected, leaving the caret where the selection started. `false` when
+    /// there was nothing selected, so the caller can fall back to its one-character meaning.
+    fn erase_selection(&mut self) -> bool {
+        let Some((from, to)) = self.selection() else {
+            return false;
+        };
+        match self.core.erase(from, to) {
+            Ok(_) => {
+                self.caret = from;
+                self.anchor = None;
+                self.mode = Mode::Normal;
+                self.status.clear();
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+        true
+    }
+
+    /// The selected text, as plain text — formatting is not carried, because a register that
+    /// held it would be a second model of a run and this shell has none.
+    fn selected_text(&self) -> Option<String> {
+        let (from, to) = self.selection()?;
+        let mut out = String::new();
+        for index in from.block..=to.block {
+            let chars: Vec<char> = self.core.input_text(index).ok()?.chars().collect();
+            let start = match index == from.block {
+                true => from.offset,
+                false => 0,
+            };
+            let end = match index == to.block {
+                true => to.offset,
+                false => chars.len(),
+            };
+            if index > from.block {
+                out.push('\n');
+            }
+            out.extend(&chars[start.min(chars.len())..end.min(chars.len())]);
+        }
+        Some(out)
+    }
+
+    fn yank(&mut self) {
+        let Some((from, _)) = self.selection() else {
+            self.status = "nothing selected — v starts a selection".to_string();
+            return;
+        };
+        match self.selected_text() {
+            Some(text) => {
+                let count = text.chars().count();
+                self.register = text;
+                self.anchor = None;
+                self.mode = Mode::Normal;
+                // Where the selection started, which is vi's own answer and the place a `p`
+                // straight afterwards would want to be.
+                self.caret = from;
+                self.goal_x = None;
+                self.status = format!("yanked {count} character(s)");
+            }
+            None => self.status = "nothing selected — v starts a selection".to_string(),
+        }
+    }
+
+    /// Put the register back at the caret, replacing a selection if there is one. A newline in
+    /// it splits a block, since a block *is* the paragraph and there is no character for one.
+    fn put(&mut self) {
+        if self.register.is_empty() {
+            self.status = "nothing yanked".to_string();
+            return;
+        }
+        self.erase_selection();
+        let register = std::mem::take(&mut self.register);
+        for (index, piece) in register.split('\n').enumerate() {
+            if index > 0 {
+                self.split();
+            }
+            if !piece.is_empty() {
+                self.insert_at_caret(piece);
+            }
+        }
+        self.register = register;
+        self.status.clear();
+    }
+
+    fn insert_at_caret(&mut self, text: &str) {
+        match self.core.insert_text(self.caret, text) {
+            Ok(()) => self.caret.offset += text.chars().count(),
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    // --- formatting ---
+
+    /// Turn one emphasis on across the selection, or off when the whole of it already has it —
+    /// `App::char_style` reports only what a span *agrees* about, which is exactly the question
+    /// a toggle asks.
+    fn emphasise_selection(&mut self, emphasis: Emphasis) {
+        let Some((from, to)) = self.selection() else {
+            self.status = "nothing selected — v starts a selection".to_string();
+            return;
+        };
+        let mut style = self.core.char_style(from, to).unwrap_or_default();
+        let wanted = emphasis.style();
+        let field = |style: &CharStyle| match emphasis {
+            Emphasis::Bold => style.font_weight.clone(),
+            Emphasis::Italic => style.font_style.clone(),
+            Emphasis::Underline => style.underline.clone(),
+            Emphasis::Strike => style.line_through.clone(),
+        };
+        let off = match emphasis {
+            Emphasis::Bold | Emphasis::Italic => "normal",
+            _ => "none",
+        };
+        let already = field(&style).as_deref().is_some_and(|v| v != off);
+        let value = Some(match already {
+            true => off.to_owned(),
+            false => field(&wanted).unwrap_or_default(),
+        });
+        match emphasis {
+            Emphasis::Bold => style.font_weight = value,
+            Emphasis::Italic => style.font_style = value,
+            Emphasis::Underline => style.underline = value,
+            Emphasis::Strike => style.line_through = value,
+        }
+        self.set_selection_style(&style, emphasis.markers());
+    }
+
+    fn set_selection_style(&mut self, style: &CharStyle, what: &str) {
+        let Some((from, to)) = self.selection() else {
+            self.status = "nothing selected — v starts a selection".to_string();
+            return;
+        };
+        match self.core.set_char_style(from, to, style) {
+            Ok(_) => {
+                self.status = format!("{what} over {} character(s)", span_len(from, to));
+                self.anchor = None;
+                self.mode = Mode::Normal;
+            }
+            Err(e) => self.status = e.to_string(),
         }
     }
 
@@ -357,6 +566,64 @@ impl App {
                 self.goal_x = None;
                 self.status.clear();
             }
+            Err(e) => {
+                self.status = e.to_string();
+                return;
+            }
+        }
+        // The character is in the document; now see whether it *finished* something.
+        self.apply_markdown();
+    }
+
+    /// Markdown-shaped typing, applied the moment its closing marker lands
+    /// ([`super::markdown`]): `**bold**` becomes bold and the four markers go, `# ` makes the
+    /// block a heading and the prefix goes.
+    ///
+    /// Both are ordinary edits through the core — an erase and a `set_char_style`, or an erase
+    /// and a `set_kind` — so `u` takes them back the way it takes back anything else. Two
+    /// presses rather than one, which is the honest cost of not inventing a compound action
+    /// for a shell's own convenience.
+    fn apply_markdown(&mut self) {
+        let Ok(text) = self.core.input_text(self.caret.block) else {
+            return;
+        };
+        let block = self.caret.block;
+
+        if let Some((width, kind)) = markdown::block_prefix(&text, self.caret.offset) {
+            let from = Caret { block, offset: 0 };
+            let to = Caret {
+                block,
+                offset: width,
+            };
+            if self.core.erase(from, to).is_ok() {
+                self.caret = from;
+                if let Err(e) = self.core.set_kind(block, kind.clone()) {
+                    self.status = e.to_string();
+                    return;
+                }
+                self.status = format!("{} — u undoes it", describe_kind(&kind));
+            }
+            return;
+        }
+
+        let Some(found) = markdown::emphasised(&text, self.caret.offset) else {
+            return;
+        };
+        let at = |offset: usize| Caret { block, offset };
+        // The closing marker first: erasing the opening one would move everything after it,
+        // and the offsets in hand were measured before either went.
+        if self.core.erase(at(found.end), at(found.close)).is_err()
+            || self.core.erase(at(found.open), at(found.start)).is_err()
+        {
+            return;
+        }
+        let opened = found.start - found.open;
+        let (from, to) = (at(found.open), at(found.open + (found.end - found.start)));
+        self.caret = to;
+        self.goal_x = None;
+        let _ = opened;
+        match self.core.set_char_style(from, to, &found.emphasis.style()) {
+            Ok(_) => self.status = format!("{} — u undoes it", found.emphasis.markers()),
             Err(e) => self.status = e.to_string(),
         }
     }
@@ -425,6 +692,15 @@ impl App {
             }
             "outline" => self.cmd_outline(),
             "words" => self.cmd_words(),
+            "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
+            _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
+            // vi's own substitution, and the one command here that is a *document* edit rather
+            // than a caret move: `App::replace` changes every match, which is what `/g` means
+            // and the only thing this build's core offers.
+            _ if cmd.starts_with("s/") => self.cmd_substitute(&cmd[2..]),
+            _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
+            _ if cmd.starts_with("highlight ") => self.cmd_color(cmd[10..].trim(), true),
+            _ if cmd.starts_with("li") => self.cmd_list(cmd[2..].trim()),
             _ if cmd.starts_with("w ") => self.cmd_write(Some(cmd[2..].trim())),
             _ if cmd.starts_with("style ") => self.cmd_style(Some(cmd[6..].trim())),
             "style" => self.cmd_style(None),
@@ -504,6 +780,92 @@ impl App {
         }
     }
 
+    /// Where a piece of text is — the count, and the caret on the first one.
+    fn cmd_find(&mut self, needle: &str) {
+        let found = self.core.find(needle);
+        match found.first() {
+            Some(first) => {
+                self.caret = Caret {
+                    block: first.index,
+                    offset: first.offset,
+                };
+                self.goal_x = None;
+                self.status = format!("{} match(es) — {}", found.len(), first.address());
+            }
+            None => self.status = format!("no match for {needle}"),
+        }
+    }
+
+    /// `:s/old/new/` — every occurrence, one undo step, because that is what `App::replace` is.
+    fn cmd_substitute(&mut self, rest: &str) {
+        let mut parts = rest.splitn(2, '/');
+        let (Some(needle), Some(with)) = (parts.next(), parts.next()) else {
+            self.status = "usage: :s/old/new/".to_string();
+            return;
+        };
+        let with = with.strip_suffix('/').unwrap_or(with);
+        if needle.is_empty() {
+            self.status = "usage: :s/old/new/".to_string();
+            return;
+        }
+        match self.core.replace(needle, with) {
+            Ok(0) => self.status = format!("no match for {needle}"),
+            Ok(n) => {
+                self.clamp_caret();
+                self.status = format!("replaced {n}");
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// A colour over the selection, by the core's own palette name or an `#rrggbb` — the same
+    /// vocabulary `grind text format --color` takes, so a swatch in a window and a word here
+    /// are the same attribute.
+    fn cmd_color(&mut self, name: &str, background: bool) {
+        let Some((from, to)) = self.selection() else {
+            self.status = "nothing selected — v starts a selection".to_string();
+            return;
+        };
+        let value = match name {
+            "" | "none" | "default" => None,
+            name => match grind_core::style::palette(name) {
+                Some(hex) => Some(hex.to_owned()),
+                None if name.starts_with('#') => Some(name.to_owned()),
+                None => {
+                    self.status = format!("not a colour: {name}");
+                    return;
+                }
+            },
+        };
+        let mut style = self.core.char_style(from, to).unwrap_or_default();
+        match background {
+            true => style.background = value,
+            false => style.color = value,
+        }
+        self.set_selection_style(&style, name);
+    }
+
+    /// `:li` makes the caret's block a list item, `:li 2` nests it one level deeper.
+    fn cmd_list(&mut self, depth: &str) {
+        let depth = match depth.is_empty() {
+            true => 1,
+            false => match depth.parse::<u32>() {
+                Ok(depth) if depth >= 1 => depth,
+                _ => {
+                    self.status = format!("not a list depth: {depth}");
+                    return;
+                }
+            },
+        };
+        match self
+            .core
+            .set_kind(self.caret.block, BlockKind::ListItem { depth })
+        {
+            Ok(()) => self.status.clear(),
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
     fn cmd_jump(&mut self, addr: &str) {
         match grind_text::loc::parse(addr).map_err(|e| e.to_string()) {
             Ok(loc) => match self.core.resolve_caret(&loc) {
@@ -520,27 +882,24 @@ impl App {
 
     // --- Rendering ---
 
-    /// Every document line from `top`, as far as the window needs — with the block each came
-    /// from, so the gutter can mark where one starts.
-    fn visible(&self, height: usize) -> Vec<(usize, usize, String)> {
+    /// Every document line from `top`, as far as the window needs — the block it came from,
+    /// which line of that block it is, and the characters it covers.
+    ///
+    /// Offsets rather than a `String`, because what is drawn is not one piece of text: a run
+    /// of it may be bold, part of it may be selected, and the caret sits between two
+    /// characters. [`App::draw`] cuts it up; this only says where the line is.
+    fn visible(&self, height: usize) -> Vec<(usize, usize, std::ops::Range<usize>)> {
         let blocks = self.core.block_count();
         let mut out = Vec::with_capacity(height);
         let mut block = self.top.0.min(blocks.saturating_sub(1));
         let mut skip = self.top.1;
         while block < blocks && out.len() < height {
-            let text: Vec<char> = self
-                .core
-                .input_text(block)
-                .unwrap_or_default()
-                .chars()
-                .collect();
             if let Ok(layout) = self.core.layout_block(block, self.width, &Cells) {
                 for (n, line) in layout.lines().iter().enumerate().skip(skip) {
                     if out.len() == height {
                         break;
                     }
-                    let piece: String = text[line.start..line.end].iter().collect();
-                    out.push((block, n, piece.trim_end().to_string()));
+                    out.push((block, n, line.start..line.end));
                 }
             }
             skip = 0;
@@ -582,6 +941,101 @@ impl App {
         }
     }
 
+    /// One laid-out line, cut into the pieces the terminal can draw it as.
+    ///
+    /// Three things change part-way along a line and none of them lines up with the others:
+    /// the document's own **formatting**, the **selection**, and the **caret**. Each is a set
+    /// of boundaries in the block's character offsets, and a piece is what falls between two
+    /// adjacent ones — the same cut `ui_web/src/text/runs.rs` makes for the same reason, in a
+    /// different toolkit.
+    ///
+    /// **A terminal draws formatting, it does not spell it.** Bold is bold, not `**bold**`:
+    /// markers on screen would be characters the core never measured, and every caret after
+    /// one would sit in the wrong column. The markers are for *typing* (`markdown.rs`).
+    fn line_spans(
+        &self,
+        view: &BlockView,
+        line: std::ops::Range<usize>,
+        selection: &Option<(Caret, Caret)>,
+        caret: Option<usize>,
+    ) -> Vec<Span<'static>> {
+        let chars: Vec<char> = view.text.chars().collect();
+        // The selection, clipped to this block — it may start pages above and end below.
+        let within = selection.as_ref().and_then(|(from, to)| {
+            (from.block <= view.index && view.index <= to.block).then(|| {
+                let start = match from.block == view.index {
+                    true => from.offset,
+                    false => 0,
+                };
+                let end = match to.block == view.index {
+                    true => to.offset,
+                    false => chars.len(),
+                };
+                start..end
+            })
+        });
+
+        let mut bounds = vec![line.start, line.end];
+        let mut mark = |at: usize| {
+            if at > line.start && at < line.end {
+                bounds.push(at);
+            }
+        };
+        for run in &view.runs {
+            mark(run.start);
+            mark(run.start + run.text.chars().count());
+        }
+        if let Some(range) = &within {
+            mark(range.start);
+            mark(range.end);
+        }
+        if let Some(caret) = caret {
+            mark(caret);
+            mark(caret + 1);
+        }
+        bounds.sort_unstable();
+        bounds.dedup();
+
+        let heading = matches!(view.kind, BlockKind::Heading { .. })
+            || matches!(view.style.as_deref(), Some("Title" | "Subtitle"));
+        let mut spans = Vec::new();
+        let mut drawn_caret = false;
+        for pair in bounds.windows(2) {
+            let (start, end) = (pair[0], pair[1]);
+            let run = view.runs.iter().find(|run| {
+                (run.start..run.start + run.text.chars().count().max(1)).contains(&start)
+            });
+            let piece: String = chars[start.min(chars.len())..end.min(chars.len())]
+                .iter()
+                .collect();
+            // A line break ends the line; it is not a character to draw.
+            let piece = piece.trim_end_matches('\n').to_string();
+            let selected = within
+                .as_ref()
+                .is_some_and(|sel| sel.start <= start && end <= sel.end);
+            let under_caret = caret == Some(start);
+            drawn_caret |= under_caret;
+            let mut style = run
+                .map(|run| terminal_style(&run.props))
+                .unwrap_or_default();
+            if heading {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            if selected || under_caret {
+                style = style.add_modifier(Modifier::REVERSED);
+            }
+            spans.push(Span::styled(piece, style));
+        }
+        // At the end of a line, and in an empty one, the caret has no character to sit on.
+        if caret.is_some() && !drawn_caret {
+            spans.push(Span::styled(
+                " ".to_string(),
+                Style::default().add_modifier(Modifier::REVERSED),
+            ));
+        }
+        spans
+    }
+
     pub fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
         let [body, status_area] =
@@ -598,18 +1052,29 @@ impl App {
             .map(|l| (l.line_at(self.caret.offset), l.x_at(self.caret.offset)))
             .unwrap_or((0, 0.0));
 
+        let selection = self.selection();
         let mut lines = Vec::with_capacity(self.height);
-        for (block, n, text) in self.visible(self.height) {
+        // One viewport read per *block* rather than per line: a wrapped paragraph is several
+        // rows and they all draw from the same runs.
+        let mut current: Option<(usize, BlockView)> = None;
+        for (block, n, range) in self.visible(self.height) {
+            if current.as_ref().is_none_or(|(at, _)| *at != block) {
+                current = self
+                    .core
+                    .get_viewport(block..block + 1)
+                    .get(block)
+                    .cloned()
+                    .map(|view| (block, view));
+            }
+            let Some((_, view)) = &current else { continue };
+
             // Only the first line of a block carries its mark, so a wrapped paragraph reads as
             // one paragraph.
             let mark = match n {
                 0 => format!(
                     "{:<4}{:<3} ",
                     grind_text::loc::format(block),
-                    self.kind_at(block)
-                        .as_ref()
-                        .map(describe_kind)
-                        .unwrap_or_default()
+                    describe_kind(&view.kind)
                 ),
                 _ => " ".repeat(GUTTER as usize),
             };
@@ -617,39 +1082,28 @@ impl App {
                 mark,
                 Style::default().add_modifier(Modifier::DIM),
             )];
-            if (block, n) == (self.caret.block, caret_line.0) {
-                // Split the line at the caret so the cell under it can be reversed — a real
-                // cursor rather than a highlighted row.
-                let at = (caret_line.1 as usize).min(text.chars().count());
-                let before: String = text.chars().take(at).collect();
-                let under: String = text.chars().skip(at).take(1).collect();
-                let after: String = text.chars().skip(at + 1).collect();
-                spans.push(Span::raw(before));
-                spans.push(Span::styled(
-                    match under.is_empty() {
-                        true => " ".to_string(),
-                        false => under,
-                    },
-                    Style::default().add_modifier(Modifier::REVERSED),
-                ));
-                spans.push(Span::raw(after));
-            } else {
-                spans.push(Span::raw(text));
-            }
+            let caret =
+                ((block, n) == (self.caret.block, caret_line.0)).then_some(self.caret.offset);
+            spans.extend(self.line_spans(view, range, &selection, caret));
             lines.push(Line::from(spans));
         }
         frame.render_widget(Paragraph::new(lines), body);
 
+        let where_ = grind_text::loc::format_offset(self.caret.block, self.caret.offset);
         let status_text = match &self.mode {
             Mode::Command { buf } => format!(":{buf}"),
             Mode::Insert => format!(
-                "-- INSERT --  {}  Esc normal",
-                grind_text::loc::format_offset(self.caret.block, self.caret.offset)
+                "-- INSERT --  {where_}  **bold** *italic* __under__ ~~struck~~  # heading  - list"
             ),
-            Mode::Normal if !self.status.is_empty() => self.status.clone(),
-            Mode::Normal => format!(
-                "{}  h j k l move  i/a/o insert  x erase  X delete  J join  u undo  : command",
-                grind_text::loc::format_offset(self.caret.block, self.caret.offset)
+            Mode::Visual => format!(
+                "-- VISUAL --  {} selected  * bold  / italic  _ under  ~ struck  - plain  y yank  d delete",
+                self.selection()
+                    .map(|(from, to)| span_len(from, to))
+                    .unwrap_or(0)
+            ),
+            _ if !self.status.is_empty() => self.status.clone(),
+            _ => format!(
+                "{where_}  h j k l move  i/a/o insert  v select  x erase  X delete  J join  u undo  : command"
             ),
         };
         frame.render_widget(
@@ -657,6 +1111,87 @@ impl App {
             status_area,
         );
     }
+}
+
+/// How many characters a selection covers, for the status line. Across blocks it counts the
+/// boundaries as one character each, which is what erasing the same span would take out.
+fn span_len(from: Caret, to: Caret) -> usize {
+    match from.block == to.block {
+        true => to.offset.saturating_sub(from.offset),
+        // Only the two ends are known here without reading every block between them; a
+        // rough count is what a status line is for.
+        false => to.block - from.block + to.offset,
+    }
+}
+
+/// A run's own formatting, as the attributes a terminal has.
+///
+/// Four of the eight `CharStyle` properties land here; family and size have no meaning in a
+/// grid of one font at one size (`Cells`' own note), and that is a limit of the medium rather
+/// than a gap in the shell. A colour is offered as one of the sixteen the terminal names,
+/// nearest by hue — a document's `#ff4136` is red here, which is the honest answer.
+fn terminal_style(props: &CharStyle) -> Style {
+    let on = |value: &Option<String>, off: &str| value.as_deref().is_some_and(|v| v != off);
+    let mut style = Style::default();
+    if on(&props.font_weight, "normal") {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    if on(&props.font_style, "normal") {
+        style = style.add_modifier(Modifier::ITALIC);
+    }
+    if on(&props.underline, "none") {
+        style = style.add_modifier(Modifier::UNDERLINED);
+    }
+    if on(&props.line_through, "none") {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+    if let Some(color) = props.color.as_deref().and_then(nearest_color) {
+        style = style.fg(color);
+    }
+    if let Some(color) = props.background.as_deref().and_then(nearest_color) {
+        style = style.bg(color);
+    }
+    style
+}
+
+/// The terminal colour nearest an ODF `#rrggbb`, by squared distance in RGB.
+///
+/// Eight hues and their bright halves — the palette every terminal has, rather than the 256
+/// some do and the true colour others do: a shell that assumed more would look wrong on the
+/// terminals that have less, and the point of a colour here is that it is *distinguishable*.
+pub fn nearest_color(hex: &str) -> Option<Color> {
+    let hex = hex.trim().strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    let channel = |at: usize| {
+        u8::from_str_radix(hex.get(at..at + 2)?, 16)
+            .ok()
+            .map(i32::from)
+    };
+    let (r, g, b) = (channel(0)?, channel(2)?, channel(4)?);
+    const TERMINAL: [(Color, (i32, i32, i32)); 16] = [
+        (Color::Black, (0, 0, 0)),
+        (Color::Red, (170, 0, 0)),
+        (Color::Green, (0, 170, 0)),
+        (Color::Yellow, (170, 85, 0)),
+        (Color::Blue, (0, 0, 170)),
+        (Color::Magenta, (170, 0, 170)),
+        (Color::Cyan, (0, 170, 170)),
+        (Color::Gray, (170, 170, 170)),
+        (Color::DarkGray, (85, 85, 85)),
+        (Color::LightRed, (255, 85, 85)),
+        (Color::LightGreen, (85, 255, 85)),
+        (Color::LightYellow, (255, 255, 85)),
+        (Color::LightBlue, (85, 85, 255)),
+        (Color::LightMagenta, (255, 85, 255)),
+        (Color::LightCyan, (85, 255, 255)),
+        (Color::White, (255, 255, 255)),
+    ];
+    TERMINAL
+        .iter()
+        .min_by_key(|(_, (tr, tg, tb))| (r - tr).pow(2) + (g - tg).pow(2) + (b - tb).pow(2))
+        .map(|(color, _)| *color)
 }
 
 fn describe_kind(kind: &BlockKind) -> String {
@@ -909,6 +1444,203 @@ mod tests {
             press(&mut app, KeyCode::Char(key));
         }
         let _ = render(&mut app, 40, 6);
+    }
+
+    /// The markdown ask, end to end: the markers are typed as ordinary characters and are
+    /// gone by the time the closing one lands, leaving the *document* formatted.
+    #[test]
+    fn typing_markdown_formats_the_span_and_takes_the_markers_back_out() {
+        for (typed, want, check) in [
+            ("**bold**", "bold", "font_weight"),
+            ("*slant*", "slant", "font_style"),
+            ("__under__", "under", "underline"),
+            ("~~struck~~", "struck", "line_through"),
+        ] {
+            let mut app = app(&[""]);
+            press(&mut app, KeyCode::Char('i'));
+            type_str(&mut app, typed);
+            assert_eq!(text(&app), want, "{typed}: the markers are gone");
+
+            let view = app.core.get_viewport(0..1);
+            let block = view.get(0).expect("the block");
+            let props = &block.runs.first().expect("one run").props;
+            let set = match check {
+                "font_weight" => props.font_weight.is_some(),
+                "font_style" => props.font_style.is_some(),
+                "underline" => props.underline.is_some(),
+                _ => props.line_through.is_some(),
+            };
+            assert!(set, "{typed}: the span carries {check} — {props:?}");
+        }
+    }
+
+    /// And the rules that keep prose out of it hold through the shell, not just in the
+    /// notation: `2*3*4` is arithmetic and stays as it was typed.
+    #[test]
+    fn typing_arithmetic_is_not_formatting() {
+        let mut app = app(&[""]);
+        press(&mut app, KeyCode::Char('i'));
+        type_str(&mut app, "2*3*4");
+        assert_eq!(text(&app), "2*3*4");
+        let view = app.core.get_viewport(0..1);
+        assert!(!view.get(0).expect("the block").styled);
+    }
+
+    /// The block half of the same notation.
+    #[test]
+    fn typing_a_hash_makes_the_block_a_heading_and_a_dash_a_list_item() {
+        let mut heading = app(&["title"]);
+        press(&mut heading, KeyCode::Char('i'));
+        type_str(&mut heading, "## ");
+        assert_eq!(text(&heading), "title", "the prefix is gone");
+        assert_eq!(heading.kind_at(0), Some(BlockKind::Heading { level: 2 }));
+
+        let mut item = app(&["item"]);
+        press(&mut item, KeyCode::Char('i'));
+        type_str(&mut item, "- ");
+        assert_eq!(item.kind_at(0), Some(BlockKind::ListItem { depth: 1 }));
+    }
+
+    /// Visual mode is the terminal's Shift+arrow: an anchor, a caret, and every verb that
+    /// needs a range.
+    #[test]
+    fn visual_mode_selects_and_the_marker_keys_format_what_is_selected() {
+        let mut app = app(&["hello world"]);
+        render(&mut app, 40, 6);
+        press(&mut app, KeyCode::Char('v'));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Char('l'));
+        }
+        assert_eq!(
+            app.selection(),
+            Some((
+                Caret {
+                    block: 0,
+                    offset: 0
+                },
+                Caret {
+                    block: 0,
+                    offset: 5
+                }
+            ))
+        );
+
+        press(&mut app, KeyCode::Char('*'));
+        assert!(matches!(app.mode, Mode::Normal), "the selection is spent");
+        let view = app.core.get_viewport(0..1);
+        let runs = &view.get(0).expect("the block").runs;
+        assert_eq!(runs[0].text, "hello");
+        assert_eq!(runs[0].props.font_weight.as_deref(), Some("bold"));
+        assert!(runs[1].props.font_weight.is_none(), "and only that far");
+    }
+
+    #[test]
+    fn a_selection_yanks_and_puts_and_deletes() {
+        let mut app = app(&["hello world"]);
+        render(&mut app, 40, 6);
+        press(&mut app, KeyCode::Char('v'));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Char('l'));
+        }
+        press(&mut app, KeyCode::Char('y'));
+        assert_eq!(app.register, "hello");
+
+        // `d` over a selection deletes the selection, not one character.
+        press(&mut app, KeyCode::Char('v'));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Char('l'));
+        }
+        press(&mut app, KeyCode::Char('d'));
+        assert_eq!(text(&app), " world");
+
+        press(&mut app, KeyCode::Char('p'));
+        assert_eq!(text(&app), "hello world", "the register puts it back");
+    }
+
+    /// Formatting is *drawn*, not spelled: the terminal's own bold, with no markers on screen
+    /// to shift every caret after them.
+    #[test]
+    fn a_bold_run_is_drawn_bold_and_no_markers_are_shown() {
+        let mut app = app(&["hello world"]);
+        render(&mut app, 40, 6);
+        app.core
+            .set_char_style(
+                Caret {
+                    block: 0,
+                    offset: 0,
+                },
+                Caret {
+                    block: 0,
+                    offset: 5,
+                },
+                &Emphasis::Bold.style(),
+            )
+            .expect("bold");
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 6)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row: String = (0..40)
+            .map(|c| buffer[(c, 0)].symbol().to_string())
+            .collect();
+        assert!(row.contains("hello world"), "{row:?}");
+        assert!(!row.contains('*'), "no markers on screen: {row:?}");
+
+        // The cell under "e" — past the gutter, past the caret's own reversed "h".
+        let bold = buffer[(GUTTER + 1, 0)].style();
+        assert!(
+            bold.add_modifier.contains(Modifier::BOLD),
+            "the run draws bold: {bold:?}"
+        );
+        let plain = buffer[(GUTTER + 7, 0)].style();
+        assert!(!plain.add_modifier.contains(Modifier::BOLD), "{plain:?}");
+    }
+
+    #[test]
+    fn the_command_line_finds_and_substitutes() {
+        let mut app = app(&["one two", "two three"]);
+        press(&mut app, KeyCode::Char(':'));
+        type_str(&mut app, "find two");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.caret.block, 0);
+        assert!(app.status.starts_with("2 match"), "{}", app.status);
+
+        press(&mut app, KeyCode::Char(':'));
+        type_str(&mut app, "s/two/2/");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(text(&app), "one 2\n2 three");
+    }
+
+    /// A colour goes through the core's own palette, so `red` here and a swatch in a window
+    /// are the same attribute.
+    #[test]
+    fn the_command_line_colours_a_selection() {
+        let mut app = app(&["hello"]);
+        render(&mut app, 40, 6);
+        press(&mut app, KeyCode::Char('v'));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Char('l'));
+        }
+        press(&mut app, KeyCode::Char(':'));
+        type_str(&mut app, "color red");
+        press(&mut app, KeyCode::Enter);
+        let view = app.core.get_viewport(0..1);
+        assert_eq!(
+            view.get(0).expect("the block").runs[0]
+                .props
+                .color
+                .as_deref(),
+            grind_core::style::palette("red")
+        );
+    }
+
+    /// The sixteen a terminal has, nearest by hue — a document's own hex has to land on one.
+    #[test]
+    fn a_document_colour_lands_on_a_colour_the_terminal_has() {
+        assert_eq!(nearest_color("#ff4136"), Some(Color::LightRed));
+        assert_eq!(nearest_color("#001f3f"), Some(Color::Black));
+        assert_eq!(nearest_color("#ffffff"), Some(Color::White));
+        assert_eq!(nearest_color("not a colour"), None);
     }
 
     #[test]

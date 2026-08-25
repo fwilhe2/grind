@@ -147,11 +147,20 @@ cargo run -p grind-tui -- --text        # a new document, empty
 ```
 
 Vi-style modes in both: **Normal** navigates (`hjkl`/arrows, `g`/`G`, `Ctrl-f`/`Ctrl-b`),
-**Insert** edits, `:` opens a command line (`:w`, `:q`, or a bare address to jump). In the word
-processor `j` and `k` move by *wrapped line* rather than by paragraph, `i`/`a`/`o` start typing,
-`x`/`X`/`J` erase a character, delete a block and join two — and the address you can type at
+**Visual** (`v`) selects, **Insert** edits, `:` opens a command line. `j` and `k` move by
+*wrapped line* in the word processor rather than by paragraph, and the address you can type at
 `:` is `p12`, `#bookmark` or `§2.1.3`, which keeps meaning the same place after an edit
-somewhere else. `grind-tui --help` has the full key list.
+somewhere else.
+
+**Formatting is typed as markdown and drawn as formatting.** `**bold**`, `*italic*`,
+`__underline__` and `~~struck~~` become the document's own formatting as the closing marker
+lands — the markers are erased, and what stays is bold, italic, underlined or struck in the
+terminal's own attributes. `# ` makes a heading and `- ` a list item the same way. Over a
+selection the same notation is one key each: `*`, `/`, `_`, `~`, `-`. The spreadsheet has the
+two it shares (`*`, `/`) plus `:align`, `:color`, `:fill`, `:format` and the rest, draws a
+cell's own styling and folds away the rows a filter hides, and yanks a range as tab-separated
+text. `grind-tui --help` has every key; [`doc/tui-shell.md`](doc/tui-shell.md) has what it
+deliberately does not do.
 
 **The browser** (`grind-web`, the same core as WebAssembly — no server, the document never
 leaves your machine):

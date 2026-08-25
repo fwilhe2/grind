@@ -16,6 +16,7 @@
 
 pub mod app;
 pub mod keymap;
+pub mod markdown;
 
 use grind_core::style::TextStyle;
 use grind_text::Metrics;
