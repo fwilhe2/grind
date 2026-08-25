@@ -156,11 +156,18 @@ run height "$book" 1:1 8mm
 # is a sticky override that survives every later save, which is what `chart-style` is for.
 say "chart: bar, line and pie, tracking ranges rather than values"
 run chart-add "$book" --type bar --categories A2:A7 --series B2:B7=B1 --series C2:C7=C1 \
-  --x-axis-label Category --y-axis-label Budgeted \
+  --x-axis-label Category --y-axis-label Budgeted --y-gridlines true \
   --x 1cm --y 30cm --width 12cm --height 8cm
 sheet chart-list "$book"
 run chart-style "$book" 0 --point-color 0.0=red   # Housing's budgeted bar, picked by hand
 run chart-reshape "$book" 0 --x 1cm --y 30cm --width 14cm --height 9cm
+
+# An axis draws its own tick labels — the categories along x, the value scale up y — and
+# either can be switched off. `chart-edit` changes what a chart *is* after the fact: its type,
+# its ranges and its axes, in one undo step, keeping a colour picked by hand on any series
+# still pointing at the same range.
+say "chart: edit what one is after the fact, and switch an axis' own labels off"
+run chart-edit "$book" 0 --x-tick-labels false --x-axis-label ""
 
 say "chart: a pie of the same categories, coloured per slice by default"
 run chart-add "$book" --type pie --categories A2:A7 --series C2:C7 \

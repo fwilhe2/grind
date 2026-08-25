@@ -19,8 +19,9 @@ are the three shapes a spreadsheet's data most commonly wants, and building one 
 second and third add no new mechanism, only a second `chart:class` token and a different way of
 turning ranges into shapes on screen. What stays out: the *chart's own* title and a legend, more
 than one axis pair, stacked/percent variants, and every chart type beyond these three — each a
-`chart:*` detail this build does not read or write, not a limitation of the mechanism. An
-*axis'* own title is a different element and is in scope — see Colour and The shell, below.
+`chart:*` detail this build does not read or write, not a limitation of the mechanism. What an
+*axis* carries is a different matter and is in scope — its own title, its tick labels and its
+gridlines, three separate places in the file: see The axes, below.
 
 ## The two places a chart's own document can live
 
@@ -136,6 +137,48 @@ changes around it. The one gap this leaves: a user who happens to pick the colou
 cycle would have produced anyway is indistinguishable from having picked nothing — harmless,
 since the effective colour is identical either way.
 
+### The axes — three things, three places in the file
+
+An *axis* carries three things this build reads, writes and draws
+([`grind_sheet::chart::Axis`]), and no two of them live in the same place:
+
+| What | Where | Cited |
+|---|---|---|
+| Its title | `chart:axis`' own `chart:title`, a `text:p` inside it | rng:422-434 |
+| Its tick labels | `chart:display-label`, on the **style** the axis names (`chart:style-name` → `style:style style:family="chart"` → `style:chart-properties`) | rng:10069, rng:446 |
+| Its gridlines | a `chart:grid chart:class="major"` **element** inside `chart:axis` | rng:672-693 |
+
+Child order inside `chart:axis` is the schema's, not this build's taste: title, then
+categories, then any grid (rng:422-434). A minor grid is *read* as a grid — this build draws
+one set of gridlines and writes the major one back — which is the same tolerance every other
+distinction it does not model gets.
+
+**`chart:display-label` is always written, on both axes, whichever way it goes.** Measured
+(LibreOffice 26.2.5.2): a chart written with the attribute *absent* comes back out of
+`soffice --convert-to` with `chart:display-label="false"` on both axes, and one written with
+`"true"` comes back `"true"`. So an absent attribute is not "the default" to LibreOffice's
+importer — it is *off*, and a chart written without it would draw its labels here and not
+there. A chart LibreOffice itself writes states it explicitly too
+(`sheet/tests/data/samples/Sales Dashboard.fods`, `ch4`/`ch5`), which is the same conclusion
+reached from the other direction.
+
+That measurement also fixes the **reader's** default, which is deliberately *not* the model's:
+an axis a file says nothing about reads as [`grind_sheet::chart::Axis::bare`] — no tick labels
+— because that is what the oracle draws for the same bytes. A **new** axis is
+`Axis::default()` — tick labels on — which is a product decision about a chart somebody just
+made, not a claim about a file.
+
+Everything else an axis could carry is out, and out the same way the rest of the scope line is:
+no secondary axis, no manual minimum or maximum (the scale is computed from the data —
+[`grind_sheet::axis_ticks`], a step of 1, 2 or 5 times a power of ten, aiming for five
+intervals), no logarithmic axis, no tick marks, no number format of its own, no label
+rotation, no minor grid of its own.
+
+**Where the scale lives.** `axis_ticks` is in `grind-sheet`, not in the shell that draws the
+picture — the same call `doc/text-layout.md` made for line breaking, for the same reason: two
+shells drawing the same chart against two different scales is two different charts. A shell
+supplies only how wide a piece of text is.
+
 ## The shell
 
 `grind-sheet-gtk` draws every chart on the active sheet over the cells it floats above
@@ -147,16 +190,45 @@ a pie slice are `gsk::PathBuilder` paths stroked or filled — GTK's own vector 
 cairo, since nothing here needs more than straight edges (a pie slice is a many-sided polygon,
 `PIE_SAMPLES_PER_TURN` fine enough that the seam does not show). Every mark's colour comes from
 [`grind_sheet::chart::effective_color`], the same function the writer calls, so what is on
-screen always matches what gets saved. No chart-level title, no legend, no axis ticks — the same
-scope line as the format itself, drawn rather than written; an axis label is the one exception,
-drawn centred under the plot (x) or rotated beside it (y) when the chart carries one.
+screen always matches what gets saved. No chart-level title and no legend — the same scope line
+as the format itself, drawn rather than written. What an *axis* carries is drawn: its title
+(centred under the plot for x, rotated beside it for y), its tick labels — the category names
+under the x axis, the value scale beside the y one — and its gridlines, ruled under the marks
+so a bar covers them rather than being cut by them.
 
-A toolbar button (`Insert Chart`) opens a dialog — chart kind, categories range, a repeatable
-list of series (`RANGE[=LABEL]`, the same vocabulary `chart-add --series` already takes) and
-the two axis labels — prefilled from the current selection when it spans more than one row and
-column (first column categories, first row each series' own label, one series per remaining
-column), and calling `App::add_chart` once. **Assigning a colour by hand is a click, not a
-dialog**: `ui_sheet_gtk/src/chart.rs`'s `mark_at` shares the exact geometry `draw` paints from,
+**The plot is scaled to the top tick, not to the tallest bar** ([`grind_sheet::axis_ticks`]),
+which is what lets the topmost gridline meet the top of the plot instead of floating below it.
+Each axis takes its room out of the frame before anything is drawn: a title's fixed
+`LABEL_SPACE`, the widest y tick label's own *measured* width, one line of x tick text. An x
+label that would collide with the one before it is dropped rather than drawn over it
+(`TICK_CLEARANCE`), so twenty categories in a narrow chart label the ones that fit. A pie has
+no axes and keeps its whole frame whatever its axes carry.
+
+Because a tick label's own width moves the plot, `draw` and `mark_at` both take the same
+`Measure` — how wide and how tall a string is, in widget pixels, which is this shell's only
+contribution to a chart's layout and exactly the shape `doc/text-layout.md` settled on for a
+page of text. Measuring differently in the two would put the click somewhere the picture is not.
+
+A toolbar button (**Chart**, labelled rather than icon-only — there is no chart icon in the
+Adwaita icon theme, and the name this button first carried is not in it at all, so it drew as
+the missing-image glyph) opens the dialog: chart kind, categories range, a repeatable list of
+series (`RANGE[=LABEL]`, the same vocabulary `chart-add --series` already takes), and a group
+per axis — title, tick labels, gridlines. **One dialog does both jobs**: inserting prefills
+from the current selection when it spans more than one row and column (first column categories,
+first row each series' own label, one series per remaining column) and calls `App::add_chart`;
+editing prefills from the chart itself and calls `App::edit_chart`, one undo step, leaving the
+position a drag put it at alone.
+
+**Editing an existing chart is a double-click or a right-click.** A double-click anywhere on a
+chart opens that dialog (the cell editor never opens underneath it, since a chart takes the
+gesture first); a right-click opens a two-item menu — *Edit Chart…* and *Delete Chart* — built
+the same way the column/row *Hide* menu is. Both hand the window a `Notice` rather than acting
+in the widget: the dialog and the undo toast are the window's, and the grid's job is to say
+which chart was asked about. Deleting is immediate with an Undo toast, exactly as deleting a
+sheet is.
+
+**Assigning a colour by hand is a click, not a dialog**:
+`ui_sheet_gtk/src/chart.rs`'s `mark_at` shares the exact geometry `draw` paints from,
 so a click on a bar, a slice or a line names the same mark the picture shows; a press that
 never moved (`Grid`'s own click-vs-drag distinction, reused from the chart-drag gesture) opens
 a palette popover — the same swatches a cell's fill-colour button offers
@@ -172,10 +244,11 @@ rect becomes ODF lengths and one call to `App::reshape_chart` — one undo entry
 drag took, the same principle `Grid::commit_resize` already applies to a column or row. Nothing
 is written mid-drag, which is what makes the drag itself smooth.
 
-**Not built**: no dialog to *remove* a chart from the GUI (`grind sheet chart-remove` is the
-only way in this build — inserting one has a dialog now), no visual feedback beyond the accent
-outline and handle already used for a resize, and no keyboard-driven repositioning — a mouse
-is what "dragged" and "clicked" both mean here.
+**Not built**: no visual feedback beyond the accent outline and handle already used for a
+resize, no keyboard-driven repositioning — a mouse is what "dragged", "clicked" and
+"right-clicked" all mean here — and no way to reach a chart's own dialog from the keyboard at
+all, which is the a11y gap this feature leaves and the CLI's `chart-edit` covers for a script
+but not for a person.
 
 ## What this build does not carry
 
@@ -183,15 +256,14 @@ No chart-level title, subtitle or legend (`chart-title`/`chart-subtitle`/`chart-
 `rng:optional` in `chart-chart`'s own content model) — read past and dropped, the same as any
 other unmodelled optional element. **An axis' own title is different** — `chart:axis`'s own
 `chart:title` (rng:422-434) is a distinct element from `chart:chart`'s, and is in scope: read,
-written and drawn (`Chart::x_axis_label`/`y_axis_label`). **Measured, not guessed**: a document
-this build writes with an axis title is schema-valid and opens correctly in LibreOffice
-26.2.5.2 (the same build `ltwbw2026.*` was measured from), but a `soffice --convert-to` round
-trip through that build does not preserve the title — Calc's own chart editor does not appear
-to expose an axis title the way this build's dialog does, and its importer drops the element on
-the way in rather than keeping it inert. This build's own reader still reads one back correctly
-(`sheet/tests/chart.rs`), so the label survives every save and reopen *this program* does; only
-a trip out through LibreOffice and back loses it, the same shape as several rows in
-`doc/not-doing.md`'s "Built, with a limit" table. No secondary axis, no stacked or
+written and drawn ([`grind_sheet::chart::Axis::label`]), along with the rest of what an axis
+carries — see The axes, above. **Measured, not guessed**: a document this build writes with an
+axis title is schema-valid and opens correctly in LibreOffice 26.2.5.2 (the same build
+`ltwbw2026.*` was measured from), *and* survives a full `.fods` → `soffice --convert-to ods`
+→ `soffice --convert-to fods` round trip through it with the title intact, on a bar chart and
+on a pie alike — **correcting an earlier note here that said it did not**, which was measured
+before the axis carried a style of its own and does not reproduce against that build.
+No secondary axis, no stacked or
 percent variants, no more than one categories range or values range per series. A chart's
 embedded `table:table` (rng:463-483's own optional
 `table-table` — the fallback data LibreOffice caches inside the chart document itself, in case

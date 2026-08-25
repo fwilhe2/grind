@@ -124,14 +124,17 @@ pub enum Action {
         width: String,
         height: String,
     },
-    /// Replace a chart's axis labels and its series (colours included) wholesale — one undo
-    /// step, whatever single field a caller actually changed. See `App::set_chart_style`.
-    SetChartStyle {
+    /// Replace the chart at `index` with another one wholesale — one undo step, whatever
+    /// single field a caller actually changed. Everything a chart carries except its position
+    /// is edited through this: its kind, its ranges, its colours and its axes, each of which
+    /// can invalidate another (changing a series' range changes how many points it has to
+    /// colour), so replacing the whole value is the only shape that cannot leave one behind.
+    /// Position is [`Action::ReshapeChart`]'s, because a drag sends it hundreds of times and
+    /// has nothing else to say. See `App::set_chart_style` and `App::edit_chart`.
+    ReplaceChart {
         sheet: usize,
         index: usize,
-        x_axis_label: Option<String>,
-        y_axis_label: Option<String>,
-        series: Vec<crate::chart::Series>,
+        chart: Box<Chart>,
     },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
@@ -335,25 +338,16 @@ impl Document {
                     height: previous_height,
                 })
             }
-            Action::SetChartStyle {
+            Action::ReplaceChart {
                 sheet,
                 index,
-                x_axis_label,
-                y_axis_label,
-                series,
+                chart,
             } => {
-                let chart = self.sheet_mut(sheet)?.chart_mut(index)?;
-                let previous_x_axis_label =
-                    std::mem::replace(&mut chart.x_axis_label, x_axis_label);
-                let previous_y_axis_label =
-                    std::mem::replace(&mut chart.y_axis_label, y_axis_label);
-                let previous_series = std::mem::replace(&mut chart.series, series);
-                Some(Action::SetChartStyle {
+                let previous = std::mem::replace(self.sheet_mut(sheet)?.chart_mut(index)?, *chart);
+                Some(Action::ReplaceChart {
                     sheet,
                     index,
-                    x_axis_label: previous_x_axis_label,
-                    y_axis_label: previous_y_axis_label,
-                    series: previous_series,
+                    chart: Box::new(previous),
                 })
             }
             // Applied in order, undone in the opposite order — two cells written in
@@ -426,7 +420,7 @@ impl Document {
             Action::InsertChart { .. }
             | Action::RemoveChart { .. }
             | Action::ReshapeChart { .. }
-            | Action::SetChartStyle { .. } => self.edits.only_values = false,
+            | Action::ReplaceChart { .. } => self.edits.only_values = false,
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
@@ -455,7 +449,7 @@ impl Document {
                 .is_some_and(|s| *index <= s.charts().len()),
             Action::RemoveChart { sheet, index }
             | Action::ReshapeChart { sheet, index, .. }
-            | Action::SetChartStyle { sheet, index, .. } => self
+            | Action::ReplaceChart { sheet, index, .. } => self
                 .sheet(*sheet)
                 .is_some_and(|s| *index < s.charts().len()),
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),

@@ -1328,6 +1328,62 @@ enum Command {
         /// The y axis' own title
         #[arg(long, value_name = "TEXT")]
         y_axis_label: Option<String>,
+        /// Draw the category names along the x axis (default true)
+        #[arg(long, value_name = "BOOL")]
+        x_tick_labels: Option<bool>,
+        /// Draw the value scale along the y axis (default true)
+        #[arg(long, value_name = "BOOL")]
+        y_tick_labels: Option<bool>,
+        /// Rule gridlines up from the x axis (default false)
+        #[arg(long, value_name = "BOOL")]
+        x_gridlines: Option<bool>,
+        /// Rule gridlines across from the y axis (default false)
+        #[arg(long, value_name = "BOOL")]
+        y_gridlines: Option<bool>,
+    },
+
+    /// Change what a chart is: its type, its ranges and its axes
+    ///
+    /// Every flag left off keeps what the chart already has, so
+    /// `sheet chart-edit book.ods 0 --type line` changes only the shape. `--series` replaces
+    /// the whole list when given at all (repeat it, `RANGE[=LABEL]` each, exactly as
+    /// `chart-add` takes them); a colour picked by hand survives for a series still pointing
+    /// at the same range. `--categories ''` clears the categories, and the chart keeps its
+    /// position and size — that is `chart-reshape`'s.
+    ChartEdit {
+        file: PathBuf,
+        /// The chart's position in `chart-list`, 0-based
+        index: usize,
+        /// Defaults to the first
+        #[arg(long)]
+        sheet: Option<String>,
+        #[arg(value_enum, long)]
+        r#type: Option<ChartType>,
+        /// The range naming each category (the x axis); pass an empty string to clear it
+        #[arg(long)]
+        categories: Option<String>,
+        /// A series' values, optionally followed by `=label-range` — repeat for more than
+        /// one series. Given at all, these replace every series the chart had.
+        #[arg(long = "series", value_name = "RANGE[=LABEL]")]
+        series: Vec<String>,
+        /// The x axis' own title; pass an empty string to clear it
+        #[arg(long, value_name = "TEXT")]
+        x_axis_label: Option<String>,
+        /// The y axis' own title; pass an empty string to clear it
+        #[arg(long, value_name = "TEXT")]
+        y_axis_label: Option<String>,
+        /// Draw the category names along the x axis
+        #[arg(long, value_name = "BOOL")]
+        x_tick_labels: Option<bool>,
+        /// Draw the value scale along the y axis
+        #[arg(long, value_name = "BOOL")]
+        y_tick_labels: Option<bool>,
+        /// Rule gridlines up from the x axis
+        #[arg(long, value_name = "BOOL")]
+        x_gridlines: Option<bool>,
+        /// Rule gridlines across from the y axis
+        #[arg(long, value_name = "BOOL")]
+        y_gridlines: Option<bool>,
     },
 
     /// List a sheet's charts
@@ -1364,10 +1420,11 @@ enum Command {
         sheet: Option<String>,
     },
 
-    /// Set a chart's axis labels or a mark's colour
+    /// Set a chart's axes or a mark's colour
     ///
     /// `sheet chart-style book.ods 0 --x-axis-label Party --y-axis-label Votes` titles a
-    /// chart's axes. `--series-color 0=navy` sets a whole line series' colour (line charts
+    /// chart's axes, and `--y-gridlines true` rules gridlines across it.
+    /// `--series-color 0=navy` sets a whole line series' colour (line charts
     /// only — a bar or a pie colours per bar/slice instead: `--point-color 0.2=red` is the
     /// third bar or slice of series 0). Either repeatable flag with nothing after `=` — `
     /// --series-color 0=` — goes back to the default cycle. `doc/chart-format.md`.
@@ -1384,6 +1441,18 @@ enum Command {
         /// The y axis' own title; pass an empty string to clear it
         #[arg(long, value_name = "TEXT")]
         y_axis_label: Option<String>,
+        /// Draw the category names along the x axis
+        #[arg(long, value_name = "BOOL")]
+        x_tick_labels: Option<bool>,
+        /// Draw the value scale along the y axis
+        #[arg(long, value_name = "BOOL")]
+        y_tick_labels: Option<bool>,
+        /// Rule gridlines up from the x axis
+        #[arg(long, value_name = "BOOL")]
+        x_gridlines: Option<bool>,
+        /// Rule gridlines across from the y axis
+        #[arg(long, value_name = "BOOL")]
+        y_gridlines: Option<bool>,
         /// A line series' whole colour, as `SERIES=COLOR` (a palette name or `#rrggbb`) —
         /// `SERIES=` clears it. Repeat for more than one series.
         #[arg(long = "series-color", value_name = "SERIES=COLOR")]
@@ -2086,20 +2155,15 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             height,
             x_axis_label,
             y_axis_label,
+            x_tick_labels,
+            y_tick_labels,
+            x_gridlines,
+            y_gridlines,
         } => {
             let app = load(file, cli)?;
             let sheet_index = chart_sheet(&app, sheet.as_deref())?;
-            let series: Vec<(String, Option<String>)> = series
-                .iter()
-                .map(|s| match s.split_once('=') {
-                    Some((values, label)) => (values.to_owned(), Some(label.to_owned())),
-                    None => (s.clone(), None),
-                })
-                .collect();
-            let series: Vec<(&str, Option<&str>)> = series
-                .iter()
-                .map(|(values, label)| (values.as_str(), label.as_deref()))
-                .collect();
+            let owned = split_series(series);
+            let series = borrow_series(&owned);
             app.add_chart(
                 sheet_index,
                 (*r#type).into(),
@@ -2109,8 +2173,67 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 y,
                 width,
                 height,
-                x_axis_label.as_deref(),
-                y_axis_label.as_deref(),
+                axis(None, x_axis_label, *x_tick_labels, *x_gridlines),
+                axis(None, y_axis_label, *y_tick_labels, *y_gridlines),
+            )
+            .say()?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::ChartEdit {
+            file,
+            index,
+            sheet,
+            r#type,
+            categories,
+            series,
+            x_axis_label,
+            y_axis_label,
+            x_tick_labels,
+            y_tick_labels,
+            x_gridlines,
+            y_gridlines,
+        } => {
+            let app = load(file, cli)?;
+            let sheet_index = chart_sheet(&app, sheet.as_deref())?;
+            let charts = app.charts(sheet_index).say()?;
+            let chart = charts
+                .get(*index)
+                .ok_or_else(|| format!("sheet {sheet_index} has no chart {index}"))?;
+            // Nothing given keeps what is there — including the series, which are handed back
+            // as the resolved addresses they already are and re-resolve to themselves.
+            let owned = match series.is_empty() {
+                true => chart
+                    .series
+                    .iter()
+                    .map(|s| (s.values.clone(), s.label.clone()))
+                    .collect(),
+                false => split_series(series),
+            };
+            let series = borrow_series(&owned);
+            let categories = match categories {
+                None => chart.categories.clone(),
+                Some(range) if range.is_empty() => None,
+                Some(range) => Some(range.clone()),
+            };
+            app.edit_chart(
+                sheet_index,
+                *index,
+                r#type.map(Into::into).unwrap_or(chart.kind),
+                categories.as_deref(),
+                &series,
+                axis(
+                    Some(&chart.x_axis),
+                    x_axis_label,
+                    *x_tick_labels,
+                    *x_gridlines,
+                ),
+                axis(
+                    Some(&chart.y_axis),
+                    y_axis_label,
+                    *y_tick_labels,
+                    *y_gridlines,
+                ),
             )
             .say()?;
             finish(&app, cli, file, true)
@@ -2131,9 +2254,10 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        "{i}\t{:?}\t{}\t{series}",
+                        "{i}\t{:?}\t{}\t{series}\t{}",
                         chart.kind,
-                        chart.categories.as_deref().unwrap_or("-")
+                        chart.categories.as_deref().unwrap_or("-"),
+                        axes(chart)
                     )
                 })
                 .collect();
@@ -2169,6 +2293,10 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             sheet,
             x_axis_label,
             y_axis_label,
+            x_tick_labels,
+            y_tick_labels,
+            x_gridlines,
+            y_gridlines,
             series_color,
             point_color,
         } => {
@@ -2222,21 +2350,21 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     s.point_colors[p] = Some(color(hex)?);
                 }
             }
-            let x_axis_label = match x_axis_label {
-                None => chart.x_axis_label.clone(),
-                Some(s) if s.is_empty() => None,
-                Some(s) => Some(s.clone()),
-            };
-            let y_axis_label = match y_axis_label {
-                None => chart.y_axis_label.clone(),
-                Some(s) if s.is_empty() => None,
-                Some(s) => Some(s.clone()),
-            };
             app.set_chart_style(
                 sheet_index,
                 *index,
-                x_axis_label.as_deref(),
-                y_axis_label.as_deref(),
+                axis(
+                    Some(&chart.x_axis),
+                    x_axis_label,
+                    *x_tick_labels,
+                    *x_gridlines,
+                ),
+                axis(
+                    Some(&chart.y_axis),
+                    y_axis_label,
+                    *y_tick_labels,
+                    *y_gridlines,
+                ),
                 series,
             )
             .say()?;
@@ -2252,6 +2380,79 @@ fn chart_sheet(app: &App, name: Option<&str>) -> Result<usize, String> {
         Some(name) => a1::sheet(app, name).say(),
         None => Ok(0),
     }
+}
+
+/// One axis' worth of flags, resolved against what the chart already carries — `current` is
+/// `None` for `chart-add`, where there is nothing to keep and an omitted flag means the
+/// default. A title given as the empty string clears it, the same convention every other
+/// "unset it" flag in this CLI uses.
+fn axis(
+    current: Option<&grind_sheet::ChartAxis>,
+    label: &Option<String>,
+    tick_labels: Option<bool>,
+    gridlines: Option<bool>,
+) -> grind_sheet::ChartAxis {
+    let mut axis = current.cloned().unwrap_or_default();
+    if let Some(label) = label {
+        axis.label = (!label.is_empty()).then(|| label.clone());
+    }
+    if let Some(show) = tick_labels {
+        axis.tick_labels = show;
+    }
+    if let Some(show) = gridlines {
+        axis.gridlines = show;
+    }
+    axis
+}
+
+/// A chart's two axes, for one column of `chart-list` — the title if it has one, then a letter
+/// per thing switched on, so a chart that carries nothing prints `-` rather than a blank.
+fn axes(chart: &grind_sheet::Chart) -> String {
+    let one = |name: &str, axis: &grind_sheet::ChartAxis| {
+        let mut flags = String::new();
+        if axis.tick_labels {
+            flags.push('t');
+        }
+        if axis.gridlines {
+            flags.push('g');
+        }
+        match (&axis.label, flags.is_empty()) {
+            (None, true) => String::new(),
+            (None, false) => format!("{name}:{flags}"),
+            (Some(label), true) => format!("{name}:{label}"),
+            (Some(label), false) => format!("{name}:{label}:{flags}"),
+        }
+    };
+    let both = [one("x", &chart.x_axis), one("y", &chart.y_axis)]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    match both.is_empty() {
+        true => "-".to_owned(),
+        false => both,
+    }
+}
+
+/// `--series RANGE[=LABEL]`, split into the pair `App` takes — `chart-add` and `chart-edit`
+/// spell a series the same way, so they split one the same way too.
+fn split_series(series: &[String]) -> Vec<(String, Option<String>)> {
+    series
+        .iter()
+        .map(|s| match s.split_once('=') {
+            Some((values, label)) => (values.to_owned(), Some(label.to_owned())),
+            None => (s.clone(), None),
+        })
+        .collect()
+}
+
+/// The borrowed view of [`split_series`]' own output, which is what `App` actually takes —
+/// two steps because the owned halves have to outlive the call.
+fn borrow_series(series: &[(String, Option<String>)]) -> Vec<(&str, Option<&str>)> {
+    series
+        .iter()
+        .map(|(values, label)| (values.as_str(), label.as_deref()))
+        .collect()
 }
 
 // --- helpers ---

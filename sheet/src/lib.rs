@@ -40,7 +40,8 @@ pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
 pub use chart::{
-    Chart, ChartData, ChartKind, Series as ChartSeries, effective_color, series_color,
+    Axis as ChartAxis, Chart, ChartData, ChartKind, Series as ChartSeries, Ticks, axis_ticks,
+    effective_color, series_color,
 };
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
@@ -1340,25 +1341,10 @@ impl App {
         y: &str,
         width: &str,
         height: &str,
-        x_axis_label: Option<&str>,
-        y_axis_label: Option<&str>,
+        x_axis: chart::Axis,
+        y_axis: chart::Axis,
     ) -> Result<()> {
-        let categories = categories
-            .map(|addr| chart::parse_range(self, sheet, addr))
-            .transpose()?;
-        let series = series
-            .iter()
-            .map(|(values, label)| {
-                Ok(chart::Series {
-                    values: chart::parse_range(self, sheet, values)?,
-                    label: label
-                        .map(|addr| chart::parse_range(self, sheet, addr))
-                        .transpose()?,
-                    color: None,
-                    point_colors: Vec::new(),
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let (categories, series) = self.resolve_chart_ranges(sheet, categories, series)?;
         let mut chart = Chart::new(
             kind,
             x.to_owned(),
@@ -1368,8 +1354,8 @@ impl App {
         );
         chart.categories = categories;
         chart.series = series;
-        chart.x_axis_label = x_axis_label.map(str::to_owned);
-        chart.y_axis_label = y_axis_label.map(str::to_owned);
+        chart.x_axis = x_axis;
+        chart.y_axis = y_axis;
 
         self.mutate(|state| {
             let sheet_len = state
@@ -1444,28 +1430,89 @@ impl App {
         })
     }
 
-    /// Replace a chart's axis labels and its series (colours included) wholesale, one undo
-    /// step — the same "send the whole mutable bundle" shape [`Self::reshape_chart`] uses.
-    /// A caller reads the chart's current state through [`Self::charts`], mutates the one
-    /// field it cares about (an axis label, or one series' `color`/`point_colors`), and calls
-    /// this with the rest unchanged.
+    /// Replace a chart's axes and its series (colours included) wholesale, one undo step —
+    /// the same "send the whole mutable bundle" shape [`Self::reshape_chart`] uses. A caller
+    /// reads the chart's current state through [`Self::charts`], mutates the one field it
+    /// cares about (an axis' title, tick labels or gridlines, or one series'
+    /// `color`/`point_colors`), and calls this with the rest unchanged.
+    ///
+    /// The series here are **already resolved** — full range-address strings carrying their
+    /// colours, straight out of [`Self::charts`]. To change what a chart *points at*, in the
+    /// vocabulary a user types, use [`Self::edit_chart`] instead.
     pub fn set_chart_style(
         &self,
         sheet: usize,
         index: usize,
-        x_axis_label: Option<&str>,
-        y_axis_label: Option<&str>,
+        x_axis: chart::Axis,
+        y_axis: chart::Axis,
         series: Vec<chart::Series>,
     ) -> Result<()> {
+        let mut chart = self.chart(sheet, index)?;
+        chart.x_axis = x_axis;
+        chart.y_axis = y_axis;
+        chart.series = series;
+        self.replace_chart(sheet, index, chart)
+    }
+
+    /// Change what a chart *is*: its kind, the ranges it points at and its axes, in the same
+    /// vocabulary [`Self::add_chart`] takes — one undo step. Its position and size are left
+    /// alone (they are [`Self::reshape_chart`]'s, and a dialog that reopened would otherwise
+    /// undo a drag).
+    ///
+    /// **A colour a user picked by hand survives an edit** that leaves the series it was
+    /// picked on pointing at the same range: colours are matched back on by range address
+    /// rather than by position, so adding a series above another one does not shuffle the
+    /// colours down. A series whose range *changed* starts again from the default cycle,
+    /// since a colour chosen for the fourth bar of one range means nothing on another.
+    // Eight arguments, one over the limit, and the same eight `add_chart` takes minus the
+    // geometry plus the index — an "options struct" here would only be this list with a name.
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_chart(
+        &self,
+        sheet: usize,
+        index: usize,
+        kind: ChartKind,
+        categories: Option<&str>,
+        series: &[(&str, Option<&str>)],
+        x_axis: chart::Axis,
+        y_axis: chart::Axis,
+    ) -> Result<()> {
+        let (categories, mut series) = self.resolve_chart_ranges(sheet, categories, series)?;
+        let mut chart = self.chart(sheet, index)?;
+        for new in &mut series {
+            if let Some(old) = chart.series.iter().find(|old| old.values == new.values) {
+                new.color = old.color.clone();
+                new.point_colors = old.point_colors.clone();
+            }
+        }
+        chart.kind = kind;
+        chart.categories = categories;
+        chart.series = series;
+        chart.x_axis = x_axis;
+        chart.y_axis = y_axis;
+        self.replace_chart(sheet, index, chart)
+    }
+
+    /// One chart, by index — the read every chart edit starts from, since each of them
+    /// replaces the whole value (`Action::ReplaceChart`).
+    fn chart(&self, sheet: usize, index: usize) -> Result<Chart> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        s.charts()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))
+    }
+
+    /// The write half of the same pair: one `Action::ReplaceChart`, one undo entry.
+    fn replace_chart(&self, sheet: usize, index: usize, chart: Chart) -> Result<()> {
         self.mutate(|state| {
             let inverse = state
                 .doc
-                .apply(Action::SetChartStyle {
+                .apply(Action::ReplaceChart {
                     sheet,
                     index,
-                    x_axis_label: x_axis_label.map(str::to_owned),
-                    y_axis_label: y_axis_label.map(str::to_owned),
-                    series,
+                    chart: Box::new(chart),
                 })
                 .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))?;
             state.undo.push(inverse);
@@ -1474,16 +1521,38 @@ impl App {
         })
     }
 
+    /// A chart's ranges as a user types them, turned into the ODF range addresses a chart
+    /// stores — shared by [`Self::add_chart`] and [`Self::edit_chart`], and run **before** the
+    /// mutation, because resolving a reference takes the same lock the mutation does.
+    fn resolve_chart_ranges(
+        &self,
+        sheet: usize,
+        categories: Option<&str>,
+        series: &[(&str, Option<&str>)],
+    ) -> Result<(Option<String>, Vec<chart::Series>)> {
+        let categories = categories
+            .map(|addr| chart::parse_range(self, sheet, addr))
+            .transpose()?;
+        let series = series
+            .iter()
+            .map(|(values, label)| {
+                Ok(chart::Series {
+                    values: chart::parse_range(self, sheet, values)?,
+                    label: label
+                        .map(|addr| chart::parse_range(self, sheet, addr))
+                        .transpose()?,
+                    color: None,
+                    point_colors: Vec::new(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok((categories, series))
+    }
+
     /// A chart's data, resolved against the live sheet — what a shell draws from.
     pub fn chart_data(&self, sheet: usize, index: usize) -> Result<ChartData> {
-        let chart = {
-            let state = self.state.read().unwrap();
-            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
-            s.charts()
-                .get(index)
-                .cloned()
-                .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))?
-        };
+        // Read and released before `ChartData::read` takes the lock again for the cells.
+        let chart = self.chart(sheet, index)?;
         ChartData::read(self, &chart)
     }
 

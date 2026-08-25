@@ -155,9 +155,20 @@ impl Ui {
             .build();
         header.pack_end(&menu);
 
-        let insert_chart = gtk::Button::from_icon_name("view-object-select-symbolic");
-        insert_chart.set_tooltip_text(Some("Insert Chart"));
-        insert_chart.set_action_name(Some("win.chart-insert"));
+        // **Labelled, not icon-only.** There is no chart icon in the icon theme — the name
+        // this button used to carry (`view-object-select-symbolic`) is not in Adwaita at all,
+        // so it drew as the missing-image glyph. A word is better than a wrong picture, and
+        // this is the one button in the header that names a whole feature rather than
+        // repeating a menu item.
+        let chart_content = adw::ButtonContent::builder()
+            .label("Chart")
+            .icon_name("insert-object-symbolic")
+            .build();
+        let insert_chart = gtk::Button::builder()
+            .child(&chart_content)
+            .tooltip_text("Insert a chart from the selected cells")
+            .action_name("win.chart-insert")
+            .build();
         header.pack_start(&insert_chart);
 
         let banner = adw::Banner::new("");
@@ -341,6 +352,8 @@ impl Ui {
                 self.banner.set_button_label(Some("Recalculate Anyway"));
                 self.banner.set_revealed(true);
             }
+            Notice::EditChart(index) => self.chart_dialog(Some(index)),
+            Notice::DeleteChart(index) => self.delete_chart(index),
         }
     }
 
@@ -718,35 +731,54 @@ impl Ui {
 
     // --- charts ---
 
-    /// Insert a chart, prefilled from the current selection when one spans more than one row
-    /// and more than one column: the first column becomes categories, the first row becomes
-    /// each remaining column's own label, and each remaining column becomes a series — the
-    /// shape a user selecting "Party" and a column of vote counts already has in mind. A
-    /// smaller selection leaves the fields blank, the same as typing `grind sheet chart-add`
-    /// with nothing pre-filled.
-    fn insert_chart_dialog(self: &Rc<Self>) {
-        let (start, end) = self.grid.selection().rect();
-        let multi = end.row > start.row && end.col > start.col;
-        let categories_default = match multi {
-            true => format!(
-                "{}:{}",
-                a1::format(None, grind_sheet::Pos::new(start.row + 1, start.col)),
-                a1::format(None, grind_sheet::Pos::new(end.row, start.col))
-            ),
-            false => String::new(),
-        };
-        let mut series_defaults: Vec<String> = Vec::new();
-        if multi {
-            for col in (start.col + 1)..=end.col {
-                let values = format!(
-                    "{}:{}",
-                    a1::format(None, grind_sheet::Pos::new(start.row + 1, col)),
-                    a1::format(None, grind_sheet::Pos::new(end.row, col))
-                );
-                let label = a1::format(None, grind_sheet::Pos::new(start.row, col));
-                series_defaults.push(format!("{values}={label}"));
-            }
+    /// The chart dialog — **one dialog, both jobs**: `None` inserts a chart, `Some(index)`
+    /// edits the one already there. Every field means the same thing either way, so writing
+    /// them twice would only be two places for them to drift apart.
+    ///
+    /// Inserting prefills from the current selection when it spans more than one row and more
+    /// than one column: the first column becomes categories, the first row becomes each
+    /// remaining column's own label, and each remaining column becomes a series — the shape a
+    /// user selecting "Party" and a column of vote counts already has in mind. A smaller
+    /// selection leaves the fields blank, the same as typing `grind sheet chart-add` with
+    /// nothing pre-filled. Editing prefills from the chart itself.
+    fn chart_dialog(self: &Rc<Self>, editing: Option<usize>) {
+        let sheet = self.grid.sheet();
+        let existing = editing.and_then(|index| self.app.charts(sheet).ok()?.get(index).cloned());
+        if editing.is_some() && existing.is_none() {
+            return;
         }
+
+        let (kind_default, categories_default, series_defaults, x_axis, y_axis) = match &existing {
+            Some(chart) => (
+                match chart.kind {
+                    grind_sheet::ChartKind::Bar => 0,
+                    grind_sheet::ChartKind::Line => 1,
+                    grind_sheet::ChartKind::Pie => 2,
+                },
+                chart.categories.clone().unwrap_or_default(),
+                chart
+                    .series
+                    .iter()
+                    .map(|s| match &s.label {
+                        Some(label) => format!("{}={label}", s.values),
+                        None => s.values.clone(),
+                    })
+                    .collect(),
+                chart.x_axis.clone(),
+                chart.y_axis.clone(),
+            ),
+            None => {
+                let (categories, series) = self.selection_as_chart();
+                (
+                    0,
+                    categories,
+                    series,
+                    grind_sheet::ChartAxis::default(),
+                    grind_sheet::ChartAxis::default(),
+                )
+            }
+        };
+        let mut series_defaults = series_defaults;
         if series_defaults.is_empty() {
             series_defaults.push(String::new());
         }
@@ -754,6 +786,7 @@ impl Ui {
         let kind = adw::ComboRow::builder()
             .title("Type")
             .model(&gtk::StringList::new(&["Bar", "Line", "Pie"]))
+            .selected(kind_default)
             .build();
         let categories = adw::EntryRow::builder()
             .title("Categories (x axis), e.g. B3:B9")
@@ -775,14 +808,9 @@ impl Ui {
             move |_| series_list.append(&series_row(""))
         ));
 
-        let x_axis_label = adw::EntryRow::builder().title("X axis label").build();
-        let y_axis_label = adw::EntryRow::builder().title("Y axis label").build();
-        let labels_list = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .build();
-        labels_list.add_css_class("boxed-list");
-        labels_list.append(&x_axis_label);
-        labels_list.append(&y_axis_label);
+        let x = axis_group("X axis (categories)", "e.g. Party", &x_axis);
+        let y = axis_group("Y axis (values)", "e.g. Votes", &y_axis);
+        let (weak_x, weak_y) = (x.weak(), y.weak());
 
         let type_list = gtk::ListBox::builder()
             .selection_mode(gtk::SelectionMode::None)
@@ -791,9 +819,12 @@ impl Ui {
         type_list.append(&kind);
         type_list.append(&categories);
 
-        let insert = gtk::Button::with_label("Insert");
-        insert.add_css_class("suggested-action");
-        insert.set_halign(gtk::Align::End);
+        let apply = gtk::Button::with_label(match editing {
+            Some(_) => "Apply",
+            None => "Insert",
+        });
+        apply.add_css_class("suggested-action");
+        apply.set_halign(gtk::Align::End);
 
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -807,8 +838,9 @@ impl Ui {
             type_list.upcast_ref::<gtk::Widget>(),
             series_list.upcast_ref(),
             add_series.upcast_ref(),
-            labels_list.upcast_ref(),
-            insert.upcast_ref(),
+            x.group.upcast_ref(),
+            y.group.upcast_ref(),
+            apply.upcast_ref(),
         ] {
             content.append(widget);
         }
@@ -820,13 +852,16 @@ impl Ui {
         let view = adw::ToolbarView::builder().content(&scroller).build();
         view.add_top_bar(&adw::HeaderBar::new());
         let dialog = adw::Dialog::builder()
-            .title("Insert Chart")
-            .content_width(420)
-            .content_height(480)
+            .title(match editing {
+                Some(_) => "Edit Chart",
+                None => "Insert Chart",
+            })
+            .content_width(460)
+            .content_height(600)
             .child(&view)
             .build();
 
-        insert.connect_clicked(glib::clone!(
+        apply.connect_clicked(glib::clone!(
             #[strong(rename_to = ui)]
             self,
             #[weak]
@@ -837,10 +872,6 @@ impl Ui {
             categories,
             #[weak]
             series_list,
-            #[weak]
-            x_axis_label,
-            #[weak]
-            y_axis_label,
             move |_| {
                 let chart_kind = match kind.selected() {
                     1 => grind_sheet::ChartKind::Line,
@@ -878,30 +909,42 @@ impl Ui {
                     .map(|(v, l)| (v.as_str(), l.as_deref()))
                     .collect();
 
-                let x_label = x_axis_label.text();
-                let y_label = y_axis_label.text();
-                let x_label = (!x_label.trim().is_empty()).then(|| x_label.trim().to_owned());
-                let y_label = (!y_label.trim().is_empty()).then(|| y_label.trim().to_owned());
+                let (Some(x_axis), Some(y_axis)) = (weak_x.read(), weak_y.read()) else {
+                    return;
+                };
 
                 let sheet = ui.grid.sheet();
-                // Successive inserts land at slightly different spots, so they don't stack
-                // exactly on top of each other — a user repositions by dragging afterward
-                // either way.
-                let n = ui.app.charts(sheet).map(|c| c.len()).unwrap_or(0) as f64;
-                let x = grind_sheet::style::mm_length(20.0 + n * 5.0);
-                let y = grind_sheet::style::mm_length(20.0 + n * 5.0);
-                match ui.app.add_chart(
-                    sheet,
-                    chart_kind,
-                    categories_range.as_deref(),
-                    &series,
-                    &x,
-                    &y,
-                    "12cm",
-                    "8cm",
-                    x_label.as_deref(),
-                    y_label.as_deref(),
-                ) {
+                let result = match editing {
+                    Some(index) => ui.app.edit_chart(
+                        sheet,
+                        index,
+                        chart_kind,
+                        categories_range.as_deref(),
+                        &series,
+                        x_axis,
+                        y_axis,
+                    ),
+                    None => {
+                        // Successive inserts land at slightly different spots, so they don't
+                        // stack exactly on top of each other — a user repositions by dragging
+                        // afterward either way.
+                        let n = ui.app.charts(sheet).map(|c| c.len()).unwrap_or(0) as f64;
+                        let at = grind_sheet::style::mm_length(20.0 + n * 5.0);
+                        ui.app.add_chart(
+                            sheet,
+                            chart_kind,
+                            categories_range.as_deref(),
+                            &series,
+                            &at,
+                            &at,
+                            "12cm",
+                            "8cm",
+                            x_axis,
+                            y_axis,
+                        )
+                    }
+                };
+                match result {
                     Ok(()) => {
                         dialog.close();
                     }
@@ -911,6 +954,43 @@ impl Ui {
         ));
 
         dialog.present(Some(&self.window));
+    }
+
+    /// The current selection read as a chart's ranges: `(categories, series)`, both empty
+    /// unless the selection spans more than one row *and* more than one column, which is the
+    /// only shape where "the first column names the rest" is a safe guess.
+    fn selection_as_chart(&self) -> (String, Vec<String>) {
+        let (start, end) = self.grid.selection().rect();
+        if end.row <= start.row || end.col <= start.col {
+            return (String::new(), Vec::new());
+        }
+        let range = |row_from: u32, row_to: u32, col: u32| {
+            format!(
+                "{}:{}",
+                a1::format(None, grind_sheet::Pos::new(row_from, col)),
+                a1::format(None, grind_sheet::Pos::new(row_to, col))
+            )
+        };
+        let categories = range(start.row + 1, end.row, start.col);
+        let series = ((start.col + 1)..=end.col)
+            .map(|col| {
+                format!(
+                    "{}={}",
+                    range(start.row + 1, end.row, col),
+                    a1::format(None, grind_sheet::Pos::new(start.row, col))
+                )
+            })
+            .collect();
+        (categories, series)
+    }
+
+    /// Deleting a chart is immediate, with an Undo toast — the inverse carries the whole
+    /// chart, exactly as deleting a sheet does.
+    fn delete_chart(self: &Rc<Self>, index: usize) {
+        match self.app.remove_chart(self.grid.sheet(), index) {
+            Ok(()) => self.undoable_toast("Deleted chart"),
+            Err(error) => self.toast(&error.to_string()),
+        }
     }
 
     // --- sheets ---
@@ -1204,7 +1284,80 @@ fn name_row(
     row
 }
 
-/// One series in the insert-chart dialog: `RANGE[=LABEL]`, the same vocabulary
+/// One axis' worth of the chart dialog: a title, and a switch for each of the two things an
+/// axis can draw. Kept together with a [`WeakAxis::read`] that turns the widgets back into the
+/// [`grind_sheet::ChartAxis`] the core takes, so what is shown and what is stored are never
+/// assembled in two different places.
+struct AxisGroup {
+    group: adw::PreferencesGroup,
+    label: adw::EntryRow,
+    tick_labels: adw::SwitchRow,
+    gridlines: adw::SwitchRow,
+}
+
+impl AxisGroup {
+    /// The same three widgets, held weakly — what the Apply handler captures. A *strong*
+    /// capture there is a reference cycle (dialog → button → closure → row → the dialog it
+    /// is in), which is why every other widget that handler reads is `#[weak]` too.
+    fn weak(&self) -> WeakAxis {
+        WeakAxis {
+            label: self.label.downgrade(),
+            tick_labels: self.tick_labels.downgrade(),
+            gridlines: self.gridlines.downgrade(),
+        }
+    }
+}
+
+struct WeakAxis {
+    label: glib::WeakRef<adw::EntryRow>,
+    tick_labels: glib::WeakRef<adw::SwitchRow>,
+    gridlines: glib::WeakRef<adw::SwitchRow>,
+}
+
+impl WeakAxis {
+    /// What the rows currently say, or `None` once the dialog they were in is gone.
+    fn read(&self) -> Option<grind_sheet::ChartAxis> {
+        let label = self.label.upgrade()?.text();
+        let label = label.trim();
+        Some(grind_sheet::ChartAxis {
+            label: (!label.is_empty()).then(|| label.to_owned()),
+            tick_labels: self.tick_labels.upgrade()?.is_active(),
+            gridlines: self.gridlines.upgrade()?.is_active(),
+        })
+    }
+}
+
+fn axis_group(title: &str, hint: &str, axis: &grind_sheet::ChartAxis) -> AxisGroup {
+    let group = adw::PreferencesGroup::builder().title(title).build();
+    let label = adw::EntryRow::builder()
+        .title(format!("Title, {hint}"))
+        .text(axis.label.clone().unwrap_or_default())
+        .build();
+    let tick_labels = adw::SwitchRow::builder()
+        .title("Tick labels")
+        .subtitle("Name each value along this axis")
+        .active(axis.tick_labels)
+        .build();
+    let gridlines = adw::SwitchRow::builder()
+        .title("Gridlines")
+        .active(axis.gridlines)
+        .build();
+    for row in [
+        label.upcast_ref::<gtk::Widget>(),
+        tick_labels.upcast_ref(),
+        gridlines.upcast_ref(),
+    ] {
+        group.add(row);
+    }
+    AxisGroup {
+        group,
+        label,
+        tick_labels,
+        gridlines,
+    }
+}
+
+/// One series in the chart dialog: `RANGE[=LABEL]`, the same vocabulary
 /// `chart-add --series` already accepts, plus a button that removes the row.
 fn series_row(text: &str) -> adw::EntryRow {
     let row = adw::EntryRow::builder()
@@ -1357,7 +1510,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.grid.toggle_filter()
         }),
         ("names", &[][..], |ui| ui.manage_names()),
-        ("chart-insert", &[][..], |ui| ui.insert_chart_dialog()),
+        ("chart-insert", &[][..], |ui| ui.chart_dialog(None)),
         ("calculations", &["<Control><Shift>f"][..], |ui| {
             ui.explore_calculations()
         }),

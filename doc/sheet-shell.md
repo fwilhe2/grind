@@ -515,9 +515,11 @@ step onto a row that has no height, so the selection appears to stick until it p
 run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
 handing it the hidden set — worth doing the first time it annoys somebody, not before).
 CSV, sort, find/replace and print keep their existing not-doing rows and gates. The chart's
-own gaps moved: creating one from the GUI, assigning a colour by hand and an axis title are
-now built (`doc/chart-format.md`) — no keyboard-driven repositioning is what remains of that
-row.
+own gaps moved again: creating one from the GUI, *editing* one (double-click, or right-click
+→ Edit Chart…), deleting one from that same menu, assigning a colour by hand, and every part
+of an axis — its title, its tick labels, its gridlines — are now built
+(`doc/chart-format.md`). What remains of that row is the keyboard: no keyboard-driven
+repositioning, and no way to reach a chart's dialog without a pointer at all.
 
 **Filtering is built** (§9.4): the dropdown button in each heading cell of the range, a
 value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L on the tool strip to

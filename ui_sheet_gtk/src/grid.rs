@@ -290,6 +290,12 @@ pub enum Notice {
     /// The core refused, and said why — a rectangle too large to format, a sheet that is
     /// gone. Carries the core's own message rather than a rephrasing of it.
     Refused(String),
+    /// The user asked to change the chart at this index on the active sheet — a double-click
+    /// on it, or *Edit Chart* from its context menu. The dialog lives in the window rather
+    /// than here, so the grid says what was asked for instead of asking it.
+    EditChart(usize),
+    /// The user asked to delete that chart, from the same menu.
+    DeleteChart(usize),
 }
 
 impl Default for Grid {
@@ -634,6 +640,11 @@ mod imp {
         /// reuse `filter_menu` gets for a heavier reason.
         pub hide_menu: OnceCell<gtk::Popover>,
         pub hide_button: OnceCell<gtk::Button>,
+        /// The right-click menu over a chart — *Edit* and *Delete*, built once and
+        /// repositioned per opening, exactly as `hide_menu` is.
+        pub chart_menu: OnceCell<gtk::Popover>,
+        /// Which chart that menu is currently open over.
+        pub chart_menu_target: Cell<Option<usize>>,
         /// What the menu is currently open over: columns or rows, and the half-open range
         /// its button hides — read back when the button is clicked, since the click handler
         /// is wired once rather than once per opening.
@@ -734,6 +745,8 @@ mod imp {
                 filter_menu: OnceCell::new(),
                 hide_menu: OnceCell::new(),
                 hide_button: OnceCell::new(),
+                chart_menu: OnceCell::new(),
+                chart_menu_target: Cell::new(None),
                 hide_target: Cell::new(None),
             }
         }
@@ -804,6 +817,9 @@ mod imp {
             if let Some(menu) = self.hide_menu.get() {
                 menu.unparent();
             }
+            if let Some(menu) = self.chart_menu.get() {
+                menu.unparent();
+            }
         }
 
         fn constructed(&self) {
@@ -857,6 +873,39 @@ mod imp {
             hide_menu.set_parent(&*widget);
             let _ = self.hide_button.set(hide_button);
             let _ = self.hide_menu.set(hide_menu);
+
+            // The right-click menu over a chart. Both items hand the window a `Notice` rather
+            // than doing the work here: a dialog and an undo toast are the window's, and the
+            // grid's job is to say which chart was asked about.
+            let chart_items = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            for (label, notice) in [
+                ("Edit Chart…", Notice::EditChart as fn(usize) -> Notice),
+                ("Delete Chart", Notice::DeleteChart as fn(usize) -> Notice),
+            ] {
+                let button = gtk::Button::with_label(label);
+                button.add_css_class("flat");
+                button.connect_clicked(glib::clone!(
+                    #[weak(rename_to = grid)]
+                    widget,
+                    move |_| {
+                        let imp = grid.imp();
+                        if let Some(index) = imp.chart_menu_target.take() {
+                            imp.notice(notice(index));
+                        }
+                        if let Some(menu) = imp.chart_menu.get() {
+                            menu.popdown();
+                        }
+                    }
+                ));
+                chart_items.append(&button);
+            }
+            let chart_menu = gtk::Popover::builder()
+                .child(&chart_items)
+                .has_arrow(true)
+                .position(gtk::PositionType::Bottom)
+                .build();
+            chart_menu.set_parent(&*widget);
+            let _ = self.chart_menu.set(chart_menu);
 
             self.editor.set_buffer(&self.buffer);
             // The caret moving is its own event: the completion and the signature hint are
@@ -912,6 +961,13 @@ mod imp {
                     if presses != 2 {
                         return;
                     }
+                    // A chart is over the cells, so a double-click on one means the chart —
+                    // the same "open what was double-clicked" every object in a spreadsheet
+                    // has, and the reason the cell editor never opens underneath it.
+                    if let Some((index, _, _)) = grid.imp().chart_hit(x, y) {
+                        grid.imp().notice(Notice::EditChart(index));
+                        return;
+                    }
                     // On a boundary the second click is a fit, not an edit — the boundary is
                     // in the header band, where there is nothing to type into anyway.
                     match grid.imp().geom().hit(x, y) {
@@ -956,9 +1012,9 @@ mod imp {
             ));
             widget.add_controller(drag);
 
-            // Right-click a column or row header to hide it (§5.4) — the one context menu
-            // this shell has, and deliberately narrow: it only fires over a header, where
-            // "hide" is the only thing a right click could mean.
+            // Right-click: a chart, or a column or row header to hide it (§5.4). Both are
+            // deliberately narrow — over a header "hide" is the only thing a right click
+            // could mean, and over a chart it means the chart rather than the cells beneath.
             let secondary = gtk::GestureClick::new();
             secondary.set_button(gtk::gdk::BUTTON_SECONDARY);
             secondary.connect_pressed(glib::clone!(
@@ -966,6 +1022,10 @@ mod imp {
                 widget,
                 move |_, _, x, y| {
                     let imp = grid.imp();
+                    if let Some((index, _, _)) = imp.chart_hit(x, y) {
+                        imp.open_chart_menu(index, x, y);
+                        return;
+                    }
                     let hit = imp.geom().hit(x, y);
                     let selection = imp.selection.get();
                     if let Some((is_cols, from, to)) = hide_range_for_hit(selection, hit) {
@@ -2332,13 +2392,15 @@ mod imp {
                     &*self.obj(),
                     f.snapshot,
                     at,
+                    chart,
                     &data,
-                    &color,
-                    f.palette.background,
-                    f.palette.lines,
-                    f.palette.foreground,
-                    chart.x_axis_label.as_deref(),
-                    chart.y_axis_label.as_deref(),
+                    &crate::chart::Painter {
+                        background: f.palette.background,
+                        border: f.palette.lines,
+                        foreground: f.palette.foreground,
+                        grid: f.palette.lines,
+                        color: &color,
+                    },
                 );
                 // The resize handle, the same square the fill handle is — a chart being
                 // dragged also gets an accent outline, so the whole shape being moved reads
@@ -2418,19 +2480,22 @@ mod imp {
             };
             let Some((series, point)) = crate::chart::mark_at(
                 rect,
+                chart,
                 &data,
                 x,
                 y,
-                chart.x_axis_label.as_deref(),
-                chart.y_axis_label.as_deref(),
+                &crate::chart::measurer(&*self.obj()),
             ) else {
+                // A click on a chart's own background is not a click on anything — editing
+                // it is a double-click or the context menu, which is what a user who did not
+                // aim at a bar meant.
                 return;
             };
 
             let shown = crate::theme::color(&grind_sheet::effective_color(chart, series, point))
                 .unwrap_or(gtk::gdk::RGBA::BLACK);
-            let x_axis_label = chart.x_axis_label.clone();
-            let y_axis_label = chart.y_axis_label.clone();
+            let x_axis = chart.x_axis.clone();
+            let y_axis = chart.y_axis.clone();
             let series_vec = chart.series.clone();
 
             let popover = gtk::Popover::new();
@@ -2456,8 +2521,8 @@ mod imp {
                 if let Err(error) = app.set_chart_style(
                     sheet,
                     chart_index,
-                    x_axis_label.as_deref(),
-                    y_axis_label.as_deref(),
+                    x_axis.clone(),
+                    y_axis.clone(),
                     series_vec,
                 ) {
                     widget.imp().notice(Notice::Refused(error.to_string()));
@@ -2739,6 +2804,16 @@ mod imp {
                 (false, true) => "Hide Rows",
                 (false, false) => "Hide Row",
             });
+            menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            menu.popup();
+        }
+
+        /// The right-click menu over a chart, at the point it was clicked.
+        fn open_chart_menu(&self, index: usize, x: f64, y: f64) {
+            let Some(menu) = self.chart_menu.get() else {
+                return;
+            };
+            self.chart_menu_target.set(Some(index));
             menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
             menu.popup();
         }

@@ -122,7 +122,6 @@ pub struct Builder {
 /// (`doc/chart-format.md`'s two shapes). Turned into a [`crate::chart::Chart`] only when
 /// `draw:frame` closes, and dropped silently if a required piece never showed up — the same
 /// §9 tolerance as any other element this build cannot make sense of.
-#[derive(Default)]
 struct PendingChart {
     kind: Option<crate::chart::ChartKind>,
     categories: Option<String>,
@@ -131,14 +130,40 @@ struct PendingChart {
     y: Option<String>,
     width: Option<String>,
     height: Option<String>,
-    x_axis_label: Option<String>,
-    y_axis_label: Option<String>,
+    x_axis: crate::chart::Axis,
+    y_axis: crate::chart::Axis,
     /// Every `style:style style:family="chart"` this chart's own
     /// `office:automatic-styles` declares, name → `draw:fill-color` — collected before
     /// `chart:plot-area` is reached (the schema puts automatic-styles ahead of the body,
     /// `write.rs`'s own comment relies on the same ordering) so a `chart:series`/
     /// `chart:data-point`'s own `chart:style-name` can be resolved by the time it is seen.
     styles: HashMap<String, String>,
+    /// The same table for the other half of a chart style this build reads: name →
+    /// `chart:display-label`, which an *axis'* own `chart:style-name` resolves against.
+    /// Separate from `styles` because the two properties live on different elements
+    /// (`style:graphic-properties` and `style:chart-properties`) and no style carries both.
+    display_labels: HashMap<String, bool>,
+}
+
+impl Default for PendingChart {
+    fn default() -> Self {
+        PendingChart {
+            kind: None,
+            categories: None,
+            series: Vec::new(),
+            x: None,
+            y: None,
+            width: None,
+            height: None,
+            // `Axis::bare`, deliberately, rather than `Axis::default` — an axis a *file* says
+            // nothing about is not an axis a *user* said nothing about, and the two defaults
+            // differ. `crate::chart::Axis::bare` has the measurement that decides it.
+            x_axis: crate::chart::Axis::bare(),
+            y_axis: crate::chart::Axis::bare(),
+            styles: HashMap::new(),
+            display_labels: HashMap::new(),
+        }
+    }
 }
 
 /// One cell of the buffered row. A struct rather than a tuple since the day it grew a
@@ -530,9 +555,10 @@ impl Context<Builder> for Frame {
                         main.kind = found.kind;
                         main.categories = found.categories;
                         main.series = found.series;
-                        main.x_axis_label = found.x_axis_label;
-                        main.y_axis_label = found.y_axis_label;
+                        main.x_axis = found.x_axis;
+                        main.y_axis = found.y_axis;
                         main.styles = found.styles;
+                        main.display_labels = found.display_labels;
                     }
                 }
                 Some(Box::new(super::context::Ignore))
@@ -561,8 +587,8 @@ impl Context<Builder> for Frame {
             y: pending.y.unwrap_or_else(|| "0cm".to_owned()),
             width,
             height,
-            x_axis_label: pending.x_axis_label,
-            y_axis_label: pending.y_axis_label,
+            x_axis: pending.x_axis,
+            y_axis: pending.y_axis,
         };
         let sheet = &mut b.doc.sheets[b.sheet];
         let index = sheet.charts().len();
@@ -611,19 +637,30 @@ impl Context<Builder> for ChartAutomaticStyles {
     }
 }
 
-/// One `style:style style:family="chart"` — only its `style:graphic-properties`' own
-/// `draw:fill-color` (rng:10941) is read back out of it.
+/// One `style:style style:family="chart"` — two properties are read back out of it: a mark's
+/// `style:graphic-properties`' own `draw:fill-color` (rng:10941), and an axis'
+/// `style:chart-properties`' own `chart:display-label` (rng:10069). Everything else in a chart
+/// style is read past, the same as any other unmodelled property.
 struct ChartStyleStyle {
     name: String,
 }
 
 impl Context<Builder> for ChartStyleStyle {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let Some(pending) = &mut b.pending_chart else {
+            return None;
+        };
         if name.is(Ns::Style, "graphic-properties")
             && let Some(color) = attrs.get(Ns::Draw, "fill-color")
-            && let Some(pending) = &mut b.pending_chart
         {
             pending.styles.insert(self.name.clone(), color.to_owned());
+        }
+        if name.is(Ns::Style, "chart-properties")
+            && let Some(display) = attrs.get(Ns::Chart, "display-label")
+        {
+            pending
+                .display_labels
+                .insert(self.name.clone(), display == "true");
         }
         None
     }
@@ -694,6 +731,17 @@ impl Context<Builder> for ChartPlotArea {
                     Some("y") => AxisDim::Y,
                     _ => return None,
                 };
+                // The axis' own style says whether its tick labels are drawn. An axis with no
+                // style, or one whose style says nothing about it, keeps
+                // `crate::chart::Axis::default`'s answer — see that impl for why absent means
+                // shown.
+                if let Some(display) = attrs
+                    .get(Ns::Chart, "style-name")
+                    .and_then(|name| b.pending_chart.as_ref()?.display_labels.get(name).copied())
+                    && let Some(pending) = &mut b.pending_chart
+                {
+                    dim.axis(pending).tick_labels = display;
+                }
                 Some(Box::new(ChartAxis { dim }) as Ctx)
             }
             (Ns::Chart, "series") => {
@@ -782,7 +830,17 @@ enum AxisDim {
     Y,
 }
 
-/// `chart:axis` (rng:423) — categories (x only) and a title (either axis).
+impl AxisDim {
+    /// The half of the chart being read that this dimension writes into.
+    fn axis(self, pending: &mut PendingChart) -> &mut crate::chart::Axis {
+        match self {
+            AxisDim::X => &mut pending.x_axis,
+            AxisDim::Y => &mut pending.y_axis,
+        }
+    }
+}
+
+/// `chart:axis` (rng:423) — categories (x only), a title, and gridlines (either axis).
 struct ChartAxis {
     dim: AxisDim,
 }
@@ -799,6 +857,15 @@ impl Context<Builder> for ChartAxis {
                 None
             }
             (Ns::Chart, "title", _) => Some(Box::new(ChartAxisTitle { dim: self.dim }) as Ctx),
+            // A minor grid is read as a grid: this build draws one set of gridlines
+            // (`doc/chart-format.md`), so an axis carrying either kind carries gridlines, and
+            // a save writes the major one back.
+            (Ns::Chart, "grid", _) => {
+                if let Some(pending) = &mut b.pending_chart {
+                    self.dim.axis(pending).gridlines = true;
+                }
+                None
+            }
             _ => None,
         }
     }
@@ -826,10 +893,7 @@ impl Context<Builder> for ChartAxisTitle {
             return;
         }
         if let Some(pending) = &mut b.pending_chart {
-            match self.dim {
-                AxisDim::X => pending.x_axis_label = Some(text),
-                AxisDim::Y => pending.y_axis_label = Some(text),
-            }
+            self.dim.axis(pending).label = Some(text);
         }
     }
 }

@@ -70,10 +70,67 @@ pub struct Series {
     pub point_colors: Vec<Option<String>>,
 }
 
+/// One axis of a chart — everything this build carries about the x or the y one, which is
+/// three things: a title, whether its tick labels are drawn, and whether it rules gridlines
+/// across the plot. Each is a distinct element or attribute in ODF, cited on its own field.
+///
+/// This is deliberately *not* the chart's own title or its legend, both of which stay out
+/// (`doc/chart-format.md`'s scope line) — an axis' own title is a different element.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Axis {
+    /// This axis' own `chart:title` (rng:422-434), plain text. A different element from
+    /// `chart:chart`'s own title, which this build never reads or writes.
+    pub label: Option<String>,
+    /// Whether the tick labels along this axis are drawn — the categories on x, the value
+    /// scale on y. `chart:display-label` (rng:10069), a `style:chart-properties` attribute on
+    /// the axis' own style rather than an attribute of the axis element itself.
+    pub tick_labels: bool,
+    /// Whether this axis rules major gridlines across the plot —
+    /// `chart:grid chart:class="major"` (rng:672-693), an element inside `chart:axis`.
+    pub gridlines: bool,
+}
+
+impl Default for Axis {
+    /// What a **new** axis is: tick labels on, no gridlines, no title. A product decision —
+    /// a chart somebody just made should be readable without having to be told to be — and
+    /// deliberately *not* what an axis a file says nothing about reads as, which is
+    /// [`Axis::bare`].
+    fn default() -> Self {
+        Axis {
+            label: None,
+            tick_labels: true,
+            gridlines: false,
+        }
+    }
+}
+
+impl Axis {
+    /// An axis carrying nothing at all — no title, no tick labels, no gridlines.
+    ///
+    /// **This, not [`Axis::default`], is how an axis a file says nothing about reads.** The
+    /// schema states no default for `chart:display-label` (rng:10069 is a bare optional
+    /// boolean), so the oracle decides: LibreOffice draws no tick labels for an axis whose
+    /// style omits it, measured in `doc/chart-format.md`. A chart LibreOffice writes always
+    /// states the attribute either way, and so does this build's writer, so the case this
+    /// default covers is a file neither of them wrote.
+    pub fn bare() -> Self {
+        Axis {
+            label: None,
+            tick_labels: false,
+            gridlines: false,
+        }
+    }
+
+    /// Whether this axis needs drawing at all, beyond the marks themselves.
+    pub fn is_empty(&self) -> bool {
+        self.label.is_none() && !self.tick_labels && !self.gridlines
+    }
+}
+
 /// A chart, as this build models it — `doc/chart-format.md`'s scope line is the whole of what
 /// is missing: no chart-level title, no subtitle, no legend, one categories range and one
-/// values range per series. An axis title is in scope (`chart:axis`'s own `chart:title`, a
-/// different element from the chart-level one `doc/not-doing.md` excludes).
+/// values range per series. An axis' own title, tick labels and gridlines are in scope — see
+/// [`Axis`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chart {
     pub kind: ChartKind,
@@ -86,12 +143,12 @@ pub struct Chart {
     pub y: String,
     pub width: String,
     pub height: String,
-    /// The x axis' own `chart:title` (rng:422-434), plain text.
+    /// The category axis.
     #[serde(default)]
-    pub x_axis_label: Option<String>,
-    /// The y axis' own `chart:title`.
+    pub x_axis: Axis,
+    /// The value axis.
     #[serde(default)]
-    pub y_axis_label: Option<String>,
+    pub y_axis: Axis,
 }
 
 impl Chart {
@@ -105,8 +162,8 @@ impl Chart {
             y,
             width,
             height,
-            x_axis_label: None,
-            y_axis_label: None,
+            x_axis: Axis::default(),
+            y_axis: Axis::default(),
         }
     }
 }
@@ -184,6 +241,69 @@ pub fn series_color(n: usize) -> &'static str {
     let name = SERIES_COLORS[n % SERIES_COLORS.len()];
     crate::style::palette(name).expect("every name in SERIES_COLORS is in PALETTE")
 }
+
+/// The value axis' own scale: where its ticks sit, and how to spell one. Computed from the
+/// data rather than stored, and computed **here** rather than in a shell, so that a chart
+/// drawn by two different shells is drawn against the same axis — the same reason line layout
+/// lives in `grind-core` (`doc/text-layout.md`, Path C) rather than in each window that draws
+/// text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ticks {
+    /// The distance between two ticks — 1, 2 or 5 times a power of ten.
+    pub step: f64,
+    /// Every tick from `0.0` up to and including [`Ticks::max`], in order.
+    pub values: Vec<f64>,
+}
+
+impl Ticks {
+    /// The top of the axis: the last tick, which is at or above the largest value plotted.
+    /// **This, not the data's own maximum, is what a plot is scaled against** — an axis
+    /// rounded up to a tick is what makes a gridline meet the top of the plot instead of
+    /// floating just below it.
+    pub fn max(&self) -> f64 {
+        self.values.last().copied().unwrap_or(1.0)
+    }
+
+    /// One tick, spelled for an axis. Rounded to the decimals [`Ticks::step`] actually needs,
+    /// so a step of `0.1` reads `0.3` rather than the `0.30000000000000004` a binary float
+    /// would otherwise print.
+    pub fn label(&self, value: f64) -> String {
+        let decimals = (-self.step.log10().floor()).clamp(0.0, 6.0) as usize;
+        format!("{value:.decimals$}")
+    }
+}
+
+/// The ticks a value axis running from zero to `max` gets — a step of 1, 2 or 5 times a power
+/// of ten, chosen as the smallest that keeps the count near [`TICK_TARGET`]. The "nice
+/// numbers" rule, which is a presentation decision this build makes once rather than one each
+/// shell makes differently.
+pub fn axis_ticks(max: f64) -> Ticks {
+    if !max.is_finite() || max <= 0.0 {
+        return Ticks {
+            step: 1.0,
+            values: vec![0.0, 1.0],
+        };
+    }
+    let rough = max / TICK_TARGET;
+    let magnitude = 10f64.powf(rough.log10().floor());
+    let step = [1.0, 2.0, 5.0, 10.0]
+        .into_iter()
+        .map(|multiple| multiple * magnitude)
+        .find(|step| *step >= rough)
+        // Unreachable in exact arithmetic (`10 * magnitude > rough` by construction), and a
+        // rounding error at the boundary is worth a wider axis rather than a panic.
+        .unwrap_or(magnitude * 10.0);
+    let count = (max / step).ceil().max(1.0) as usize;
+    Ticks {
+        step,
+        // Multiplied rather than accumulated: adding `step` to itself `count` times drifts.
+        values: (0..=count).map(|i| i as f64 * step).collect(),
+    }
+}
+
+/// How many intervals [`axis_ticks`] aims for. Five is the count that reads as a scale without
+/// becoming a ladder — the number of gridlines a reader can count without counting.
+const TICK_TARGET: f64 = 5.0;
 
 /// A stored range, read back to the place it names — the reverse of [`parse_range`], used
 /// whenever a chart's own ranges are resolved rather than typed: reading a chart back out to
@@ -329,6 +449,36 @@ mod tests {
         chart.series = vec![s];
         assert_eq!(effective_color(&chart, 0, Some(0)), series_color(0));
         assert_eq!(effective_color(&chart, 0, Some(1)), "#123456");
+    }
+
+    #[test]
+    fn ticks_run_from_zero_to_at_least_the_largest_value() {
+        for max in [1.0, 7.0, 99.0, 100.0, 1234.0, 0.37] {
+            let ticks = axis_ticks(max);
+            assert_eq!(ticks.values.first(), Some(&0.0), "max {max}");
+            assert!(ticks.max() >= max, "max {max} ticked to {}", ticks.max());
+            // Near enough to the target that the axis reads as a scale rather than a ladder
+            // or a pair of endpoints.
+            assert!(
+                (3..=11).contains(&ticks.values.len()),
+                "max {max} gave {} ticks",
+                ticks.values.len()
+            );
+        }
+    }
+
+    #[test]
+    fn a_tick_is_spelled_with_the_decimals_its_own_step_needs() {
+        assert_eq!(axis_ticks(1000.0).label(400.0), "400");
+        let tenths = axis_ticks(0.5);
+        assert_eq!(tenths.label(tenths.values[3]), "0.3");
+    }
+
+    #[test]
+    fn an_axis_of_nothing_still_has_a_scale_rather_than_dividing_by_zero() {
+        let ticks = axis_ticks(0.0);
+        assert!(ticks.max() > 0.0);
+        assert_eq!(axis_ticks(f64::NAN).max(), 1.0);
     }
 
     #[test]

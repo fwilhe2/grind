@@ -63,15 +63,21 @@ stops ratcheting.
   JSON report. Not a command of its own, because the answer is only interesting *after* an
   edit — asking it of an untouched document is what `grind sheet recalc --dry-run` is for.
 - `add_chart` — `grind sheet chart-add --type bar|line|pie --categories <range> --series
-  <range>[=<label-range>] … [--x-axis-label <text>] [--y-axis-label <text>]`
-  (`doc/chart-format.md`)
+  <range>[=<label-range>] … [--x-axis-label <text>] [--y-axis-label <text>]
+  [--x-tick-labels <bool>] [--y-tick-labels <bool>] [--x-gridlines <bool>]
+  [--y-gridlines <bool>]` (`doc/chart-format.md`)
+- `edit_chart` — `grind sheet chart-edit <index> [--type bar|line|pie]
+  [--categories <range>] [--series <range>[=<label-range>]]… [the same axis flags]` — what a
+  chart *is*, changed after the fact in the vocabulary a user types; every flag left off keeps
+  what the chart already has, and its position stays `chart-reshape`'s
 - `charts` — `grind sheet chart-list`
 - `remove_chart` — `grind sheet chart-remove <index>`
 - `reshape_chart` — `grind sheet chart-reshape <index> --x --y --width --height`
 - `set_chart_style` — `grind sheet chart-style <index> [--x-axis-label <text>]
-  [--y-axis-label <text>] [--series-color <series>=<color>]…
-  [--point-color <series>.<point>=<color>]…` — an axis' own title, and the colour a line
-  series or a bar/pie point gets, overriding `series_color`'s default cycle
+  [--y-axis-label <text>] [--x-tick-labels <bool>] [--y-tick-labels <bool>]
+  [--x-gridlines <bool>] [--y-gridlines <bool>] [--series-color <series>=<color>]…
+  [--point-color <series>.<point>=<color>]…` — everything an axis carries, and the colour a
+  line series or a bar/pie point gets, overriding `series_color`'s default cycle
   (`doc/chart-format.md`)
 - `chart_data` — not exposed: nothing here draws a chart. `chart-list`'s ranges are read
   back through `charts`; `grind-sheet-gtk` is the shell that resolves them against the live

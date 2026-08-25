@@ -24,6 +24,7 @@ use super::names::{CHART, DRAW, FO, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLI
 // type (§1.1, §1.3), so they live in `grind-core` and are reached here by the names this
 // file always used.
 use crate::Result;
+use crate::chart::Axis;
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
@@ -707,6 +708,15 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
             }
         }
     }
+    // Each axis needs a style of its own to carry `chart:display-label` — a
+    // `style:chart-properties` attribute, not an attribute of `chart:axis` itself.
+    //
+    // **Always written, on both axes, whichever way it goes** (`doc/chart-format.md` has the
+    // measurement): LibreOffice's own importer reads an *absent* `chart:display-label` as
+    // `false`, so leaving the attribute off when tick labels are shown would hand out a chart
+    // that draws differently there than it does here. A chart LibreOffice itself writes states
+    // it explicitly too, which is the same conclusion reached from the other direction.
+    let axis_styles: [(&str, &Axis); 2] = [("gchx", &chart.x_axis), ("gchy", &chart.y_axis)];
 
     let _ = writeln!(
         out,
@@ -721,18 +731,25 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
         out,
         "       <office:document office:mimetype=\"{CHART_MIMETYPE}\" office:version=\"{VERSION}\">"
     );
-    if !styles.is_empty() {
-        out.push_str("        <office:automatic-styles>\n");
-        for (name, color) in &styles {
-            let _ = writeln!(
-                out,
-                "         <style:style style:name=\"{name}\" style:family=\"chart\">\
-                 <style:graphic-properties svg:stroke-color=\"{color}\" draw:fill-color=\"{color}\"/>\
-                 </style:style>"
-            );
-        }
-        out.push_str("        </office:automatic-styles>\n");
+    out.push_str("        <office:automatic-styles>\n");
+    for (name, color) in &styles {
+        let _ = writeln!(
+            out,
+            "         <style:style style:name=\"{name}\" style:family=\"chart\">\
+             <style:graphic-properties svg:stroke-color=\"{color}\" draw:fill-color=\"{color}\"/>\
+             </style:style>"
+        );
     }
+    for (name, axis) in axis_styles {
+        let _ = writeln!(
+            out,
+            "         <style:style style:name=\"{name}\" style:family=\"chart\">\
+             <style:chart-properties chart:display-label=\"{}\"/>\
+             </style:style>",
+            axis.tick_labels
+        );
+    }
+    out.push_str("        </office:automatic-styles>\n");
     out.push_str("        <office:body><office:chart>\n");
     let _ = writeln!(
         out,
@@ -742,13 +759,8 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
         chart.kind.class()
     );
     out.push_str("          <chart:plot-area>\n");
-    write_axis(
-        out,
-        "x",
-        chart.categories.as_deref(),
-        chart.x_axis_label.as_deref(),
-    );
-    write_axis(out, "y", None, chart.y_axis_label.as_deref());
+    write_axis(out, "x", chart.categories.as_deref(), &chart.x_axis);
+    write_axis(out, "y", None, &chart.y_axis);
     for (n, series) in chart.series.iter().enumerate() {
         let label = series
             .label
@@ -798,22 +810,28 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
     out.push_str("     </draw:frame>\n");
 }
 
-/// One `chart:axis` (rng:423): categories (x only, `None` for y) and a title, either or both
-/// absent — self-closed when it would otherwise be empty, the same as the y axis always used
-/// to be before it could carry a title.
-fn write_axis(out: &mut String, dimension: &str, categories: Option<&str>, title: Option<&str>) {
-    if categories.is_none() && title.is_none() {
+/// One `chart:axis` (rng:423): categories (x only, `None` for y), and whatever the [`Axis`]
+/// itself carries — self-closed when all of that is empty, the same as the y axis always used
+/// to be before it could carry anything.
+///
+/// Child order is the schema's, not this build's taste: `chart:title`, then
+/// `chart:categories`, then any `chart:grid` (rng:422-434). Tick labels are *not* here —
+/// `chart:display-label` lives on the axis' own style, written by [`write_chart`] and
+/// referenced by the `chart:style-name` below.
+fn write_axis(out: &mut String, dimension: &str, categories: Option<&str>, axis: &Axis) {
+    let style = format!(" chart:style-name=\"gch{dimension}\"");
+    if categories.is_none() && axis.label.is_none() && !axis.gridlines {
         let _ = writeln!(
             out,
-            "           <chart:axis chart:dimension=\"{dimension}\"/>"
+            "           <chart:axis chart:dimension=\"{dimension}\"{style}/>"
         );
         return;
     }
     let _ = writeln!(
         out,
-        "           <chart:axis chart:dimension=\"{dimension}\">"
+        "           <chart:axis chart:dimension=\"{dimension}\"{style}>"
     );
-    if let Some(title) = title {
+    if let Some(title) = &axis.label {
         let _ = writeln!(
             out,
             "            <chart:title><text:p>{}</text:p></chart:title>",
@@ -826,6 +844,9 @@ fn write_axis(out: &mut String, dimension: &str, categories: Option<&str>, title
             "            <chart:categories table:cell-range-address=\"{}\"/>",
             esc(categories)
         );
+    }
+    if axis.gridlines {
+        out.push_str("            <chart:grid chart:class=\"major\"/>\n");
     }
     out.push_str("           </chart:axis>\n");
 }
