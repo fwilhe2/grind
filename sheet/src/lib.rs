@@ -39,7 +39,7 @@ pub mod style;
 pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
-pub use chart::{Chart, ChartData, ChartKind, Series as ChartSeries};
+pub use chart::{Chart, ChartData, ChartKind, Series as ChartSeries, series_color};
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
 
@@ -1398,6 +1398,38 @@ impl App {
                 .doc
                 .apply(Action::RemoveChart { sheet, index })
                 .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Move or resize the chart at `index` — `x`/`y`/`width`/`height` are ODF lengths
+    /// (`"2.5cm"`), the same as [`Self::add_chart`] takes. One undo step however many times a
+    /// shell calls this mid-drag is `App`'s caller's job, not this method's — see
+    /// `grind-sheet-gtk`'s own commit-on-release, which only calls this once the pointer is
+    /// released rather than on every pixel of motion.
+    pub fn reshape_chart(
+        &self,
+        sheet: usize,
+        index: usize,
+        x: &str,
+        y: &str,
+        width: &str,
+        height: &str,
+    ) -> Result<()> {
+        self.mutate(|state| {
+            let inverse = state
+                .doc
+                .apply(Action::ReshapeChart {
+                    sheet,
+                    index,
+                    x: x.to_owned(),
+                    y: y.to_owned(),
+                    width: width.to_owned(),
+                    height: height.to_owned(),
+                })
+                .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))?;
             state.undo.push(inverse);
             state.redo.clear();
             Ok(())

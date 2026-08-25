@@ -16,6 +16,7 @@
 //! it must be `Send`, and a GTK widget is not — and one local future drains it, coalescing
 //! a burst of changes into a single refresh.
 
+mod chart;
 mod chrome;
 mod filter_ui;
 mod formatting;

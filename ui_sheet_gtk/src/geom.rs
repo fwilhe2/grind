@@ -265,6 +265,24 @@ impl GridGeom {
         }
     }
 
+    /// A chart's own position and size, in **widget** space, given already in on-screen
+    /// pixels — a chart's `svg:x`/`svg:y`/`svg:width`/`svg:height` are ODF lengths, and unlike
+    /// every other measurement in this module, converting a physical length and applying the
+    /// zoom is `grid.rs`'s job, not this module's, the same split [`GridGeom::cell_rect`]
+    /// draws between a track's size and where it sits.
+    ///
+    /// Unlike [`GridGeom::cell_rect`], not tied to a row or column: `table:shapes` sits
+    /// beside a sheet's rows, positioned from the table's own top-left corner rather than
+    /// from any cell in it.
+    pub fn chart_rect(&self, x_px: f64, y_px: f64, w_px: f64, h_px: f64) -> Rect {
+        Rect {
+            x: self.header_w + x_px - self.scroll_x,
+            y: self.header_h + y_px - self.scroll_y,
+            w: w_px,
+            h: h_px,
+        }
+    }
+
     /// The autofilter dropdown's square, in **widget** space: inset at the right-hand end of
     /// a header-row cell, which is where every spreadsheet puts it.
     ///
@@ -537,6 +555,21 @@ mod tests {
         assert!(h.contains(50.0 + 80.0 - 1.0, 24.0 + 20.0 - 1.0), "inside");
         assert!(h.contains(50.0 + 80.0 + 1.0, 24.0 + 20.0 + 1.0), "outside");
         assert!(!h.contains(50.0 + 40.0, 24.0 + 10.0), "cell centre");
+    }
+
+    /// A chart sits from the table's own corner, so scrolling moves it exactly like a cell —
+    /// and its own size is untouched by either the header band or the scroll position.
+    #[test]
+    fn a_chart_sits_from_the_tables_own_corner_and_scrolls_with_it() {
+        let g = GridGeom {
+            scroll_x: 20.0,
+            scroll_y: 5.0,
+            ..geom()
+        };
+        let r = g.chart_rect(100.0, 50.0, 200.0, 120.0);
+        assert_eq!(r.x, g.header_w + 100.0 - 20.0);
+        assert_eq!(r.y, g.header_h + 50.0 - 5.0);
+        assert_eq!((r.w, r.h), (200.0, 120.0));
     }
 
     /// The dropdown sits at the cell's right-hand end, clear of the text, inside the cell —

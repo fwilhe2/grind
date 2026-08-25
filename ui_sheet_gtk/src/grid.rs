@@ -38,7 +38,7 @@ use grind_sheet::{App, Pos, a1};
 use gtk::glib;
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 
-use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
+use crate::geom::{GridGeom, HANDLE, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::{Dir, Selection};
 
 /// Pixels to an ODF millimetre.
@@ -52,6 +52,11 @@ const PX_PER_MM: f64 = 96.0 / 25.4;
 /// The narrowest a drag may make a track. Zero is legal in ODF and means *hidden*, which is
 /// a feature with its own UI rather than something to arrive at by dragging past the edge.
 const MIN_TRACK: f64 = 6.0;
+
+/// The smallest a chart may be resized to, in widget pixels — small enough not to fight a
+/// deliberate shrink, large enough that the resize handle sitting on its own corner is never
+/// bigger than the chart itself.
+const MIN_CHART: f64 = 24.0;
 
 /// What a filter button is marked with. A glyph rather than a drawn triangle: the layout is
 /// already here for every other piece of text in the grid, and a path builder for one arrow
@@ -567,6 +572,11 @@ mod imp {
         /// A track being resized, in pixels — presentation state until the pointer is
         /// released, at which point it becomes one core write and one undo entry.
         pub resize: Cell<Option<Resize>>,
+        /// A chart being moved or resized, and which chart it is.
+        pub chart_drag: Cell<Option<ChartDrag>>,
+        /// Where that drag currently puts the chart, in widget space — painted in its place
+        /// until the pointer is released and it becomes `App::reshape_chart`.
+        pub chart_drag_rect: Cell<Option<Rect>>,
         /// Whether the drag in progress started on the fill handle.
         pub filling: Cell<bool>,
         /// Where that drag is pointing ([`keymap::fill_target`]), painted as an outline
@@ -632,6 +642,38 @@ mod imp {
         pub size: f64,
     }
 
+    /// A chart being moved or resized by hand — presentation state until the pointer is
+    /// released, the same as [`Resize`] and the fill handle are. The live rect this produces
+    /// is painted from instead of the document's own geometry (`Grid::draw_charts`), which is
+    /// what makes the drag itself smooth rather than one written cell per pixel of motion —
+    /// this shell's whole answer to "I hate how dragging a chart feels in LibreOffice."
+    #[derive(Clone, Copy, Debug)]
+    pub enum ChartDrag {
+        /// Moving: the offset from the chart's own top-left corner to the point the pointer
+        /// grabbed it at, so the chart does not jump to be centred under the pointer the
+        /// moment the drag starts.
+        Move {
+            index: usize,
+            grab_dx: f64,
+            grab_dy: f64,
+        },
+        /// Resizing from the bottom-right handle: the chart's own top-left corner, fixed for
+        /// the whole drag since only the far corner is moving.
+        Resize {
+            index: usize,
+            origin_x: f64,
+            origin_y: f64,
+        },
+    }
+
+    impl ChartDrag {
+        fn index(self) -> usize {
+            match self {
+                ChartDrag::Move { index, .. } | ChartDrag::Resize { index, .. } => index,
+            }
+        }
+    }
+
     /// A reference being pointed at.
     #[derive(Clone, Debug)]
     pub struct Pending {
@@ -658,6 +700,8 @@ mod imp {
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
                 resize: Cell::new(None),
+                chart_drag: Cell::new(None),
+                chart_drag_rect: Cell::new(None),
                 filling: Cell::new(false),
                 fill_to: Cell::new(None),
                 on_selection: RefCell::new(Vec::new()),
@@ -901,6 +945,7 @@ mod imp {
                     grid.imp().drag.set(None);
                     grid.imp().commit_resize();
                     grid.imp().commit_fill();
+                    grid.imp().commit_chart_drag();
                 }
             ));
             widget.add_controller(drag);
@@ -1123,6 +1168,9 @@ mod imp {
             // table look ruled rather than slightly darker.
             self.draw_borders(&frame);
             self.draw_cells(&frame);
+            // Charts float over the sheet body (`table:shapes` is a sibling of the rows, not
+            // inside one), so they are drawn over every cell's own text.
+            self.draw_charts(&frame);
             // Over the text, because the button sits on top of the heading's right-hand end
             // and the heading is what would otherwise run through it.
             self.draw_filter_buttons(&frame);
@@ -2192,6 +2240,141 @@ mod imp {
             self.obj().queue_draw();
         }
 
+        /// A chart's own `svg:x`/`svg:y`/`svg:width`/`svg:height`, converted to on-screen
+        /// pixels and placed in widget space — `None` for a length this build cannot parse,
+        /// which is a chart this shell simply does not draw rather than a panic (§9's own
+        /// tolerance, applied to a shell rather than a reader).
+        fn chart_widget_rect(&self, geom: &GridGeom, chart: &grind_sheet::Chart) -> Option<Rect> {
+            let zoom = self.zoom.get();
+            let px = |length: &str| Some(style::length_mm(length)? * PX_PER_MM * zoom);
+            Some(geom.chart_rect(
+                px(&chart.x)?,
+                px(&chart.y)?,
+                px(&chart.width)?,
+                px(&chart.height)?,
+            ))
+        }
+
+        /// What a point hits among this sheet's charts: the resize handle at a chart's own
+        /// bottom-right corner beats its body, the same precedence the fill handle gets over
+        /// the cell under it — and the *last* chart in `table:shapes`' own order wins a point
+        /// two charts both cover, since that is the one drawn on top.
+        fn chart_hit(&self, x: f64, y: f64) -> Option<(usize, bool, Rect)> {
+            let app = self.app.borrow().clone()?;
+            let sheet = self.sheet.get();
+            let charts = app.charts(sheet).ok()?;
+            let geom = self.geom();
+            for (index, chart) in charts.iter().enumerate().rev() {
+                let Some(rect) = self.chart_widget_rect(&geom, chart) else {
+                    continue;
+                };
+                let handle = Rect {
+                    x: rect.x + rect.w - HANDLE,
+                    y: rect.y + rect.h - HANDLE,
+                    w: HANDLE * 2.0,
+                    h: HANDLE * 2.0,
+                };
+                if handle.contains(x, y) {
+                    return Some((index, true, rect));
+                }
+                if rect.contains(x, y) {
+                    return Some((index, false, rect));
+                }
+            }
+            None
+        }
+
+        /// Every chart on this sheet, read fresh and thrown away again like everything else
+        /// this widget paints (doc/plan.md rule 1) — a sheet has a handful of charts at most,
+        /// so re-resolving each one's live data every frame costs nothing worth caching.
+        fn draw_charts(&self, f: &Frame) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            let Ok(charts) = app.charts(sheet) else {
+                return;
+            };
+            let dragging = self.chart_drag.get().map(ChartDrag::index);
+            for (index, chart) in charts.iter().enumerate() {
+                let at = match (dragging, self.chart_drag_rect.get()) {
+                    (Some(i), Some(at)) if i == index => at,
+                    _ => match self.chart_widget_rect(&f.geom, chart) {
+                        Some(at) => at,
+                        None => continue,
+                    },
+                };
+                if at.x + at.w < f.geom.header_w
+                    || at.y + at.h < f.geom.header_h
+                    || at.x > f.width
+                    || at.y > f.height
+                {
+                    continue;
+                }
+                let Ok(data) = app.chart_data(sheet, index) else {
+                    continue;
+                };
+                // One colour per series (bar, line) or per category (pie) — whichever this
+                // chart's kind needs more of — cycling `grind_sheet::series_color` exactly the
+                // way the writer does, so a chart drawn here matches what gets saved.
+                let n = data
+                    .series
+                    .len()
+                    .max(data.series.first().map_or(0, |(_, v)| v.len()))
+                    .max(1);
+                let colors: Vec<gtk::gdk::RGBA> = (0..n)
+                    .map(|k| {
+                        crate::theme::color(grind_sheet::series_color(k))
+                            .unwrap_or(f.palette.foreground)
+                    })
+                    .collect();
+                crate::chart::draw(
+                    f.snapshot,
+                    at,
+                    &data,
+                    &colors,
+                    f.palette.background,
+                    f.palette.lines,
+                );
+                // The resize handle, the same square the fill handle is — a chart being
+                // dragged also gets an accent outline, so the whole shape being moved reads
+                // as one thing rather than the drag being invisible until it lands.
+                if dragging == Some(index) {
+                    outline(f.snapshot, at, f.palette.accent, 2.0);
+                }
+                f.snapshot.append_color(
+                    &f.palette.accent,
+                    &rect(at.x + at.w - HANDLE, at.y + at.h - HANDLE, HANDLE, HANDLE),
+                );
+            }
+        }
+
+        /// The end of a chart drag: the widget-space rect becomes ODF lengths and one undo
+        /// entry — moving and resizing are otherwise the same call, `App::reshape_chart`.
+        fn commit_chart_drag(&self) {
+            let Some(drag) = self.chart_drag.take() else {
+                return;
+            };
+            let Some(rect) = self.chart_drag_rect.take() else {
+                return;
+            };
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let geom = self.geom();
+            let zoom = self.zoom.get();
+            let to_mm = |px: f64| px / zoom / PX_PER_MM;
+            let x = style::mm_length(to_mm(rect.x - geom.header_w + geom.scroll_x).max(0.0));
+            let y = style::mm_length(to_mm(rect.y - geom.header_h + geom.scroll_y).max(0.0));
+            let width = style::mm_length(to_mm(rect.w).max(0.1));
+            let height = style::mm_length(to_mm(rect.h).max(0.1));
+            let sheet = self.sheet.get();
+            if let Err(error) = app.reshape_chart(sheet, drag.index(), &x, &y, &width, &height) {
+                self.notice(Notice::Refused(error.to_string()));
+            }
+            self.obj().queue_draw();
+        }
+
         /// Double-clicking a column boundary: wide enough for the widest thing in the
         /// column, which is what every spreadsheet does with that gesture.
         ///
@@ -2504,6 +2687,28 @@ mod imp {
                 }
                 _ => {}
             }
+            // A chart floats over the cells it sits above, so a press on one grabs the chart
+            // rather than starting (or extending) a cell selection underneath it — the same
+            // precedence the fill handle gets below, but earlier, since a chart is drawn over
+            // everything a filter button or the fill handle could otherwise claim first.
+            if let Some((index, resize, rect)) = self.chart_hit(x, y) {
+                self.chart_drag.set(Some(match resize {
+                    true => ChartDrag::Resize {
+                        index,
+                        origin_x: rect.x,
+                        origin_y: rect.y,
+                    },
+                    false => ChartDrag::Move {
+                        index,
+                        grab_dx: x - rect.x,
+                        grab_dy: y - rect.y,
+                    },
+                }));
+                self.chart_drag_rect.set(Some(rect));
+                self.obj().grab_focus();
+                self.obj().queue_draw();
+                return;
+            }
             // A filter button beats the cell under it, for the same reason the fill handle
             // below does — and before the handle, because the two can overlap on a
             // one-cell selection sitting in the heading row.
@@ -2543,6 +2748,38 @@ mod imp {
 
         /// Drag: extend from the anchor, in whatever the press started on.
         fn extend_to(&self, x: f64, y: f64) {
+            // A chart drag only ever repaints its own live rect — nothing is written to the
+            // document until the pointer is released (`commit_chart_drag`), which is the
+            // whole reason dragging a chart here does not feel like LibreOffice's own.
+            if let Some(drag) = self.chart_drag.get() {
+                let rect = match drag {
+                    ChartDrag::Move {
+                        grab_dx, grab_dy, ..
+                    } => {
+                        let (w, h) = self
+                            .chart_drag_rect
+                            .get()
+                            .map_or((0.0, 0.0), |r| (r.w, r.h));
+                        Rect {
+                            x: x - grab_dx,
+                            y: y - grab_dy,
+                            w,
+                            h,
+                        }
+                    }
+                    ChartDrag::Resize {
+                        origin_x, origin_y, ..
+                    } => Rect {
+                        x: origin_x,
+                        y: origin_y,
+                        w: (x - origin_x).max(MIN_CHART),
+                        h: (y - origin_y).max(MIN_CHART),
+                    },
+                };
+                self.chart_drag_rect.set(Some(rect));
+                self.obj().queue_draw();
+                return;
+            }
             // A drag from the fill handle grows the *fill*, not the selection: it only
             // outlines where it is pointing until the pointer is released.
             if self.filling.get() {

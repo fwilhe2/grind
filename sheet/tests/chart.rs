@@ -107,6 +107,47 @@ fn removing_a_chart_undoes_back_to_having_it() {
 }
 
 #[test]
+fn reshaping_a_chart_moves_it_and_undoes_back() {
+    let app = App::new();
+    filled(&app);
+    app.add_chart(
+        0,
+        ChartKind::Bar,
+        None,
+        &[("B2:B4", None)],
+        "1cm",
+        "1cm",
+        "10cm",
+        "8cm",
+    )
+    .unwrap();
+
+    app.reshape_chart(0, 0, "3cm", "4cm", "12cm", "9cm")
+        .unwrap();
+    let chart = &app.charts(0).unwrap()[0];
+    assert_eq!((chart.x.as_str(), chart.y.as_str()), ("3cm", "4cm"));
+    assert_eq!(
+        (chart.width.as_str(), chart.height.as_str()),
+        ("12cm", "9cm")
+    );
+
+    assert!(app.undo());
+    let chart = &app.charts(0).unwrap()[0];
+    assert_eq!((chart.x.as_str(), chart.y.as_str()), ("1cm", "1cm"));
+    assert_eq!(
+        (chart.width.as_str(), chart.height.as_str()),
+        ("10cm", "8cm")
+    );
+}
+
+#[test]
+fn reshaping_a_chart_that_does_not_exist_is_an_error() {
+    let app = App::new();
+    filled(&app);
+    assert!(app.reshape_chart(0, 0, "1cm", "1cm", "1cm", "1cm").is_err());
+}
+
+#[test]
 fn a_bad_range_is_an_error_not_a_panic() {
     let app = App::new();
     assert!(

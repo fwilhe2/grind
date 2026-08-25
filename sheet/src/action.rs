@@ -112,6 +112,18 @@ pub enum Action {
     },
     /// Remove the chart at `index` on a sheet.
     RemoveChart { sheet: usize, index: usize },
+    /// Move or resize the chart at `index` — `draw:frame`'s own `svg:x`/`svg:y`/`svg:width`/
+    /// `svg:height`, replaced wholesale rather than per-field because a drag commits all four
+    /// at once and there is no case where only one of them changes without the others being
+    /// resent unchanged.
+    ReshapeChart {
+        sheet: usize,
+        index: usize,
+        x: String,
+        y: String,
+        width: String,
+        height: String,
+    },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
     Batch(Vec<Action>),
@@ -292,6 +304,28 @@ impl Document {
                     chart: Box::new(chart),
                 })
             }
+            Action::ReshapeChart {
+                sheet,
+                index,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                let chart = self.sheet_mut(sheet)?.chart_mut(index)?;
+                let previous_x = std::mem::replace(&mut chart.x, x);
+                let previous_y = std::mem::replace(&mut chart.y, y);
+                let previous_width = std::mem::replace(&mut chart.width, width);
+                let previous_height = std::mem::replace(&mut chart.height, height);
+                Some(Action::ReshapeChart {
+                    sheet,
+                    index,
+                    x: previous_x,
+                    y: previous_y,
+                    width: previous_width,
+                    height: previous_height,
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -359,9 +393,9 @@ impl Document {
                 self.edits.only_values = false;
             }
             // Not a cell either: `table:shapes` is a sibling of the rows, not a splice site.
-            Action::InsertChart { .. } | Action::RemoveChart { .. } => {
-                self.edits.only_values = false
-            }
+            Action::InsertChart { .. }
+            | Action::RemoveChart { .. }
+            | Action::ReshapeChart { .. } => self.edits.only_values = false,
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
@@ -388,9 +422,10 @@ impl Document {
             Action::InsertChart { sheet, index, .. } => self
                 .sheet(*sheet)
                 .is_some_and(|s| *index <= s.charts().len()),
-            Action::RemoveChart { sheet, index } => self
-                .sheet(*sheet)
-                .is_some_and(|s| *index < s.charts().len()),
+            Action::RemoveChart { sheet, index } | Action::ReshapeChart { sheet, index, .. } => {
+                self.sheet(*sheet)
+                    .is_some_and(|s| *index < s.charts().len())
+            }
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

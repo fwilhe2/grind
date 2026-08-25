@@ -1339,6 +1339,24 @@ enum Command {
         /// Defaults to the first
         sheet: Option<String>,
     },
+
+    /// Move or resize a chart
+    ChartReshape {
+        file: PathBuf,
+        /// The chart's position in `chart-list`, 0-based
+        index: usize,
+        #[arg(long)]
+        x: String,
+        #[arg(long)]
+        y: String,
+        #[arg(long)]
+        width: String,
+        #[arg(long)]
+        height: String,
+        /// Defaults to the first
+        #[arg(long)]
+        sheet: Option<String>,
+    },
 }
 
 /// The three shapes `sheet chart-add --type` takes — `doc/chart-format.md`'s scope line.
@@ -2086,6 +2104,22 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             let app = load(file, cli)?;
             let sheet_index = chart_sheet(&app, sheet.as_deref())?;
             app.remove_chart(sheet_index, *index).say()?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::ChartReshape {
+            file,
+            index,
+            x,
+            y,
+            width,
+            height,
+            sheet,
+        } => {
+            let app = load(file, cli)?;
+            let sheet_index = chart_sheet(&app, sheet.as_deref())?;
+            app.reshape_chart(sheet_index, *index, x, y, width, height)
+                .say()?;
             finish(&app, cli, file, true)
         }
     }

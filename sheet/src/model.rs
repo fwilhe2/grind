@@ -229,6 +229,12 @@ impl Sheet {
         self.charts.insert(index, chart);
     }
 
+    /// The chart at `index`, for [`Action::ReshapeChart`](crate::action::Action::ReshapeChart)
+    /// to mutate its position and size in place — a drag's own commit, not an add/remove.
+    pub(crate) fn chart_mut(&mut self, index: usize) -> Option<&mut crate::chart::Chart> {
+        self.charts.get_mut(index)
+    }
+
     /// The sheet's autofilter, or `None` when it has none (§9.4).
     pub fn filter(&self) -> Option<&crate::filter::Filter> {
         self.filter.as_ref()
