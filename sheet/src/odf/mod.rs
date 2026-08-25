@@ -31,6 +31,11 @@ use crate::model::Document;
 pub fn read(bytes: &[u8]) -> Result<Document> {
     let content = package::content_xml(bytes)?;
     let mut builder = read::Builder::new();
+    // Kept so a chart's `xlink:href` can be resolved against the archive it came from — a
+    // package stores one as its own part rather than inline (`doc/chart-format.md`).
+    if package::is_package(bytes) {
+        builder.set_package(bytes.to_vec());
+    }
     // R6: the flat form only, and installed *before* parsing, because the cell contexts
     // record their spans into it as they go. A package is a zip and has no diff to preserve,
     // so it is read without one and always regenerates — see `odf::source`.

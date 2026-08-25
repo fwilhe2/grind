@@ -21,6 +21,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod a1;
 pub mod action;
+pub mod chart;
 pub mod filter;
 pub mod formula;
 pub mod grid;
@@ -38,6 +39,7 @@ pub mod style;
 pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
+pub use chart::{Chart, ChartData, ChartKind, Series as ChartSeries};
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
 
@@ -1317,6 +1319,102 @@ impl App {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.hidden_rows(state.doc.null_date))
+    }
+
+    // --- charts ---
+
+    /// Add a chart to a sheet, resolving `categories` and each series' `(values, label)` the
+    /// way a formula's own reference resolves — see [`chart::parse_range`]. `label` names a
+    /// range too (`chart:label-cell-address`, usually one cell); pass `None` for a series with
+    /// no name of its own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_chart(
+        &self,
+        sheet: usize,
+        kind: ChartKind,
+        categories: Option<&str>,
+        series: &[(&str, Option<&str>)],
+        x: &str,
+        y: &str,
+        width: &str,
+        height: &str,
+    ) -> Result<()> {
+        let categories = categories
+            .map(|addr| chart::parse_range(self, sheet, addr))
+            .transpose()?;
+        let series = series
+            .iter()
+            .map(|(values, label)| {
+                Ok(chart::Series {
+                    values: chart::parse_range(self, sheet, values)?,
+                    label: label
+                        .map(|addr| chart::parse_range(self, sheet, addr))
+                        .transpose()?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut chart = Chart::new(
+            kind,
+            x.to_owned(),
+            y.to_owned(),
+            width.to_owned(),
+            height.to_owned(),
+        );
+        chart.categories = categories;
+        chart.series = series;
+
+        self.mutate(|state| {
+            let sheet_len = state
+                .doc
+                .sheet(sheet)
+                .ok_or(Error::NoSuchSheet(sheet))?
+                .charts()
+                .len();
+            let inverse = state
+                .doc
+                .apply(Action::InsertChart {
+                    sheet,
+                    index: sheet_len,
+                    chart: Box::new(chart),
+                })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Every chart on a sheet, in document order.
+    pub fn charts(&self, sheet: usize) -> Result<Vec<Chart>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.charts().to_vec())
+    }
+
+    /// Remove the chart at `index` on `sheet`.
+    pub fn remove_chart(&self, sheet: usize, index: usize) -> Result<()> {
+        self.mutate(|state| {
+            let inverse = state
+                .doc
+                .apply(Action::RemoveChart { sheet, index })
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// A chart's data, resolved against the live sheet — what a shell draws from.
+    pub fn chart_data(&self, sheet: usize, index: usize) -> Result<ChartData> {
+        let chart = {
+            let state = self.state.read().unwrap();
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            s.charts()
+                .get(index)
+                .cloned()
+                .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))?
+        };
+        ChartData::read(self, &chart)
     }
 
     // --- history across processes ---

@@ -188,6 +188,10 @@ pub struct Sheet {
     /// can act on. Which rows it hides is *not* stored — see [`crate::filter`].
     #[serde(default)]
     filter: Option<crate::filter::Filter>,
+    /// The sheet's charts (`table:shapes`, rng:15678), in document order — `doc/chart-format.md`
+    /// is the model these hold.
+    #[serde(default)]
+    charts: Vec<crate::chart::Chart>,
 }
 
 impl Sheet {
@@ -204,7 +208,25 @@ impl Sheet {
             hidden_cols: BTreeSet::new(),
             manually_hidden_rows: BTreeSet::new(),
             filter: None,
+            charts: Vec::new(),
         }
+    }
+
+    /// Every chart on this sheet, in document order.
+    pub fn charts(&self) -> &[crate::chart::Chart] {
+        &self.charts
+    }
+
+    /// Remove the chart at `index`, or `None` if there is none there.
+    pub(crate) fn remove_chart(&mut self, index: usize) -> Option<crate::chart::Chart> {
+        (index < self.charts.len()).then(|| self.charts.remove(index))
+    }
+
+    /// Insert `chart` back at `index` — undoing [`Self::remove_chart`], which is why this
+    /// takes the index rather than only appending.
+    pub(crate) fn insert_chart(&mut self, index: usize, chart: crate::chart::Chart) {
+        let index = index.min(self.charts.len());
+        self.charts.insert(index, chart);
     }
 
     /// The sheet's autofilter, or `None` when it has none (§9.4).

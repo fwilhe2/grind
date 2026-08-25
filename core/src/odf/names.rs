@@ -39,6 +39,9 @@ pub enum Ns {
     /// Only the two above are resolved by anything today; the rest route to `Ignore` like any
     /// other unrecognised content.
     Draw,
+    /// `chart:` — `chart:chart`, `chart:series`, `chart:axis` and the rest of a chart's own
+    /// embedded document (`grind_sheet::chart`, `doc/chart-format.md`).
+    Chart,
     Other,
 }
 
@@ -53,6 +56,7 @@ pub const SVG: &str = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
 pub const XLINK: &str = "http://www.w3.org/1999/xlink";
 pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
 pub const DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
+pub const CHART: &str = "urn:oasis:names:tc:opendocument:xmlns:chart:1.0";
 
 impl Ns {
     pub fn from_uri(uri: &[u8]) -> Ns {
@@ -67,6 +71,7 @@ impl Ns {
             b if b == XLINK.as_bytes() => Ns::Xlink,
             b if b == CALCEXT.as_bytes() => Ns::Calcext,
             b if b == DRAW.as_bytes() => Ns::Draw,
+            b if b == CHART.as_bytes() => Ns::Chart,
             _ => Ns::Other,
         }
     }

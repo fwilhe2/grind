@@ -70,7 +70,8 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Conditional formatting beyond one rule type** | The general form is a rule engine with its own evaluation order. One rule type is the whole of the demonstrated need. |
 | **Draw objects beyond images** | Shapes, connectors, and their layout model are a drawing application. |
 | **Pivot tables** | Revisit *once*, later, as `plan.md` says — and only against a real use, because the honest version is an aggregation engine plus a UI plus a serialisation format. |
-| **More than one chart type** | One that round-trips proves the mechanism. The second is taste. |
+| **A chart type beyond bar, line, pie** | Three proved the mechanism holds no per-type special case (`doc/chart-format.md`); a fourth is taste until a real document asks for one. |
+| **A chart's title, subtitle or legend** | Each is `rng:optional` and each is its own layout problem — a legend already needs a second box the plot area's own size makes room for. Read past and dropped, like any other unmodelled optional element (`doc/chart-format.md`). |
 
 ### The word processor
 
@@ -100,7 +101,7 @@ CLI parity gaps.
 | **Sort** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. Filtering is built (§9.4, `sheet/src/filter.rs`): a set of values compares for equality, which is the half of "sort and filter" that needs no collation. |
 | **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
 | **Freeze panes** | Phase 9 shells | Purely a view concern, and there is no view. |
-| **One chart type** | Phase 9 shells | Must round-trip through LibreOffice like everything else. |
+| **Charts beyond bar, line, pie** | Phase 9 shells | The three built round-trip through LibreOffice like everything else (`doc/chart-format.md`); a fourth is the same gate the first three passed, on evidence. |
 | **Print to PDF** | Phase 9 shells | Via the platform, so it needs a platform. |
 | **Preserving what the model does not carry, on a *regenerating* save** | No gate | R6 is met by not regenerating: an opened document is edited in place, so `office:meta`, `office:settings`, unreferenced styles and other vendors' extensions are never touched. They are still lost when the writer *does* regenerate — a new row, a changed format, a conversion between forms — and closing that would mean modelling all of ODF, which is the trade this project exists not to make. |
 | **Splicing a `.ods`** | No gate | A zip has no diff to preserve, so the package form always regenerates. |

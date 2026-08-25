@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::chart::Chart;
 use crate::model::{CellValue, Document, Pos, Sheet};
 use crate::numfmt::Format;
 use crate::style::CellStyle;
@@ -102,6 +103,15 @@ pub enum Action {
     ///
     /// Formulas naming the old sheet are **not** rewritten — see [`crate::App::rename_sheet`].
     RenameSheet { index: usize, name: String },
+    /// Insert a chart at `index` in a sheet's list (`table:shapes`'s own order) — `index` is
+    /// the list's length to append, the way `App::add_chart` uses this.
+    InsertChart {
+        sheet: usize,
+        index: usize,
+        chart: Box<Chart>,
+    },
+    /// Remove the chart at `index` on a sheet.
+    RemoveChart { sheet: usize, index: usize },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
     Batch(Vec<Action>),
@@ -262,6 +272,26 @@ impl Document {
                     name: previous,
                 })
             }
+            Action::InsertChart {
+                sheet,
+                index,
+                chart,
+            } => {
+                let s = self.sheet_mut(sheet)?;
+                if index > s.charts().len() {
+                    return None;
+                }
+                s.insert_chart(index, *chart);
+                Some(Action::RemoveChart { sheet, index })
+            }
+            Action::RemoveChart { sheet, index } => {
+                let chart = self.sheet_mut(sheet)?.remove_chart(index)?;
+                Some(Action::InsertChart {
+                    sheet,
+                    index,
+                    chart: Box::new(chart),
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -328,6 +358,10 @@ impl Document {
             | Action::RenameSheet { .. } => {
                 self.edits.only_values = false;
             }
+            // Not a cell either: `table:shapes` is a sibling of the rows, not a splice site.
+            Action::InsertChart { .. } | Action::RemoveChart { .. } => {
+                self.edits.only_values = false
+            }
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
@@ -351,6 +385,12 @@ impl Document {
             Action::InsertSheet { index, .. } => *index <= self.sheets.len(),
             Action::RemoveSheet { index } => *index < self.sheets.len(),
             Action::RenameSheet { index, .. } => self.sheet(*index).is_some(),
+            Action::InsertChart { sheet, index, .. } => self
+                .sheet(*sheet)
+                .is_some_and(|s| *index <= s.charts().len()),
+            Action::RemoveChart { sheet, index } => self
+                .sheet(*sheet)
+                .is_some_and(|s| *index < s.charts().len()),
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

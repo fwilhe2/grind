@@ -1293,6 +1293,70 @@ enum Command {
         #[arg(long, value_name = "TEXT")]
         filter: Option<String>,
     },
+
+    /// Add a chart — bar, line or pie (`doc/chart-format.md`)
+    ///
+    /// `sheet chart-add book.ods --type bar --categories B3:B9 --series C3:C9` adds a bar
+    /// chart of column C, labelled by column B. Repeat `--series` for more than one series
+    /// (a pie's first is the one drawn); each may carry its own name as `range=label-range`,
+    /// e.g. `C3:C9=C2:C2` — `=` rather than a second `:`, since a range already has one.
+    ChartAdd {
+        file: PathBuf,
+        #[arg(value_enum, long)]
+        r#type: ChartType,
+        /// The range naming each category (the x axis), e.g. B3:B9
+        #[arg(long)]
+        categories: Option<String>,
+        /// A series' values, optionally followed by `=label-range` — repeat for more than
+        /// one series
+        #[arg(long = "series", required = true, value_name = "RANGE[=LABEL]")]
+        series: Vec<String>,
+        /// Which sheet the ranges (and the chart itself) are on; defaults to the first
+        #[arg(long)]
+        sheet: Option<String>,
+        #[arg(long, default_value = "1cm")]
+        x: String,
+        #[arg(long, default_value = "1cm")]
+        y: String,
+        #[arg(long, default_value = "10cm")]
+        width: String,
+        #[arg(long, default_value = "8cm")]
+        height: String,
+    },
+
+    /// List a sheet's charts
+    ChartList {
+        file: PathBuf,
+        /// Defaults to the first
+        sheet: Option<String>,
+    },
+
+    /// Remove a chart
+    ChartRemove {
+        file: PathBuf,
+        /// The chart's position in `chart-list`, 0-based
+        index: usize,
+        /// Defaults to the first
+        sheet: Option<String>,
+    },
+}
+
+/// The three shapes `sheet chart-add --type` takes — `doc/chart-format.md`'s scope line.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ChartType {
+    Bar,
+    Line,
+    Pie,
+}
+
+impl From<ChartType> for grind_sheet::ChartKind {
+    fn from(t: ChartType) -> Self {
+        match t {
+            ChartType::Bar => grind_sheet::ChartKind::Bar,
+            ChartType::Line => grind_sheet::ChartKind::Line,
+            ChartType::Pie => grind_sheet::ChartKind::Pie,
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -1955,6 +2019,84 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             lines.push(summary);
             Ok(Report::Text(TextReport { lines }))
         }
+
+        Command::ChartAdd {
+            file,
+            r#type,
+            categories,
+            series,
+            sheet,
+            x,
+            y,
+            width,
+            height,
+        } => {
+            let app = load(file, cli)?;
+            let sheet_index = chart_sheet(&app, sheet.as_deref())?;
+            let series: Vec<(String, Option<String>)> = series
+                .iter()
+                .map(|s| match s.split_once('=') {
+                    Some((values, label)) => (values.to_owned(), Some(label.to_owned())),
+                    None => (s.clone(), None),
+                })
+                .collect();
+            let series: Vec<(&str, Option<&str>)> = series
+                .iter()
+                .map(|(values, label)| (values.as_str(), label.as_deref()))
+                .collect();
+            app.add_chart(
+                sheet_index,
+                (*r#type).into(),
+                categories.as_deref(),
+                &series,
+                x,
+                y,
+                width,
+                height,
+            )
+            .say()?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::ChartList { file, sheet } => {
+            let app = load(file, cli)?;
+            let sheet_index = chart_sheet(&app, sheet.as_deref())?;
+            let charts = app.charts(sheet_index).say()?;
+            let lines = charts
+                .iter()
+                .enumerate()
+                .map(|(i, chart)| {
+                    let series = chart
+                        .series
+                        .iter()
+                        .map(|s| s.values.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "{i}\t{:?}\t{}\t{series}",
+                        chart.kind,
+                        chart.categories.as_deref().unwrap_or("-")
+                    )
+                })
+                .collect();
+            Ok(Report::Text(TextReport { lines }))
+        }
+
+        Command::ChartRemove { file, index, sheet } => {
+            let app = load(file, cli)?;
+            let sheet_index = chart_sheet(&app, sheet.as_deref())?;
+            app.remove_chart(sheet_index, *index).say()?;
+            finish(&app, cli, file, true)
+        }
+    }
+}
+
+/// `chart-add`/`chart-list`/`chart-remove`'s own `--sheet`/positional sheet argument,
+/// defaulting to the first — the same default `a1::as_definition` gives a named range.
+fn chart_sheet(app: &App, name: Option<&str>) -> Result<usize, String> {
+    match name {
+        Some(name) => a1::sheet(app, name).say(),
+        None => Ok(0),
     }
 }
 

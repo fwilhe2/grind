@@ -41,12 +41,23 @@ pub fn parse(addr: &str) -> Result<Reference> {
         })
         .collect();
     let source = format!("[{}]", bracketed.join(":"));
+    parse_bracketed(&source).map_err(|e| Error::Formula(format!("{addr}: {e}")))
+}
 
-    let tokens = lex::lex(&source).map_err(|e| Error::Formula(format!("{addr}: {e}")))?;
+/// A reference already spelled the way the lexer wants it — `[Sheet1.B3:Sheet1.B9]` — with no
+/// case-folding or quote-splitting, because the caller's own address already is one.
+///
+/// The tail of [`parse`], pulled out for `chart`'s `table:cell-range-address`
+/// (`doc/chart-format.md`): ODF's own grammar for that attribute (rng:382) is the same
+/// `sheet-name.COLROW[:sheet-name.COLROW]` shape a formula reference already is, just without
+/// the `[…]` a *user's* typed address needs and a document's own attribute never has, so one
+/// wrap-and-lex is every caller this format has.
+pub fn parse_bracketed(source: &str) -> Result<Reference> {
+    let tokens = lex::lex(source).map_err(|e| Error::Formula(e.to_string()))?;
     match tokens.as_slice() {
         [Token::Ref(reference)] => Ok(reference.clone()),
         _ => Err(Error::Formula(format!(
-            "{addr}: not a cell address or range"
+            "{source}: not a cell address or range"
         ))),
     }
 }

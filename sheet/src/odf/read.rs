@@ -107,6 +107,30 @@ pub struct Builder {
     filter: Option<(usize, Filter)>,
     /// The `table:filter-condition` being read: its field number and the values so far.
     filter_values: (u32, BTreeSet<String>),
+
+    // --- charts (`doc/chart-format.md`) ---
+    /// The chart being assembled out of the `draw:frame`/`draw:object` currently open, if any.
+    pending_chart: Option<PendingChart>,
+    /// The original bytes, kept only when they are a package — a chart's own document may be
+    /// a separate part (`Object 1/content.xml`) an `xlink:href` points at rather than embedded
+    /// inline, and resolving one means going back to the archive it came from.
+    package: Option<Vec<u8>>,
+}
+
+/// One chart (`draw:frame`/`draw:object`) being read, gathered as its pieces arrive: position
+/// from the frame's own attributes, everything else from however its document is reached
+/// (`doc/chart-format.md`'s two shapes). Turned into a [`crate::chart::Chart`] only when
+/// `draw:frame` closes, and dropped silently if a required piece never showed up — the same
+/// §9 tolerance as any other element this build cannot make sense of.
+#[derive(Default)]
+struct PendingChart {
+    kind: Option<crate::chart::ChartKind>,
+    categories: Option<String>,
+    series: Vec<crate::chart::Series>,
+    x: Option<String>,
+    y: Option<String>,
+    width: Option<String>,
+    height: Option<String>,
 }
 
 /// One cell of the buffered row. A struct rather than a tuple since the day it grew a
@@ -155,7 +179,21 @@ impl Builder {
             row_hidden: false,
             filter: None,
             filter_values: Default::default(),
+            pending_chart: None,
+            package: None,
         }
+    }
+
+    /// Record the package this document is being read from, so a chart's `xlink:href` can
+    /// later be resolved against it. Called from `odf::read` before parsing starts.
+    pub fn set_package(&mut self, bytes: Vec<u8>) {
+        self.package = Some(bytes);
+    }
+
+    /// A part of the package this document was read from, by path — `None` for the flat form
+    /// and for anything the archive does not actually hold.
+    fn resolve_part(&self, path: &str) -> Option<Vec<u8>> {
+        super::package::part(self.package.as_deref()?, path)
     }
 
     fn start_sheet(&mut self, name: String) {
@@ -432,6 +470,214 @@ impl Context<Builder> for NamedExpressions {
     }
 }
 
+/// `table:shapes` (rng:15678) — a sheet's charts, and nothing else this build reads out of a
+/// shape (`doc/chart-format.md`).
+struct Shapes;
+
+impl Context<Builder> for Shapes {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Draw, "frame") {
+            return None;
+        }
+        b.pending_chart = Some(PendingChart {
+            x: attrs.get(Ns::Svg, "x").map(str::to_owned),
+            y: attrs.get(Ns::Svg, "y").map(str::to_owned),
+            width: attrs.get(Ns::Svg, "width").map(str::to_owned),
+            height: attrs.get(Ns::Svg, "height").map(str::to_owned),
+            ..Default::default()
+        });
+        Some(Box::new(Frame))
+    }
+}
+
+/// `draw:frame` (rng:5088) — a chart's position, and the only content of one this build reads.
+/// A shape that is not a chart (a plain picture, a text box) leaves [`Builder::pending_chart`]
+/// with no [`crate::chart::ChartKind`] and is silently dropped when it closes.
+struct Frame;
+
+impl Context<Builder> for Frame {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Draw, "object") {
+            return None;
+        }
+        // `common-draw-data-attlist` (rng:1621) vs. an inline `office:document` (rng:5541-
+        // 5545) — the schema's own choice, and the one the package form actually takes:
+        // the chart's own document is a separate part (`Object 1/content.xml`) this frame
+        // only points at.
+        match attrs.get(Ns::Xlink, "href") {
+            Some(href) => {
+                let path = format!(
+                    "{}/content.xml",
+                    href.trim_start_matches("./").trim_end_matches('/')
+                );
+                if let Some(bytes) = b.resolve_part(&path) {
+                    let mut sub = Builder::new();
+                    sub.pending_chart = Some(PendingChart::default());
+                    let _ = super::context::parse(
+                        std::io::Cursor::new(bytes),
+                        Box::new(ChartPartFile),
+                        &mut sub,
+                    );
+                    if let (Some(main), Some(found)) = (&mut b.pending_chart, sub.pending_chart) {
+                        main.kind = found.kind;
+                        main.categories = found.categories;
+                        main.series = found.series;
+                    }
+                }
+                Some(Box::new(super::context::Ignore))
+            }
+            // The flat form's own shape: the chart's document lives right here.
+            None => Some(Box::new(DrawObject)),
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let Some(pending) = b.pending_chart.take() else {
+            return;
+        };
+        let (Some(kind), Some(width), Some(height)) = (pending.kind, pending.width, pending.height)
+        else {
+            return;
+        };
+        if pending.series.is_empty() {
+            return;
+        }
+        let chart = crate::chart::Chart {
+            kind,
+            categories: pending.categories,
+            series: pending.series,
+            x: pending.x.unwrap_or_else(|| "0cm".to_owned()),
+            y: pending.y.unwrap_or_else(|| "0cm".to_owned()),
+            width,
+            height,
+        };
+        let sheet = &mut b.doc.sheets[b.sheet];
+        let index = sheet.charts().len();
+        sheet.insert_chart(index, chart);
+    }
+}
+
+/// The chart's *own* document, one level in — reached as `office:document`'s child when the
+/// flat form embeds it right here, inline (`doc/chart-format.md`).
+struct DrawObject;
+
+impl Context<Builder> for DrawObject {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        name.is(Ns::Office, "document")
+            .then(|| Box::new(ChartPartRoot) as Ctx)
+    }
+}
+
+/// The chart's own document's `office:body` — what [`DrawObject`] reaches one level down from
+/// `office:document`, and, for the package form, what [`ChartPartFile`] reaches one level down
+/// from `office:document-content`. Both physical forms put `office:body` in the same place
+/// relative to their own root, so this one context serves both.
+struct ChartPartRoot;
+
+impl Context<Builder> for ChartPartRoot {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        name.is(Ns::Office, "body")
+            .then(|| Box::new(OfficeBody) as Ctx)
+    }
+}
+
+/// `office:body` (rng:7687) — one recognised child, `office:chart` (rng:7717).
+struct OfficeBody;
+
+impl Context<Builder> for OfficeBody {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        name.is(Ns::Office, "chart")
+            .then(|| Box::new(OfficeChart) as Ctx)
+    }
+}
+
+/// The **root** of the standalone parse `Frame::start_child` runs over a package's own chart
+/// part (`Object 1/content.xml`) — its file starts at `office:document-content` rather than at
+/// `office:document`, since it is a *part* rather than a whole physical document; this is the
+/// one level [`DrawObject`] does not need, because there the wrapper already arrived as an
+/// ordinary child in the middle of the outer document's own stream.
+struct ChartPartFile;
+
+impl Context<Builder> for ChartPartFile {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        name.is(Ns::Office, "document-content")
+            .then(|| Box::new(ChartPartRoot) as Ctx)
+    }
+}
+
+/// `office:chart` (rng:7717) — one child, `chart:chart`, and nothing this build reads directly
+/// on `office:chart` itself.
+struct OfficeChart;
+
+impl Context<Builder> for OfficeChart {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Chart, "chart") {
+            return None;
+        }
+        if let Some(pending) = &mut b.pending_chart {
+            pending.kind = attrs
+                .get(Ns::Chart, "class")
+                .and_then(crate::chart::ChartKind::from_class);
+        }
+        Some(Box::new(ChartChart))
+    }
+}
+
+/// `chart:chart` (rng:463) — a title, subtitle, footer and legend may all sit here
+/// (`doc/chart-format.md`'s scope line: none of them are read), then `chart:plot-area`.
+struct ChartChart;
+
+impl Context<Builder> for ChartChart {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        name.is(Ns::Chart, "plot-area")
+            .then(|| Box::new(ChartPlotArea) as Ctx)
+    }
+}
+
+/// `chart:plot-area` (rng:776) — the x axis' categories, and every series.
+struct ChartPlotArea;
+
+impl Context<Builder> for ChartPlotArea {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Chart, "axis") => (attrs.get(Ns::Chart, "dimension") == Some("x"))
+                .then(|| Box::new(ChartAxisX) as Ctx),
+            (Ns::Chart, "series") => {
+                let values = attrs
+                    .get(Ns::Chart, "values-cell-range-address")?
+                    .to_owned();
+                let label = attrs
+                    .get(Ns::Chart, "label-cell-address")
+                    .map(str::to_owned);
+                if let Some(pending) = &mut b.pending_chart {
+                    pending.series.push(crate::chart::Series { values, label });
+                }
+                // `chart:data-point` carries only styling (`doc/chart-format.md`'s colour
+                // section) — nothing this build reads back out of one.
+                Some(Box::new(super::context::Ignore))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// `chart:axis` (rng:423) for `chart:dimension="x"` — the one axis a chart's categories hang
+/// off. The y axis (and any chart with more than these two) is out of scope and ignored.
+struct ChartAxisX;
+
+impl Context<Builder> for ChartAxisX {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Chart, "categories")
+            && let Some(pending) = &mut b.pending_chart
+        {
+            pending.categories = attrs
+                .get(Ns::Table, "cell-range-address")
+                .map(str::to_owned);
+        }
+        None
+    }
+}
+
 /// `table:calculation-settings`, for the one setting that changes what a stored number
 /// *means*: `table:null-date`, the epoch (Part 4 §3.4 item 8).
 ///
@@ -615,6 +861,8 @@ impl Context<Builder> for Table {
             }
             // Sheet-local names (§5.11).
             (Ns::Table, "named-expressions") => Some(Box::new(NamedExpressions)),
+            // A sheet's charts (rng:15678) — `doc/chart-format.md`.
+            (Ns::Table, "shapes") => Some(Box::new(Shapes)),
             _ => None,
         }
     }

@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
-use super::names::{FO, NUMBER, OFFICE, STYLE, TABLE, TEXT};
+use super::names::{CHART, DRAW, FO, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
 // Packaging, the manifest, the ODF version and XML escaping are the same for every document
 // type (§1.1, §1.3), so they live in `grind-core` and are reached here by the names this
 // file always used.
@@ -175,6 +175,14 @@ fn content(doc: &Document, form: Form) -> String {
     }
     if pool.styles_cells() {
         let _ = write!(out, " xmlns:number=\"{NUMBER}\" xmlns:fo=\"{FO}\"");
+    }
+    // A chart's own document needs all four — `doc/chart-format.md`'s embedded shape — and
+    // only a document that actually has a chart pays for the declarations.
+    if doc.sheets.iter().any(|s| !s.charts().is_empty()) {
+        let _ = write!(
+            out,
+            " xmlns:draw=\"{DRAW}\" xmlns:chart=\"{CHART}\" xmlns:svg=\"{SVG}\" xmlns:xlink=\"{XLINK}\""
+        );
     }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
@@ -653,6 +661,156 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
     out
 }
 
+/// `table:shapes` (rng:15678) — every chart on this sheet, regenerated fresh from the model
+/// every time: `doc/chart-format.md` explains why this build does not try to splice a chart's
+/// own document the way a cell splices, and assigns [`crate::chart::series_color`] rather than
+/// reproducing whatever colours the chart was last saved with.
+fn write_shapes(out: &mut String, sheet: &Sheet) {
+    if sheet.charts().is_empty() {
+        return;
+    }
+    out.push_str("    <table:shapes>\n");
+    for chart in sheet.charts() {
+        write_chart(out, chart);
+    }
+    out.push_str("    </table:shapes>\n");
+}
+
+/// One chart, as the flat form's own inline shape (`doc/chart-format.md`) — valid ODF
+/// regardless of the outer document's physical form, and always the simpler of the two
+/// `draw:object` may hold (R3).
+fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
+    // Every `style:style style:family="chart"` this chart's document needs, one
+    // [`crate::chart::series_color`] each — a series' own colour (bar, line) or one per data
+    // point (pie, which has no axis to share a colour down). Built before anything is
+    // written, so the automatic-styles section — which the schema puts ahead of the body —
+    // never has to forward-reference a name the body decides on later.
+    let mut styles: Vec<(String, &'static str)> = Vec::new();
+    for (n, _) in chart.series.iter().enumerate() {
+        match chart.kind {
+            crate::chart::ChartKind::Pie => {
+                for point in 0..cell_count(&chart.series[n].values) {
+                    styles.push((format!("gch{n}-{point}"), crate::chart::series_color(point)));
+                }
+            }
+            _ => styles.push((format!("gch{n}"), crate::chart::series_color(n))),
+        }
+    }
+
+    let _ = writeln!(
+        out,
+        "     <draw:frame svg:x=\"{}\" svg:y=\"{}\" svg:width=\"{}\" svg:height=\"{}\">",
+        esc(&chart.x),
+        esc(&chart.y),
+        esc(&chart.width),
+        esc(&chart.height)
+    );
+    out.push_str("      <draw:object>\n");
+    let _ = writeln!(
+        out,
+        "       <office:document office:mimetype=\"{CHART_MIMETYPE}\" office:version=\"{VERSION}\">"
+    );
+    if !styles.is_empty() {
+        out.push_str("        <office:automatic-styles>\n");
+        for (name, color) in &styles {
+            let _ = writeln!(
+                out,
+                "         <style:style style:name=\"{name}\" style:family=\"chart\">\
+                 <style:graphic-properties svg:stroke-color=\"{color}\" draw:fill-color=\"{color}\"/>\
+                 </style:style>"
+            );
+        }
+        out.push_str("        </office:automatic-styles>\n");
+    }
+    out.push_str("        <office:body><office:chart>\n");
+    let _ = writeln!(
+        out,
+        "         <chart:chart svg:width=\"{}\" svg:height=\"{}\" chart:class=\"{}\">",
+        esc(&chart.width),
+        esc(&chart.height),
+        chart.kind.class()
+    );
+    out.push_str("          <chart:plot-area>\n");
+    if let Some(categories) = &chart.categories {
+        out.push_str("           <chart:axis chart:dimension=\"x\">\n");
+        let _ = writeln!(
+            out,
+            "            <chart:categories table:cell-range-address=\"{}\"/>",
+            esc(categories)
+        );
+        out.push_str("           </chart:axis>\n");
+    }
+    out.push_str("           <chart:axis chart:dimension=\"y\"/>\n");
+    for (n, series) in chart.series.iter().enumerate() {
+        let label = series
+            .label
+            .as_deref()
+            .map(|l| format!(" chart:label-cell-address=\"{}\"", esc(l)))
+            .unwrap_or_default();
+        let style = match chart.kind {
+            crate::chart::ChartKind::Pie => String::new(),
+            _ => format!(" chart:style-name=\"gch{n}\""),
+        };
+        let _ = writeln!(
+            out,
+            "           <chart:series chart:class=\"{}\" \
+             chart:values-cell-range-address=\"{}\"{label}{style}>",
+            chart.kind.class(),
+            esc(&series.values)
+        );
+        match chart.kind {
+            // A pie has no axis to share one colour down, so every slice is its own
+            // `chart:data-point` and its own colour.
+            crate::chart::ChartKind::Pie => {
+                for point in 0..cell_count(&series.values) {
+                    let _ = writeln!(
+                        out,
+                        "            <chart:data-point chart:style-name=\"gch{n}-{point}\"/>"
+                    );
+                }
+            }
+            // A bar or a line series shares one colour across every point in it.
+            _ => {
+                let _ = writeln!(
+                    out,
+                    "            <chart:data-point chart:repeated=\"{}\"/>",
+                    cell_count(&series.values)
+                );
+            }
+        }
+        out.push_str("           </chart:series>\n");
+    }
+    out.push_str("          </chart:plot-area>\n");
+    out.push_str("         </chart:chart>\n");
+    out.push_str("        </office:chart></office:body>\n");
+    out.push_str("       </office:document>\n");
+    out.push_str("      </draw:object>\n");
+    out.push_str("     </draw:frame>\n");
+}
+
+const CHART_MIMETYPE: &str = "application/vnd.oasis.opendocument.chart";
+
+/// How many cells a chart's own range spans — the only reason this build parses one back out:
+/// a pie's per-slice colouring needs one `chart:data-point` per cell, and a bar or line
+/// series' `chart:data-point chart:repeated`  needs the same count for R2 validity (the
+/// schema does not require it to add up, but a reader that draws one dot per data point
+/// should see as many as the range actually has).
+fn cell_count(range: &str) -> usize {
+    let Ok(reference) = crate::a1::parse_bracketed(&format!("[{range}]")) else {
+        return 1;
+    };
+    let end = reference.end.as_ref().unwrap_or(&reference.start);
+    let rows = match (reference.start.row, end.row) {
+        (Some(s), Some(e)) => e.index.abs_diff(s.index) + 1,
+        _ => 1,
+    };
+    let cols = match (reference.start.col, end.col) {
+        (Some(s), Some(e)) => e.index.abs_diff(s.index) + 1,
+        _ => 1,
+    };
+    (rows * cols) as usize
+}
+
 fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     let cols = sheet.used_cols().max(1);
     // A sized or hidden track past the last value still has to be declared, or the layout
@@ -663,6 +821,9 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     let rows = cols_or_rows_extent(sheet, null_date);
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
+    // Before the columns, which is where the schema puts it (rng:15961, ahead of
+    // rng:15963-15964's `table-columns-and-groups`/`table-rows-and-groups`).
+    write_shapes(out, sheet);
     // Both the column block and the row block are mandatory, even for an all-empty sheet
     // (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring columns
     // of equal width and hidden state are one declaration, which is what the reader's
