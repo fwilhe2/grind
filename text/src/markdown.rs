@@ -4,16 +4,21 @@
 
 //! Markdown-shaped typing: what `**bold**` and `# ` mean while you write them.
 //!
-//! **The terminal's answer to a formatting toolbar.** A window has a row of buttons and a
-//! selection to press them against; a terminal has a keyboard and a caret. So this shell takes
-//! the notation everybody already types when they mean emphasis, and turns it into the
-//! document's own formatting as the closing marker lands — the markers are ordinary characters
-//! until then, so the caret, the line breaking and the undo history all stay honest. Nothing
-//! here is a *display* convention: the document is drawn with the terminal's own bold and
-//! italic (`app.rs`), never as source with markers in it, because markers on screen would be
-//! characters the core never measured and every caret after one would sit in the wrong column.
+//! **A notation, not a document format.** This build's model is ODF and stays ODF; what is
+//! here is the shape of an *edit* — somebody typing `**bold**` means the four characters to go
+//! away and the two words between them to be bold. [`crate::App::type_markdown`] is the edit,
+//! and this module is the reading that decides what one means.
 //!
-//! Pure functions over a block's text, so all of it unit-tests with no terminal attached.
+//! **In the core rather than in a shell**, for the reason `doc/text-layout.md` gives about
+//! line breaking: three shells recognising `**` three ways would be three editors. A terminal
+//! has no formatting toolbar and this is its whole answer to one; a window has both, and both
+//! set the same property on the same run.
+//!
+//! Nothing here is a *display* convention. A document is drawn with the shell's own bold and
+//! italic, never as source with markers in it — markers on screen would be characters the
+//! layout engine never measured, and every caret after one would sit in the wrong column.
+//!
+//! Pure functions over a block's text, so all of it unit-tests with no document at all.
 //!
 //! **One divergence from markdown, named**: `__x__` is *underline* here, where markdown reads
 //! it as a second spelling of bold. ODF has underline and this build already spells bold
@@ -21,8 +26,8 @@
 //! notation nobody types twice. `_x_` alone means nothing at all, deliberately —
 //! `snake_case` is not emphasis.
 
-use grind_text::BlockKind;
-use grind_text::style::CharStyle;
+use crate::BlockKind;
+use crate::style::CharStyle;
 
 /// The five emphases this notation can ask for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -46,6 +46,9 @@ use keymap::{Action, Chord, Motion};
 /// style as it is rendered, and the canvas measures with the identical string. A serif at
 /// this size because this is a page of prose, not a user interface.
 const FAMILY: &str = "Georgia, 'Times New Roman', serif";
+/// What a fenced block and a `` `code` `` run are set in. A generic first, so the reader's own
+/// monospace face wins — which one that is, is theirs to know.
+const MONO_FAMILY: &str = "ui-monospace, monospace";
 const BODY_PX: f64 = 17.0;
 /// Multiplied by the font size to give a line's height, and by the *body* size to give the
 /// space under a paragraph.
@@ -91,13 +94,22 @@ struct Face {
 
 impl Face {
     fn new(ctx: Option<Rc<CanvasRenderingContext2d>>, size: f64, bold: bool) -> Self {
+        Self::in_family(ctx, size, bold, FAMILY)
+    }
+
+    fn in_family(
+        ctx: Option<Rc<CanvasRenderingContext2d>>,
+        size: f64,
+        bold: bool,
+        family: &str,
+    ) -> Self {
         let weight = match bold {
             true => "bold ",
             false => "",
         };
         Face {
             ctx,
-            font: format!("{weight}{size}px {FAMILY}"),
+            font: format!("{weight}{size}px {family}"),
             size,
             height: (size * LINE).round(),
             widths: RefCell::new(HashMap::new()),
@@ -170,6 +182,10 @@ struct Faces {
     headings: Vec<Face>,
     title: Face,
     subtitle: Face,
+    /// A fenced code block (`grind_text::markdown::PREFORMATTED`). A *face* rather than a CSS
+    /// rule, because the same object is what measures the block — a monospace paragraph drawn
+    /// in one font and measured in another would break every line in the wrong place.
+    code: Face,
 }
 
 impl Faces {
@@ -181,7 +197,8 @@ impl Faces {
                 .map(|scale| Face::new(ctx.clone(), (BODY_PX * scale).round(), true))
                 .collect(),
             title: Face::new(ctx.clone(), (BODY_PX * TITLE_SCALE).round(), true),
-            subtitle: Face::new(ctx, (BODY_PX * SUBTITLE_SCALE).round(), false),
+            subtitle: Face::new(ctx.clone(), (BODY_PX * SUBTITLE_SCALE).round(), false),
+            code: Face::in_family(ctx, BODY_PX - 1.0, false, MONO_FAMILY),
         }
     }
 
@@ -198,6 +215,7 @@ impl Faces {
         match block.style.as_deref() {
             Some("Title") => return &self.title,
             Some("Subtitle") => return &self.subtitle,
+            Some(grind_text::markdown::PREFORMATTED) => return &self.code,
             _ => {}
         }
         self.for_kind(&block.kind)
@@ -252,6 +270,9 @@ pub struct Ui {
     /// The column the caret is trying to keep while moving by lines — see
     /// [`App::caret_line`]. Cleared by any horizontal move.
     goal_x: Cell<Option<f32>>,
+    /// What `App::type_markdown` said the next character must be set in, so a notation ends
+    /// where its closing marker does. Handed straight back and never read here.
+    resume: RefCell<Option<CharStyle>>,
     /// Whether the pointer is down and dragging out a selection.
     dragging: Cell<bool>,
     /// Pictures already turned into a `data:` URL, by the block they are in.
@@ -295,6 +316,7 @@ impl Ui {
             }),
             anchor: Cell::new(None),
             goal_x: Cell::new(None),
+            resume: RefCell::new(None),
             dragging: Cell::new(false),
             images: RefCell::new(HashMap::new()),
             message: RefCell::new(String::new()),
@@ -318,6 +340,7 @@ impl Ui {
         });
         self.anchor.set(None);
         self.goal_x.set(None);
+        *self.resume.borrow_mut() = None;
         self.images.borrow_mut().clear();
         self.dom.pane.set_scroll_top(0);
         Ok(())
@@ -817,7 +840,7 @@ impl Ui {
                 self.split();
             }
             if !line.is_empty() {
-                self.type_text(line);
+                self.insert_plain(line);
             }
         }
     }
@@ -1036,23 +1059,48 @@ impl Ui {
 
     // --- editing ---
 
+    /// A typed character, read as **markdown-shaped notation** as it lands
+    /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `` `code` ``
+    /// becomes monospace, `# ` makes the block a heading, ``` fences a code paragraph.
+    ///
+    /// The reading is `App::type_markdown`'s, so this pane, the terminal and the CLI agree
+    /// about what `**` means — and it is one action, so one Ctrl+Z takes back the whole of
+    /// `**bold**`. Pasting deliberately does *not* go through it ([`Ui::paste_text`]): text
+    /// arriving from a clipboard is text, and turning somebody's asterisks into formatting
+    /// they did not ask for is not a favour.
     fn type_text(&self, text: &str) {
         // A document with no blocks at all has nowhere to put a character, and the first
         // thing anybody does with an empty page is type into it.
         if self.app.block_count() == 0 {
-            match self.app.insert(0, BlockKind::Paragraph, text) {
+            match self.app.insert(0, BlockKind::Paragraph, "") {
                 Ok(()) => self.set_caret(Caret {
                     block: 0,
-                    offset: text.chars().count(),
+                    offset: 0,
                 }),
-                Err(error) => self.set_message(error.to_string()),
+                Err(error) => return self.set_message(error.to_string()),
             }
-            return;
         }
+        let caret = self.caret.get();
+        // Cloned out first: a `borrow()` in the scrutinee lives for the whole `match`, and the
+        // arm below takes a `borrow_mut()` of the same cell.
+        let resume = self.resume.borrow().clone();
+        match self.app.type_markdown(caret, text, resume.as_ref()) {
+            Ok(typed) => {
+                self.goal_x.set(None);
+                *self.resume.borrow_mut() = typed.resume;
+                self.set_caret(typed.caret);
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// Text in at the caret with no notation read — what pasting and the register use.
+    fn insert_plain(&self, text: &str) {
         let caret = self.caret.get();
         match self.app.insert_text(caret, text) {
             Ok(()) => {
                 self.goal_x.set(None);
+                *self.resume.borrow_mut() = None;
                 self.set_caret(Caret {
                     block: caret.block,
                     offset: caret.offset + text.chars().count(),
@@ -1172,6 +1220,10 @@ fn class_of(block: &BlockView) -> String {
     // — the two that are not headings and would otherwise be indistinguishable paragraphs.
     if let Some(style @ ("Title" | "Subtitle")) = block.style.as_deref() {
         class.push_str(&format!(" {}", style.to_lowercase()));
+    }
+    // ODF's own name for a code paragraph, which is what ``` fences (`grind_text::markdown`).
+    if block.style.as_deref() == Some(grind_text::markdown::PREFORMATTED) {
+        class.push_str(" pre");
     }
     class
 }

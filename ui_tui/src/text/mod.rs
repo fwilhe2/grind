@@ -16,7 +16,6 @@
 
 pub mod app;
 pub mod keymap;
-pub mod markdown;
 
 /// The word processor's own keys and commands — `--help` prints it, `:help` shows it.
 pub const HELP: &str = "\

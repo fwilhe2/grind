@@ -142,6 +142,9 @@ mod imp {
         /// [`App::caret_line`]. Cleared by any horizontal move, which is what makes walking
         /// down through a short line and out the other side come back where it started.
         pub goal_x: Cell<Option<f32>>,
+        /// What `App::type_markdown` said the next character must be set in, so a notation
+        /// ends where its closing marker does. Handed straight back and never read here.
+        pub resume: RefCell<Option<grind_text::CharStyle>>,
         /// Every block's box, cached against the width it was measured at.
         ///
         /// ponytail: rebuilt from scratch whenever the document or the width changes, which
@@ -174,6 +177,7 @@ mod imp {
                 }),
                 anchor: Cell::new(None),
                 goal_x: Cell::new(None),
+                resume: RefCell::new(None),
                 flow: RefCell::new(None),
                 faces: RefCell::new(None),
                 palette: Cell::new(None),
@@ -850,34 +854,32 @@ mod imp {
             }
         }
 
+        /// A typed character, read as **markdown-shaped notation** as it lands
+        /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `# ` makes
+        /// the block a heading, ``` fences a code paragraph.
+        ///
+        /// The reading is `App::type_markdown`'s, so this window, the browser, the terminal
+        /// and the CLI agree about what `**` means — and it is one action, so one Ctrl+Z takes
+        /// back the whole of `**bold**`. The toolbar is still the other way to say it, over a
+        /// selection; this is the way that needs no pointer.
         pub fn type_text(&self, text: &str) {
             let Some(app) = self.app() else { return };
             // A document with no blocks at all has nowhere to put a character, and the first
             // thing anybody does with an empty window is type into it.
-            if app.block_count() == 0 {
-                match app.insert(0, BlockKind::Paragraph, text) {
-                    Ok(()) => self.move_caret(
-                        Caret {
-                            block: 0,
-                            offset: text.chars().count(),
-                        },
-                        true,
-                    ),
-                    Err(error) => self.notice(error.to_string()),
-                }
-                return;
+            if app.block_count() == 0
+                && let Err(error) = app.insert(0, BlockKind::Paragraph, "")
+            {
+                return self.notice(error.to_string());
             }
             let caret = self.consume_selection(&app);
-            match app.insert_text(caret, text) {
-                Ok(()) => {
+            // Cloned out first: a `borrow()` in the scrutinee lives for the whole `match`, and
+            // the arm below takes a `borrow_mut()` of the same cell.
+            let resume = self.resume.borrow().clone();
+            match app.type_markdown(caret, text, resume.as_ref()) {
+                Ok(typed) => {
                     self.goal_x.set(None);
-                    self.move_caret(
-                        Caret {
-                            block: caret.block,
-                            offset: caret.offset + text.chars().count(),
-                        },
-                        true,
-                    );
+                    *self.resume.borrow_mut() = typed.resume;
+                    self.move_caret(typed.caret, true);
                 }
                 Err(error) => self.notice(error.to_string()),
             }
@@ -1329,6 +1331,10 @@ mod tests {
             "Down moves by a wrapped line, not by a block",
             down_moves_by_a_wrapped_line_not_by_a_block,
         ),
+        (
+            "markdown as it is typed reaches the document",
+            typing_markdown_formats_the_span,
+        ),
     ];
 
     /// A widget with a document in it and a size to lay it out at. Only ever called from
@@ -1643,6 +1649,33 @@ mod tests {
         }
         assert_eq!(doc.caret().block, 1);
         assert_eq!(app.block_count(), 2, "and nothing was edited on the way");
+    }
+
+    /// The notation is `grind_text::markdown`'s and the edit is `App::type_markdown`'s, so
+    /// what this checks is the *wiring*: a key that reaches `type_text` reaches the reading.
+    fn typing_markdown_formats_the_span() {
+        let (doc, app) = shell(&[""]);
+        let imp = doc.imp();
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        for c in "say **this** now".chars() {
+            imp.type_text(&c.to_string());
+        }
+        assert_eq!(text(&app), "say this now", "the markers are gone");
+        let view = app.get_viewport(0..1);
+        let bold = view
+            .get(0)
+            .expect("the block")
+            .runs
+            .iter()
+            .find(|run| run.props.is_bold())
+            .expect("a bold run");
+        assert_eq!(bold.text, "this");
     }
 
     #[test]

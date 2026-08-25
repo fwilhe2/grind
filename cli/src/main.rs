@@ -233,11 +233,20 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             file,
             at: address,
             text,
+            markdown,
         } => {
             let app = open_text(file)?;
             let caret = caret_at(&app, address)?;
             let text = read_stdin_if_dash(text)?;
-            app.insert_text(caret, &text).map_err(|e| e.to_string())?;
+            match markdown {
+                // One call rather than one per character: the notation is resolved between
+                // them inside the core, so a whole line is one action and one undo step.
+                true => {
+                    app.type_markdown(caret, &text, None)
+                        .map_err(|e| e.to_string())?;
+                }
+                false => app.insert_text(caret, &text).map_err(|e| e.to_string())?,
+            }
             finish_text(&app, cli, file, !text.is_empty())
         }
 
@@ -722,6 +731,11 @@ enum TextCommand {
     /// What typing does. `set` replaces a whole block, which is what a script wants; this is
     /// what a cursor wants, and the CLI has it because rule 4 says a shell may not have a verb
     /// the CLI does not. The text takes the formatting of the run at the caret.
+    ///
+    /// `--markdown` reads the notation as it goes: `**bold**` becomes bold and its markers go,
+    /// `*italic*`, `__underline__`, `~~struck~~` and `` `code` `` likewise, `# ` at the front
+    /// of a block makes it a heading and ``` fences a code paragraph. One undo step for the
+    /// whole line, and the same reading every shell does (`grind_text::markdown`).
     Type {
         file: PathBuf,
         /// Where it goes, e.g. p3+12 — an address with no offset means the front of its block
@@ -729,6 +743,9 @@ enum TextCommand {
         /// The text; "-" reads it from stdin
         #[arg(allow_hyphen_values = true)]
         text: String,
+        /// Read **bold**, *italic*, __underline__, ~~struck~~, `code`, "# " and ``` as they land
+        #[arg(long)]
+        markdown: bool,
     },
 
     /// Insert an image at a caret, from a file on disk

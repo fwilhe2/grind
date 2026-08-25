@@ -270,3 +270,25 @@ the build; so does listing one here that nothing implements.
 
 That is the anti-bloat rule made mechanical, and for a scope line that was invented rather
 than extracted, it is the only thing standing between this document and a wish list.
+
+## Markdown-shaped typing
+
+`markdown.rs` and [`App::type_markdown`] are **a notation, not a second document format**.
+The model is ODF and stays ODF; what the module describes is the shape of an *edit* — somebody
+typing `**bold**` means the four markers to go away and the words between them to be bold.
+Nothing about a document changes: what lands is `fo:font-weight`, `fo:font-family` and the rest,
+exactly as a toolbar over a selection would set them.
+
+It is in the core rather than in a shell for the reason `doc/text-layout.md` gives about line
+breaking: four shells recognising `**` four ways would be four editors. It is **opt-in** —
+`insert_text` still puts asterisks in as asterisks — so a shell that does not want the notation
+does not get it, and pasting deliberately goes the other way.
+
+The whole of one span is one `Action::SetBlock`, so one press of undo takes back `**bold**`
+rather than the style, then the markers, then the characters. `Typed::resume` is what makes a
+notation end where its marker does: after a closing marker the caret sits at the end of the run
+just formatted, and the next character typed there would join it.
+
+One divergence from markdown, named: `__x__` is *underline*, where markdown reads it as a
+second spelling of bold. ODF has underline and bold is already `**x**`. `_x_` alone means
+nothing — `snake_case` is not emphasis.

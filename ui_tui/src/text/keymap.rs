@@ -64,7 +64,7 @@ pub enum Action {
     /// no toolbar, so the toolbar's vocabulary is the notation. (`/` rather than a lone `*`
     /// for italic: one asterisk is bold's own key here, and doubling a keystroke to mean
     /// *less* emphasis reads backwards.)
-    Emphasise(crate::text::markdown::Emphasis),
+    Emphasise(grind_text::markdown::Emphasis),
     /// `-` over a selection: back to no formatting at all.
     Plain,
     /// `Esc` — leave Visual mode without doing anything to what was selected.
@@ -77,7 +77,7 @@ pub enum Action {
 /// need a range mean: everything else is the same key in both modes, which is what makes
 /// Visual feel like Normal with a highlight rather than like a different editor.
 pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<Action> {
-    use crate::text::markdown::Emphasis;
+    use grind_text::markdown::Emphasis;
     let ctrl = mods.contains(KeyModifiers::CONTROL);
     let go = |motion| Some(Action::Move(motion));
     match code {
@@ -207,7 +207,7 @@ mod tests {
     /// stay available to whatever wants them next.
     #[test]
     fn the_formatting_keys_only_bind_once_something_is_selected() {
-        use crate::text::markdown::Emphasis;
+        use grind_text::markdown::Emphasis;
         for (ch, emphasis) in [
             ('*', Emphasis::Bold),
             ('/', Emphasis::Italic),

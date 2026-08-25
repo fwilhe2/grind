@@ -500,6 +500,18 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("Ctrl+U underlines the selection", document.querySelectorAll("#flow .run.u").length > 0, true);
 
+  // Markdown-shaped typing, the same reading the terminal and the CLI do
+  // (grind_text::markdown, one core call).
+  pressInDoc("End");
+  typeInDoc(" run `ls` now");
+  await frame();
+  check("typing markdown formats the span", blocks().some((b) => b.includes("run ls now")), true);
+  check("and takes the markers out", blocks().every((b) => !b.includes("`")), true);
+  check("the code run is drawn monospace",
+        [...document.querySelectorAll("#flow .run")].some(
+          (r) => (r.getAttribute("style") || "").includes("font-family:monospace")),
+        true);
+
   pressInDoc("2", { ctrlKey: true });
   await frame();
   check("Ctrl+2 makes the block a heading", document.querySelectorAll("#flow .block.h2").length, 1);

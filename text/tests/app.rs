@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use grind_text::{App, BlockKind, Form, Observer, loc};
+use grind_text::{App, BlockKind, Caret, Form, Observer, loc};
 
 /// Build a document *through the App*, which means the setup is itself undoable — every
 /// helper below accounts for that rather than pretending history starts empty.
@@ -868,4 +868,194 @@ fn an_image_that_needs_a_namespace_the_file_never_declared_forces_a_regenerate()
         reread.input_text(0).expect("reads"),
         "\u{fffc}a tiny picture"
     );
+}
+
+// --- markdown-shaped typing (`doc/tui-shell.md`, `grind_text::markdown`) ----------------
+
+/// Type a string one character at a time, the way a shell with a keyboard does — carrying the
+/// `resume` the previous keystroke handed back.
+fn type_markdown(app: &App, at: Caret, text: &str) -> Caret {
+    let mut typed = grind_text::Typed {
+        caret: at,
+        resume: None,
+    };
+    for c in text.chars() {
+        typed = app
+            .type_markdown(typed.caret, &c.to_string(), typed.resume.as_ref())
+            .expect("types");
+    }
+    typed.caret
+}
+
+#[test]
+fn typing_markdown_formats_the_span_and_takes_the_markers_out() {
+    for (source, want, set) in [
+        ("**bold**", "bold", "weight"),
+        ("*slant*", "slant", "style"),
+        ("__under__", "under", "underline"),
+        ("~~struck~~", "struck", "strike"),
+        ("`code`", "code", "family"),
+    ] {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "").expect("inserts");
+        type_markdown(
+            &app,
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            source,
+        );
+
+        let view = app.get_viewport(0..1);
+        let block = view.get(0).expect("the block");
+        assert_eq!(block.text, want, "{source}: the markers are gone");
+        let props = &block.runs.first().expect("a run").props;
+        let on = match set {
+            "weight" => props.font_weight.is_some(),
+            "style" => props.font_style.is_some(),
+            "underline" => props.underline.is_some(),
+            "strike" => props.line_through.is_some(),
+            _ => props.font_family.as_deref() == Some(grind_text::markdown::MONOSPACE),
+        };
+        assert!(on, "{source}: the span carries {set} — {props:?}");
+    }
+}
+
+/// **One action, one undo step.** A shell doing this as "erase, erase, restyle" would need
+/// three presses, and the third would be the one that surprised somebody.
+#[test]
+fn a_completed_notation_undoes_in_one_step() {
+    let app = App::new();
+    app.insert(0, BlockKind::Paragraph, "").expect("inserts");
+    // One call, one action — which is what a shell typing a whole line does.
+    app.type_markdown(
+        Caret {
+            block: 0,
+            offset: 0,
+        },
+        "say **this** now",
+        None,
+    )
+    .expect("types");
+    assert_eq!(app.input_text(0).unwrap(), "say this now");
+    assert!(app.undo());
+    assert_eq!(
+        app.input_text(0).unwrap(),
+        "",
+        "the whole line came back out"
+    );
+}
+
+/// The bug a shell would have without `resume`: text after the closing marker joins the run
+/// that was just formatted.
+#[test]
+fn typing_after_a_closing_marker_is_not_emphasised() {
+    for source in [
+        "**b** tail",
+        "*i* tail",
+        "__u__ tail",
+        "~~s~~ tail",
+        "`c` tail",
+    ] {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "").expect("inserts");
+        type_markdown(
+            &app,
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            source,
+        );
+        let view = app.get_viewport(0..1);
+        let last = view.get(0).unwrap().runs.last().expect("a run").clone();
+        assert!(
+            last.props.is_plain(),
+            "{source}: the tail is plain — {last:?}"
+        );
+        assert!(last.text.ends_with("tail"), "{source}: {:?}", last.text);
+    }
+}
+
+#[test]
+fn a_block_prefix_sets_the_kind_and_a_fence_the_style() {
+    let app = App::new();
+    app.insert(0, BlockKind::Paragraph, "title")
+        .expect("inserts");
+    type_markdown(
+        &app,
+        Caret {
+            block: 0,
+            offset: 0,
+        },
+        "## ",
+    );
+    let view = app.get_viewport(0..1);
+    assert_eq!(view.get(0).unwrap().kind, BlockKind::Heading { level: 2 });
+    assert_eq!(view.get(0).unwrap().text, "title", "the prefix is gone");
+
+    let app = App::new();
+    app.insert(0, BlockKind::Paragraph, "").expect("inserts");
+    type_markdown(
+        &app,
+        Caret {
+            block: 0,
+            offset: 0,
+        },
+        "```",
+    );
+    assert_eq!(
+        app.get_viewport(0..1).get(0).unwrap().style.as_deref(),
+        Some(grind_text::markdown::PREFORMATTED)
+    );
+    // And a second fence ends it.
+    type_markdown(
+        &app,
+        Caret {
+            block: 0,
+            offset: 0,
+        },
+        "```",
+    );
+    assert_eq!(app.get_viewport(0..1).get(0).unwrap().style, None);
+}
+
+/// A code block continues over Enter — `split_block` already carries a named style to the
+/// second block, so nothing in a shell has to.
+#[test]
+fn a_split_carries_the_preformatted_style_so_a_fence_continues() {
+    let app = App::new();
+    app.insert(0, BlockKind::Paragraph, "one").expect("inserts");
+    app.set_style(0..1, Some(grind_text::markdown::PREFORMATTED.to_owned()))
+        .expect("styles");
+    app.split_block(Caret {
+        block: 0,
+        offset: 3,
+    })
+    .expect("splits");
+    assert_eq!(
+        app.get_viewport(1..2).get(1).unwrap().style.as_deref(),
+        Some(grind_text::markdown::PREFORMATTED)
+    );
+}
+
+/// The rules that keep prose out of it, through the whole edit rather than only in the
+/// notation.
+#[test]
+fn ordinary_prose_types_as_itself() {
+    for source in ["2*3*4", "snake_case_name", "a**b**"] {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "").expect("inserts");
+        type_markdown(
+            &app,
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            source,
+        );
+        assert_eq!(app.input_text(0).unwrap(), source, "{source}");
+        assert!(!app.get_viewport(0..1).get(0).unwrap().styled, "{source}");
+    }
 }

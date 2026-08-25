@@ -65,6 +65,10 @@ operations that feel like they belong to a UI.
   hyperlink of the run at the caret, preferring the one to its left. One `SetBlock` underneath,
   so a keystroke splices: one character changed is one line of `git diff`
   (`text/tests/diffable.rs`)
+- `type_markdown` — `grind text type <at> <text> --markdown`. The same edit with the
+  markdown-shaped notation read as it lands (`grind_text::markdown`): `**bold**`, `*italic*`,
+  `__underline__`, `~~struck~~`, `` `code` ``, `# ` and ```` ``` ````. One action for the whole
+  string, so one undo step
 - `erase` — `grind text erase <range>`, where the range is characters — `p3+12:p3+20`, or a bare
   address for a whole block's text. Crossing a block boundary closes it up and leaves one block
   carrying the first one's kind and style, in **one** undo step; a bookmark inside the erased

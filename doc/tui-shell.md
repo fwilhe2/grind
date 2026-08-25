@@ -23,11 +23,17 @@ two words for emphasis.
 
 **2. Markdown is for *typing*, never for *showing*.**
 
-The word processor recognises `**bold**`, `*italic*`, `__underline__` and `~~struck~~` as the
-closing marker lands, and `# `/`- ` at the start of a block: the markers are erased and the
-document's own formatting is set (`ui_tui/src/text/markdown.rs`). It is the terminal's answer
-to a formatting toolbar — the notation everybody already types, on the keyboard that is all
-there is.
+The word processor recognises `**bold**`, `*italic*`, `__underline__`, `~~struck~~` and
+`` `code` `` as the closing marker lands, and `# `/`- `/```` ``` ```` at the start of a block:
+the markers are erased and the document's own formatting is set. It is the terminal's answer to
+a formatting toolbar — the notation everybody already types, on the keyboard that is all there
+is.
+
+**The reading lives in the core**, not here: `grind_text::markdown` and
+`App::type_markdown`. It started in this shell and moved the day it worked, for the reason
+`doc/text-layout.md` gives about line breaking — three shells recognising `**` three ways
+would be three editors. All four now type through the same call, and one press of undo takes
+back the whole of `**bold**` because it is one action.
 
 What it is **not** is a display convention. A formatted run is drawn with the terminal's own
 bold, italic, underline and strikethrough; the markers never appear on screen. That is not
@@ -35,25 +41,14 @@ taste, it is a constraint: the core breaks lines in *this shell's* units
 (`doc/text-layout.md`), and a marker drawn but never measured would put every caret after it
 in the wrong column. The same reasoning rules out a markdown *source* view.
 
-`` `code` `` is the fifth notation, and the odd one: the other four set a property that is on
-or off, and this sets a *family* — `fo:font-family: monospace`, a generic rather than the name
-of a font, since which monospace face a reader has is theirs to know. Three backticks alone in
-a block are a **fence**: the block becomes ODF's own `Preformatted Text` paragraph style,
-Enter inside one opens another (so a code region is a run of preformatted paragraphs), and a
-second fence ends it. Markdown fences a run of *lines*; a block model has no run of lines to
-fence, and this is the shape that fits it.
-
 The rules that keep prose out of it are in `markdown.rs` and tested there: the content may not
 be empty or padded with spaces, may hold no marker of its own (`2*3*4` is arithmetic), and the
 opening marker must start a word (`snake_case` is not emphasis). `_x_` alone means nothing —
 `__x__` is underline, the one deliberate divergence from markdown, because ODF has underline
 and this build already spells bold `**x**`.
 
-**A character typed after a closing marker is not emphasised.** It would be otherwise: the
-caret sits at the end of the run the shell has just formatted, and text inserted there joins
-it — so `say **this** and` would carry on bold past the marker that ended it. The shell
-remembers what the span was set in *before* it was emphasised and restores it on the next
-keystroke (`App::resume`). Found by the test for `` `code` ``, fixed for all five.
+A character typed after a closing marker is not emphasised — `App::type_markdown`'s `resume`,
+which every shell carries and none of them reads.
 
 ## What is built
 
@@ -83,7 +78,7 @@ Deferred by decision, not omission. Everything here is reachable from the CLI (R
 stored and not drawn, and a monospace family cannot be drawn as a different font — everything
 in a terminal already is one. A `` `code` `` run and a preformatted block are **dimmed**
 instead, so they are at least visible as their own kind of text; the document carries the
-family either way, and the browser draws it as an actual monospace face. Sixteen colours, so a
+family either way, and the browser draws both in an actual monospace face. Sixteen colours, so a
 document's `#ff4136` is drawn as the nearest of them — `nearest_color` in
 `ui_tui/src/text/app.rs`, by squared distance in RGB.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here

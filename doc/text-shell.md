@@ -25,6 +25,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Draw | custom widget, `snapshot()`, Pango | one `<div>` per **laid-out line**, no `contenteditable` |
 | Caret motion | arrows, Home/End, Page, Ctrl+Home/End — all answered by the core | the same set |
 | Editing | type, Enter, Backspace, Delete | the same four |
+| Markdown as you type | `**bold**`, `*italic*`, `__underline__`, `~~struck~~`, `` `code` ``, `# `, ``` — `App::type_markdown` | the same, same call |
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
 | Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | the same three, all inside the Ctrl+K palette (`doc/web-shell.md`) |
 | Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | the same |

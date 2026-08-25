@@ -361,6 +361,14 @@ input[type="text"] {
   opacity: 0.75;
 }
 
+ /* A fenced code paragraph — ODF's `Preformatted Text`, which ``` sets. The *font* is a
+   run's own property and is drawn inline; this is the block around it. */
+.pre {
+  background: var(--faint);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+}
+
 .picture {
   display: block;
   max-width: 100%;

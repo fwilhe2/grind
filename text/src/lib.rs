@@ -44,6 +44,7 @@
 
 pub mod action;
 pub mod loc;
+pub mod markdown;
 pub mod model;
 pub mod odf;
 pub mod style;
@@ -690,6 +691,80 @@ impl App {
         })
     }
 
+    /// Type text at a caret, reading the **markdown-shaped notation** as each character lands
+    /// ([`crate::markdown`]) — `**bold**` becomes bold and its four markers go, `` `code` ``
+    /// becomes monospace, `# ` makes the block a heading, ``` fences a code block.
+    ///
+    /// [`App::insert_text`]'s opinionated sibling, and opt-in for exactly that reason: a shell
+    /// that wants asterisks to stay asterisks calls the other one. It is here rather than in a
+    /// shell for the reason `doc/text-layout.md` gives about line breaking — three shells
+    /// recognising `**` three ways would be three editors — and it is *one* action, so one
+    /// press of undo takes back the whole of `**bold**` rather than the style, then the
+    /// markers, then the characters.
+    ///
+    /// **`resume` is what makes the notation end where it says it does.** After a closing
+    /// marker the caret sits at the end of the run just formatted, and the next character
+    /// typed there would join it — `say **this** and` would carry on bold. The returned
+    /// [`Typed::resume`] carries the formatting the span had *before* it was emphasised; hand
+    /// it back on the next call and the notation stops where its marker did. A shell typing a
+    /// whole string in one call never sees this: it is handled between the characters.
+    pub fn type_markdown(
+        &self,
+        at: Caret,
+        text: &str,
+        resume: Option<&CharStyle>,
+    ) -> Result<Typed> {
+        if text.is_empty() {
+            return Ok(Typed {
+                caret: at,
+                resume: resume.cloned(),
+            });
+        }
+        let mut resume = resume.cloned();
+        self.mutate(|state| {
+            let mut block = block_at(state, at.block)?;
+            let mut caret = at.offset.min(block.len());
+            for c in text.chars() {
+                let mut buffer = [0u8; 4];
+                let typed = c.encode_utf8(&mut buffer);
+                // The character itself, in whatever the caret is set in — or in what the last
+                // completed span said to go back to.
+                let (mut runs, tail) = model::split_runs(&block.runs, caret);
+                let (style, props, href) = match resume.take() {
+                    Some(props) => (None, props, None),
+                    None => caret_formatting(&runs, &tail),
+                };
+                runs.push(Run::Text {
+                    text: typed.to_owned(),
+                    style,
+                    props,
+                    href,
+                });
+                runs.extend(tail);
+                model::coalesce(&mut runs);
+                block.runs = runs;
+                caret += 1;
+
+                // And now: did that character *finish* something?
+                resume = apply_notation(&mut block, &mut caret);
+            }
+            Self::commit(
+                state,
+                Action::SetBlock {
+                    index: at.block,
+                    block: Box::new(block),
+                },
+            )?;
+            Ok(Typed {
+                caret: Caret {
+                    block: at.block,
+                    offset: caret,
+                },
+                resume,
+            })
+        })
+    }
+
     /// Insert an image at a caret — a fifth caret-level edit, alongside `insert_text`, for the
     /// one kind of content that is not text (`doc/text-core.md`'s `draw:frame` row).
     ///
@@ -1210,6 +1285,76 @@ impl App {
 /// decides; at the front of a block there is nothing before it and the run after decides
 /// instead. A caret next to a tab, a break or a bookmark carries no formatting of its own, so
 /// the search is for the nearest *text* run and stops at the first thing that is not one.
+/// What [`App::type_markdown`] did: where the caret ended up, and what the *next* character
+/// typed there must be set in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Typed {
+    pub caret: Caret,
+    /// `Some` when the last character closed an emphasis — see [`App::type_markdown`].
+    pub resume: Option<CharStyle>,
+}
+
+/// Read the notation off a block that has just had a character typed into it, and apply
+/// whatever it completed — in memory, so the whole of `**bold**` is one `SetBlock` and one
+/// undo step.
+///
+/// Returns the formatting the next character typed at the caret must be given, `None` when
+/// nothing completed.
+fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
+    let text = block.text();
+
+    // A fence toggles the block between preformatted and plain, and takes its own three
+    // markers back out.
+    if markdown::is_fence(&text, *caret) {
+        block.runs = without(block, 0, *caret);
+        *caret = 0;
+        block.style = match block.style.as_deref() == Some(markdown::PREFORMATTED) {
+            true => None,
+            false => Some(markdown::PREFORMATTED.to_owned()),
+        };
+        return None;
+    }
+
+    // `# ` and `- ` — the block's own kind, and the prefix gone.
+    if let Some((width, kind)) = markdown::block_prefix(&text, *caret) {
+        block.runs = without(block, 0, width);
+        *caret -= width;
+        block.kind = kind;
+        return None;
+    }
+
+    let found = markdown::emphasised(&text, *caret)?;
+    // What the span was set in before it was emphasised — read from the opening marker, which
+    // was typed in the formatting around it and is about to be deleted.
+    let before = props_at(block, found.open);
+    // The closing marker first: taking the opening one out would move everything after it, and
+    // these offsets were measured before either went.
+    block.runs = without(block, found.end, found.close);
+    block.runs = without(block, found.open, found.start);
+    let end = found.open + (found.end - found.start);
+    if let Some(runs) = restyled(block, found.open, end, &found.emphasis.style()) {
+        block.runs = runs;
+    }
+    *caret = end;
+    Some(before)
+}
+
+/// A block's runs with the characters in `from..to` removed.
+fn without(block: &Block, from: usize, to: usize) -> Vec<Run> {
+    let (mut head, rest) = model::split_runs(&block.runs, from);
+    let (_, tail) = model::split_runs(&rest, to.saturating_sub(from));
+    head.extend(tail);
+    model::coalesce(&mut head);
+    head
+}
+
+/// The direct formatting of the run covering `offset` — what a character typed there would
+/// have inherited, which is what the text after a closing marker has to go back to.
+fn props_at(block: &Block, offset: usize) -> CharStyle {
+    let (head, tail) = model::split_runs(&block.runs, offset);
+    caret_formatting(&head, &tail).1
+}
+
 fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, Option<String>) {
     let neighbour = head.last().or_else(|| tail.first());
     match neighbour {

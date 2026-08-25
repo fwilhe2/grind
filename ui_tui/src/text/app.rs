@@ -37,8 +37,8 @@ use grind_text::{App as CoreApp, BlockKind, BlockView, Caret};
 
 use super::Cells;
 use super::keymap::{self, Action, Motion};
-use super::markdown::{self, Emphasis};
 use crate::app::RedrawFlag;
+use grind_text::markdown::{self, Emphasis};
 
 /// Room for `p12 h1 ` down the left, so a reader can see the structure the outline is made of.
 const GUTTER: u16 = 8;
@@ -69,14 +69,10 @@ pub struct App {
     width: f32,
     height: usize,
     mode: Mode,
-    /// What the *next* typed character's formatting must be, and where it will be typed.
-    ///
-    /// Set when a markdown span completes: the caret is then at the end of a run this shell
-    /// has just emphasised, and text inserted there would join it — so `say **this** and`
-    /// would carry on bold past the closing marker, which is the opposite of what the marker
-    /// said. This holds the formatting the span had *before* it was emphasised, and the next
-    /// keystroke restores it.
-    resume: Option<(Caret, CharStyle)>,
+    /// What [`grind_text::App::type_markdown`] said the next character must be set in — see
+    /// there for why a notation needs it to end where its marker does. Handed straight back on
+    /// the next keystroke and never read here.
+    resume: Option<CharStyle>,
     /// Where a Visual-mode selection started. The caret is its other end.
     anchor: Option<Caret>,
     /// What `y` copied, as plain text. A register rather than the system clipboard: a
@@ -588,139 +584,39 @@ impl App {
     }
 
     fn type_char(&mut self, c: char) {
-        let at = self.caret;
-        let mut text = [0u8; 4];
-        match self.core.insert_text(at, c.encode_utf8(&mut text)) {
-            Ok(()) => {
-                self.caret.offset += 1;
+        // **One core call, one undo step.** The notation, the erasing of the markers and the
+        // formatting are `App::type_markdown`'s (`grind_text::markdown`), so this shell and
+        // the two windows read `**` the same way and none of them has its own idea of it.
+        match self
+            .core
+            .type_markdown(self.caret, &c.to_string(), self.resume.as_ref())
+        {
+            Ok(typed) => {
+                self.caret = typed.caret;
+                self.resume = typed.resume;
                 self.goal_x = None;
                 self.status.clear();
-            }
-            Err(e) => {
-                self.status = e.to_string();
-                return;
-            }
-        }
-        // A character typed straight after a completed span joins the run this shell just
-        // emphasised. Put it back the way it would have been.
-        if let Some((resume_at, style)) = self.resume.take()
-            && resume_at == at
-        {
-            let _ = self.core.set_char_style(at, self.caret, &style);
-        }
-        // The character is in the document; now see whether it *finished* something.
-        self.apply_markdown();
-    }
-
-    /// Markdown-shaped typing, applied the moment its closing marker lands
-    /// ([`super::markdown`]): `**bold**` becomes bold and the four markers go, `# ` makes the
-    /// block a heading and the prefix goes.
-    ///
-    /// Both are ordinary edits through the core — an erase and a `set_char_style`, or an erase
-    /// and a `set_kind` — so `u` takes them back the way it takes back anything else. Two
-    /// presses rather than one, which is the honest cost of not inventing a compound action
-    /// for a shell's own convenience.
-    fn apply_markdown(&mut self) {
-        let Ok(text) = self.core.input_text(self.caret.block) else {
-            return;
-        };
-        let block = self.caret.block;
-
-        // A fence toggles the block between preformatted and plain, and takes its own three
-        // backticks back out.
-        if markdown::is_fence(&text, self.caret.offset) {
-            let from = Caret { block, offset: 0 };
-            if self.core.erase(from, self.caret).is_err() {
-                return;
-            }
-            self.caret = from;
-            let preformatted = self.is_preformatted(block);
-            let style = (!preformatted).then(|| markdown::PREFORMATTED.to_owned());
-            match self.core.set_style(block..block + 1, style) {
-                Ok(_) => {
-                    self.status = match preformatted {
-                        true => "code block ended".to_owned(),
-                        false => "code block — ``` again ends it".to_owned(),
-                    }
-                }
-                Err(e) => self.status = e.to_string(),
-            }
-            return;
-        }
-
-        if let Some((width, kind)) = markdown::block_prefix(&text, self.caret.offset) {
-            let from = Caret { block, offset: 0 };
-            let to = Caret {
-                block,
-                offset: width,
-            };
-            if self.core.erase(from, to).is_ok() {
-                self.caret = from;
-                if let Err(e) = self.core.set_kind(block, kind.clone()) {
-                    self.status = e.to_string();
-                    return;
-                }
-                self.status = format!("{} — u undoes it", describe_kind(&kind));
-            }
-            return;
-        }
-
-        let Some(found) = markdown::emphasised(&text, self.caret.offset) else {
-            return;
-        };
-        let at = |offset: usize| Caret { block, offset };
-        // The closing marker first: erasing the opening one would move everything after it,
-        // and the offsets in hand were measured before either went.
-        if self.core.erase(at(found.end), at(found.close)).is_err()
-            || self.core.erase(at(found.open), at(found.start)).is_err()
-        {
-            return;
-        }
-        let (from, to) = (at(found.open), at(found.open + (found.end - found.start)));
-        // What the span was set in before it was emphasised — which is what the next
-        // character typed after the closing marker has to go back to.
-        let before = self.core.char_style(from, to).unwrap_or_default();
-        self.caret = to;
-        self.goal_x = None;
-        match self.core.set_char_style(from, to, &found.emphasis.style()) {
-            Ok(_) => {
-                self.resume = Some((to, before));
-                self.status = format!("{} — u undoes it", found.emphasis.markers());
             }
             Err(e) => self.status = e.to_string(),
         }
     }
 
     fn split(&mut self) {
-        // A code block continues over Enter — markdown fences a *run* of lines, and a run of
-        // preformatted paragraphs is what that is in a block model. `` ``` `` ends it.
-        let preformatted = self.is_preformatted(self.caret.block);
+        // A code block continues over Enter with nothing done here: `App::split_block` already
+        // carries a named paragraph style to the second block, so a run of preformatted
+        // paragraphs is what a fence opens and `` ``` `` is what ends it.
         match self.core.split_block(self.caret) {
             Ok(()) => {
-                let block = self.caret.block + 1;
-                self.caret = Caret { block, offset: 0 };
+                self.caret = Caret {
+                    block: self.caret.block + 1,
+                    offset: 0,
+                };
+                self.resume = None;
                 self.goal_x = None;
                 self.status.clear();
-                if preformatted
-                    && let Err(e) = self
-                        .core
-                        .set_style(block..block + 1, Some(markdown::PREFORMATTED.to_owned()))
-                {
-                    self.status = e.to_string();
-                }
             }
             Err(e) => self.status = e.to_string(),
         }
-    }
-
-    /// Whether a block carries the named paragraph style a fence sets.
-    fn is_preformatted(&self, index: usize) -> bool {
-        self.block_view(index)
-            .is_some_and(|block| block.style.as_deref() == Some(markdown::PREFORMATTED))
-    }
-
-    fn block_view(&self, index: usize) -> Option<BlockView> {
-        self.core.get_viewport(index..index + 1).get(index).cloned()
     }
 
     // --- Command mode ---
@@ -1603,17 +1499,25 @@ mod tests {
         let mut fenced = app(&[""]);
         press(&mut fenced, KeyCode::Char('i'));
         type_str(&mut fenced, "```");
-        assert!(fenced.is_preformatted(0), "the fence opened a code block");
+        let preformatted = |app: &App, index: usize| {
+            app.core
+                .get_viewport(index..index + 1)
+                .get(index)
+                .and_then(|block| block.style.clone())
+                .as_deref()
+                == Some(markdown::PREFORMATTED)
+        };
+        assert!(preformatted(&fenced, 0), "the fence opened a code block");
         assert_eq!(text(&fenced), "", "and took its own markers back out");
         type_str(&mut fenced, "one");
         press(&mut fenced, KeyCode::Enter);
         type_str(&mut fenced, "two");
-        assert!(fenced.is_preformatted(1), "Enter continues the block");
+        assert!(preformatted(&fenced, 1), "Enter continues the block");
 
         // And a second fence ends it.
         press(&mut fenced, KeyCode::Enter);
         type_str(&mut fenced, "```");
-        assert!(!fenced.is_preformatted(2), "the closing fence ends it");
+        assert!(!preformatted(&fenced, 2), "the closing fence ends it");
     }
 
     /// The bug the backtick test found, pinned for all five notations: a character typed
