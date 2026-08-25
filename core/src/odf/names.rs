@@ -59,19 +59,19 @@ pub const DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 pub const CHART: &str = "urn:oasis:names:tc:opendocument:xmlns:chart:1.0";
 
 impl Ns {
-    pub fn from_uri(uri: &[u8]) -> Ns {
+    pub fn from_uri(uri: &str) -> Ns {
         match uri {
-            b if b == OFFICE.as_bytes() => Ns::Office,
-            b if b == TABLE.as_bytes() => Ns::Table,
-            b if b == TEXT.as_bytes() => Ns::Text,
-            b if b == NUMBER.as_bytes() => Ns::Number,
-            b if b == STYLE.as_bytes() => Ns::Style,
-            b if b == FO.as_bytes() => Ns::Fo,
-            b if b == SVG.as_bytes() => Ns::Svg,
-            b if b == XLINK.as_bytes() => Ns::Xlink,
-            b if b == CALCEXT.as_bytes() => Ns::Calcext,
-            b if b == DRAW.as_bytes() => Ns::Draw,
-            b if b == CHART.as_bytes() => Ns::Chart,
+            OFFICE => Ns::Office,
+            TABLE => Ns::Table,
+            TEXT => Ns::Text,
+            NUMBER => Ns::Number,
+            STYLE => Ns::Style,
+            FO => Ns::Fo,
+            SVG => Ns::Svg,
+            XLINK => Ns::Xlink,
+            CALCEXT => Ns::Calcext,
+            DRAW => Ns::Draw,
+            CHART => Ns::Chart,
             _ => Ns::Other,
         }
     }

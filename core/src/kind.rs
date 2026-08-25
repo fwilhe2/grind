@@ -174,14 +174,14 @@ fn flat_kind(bytes: &[u8]) -> Option<DocumentKind> {
 
         // `office:mimetype` on the root settles it outright (§1.2).
         for attr in start.attributes().flatten() {
-            let (rr, local) = reader.resolve_attribute(attr.key);
+            let (rr, local) = reader.resolver().resolve_attribute(attr.key);
             if !matches!(rr, ResolveResult::Bound(n) if Ns::from_uri(n.as_ref()) == Ns::Office) {
                 continue;
             }
-            if local.as_ref() != b"mimetype" {
+            if local.as_ref() != "mimetype" {
                 continue;
             }
-            if let Ok(value) = attr.unescape_value()
+            if let Ok(value) = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
                 && let Some(kind) = DocumentKind::from_media_type(&value)
             {
                 return Some(kind);
@@ -189,10 +189,9 @@ fn flat_kind(bytes: &[u8]) -> Option<DocumentKind> {
         }
 
         // Otherwise the body element, once we reach one.
-        let (rr, local) = reader.resolve_element(start.name());
+        let (rr, local) = reader.resolver().resolve_element(start.name());
         if matches!(rr, ResolveResult::Bound(n) if Ns::from_uri(n.as_ref()) == Ns::Office)
-            && let Ok(local) = std::str::from_utf8(local.as_ref())
-            && let Some(kind) = DocumentKind::from_body_element(local)
+            && let Some(kind) = DocumentKind::from_body_element(local.as_ref())
         {
             return Some(kind);
         }

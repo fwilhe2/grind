@@ -23,13 +23,16 @@ use std::ops::Range;
 /// reader will open. Dropping is what §9's tolerance looks like from the writing side.
 ///
 /// Surrogates and the two non-characters `U+FFFE`/`U+FFFF` go for the same reason. Tab,
-/// newline and carriage return are the three control characters XML does allow, and stay.
+/// newline and carriage return are the three control characters XML does allow, and stay —
+/// but a carriage return survives only as `&#13;`, because a literal one is folded away by
+/// the EOL and attribute-value normalization every conforming reader applies (XML 1.0
+/// §2.11, §3.3.3). Writing the reference is what makes the character round-trip.
 pub fn esc(s: &str) -> String {
     let clean: String = s
         .chars()
         .filter(|c| matches!(*c, '\t' | '\n' | '\r' | ' '..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..))
         .collect();
-    quick_xml::escape::escape(&clean).into_owned()
+    quick_xml::escape::escape(clean.as_str()).into_owned()
 }
 
 /// The qualified name in an element's start tag — `text:p` out of `<text:p …>`.
@@ -122,8 +125,9 @@ mod tests {
         // `&#1;` is as ill-formed as a raw \x01, so there is nothing to escape *to*.
         assert_eq!(esc("a\u{1}b"), "ab");
         assert_eq!(esc("a\u{fffe}b"), "ab");
-        // The three XML does allow survive.
-        assert_eq!(esc("a\tb\nc\rd"), "a\tb\nc\rd");
+        // The three XML does allow survive — the carriage return as a numeric reference,
+        // since a literal one is normalized away on the way back in.
+        assert_eq!(esc("a\tb\nc\rd"), "a\tb\nc&#13;d");
     }
 
     /// `start` is the span of the first start tag in `xml`, found the crude way a test may.
