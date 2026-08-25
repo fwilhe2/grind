@@ -220,7 +220,7 @@ fn is_line(value: &Option<String>) -> bool {
 /// `'Liberation Serif'` — the quotes are the *list's* syntax and not part of the family's name.
 /// Keeping them would make `font_family == Some("Georgia")` false for a document that wrote
 /// `'Georgia'`, and would hand a shell a name no font system resolves. The same trade `text:s`
-/// gets: decode on the way in, re-encode on the way out ([`quote_family`]).
+/// gets: decode on the way in, re-encode on the way out (`quote_family`, private to this module).
 ///
 /// A value with a comma in it is a *list* of families and is left exactly as it was: picking
 /// one of them would be this build choosing a font, which is a renderer's business.
