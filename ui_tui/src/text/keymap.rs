@@ -57,7 +57,8 @@ pub enum Action {
     /// `y` — copy the selection into the register; `p` puts it back.
     Yank,
     Put,
-    /// A marker key over a selection: `*` bold, `_` underline, `~` strikethrough, `/` italic.
+    /// A marker key over a selection: `*` bold, `_` underline, `~` strikethrough, `` ` ``
+    /// monospace, `/` italic.
     ///
     /// **The same notation `markdown.rs` recognises while typing**, on one key — a terminal has
     /// no toolbar, so the toolbar's vocabulary is the notation. (`/` rather than a lone `*`
@@ -100,6 +101,7 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('/') if visual => Some(Action::Emphasise(Emphasis::Italic)),
         KeyCode::Char('_') if visual => Some(Action::Emphasise(Emphasis::Underline)),
         KeyCode::Char('~') if visual => Some(Action::Emphasise(Emphasis::Strike)),
+        KeyCode::Char('`') if visual => Some(Action::Emphasise(Emphasis::Code)),
         KeyCode::Char('-') if visual => Some(Action::Plain),
         KeyCode::Char('y') => Some(Action::Yank),
         KeyCode::Char('p') => Some(Action::Put),
@@ -211,6 +213,7 @@ mod tests {
             ('/', Emphasis::Italic),
             ('_', Emphasis::Underline),
             ('~', Emphasis::Strike),
+            ('`', Emphasis::Code),
         ] {
             assert_eq!(
                 normal_action(KeyCode::Char(ch), KeyModifiers::NONE, true),

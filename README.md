@@ -155,11 +155,13 @@ somewhere else.
 **Formatting is typed as markdown and drawn as formatting.** `**bold**`, `*italic*`,
 `__underline__` and `~~struck~~` become the document's own formatting as the closing marker
 lands — the markers are erased, and what stays is bold, italic, underlined or struck in the
-terminal's own attributes. `# ` makes a heading and `- ` a list item the same way. Over a
+terminal's own attributes. `` `code` `` sets a monospace family and three backticks alone open
+a code block; `# ` makes a heading and `- ` a list item the same way. Over a
 selection the same notation is one key each: `*`, `/`, `_`, `~`, `-`. The spreadsheet has the
 two it shares (`*`, `/`) plus `:align`, `:color`, `:fill`, `:format` and the rest, draws a
 cell's own styling and folds away the rows a filter hides, and yanks a range as tab-separated
-text. `grind-tui --help` has every key; [`doc/tui-shell.md`](doc/tui-shell.md) has what it
+text. `:help` shows every key without leaving the document, and `grind-tui --help` prints the
+same list; [`doc/tui-shell.md`](doc/tui-shell.md) has what it
 deliberately does not do.
 
 **The browser** (`grind-web`, the same core as WebAssembly — no server, the document never

@@ -69,6 +69,14 @@ pub struct App {
     width: f32,
     height: usize,
     mode: Mode,
+    /// What the *next* typed character's formatting must be, and where it will be typed.
+    ///
+    /// Set when a markdown span completes: the caret is then at the end of a run this shell
+    /// has just emphasised, and text inserted there would join it — so `say **this** and`
+    /// would carry on bold past the closing marker, which is the opposite of what the marker
+    /// said. This holds the formatting the span had *before* it was emphasised, and the next
+    /// keystroke restores it.
+    resume: Option<(Caret, CharStyle)>,
     /// Where a Visual-mode selection started. The caret is its other end.
     anchor: Option<Caret>,
     /// What `y` copied, as plain text. A register rather than the system clipboard: a
@@ -76,6 +84,10 @@ pub struct App {
     /// register is the convention every reader of this shell already has.
     register: String,
     status: String,
+    /// The key list, when it is showing. Presentation state like everything else here.
+    help: crate::help::Help,
+    /// The window's height as of the last frame — what a page key in the help pane scrolls by.
+    help_height: usize,
     quit: bool,
 }
 
@@ -94,9 +106,12 @@ impl App {
             width: 60.0,
             height: 20,
             mode: Mode::Normal,
+            resume: None,
             anchor: None,
             register: String::new(),
             status: String::new(),
+            help: crate::help::Help::default(),
+            help_height: 20,
             quit: false,
         }
     }
@@ -111,6 +126,12 @@ impl App {
             return;
         }
         self.redraw.raise();
+        if self.help.is_open() {
+            let text = crate::text::help();
+            self.help
+                .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
         match self.mode {
             Mode::Normal | Mode::Visual => self.on_normal_key(key.code, key.modifiers),
             Mode::Insert => self.on_insert_key(key.code),
@@ -301,21 +322,29 @@ impl App {
             Emphasis::Italic => style.font_style.clone(),
             Emphasis::Underline => style.underline.clone(),
             Emphasis::Strike => style.line_through.clone(),
+            Emphasis::Code => style.font_family.clone(),
         };
+        // The four switches have an explicit "off" the document can hold; a *family* does not
+        // — the way to have none is to have none, which is `None`.
         let off = match emphasis {
-            Emphasis::Bold | Emphasis::Italic => "normal",
-            _ => "none",
+            Emphasis::Bold | Emphasis::Italic => Some("normal"),
+            Emphasis::Underline | Emphasis::Strike => Some("none"),
+            Emphasis::Code => None,
         };
-        let already = field(&style).as_deref().is_some_and(|v| v != off);
-        let value = Some(match already {
-            true => off.to_owned(),
-            false => field(&wanted).unwrap_or_default(),
-        });
+        let already = match off {
+            Some(off) => field(&style).as_deref().is_some_and(|v| v != off),
+            None => field(&style).is_some(),
+        };
+        let value = match already {
+            true => off.map(str::to_owned),
+            false => field(&wanted),
+        };
         match emphasis {
             Emphasis::Bold => style.font_weight = value,
             Emphasis::Italic => style.font_style = value,
             Emphasis::Underline => style.underline = value,
             Emphasis::Strike => style.line_through = value,
+            Emphasis::Code => style.font_family = value,
         }
         self.set_selection_style(&style, emphasis.markers());
     }
@@ -559,8 +588,9 @@ impl App {
     }
 
     fn type_char(&mut self, c: char) {
+        let at = self.caret;
         let mut text = [0u8; 4];
-        match self.core.insert_text(self.caret, c.encode_utf8(&mut text)) {
+        match self.core.insert_text(at, c.encode_utf8(&mut text)) {
             Ok(()) => {
                 self.caret.offset += 1;
                 self.goal_x = None;
@@ -570,6 +600,13 @@ impl App {
                 self.status = e.to_string();
                 return;
             }
+        }
+        // A character typed straight after a completed span joins the run this shell just
+        // emphasised. Put it back the way it would have been.
+        if let Some((resume_at, style)) = self.resume.take()
+            && resume_at == at
+        {
+            let _ = self.core.set_char_style(at, self.caret, &style);
         }
         // The character is in the document; now see whether it *finished* something.
         self.apply_markdown();
@@ -588,6 +625,28 @@ impl App {
             return;
         };
         let block = self.caret.block;
+
+        // A fence toggles the block between preformatted and plain, and takes its own three
+        // backticks back out.
+        if markdown::is_fence(&text, self.caret.offset) {
+            let from = Caret { block, offset: 0 };
+            if self.core.erase(from, self.caret).is_err() {
+                return;
+            }
+            self.caret = from;
+            let preformatted = self.is_preformatted(block);
+            let style = (!preformatted).then(|| markdown::PREFORMATTED.to_owned());
+            match self.core.set_style(block..block + 1, style) {
+                Ok(_) => {
+                    self.status = match preformatted {
+                        true => "code block ended".to_owned(),
+                        false => "code block — ``` again ends it".to_owned(),
+                    }
+                }
+                Err(e) => self.status = e.to_string(),
+            }
+            return;
+        }
 
         if let Some((width, kind)) = markdown::block_prefix(&text, self.caret.offset) {
             let from = Caret { block, offset: 0 };
@@ -617,29 +676,51 @@ impl App {
         {
             return;
         }
-        let opened = found.start - found.open;
         let (from, to) = (at(found.open), at(found.open + (found.end - found.start)));
+        // What the span was set in before it was emphasised — which is what the next
+        // character typed after the closing marker has to go back to.
+        let before = self.core.char_style(from, to).unwrap_or_default();
         self.caret = to;
         self.goal_x = None;
-        let _ = opened;
         match self.core.set_char_style(from, to, &found.emphasis.style()) {
-            Ok(_) => self.status = format!("{} — u undoes it", found.emphasis.markers()),
+            Ok(_) => {
+                self.resume = Some((to, before));
+                self.status = format!("{} — u undoes it", found.emphasis.markers());
+            }
             Err(e) => self.status = e.to_string(),
         }
     }
 
     fn split(&mut self) {
+        // A code block continues over Enter — markdown fences a *run* of lines, and a run of
+        // preformatted paragraphs is what that is in a block model. `` ``` `` ends it.
+        let preformatted = self.is_preformatted(self.caret.block);
         match self.core.split_block(self.caret) {
             Ok(()) => {
-                self.caret = Caret {
-                    block: self.caret.block + 1,
-                    offset: 0,
-                };
+                let block = self.caret.block + 1;
+                self.caret = Caret { block, offset: 0 };
                 self.goal_x = None;
                 self.status.clear();
+                if preformatted
+                    && let Err(e) = self
+                        .core
+                        .set_style(block..block + 1, Some(markdown::PREFORMATTED.to_owned()))
+                {
+                    self.status = e.to_string();
+                }
             }
             Err(e) => self.status = e.to_string(),
         }
+    }
+
+    /// Whether a block carries the named paragraph style a fence sets.
+    fn is_preformatted(&self, index: usize) -> bool {
+        self.block_view(index)
+            .is_some_and(|block| block.style.as_deref() == Some(markdown::PREFORMATTED))
+    }
+
+    fn block_view(&self, index: usize) -> Option<BlockView> {
+        self.core.get_viewport(index..index + 1).get(index).cloned()
     }
 
     // --- Command mode ---
@@ -681,6 +762,7 @@ impl App {
             return;
         }
         match cmd {
+            "help" | "h?" => self.help.open(),
             "q" => self.cmd_quit(false),
             "q!" => self.cmd_quit(true),
             "w" => self.cmd_write(None),
@@ -998,6 +1080,9 @@ impl App {
 
         let heading = matches!(view.kind, BlockKind::Heading { .. })
             || matches!(view.style.as_deref(), Some("Title" | "Subtitle"));
+        // A whole block of code is drawn the way a run of it is — the fence set a paragraph
+        // style, and what it means is "all of this is code".
+        let block_code = view.style.as_deref() == Some(markdown::PREFORMATTED);
         let mut spans = Vec::new();
         let mut drawn_caret = false;
         for pair in bounds.windows(2) {
@@ -1021,6 +1106,9 @@ impl App {
             if heading {
                 style = style.add_modifier(Modifier::BOLD);
             }
+            if block_code {
+                style = style.add_modifier(Modifier::DIM);
+            }
             if selected || under_caret {
                 style = style.add_modifier(Modifier::REVERSED);
             }
@@ -1036,8 +1124,19 @@ impl App {
         spans
     }
 
+    /// How tall the help pane is, for the page keys — the whole window, which is what it
+    /// takes when it is open.
+    fn help_height(&self) -> usize {
+        self.help_height.max(1)
+    }
+
     pub fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        self.help_height = usize::from(area.height);
+        if self.help.is_open() {
+            self.help.draw(frame, area, &crate::text::help());
+            return;
+        }
         let [body, status_area] =
             Rects::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
@@ -1144,6 +1243,13 @@ fn terminal_style(props: &CharStyle) -> Style {
     }
     if on(&props.line_through, "none") {
         style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+    // **A terminal has one font**, so a monospace run cannot be drawn as a different one —
+    // everything here already is monospace. It is dimmed instead, so `code` is at least
+    // visible as its own kind of text rather than silently indistinguishable. The *document*
+    // carries the family either way, and the two windows draw it as one.
+    if props.font_family.is_some() {
+        style = style.add_modifier(Modifier::DIM);
     }
     if let Some(color) = props.color.as_deref().and_then(nearest_color) {
         style = style.fg(color);
@@ -1471,6 +1577,73 @@ mod tests {
                 _ => props.line_through.is_some(),
             };
             assert!(set, "{typed}: the span carries {check} — {props:?}");
+        }
+    }
+
+    /// Backticks, both halves: `` `code` `` is a monospace run, and ``` is a code *block* —
+    /// a named paragraph style, which is what ODF has for one.
+    #[test]
+    fn backticks_make_code_inline_and_a_fence_makes_a_block() {
+        let mut inline = app(&[""]);
+        press(&mut inline, KeyCode::Char('i'));
+        type_str(&mut inline, "run `ls -l` first");
+        assert_eq!(text(&inline), "run ls -l first", "the backticks are gone");
+        let view = inline.core.get_viewport(0..1);
+        let code = view
+            .get(0)
+            .expect("the block")
+            .runs
+            .iter()
+            .find(|run| run.props.font_family.is_some())
+            .expect("a monospace run");
+        assert_eq!(code.text, "ls -l");
+        assert_eq!(code.props.font_family.as_deref(), Some(markdown::MONOSPACE));
+
+        // A fence turns the block into a code paragraph, and Enter keeps it that way.
+        let mut fenced = app(&[""]);
+        press(&mut fenced, KeyCode::Char('i'));
+        type_str(&mut fenced, "```");
+        assert!(fenced.is_preformatted(0), "the fence opened a code block");
+        assert_eq!(text(&fenced), "", "and took its own markers back out");
+        type_str(&mut fenced, "one");
+        press(&mut fenced, KeyCode::Enter);
+        type_str(&mut fenced, "two");
+        assert!(fenced.is_preformatted(1), "Enter continues the block");
+
+        // And a second fence ends it.
+        press(&mut fenced, KeyCode::Enter);
+        type_str(&mut fenced, "```");
+        assert!(!fenced.is_preformatted(2), "the closing fence ends it");
+    }
+
+    /// The bug the backtick test found, pinned for all five notations: a character typed
+    /// after a closing marker joins the run that was just emphasised unless something stops
+    /// it, so `say **this** and` would carry on bold past the marker that ended it.
+    #[test]
+    fn typing_after_a_closing_marker_is_not_emphasised() {
+        for typed in [
+            "**b** tail",
+            "*i* tail",
+            "__u__ tail",
+            "~~s~~ tail",
+            "`c` tail",
+        ] {
+            let mut app = app(&[""]);
+            press(&mut app, KeyCode::Char('i'));
+            type_str(&mut app, typed);
+            let view = app.core.get_viewport(0..1);
+            let block = view.get(0).expect("the block");
+            let last = block.runs.last().expect("a run");
+            assert!(
+                last.props.is_plain(),
+                "{typed}: the tail is plain — {:?}",
+                last.props
+            );
+            assert!(
+                last.text.ends_with("tail"),
+                "{typed}: and it is the tail — {:?}",
+                last.text
+            );
         }
     }
 

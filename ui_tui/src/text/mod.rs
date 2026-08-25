@@ -18,6 +18,29 @@ pub mod app;
 pub mod keymap;
 pub mod markdown;
 
+/// The word processor's own keys and commands — `--help` prints it, `:help` shows it.
+pub const HELP: &str = "\
+Word processor:
+  i  type here    a  type after    o  new paragraph below
+  x  erase a character    X  delete the block    J  join with the next
+  Visual mode also: _  underline    ~  strikethrough    `  monospace
+
+  Markdown as you type:
+    **bold**   *italic*   __underline__   ~~struck~~   `code`
+    \"# \" a heading (to \"###### \")     \"- \" a list item
+    ``` on its own — a code block; ``` again ends it
+
+  :color <name>  :highlight <name>  :plain
+  :h <level>     :li [depth]        :style [name]
+  :find <text>   :s/old/new/        :outline   :words
+  :<address>     — p12, p12+40, #bookmark or \u{a7}2.1.3
+";
+
+/// What `:help` shows: what this shell shares with the other, then its own.
+pub fn help() -> String {
+    format!("{}\n{HELP}", crate::help::COMMON)
+}
+
 use grind_core::style::TextStyle;
 use grind_text::Metrics;
 use unicode_width::UnicodeWidthChar;

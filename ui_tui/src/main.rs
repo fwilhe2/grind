@@ -19,6 +19,7 @@
 //! with a shell that no longer echoes. [`restore_terminal`] and the panic hook are for that.
 
 mod app;
+mod help;
 mod sheet;
 mod text;
 
@@ -40,43 +41,22 @@ use grind_core::DocumentKind;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-const USAGE: &str = "usage: grind-tui [--sheet|--text] [file]
-
-The document type is read out of the file, not guessed from its name. With no file,
---sheet (the default) or --text says which to start empty.
-
-Normal mode, both types (vi-style):
-  h j k l / arrows   move
-  Ctrl+f / Ctrl+b    page down / up
-  0 / $              start / end of the line
-  g / G              start / end of the document
-  v                  select — Visual mode, a rectangle or a run of text
-  y / p              yank the selection / put it back
-  u / Ctrl+r         undo / redo
-  :                  command line
-
-Visual mode — one notation for emphasis, whichever document it is:
-  *  bold       /  italic       -  no formatting
-  ~  strikethrough      _  underline        (the word processor only)
-  d / x  delete or clear what is selected   Esc  stop selecting
-
-Spreadsheet:
-  i, a  edit the cell   c  edit from empty   x  clear the cell or selection
-  :bold  :italic  :wrap  :border  :plain
-  :align l|c|r   :color <name|#rrggbb>   :fill <name|#rrggbb>
-  :format general|int|number [n]|percent|currency|date|time|datetime   :general
-  :sheet <name>  :sheet-new  :sheet-rename <name>  :sheet-delete
-  :w [file]  :q  :q!  :wq / :x  :recalc  :<address>
-
-Word processor:
-  i  type here   a  type after   o  new paragraph below
-  x  erase a character   X  delete the block   J  join with the next
-  Markdown as you type: **bold**  *italic*  __underline__  ~~struck~~
-                        '# ' a heading (to '###### '), '- ' a list item
-  :color <name>  :highlight <name>  :plain  :h <level>  :li [depth]  :style [name]
-  :find <text>   :s/old/new/   :outline  :words
-  :w [file]  :q  :q!  :wq / :x  :<address>  — p12, p12+40, #bookmark or \u{a7}2.1.3
-";
+/// What `--help` prints: the invocation, then the same two help texts `:help` shows inside
+/// each shell.
+///
+/// One source for both, because a key list that is written twice is a key list that is wrong
+/// in one of the two places — and the one nobody reads is the one that rots.
+fn usage() -> String {
+    format!(
+        "usage: grind-tui [--sheet|--text] [file]\n\n\
+         The document type is read out of the file, not guessed from its name. With no file,\n\
+         --sheet (the default) or --text says which to start empty.\n\
+         \n{}\n{}\n{}",
+        crate::help::COMMON,
+        crate::sheet::HELP,
+        crate::text::HELP,
+    )
+}
 
 fn main() -> ExitCode {
     let mut kind: Option<DocumentKind> = None;
@@ -84,7 +64,7 @@ fn main() -> ExitCode {
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "-h" | "--help" => {
-                print!("{USAGE}");
+                print!("{}", usage());
                 return ExitCode::SUCCESS;
             }
             "-V" | "--version" => {

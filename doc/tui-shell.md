@@ -35,11 +35,25 @@ taste, it is a constraint: the core breaks lines in *this shell's* units
 (`doc/text-layout.md`), and a marker drawn but never measured would put every caret after it
 in the wrong column. The same reasoning rules out a markdown *source* view.
 
+`` `code` `` is the fifth notation, and the odd one: the other four set a property that is on
+or off, and this sets a *family* — `fo:font-family: monospace`, a generic rather than the name
+of a font, since which monospace face a reader has is theirs to know. Three backticks alone in
+a block are a **fence**: the block becomes ODF's own `Preformatted Text` paragraph style,
+Enter inside one opens another (so a code region is a run of preformatted paragraphs), and a
+second fence ends it. Markdown fences a run of *lines*; a block model has no run of lines to
+fence, and this is the shape that fits it.
+
 The rules that keep prose out of it are in `markdown.rs` and tested there: the content may not
 be empty or padded with spaces, may hold no marker of its own (`2*3*4` is arithmetic), and the
 opening marker must start a word (`snake_case` is not emphasis). `_x_` alone means nothing —
 `__x__` is underline, the one deliberate divergence from markdown, because ODF has underline
 and this build already spells bold `**x**`.
+
+**A character typed after a closing marker is not emphasised.** It would be otherwise: the
+caret sits at the end of the run the shell has just formatted, and text inserted there joins
+it — so `say **this** and` would carry on bold past the marker that ended it. The shell
+remembers what the span was set in *before* it was emphasised and restores it on the next
+keystroke (`App::resume`). Found by the test for `` `code` ``, fixed for all five.
 
 ## What is built
 
@@ -53,7 +67,8 @@ and this build already spells bold `**x**`.
 | Number formats | `:format` over eight presets, `:general` | — |
 | Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete` | `:h <level>`, `:li [depth]`, `:style [name]`, `:outline`, `:words` |
 | Find | — | `:find <text>`, `:s/old/new/` |
-| Drawn from the document | bold, italic, colour, background, alignment; filtered and hidden rows are folded away | bold, italic, underline, strikethrough, colour, background; headings and `Title`/`Subtitle` emphasised; the block's kind in the gutter |
+| Help | `:help` — the key list, over the document, scrollable | the same, with its own section |
+| Drawn from the document | bold, italic, colour, background, alignment; filtered and hidden rows are folded away | bold, italic, underline, strikethrough, colour, background; monospace runs and preformatted blocks dimmed; headings and `Title`/`Subtitle` emphasised; the block's kind in the gutter |
 | Addressing | `:<address>` — a cell or a range | `:<address>` — `p12`, `p12+40`, `#bookmark`, `§2.1.3` |
 | Assertable output | `TestBackend`, no terminal needed | the same |
 
@@ -64,9 +79,13 @@ Both are renderers that own nothing: every paint reads `App::get_viewport` (and
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
 
-**The medium's own limits, which are not gaps.** One font at one size, so a font family and a
-size are stored and not drawn. Sixteen colours, so a document's `#ff4136` is drawn as the
-nearest of them — `nearest_color` in `ui_tui/src/text/app.rs`, by squared distance in RGB.
+**The medium's own limits, which are not gaps.** One font at one size, so a font *size* is
+stored and not drawn, and a monospace family cannot be drawn as a different font — everything
+in a terminal already is one. A `` `code` `` run and a preformatted block are **dimmed**
+instead, so they are at least visible as their own kind of text; the document carries the
+family either way, and the browser draws it as an actual monospace face. Sixteen colours, so a
+document's `#ff4136` is drawn as the nearest of them — `nearest_color` in
+`ui_tui/src/text/app.rs`, by squared distance in RGB.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here
 draws one.
 
@@ -82,7 +101,9 @@ footnotes or fields, because the core has none. `:outline` prints to the status 
 than opening a pane. An image in a file is kept and not drawn, and a named *character* style
 is kept and not interpreted (`doc/text-core.md`).
 
-**Both.** The register is this shell's own, not the system clipboard — a terminal cannot reach
+**Both.** `:help` is a pane over the document rather than a window beside it, and it takes the
+whole screen while it is open — a key list is what the reader asked to look at, and half of one
+is worse than none. The register is this shell's own, not the system clipboard — a terminal cannot reach
 one without a protocol the host may not speak, and vi's register is the convention a reader of
 this shell already has. Markdown-while-typing costs two undo steps rather than one (an erase
 and a style), which is the honest price of not inventing a compound action for a shell's own

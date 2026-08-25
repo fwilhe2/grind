@@ -24,14 +24,31 @@
 use grind_text::BlockKind;
 use grind_text::style::CharStyle;
 
-/// The four emphases this notation can ask for.
+/// The five emphases this notation can ask for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Emphasis {
     Bold,
     Italic,
     Underline,
     Strike,
+    /// `` `code` `` — a monospace family on the run.
+    ///
+    /// The odd one out, and the only one that is not a switch: the other four set a property
+    /// that is on or off, and this sets a *family*, which is a name a document chose. Turning
+    /// it off is therefore "no family of my own" rather than a second value.
+    Code,
 }
+
+/// What `` `code` `` sets a run's family to.
+///
+/// A generic family rather than the name of a font: which monospace face a reader has is
+/// theirs to know, and `fo:font-family` is a CSS-shaped list where a generic is a legitimate
+/// entry (`doc/odt-format.md`'s rule that values are kept verbatim applies either way).
+pub const MONOSPACE: &str = "monospace";
+
+/// The named paragraph style a fenced block gets — ODF's own name for a code paragraph, and
+/// the one LibreOffice writes, so a fence here opens as a code block there.
+pub const PREFORMATTED: &str = "Preformatted Text";
 
 impl Emphasis {
     /// The formatting to write, as the character style the core takes.
@@ -42,6 +59,7 @@ impl Emphasis {
             Emphasis::Italic => style.font_style = Some("italic".to_owned()),
             Emphasis::Underline => style.underline = Some("solid".to_owned()),
             Emphasis::Strike => style.line_through = Some("solid".to_owned()),
+            Emphasis::Code => style.font_family = Some(MONOSPACE.to_owned()),
         }
         style
     }
@@ -54,6 +72,7 @@ impl Emphasis {
             Emphasis::Italic => "*",
             Emphasis::Underline => "__",
             Emphasis::Strike => "~~",
+            Emphasis::Code => "`",
         }
     }
 }
@@ -74,11 +93,12 @@ pub struct Emphasised {
 
 /// Every notation, longest marker first: `**` has to be tried before `*`, or `**x**` would be
 /// read as an italic `*x` the moment its third marker landed.
-const NOTATION: [(&str, Emphasis); 4] = [
+const NOTATION: [(&str, Emphasis); 5] = [
     ("**", Emphasis::Bold),
     ("__", Emphasis::Underline),
     ("~~", Emphasis::Strike),
     ("*", Emphasis::Italic),
+    ("`", Emphasis::Code),
 ];
 
 /// What the character just typed at `caret` completed, if it completed anything.
@@ -160,6 +180,21 @@ fn starts_a_word(chars: &[char], at: usize) -> bool {
         None => true,
         Some(c) => c.is_whitespace() || matches!(c, '(' | '[' | '{' | '"' | '\'' | '—' | '-'),
     }
+}
+
+/// Whether the three backticks just typed are a **fence** — a block whose whole text is
+/// ``` and nothing else.
+///
+/// Markdown fences a run of lines between two of them. A block model has no run of lines to
+/// fence, so the rule here is the one that fits it: a fence *toggles* whether the block it is
+/// in is preformatted, and Enter inside a preformatted block opens another one — so a code
+/// region is a run of preformatted paragraphs, and the closing fence is what ends it.
+///
+/// Requiring the whole block to be the fence keeps it unambiguous: ``` mid-sentence is three
+/// backticks, and two of them have already been read as an empty `` `` `` by [`emphasised`].
+pub fn is_fence(text: &str, caret: usize) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    caret == chars.len() && chars.len() == 3 && chars.iter().all(|c| *c == '`')
 }
 
 /// The block kind a line-opening prefix asks for — `# `, `## `, `- ` — and how many characters
@@ -257,6 +292,29 @@ mod tests {
     fn a_single_underscore_is_not_a_notation() {
         assert_eq!(typing("_under_"), None);
         assert_eq!(typing("__under__").unwrap().emphasis, Emphasis::Underline);
+    }
+
+    #[test]
+    fn a_backtick_pair_is_monospace() {
+        let found = typing("`code`").expect("a pair");
+        assert_eq!(found.emphasis, Emphasis::Code);
+        assert_eq!(
+            found.emphasis.style().font_family.as_deref(),
+            Some(MONOSPACE)
+        );
+        // And the rules that keep prose out of it hold for it too.
+        assert_eq!(typing("a`b`"), None, "mid-word");
+        assert_eq!(typing("` `"), None, "empty");
+    }
+
+    /// A fence is the whole block and nothing else, so ``` mid-sentence is three backticks.
+    #[test]
+    fn three_backticks_alone_are_a_fence() {
+        assert!(is_fence("```", 3));
+        assert!(!is_fence("``", 2), "two is an empty pair, not a fence");
+        assert!(!is_fence("a```", 4), "not at the start of the block");
+        assert!(!is_fence("```x", 4));
+        assert!(!is_fence("```", 2), "and only as the third one lands");
     }
 
     #[test]

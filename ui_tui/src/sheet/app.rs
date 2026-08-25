@@ -67,6 +67,10 @@ pub struct App {
     /// speak, and vi's register is the convention a reader of this shell already has.
     register: String,
     status: String,
+    /// The key list, when it is showing. Presentation state like everything else here.
+    help: crate::help::Help,
+    /// The window's height as of the last frame — what a page key in the help pane scrolls by.
+    help_height: usize,
     quit: bool,
 }
 
@@ -85,6 +89,8 @@ impl App {
             anchor: None,
             register: String::new(),
             status: String::new(),
+            help: crate::help::Help::default(),
+            help_height: 20,
             quit: false,
         }
     }
@@ -99,6 +105,12 @@ impl App {
             return;
         }
         self.redraw.raise();
+        if self.help.is_open() {
+            let text = crate::sheet::help();
+            self.help
+                .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
         match self.mode {
             Mode::Normal | Mode::Visual => self.on_normal_key(key.code, key.modifiers),
             Mode::Insert { .. } => self.on_insert_key(key.code),
@@ -437,6 +449,7 @@ impl App {
             return;
         }
         match cmd {
+            "help" | "h?" => self.help.open(),
             "q" => self.cmd_quit(false),
             "q!" => self.cmd_quit(true),
             "w" => self.cmd_write(None),
@@ -653,8 +666,19 @@ impl App {
         }
     }
 
+    /// How tall the help pane is, for the page keys — the whole window, which is what it
+    /// takes when it is open.
+    fn help_height(&self) -> usize {
+        self.help_height.max(1)
+    }
+
     pub fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        self.help_height = usize::from(area.height);
+        if self.help.is_open() {
+            self.help.draw(frame, area, &crate::sheet::help());
+            return;
+        }
         let [col_header_area, grid_area, formula_area, status_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
