@@ -37,7 +37,7 @@ use libadwaita::gtk;
 use libadwaita::prelude::*;
 
 use grind_core::{DocumentKind, Observer, kind};
-use grind_text::{App, BlockKind, Form};
+use grind_text::{App, BlockKind, CharStyle, Form};
 use gtk::{gio, glib};
 
 use view::Doc;
@@ -131,6 +131,18 @@ struct Ui {
     goto: gtk::MenuButton,
     undo: gtk::Button,
     redo: gtk::Button,
+    /// The four character-formatting toggles. Each reads as pressed when the selection
+    /// agrees it is on, and both reading and writing go through the same `App` the rest of
+    /// this file does (`App::char_style`/`set_char_style`) — no toolbar has its own idea of
+    /// what bold means.
+    bold: gtk::ToggleButton,
+    italic: gtk::ToggleButton,
+    underline: gtk::ToggleButton,
+    strike: gtk::ToggleButton,
+    /// Guards [`Ui::refresh`]'s own `set_active` calls from being read back as a click —
+    /// without it, painting the toolbar's state would immediately rewrite the document it
+    /// was reporting on.
+    updating: Cell<bool>,
     path: RefCell<Option<PathBuf>>,
     /// The document a banner is offering to hand to the spreadsheet.
     handoff: RefCell<Option<PathBuf>>,
@@ -198,6 +210,41 @@ impl Ui {
             .build();
         header.pack_end(&menu);
 
+        // The formatting toolbar — a second top bar rather than crowded into the header, the
+        // way a spreadsheet's format strip sits under its own header (`ui_sheet_gtk`). Every
+        // button here writes through `App::set_char_style`, so a run it touches survives a
+        // LibreOffice round-trip the same way typing does (R6).
+        let bold = gtk::ToggleButton::builder()
+            .icon_name("format-text-bold-symbolic")
+            .tooltip_text("Bold")
+            .build();
+        let italic = gtk::ToggleButton::builder()
+            .icon_name("format-text-italic-symbolic")
+            .tooltip_text("Italic")
+            .build();
+        let underline = gtk::ToggleButton::builder()
+            .icon_name("format-text-underline-symbolic")
+            .tooltip_text("Underline")
+            .build();
+        let strike = gtk::ToggleButton::builder()
+            .icon_name("format-text-strikethrough-symbolic")
+            .tooltip_text("Strikethrough")
+            .build();
+        let format_group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        format_group.add_css_class("linked");
+        for button in [&bold, &italic, &underline, &strike] {
+            format_group.append(button);
+        }
+        let formatting = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .margin_start(6)
+            .margin_end(6)
+            .margin_top(4)
+            .margin_bottom(4)
+            .build();
+        formatting.append(&format_group);
+
         let banner = adw::Banner::new("");
         let status = gtk::Label::builder()
             .xalign(0.0)
@@ -214,6 +261,7 @@ impl Ui {
 
         let content = adw::ToolbarView::builder().content(&toasts).build();
         content.add_top_bar(&header);
+        content.add_top_bar(&formatting);
         content.add_top_bar(&banner);
         content.add_bottom_bar(&status_bar);
 
@@ -239,6 +287,11 @@ impl Ui {
             goto,
             undo,
             redo,
+            bold,
+            italic,
+            underline,
+            strike,
+            updating: Cell::new(false),
             path: RefCell::new(path),
             handoff: RefCell::new(None),
             dirty: Cell::new(false),
@@ -298,6 +351,25 @@ impl Ui {
             }
         ));
 
+        for (button, mutate) in [
+            (&self.bold, CharStyle::set_bold as fn(&mut CharStyle, bool)),
+            (&self.italic, CharStyle::set_italic),
+            (&self.underline, CharStyle::set_underlined),
+            (&self.strike, CharStyle::set_struck),
+        ] {
+            button.connect_toggled(glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |button| {
+                    // `refresh` sets these to reflect the document; only a click — the user
+                    // actually toggling one — should write anything back.
+                    if !ui.updating.get() {
+                        ui.apply_char_style(mutate, button.is_active());
+                    }
+                }
+            ));
+        }
+
         // The banner's one button: hand this document to the shell that does open it.
         self.banner.connect_button_clicked(glib::clone!(
             #[strong(rename_to = ui)]
@@ -335,6 +407,7 @@ impl Ui {
         });
         self.undo.set_sensitive(self.app.can_undo());
         self.redo.set_sensitive(self.app.can_redo());
+        self.refresh_formatting();
 
         let caret = self.doc.caret();
         let counts = self.app.counts();
@@ -566,6 +639,42 @@ impl Ui {
             level => BlockKind::Heading { level },
         };
         if let Err(error) = self.app.set_kind(self.doc.caret().block, kind) {
+            self.toast(&error.to_string());
+        }
+    }
+
+    /// The toolbar's other half of `refresh`: what the four toggles show, read from the
+    /// selection rather than kept as state of their own — there is exactly one fact anywhere
+    /// about whether a run is bold, and it is in the document (`App::char_style`).
+    fn refresh_formatting(self: &Rc<Self>) {
+        let selected = self.doc.selection();
+        let style = selected
+            .and_then(|(from, to)| self.app.char_style(from, to).ok())
+            .unwrap_or_default();
+        self.updating.set(true);
+        for button in [&self.bold, &self.italic, &self.underline, &self.strike] {
+            button.set_sensitive(selected.is_some());
+        }
+        self.bold.set_active(style.is_bold());
+        self.italic.set_active(style.is_italic());
+        self.underline.set_active(style.is_underlined());
+        self.strike.set_active(style.is_struck());
+        self.updating.set(false);
+    }
+
+    /// One toolbar toggle, applied to the current selection. `mutate` sets the one property
+    /// that button owns — `CharStyle::set_bold` and its three siblings — on top of what the
+    /// selection already agrees about, so toggling Italic on a bold-and-italic run leaves the
+    /// bold alone.
+    fn apply_char_style(self: &Rc<Self>, mutate: fn(&mut CharStyle, bool), on: bool) {
+        let Some((from, to)) = self.doc.selection() else {
+            // The toggle is insensitive with no selection, so a click here would have to be
+            // a stray key event rather than a person — nothing to toast about.
+            return;
+        };
+        let mut style = self.app.char_style(from, to).unwrap_or_default();
+        mutate(&mut style, on);
+        if let Err(error) = self.app.set_char_style(from, to, &style) {
             self.toast(&error.to_string());
         }
     }

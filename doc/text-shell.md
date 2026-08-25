@@ -27,6 +27,8 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Editing | type, Enter, Backspace, Delete | the same four |
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
 | Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | — (named gap) |
+| Selection | Shift+arrow, Shift+click; typing or Enter over one replaces it | — (named gap) |
+| Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; `Title`/`Subtitle` paragraphs and every run's own formatting are drawn, not only measured | — (named gap) |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
 
@@ -56,9 +58,20 @@ windows — and there is a test in `ui_web` that says so.
 > formatting, so `lay_out` projects each run's `CharStyle` into the four metric properties and
 > hands *those* to the provider, per fragment. A bold word is measured bold without a shell
 > knowing. The block-level half is unchanged and still the shell's — a heading is a *paragraph*
-> style, and the paragraph family is still gated. **Neither shell has been updated to draw what
-> the core now measures**, so a bold run in a file laid out correctly is still painted plain;
-> that is the toolbar work, not a second layout decision.
+> style, and the paragraph family is still gated.
+>
+> **`grind-text-gtk` now draws what the core measures, the other shell does not yet.** A line's
+> Pango attribute list is built from the block's own `RunView`s (`ui_text_gtk/src/metrics.rs`'s
+> `run_attributes`, one `pango::AttrInt`/`AttrColor` per bold/italic/underline/strikethrough run,
+> clipped to the line and converted from the model's character offsets to the byte offsets Pango
+> attributes are measured against) rather than one plain string per line — so a bold word in a
+> file that already laid out bold now paints bold, with no change to the arithmetic that placed
+> it there. `Title` and `Subtitle` get the same treatment one level up: `Faces::of` checks the
+> block's named style before its kind, because both are `BlockKind::Paragraph` with nothing else
+> to key a face off, and are given their own (larger, and italic for `Subtitle`) faces alongside
+> the six heading ones. `ui_web`'s pane has neither yet — a bold run there still paints plain,
+> and a `Title` paragraph draws as body text — which is the browser shell's own instance of this
+> same gap, unclosed.
 
 **An empty paragraph was one unit tall.** `layout::wrap` takes a line's height from the
 fragments it was given, and a block with no runs has none, so the height fell back to `1.0` —
@@ -80,21 +93,27 @@ own line arithmetic, which is the thing Path C exists to prevent.
 Deferred by decision, not omission. Nothing here is reachable in one shell and missing from
 the other unless it says so, and everything here is reachable from the CLI (R9).
 
-**Both shells.** No selection — no shift-click, no shift-arrow, no copy, cut or paste;
-`App::erase` takes two carets and nothing yet produces the second. No find/replace UI
-(`grind text find`/`replace` exist). **No styling UI — and the reason has changed.** It used to
-be that the model carried a run's style *name* and nothing else, so a bold button would have
-been offering to write something LibreOffice will not read back. That is no longer true: a run
-carries direct formatting, `App::set_char_style` writes it, `App::char_style` reads what a span
-agrees about, and `grind text format` reaches both (`doc/text-core.md`). What is missing is the
-*shell* half — the toolbar, and the selection it would apply to, which is the first gap in this
-paragraph and the one that blocks this one. A named-style picker stays out for the original
-reason. No lists UI: a list item read from a file draws with its bullet and its indent, and
-nothing creates or renests one. No tables, footnotes, fields or images, because the core has
-none. No
-pages, no print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are
-measured per run rather than per line, so a line with several tabs drifts from where a word
-processor would put them.
+**Both shells.** No copy, cut or paste — `App::erase` takes two carets, and a selection can now
+name them in `grind-text-gtk`, but nothing yet puts either end on a clipboard. No find/replace UI
+(`grind text find`/`replace` exist). No lists UI: a list item read from a file draws with its
+bullet and its indent, and nothing creates or renests one. No tables, footnotes, fields or
+images, because the core has none. No pages, no print, no zoom. No RTL — excluded by decision in
+`doc/text-layout.md`. Tab stops are measured per run rather than per line, so a line with several
+tabs drifts from where a word processor would put them. A named-style picker stays out: a run's
+*named* style (as opposed to its direct formatting) is a name this build keeps and does not
+interpret, and turning `Emphasis` into a set of checkboxes would throw that structure away to
+draw it (`doc/text-core.md`).
+
+**`grind-web`'s document pane only, now.** No selection — no shift-click, no shift-arrow — and
+no styling UI, which used to be a *both-shells* gap blocked on the model carrying only a run's
+style name. That blocker is gone (`App::set_char_style`/`char_style`, `doc/text-core.md`) and
+`grind-text-gtk` closed both halves of it: an anchor alongside the caret (`Doc::selection`,
+Shift+arrow and Shift+click extend it, typing or Enter over one erases it first the way every
+other editor's Shift key does), a toolbar of four toggles that read the selection's common
+formatting and write through `set_char_style`, and the drawing fix in the section above so a
+toggle's effect is visible rather than only present in the file. The browser pane has none of
+it yet — the first candidate when it grows, the same way the outline dialog and go-to-address
+field are (below).
 
 **`grind-text-gtk` only.** No `grind-ui` crate: `doc/suite.md` says to extract the shared GTK
 plumbing "on evidence, at S9, when the second shell shows the seam", and one *minimal* shell

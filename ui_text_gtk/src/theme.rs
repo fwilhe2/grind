@@ -35,6 +35,8 @@ pub struct Palette {
     pub dim: gdk::RGBA,
     /// The caret.
     pub accent: gdk::RGBA,
+    /// The band behind selected text.
+    pub selection: gdk::RGBA,
 }
 
 impl Palette {
@@ -44,15 +46,17 @@ impl Palette {
         let foreground = named(widget, "view_fg_color")
             .or_else(|| named(widget, "theme_fg_color"))
             .unwrap_or(BLACK);
+        let accent = named(widget, "accent_color")
+            .or_else(|| named(widget, "theme_selected_bg_color"))
+            .unwrap_or(foreground);
         Palette {
             background: named(widget, "view_bg_color")
                 .or_else(|| named(widget, "theme_base_color"))
                 .unwrap_or(WHITE),
             foreground,
             dim: with_alpha(foreground, 0.55),
-            accent: named(widget, "accent_color")
-                .or_else(|| named(widget, "theme_selected_bg_color"))
-                .unwrap_or(foreground),
+            accent,
+            selection: with_alpha(accent, 0.35),
         }
     }
 }

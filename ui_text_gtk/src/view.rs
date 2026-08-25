@@ -72,6 +72,7 @@ impl Doc {
             block: 0,
             offset: 0,
         });
+        imp.anchor.set(None);
         imp.goal_x.set(None);
         if let Some(adjustment) = imp.vadjustment.borrow().as_ref() {
             adjustment.set_value(0.0);
@@ -81,6 +82,13 @@ impl Doc {
 
     pub fn caret(&self) -> Caret {
         self.imp().caret.get()
+    }
+
+    /// The selected range, normalised to document order — `None` when the anchor and the
+    /// caret coincide, which is what makes an empty selection and no selection the same case
+    /// everywhere else in this file.
+    pub fn selection(&self) -> Option<(Caret, Caret)> {
+        self.imp().selection()
     }
 
     /// Told whenever the caret moves — the status bar's readout.
@@ -94,8 +102,10 @@ impl Doc {
         self.imp().on_notice.borrow_mut().push(Box::new(f));
     }
 
-    /// Set the caret from an address the user typed — `p12`, `#intro`, `§2.1.3`.
+    /// Set the caret from an address the user typed — `p12`, `#intro`, `§2.1.3`. A jump
+    /// replaces the caret rather than extending anything, so any selection goes with it.
     pub fn go_to(&self, caret: Caret) {
+        self.imp().anchor.set(None);
         self.imp().move_caret(caret, true);
     }
 }
@@ -111,7 +121,7 @@ mod imp {
 
     use crate::geom;
     use crate::keymap::{self, Action, Key, Mods, Motion};
-    use crate::metrics::Faces;
+    use crate::metrics::{Faces, run_attributes};
     use crate::theme::Palette;
 
     type NoticeHook = Box<dyn Fn(String)>;
@@ -124,6 +134,10 @@ mod imp {
     pub struct Doc {
         pub app: RefCell<Option<Arc<App>>>,
         pub caret: Cell<Caret>,
+        /// The other end of the selection, when there is one. `None` means "no selection",
+        /// not "a selection at the caret" — see [`Doc::selection`], the one place that turns
+        /// this and the caret into a range.
+        pub anchor: Cell<Option<Caret>>,
         /// The column the caret is trying to keep while moving by lines — see
         /// [`App::caret_line`]. Cleared by any horizontal move, which is what makes walking
         /// down through a short line and out the other side come back where it started.
@@ -158,6 +172,7 @@ mod imp {
                     block: 0,
                     offset: 0,
                 }),
+                anchor: Cell::new(None),
                 goal_x: Cell::new(None),
                 flow: RefCell::new(None),
                 faces: RefCell::new(None),
@@ -284,9 +299,12 @@ mod imp {
             click.connect_pressed(glib::clone!(
                 #[weak(rename_to = doc)]
                 widget,
-                move |_, _, x, y| {
+                move |gesture, _, x, y| {
                     doc.grab_focus();
-                    doc.imp().click(x, y);
+                    let shift = gesture
+                        .current_event_state()
+                        .contains(gtk::gdk::ModifierType::SHIFT_MASK);
+                    doc.imp().click(x, y, shift);
                 }
             ));
             widget.add_controller(click);
@@ -343,12 +361,14 @@ mod imp {
             // One read for the whole paint, exactly as wide as the screen (rule 1).
             let viewport = app.get_viewport(first.index..last.index + 1);
             let caret = self.caret.get();
+            let selection = self.selection();
 
             for slot in slots {
                 let Some(block) = viewport.get(slot.index) else {
                     continue;
                 };
-                let face = faces.of(&block.kind);
+                let style = block.style.as_deref();
+                let face = faces.of(&block.kind, style);
                 let Ok(layout) = app.layout_block(slot.index, (column - slot.indent) as f32, face)
                 else {
                     continue;
@@ -356,6 +376,10 @@ mod imp {
                 let text: Vec<char> = block.text.chars().collect();
                 let x = left + slot.indent;
                 let y = slot.top - scroll;
+                let ink = match style {
+                    Some("Subtitle") => palette.dim,
+                    _ => palette.foreground,
+                };
 
                 if let BlockKind::ListItem { .. } = block.kind {
                     // A bullet is drawn rather than inserted: the character is not in the
@@ -370,22 +394,58 @@ mod imp {
                     );
                 }
 
+                // The selection's band, one rectangle per line it crosses, drawn under the
+                // text so a run painted over it stays legible.
+                if let Some((from, to)) = selection
+                    && slot.index >= from.block
+                    && slot.index <= to.block
+                {
+                    let start = if slot.index == from.block {
+                        from.offset
+                    } else {
+                        0
+                    };
+                    let end = if slot.index == to.block {
+                        to.offset
+                    } else {
+                        text.len()
+                    };
+                    for line in layout.lines() {
+                        let from_x = start.max(line.start);
+                        let to_x = end.min(line.end);
+                        if from_x >= to_x {
+                            continue;
+                        }
+                        snapshot.append_color(
+                            &palette.selection,
+                            &rect(
+                                x + f64::from(layout.x_at(from_x)),
+                                y + f64::from(line.top),
+                                f64::from(layout.x_at(to_x) - layout.x_at(from_x)),
+                                f64::from(line.height),
+                            ),
+                        );
+                    }
+                }
+
                 for line in layout.lines() {
                     let piece: String = text[line.start.min(text.len())..line.end.min(text.len())]
                         .iter()
                         .collect();
+                    // A line's `end` includes the break that ended it, and a newline handed
+                    // to Pango would start a second line inside this one.
+                    let piece = piece.trim_end_matches('\n');
+                    let attrs = run_attributes(&block.runs, line.start, line.end, piece);
                     draw_at(
                         snapshot,
-                        // A line's `end` includes the break that ended it, and a newline
-                        // handed to Pango would start a second line inside this one.
-                        face.draw(piece.trim_end_matches('\n')),
+                        face.draw_styled(piece, &attrs),
                         x,
                         y + f64::from(line.top),
-                        palette.foreground,
+                        ink,
                     );
                 }
 
-                if slot.index == caret.block && widget.is_focus() {
+                if selection.is_none() && slot.index == caret.block && widget.is_focus() {
                     let line = layout.lines()[layout.line_at(caret.offset)];
                     snapshot.append_color(
                         &palette.accent,
@@ -465,14 +525,17 @@ mod imp {
             let faces = self.faces();
             let viewport = app.get_viewport(0..app.block_count());
             for block in viewport.iter() {
-                let face = faces.of(&block.kind);
+                let style = block.style.as_deref();
+                let face = faces.of(&block.kind, style);
                 let indent = indent_of(&block.kind);
                 let height = app
                     .layout_block(block.index, (column - indent) as f32, face)
                     .map(|layout| f64::from(layout.height()))
                     .unwrap_or_else(|_| face.height());
-                let space = match block.kind {
-                    BlockKind::Heading { .. } => geom::HEADING_GAP,
+                let space = match (style, &block.kind) {
+                    (Some("Title" | "Subtitle"), _) | (_, BlockKind::Heading { .. }) => {
+                        geom::HEADING_GAP
+                    }
                     _ => geom::GAP,
                 };
                 flow.push(block.index, height, indent, space, geom::GAP);
@@ -486,12 +549,27 @@ mod imp {
         /// block's face would put the caret in the wrong place, so they are fetched together.
         pub fn measured(&self, index: usize) -> Option<(Layout, Rc<Faces>, BlockKind)> {
             let app = self.app()?;
-            let kind = app.get_viewport(index..index + 1).get(index)?.kind.clone();
+            let viewport = app.get_viewport(index..index + 1);
+            let block = viewport.get(index)?;
+            let kind = block.kind.clone();
+            let style = block.style.clone();
             let faces = self.faces();
             let (_, column) = geom::column(f64::from(self.obj().width()));
             let width = (column - indent_of(&kind)) as f32;
-            let layout = app.layout_block(index, width, faces.of(&kind)).ok()?;
+            let layout = app
+                .layout_block(index, width, faces.of(&kind, style.as_deref()))
+                .ok()?;
             Some((layout, faces, kind))
+        }
+
+        /// Same block, plus its named style — what picking its face needs beyond
+        /// [`Doc::measured`]'s own answer, and not worth changing that signature for.
+        fn style_of(&self, index: usize) -> Option<String> {
+            self.app()?
+                .get_viewport(index..index + 1)
+                .get(index)?
+                .style
+                .clone()
         }
 
         /// The width and metrics a *line* operation is asked in, for the caret's own block.
@@ -503,10 +581,12 @@ mod imp {
         /// looked up per block rather than passed once — and it is written down in
         /// `doc/text-shell.md` rather than worked around here, because working around it
         /// would mean this shell doing its own line arithmetic.
-        fn line_context(&self) -> Option<(f32, Rc<Faces>, BlockKind)> {
-            let (_, faces, kind) = self.measured(self.caret.get().block)?;
+        fn line_context(&self) -> Option<(f32, Rc<Faces>, BlockKind, Option<String>)> {
+            let block = self.caret.get().block;
+            let (_, faces, kind) = self.measured(block)?;
+            let style = self.style_of(block);
             let (_, column) = geom::column(f64::from(self.obj().width()));
-            Some(((column - indent_of(&kind)) as f32, faces, kind))
+            Some(((column - indent_of(&kind)) as f32, faces, kind, style))
         }
 
         // --- input ---
@@ -526,7 +606,7 @@ mod imp {
                 return glib::Propagation::Proceed;
             };
             match action {
-                Action::Move(motion) => self.go(motion),
+                Action::Move(motion) => self.go(motion, mods.shift),
                 Action::Split => self.split(),
                 Action::EraseBack => self.erase_back(),
                 Action::EraseForward => self.erase_forward(),
@@ -534,17 +614,24 @@ mod imp {
             glib::Propagation::Stop
         }
 
-        /// Every motion, routed to the core.
-        pub fn go(&self, motion: Motion) {
+        /// Every motion, routed to the core. `extend` is Shift: it grows the selection from
+        /// wherever the caret was rather than replacing it, the way every other editor's
+        /// Shift+arrow does.
+        pub fn go(&self, motion: Motion, extend: bool) {
             let Some(app) = self.app() else { return };
             if app.block_count() == 0 {
                 return;
             }
             let caret = self.caret.get();
-            let Some((width, faces, kind)) = self.line_context() else {
+            match extend {
+                true if self.anchor.get().is_none() => self.anchor.set(Some(caret)),
+                false => self.anchor.set(None),
+                true => {}
+            }
+            let Some((width, faces, kind, style)) = self.line_context() else {
                 return;
             };
-            let metrics = faces.of(&kind);
+            let metrics = faces.of(&kind, style.as_deref());
             match motion {
                 Motion::Char(delta) => {
                     self.goal_x.set(None);
@@ -636,8 +723,9 @@ mod imp {
         }
 
         /// Where a click landed: the block under the pointer, and the offset nearest to x on
-        /// the line it hit.
-        fn click(&self, x: f64, y: f64) {
+        /// the line it hit. Shift extends the selection from wherever the caret already was,
+        /// the way Shift+arrow does; a plain click starts fresh.
+        fn click(&self, x: f64, y: f64, shift: bool) {
             let width = f64::from(self.obj().width());
             let flow = self.flow(width);
             let (left, _) = geom::column(width);
@@ -652,6 +740,11 @@ mod imp {
             // core answers them, so a click and a Down-arrow land on the same offset.
             let line = line_at_y(&layout, y + scroll - slot.top);
             let offset = layout.offset_at(line, (x - left - slot.indent) as f32);
+            match shift {
+                true if self.anchor.get().is_none() => self.anchor.set(Some(self.caret.get())),
+                false => self.anchor.set(None),
+                true => {}
+            }
             self.move_caret(
                 Caret {
                     block: slot.index,
@@ -661,7 +754,36 @@ mod imp {
             );
         }
 
+        // --- selection ---
+
+        /// The selected range, normalised to document order. `None` covers both "nothing was
+        /// ever selected" and "the anchor and the caret are back on top of each other" —
+        /// a Shift+Right immediately followed by Shift+Left collapses a selection the same
+        /// way letting go of Shift does, and every reader of this treats them alike.
+        pub fn selection(&self) -> Option<(Caret, Caret)> {
+            let anchor = self.anchor.get()?;
+            let caret = self.caret.get();
+            (anchor != caret).then(|| (anchor.min(caret), anchor.max(caret)))
+        }
+
         // --- editing ---
+
+        /// If there is a selection, erase it and hand back the caret it collapses to —
+        /// what typing a character, or Enter, over a selection does in every editor. Returns
+        /// the caret unchanged when there is nothing selected.
+        fn consume_selection(&self, app: &App) -> Caret {
+            let Some((from, to)) = self.selection() else {
+                return self.caret.get();
+            };
+            self.anchor.set(None);
+            match app.erase(from, to) {
+                Ok(_) => from,
+                Err(error) => {
+                    self.notice(error.to_string());
+                    self.caret.get()
+                }
+            }
+        }
 
         pub fn type_text(&self, text: &str) {
             let Some(app) = self.app() else { return };
@@ -680,7 +802,7 @@ mod imp {
                 }
                 return;
             }
-            let caret = self.caret.get();
+            let caret = self.consume_selection(&app);
             match app.insert_text(caret, text) {
                 Ok(()) => {
                     self.goal_x.set(None);
@@ -698,7 +820,7 @@ mod imp {
 
         pub fn split(&self) {
             let Some(app) = self.app() else { return };
-            let caret = self.caret.get();
+            let caret = self.consume_selection(&app);
             match app.split_block(caret) {
                 Ok(()) => self.move_caret(
                     Caret {
@@ -711,10 +833,19 @@ mod imp {
             }
         }
 
-        /// Backspace: the character before the caret, and at the front of a block the
-        /// boundary itself — which is what [`App::erase`] across one already does.
+        /// Backspace: erases the selection if there is one, otherwise the character before
+        /// the caret — and at the front of a block the boundary itself, which is what
+        /// [`App::erase`] across one already does.
         pub fn erase_back(&self) {
             let Some(app) = self.app() else { return };
+            if let Some((from, to)) = self.selection() {
+                self.anchor.set(None);
+                match app.erase(from, to) {
+                    Ok(_) => self.move_caret(from, true),
+                    Err(error) => self.notice(error.to_string()),
+                }
+                return;
+            }
             let caret = self.caret.get();
             let from = self.stepped(&app, -1);
             if from == caret {
@@ -728,6 +859,14 @@ mod imp {
 
         pub fn erase_forward(&self) {
             let Some(app) = self.app() else { return };
+            if let Some((from, to)) = self.selection() {
+                self.anchor.set(None);
+                match app.erase(from, to) {
+                    Ok(_) => self.move_caret(from, true),
+                    Err(error) => self.notice(error.to_string()),
+                }
+                return;
+            }
             let caret = self.caret.get();
             let to = match caret.offset < self.block_len(&app, caret.block) {
                 true => Caret {
@@ -1022,6 +1161,85 @@ mod tests {
         assert_eq!(text(&app), "hello world");
     }
 
+    /// Shift+arrow grows a selection from wherever the caret started, and typing over one
+    /// replaces it — the two behaviours every other editor's Shift key has, neither of which
+    /// existed before this file grew an anchor.
+    #[test]
+    fn shift_extends_a_selection_and_typing_replaces_it() {
+        let Some((doc, app)) = shell(&["hello world"]) else {
+            return;
+        };
+        let imp = doc.imp();
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        assert_eq!(doc.selection(), None, "no selection yet");
+
+        for _ in 0..5 {
+            imp.go(crate::keymap::Motion::Char(1), true);
+        }
+        assert_eq!(
+            doc.selection(),
+            Some((
+                Caret {
+                    block: 0,
+                    offset: 0
+                },
+                Caret {
+                    block: 0,
+                    offset: 5
+                }
+            )),
+            "\"hello\" is selected"
+        );
+
+        // A plain (non-Shift) move drops the selection rather than replacing it with a new
+        // one-character one.
+        imp.go(crate::keymap::Motion::Char(1), false);
+        assert_eq!(doc.selection(), None);
+
+        // Re-select "hello" and type over it: the selection is erased first, same as every
+        // other editor's Shift+arrow-then-type.
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 5,
+            },
+            true,
+        );
+        for _ in 0..5 {
+            imp.go(crate::keymap::Motion::Char(-1), true);
+        }
+        imp.type_text("goodbye");
+        assert_eq!(text(&app), "goodbye world");
+        assert_eq!(doc.selection(), None, "typing collapses the selection");
+        assert_eq!(doc.caret().offset, 7);
+    }
+
+    /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes
+    /// a heading bigger than the body, keyed off the block's *name* instead of its kind
+    /// because `Title` is `BlockKind::Paragraph` with nothing else to tell it apart.
+    #[test]
+    fn a_title_style_is_drawn_in_a_larger_face_than_the_body() {
+        let Some((doc, app)) = shell(&["Report", "body text"]) else {
+            return;
+        };
+        app.set_style(0..1, Some("Title".to_owned()))
+            .expect("sets the style");
+        let imp = doc.imp();
+        let (_, faces, _) = imp.measured(0).expect("the title lays out");
+        let (_, _, _) = imp.measured(1).expect("the body lays out");
+        assert!(
+            faces.of(&BlockKind::Paragraph, Some("Title")).height()
+                > faces.of(&BlockKind::Paragraph, None).height(),
+            "a title reads larger than a plain paragraph"
+        );
+    }
+
     /// The test S9 exists for, and the GTK half of `doc/text-layout.md`'s payoff: Down is
     /// not "the next block", it is the next *line*, and the answer comes from the core —
     /// measured in pixels through Pango here and in cells in the terminal.
@@ -1040,14 +1258,14 @@ mod tests {
         );
         drop((faces, kind));
 
-        imp.go(crate::keymap::Motion::Line(1));
+        imp.go(crate::keymap::Motion::Line(1), false);
         assert_eq!(doc.caret().block, 0, "still inside the same paragraph");
         assert!(doc.caret().offset > 0, "but further down it");
 
         // Off the end of the last line, the same key carries into the next block — a
         // document is one flow, not a list of boxes.
         for _ in 0..layout.lines().len() {
-            imp.go(crate::keymap::Motion::Line(1));
+            imp.go(crate::keymap::Motion::Line(1), false);
         }
         assert_eq!(doc.caret().block, 1);
         assert_eq!(app.block_count(), 2, "and nothing was edited on the way");

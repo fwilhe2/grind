@@ -32,7 +32,7 @@
 use libadwaita::gtk;
 
 use grind_core::style::TextStyle;
-use grind_text::{BlockKind, Metrics};
+use grind_text::{BlockKind, Metrics, RunView};
 use gtk::pango;
 
 /// How much bigger than the body text each heading level is.
@@ -41,6 +41,15 @@ use gtk::pango;
 /// four because a level-6 heading that is barely larger than the paragraph under it is
 /// exactly what a level-6 heading should look like.
 const HEADING_SCALE: [f64; 6] = [1.8, 1.5, 1.3, 1.15, 1.05, 1.0];
+
+/// `Title` and `Subtitle` are the two named paragraph styles LibreOffice's own template offers
+/// on a blank document, and the only two this shell gives their own face — everything else in
+/// `office:styles` is a name this build keeps and does not interpret (`doc/text-core.md`).
+/// Larger than any heading, because a document's title sits above its outline rather than in
+/// it, and unlike a heading a `Title`/`Subtitle` block carries no `text:outline-level` for
+/// `HEADING_SCALE` to key off — the name on the block is the only signal there is.
+const TITLE_SCALE: f64 = 2.4;
+const SUBTITLE_SCALE: f64 = 1.3;
 
 /// One block-level face: a font, and a Pango layout kept to measure with.
 ///
@@ -84,6 +93,18 @@ impl Face {
     /// was answered in, which is the whole reason a face is one object rather than two.
     pub fn draw(&self, text: &str) -> &pango::Layout {
         self.drawing.set_text(text);
+        // Clear whatever a previous line's `draw_styled` left on the same shared layout —
+        // the bullet drawn after a bold heading must not come out bold with it.
+        self.drawing.set_attributes(None::<&pango::AttrList>);
+        &self.drawing
+    }
+
+    /// The same layout, with per-character Pango attributes over it — what makes a bold or
+    /// italic run actually look like one rather than only measuring like one. `attrs`'
+    /// indices are byte offsets into `text`, which is [`run_attributes`]'s job to produce.
+    pub fn draw_styled(&self, text: &str, attrs: &pango::AttrList) -> &pango::Layout {
+        self.drawing.set_text(text);
+        self.drawing.set_attributes(Some(attrs));
         &self.drawing
     }
 
@@ -131,6 +152,8 @@ impl Metrics for Face {
 pub struct Faces {
     body: Face,
     headings: Vec<Face>,
+    title: Face,
+    subtitle: Face,
 }
 
 impl Faces {
@@ -140,29 +163,45 @@ impl Faces {
             0 => 11 * pango::SCALE,
             size => size,
         };
-        let body = {
+        let scaled = |scale: f64, bold: bool, italic: bool| {
             let mut font = base.clone();
-            font.set_size(size);
+            font.set_size((f64::from(size) * scale) as i32);
+            if bold {
+                font.set_weight(pango::Weight::Bold);
+            }
+            if italic {
+                font.set_style(pango::Style::Italic);
+            }
             Face::new(context, font)
         };
+        let body = scaled(1.0, false, false);
         let headings = HEADING_SCALE
             .iter()
-            .map(|scale| {
-                let mut font = base.clone();
-                font.set_size((f64::from(size) * scale) as i32);
-                font.set_weight(pango::Weight::Bold);
-                Face::new(context, font)
-            })
+            .map(|scale| scaled(*scale, true, false))
             .collect();
-        Faces { body, headings }
+        let title = scaled(TITLE_SCALE, true, false);
+        let subtitle = scaled(SUBTITLE_SCALE, false, true);
+        Faces {
+            body,
+            headings,
+            title,
+            subtitle,
+        }
     }
 
     /// The face a block is set in.
     ///
-    /// A heading deeper than the six levels this shell has faces for is drawn as the last of
-    /// them rather than refused: the reader is *tolerant* (R5), so a level-9 heading loads,
-    /// and a shell that panicked on one would undo that.
-    pub fn of(&self, kind: &BlockKind) -> &Face {
+    /// A named style wins over the block's own kind — `Title` and `Subtitle` are paragraphs
+    /// (`BlockKind::Paragraph`) whose only signal is the name in `style`, so that is checked
+    /// first. A heading deeper than the six levels this shell has faces for is drawn as the
+    /// last of them rather than refused: the reader is *tolerant* (R5), so a level-9 heading
+    /// loads, and a shell that panicked on one would undo that.
+    pub fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
+        match style {
+            Some("Title") => return &self.title,
+            Some("Subtitle") => return &self.subtitle,
+            _ => {}
+        }
         match kind {
             BlockKind::Heading { level } => {
                 let index = (*level).max(1) as usize - 1;
@@ -177,4 +216,59 @@ impl Faces {
     pub fn body(&self) -> &Face {
         &self.body
     }
+}
+
+/// The bold/italic/underline/strikethrough Pango attributes for one line of `text`, from the
+/// block's own runs — the toolbar's other half. `App::layout_block` already measures a bold
+/// run bold (`lay_out` projects each run's [`grind_text::CharStyle`] into the metrics), so this
+/// is the only piece the shell was still short: making it *look* like what it already measures
+/// as (`doc/text-shell.md`, "Neither shell has been updated to draw what the core now
+/// measures").
+///
+/// `line_start`/`line_end` are character offsets into the whole block, matching
+/// [`grind_core::layout::Line::start`]/`end` and [`RunView::start`]/`end`; `text` is that same
+/// range already sliced out, which is what a Pango attribute's byte offsets are measured
+/// against.
+pub fn run_attributes(
+    runs: &[RunView],
+    line_start: usize,
+    line_end: usize,
+    text: &str,
+) -> pango::AttrList {
+    let attrs = pango::AttrList::new();
+    // A char-offset-to-byte-offset table for this line alone — built once rather than once
+    // per run, since a line can carry several.
+    let bytes: Vec<u32> = text
+        .char_indices()
+        .map(|(byte, _)| byte as u32)
+        .chain(std::iter::once(text.len() as u32))
+        .collect();
+    let byte_at = |chars: usize| bytes.get(chars).copied().unwrap_or(text.len() as u32);
+
+    for run in runs {
+        let start = run.start.max(line_start);
+        let end = run.end().min(line_end);
+        if start >= end {
+            continue;
+        }
+        let (s, e) = (byte_at(start - line_start), byte_at(end - line_start));
+        let mark = |mut attr: pango::Attribute| {
+            attr.set_start_index(s);
+            attr.set_end_index(e);
+            attrs.insert(attr);
+        };
+        if run.props.is_bold() {
+            mark(pango::AttrInt::new_weight(pango::Weight::Bold).into());
+        }
+        if run.props.is_italic() {
+            mark(pango::AttrInt::new_style(pango::Style::Italic).into());
+        }
+        if run.props.is_underlined() {
+            mark(pango::AttrInt::new_underline(pango::Underline::Single).into());
+        }
+        if run.props.is_struck() {
+            mark(pango::AttrInt::new_strikethrough(true).into());
+        }
+    }
+    attrs
 }
