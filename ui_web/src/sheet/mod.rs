@@ -15,6 +15,7 @@
 //! knows which box the pointer is in, and `layout.rs` is left with only the arithmetic the
 //! platform cannot do.
 
+mod chart;
 pub mod keymap;
 mod layout;
 
@@ -24,6 +25,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use grind_sheet::formula::{display, lex};
+use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
 use grind_sheet::{App, CellValue, Form, Pos, RecalcMode, a1};
 use wasm_bindgen::prelude::*;
@@ -31,8 +33,10 @@ use web_sys::{
     Document, Element, Event, HtmlElement, HtmlInputElement, KeyboardEvent, MouseEvent, WheelEvent,
 };
 
-use crate::{element, js, listen, request_frame};
+use crate::command::Entry;
+use crate::{element, js, listen, request_frame, set_pressed, set_select, set_swatch};
 use keymap::{Action, Chord, Dir, Motion};
+use layout::{PX_PER_MM, Tracks};
 
 /// The ODF sheet limits, and what a plain move clamps to — the same two numbers
 /// `grind-tui` states, for the same reason.
@@ -110,11 +114,16 @@ struct Dom {
     document: Document,
     /// The scrolling box, and the thing that holds the keyboard.
     surface: HtmlElement,
+    /// The `<colgroup>`: where a document's own column widths land.
+    cols: Element,
     head: Element,
     body: Element,
-    address: HtmlElement,
+    /// An `<input>`, not a label — typing an address in it goes there.
+    address: HtmlInputElement,
     formula: HtmlInputElement,
     tabs: HtmlElement,
+    /// The layer charts float in, over the cells they sit above.
+    charts: HtmlElement,
     message: HtmlElement,
     summary: HtmlElement,
 }
@@ -124,11 +133,13 @@ impl Dom {
         Ok(Dom {
             document: document.clone(),
             surface: element(document, "surface")?,
+            cols: element(document, "cols")?,
             head: element(document, "head-row")?,
             body: element(document, "body")?,
             address: element(document, "address")?,
             formula: element(document, "formula")?,
             tabs: element(document, "tabs")?,
+            charts: element(document, "charts")?,
             message: element(document, "message")?,
             summary: element(document, "summary")?,
         })
@@ -147,6 +158,8 @@ pub struct Ui {
     selection: Cell<Selection>,
     scroll: Cell<Pos>,
     editing: Cell<bool>,
+    /// Whether the pointer is down and dragging a rectangle out.
+    dragging: Cell<bool>,
     message: RefCell<String>,
 }
 
@@ -167,6 +180,7 @@ impl Ui {
             selection: Cell::new(Selection::default()),
             scroll: Cell::new(Pos::new(0, 0)),
             editing: Cell::new(false),
+            dragging: Cell::new(false),
             message: RefCell::new(String::new()),
         });
         wire_grid(&ui)?;
@@ -205,17 +219,39 @@ impl Ui {
 
     fn render(&self) -> Result<(), JsValue> {
         let sheet = self.sheet.get();
-        let visible = self.visible();
+        let widths = self.widths();
+        let heights = self.heights();
         let scroll = self.scroll.get();
+        let visible = self.visible_with(&widths, &heights);
         let rows = scroll.row..scroll.row.saturating_add(visible.0);
         let cols = scroll.col..scroll.col.saturating_add(visible.1);
         let viewport = self
             .app
             .get_viewport(sheet, rows.clone(), cols.clone())
             .map_err(js)?;
+        // Filtered *and* manually hidden, which is what `hidden_rows` already unions —
+        // a row with no height is one the document says is not there.
+        let hidden = self.app.hidden_rows(sheet).unwrap_or_default();
+        let hidden_cols = self.app.hidden_cols(sheet).unwrap_or_default();
 
         let selection = self.selection.get();
         let editing = self.editing.get();
+
+        // The column widths the document chose, as `<col>` elements: one declaration per
+        // column, which is what `table-layout: fixed` sizes from.
+        self.dom.cols.set_text_content(None);
+        let corner_col = self.dom.document.create_element("col")?;
+        corner_col.set_attribute("style", "width:3.5rem")?;
+        self.dom.cols.append_child(&corner_col)?;
+        for col in cols.clone() {
+            let declaration = self.dom.document.create_element("col")?;
+            let width = match hidden_cols.contains(&col) {
+                true => 0.0,
+                false => widths.size(col),
+            };
+            declaration.set_attribute("style", &format!("width:{width:.1}px"))?;
+            self.dom.cols.append_child(&declaration)?;
+        }
 
         // Column headers. Rebuilt with the body, because a horizontal scroll
         // changes which letters are over which cells.
@@ -230,6 +266,7 @@ impl Ui {
                     false => "head col",
                 },
             );
+            cell.set_attribute("data-col", &col.to_string())?;
             cell.set_text_content(Some(&lex::column_name(col)));
             self.dom.head.append_child(&cell)?;
         }
@@ -240,11 +277,19 @@ impl Ui {
         self.dom.body.set_text_content(None);
         for row in rows.clone() {
             let line = self.dom.document.create_element("tr")?;
+            if hidden.contains(&row) {
+                // Drawn at no height rather than left out: the rows around it keep their
+                // addresses, and the run reads as a fold rather than as a gap.
+                line.set_attribute("style", "display:none")?;
+            } else if heights.is_sized(row) {
+                line.set_attribute("style", &format!("height:{:.1}px", heights.size(row)))?;
+            }
             let header = self.dom.document.create_element("th")?;
             header.set_class_name(match row == selection.active.row {
                 true => "head row current",
                 false => "head row",
             });
+            header.set_attribute("data-row", &row.to_string())?;
             header.set_text_content(Some(&(row + 1).to_string()));
             line.append_child(&header)?;
 
@@ -277,8 +322,63 @@ impl Ui {
             self.dom.body.append_child(&line)?;
         }
 
+        self.render_charts(&widths, &heights)?;
         self.render_tabs()?;
         self.render_chrome(&selection)?;
+        Ok(())
+    }
+
+    /// Every chart on this sheet, over the cells it floats above.
+    ///
+    /// Read fresh and thrown away like everything else here (doc/plan.md rule 1). A chart's
+    /// own position is an ODF length from the table's corner, so it is placed in pixels from
+    /// that corner *minus* whatever has been scrolled past — the same arithmetic
+    /// `ui_sheet_gtk/src/geom.rs` does, in a different unit.
+    fn render_charts(&self, widths: &Tracks, heights: &Tracks) -> Result<(), JsValue> {
+        self.dom.charts.set_text_content(None);
+        let sheet = self.sheet.get();
+        let Ok(charts) = self.app.charts(sheet) else {
+            return Ok(());
+        };
+        if charts.is_empty() {
+            return Ok(());
+        }
+        let scroll = self.scroll.get();
+        // The distance the corner has been scrolled past, and the headers' own band.
+        let past_x = widths.span(0, scroll.col);
+        let past_y = heights.span(0, scroll.row);
+        let header_w = 3.5 * 16.0;
+        let header_h = layout::CELL.cell_h;
+
+        for (index, chart) in charts.iter().enumerate() {
+            let px = |length: &str| grind_sheet::style::length_mm(length).map(|mm| mm * PX_PER_MM);
+            let (Some(x), Some(y), Some(w), Some(h)) = (
+                px(&chart.x),
+                px(&chart.y),
+                px(&chart.width),
+                px(&chart.height),
+            ) else {
+                // A length this build cannot parse is a chart it does not draw, which is §9's
+                // own tolerance applied to a picture.
+                continue;
+            };
+            let Ok(data) = self.app.chart_data(sheet, index) else {
+                continue;
+            };
+            let frame = self.dom.document.create_element("div")?;
+            frame.set_class_name("chart");
+            frame.set_attribute("data-chart", &index.to_string())?;
+            frame.set_attribute(
+                "style",
+                &format!(
+                    "left:{:.1}px;top:{:.1}px;width:{w:.1}px;height:{h:.1}px",
+                    header_w + x - past_x,
+                    header_h + y - past_y
+                ),
+            )?;
+            frame.set_inner_html(&chart::svg(chart, &data, w, h));
+            self.dom.charts.append_child(&frame)?;
+        }
         Ok(())
     }
 
@@ -310,9 +410,15 @@ impl Ui {
     fn render_chrome(&self, selection: &Selection) -> Result<(), JsValue> {
         let sheet = self.sheet.get();
         let active = selection.active;
-        self.dom
-            .address
-            .set_text_content(Some(&a1::format(None, active)));
+        // Not while it is being typed into: the address box is an input, and rewriting it
+        // under the caret would make it impossible to type a second character.
+        if self.dom.document.active_element().as_ref() != Some(self.dom.address.as_ref()) {
+            let (start, end) = selection.rect();
+            self.dom.address.set_value(&match start == end {
+                true => a1::format(None, active),
+                false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+            });
+        }
 
         // The formula bar shows the cell only when it is not the thing being
         // edited; overwriting it mid-edit would throw away what was typed.
@@ -343,12 +449,34 @@ impl Ui {
         Ok(())
     }
 
-    /// How much of the sheet is on screen. A function of the surface alone — never
-    /// of the grid inside it, which is [`layout::CELL`]'s whole point.
+    /// The column widths this sheet declares, over the default. Read per frame like
+    /// everything else — a sheet sizes a handful of columns, and re-reading them is cheaper
+    /// than knowing when they changed.
+    fn widths(&self) -> Tracks {
+        Tracks::new(
+            layout::CELL.cell_w,
+            self.app.col_widths(self.sheet.get()).unwrap_or_default(),
+        )
+    }
+
+    fn heights(&self) -> Tracks {
+        Tracks::new(
+            layout::CELL.cell_h,
+            self.app.row_heights(self.sheet.get()).unwrap_or_default(),
+        )
+    }
+
+    /// How much of the sheet is on screen. A function of the surface and the document's own
+    /// track sizes — never of the grid inside it, which is [`layout::CELL`]'s whole point.
     fn visible(&self) -> (u32, u32) {
-        layout::CELL.visible(
-            self.dom.surface.client_width() as f64,
-            self.dom.surface.client_height() as f64,
+        self.visible_with(&self.widths(), &self.heights())
+    }
+
+    fn visible_with(&self, widths: &Tracks, heights: &Tracks) -> (u32, u32) {
+        let scroll = self.scroll.get();
+        (
+            heights.fit(scroll.row, self.dom.surface.client_height() as f64),
+            widths.fit(scroll.col, self.dom.surface.client_width() as f64),
         )
     }
 
@@ -382,16 +510,419 @@ impl Ui {
             Action::Begin(seed) => self.begin(seed)?,
             Action::Commit(direction) => self.commit(direction)?,
             Action::Cancel => self.cancel()?,
-            Action::Clear => self.clear(),
-            Action::Undo => self.step_history(true),
-            Action::Redo => self.step_history(false),
-            // Chrome, not grid: opening and saving are the same gesture whichever
-            // document type is showing, so they belong to the one shell that owns both.
-            Action::Open => crate::with_shell(|shell| shell.open_picker()),
-            Action::Save => crate::with_shell(|shell| shell.save()),
-            Action::Recalc => self.recalc(),
+            // Everything else is a command, and takes the same path a palette row and a
+            // toolbar button do — the chrome answers its own and hands the rest back here.
+            Action::Run(id) => crate::run_command(id),
         }
         Ok(())
+    }
+
+    // --- commands ---
+
+    /// Every verb this pane answers, by the id the palette, the toolbar and the keyboard all
+    /// name it with ([`crate::command::SHEET`]).
+    pub fn run(&self, id: &str) {
+        let style = |set: fn(&mut CellStyle)| self.merge_style(set);
+        match id {
+            "sheet.recalc" => self.recalc(),
+            "edit.clear" => self.clear(),
+            "edit.fill-down" => self.fill(true),
+            "edit.fill-right" => self.fill(false),
+            "edit.select-all" => self.select_all(),
+
+            "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
+            "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
+            "style.align-left" => style(|s| set(&mut s.align, "start")),
+            "style.align-center" => style(|s| set(&mut s.align, "center")),
+            "style.align-right" => style(|s| set(&mut s.align, "end")),
+            "style.align-clear" => style(|s| s.align = None),
+            "style.wrap" => style(|s| toggle(&mut s.wrap, "wrap")),
+            "style.border" => style(|s| s.set_border(Some(BORDER.to_owned()))),
+            "style.border-clear" => style(|s| s.set_border(None)),
+            "style.clear" => self.set_style_of_selection(None),
+
+            "format.general" => self.set_format_of_selection(None),
+            "format.integer" => self.preset(Kind::Number, 0),
+            "format.number" => self.preset(Kind::Number, 2),
+            "format.percent" => self.preset(Kind::Percentage, 0),
+            "format.currency" => self.preset(Kind::Currency, 2),
+            "format.date" => self.preset(Kind::Date, 0),
+            "format.time" => self.preset(Kind::Time, 0),
+            "format.datetime" => self.set_format_of_selection(Some(numfmt::datetime_preset())),
+            "format.more" => self.step_decimals(1),
+            "format.fewer" => self.step_decimals(-1),
+
+            "sheet.add" => self.add_sheet(),
+            "sheet.rename" => self.rename_sheet(),
+            "sheet.delete" => self.delete_sheet(),
+
+            id => match id.strip_prefix("goto:") {
+                Some(where_) => self.go_to(where_),
+                None => self.set_message(format!("No such command: {id}")),
+            },
+        }
+    }
+
+    /// What the palette offers for a query that is not a verb: somewhere to go.
+    ///
+    /// An address or a range, a defined name, or a sheet — the three things a spreadsheet
+    /// navigates by, in one box. This is why there is no separate go-to dialog.
+    pub fn targets(&self, query: &str) -> Vec<Entry> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        // An address only counts if it names a *cell* — `bol` lexes as the column BOL, and
+        // offering "Go to BOL" above "Bold" would put a destination where a verb was meant.
+        // Requiring a row is what tells a word from an address.
+        let names_a_cell = a1::parse(query)
+            .is_ok_and(|reference| reference.start.row.is_some() && reference.start.col.is_some());
+        if names_a_cell {
+            out.push(Entry::target(
+                format!("goto:{query}"),
+                format!("Go to {}", query.to_uppercase()),
+                "Go",
+            ));
+        }
+        let lower = query.to_lowercase();
+        for (name, expression) in self.app.names() {
+            if name.to_lowercase().contains(&lower) {
+                out.push(Entry::target(
+                    format!("goto:{name}"),
+                    format!("{name} — {expression}"),
+                    "Name",
+                ));
+            }
+        }
+        for index in 0..self.app.sheet_count() {
+            let Ok(name) = self.app.sheet_name(index) else {
+                continue;
+            };
+            if index != self.sheet.get() && name.to_lowercase().contains(&lower) {
+                out.push(Entry::target(
+                    format!("goto:{name}."),
+                    format!("Sheet {name}"),
+                    "Go",
+                ));
+            }
+        }
+        out.truncate(6);
+        out
+    }
+
+    /// Go where an address says. A trailing dot is a *sheet* with no cell — `Data.` means
+    /// "that sheet, wherever I was" — which is the one spelling `a1` already refuses and the
+    /// palette needs.
+    fn go_to(&self, where_: &str) {
+        if let Some(name) = where_.strip_suffix('.') {
+            match a1::sheet(&self.app, name) {
+                Ok(index) => {
+                    let _ = self.switch_to(index);
+                }
+                Err(error) => self.set_message(error.to_string()),
+            }
+            return;
+        }
+        // A defined name resolves through the same parser a formula's reference does, so
+        // `Totals` goes wherever the document says it is.
+        let expression = self
+            .app
+            .names()
+            .into_iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(where_))
+            .map(|(_, expression)| expression);
+        let address = expression.as_deref().unwrap_or(where_);
+        let parsed = match address.starts_with('[') {
+            true => a1::parse_bracketed(address),
+            false => a1::parse(address),
+        };
+        let Ok(reference) = parsed else {
+            return self.set_message(format!("{where_} is not an address"));
+        };
+        match a1::resolve(&self.app, &reference) {
+            Ok((sheet, start, end)) => {
+                if sheet != self.sheet.get() {
+                    self.sheet.set(sheet);
+                    self.scroll.set(Pos::new(0, 0));
+                }
+                self.set_selection(Selection {
+                    anchor: end,
+                    active: start,
+                });
+                let _ = self.dom.surface.focus();
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    // --- formatting ---
+
+    /// The selected rectangle, as the two corners every `App` call over a range takes.
+    fn rect(&self) -> (Pos, Pos) {
+        self.selection.get().rect()
+    }
+
+    /// Read the active cell's style, change one field, write the whole rectangle.
+    ///
+    /// `App::set_style` *replaces* rather than merges, deliberately (`sheet/src/lib.rs`) — so
+    /// the merge policy is here, where "make this bold as well" is a sentence about what is
+    /// under the cursor rather than about every cell in the range.
+    fn merge_style(&self, change: impl Fn(&mut CellStyle)) {
+        let mut style = self
+            .app
+            .style_at(self.sheet.get(), self.selection.get().active)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        change(&mut style);
+        self.set_style_of_selection(Some(style));
+    }
+
+    fn set_style_of_selection(&self, style: Option<CellStyle>) {
+        let (start, end) = self.rect();
+        if let Err(error) = self.app.set_style(self.sheet.get(), start, end, style) {
+            self.set_message(error.to_string());
+        }
+    }
+
+    fn set_format_of_selection(&self, format: Option<numfmt::Format>) {
+        let (start, end) = self.rect();
+        if let Err(error) = self.app.set_format(self.sheet.get(), start, end, format) {
+            self.set_message(error.to_string());
+        }
+    }
+
+    /// One of the number-format presets, in the core's own vocabulary
+    /// (`grind_sheet::numfmt::preset`) rather than a format-code string — this build has no
+    /// such thing, which is `doc/ods-format.md` §5.2's decision and not this shell's.
+    fn preset(&self, kind: Kind, decimals: u8) {
+        let grouping = matches!(kind, Kind::Number | Kind::Currency) && decimals > 0;
+        self.set_format_of_selection(Some(numfmt::preset(kind, decimals, grouping, CURRENCY)));
+    }
+
+    /// More or fewer decimal places, keeping whatever kind the cell already had — General
+    /// becomes a plain number, which is what pressing it on an unformatted cell means.
+    fn step_decimals(&self, by: i16) {
+        let current = self
+            .app
+            .format_at(self.sheet.get(), self.selection.get().active)
+            .ok()
+            .flatten();
+        let (kind, decimals, grouping, symbol) = match &current {
+            Some(format) => format.preset_params(),
+            None => (Kind::Number, 2, false, String::new()),
+        };
+        let decimals = (i16::from(decimals) + by).clamp(0, 10) as u8;
+        let symbol = match symbol.is_empty() {
+            true => CURRENCY.to_owned(),
+            false => symbol,
+        };
+        self.set_format_of_selection(Some(numfmt::preset(kind, decimals, grouping, &symbol)));
+    }
+
+    /// A colour picked from the swatch grid — `"color"` for the text, `"fill"` for behind it.
+    pub fn set_color(&self, target: &str, hex: Option<String>) {
+        match target {
+            "color" => self.merge_style(|s| s.color = hex.clone()),
+            "fill" => self.merge_style(|s| s.background = hex.clone()),
+            _ => {}
+        }
+    }
+
+    /// Show what the active cell already is, on the tool row.
+    pub fn refresh_tools(&self) -> Result<(), JsValue> {
+        let document = &self.dom.document;
+        let at = self.selection.get().active;
+        let style = self
+            .app
+            .style_at(self.sheet.get(), at)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        set_pressed(
+            document,
+            "s-bold",
+            style.font_weight.as_deref() == Some("bold"),
+        );
+        set_pressed(
+            document,
+            "s-italic",
+            style.font_style.as_deref() == Some("italic"),
+        );
+        set_pressed(document, "s-wrap", style.wrap.as_deref() == Some("wrap"));
+        for (id, value) in [
+            ("s-align-left", "start"),
+            ("s-align-center", "center"),
+            ("s-align-right", "end"),
+        ] {
+            set_pressed(document, id, style.align.as_deref() == Some(value));
+        }
+        set_swatch(document, "s-color-bar", style.color.as_deref());
+        set_swatch(document, "s-fill-bar", style.background.as_deref());
+
+        // The format `<select>` shows the preset the cell's format *is*, and General for
+        // anything this vocabulary cannot spell — which is honest: choosing a preset would
+        // overwrite a format the document brought and this build only knows how to display.
+        let format = self.app.format_at(self.sheet.get(), at).ok().flatten();
+        set_select(document, "s-format", &named_format(format.as_ref()));
+        Ok(())
+    }
+
+    // --- the clipboard ---
+
+    /// The selection as tab-separated text — the shape every spreadsheet on every platform
+    /// reads, so a range copied here pastes into one of them and back.
+    ///
+    /// The cells' *input* text, not their displayed text: a formula copies as a formula, which
+    /// is what a user who copies `=SUM(A1:A9)` means. It is also what `paste_text` feeds back
+    /// to `App::enter_range`, so a round trip through the clipboard is lossless.
+    pub fn clipboard_text(&self) -> Option<String> {
+        let (start, end) = self.rect();
+        let sheet = self.sheet.get();
+        let mut out = String::new();
+        for row in start.row..=end.row {
+            if row > start.row {
+                out.push('\n');
+            }
+            for col in start.col..=end.col {
+                if col > start.col {
+                    out.push('\t');
+                }
+                let text = self.app.input_text(sheet, Pos::new(row, col)).ok()?;
+                // A tab or a newline *inside* a cell would be read back as a cell boundary.
+                // Spaces are the lossy-but-legible answer; a quoting scheme would be a second
+                // dialect of TSV that nothing else reads.
+                out.push_str(&text.replace(['\t', '\n'], " "));
+            }
+        }
+        Some(out)
+    }
+
+    /// Tab-separated text, entered as a rectangle from the active cell — one undo step,
+    /// because `App::enter_range` is one action.
+    pub fn paste_text(&self, text: &str) {
+        let rows: Vec<Vec<String>> = text
+            .replace("\r\n", "\n")
+            .trim_end_matches('\n')
+            .split('\n')
+            .map(|line| line.split('\t').map(str::to_owned).collect())
+            .collect();
+        if rows.is_empty() {
+            return;
+        }
+        let anchor = self.selection.get().active;
+        match self
+            .app
+            .enter_range(self.sheet.get(), anchor, &rows, RecalcMode::Document)
+        {
+            Ok(outcome) => {
+                let last = Pos::new(
+                    anchor.row + rows.len().saturating_sub(1) as u32,
+                    anchor.col
+                        + rows
+                            .iter()
+                            .map(Vec::len)
+                            .max()
+                            .unwrap_or(1)
+                            .saturating_sub(1) as u32,
+                );
+                // The pasted rectangle is selected, with the *active* cell back where the
+                // paste started: what was just pasted is highlighted, and the next thing
+                // typed replaces its first cell rather than its last.
+                self.set_selection(Selection {
+                    anchor: last,
+                    active: anchor,
+                });
+                self.set_message(format!("Pasted {} cell(s)", outcome.cells));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    pub fn is_editing(&self) -> bool {
+        self.editing.get()
+    }
+
+    // --- the workbook ---
+
+    fn add_sheet(&self) {
+        let taken: Vec<String> = (0..self.app.sheet_count())
+            .filter_map(|i| self.app.sheet_name(i).ok())
+            .collect();
+        let name = (1..)
+            .map(|n| format!("Sheet{n}"))
+            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
+            .expect("there is always a free number");
+        match self.app.add_sheet(&name) {
+            Ok(index) => {
+                let _ = self.switch_to(index);
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// `window.prompt` rather than a dialog of this shell's own: it is one line of input, the
+    /// browser already has one, and a modal built here would be a second thing to keep
+    /// accessible for no gain.
+    fn rename_sheet(&self) {
+        let sheet = self.sheet.get();
+        let Ok(current) = self.app.sheet_name(sheet) else {
+            return;
+        };
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Ok(Some(name)) = window.prompt_with_message_and_default("Sheet name", &current) else {
+            return;
+        };
+        // A rename does not rewrite the formulas that name the old sheet — they go stale,
+        // which `App::stale` counts. Saying so is what keeps it from being a surprise.
+        if let Err(error) = self.app.rename_sheet(sheet, name.trim()) {
+            self.set_message(error.to_string());
+        }
+    }
+
+    fn delete_sheet(&self) {
+        let sheet = self.sheet.get();
+        let name = self.app.sheet_name(sheet).unwrap_or_default();
+        match self.app.remove_sheet(sheet) {
+            Ok(()) => {
+                let _ = self.switch_to(sheet.saturating_sub(1));
+                self.set_message(format!("Deleted “{name}” — Ctrl+Z brings it back"));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// Everything in the used region — Ctrl+A, and what "the whole sheet" means when the
+    /// address space is a million rows of mostly nothing.
+    fn select_all(&self) {
+        let (rows, cols) = self.app.used_extent(self.sheet.get()).unwrap_or((1, 1));
+        self.set_selection(Selection {
+            anchor: Pos::new(0, 0),
+            active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
+        });
+    }
+
+    /// Replicate the top row — or the left column — across the selection, which is what
+    /// `App::fill` already is.
+    fn fill(&self, down: bool) {
+        let (start, end) = self.rect();
+        if (down && end.row == start.row) || (!down && end.col == start.col) {
+            return self.set_message("Select the cells to fill into as well".to_owned());
+        }
+        let from = match down {
+            true => Pos::new(start.row + 1, start.col),
+            false => Pos::new(start.row, start.col + 1),
+        };
+        match self
+            .app
+            .fill(self.sheet.get(), start, from, end, RecalcMode::Document)
+        {
+            Ok(outcome) => self.set_message(format!("Filled {} cell(s)", outcome.cells)),
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     fn move_to(&self, motion: Motion, extend: bool) {
@@ -522,19 +1053,6 @@ impl Ui {
         }
     }
 
-    fn step_history(&self, undo: bool) {
-        let moved = match undo {
-            true => self.app.undo(),
-            false => self.app.redo(),
-        };
-        if !moved {
-            self.set_message(match undo {
-                true => "Nothing to undo".into(),
-                false => "Nothing to redo".into(),
-            });
-        }
-    }
-
     fn recalc(&self) {
         match self.app.recalc() {
             Ok(recalc) => self.set_message(match recalc.spoiled {
@@ -644,6 +1162,64 @@ impl Ui {
     }
 }
 
+/// The border this shell draws when asked for one.
+///
+/// LibreOffice's own hairline, in the three-part form ODF stores (`doc/ods-format.md` §5.4) —
+/// so a box drawn here is the box a document already full of them has, rather than a second
+/// weight nothing else uses.
+const BORDER: &str = "0.06pt solid #000000";
+
+/// What `format.currency` spells. A gap, and a named one: the core carries the symbol a
+/// document chose and this shell has no locale to pick one from, so it offers the one that is
+/// unambiguous rather than guessing at the reader's.
+const CURRENCY: &str = "¤";
+
+/// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
+/// opposed to a value a picker sets.
+fn toggle(field: &mut Option<String>, value: &str) {
+    *field = match field.as_deref() == Some(value) {
+        true => None,
+        false => Some(value.to_owned()),
+    };
+}
+
+fn set(field: &mut Option<String>, value: &str) {
+    *field = Some(value.to_owned());
+}
+
+/// Which of the format `<select>`'s options a cell's format *is* — the command id, so the
+/// toolbar reports in the same vocabulary it commands in.
+///
+/// A format the preset vocabulary cannot spell (`DD.MM.YYYY`, a document's own) reports as
+/// General, because none of the options is it: this build displays such a format faithfully
+/// and has no name for it (`Format::is_preset`).
+fn named_format(format: Option<&numfmt::Format>) -> String {
+    let Some(format) = format else {
+        return "format.general".to_owned();
+    };
+    if !format.is_preset() {
+        return "format.general".to_owned();
+    }
+    let (kind, decimals, _, _) = format.preset_params();
+    // "Date and time" is not a `Kind` of its own — it is a `Date` format with the time's own
+    // parts appended (`numfmt::datetime_preset`), so the two are told apart by what is in it.
+    let has_time = format
+        .parts
+        .iter()
+        .any(|part| matches!(part, numfmt::Part::Hours { .. }));
+    match kind {
+        Kind::Number if decimals == 0 => "format.integer",
+        Kind::Number => "format.number",
+        Kind::Percentage => "format.percent",
+        Kind::Currency => "format.currency",
+        Kind::Date if has_time => "format.datetime",
+        Kind::Date => "format.date",
+        Kind::Time => "format.time",
+        _ => "format.general",
+    }
+    .to_owned()
+}
+
 /// A `CellStyle` as inline CSS.
 ///
 /// ODF's style vocabulary is CSS's here, near enough to pass values through
@@ -713,10 +1289,36 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
     // rebuilt every frame, and a listener each would be a listener each frame.
     let click = ui.clone();
     listen(&ui.dom.surface, "mousedown", move |event: MouseEvent| {
+        click.dragging.set(true);
         if let Err(error) = click.on_click(&event) {
             web_sys::console::error_1(&error);
         }
     })?;
+
+    // Dragging a rectangle out: every move with the button down extends the
+    // selection, which is the gesture every grid has and this one did not.
+    let drag = ui.clone();
+    listen(&ui.dom.surface, "mousemove", move |event: MouseEvent| {
+        if !drag.dragging.get() || drag.editing.get() {
+            return;
+        }
+        let Some(pos) = cell_at(&event) else { return };
+        let anchor = drag.selection.get().anchor;
+        if drag.selection.get().active != pos {
+            drag.set_selection(Selection {
+                anchor,
+                active: pos,
+            });
+        }
+    })?;
+
+    // On the *window*, not the surface: a drag that ends outside it still ends.
+    if let Some(window) = web_sys::window() {
+        let release = ui.clone();
+        listen(&window, "mouseup", move |_: MouseEvent| {
+            release.dragging.set(false);
+        })?;
+    }
 
     let tabs = ui.clone();
     listen(&ui.dom.tabs, "click", move |event: MouseEvent| {
@@ -725,10 +1327,47 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
         }
     })?;
 
+    // Double-clicking a tab renames the sheet it names — the gesture every
+    // spreadsheet's tab bar has, and the reason there is no rename button.
+    let rename = ui.clone();
+    listen(&ui.dom.tabs, "dblclick", move |event: MouseEvent| {
+        rename.run("sheet.rename");
+        event.prevent_default();
+    })?;
+
+    // The address box: type a cell, a range or a name and go there.
+    let address = ui.clone();
+    listen(&ui.dom.address, "keydown", move |event: KeyboardEvent| {
+        match event.key().as_str() {
+            "Enter" => {
+                event.prevent_default();
+                let where_ = address.dom.address.value();
+                address.go_to(where_.trim());
+            }
+            "Escape" => {
+                let _ = address.dom.surface.focus();
+            }
+            _ => {}
+        }
+        // Every other key belongs to the input, including the arrows — this is a
+        // text field, and the grid's own keymap must not reach into it.
+        event.stop_propagation();
+    })?;
+
     let wheel = ui.clone();
     listen(&ui.dom.surface, "wheel", move |event: WheelEvent| {
         wheel.on_wheel(&event);
     })
+}
+
+/// The cell a pointer event landed on, from the address the cell carries.
+fn cell_at(event: &MouseEvent) -> Option<Pos> {
+    let target = event.target()?.dyn_into::<Element>().ok()?;
+    let cell = target.closest("td.cell").ok()??;
+    Some(Pos::new(
+        attribute(&cell, "data-row")?,
+        attribute(&cell, "data-col")?,
+    ))
 }
 
 fn wire_editor(ui: &Rc<Ui>) -> Result<(), JsValue> {

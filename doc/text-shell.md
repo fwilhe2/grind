@@ -26,10 +26,10 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Caret motion | arrows, Home/End, Page, Ctrl+Home/End — all answered by the core | the same set |
 | Editing | type, Enter, Backspace, Delete | the same four |
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
-| Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | — (named gap) |
-| Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | — (named gap) |
-| Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; `Title`/`Subtitle` paragraphs and every run's own formatting are drawn, not only measured | — (named gap) |
-| Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | — (named gap) |
+| Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | the same three, all inside the Ctrl+K palette (`doc/web-shell.md`) |
+| Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | the same |
+| Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; `Title`/`Subtitle` paragraphs and every run's own formatting are drawn, not only measured | the same, plus colour and highlight |
+| Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
 
@@ -106,13 +106,11 @@ put them. A named-style picker stays out: a run's *named* style (as opposed to i
 formatting) is a name this build keeps and does not interpret, and turning `Emphasis` into a set
 of checkboxes would throw that structure away to draw it (`doc/text-core.md`).
 
-**`grind-web`'s document pane only, for images.** `grind-text-gtk` decodes and draws one — the
-CLI's own `--render-to` proof is `Earthrise.fodt` and `Earthrise.odt`, a real photograph and
-caption LibreOffice wrote in both physical forms, opening with the picture and its caption both
-visible rather than either dropped. The browser pane still has neither the model call nor the
-drawing; the second is now most of the work, since `App::insert_image` and the reader/writer
-support underneath it are shared by every shell already. Two things are true in `grind-text-gtk`
-alone even once the browser catches up: an image sitting *mid-sentence* — the
+**Images.** Both shells decode and draw one now — the CLI's own `--render-to` proof is
+`Earthrise.fodt` and `Earthrise.odt`, a real photograph and caption LibreOffice wrote in both
+physical forms, opening with the picture and its caption both visible rather than either
+dropped; the browser pane draws the same bytes as a `data:` URL. Two things are true in both:
+an image sitting *mid-sentence* — the
 `text:anchor-type="char"` case, as opposed to a paragraph that is only a picture (optionally
 followed by its caption's text, which reads the same way) — still draws as the placeholder
 character (`\u{fffc}`) rather than the picture, because nothing here lays inline content out
@@ -123,17 +121,17 @@ A package's picture referenced by `xlink:href` into `Pictures/` (as opposed to e
 `office:binary-data`) now resolves at read time in every shell (`doc/odt-format.md`'s "The image
 itself may be a reference rather than bytes"), so this is no longer a gap.
 
-**`grind-web`'s document pane only, now.** No selection — no shift-click, no shift-arrow, no
-dragging — and no styling UI, which used to be a *both-shells* gap blocked on the model carrying
-only a run's style name. That blocker is gone (`App::set_char_style`/`char_style`,
-`doc/text-core.md`) and `grind-text-gtk` closed both halves of it: an anchor alongside the caret
-(`Doc::selection`, Shift+arrow and Shift+click extend it, dragging with the button down grows it
-continuously through `GestureDrag`'s own `drag-begin`/`drag-update`, typing or Enter over one
-erases it first the way every other editor's Shift key does), a toolbar of four toggles that
-read the selection's common formatting and write through `set_char_style`, and the drawing fix
-in the section above so a toggle's effect is visible rather than only present in the file. The
-browser pane has none of it yet — the first candidate when it grows, the same way the outline
-dialog and go-to-address field are (below).
+**Selection and formatting: both shells have them now.** This used to be a *both-shells* gap
+blocked on the model carrying only a run's style name. That blocker is gone
+(`App::set_char_style`/`char_style`, `doc/text-core.md`) and both shells closed it the same way:
+an anchor alongside the caret (Shift+arrow, Shift+click and dragging all extend it; typing or
+Enter over one erases it first, the way every other editor's Shift key does), a toolbar of
+toggles that read the selection's common formatting and write through `set_char_style`, and
+drawing each run as the document formatted it rather than as one plain string. `grind-text-gtk`
+does it with a Pango attribute list per line (`run_attributes`); `grind-web` cuts each line into
+`<span>`s at every boundary the formatting, the selection and the caret introduce
+(`ui_web/src/text/runs.rs`). Both give `Title` and `Subtitle` their own faces, so a document has
+one shape in both windows.
 
 **`grind-text-gtk` only.** No `grind-ui` crate: `doc/suite.md` says to extract the shared GTK
 plumbing "on evidence, at S9, when the second shell shows the seam", and one *minimal* shell
@@ -145,16 +143,12 @@ beyond the floor (`Accessible::announce` on every caret move, as M9 requires). T
 is re-laid-out in full whenever it or the width changes, so a very long document costs a pass
 per resize (`ponytail` in `view.rs`).
 
-**`grind-web` only.** The whole document is in the DOM — no windowing, because a document has
-as many blocks as somebody typed and a scroll-position-to-block map only pays for itself on
-documents nobody has written yet. Character advances are measured once each and cached, so
-kerning between two characters is lost (`ponytail` in `text/mod.rs`); the caret is an element
-*in* the line, so the browser still places it against its own kerning, and the cost is at most
-a pixel or two in where a line breaks. No input method: a character arrives as a
-`KeyboardEvent.key`, so dead keys compose and CJK candidate windows do not. No outline dialog
-and no go-to-address field — the two things the GTK shell has that this one does not, and the
-first candidates when it grows. Both panes exist in one page and one is `hidden`; the
-spreadsheet's own gap list in `doc/sheet-shell.md` still applies to the other one.
+**`grind-web` only.** Its own gap list has moved to **`doc/web-shell.md`**, which is where that
+shell's answers live now — it grew a command palette, formatting, a clipboard and charts, and
+"the same list, minimally" stopped being true. In short: no input method, the whole document is
+in the DOM rather than windowed, and character advances are cached per character so kerning
+between two of them is lost. The outline dialog and the go-to-address field are no longer gaps
+— both are in the palette Ctrl+K opens, which is that shell's answer to a dialog.
 
 ## How to see them
 

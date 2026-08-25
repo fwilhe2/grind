@@ -40,7 +40,12 @@ pub enum Motion {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action<'a> {
-    Move(Motion),
+    /// Move the caret. `extend` is Shift held down: the anchor stays where it is and the
+    /// selection grows, which is the same word `ui_sheet_gtk`'s grid uses for the same idea.
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
     /// A character was typed. Borrowed from the event, because it is `KeyboardEvent.key` and
     /// copying it would be a `String` per keystroke.
     ///
@@ -51,25 +56,44 @@ pub enum Action<'a> {
     Split,
     EraseBack,
     EraseForward,
-    Undo,
-    Redo,
-    Open,
-    Save,
+    /// Tab, which means two different things depending on what the caret is in — a list item
+    /// nests, anything else takes a tab character. The pane decides, because this file has no
+    /// document to ask.
+    Tab {
+        back: bool,
+    },
+    /// A command, by the id [`crate::command::TEXT`] names it with. Every modifier chord
+    /// this shell claims is one of these, so a key and a palette row run the same code.
+    Run(&'static str),
 }
 
 pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
-    let go = |motion| Some(Action::Move(motion));
+    let go = |motion| {
+        Some(Action::Move {
+            motion,
+            extend: chord.shift,
+        })
+    };
     // The chrome's shortcuts first: a document that swallowed Ctrl+S would type an `s`.
     if chord.primary {
         return match chord.key {
-            "z" | "Z" if chord.shift => Some(Action::Redo),
-            "z" | "Z" => Some(Action::Undo),
-            "y" | "Y" => Some(Action::Redo),
-            "s" | "S" => Some(Action::Save),
-            "o" | "O" => Some(Action::Open),
+            "z" | "Z" if chord.shift => Some(Action::Run("doc.redo")),
+            "z" | "Z" => Some(Action::Run("doc.undo")),
+            "y" | "Y" => Some(Action::Run("doc.redo")),
+            "s" | "S" => Some(Action::Run("doc.save")),
+            "o" | "O" => Some(Action::Run("doc.open")),
+            "a" | "A" => Some(Action::Run("edit.select-all")),
+            "b" | "B" => Some(Action::Run("char.bold")),
+            "i" | "I" => Some(Action::Run("char.italic")),
+            "u" | "U" => Some(Action::Run("char.underline")),
+            "0" => Some(Action::Run("block.body")),
+            "1" => Some(Action::Run("block.h1")),
+            "2" => Some(Action::Run("block.h2")),
+            "3" => Some(Action::Run("block.h3")),
             "Home" => go(Motion::DocStart),
             "End" => go(Motion::DocEnd),
-            // Ctrl+T and F5 still belong to the browser.
+            // Ctrl+T and F5 still belong to the browser — and so do Ctrl+C, Ctrl+X and
+            // Ctrl+V, whose *events* are how this shell reaches the clipboard at all.
             _ => None,
         };
     }
@@ -85,9 +109,10 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
         "Enter" => Some(Action::Split),
         "Backspace" => Some(Action::EraseBack),
         "Delete" => Some(Action::EraseForward),
-        // A tab is a character in this model (`text:tab`), and the alternative is a key that
-        // moves focus out of the document you are writing in.
-        "Tab" => Some(Action::Type("\t")),
+        // A tab is a character in this model (`text:tab`) — except in a list, where it is
+        // what nests one. The alternative is a key that moves focus out of the document you
+        // are writing in.
+        "Tab" => Some(Action::Tab { back: chord.shift }),
         // Exactly one character is a typed character; anything longer is a named key this
         // shell does not claim — "F5", "Escape", "Shift".
         key if key.chars().count() == 1 => Some(Action::Type(key)),
@@ -115,10 +140,55 @@ mod tests {
         })
     }
 
+    fn shifted(key: &str) -> Option<Action<'_>> {
+        action_for(&Chord {
+            key,
+            primary: false,
+            shift: true,
+        })
+    }
+
     #[test]
     fn vertical_is_lines_and_horizontal_is_characters() {
-        assert_eq!(plain("ArrowDown"), Some(Action::Move(Motion::Line(1))));
-        assert_eq!(plain("ArrowRight"), Some(Action::Move(Motion::Char(1))));
+        assert_eq!(
+            plain("ArrowDown"),
+            Some(Action::Move {
+                motion: Motion::Line(1),
+                extend: false
+            })
+        );
+        assert_eq!(
+            plain("ArrowRight"),
+            Some(Action::Move {
+                motion: Motion::Char(1),
+                extend: false
+            })
+        );
+    }
+
+    /// Shift extends rather than moving — every motion, not a special list of them.
+    #[test]
+    fn shift_extends_whatever_the_motion_is() {
+        for key in ["ArrowLeft", "ArrowDown", "Home", "End", "PageUp"] {
+            let Some(Action::Move { extend, .. }) = shifted(key) else {
+                panic!("{key} is not a motion");
+            };
+            assert!(extend, "{key}");
+        }
+    }
+
+    #[test]
+    fn the_formatting_chords_are_commands_rather_than_typing() {
+        assert_eq!(ctrl("b"), Some(Action::Run("char.bold")));
+        assert_eq!(ctrl("i"), Some(Action::Run("char.italic")));
+        assert_eq!(ctrl("u"), Some(Action::Run("char.underline")));
+        assert_eq!(ctrl("1"), Some(Action::Run("block.h1")));
+        assert_eq!(ctrl("0"), Some(Action::Run("block.body")));
+        // The clipboard's own three stay with the browser, whose events this shell listens
+        // for — claiming them here would stop those events ever firing.
+        for key in ["c", "x", "v"] {
+            assert_eq!(ctrl(key), None, "{key}");
+        }
     }
 
     /// The rule that decides typing: one character is text, more than one is a named key.
@@ -137,26 +207,30 @@ mod tests {
     /// types an `s` into the paragraph it was meant to save.
     #[test]
     fn the_chrome_owns_the_modifier_chords() {
-        assert_eq!(ctrl("s"), Some(Action::Save));
-        assert_eq!(ctrl("o"), Some(Action::Open));
-        assert_eq!(ctrl("z"), Some(Action::Undo));
-        assert_eq!(ctrl("y"), Some(Action::Redo));
+        assert_eq!(ctrl("s"), Some(Action::Run("doc.save")));
+        assert_eq!(ctrl("o"), Some(Action::Run("doc.open")));
+        assert_eq!(ctrl("z"), Some(Action::Run("doc.undo")));
+        assert_eq!(ctrl("y"), Some(Action::Run("doc.redo")));
         assert_eq!(
             action_for(&Chord {
                 key: "z",
                 primary: true,
                 shift: true
             }),
-            Some(Action::Redo)
+            Some(Action::Run("doc.redo"))
         );
-        assert_eq!(ctrl("a"), None, "and nothing else is claimed");
+        assert_eq!(ctrl("t"), None, "and nothing else is claimed");
     }
 
     #[test]
     fn ctrl_home_is_the_document_and_home_alone_is_the_line() {
-        assert_eq!(plain("Home"), Some(Action::Move(Motion::LineStart)));
-        assert_eq!(ctrl("Home"), Some(Action::Move(Motion::DocStart)));
-        assert_eq!(ctrl("End"), Some(Action::Move(Motion::DocEnd)));
+        let motion = |action| match action {
+            Some(Action::Move { motion, .. }) => Some(motion),
+            _ => None,
+        };
+        assert_eq!(motion(plain("Home")), Some(Motion::LineStart));
+        assert_eq!(motion(ctrl("Home")), Some(Motion::DocStart));
+        assert_eq!(motion(ctrl("End")), Some(Motion::DocEnd));
     }
 
     #[test]
@@ -164,6 +238,7 @@ mod tests {
         assert_eq!(plain("Enter"), Some(Action::Split));
         assert_eq!(plain("Backspace"), Some(Action::EraseBack));
         assert_eq!(plain("Delete"), Some(Action::EraseForward));
-        assert_eq!(plain("Tab"), Some(Action::Type("\t")));
+        assert_eq!(plain("Tab"), Some(Action::Tab { back: false }));
+        assert_eq!(shifted("Tab"), Some(Action::Tab { back: true }));
     }
 }

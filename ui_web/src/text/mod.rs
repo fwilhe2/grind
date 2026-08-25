@@ -18,6 +18,7 @@
 //! contributes: how wide is this text, in CSS pixels.
 
 pub mod keymap;
+mod runs;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -26,14 +27,16 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use grind_core::style::TextStyle;
-use grind_text::{App, BlockKind, Caret, Form, Metrics, loc};
+use grind_text::style::CharStyle;
+use grind_text::{App, BlockKind, BlockView, Caret, Form, Metrics, loc};
 use wasm_bindgen::prelude::*;
 use web_sys::{
     CanvasRenderingContext2d, Document, Element, HtmlCanvasElement, HtmlElement, KeyboardEvent,
     MouseEvent,
 };
 
-use crate::{element, listen, request_repaint};
+use crate::command::Entry;
+use crate::{element, listen, request_repaint, set_pressed, set_select, set_swatch};
 use keymap::{Action, Chord, Motion};
 
 /// The document's typeface, owned **here** rather than in the stylesheet.
@@ -155,10 +158,18 @@ impl Metrics for Face {
     }
 }
 
-/// The faces a document is set in: body text, and one per heading level.
+/// How much bigger than the body a `Title` and a `Subtitle` are — the two *named* paragraph
+/// styles this shell gives a face of their own, matching `grind-text-gtk`'s.
+const TITLE_SCALE: f64 = 2.2;
+const SUBTITLE_SCALE: f64 = 1.3;
+
+/// The faces a document is set in: body text, one per heading level, and the two named
+/// paragraph styles that are not headings.
 struct Faces {
     body: Face,
     headings: Vec<Face>,
+    title: Face,
+    subtitle: Face,
 }
 
 impl Faces {
@@ -169,15 +180,30 @@ impl Faces {
                 .iter()
                 .map(|scale| Face::new(ctx.clone(), (BODY_PX * scale).round(), true))
                 .collect(),
+            title: Face::new(ctx.clone(), (BODY_PX * TITLE_SCALE).round(), true),
+            subtitle: Face::new(ctx, (BODY_PX * SUBTITLE_SCALE).round(), false),
         }
     }
 
     /// The face a block is set in.
     ///
+    /// **The named style is checked before the kind**, because `Title` and `Subtitle` are both
+    /// `BlockKind::Paragraph` with nothing else to key a face off — the same order
+    /// `ui_text_gtk`'s `Faces::of` uses, so a document has one shape in both windows.
+    ///
     /// A heading deeper than the six levels there are faces for is set as the last of them
     /// rather than refused: the reader is tolerant (R5), so a level-9 heading loads, and a
     /// shell that panicked on one would undo that.
-    fn of(&self, kind: &BlockKind) -> &Face {
+    fn of(&self, block: &BlockView) -> &Face {
+        match block.style.as_deref() {
+            Some("Title") => return &self.title,
+            Some("Subtitle") => return &self.subtitle,
+            _ => {}
+        }
+        self.for_kind(&block.kind)
+    }
+
+    fn for_kind(&self, kind: &BlockKind) -> &Face {
         match kind {
             BlockKind::Heading { level } => {
                 let index = (*level).max(1) as usize - 1;
@@ -219,9 +245,22 @@ pub struct Ui {
     // Everything below is *presentation*. None of it is the document, which is why the core
     // neither knows nor keeps it.
     caret: Cell<Caret>,
+    /// Where a selection started, if there is one. The caret is its other end, so extending
+    /// with Shift is a move that leaves this alone — the same two-ends shape the grid's own
+    /// `Selection` has, and for the same reason.
+    anchor: Cell<Option<Caret>>,
     /// The column the caret is trying to keep while moving by lines — see
     /// [`App::caret_line`]. Cleared by any horizontal move.
     goal_x: Cell<Option<f32>>,
+    /// Whether the pointer is down and dragging out a selection.
+    dragging: Cell<bool>,
+    /// Pictures already turned into a `data:` URL, by the block they are in.
+    ///
+    /// ponytail: keyed by *index*, so an insertion above an image invalidates nothing and the
+    /// picture under the old index is drawn for one frame before the next repaint corrects it.
+    /// A `BlockId` would be exact; it is not on `RunView`, and the cost of being wrong is one
+    /// frame of the wrong picture in a document with two images in it.
+    images: RefCell<HashMap<usize, String>>,
     message: RefCell<String>,
 }
 
@@ -254,7 +293,10 @@ impl Ui {
                 block: 0,
                 offset: 0,
             }),
+            anchor: Cell::new(None),
             goal_x: Cell::new(None),
+            dragging: Cell::new(false),
+            images: RefCell::new(HashMap::new()),
             message: RefCell::new(String::new()),
         });
         wire(&ui)?;
@@ -274,7 +316,9 @@ impl Ui {
             block: 0,
             offset: 0,
         });
+        self.anchor.set(None);
         self.goal_x.set(None);
+        self.images.borrow_mut().clear();
         self.dom.pane.set_scroll_top(0);
         Ok(())
     }
@@ -311,6 +355,7 @@ impl Ui {
     fn render(&self) -> Result<(), JsValue> {
         let width = self.width();
         let caret = self.caret.get();
+        let selection = self.selection();
         // ponytail: the whole document is rendered, not the part on screen. A grid needs a
         // viewport because a sheet has a million rows; a document has as many blocks as
         // somebody typed, and windowing one costs a scroll-position-to-block map that only
@@ -319,7 +364,7 @@ impl Ui {
 
         self.dom.flow.set_text_content(None);
         for block in viewport.iter() {
-            let face = self.faces.of(&block.kind);
+            let face = self.faces.of(block);
             let indent = indent_of(&block.kind);
             let Ok(layout) = self
                 .app
@@ -329,11 +374,20 @@ impl Ui {
             };
 
             let element = self.dom.document.create_element("div")?;
-            element.set_class_name(&class_of(&block.kind));
+            element.set_class_name(&class_of(block));
             element.set_attribute("data-block", &block.index.to_string())?;
             element.set_attribute("style", &face.css(indent))?;
 
-            let text: Vec<char> = block.text.chars().collect();
+            // A block that is a picture is drawn as one, above whatever text it also holds
+            // (a caption reads as the paragraph's own text — `doc/odt-format.md`).
+            if let Some(image) = block.runs.iter().find_map(|run| run.image.as_ref()) {
+                let picture = self.dom.document.create_element("img")?;
+                picture.set_class_name("picture");
+                picture.set_attribute("alt", "")?;
+                picture.set_attribute("src", &self.image_url(block.index, image))?;
+                element.append_child(&picture)?;
+            }
+
             for (number, line) in layout.lines().iter().enumerate() {
                 let row = self.dom.document.create_element("div")?;
                 row.set_class_name("line");
@@ -342,30 +396,11 @@ impl Ui {
                 // pixels tall, however tall its line height says it is.
                 row.set_attribute("style", &format!("height:{}px", face.height))?;
 
-                let piece: String = text[line.start.min(text.len())..line.end.min(text.len())]
-                    .iter()
-                    .collect();
-                let piece = piece.trim_end_matches('\n');
                 // `line_at` rather than `Line::holds`: an offset at a soft break belongs to
                 // both lines, and drawing the caret on both is drawing it twice.
-                match block.index == caret.block && layout.line_at(caret.offset) == number {
-                    // The caret is an element *between* two pieces of text rather than a
-                    // rectangle drawn at a measured x — so the browser places it against its
-                    // own kerning, which is the one place this shell's own measurements
-                    // could be a pixel out.
-                    true => {
-                        let at = caret.offset.saturating_sub(line.start);
-                        let head: String = piece.chars().take(at).collect();
-                        let tail: String = piece.chars().skip(at).collect();
-                        row.append_child(&self.dom.document.create_text_node(&head))?;
-                        let caret_element = self.dom.document.create_element("span")?;
-                        caret_element.set_class_name("caret");
-                        caret_element.set_id("caret");
-                        row.append_child(&caret_element)?;
-                        row.append_child(&self.dom.document.create_text_node(&tail))?;
-                    }
-                    false => row.set_text_content(Some(piece)),
-                }
+                let here = (block.index == caret.block && layout.line_at(caret.offset) == number)
+                    .then_some(caret.offset);
+                self.draw_line(&row, block, line.start..line.end, &selection, here)?;
                 element.append_child(&row)?;
             }
             self.dom.flow.append_child(&element)?;
@@ -376,11 +411,94 @@ impl Ui {
         Ok(())
     }
 
+    /// One line's worth of `<span>`s — the document's formatting, the selection and the caret,
+    /// each of which cuts the line somewhere the others do not ([`runs::cut`]).
+    fn draw_line(
+        &self,
+        row: &Element,
+        block: &BlockView,
+        line: std::ops::Range<usize>,
+        selection: &Option<(Caret, Caret)>,
+        caret: Option<usize>,
+    ) -> Result<(), JsValue> {
+        let text: Vec<char> = block.text.chars().collect();
+        // The selection, clipped to *this block* — it may start pages above and end below.
+        let within = selection.as_ref().and_then(|(from, to)| {
+            (from.block <= block.index && block.index <= to.block).then(|| {
+                let start = match from.block == block.index {
+                    true => from.offset,
+                    false => 0,
+                };
+                let end = match to.block == block.index {
+                    true => to.offset,
+                    false => text.len(),
+                };
+                start..end
+            })
+        });
+
+        let mut drawn = false;
+        for piece in runs::cut(line.clone(), &block.runs, within, caret) {
+            if caret == Some(piece.range.start) {
+                self.append_caret(row)?;
+                drawn = true;
+            }
+            let slice: String = text
+                [piece.range.start.min(text.len())..piece.range.end.min(text.len())]
+                .iter()
+                .collect();
+            // A line break is where the line ends; it is not a character to draw.
+            let slice = slice.trim_end_matches('\n');
+            let span = self.dom.document.create_element("span")?;
+            span.set_class_name(&runs::classes(&piece));
+            let css = runs::css(&piece);
+            if !css.is_empty() {
+                span.set_attribute("style", &css)?;
+            }
+            span.set_text_content(Some(slice));
+            row.append_child(&span)?;
+        }
+        // At the end of the line, and in an empty one — neither is the start of any piece.
+        if caret.is_some() && !drawn {
+            self.append_caret(row)?;
+        }
+        Ok(())
+    }
+
+    fn append_caret(&self, row: &Element) -> Result<(), JsValue> {
+        let caret = self.dom.document.create_element("span")?;
+        caret.set_class_name("caret");
+        caret.set_id("caret");
+        row.append_child(&caret)?;
+        Ok(())
+    }
+
+    /// A picture as a `data:` URL, encoded once and remembered.
+    ///
+    /// A `blob:` URL would avoid the base64 pass, and would then have to be revoked — a
+    /// lifetime this shell has nowhere to keep, since every frame throws the whole page away.
+    /// A `data:` URL is owned by the element that carries it.
+    fn image_url(&self, block: usize, image: &grind_text::ImageView) -> String {
+        if let Some(url) = self.images.borrow().get(&block) {
+            return url.clone();
+        }
+        let url = format!("data:{};base64,{}", image.mime, base64(&image.data));
+        self.images.borrow_mut().insert(block, url.clone());
+        url
+    }
+
     fn render_chrome(&self) {
         let caret = self.caret.get();
         let counts = self.app.counts();
+        let selected = match self.selection() {
+            Some((from, to)) if from.block == to.block => {
+                format!(" · {} selected", to.offset - from.offset)
+            }
+            Some((from, to)) => format!(" · {} blocks selected", to.block - from.block + 1),
+            None => String::new(),
+        };
         self.dom.summary.set_text_content(Some(&format!(
-            "{} · {} words · {} blocks",
+            "{} · {} words · {} blocks{selected}",
             loc::format_offset(caret.block, caret.offset),
             counts.words,
             counts.blocks
@@ -388,6 +506,324 @@ impl Ui {
         self.dom
             .message
             .set_text_content(Some(&self.message.borrow()));
+    }
+
+    // --- the selection ---
+
+    /// The selection, in document order, or `None` when the anchor is where the caret is —
+    /// which is what "nothing is selected" *is*, rather than a second state to keep in step.
+    pub fn selection(&self) -> Option<(Caret, Caret)> {
+        let anchor = self.anchor.get()?;
+        let caret = self.caret.get();
+        if anchor == caret {
+            return None;
+        }
+        Some(
+            match (anchor.block, anchor.offset) <= (caret.block, caret.offset) {
+                true => (anchor, caret),
+                false => (caret, anchor),
+            },
+        )
+    }
+
+    /// Erase whatever is selected, leaving the caret where it started. Every edit that
+    /// *replaces* a selection begins here — typing, Enter, and paste.
+    pub fn erase_selection(&self) -> bool {
+        let Some((from, to)) = self.selection() else {
+            return false;
+        };
+        match self.app.erase(from, to) {
+            Ok(_) => {
+                self.anchor.set(None);
+                self.set_caret(from);
+                true
+            }
+            Err(error) => {
+                self.set_message(error.to_string());
+                false
+            }
+        }
+    }
+
+    fn select_all(&self) {
+        let blocks = self.app.block_count();
+        if blocks == 0 {
+            return;
+        }
+        self.anchor.set(Some(Caret {
+            block: 0,
+            offset: 0,
+        }));
+        self.set_caret(Caret {
+            block: blocks - 1,
+            offset: self.block_len(blocks - 1),
+        });
+    }
+
+    // --- commands ---
+
+    /// Every verb this pane answers ([`crate::command::TEXT`]).
+    pub fn run(&self, id: &str) {
+        match id {
+            "edit.select-all" => self.select_all(),
+            "char.bold" => self.toggle_char(|s| &mut s.font_weight, "bold", "normal"),
+            "char.italic" => self.toggle_char(|s| &mut s.font_style, "italic", "normal"),
+            "char.underline" => self.toggle_char(|s| &mut s.underline, "solid", "none"),
+            "char.strike" => self.toggle_char(|s| &mut s.line_through, "solid", "none"),
+            "char.clear" => self.set_char_style(CharStyle::default()),
+            "block.body" => self.set_kind(BlockKind::Paragraph, None),
+            "block.title" => self.set_kind(BlockKind::Paragraph, Some("Title")),
+            "block.subtitle" => self.set_kind(BlockKind::Paragraph, Some("Subtitle")),
+            "block.h1" => self.set_kind(BlockKind::Heading { level: 1 }, None),
+            "block.h2" => self.set_kind(BlockKind::Heading { level: 2 }, None),
+            "block.h3" => self.set_kind(BlockKind::Heading { level: 3 }, None),
+            "block.h4" => self.set_kind(BlockKind::Heading { level: 4 }, None),
+            "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
+            "block.indent" => self.renest(1),
+            "block.outdent" => self.renest(-1),
+            id => match id.strip_prefix("goto:") {
+                Some(where_) => self.go_to(where_),
+                None => self.set_message(format!("No such command: {id}")),
+            },
+        }
+    }
+
+    /// What the palette offers for a query that is not a verb: a heading to jump to, a
+    /// bookmark, or an address.
+    ///
+    /// **This is the outline dialog and the go-to field, in the box that was already there.**
+    /// `doc/text-shell.md` named both as the browser pane's next candidates; one palette
+    /// answers both without a second dialog to open, style and keep accessible.
+    pub fn targets(&self, query: &str) -> Vec<Entry> {
+        let query = query.trim();
+        if query.is_empty() {
+            // With nothing typed, the outline *is* the useful list — a document's own table of
+            // contents, which is what somebody who opened the palette in a long report wants.
+            return self
+                .app
+                .outline()
+                .into_iter()
+                .take(8)
+                .map(|heading| {
+                    Entry::target(
+                        format!("goto:{}", heading.index),
+                        format!(
+                            "{}{}",
+                            "  ".repeat(heading.level.saturating_sub(1) as usize),
+                            heading.text
+                        ),
+                        "Outline",
+                    )
+                })
+                .collect();
+        }
+        let lower = query.to_lowercase();
+        let mut out: Vec<Entry> = self
+            .app
+            .outline()
+            .into_iter()
+            .filter(|heading| heading.text.to_lowercase().contains(&lower))
+            .take(6)
+            .map(|heading| {
+                Entry::target(
+                    format!("goto:{}", heading.index),
+                    heading.text.clone(),
+                    "Outline",
+                )
+            })
+            .collect();
+        for (name, index) in self.app.bookmarks() {
+            if name.to_lowercase().contains(&lower) {
+                out.push(Entry::target(
+                    format!("goto:{index}"),
+                    format!("#{name}"),
+                    "Bookmark",
+                ));
+            }
+        }
+        // `p12`, `#intro`, `§2.1.3` — `loc`'s own vocabulary, so what the CLI accepts the
+        // palette accepts.
+        if out.is_empty()
+            && let Ok(at) = loc::parse(query)
+            && let Ok(index) = self.app.resolve(&at)
+        {
+            out.push(Entry::target(
+                format!("goto:{index}"),
+                format!("Go to {query}"),
+                "Go",
+            ));
+        }
+        out.truncate(6);
+        out
+    }
+
+    fn go_to(&self, where_: &str) {
+        let Ok(index) = where_.parse::<usize>() else {
+            return;
+        };
+        if index >= self.app.block_count() {
+            return;
+        }
+        self.anchor.set(None);
+        self.set_caret(Caret {
+            block: index,
+            offset: 0,
+        });
+        let _ = self.dom.pane.focus();
+    }
+
+    // --- formatting ---
+
+    /// Turn one character property on across the selection, or off when it is already on
+    /// everywhere in it — [`App::char_style`] is what "already on everywhere" means, since it
+    /// reports only what the whole span *agrees* about.
+    fn toggle_char(&self, field: fn(&mut CharStyle) -> &mut Option<String>, on: &str, off: &str) {
+        let Some((from, to)) = self.selection() else {
+            return self.set_message("Select some text first".to_owned());
+        };
+        let mut style = self.app.char_style(from, to).unwrap_or_default();
+        let slot = field(&mut style);
+        let already = slot.as_deref().is_some_and(|value| value != off);
+        *slot = match already {
+            true => Some(off.to_owned()),
+            false => Some(on.to_owned()),
+        };
+        self.write_char_style(from, to, &style);
+    }
+
+    fn set_char_style(&self, style: CharStyle) {
+        let Some((from, to)) = self.selection() else {
+            return self.set_message("Select some text first".to_owned());
+        };
+        self.write_char_style(from, to, &style);
+    }
+
+    fn write_char_style(&self, from: Caret, to: Caret, style: &CharStyle) {
+        if let Err(error) = self.app.set_char_style(from, to, style) {
+            self.set_message(error.to_string());
+        }
+    }
+
+    /// A colour from the swatch grid — `"color"` for the letters, `"highlight"` for behind
+    /// them.
+    pub fn set_color(&self, target: &str, hex: Option<String>) {
+        let Some((from, to)) = self.selection() else {
+            return self.set_message("Select some text first".to_owned());
+        };
+        let mut style = self.app.char_style(from, to).unwrap_or_default();
+        match target {
+            "color" => style.color = hex,
+            "highlight" => style.background = hex,
+            _ => return,
+        }
+        self.write_char_style(from, to, &style);
+    }
+
+    /// Change what the block under the caret *is* — every block the selection touches, since
+    /// "make these three paragraphs headings" is one thing to ask for.
+    fn set_kind(&self, kind: BlockKind, style: Option<&str>) {
+        let (first, last) = match self.selection() {
+            Some((from, to)) => (from.block, to.block),
+            None => (self.caret.get().block, self.caret.get().block),
+        };
+        for index in first..=last {
+            if let Err(error) = self.app.set_kind(index, kind.clone()) {
+                return self.set_message(error.to_string());
+            }
+        }
+        if let Err(error) = self
+            .app
+            .set_style(first..last + 1, style.map(str::to_owned))
+        {
+            self.set_message(error.to_string());
+        }
+    }
+
+    /// One list level in or out. Only a list item has a depth to change, which is why Tab
+    /// types a tab everywhere else.
+    fn renest(&self, by: i32) {
+        let index = self.caret.get().block;
+        let Some(block) = self.block_at(index) else {
+            return;
+        };
+        let BlockKind::ListItem { depth } = block.kind else {
+            return self.set_message("Only a list item is nested".to_owned());
+        };
+        let depth = (depth as i32 + by).clamp(1, 9) as u32;
+        if let Err(error) = self.app.set_kind(index, BlockKind::ListItem { depth }) {
+            self.set_message(error.to_string());
+        }
+    }
+
+    /// Show what the caret — or the selection — already is, on the tool row.
+    pub fn refresh_tools(&self) -> Result<(), JsValue> {
+        let document = &self.dom.document;
+        // The toggles report what the *selection* agrees about, which is what
+        // `App::char_style` answers. With nothing selected they read plain — honestly, since
+        // the toggles are also disabled in that state: this shell formats a selection, and
+        // there is no pending style a caret carries into the next keystroke.
+        let style = match self.selection() {
+            Some((from, to)) => self.app.char_style(from, to).unwrap_or_default(),
+            None => CharStyle::default(),
+        };
+        let on =
+            |value: &Option<String>, off: &str| value.as_deref().is_some_and(|value| value != off);
+        set_pressed(document, "t-bold", on(&style.font_weight, "normal"));
+        set_pressed(document, "t-italic", on(&style.font_style, "normal"));
+        set_pressed(document, "t-underline", on(&style.underline, "none"));
+        set_pressed(document, "t-strike", on(&style.line_through, "none"));
+        set_swatch(document, "t-color-bar", style.color.as_deref());
+        set_swatch(document, "t-highlight-bar", style.background.as_deref());
+
+        let block = self.block_at(self.caret.get().block);
+        set_select(document, "t-block", &named_block(block.as_ref()));
+        Ok(())
+    }
+
+    // --- the clipboard ---
+
+    /// The selected text, as plain text. Formatting is not carried: the clipboard this shell
+    /// writes is the one every other application reads, and a run's own `CharStyle` has no
+    /// spelling in `text/plain`.
+    pub fn clipboard_text(&self) -> Option<String> {
+        let (from, to) = self.selection()?;
+        let mut out = String::new();
+        for index in from.block..=to.block {
+            let text = self.app.input_text(index).ok()?;
+            let chars: Vec<char> = text.chars().collect();
+            let start = match index == from.block {
+                true => from.offset,
+                false => 0,
+            };
+            let end = match index == to.block {
+                true => to.offset,
+                false => chars.len(),
+            };
+            if index > from.block {
+                out.push('\n');
+            }
+            out.extend(&chars[start.min(chars.len())..end.min(chars.len())]);
+        }
+        Some(out)
+    }
+
+    /// Text in, at the caret — replacing the selection if there is one. A newline splits a
+    /// block, which is what pasting two paragraphs has to mean in a model that has no
+    /// character for one.
+    pub fn paste_text(&self, text: &str) {
+        self.erase_selection();
+        for (index, line) in text.replace("\r\n", "\n").split('\n').enumerate() {
+            if index > 0 {
+                self.split();
+            }
+            if !line.is_empty() {
+                self.type_text(line);
+            }
+        }
+    }
+
+    fn block_at(&self, index: usize) -> Option<BlockView> {
+        self.app.get_viewport(index..index + 1).get(index).cloned()
     }
 
     /// Scroll the least it takes to keep the caret on screen.
@@ -439,28 +875,62 @@ impl Ui {
 
     fn apply(&self, action: Action<'_>) -> Result<(), JsValue> {
         match action {
-            Action::Move(motion) => self.go(motion),
-            Action::Type(text) => self.type_text(text),
-            Action::Split => self.split(),
-            Action::EraseBack => self.erase_back(),
-            Action::EraseForward => self.erase_forward(),
-            // The chrome's, and the same code path its buttons take.
-            Action::Undo => crate::with_shell(|shell| shell.undo()),
-            Action::Redo => crate::with_shell(|shell| shell.redo()),
-            Action::Open => crate::with_shell(|shell| shell.open_picker()),
-            Action::Save => crate::with_shell(|shell| shell.save()),
+            Action::Move { motion, extend } => self.go(motion, extend),
+            Action::Type(text) => {
+                self.erase_selection();
+                self.type_text(text);
+            }
+            Action::Split => {
+                self.erase_selection();
+                self.split();
+            }
+            Action::EraseBack => {
+                if !self.erase_selection() {
+                    self.erase_back();
+                }
+            }
+            Action::EraseForward => {
+                if !self.erase_selection() {
+                    self.erase_forward();
+                }
+            }
+            // A tab nests a list item and types a character anywhere else — the one key whose
+            // meaning this pane decides rather than the keymap.
+            Action::Tab { back } => match self.block_at(self.caret.get().block) {
+                Some(block) if matches!(block.kind, BlockKind::ListItem { .. }) => {
+                    self.renest(if back { -1 } else { 1 })
+                }
+                _ if !back => {
+                    self.erase_selection();
+                    self.type_text("\t");
+                }
+                _ => {}
+            },
+            // Everything else is a command, and takes the same path a palette row does — the
+            // chrome answers its own and hands the rest back to `Ui::run`.
+            Action::Run(id) => crate::run_command(id),
         }
         Ok(())
     }
 
-    /// Every motion, routed to the core.
-    fn go(&self, motion: Motion) {
+    /// Every motion, routed to the core. `extend` keeps the anchor where it is, which is what
+    /// makes Shift+arrow a selection rather than a move.
+    fn go(&self, motion: Motion, extend: bool) {
         if self.app.block_count() == 0 {
             return;
         }
+        match extend {
+            // The anchor is set on the *first* extending move, from wherever the caret was.
+            true => {
+                if self.anchor.get().is_none() {
+                    self.anchor.set(Some(self.caret.get()));
+                }
+            }
+            false => self.anchor.set(None),
+        }
         let caret = self.caret.get();
         let kind = self.kind_at(caret.block);
-        let face = self.faces.of(&kind);
+        let face = self.face_at(caret.block);
         let width = (self.width() - indent_of(&kind)) as f32;
         let moved = match motion {
             Motion::Char(delta) => Some(self.stepped(delta)),
@@ -551,11 +1021,17 @@ impl Ui {
     }
 
     fn kind_at(&self, index: usize) -> BlockKind {
-        self.app
-            .get_viewport(index..index + 1)
-            .get(index)
-            .map(|block| block.kind.clone())
+        self.block_at(index)
+            .map(|block| block.kind)
             .unwrap_or(BlockKind::Paragraph)
+    }
+
+    /// The face a block is set in — the *whole* block, so a `Title` is measured as one.
+    fn face_at(&self, index: usize) -> &Face {
+        match self.block_at(index) {
+            Some(block) => self.faces.of(&block),
+            None => &self.faces.body,
+        }
     }
 
     // --- editing ---
@@ -634,44 +1110,117 @@ impl Ui {
 
     /// Where a click landed. The line carries its own address, so the DOM answers the first
     /// half and the core's layout answers the second.
-    fn on_click(&self, event: &MouseEvent) -> Result<(), JsValue> {
-        let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
+    ///
+    /// `extend` is Shift held, or the pointer still down from a press — the two ways every
+    /// editor grows a selection, and they end in the same place here.
+    fn on_click(&self, event: &MouseEvent, extend: bool) -> Result<(), JsValue> {
+        let Some(caret) = self.caret_at(event)? else {
             return Ok(());
+        };
+        match extend {
+            true => {
+                if self.anchor.get().is_none() {
+                    self.anchor.set(Some(self.caret.get()));
+                }
+            }
+            false => self.anchor.set(None),
+        }
+        self.goal_x.set(None);
+        self.set_caret(caret);
+        self.dom.pane.focus()
+    }
+
+    /// The caret a pointer position names, or `None` when it landed on nothing — the gap
+    /// between two blocks, or the chrome.
+    fn caret_at(&self, event: &MouseEvent) -> Result<Option<Caret>, JsValue> {
+        let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
+            return Ok(None);
         };
         let (Some(row), Some(block)) = (target.closest(".line")?, target.closest("[data-block]")?)
         else {
-            return Ok(());
+            return Ok(None);
         };
         let (Some(line), Some(index)) = (
             attribute(&row, "data-line"),
             attribute(&block, "data-block"),
         ) else {
-            return Ok(());
+            return Ok(None);
         };
         let kind = self.kind_at(index);
-        let face = self.faces.of(&kind);
+        let face = self.face_at(index);
         let width = (self.width() - indent_of(&kind)) as f32;
         let Ok(layout) = self.app.layout_block(index, width, face) else {
-            return Ok(());
+            return Ok(None);
         };
         let x = f64::from(event.client_x()) - row.get_bounding_client_rect().left();
-        self.goal_x.set(None);
-        self.set_caret(Caret {
+        Ok(Some(Caret {
             block: index,
             offset: layout.offset_at(line, x as f32),
-        });
-        self.dom.pane.focus()
+        }))
     }
 }
 
 /// Which CSS class a block is drawn with. Structure only — the font is inline, from the face
 /// that measured it.
-fn class_of(kind: &BlockKind) -> String {
-    match kind {
+fn class_of(block: &BlockView) -> String {
+    let mut class = match &block.kind {
         BlockKind::Paragraph => "block p".to_owned(),
         BlockKind::Heading { level } => format!("block h h{}", level.clamp(&1, &6)),
         BlockKind::ListItem { .. } => "block li".to_owned(),
+    };
+    // A named style this shell gives a face to is a class too, so the stylesheet can space it
+    // — the two that are not headings and would otherwise be indistinguishable paragraphs.
+    if let Some(style @ ("Title" | "Subtitle")) = block.style.as_deref() {
+        class.push_str(&format!(" {}", style.to_lowercase()));
     }
+    class
+}
+
+/// Which option of the paragraph-style `<select>` a block *is* — the command id, so the
+/// toolbar reports in the same vocabulary it commands in.
+fn named_block(block: Option<&BlockView>) -> String {
+    let Some(block) = block else {
+        return "block.body".to_owned();
+    };
+    match block.style.as_deref() {
+        Some("Title") => return "block.title".to_owned(),
+        Some("Subtitle") => return "block.subtitle".to_owned(),
+        _ => {}
+    }
+    match &block.kind {
+        BlockKind::Heading { level } => format!("block.h{}", level.clamp(&1, &4)),
+        BlockKind::ListItem { .. } => "block.list".to_owned(),
+        BlockKind::Paragraph => "block.body".to_owned(),
+    }
+}
+
+/// Bytes as base64, for a picture's `data:` URL.
+///
+/// Written out rather than pulled in: it is fifteen lines, the alternative is a dependency in
+/// a `wasm` bundle that every reader downloads, and `window.btoa` would need the bytes turned
+/// into a string of code points first — which is the same loop with an extra copy.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = |at: usize| u32::from(chunk.get(at).copied().unwrap_or(0));
+        let triple = (b(0) << 16) | (b(1) << 8) | b(2);
+        for shift in [18, 12, 6, 0] {
+            let sextet = ((triple >> shift) & 0x3f) as usize;
+            // The last group is padded rather than truncated: `=` is how a decoder is told
+            // how many of the final bits are real.
+            let pad = match shift {
+                6 => chunk.len() < 2,
+                0 => chunk.len() < 3,
+                _ => false,
+            };
+            out.push(match pad {
+                true => '=',
+                false => ALPHABET[sextet] as char,
+            });
+        }
+    }
+    out
 }
 
 /// How far a block's text is indented — a list's nesting, and nothing else.
@@ -696,9 +1245,34 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
     // frame, and a listener each would be a listener each frame.
     let click = ui.clone();
     listen(&ui.dom.pane, "mousedown", move |event: MouseEvent| {
-        if let Err(error) = click.on_click(&event) {
+        // The browser's own text selection would otherwise start alongside this one, and the
+        // two would disagree about where it is.
+        event.prevent_default();
+        click.dragging.set(true);
+        if let Err(error) = click.on_click(&event, event.shift_key()) {
             web_sys::console::error_1(&error);
         }
+    })?;
+
+    // Dragging: every move with the button down extends the selection, which is the same
+    // "press, move, release" gesture `ui_text_gtk` gets from `GestureDrag`.
+    let drag = ui.clone();
+    listen(&ui.dom.pane, "mousemove", move |event: MouseEvent| {
+        if !drag.dragging.get() {
+            return;
+        }
+        if let Err(error) = drag.on_click(&event, true) {
+            web_sys::console::error_1(&error);
+        }
+    })?;
+
+    // On the *window*, not the pane: a drag that ends outside it still ends.
+    let Some(window) = web_sys::window() else {
+        return Ok(());
+    };
+    let release = ui.clone();
+    listen(&window, "mouseup", move |_: MouseEvent| {
+        release.dragging.set(false);
     })
 }
 
@@ -726,13 +1300,83 @@ pub fn declare_spacing(document: &Document) -> Result<(), JsValue> {
 mod tests {
     use super::*;
 
+    fn block(kind: BlockKind, style: Option<&str>) -> BlockView {
+        BlockView {
+            index: 0,
+            id: grind_text::BlockId(0),
+            kind,
+            style: style.map(str::to_owned),
+            text: String::new(),
+            runs: Vec::new(),
+            styled: false,
+        }
+    }
+
     #[test]
     fn a_block_carries_its_kind_as_a_class() {
-        assert_eq!(class_of(&BlockKind::Paragraph), "block p");
-        assert_eq!(class_of(&BlockKind::Heading { level: 2 }), "block h h2");
+        assert_eq!(class_of(&block(BlockKind::Paragraph, None)), "block p");
+        assert_eq!(
+            class_of(&block(BlockKind::Heading { level: 2 }, None)),
+            "block h h2"
+        );
         // A level the schema allows and this shell has no face for is still drawn.
-        assert_eq!(class_of(&BlockKind::Heading { level: 9 }), "block h h6");
-        assert_eq!(class_of(&BlockKind::ListItem { depth: 1 }), "block li");
+        assert_eq!(
+            class_of(&block(BlockKind::Heading { level: 9 }, None)),
+            "block h h6"
+        );
+        assert_eq!(
+            class_of(&block(BlockKind::ListItem { depth: 1 }, None)),
+            "block li"
+        );
+        // The two named styles that are not headings carry their name as well.
+        assert_eq!(
+            class_of(&block(BlockKind::Paragraph, Some("Title"))),
+            "block p title"
+        );
+        // A named style this shell has no face for is still an ordinary paragraph.
+        assert_eq!(
+            class_of(&block(BlockKind::Paragraph, Some("Quotations"))),
+            "block p"
+        );
+    }
+
+    /// The toolbar reports in the same vocabulary it commands in, so what it shows and what
+    /// pressing it would do cannot drift apart.
+    #[test]
+    fn the_style_picker_names_the_command_that_would_produce_the_block() {
+        assert_eq!(named_block(None), "block.body");
+        assert_eq!(
+            named_block(Some(&block(BlockKind::Heading { level: 3 }, None))),
+            "block.h3"
+        );
+        assert_eq!(
+            named_block(Some(&block(BlockKind::Paragraph, Some("Subtitle")))),
+            "block.subtitle"
+        );
+        assert_eq!(
+            named_block(Some(&block(BlockKind::ListItem { depth: 2 }, None))),
+            "block.list"
+        );
+        // Deeper than the picker offers, clamped to the deepest it does.
+        assert_eq!(
+            named_block(Some(&block(BlockKind::Heading { level: 9 }, None))),
+            "block.h4"
+        );
+    }
+
+    /// Checked against a known vector rather than against itself.
+    #[test]
+    fn base64_pads_the_last_group() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"M"), "TQ==");
+        assert_eq!(base64(b"Ma"), "TWE=");
+        assert_eq!(base64(b"Man"), "TWFu");
+        assert_eq!(
+            base64(b"any carnal pleasure"),
+            "YW55IGNhcm5hbCBwbGVhc3VyZQ=="
+        );
+        // A PNG's own first bytes, which is what this is actually for.
+        assert_eq!(base64(&[0x89, b'P', b'N', b'G']), "iVBORw==");
     }
 
     #[test]

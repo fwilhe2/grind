@@ -62,6 +62,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
 | `doc/sheet-shell.md` | Phase 9's work plan for the **spreadsheet's** GTK shell — normative for that phase |
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
+| `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/not-doing.md` | The feature line as a product document |
 
@@ -227,7 +228,7 @@ rather than a guest:
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
-| `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas |
+| `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
@@ -367,10 +368,18 @@ each crate's `Cargo.toml`, as artifacts on every push — not yet attached to a 
 arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download
 (`App::save_bytes`), with no path anywhere. Built by `ui_web/build.sh` (needs
 `wasm32-unknown-unknown` and a version-matched `wasm-bindgen-cli`), checked without a browser
-by `ui_web/smoke.sh` (jsdom) and by `cargo test -p grind-web` (keymap + layout arithmetic).
-Its spreadsheet gaps, on purpose: point mode, styling controls, column widths, and a uniform
-grid; its document pane's are in `doc/text-shell.md`. `doc/sheet-shell.md`'s "The gaps, written
-down" section is the up-to-date list of everything deferred by decision in phase 9.
+by `ui_web/smoke.sh` (jsdom) and by `cargo test -p grind-web` — the command table and its
+fuzzy match, both keymaps, the viewport and track arithmetic, the chart's geometry, and the
+line-cutting that turns formatting, a selection and a caret into `<span>`s.
+
+**`doc/web-shell.md` is normative for it**, and is where its gap list lives. Its one design
+decision: a browser tab has no menu bar and inventing one makes a worse desktop application, so
+there is one bar of verbs, one tool row per document type, and **Ctrl+K** for everything else —
+a palette over `ui_web/src/command.rs`, which is every verb as data. A command id is the one
+vocabulary a button, a key and a palette row all speak. The palette is also the go-to box (an
+address, a sheet, a defined name, a heading, a bookmark), which is why this shell has no go-to
+or outline dialog. `doc/sheet-shell.md`'s "The gaps, written down" section is the up-to-date
+list of everything deferred by decision in phase 9 for the *GTK* window.
 
 **Phase 10 (the suite) is done through S10**, planned in `doc/suite.md` — every cell of R10's
 shell matrix is now filled, some of them minimally and every gap named. S1–S6 split

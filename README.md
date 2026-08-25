@@ -164,10 +164,18 @@ cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' C
 python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
 ```
 
-Open, edit, formulas, undo, sheets, save as a download — **and it opens both document types
-too**, in one bundle, deciding which from the file's own bytes. Spreadsheet gaps: no point
-mode, no styling controls, one column width for everything. Document gaps:
-[`doc/text-shell.md`](doc/text-shell.md).
+**It is a web page, not a window pretending to be one.** One bar of verbs, one row of tools for
+whichever document is open, and **Ctrl+K** for everything else — a searchable list of every
+command either pane has, which doubles as the go-to box: type `B12`, a sheet's name, a defined
+name, or a heading, and it takes you there. Drop a file on the page to open it.
+
+Both document types, one bundle, decided from the file's own bytes. The spreadsheet has
+formatting (bold, alignment, colours, number formats, borders), copy/cut/paste through the
+browser's own clipboard, the document's own column widths and row heights, charts drawn as
+SVG, and sheets you can add, rename and delete. The word processor has a selection, character
+formatting, headings and the two named paragraph styles, its own pictures, and the outline in
+the palette. What is deliberately missing is listed in
+[`doc/web-shell.md`](doc/web-shell.md).
 
 ## Your files stay yours
 

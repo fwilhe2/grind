@@ -22,10 +22,20 @@
 //! above them is the same toolbar either way.
 //!
 //! This file is that shell: the chrome both panes share (open, save, undo, redo, the
-//! document's name), the dispatch, and the frame scheduling. Everything about a *grid* is in
-//! [`sheet`] and everything about a *document* is in [`text`].
+//! command palette, the colour grid, the clipboard, the document's name), the dispatch, and
+//! the frame scheduling. Everything about a *grid* is in [`sheet`] and everything about a
+//! *document* is in [`text`].
+//!
+//! **It is a web page, not a window.** There is no menu bar to imitate and no window manager
+//! to borrow chrome from, so this shell does not pretend: one bar of verbs, one row of tools
+//! for whichever document is open, and [`command`]'s palette — Ctrl+K — for everything else,
+//! including going somewhere. A file dropped on the page opens; the clipboard is the
+//! browser's own, through the events every browser already sends.
 
+pub mod command;
+pub mod palette;
 pub mod sheet;
+pub mod swatch;
 pub mod text;
 
 use std::cell::{Cell, RefCell};
@@ -37,8 +47,11 @@ use grind_core::{DocumentKind, Form, Observer, kind};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
-    Document, Event, File, HtmlAnchorElement, HtmlButtonElement, HtmlElement, HtmlInputElement,
+    ClipboardEvent, Document, DragEvent, Element, Event, File, HtmlAnchorElement,
+    HtmlButtonElement, HtmlElement, HtmlInputElement, KeyboardEvent, MouseEvent,
 };
+
+use command::Entry;
 
 /// What a document nobody has opened is downloaded as — one per document type.
 ///
@@ -86,6 +99,8 @@ pub fn start() -> Result<(), JsValue> {
         sheet: sheet::Ui::new(&document, sheet_app, pending.clone())?,
         text: text::Ui::new(&document, text_app, pending.clone())?,
         dom: Chrome::find(&document)?,
+        palette: palette::Palette::find(&document)?,
+        swatches: Rc::new(swatch::Swatches::find(&document)?),
         pending,
         mode: Cell::new(Mode::Sheet),
         name: RefCell::new(String::new()),
@@ -96,6 +111,10 @@ pub fn start() -> Result<(), JsValue> {
 
     wire_toolbar(&shell)?;
     wire_file_input(&shell)?;
+    wire_palette(&shell)?;
+    wire_swatches(&shell)?;
+    wire_clipboard(&shell, &document)?;
+    wire_dropping(&shell, &document)?;
     wire_window(&shell, &window)?;
 
     SHELL.with(|slot| *slot.borrow_mut() = Some(shell.clone()));
@@ -131,15 +150,20 @@ struct Chrome {
     sheet_pane: HtmlElement,
     text_pane: HtmlElement,
     formula_bar: HtmlElement,
-    /// The sheet tabs. A document has no sheets, so in text mode they go with the grid.
+    /// The two tool rows — one per document type, and only one of them ever on screen.
+    sheet_tools: HtmlElement,
+    text_tools: HtmlElement,
+    /// The sheet tabs and their `+`. A document has no sheets, so both go with the grid.
     tabs: HtmlElement,
+    sheet_add: HtmlButtonElement,
     name: HtmlElement,
-    open: HtmlButtonElement,
-    save: HtmlButtonElement,
     undo: HtmlButtonElement,
     redo: HtmlButtonElement,
     recalc: HtmlButtonElement,
+    palette_open: HtmlButtonElement,
     file_input: HtmlInputElement,
+    /// The overlay shown while a file is being dragged across the page.
+    drop: HtmlElement,
 }
 
 impl Chrome {
@@ -149,14 +173,17 @@ impl Chrome {
             sheet_pane: element(document, "surface")?,
             text_pane: element(document, "page")?,
             formula_bar: element(document, "formula-bar")?,
+            sheet_tools: element(document, "sheet-tools")?,
+            text_tools: element(document, "text-tools")?,
             tabs: element(document, "tabs")?,
+            sheet_add: element(document, "sheet-add")?,
             name: element(document, "name")?,
-            open: element(document, "open")?,
-            save: element(document, "save")?,
             undo: element(document, "undo")?,
             redo: element(document, "redo")?,
             recalc: element(document, "recalc")?,
+            palette_open: element(document, "palette-open")?,
             file_input: element(document, "file-input")?,
+            drop: element(document, "drop")?,
         })
     }
 }
@@ -166,6 +193,8 @@ struct Shell {
     sheet: Rc<sheet::Ui>,
     text: Rc<text::Ui>,
     dom: Chrome,
+    palette: palette::Palette,
+    swatches: Rc<swatch::Swatches>,
     /// Set by either observer, cleared by the repaint it asked for.
     pending: Arc<AtomicBool>,
     mode: Cell<Mode>,
@@ -197,7 +226,12 @@ impl Shell {
             Mode::Text => "text",
         };
         self.dom.document.set_title(&format!("{name} — {what}"));
-        Ok(())
+        // The tool row shows what the *selection* already is, so pressing Bold on bold text
+        // reads as "this is bold" rather than as "make it bold again".
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.refresh_tools(),
+            Mode::Text => self.text.refresh_tools(),
+        }
     }
 
     /// Put one pane on screen and take the other one off.
@@ -211,6 +245,9 @@ impl Shell {
         self.dom.sheet_pane.set_hidden(!sheet);
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
+        self.dom.sheet_add.set_hidden(!sheet);
+        self.dom.sheet_tools.set_hidden(!sheet);
+        self.dom.text_tools.set_hidden(sheet);
         self.dom.text_pane.set_hidden(sheet);
         // Recalculation is a spreadsheet's word. The button goes rather than greying out:
         // there is no such thing as an unrecalculated paragraph.
@@ -219,6 +256,119 @@ impl Shell {
             true => self.sheet.focus(),
             false => self.text.focus(),
         }
+    }
+
+    // --- the command palette ---
+
+    /// What the palette shows for a query: whatever the pane can *go to*, then the verbs.
+    ///
+    /// Targets first because they are the specific answer — someone who typed `B12` meant the
+    /// cell, and someone who typed `bold` gets no targets at all.
+    fn entries(&self, query: &str) -> Vec<Entry> {
+        let (table, mut entries) = match self.mode.get() {
+            Mode::Sheet => (command::SHEET, self.sheet.targets(query)),
+            Mode::Text => (command::TEXT, self.text.targets(query)),
+        };
+        entries.extend(command::filter(table, query));
+        entries
+    }
+
+    fn open_palette(&self) {
+        self.swatches.close();
+        if let Err(error) = self.palette.open(self.entries("")) {
+            web_sys::console::error_1(&error);
+        }
+    }
+
+    fn close_palette(&self) {
+        self.palette.close();
+        let _ = self.show(self.mode.get());
+    }
+
+    /// Run whatever the palette (or a toolbar button, or a shortcut) asked for.
+    ///
+    /// The chrome's own verbs are answered here and everything else goes to the pane that is
+    /// showing — so a command id is the one vocabulary a button, a key and a palette row all
+    /// speak, and there is no second path for any of them to drift down.
+    fn run(self: &Rc<Self>, id: &str) {
+        match id {
+            "doc.open" => self.open_picker(),
+            "doc.save" => self.save(),
+            "doc.undo" => self.undo(),
+            "doc.redo" => self.redo(),
+            "edit.copy" => self.copy_out(false),
+            "edit.cut" => self.copy_out(true),
+            "edit.paste" => self.paste_in(),
+            _ => match self.mode.get() {
+                Mode::Sheet => self.sheet.run(id),
+                Mode::Text => self.text.run(id),
+            },
+        }
+    }
+
+    // --- the clipboard ---
+
+    /// What the showing pane would put on the clipboard, as plain text. `None` when there is
+    /// nothing to copy.
+    fn clipboard_text(&self) -> Option<String> {
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.clipboard_text(),
+            Mode::Text => self.text.clipboard_text(),
+        }
+    }
+
+    fn paste_text(&self, text: &str) {
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.paste_text(text),
+            Mode::Text => self.text.paste_text(text),
+        }
+    }
+
+    fn delete_selection(&self) {
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.run("edit.clear"),
+            Mode::Text => {
+                self.text.erase_selection();
+            }
+        }
+    }
+
+    /// Copy — or cut — from a *command* rather than from the browser's own event.
+    ///
+    /// `navigator.clipboard.writeText` needs the user gesture it is running inside, which a
+    /// palette row and a toolbar button both are. The `copy`/`cut` events handle Ctrl+C and
+    /// Ctrl+X without any of this; both paths end in the same two calls.
+    fn copy_out(&self, cut: bool) {
+        let Some(text) = self.clipboard_text() else {
+            return self.set_message("Nothing to copy".to_owned());
+        };
+        let Some(clipboard) = clipboard() else {
+            return self.set_message("Press Ctrl+C to copy".to_owned());
+        };
+        let _ = clipboard.write_text(&text);
+        if cut {
+            self.delete_selection();
+        }
+        self.set_message(match cut {
+            true => "Cut".to_owned(),
+            false => "Copied".to_owned(),
+        });
+    }
+
+    /// Paste from a command. Reading the clipboard is the half browsers guard: it may prompt,
+    /// and in some it is not there at all — so a failure says which key does work rather than
+    /// leaving the command looking broken.
+    fn paste_in(self: &Rc<Self>) {
+        let Some(clipboard) = clipboard() else {
+            return self.set_message("Press Ctrl+V to paste".to_owned());
+        };
+        let shell = self.clone();
+        spawn_local(async move {
+            match JsFuture::from(clipboard.read_text()).await {
+                Ok(text) => shell.paste_text(&text.as_string().unwrap_or_default()),
+                Err(_) => shell.set_message("Press Ctrl+V to paste".to_owned()),
+            }
+        });
     }
 
     fn can_undo(&self) -> bool {
@@ -406,6 +556,17 @@ impl Shell {
     }
 }
 
+/// Run a command from a pane — the same path a palette row and a toolbar button take.
+///
+/// A pane cannot hold an `Rc<Shell>` (a cycle that never drops), and `Shell::run` needs one
+/// because pasting is asynchronous, so this reaches the live shell and hands the id over.
+pub(crate) fn run_command(id: &str) {
+    let shell = SHELL.with(|slot| slot.borrow().clone());
+    if let Some(shell) = shell {
+        shell.run(id);
+    }
+}
+
 /// Reach the live shell from a pane — the chrome's actions belong to it, and a pane that
 /// held an `Rc` to its owner would be a cycle that never drops.
 pub(crate) fn with_shell(f: impl FnOnce(&Shell)) {
@@ -446,6 +607,53 @@ pub(crate) fn request_frame() {
     let _ = window.request_animation_frame(callback.unchecked_ref());
 }
 
+/// `navigator.clipboard`, if this browser has one.
+///
+/// Looked up by property rather than through `Navigator::clipboard`, which assumes it is
+/// there — it is absent in some browsers and in every headless runtime, and calling a method
+/// on `undefined` would throw out of wasm rather than come back as `None`.
+fn clipboard() -> Option<web_sys::Clipboard> {
+    let navigator = web_sys::window()?.navigator();
+    let value = js_sys::Reflect::get(&navigator, &JsValue::from_str("clipboard")).ok()?;
+    (!value.is_undefined() && !value.is_null()).then(|| value.unchecked_into())
+}
+
+/// Show a toolbar toggle as pressed or not.
+///
+/// `aria-pressed` rather than a class: it is what a screen reader reads, the stylesheet keys
+/// off the same attribute, and there is then one answer to "is this on" rather than two.
+pub(crate) fn set_pressed(document: &Document, id: &str, on: bool) {
+    if let Some(button) = document.get_element_by_id(id) {
+        let _ = button.set_attribute("aria-pressed", if on { "true" } else { "false" });
+    }
+}
+
+/// Show the colour a swatch button would apply, in the bar under its glyph. `None` paints the
+/// page's own text colour, which is what "no colour of its own" looks like.
+pub(crate) fn set_swatch(document: &Document, id: &str, color: Option<&str>) {
+    if let Some(bar) = document.get_element_by_id(id) {
+        let _ = bar.set_attribute(
+            "style",
+            &match color {
+                Some(hex) => format!("background:{hex}"),
+                None => "background:currentColor".to_owned(),
+            },
+        );
+    }
+}
+
+/// Point a `<select>` at one of its options, without firing `change` — this is the toolbar
+/// *reporting* what the selection already is, not asking for it to change.
+pub(crate) fn set_select(document: &Document, id: &str, value: &str) {
+    if let Some(select) = document
+        .get_element_by_id(id)
+        .and_then(|e| e.dyn_into::<web_sys::HtmlSelectElement>().ok())
+        && select.value() != value
+    {
+        select.set_value(value);
+    }
+}
+
 pub(crate) fn element<T: JsCast>(document: &Document, id: &str) -> Result<T, JsValue> {
     document
         .get_element_by_id(id)
@@ -470,38 +678,330 @@ pub(crate) fn js(error: impl std::fmt::Display) -> JsValue {
 
 // --- wiring ---
 
+/// Every button in the chrome, and every button in either tool row.
+///
+/// **All of them run a command id.** A button is a way to say a verb, never a second
+/// implementation of one — which is what keeps the toolbar, the palette and the keyboard
+/// from drifting apart, and what makes `every_button_names_a_command` checkable.
 fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
-    // Every button hands the keyboard back: a toolbar that keeps focus leaves the user
-    // typing into nothing.
-    type Press = fn(&Shell);
-    // The flag is "does this button take the focus somewhere on purpose" — opening puts it
-    // in the file picker, which is the one place it should stay.
-    for (button, press, keeps_focus) in [
-        (
-            &shell.dom.open,
-            (|s: &Shell| s.open_picker()) as Press,
-            true,
-        ),
-        (&shell.dom.save, |s| s.save(), false),
-        (&shell.dom.undo, |s| s.undo(), false),
-        (&shell.dom.redo, |s| s.redo(), false),
-        (
-            &shell.dom.recalc,
-            |s| {
-                let _ = s.sheet.apply(sheet::keymap::Action::Recalc);
-            },
-            false,
-        ),
-    ] {
+    // `(element id, command id, does it keep the focus)`. Opening is the one that keeps it:
+    // the focus belongs in the file picker it just raised. Everything else hands the keyboard
+    // straight back, or the next keystroke goes to a button instead of the document.
+    const BUTTONS: &[(&str, &str, bool)] = &[
+        ("open", "doc.open", true),
+        ("save", "doc.save", false),
+        ("undo", "doc.undo", false),
+        ("redo", "doc.redo", false),
+        ("recalc", "sheet.recalc", false),
+        ("sheet-add", "sheet.add", false),
+        ("s-bold", "style.bold", false),
+        ("s-italic", "style.italic", false),
+        ("s-align-left", "style.align-left", false),
+        ("s-align-center", "style.align-center", false),
+        ("s-align-right", "style.align-right", false),
+        ("s-wrap", "style.wrap", false),
+        ("s-border", "style.border", false),
+        ("s-fewer", "format.fewer", false),
+        ("s-more", "format.more", false),
+        ("t-bold", "char.bold", false),
+        ("t-italic", "char.italic", false),
+        ("t-underline", "char.underline", false),
+        ("t-strike", "char.strike", false),
+        ("t-clear", "char.clear", false),
+    ];
+    for (id, command, keeps_focus) in BUTTONS {
+        let button: HtmlButtonElement = element(&shell.dom.document, id)?;
+        // **`click`, not `mousedown`.** A `mousedown` handler is unreachable from the
+        // keyboard — Enter and Space on a focused button fire `click` and nothing else — and
+        // this row has to work without a pointer.
         let shell = shell.clone();
-        listen(button, "click", move |_: Event| {
-            press(&shell);
+        let command = (*command).to_owned();
+        let keeps_focus = *keeps_focus;
+        listen(&button, "click", move |_: Event| {
+            shell.swatches.close();
+            shell.run(&command);
             if !keeps_focus {
                 let _ = shell.show(shell.mode.get());
             }
         })?;
+        // Refusing the *press* is what keeps the button from taking the focus off the
+        // document first, which is the reason `mousedown` was tempting above.
+        keep_focus(&button)?;
+    }
+
+    // The two `<select>`s are the same thing with more than two states, so they run the
+    // command their chosen option names.
+    for id in ["s-format", "t-block"] {
+        let select: HtmlElement = element(&shell.dom.document, id)?;
+        let shell = shell.clone();
+        listen(&select, "change", move |event: Event| {
+            let Some(select) = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::HtmlSelectElement>().ok())
+            else {
+                return;
+            };
+            shell.run(&select.value());
+            let _ = shell.show(shell.mode.get());
+        })?;
+    }
+
+    // The palette's own button is not a command: it opens the list of them.
+    Ok(())
+}
+
+/// The palette: opening it, typing in it, and choosing a row.
+///
+/// Its own keys are handled here rather than in a keymap because they are the palette's, not
+/// the document's — a list has Up, Down, Enter and Escape whatever is in it.
+fn wire_palette(shell: &Rc<Shell>) -> Result<(), JsValue> {
+    let open = shell.clone();
+    listen(&shell.dom.palette_open, "click", move |_: Event| {
+        open.open_palette();
+    })?;
+
+    // Ctrl+K from anywhere, including from inside the panes' own key handlers, because this
+    // listens on the document in the capture phase — a palette a pane could swallow would be
+    // a palette that works in some places and not others.
+    let keys = shell.clone();
+    let listener = Closure::wrap(Box::new(move |event: KeyboardEvent| {
+        let primary = event.ctrl_key() || event.meta_key();
+        match event.key().as_str() {
+            "k" | "K" if primary => {
+                event.prevent_default();
+                event.stop_propagation();
+                match keys.palette.is_open() {
+                    true => keys.close_palette(),
+                    false => keys.open_palette(),
+                }
+            }
+            "Escape" if keys.palette.is_open() => {
+                event.prevent_default();
+                event.stop_propagation();
+                keys.close_palette();
+            }
+            "Escape" if keys.swatches.is_open() => keys.swatches.close(),
+            _ => {}
+        }
+    }) as Box<dyn FnMut(KeyboardEvent)>);
+    shell
+        .dom
+        .document
+        .add_event_listener_with_callback_and_bool(
+            "keydown",
+            listener.as_ref().unchecked_ref(),
+            true,
+        )?;
+    listener.forget();
+
+    let typed = shell.clone();
+    listen(&shell.palette.input, "input", move |_: Event| {
+        let entries = typed.entries(&typed.palette.query());
+        if let Err(error) = typed.palette.show(entries) {
+            web_sys::console::error_1(&error);
+        }
+    })?;
+
+    let moved = shell.clone();
+    listen(
+        &shell.palette.input,
+        "keydown",
+        move |event: KeyboardEvent| {
+            let step = match event.key().as_str() {
+                "ArrowDown" => 1,
+                "ArrowUp" => -1,
+                "Enter" => {
+                    event.prevent_default();
+                    if let Some(id) = moved.palette.chosen() {
+                        moved.close_palette();
+                        moved.run(&id);
+                    }
+                    return;
+                }
+                _ => return,
+            };
+            event.prevent_default();
+            let _ = moved.palette.step(step);
+        },
+    )?;
+
+    // Pointing at the palette: hovering picks, pressing runs. `mousedown` rather than `click`,
+    // so the row does not have to survive the input losing focus first.
+    let list: HtmlElement = element(&shell.dom.document, "palette-list")?;
+    let over = shell.clone();
+    listen(&list, "mousemove", move |event: MouseEvent| {
+        if let Some(index) = row_index(&event) {
+            let _ = over.palette.pick(index);
+        }
+    })?;
+    let hit = shell.clone();
+    listen(&list, "mousedown", move |event: MouseEvent| {
+        let Some(index) = row_index(&event) else {
+            return;
+        };
+        event.prevent_default();
+        let _ = hit.palette.pick(index);
+        if let Some(id) = hit.palette.chosen() {
+            hit.close_palette();
+            hit.run(&id);
+        }
+    })?;
+
+    // Clicking the backdrop closes it, which is what every overlay on the web does.
+    let away = shell.clone();
+    listen(&shell.palette.input, "blur", move |_: Event| {
+        // Only when the pointer went somewhere else entirely — a click *inside* the list
+        // refocuses through the handlers above.
+        if away.palette.is_open() {
+            away.close_palette();
+        }
+    })
+}
+
+fn row_index(event: &MouseEvent) -> Option<usize> {
+    let target = event.target()?.dyn_into::<Element>().ok()?;
+    target
+        .closest("li")
+        .ok()??
+        .get_attribute("data-index")?
+        .parse()
+        .ok()
+}
+
+/// The colour grid: which button opens it, and what a pick means.
+fn wire_swatches(shell: &Rc<Shell>) -> Result<(), JsValue> {
+    let owner = shell.clone();
+    swatch::wire(&shell.swatches, move |target, hex| {
+        match owner.mode.get() {
+            Mode::Sheet => owner.sheet.set_color(&target, hex),
+            Mode::Text => owner.text.set_color(&target, hex),
+        }
+        let _ = owner.show(owner.mode.get());
+    })?;
+
+    // Every swatch button in either tool row, and which property its grid sets.
+    for (id, target) in [
+        ("s-color", "color"),
+        ("s-fill", "fill"),
+        ("t-color", "color"),
+        ("t-highlight", "highlight"),
+    ] {
+        let button: HtmlButtonElement = element(&shell.dom.document, id)?;
+        let shell = shell.clone();
+        let target = target.to_owned();
+        let anchor = button.clone();
+        listen(&button, "click", move |_: Event| {
+            match shell.swatches.target().as_deref() == Some(target.as_str()) {
+                true => shell.swatches.close(),
+                false => {
+                    if let Err(error) = shell.swatches.open(&anchor, target.clone()) {
+                        web_sys::console::error_1(&error);
+                    }
+                }
+            }
+        })?;
+        keep_focus(&button)?;
     }
     Ok(())
+}
+
+/// Stop a button taking the focus when it is pressed with the pointer.
+///
+/// The document being edited has to keep the keyboard: a toolbar that steals it leaves the
+/// user typing into a button. Refusing `mousedown`'s default is the web's way to say so, and
+/// it leaves `click` — and therefore the keyboard — untouched.
+fn keep_focus(button: &HtmlButtonElement) -> Result<(), JsValue> {
+    listen(button, "mousedown", move |event: MouseEvent| {
+        event.prevent_default();
+    })
+}
+
+/// Copy, cut and paste through the browser's own events.
+///
+/// **This is the path Ctrl+C actually takes.** `navigator.clipboard` needs a permission a
+/// `copy` event does not, so the keys work everywhere and the palette's own commands are the
+/// ones that fall back. Listened for on the document, because the event fires at whatever has
+/// the focus and both panes are `tabindex` divs rather than fields.
+fn wire_clipboard(shell: &Rc<Shell>, document: &Document) -> Result<(), JsValue> {
+    // An edit in progress belongs to its `<input>`: the browser's own copy of a selected
+    // formula is right, and ours would replace it with the cell underneath.
+    let editing = |shell: &Shell| shell.mode.get() == Mode::Sheet && shell.sheet.is_editing();
+
+    let copy = shell.clone();
+    listen(document, "copy", move |event: ClipboardEvent| {
+        if editing(&copy) || copy.palette.is_open() {
+            return;
+        }
+        let (Some(data), Some(text)) = (event.clipboard_data(), copy.clipboard_text()) else {
+            return;
+        };
+        event.prevent_default();
+        let _ = data.set_data("text/plain", &text);
+    })?;
+
+    let cut = shell.clone();
+    listen(document, "cut", move |event: ClipboardEvent| {
+        if editing(&cut) || cut.palette.is_open() {
+            return;
+        }
+        let (Some(data), Some(text)) = (event.clipboard_data(), cut.clipboard_text()) else {
+            return;
+        };
+        event.prevent_default();
+        let _ = data.set_data("text/plain", &text);
+        cut.delete_selection();
+    })?;
+
+    let paste = shell.clone();
+    listen(document, "paste", move |event: ClipboardEvent| {
+        if editing(&paste) || paste.palette.is_open() {
+            return;
+        }
+        let Some(data) = event.clipboard_data() else {
+            return;
+        };
+        let Ok(text) = data.get_data("text/plain") else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+        event.prevent_default();
+        paste.paste_text(&text);
+    })
+}
+
+/// Dropping a document on the page opens it — the gesture a browser has and a file dialog is
+/// the long way round. The same bytes reach `Shell::open` either way.
+fn wire_dropping(shell: &Rc<Shell>, document: &Document) -> Result<(), JsValue> {
+    let over = shell.clone();
+    listen(document, "dragover", move |event: DragEvent| {
+        // Without this the browser navigates to the file, which loses the page.
+        event.prevent_default();
+        over.dom.drop.set_hidden(false);
+    })?;
+
+    let left = shell.clone();
+    listen(document, "dragleave", move |event: DragEvent| {
+        // Only when the pointer left the *page*, not one element inside it.
+        if event.related_target().is_none() {
+            left.dom.drop.set_hidden(true);
+        }
+    })?;
+
+    let dropped = shell.clone();
+    listen(document, "drop", move |event: DragEvent| {
+        event.prevent_default();
+        dropped.dom.drop.set_hidden(true);
+        let Some(file) = event
+            .data_transfer()
+            .and_then(|data| data.files())
+            .and_then(|files| files.get(0))
+        else {
+            return;
+        };
+        spawn_local(dropped.clone().load(file));
+    })
 }
 
 fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {

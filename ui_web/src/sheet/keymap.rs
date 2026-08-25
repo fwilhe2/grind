@@ -61,13 +61,10 @@ pub enum Action {
     /// Store what is being edited, then move — Enter and Tab.
     Commit(Option<Dir>),
     Cancel,
-    /// Empty the selection, which `App::enter` spells as entering nothing.
-    Clear,
-    Undo,
-    Redo,
-    Open,
-    Save,
-    Recalc,
+    /// A command, by the id [`crate::command::SHEET`] names it with. Every modifier chord
+    /// this shell claims is one of these, so a key, a toolbar button and a palette row all
+    /// run the same code.
+    Run(&'static str),
 }
 
 /// The whole map. `None` means the shell does not claim the key, and the browser
@@ -93,11 +90,16 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
 
     if chord.primary {
         return match chord.key {
-            "z" | "Z" if chord.shift => Some(Action::Redo),
-            "z" | "Z" => Some(Action::Undo),
-            "y" | "Y" => Some(Action::Redo),
-            "o" | "O" => Some(Action::Open),
-            "s" | "S" => Some(Action::Save),
+            "z" | "Z" if chord.shift => Some(Action::Run("doc.redo")),
+            "z" | "Z" => Some(Action::Run("doc.undo")),
+            "y" | "Y" => Some(Action::Run("doc.redo")),
+            "o" | "O" => Some(Action::Run("doc.open")),
+            "s" | "S" => Some(Action::Run("doc.save")),
+            "b" | "B" => Some(Action::Run("style.bold")),
+            "i" | "I" => Some(Action::Run("style.italic")),
+            "a" | "A" => Some(Action::Run("edit.select-all")),
+            "d" | "D" => Some(Action::Run("edit.fill-down")),
+            "r" | "R" => Some(Action::Run("edit.fill-right")),
             "Home" => Some(Action::Move {
                 motion: Motion::SheetStart,
                 extend: chord.shift,
@@ -106,6 +108,8 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
                 motion: Motion::SheetEnd,
                 extend: chord.shift,
             }),
+            // Ctrl+C, Ctrl+X and Ctrl+V stay with the browser, whose events are how this
+            // shell reaches the clipboard at all.
             _ => None,
         };
     }
@@ -129,8 +133,8 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
         "Home" => motion(Motion::RowStart),
         "End" => motion(Motion::RowEnd),
         "F2" => Some(Action::Begin(None)),
-        "F9" => Some(Action::Recalc),
-        "Delete" | "Backspace" => Some(Action::Clear),
+        "F9" => Some(Action::Run("sheet.recalc")),
+        "Delete" | "Backspace" => Some(Action::Run("edit.clear")),
         // A printable key starts an edit and *is* its first character. The browser
         // spells every named key with more than one character, which is exactly the
         // test for "printable" — `"a"` is a key, `"ArrowUp"` is a name.
@@ -241,9 +245,18 @@ mod tests {
     #[test]
     fn a_shortcut_is_not_typing() {
         // Ctrl+S must save, not enter an "s" into the cell.
-        assert_eq!(action_for(&primary("s"), false), Some(Action::Save));
-        assert_eq!(action_for(&primary("o"), false), Some(Action::Open));
-        assert_eq!(action_for(&primary("z"), false), Some(Action::Undo));
+        assert_eq!(
+            action_for(&primary("s"), false),
+            Some(Action::Run("doc.save"))
+        );
+        assert_eq!(
+            action_for(&primary("o"), false),
+            Some(Action::Run("doc.open"))
+        );
+        assert_eq!(
+            action_for(&primary("z"), false),
+            Some(Action::Run("doc.undo"))
+        );
         assert_eq!(
             action_for(
                 &Chord {
@@ -252,11 +265,21 @@ mod tests {
                 },
                 false
             ),
-            Some(Action::Redo)
+            Some(Action::Run("doc.redo"))
         );
-        assert_eq!(action_for(&primary("y"), false), Some(Action::Redo));
-        // And an unclaimed one is still the browser's.
-        assert_eq!(action_for(&primary("t"), false), None);
+        assert_eq!(
+            action_for(&primary("y"), false),
+            Some(Action::Run("doc.redo"))
+        );
+        assert_eq!(
+            action_for(&primary("b"), false),
+            Some(Action::Run("style.bold"))
+        );
+        // And an unclaimed one is still the browser's — including the clipboard's three,
+        // whose *events* are how this shell reaches it.
+        for key in ["t", "c", "x", "v"] {
+            assert_eq!(action_for(&primary(key), false), None, "{key}");
+        }
     }
 
     /// The rule that makes editing work at all: the three keys that end an edit are

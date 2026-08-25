@@ -16,16 +16,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       The page is scaffolding: every element here is empty, and the shell fills it
       from `App::get_viewport` on each frame. Nothing in this file is document
       state, which is the same rule the GTK and TUI shells follow.
+
+      The icons are inline `<svg>` drawn from straight lines here rather than a
+      font or an icon set — a web page has no icon theme to borrow from, and three
+      rectangles are cheaper than a dependency.
     -->
-    <header class="bar">
-      <button id="open" type="button">Open…</button>
-      <button id="save" type="button">Save</button>
-      <span class="gap"></span>
-      <button id="undo" type="button" disabled>Undo</button>
-      <button id="redo" type="button" disabled>Redo</button>
-      <button id="recalc" type="button">Recalc</button>
+    <header class="bar app">
+      <span class="brand" aria-hidden="true">grind</span>
+      <button id="open" type="button" class="text">Open…</button>
+      <button id="save" type="button" class="text">Save</button>
+      <span class="rule"></span>
+      <button id="undo" type="button" class="icon" title="Undo (Ctrl+Z)" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6 4 2.5 7.5 6 11" />
+          <path d="M2.5 7.5H9a4 4 0 0 1 0 8H6" />
+        </svg>
+        <span class="sr">Undo</span>
+      </button>
+      <button id="redo" type="button" class="icon" title="Redo (Ctrl+Shift+Z)" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M10 4 13.5 7.5 10 11" />
+          <path d="M13.5 7.5H7a4 4 0 0 0 0 8h3" />
+        </svg>
+        <span class="sr">Redo</span>
+      </button>
+      <button id="recalc" type="button" class="text" title="Recalculate (F9)">Recalc</button>
       <span class="gap"></span>
       <span id="name" class="name"></span>
+      <button id="palette-open" type="button" class="text keyed">
+        Commands<kbd>Ctrl K</kbd>
+      </button>
       <!-- Hidden because the toolbar button is the affordance; the picker is the
            browser's own, and the only way a page may read a file. -->
       <input
@@ -36,8 +56,144 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       />
     </header>
 
+    <!-- One tool row, two contents: whichever document is open shows its own. -->
+    <div id="tools" class="bar tools">
+      <div id="sheet-tools" class="tool-group">
+        <button id="s-bold" type="button" class="icon toggle" title="Bold (Ctrl+B)">
+          <span class="glyph bold">B</span><span class="sr">Bold</span>
+        </button>
+        <button id="s-italic" type="button" class="icon toggle" title="Italic (Ctrl+I)">
+          <span class="glyph italic">I</span><span class="sr">Italic</span>
+        </button>
+        <span class="rule"></span>
+        <button id="s-align-left" type="button" class="icon toggle" title="Align left">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 4h12M2 8h7M2 12h10" />
+          </svg>
+          <span class="sr">Align left</span>
+        </button>
+        <button id="s-align-center" type="button" class="icon toggle" title="Align centre">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 4h12M4.5 8h7M3 12h10" />
+          </svg>
+          <span class="sr">Align centre</span>
+        </button>
+        <button id="s-align-right" type="button" class="icon toggle" title="Align right">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 4h12M7 8h7M4 12h10" />
+          </svg>
+          <span class="sr">Align right</span>
+        </button>
+        <button id="s-wrap" type="button" class="icon toggle" title="Wrap text">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 4h12M2 8h9a2.5 2.5 0 0 1 0 5H8" />
+            <path d="M10 11 8 13l2 2" />
+            <path d="M2 12h3" />
+          </svg>
+          <span class="sr">Wrap text</span>
+        </button>
+        <span class="rule"></span>
+        <div class="swatch-host">
+          <button id="s-color" type="button" class="icon swatch-button" title="Text colour">
+            <span class="glyph">A</span>
+            <span id="s-color-bar" class="swatch-bar"></span>
+            <span class="sr">Text colour</span>
+          </button>
+        </div>
+        <div class="swatch-host">
+          <button id="s-fill" type="button" class="icon swatch-button" title="Fill colour">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 9 8 4l5 5-5 5z" />
+              <path d="M13 10.5c1 1.4 1.5 2.2 1.5 2.8a1.5 1.5 0 0 1-3 0c0-.6.5-1.4 1.5-2.8z" />
+            </svg>
+            <span id="s-fill-bar" class="swatch-bar"></span>
+            <span class="sr">Fill colour</span>
+          </button>
+        </div>
+        <button id="s-border" type="button" class="icon" title="Add borders">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="11" height="11" />
+            <path d="M8 2.5v11M2.5 8h11" />
+          </svg>
+          <span class="sr">Add borders</span>
+        </button>
+        <span class="rule"></span>
+        <select id="s-format" aria-label="Number format">
+          <option value="format.general">General</option>
+          <option value="format.integer">1 235</option>
+          <option value="format.number">1 234.57</option>
+          <option value="format.percent">Per cent</option>
+          <option value="format.currency">Currency</option>
+          <option value="format.date">Date</option>
+          <option value="format.time">Time</option>
+          <option value="format.datetime">Date and time</option>
+        </select>
+        <button id="s-fewer" type="button" class="icon" title="Fewer decimal places">
+          <span class="glyph small">.0</span><span class="sr">Fewer decimal places</span>
+        </button>
+        <button id="s-more" type="button" class="icon" title="More decimal places">
+          <span class="glyph small">.00</span><span class="sr">More decimal places</span>
+        </button>
+      </div>
+
+      <div id="text-tools" class="tool-group" hidden>
+        <select id="t-block" aria-label="Paragraph style">
+          <option value="block.body">Body text</option>
+          <option value="block.title">Title</option>
+          <option value="block.subtitle">Subtitle</option>
+          <option value="block.h1">Heading 1</option>
+          <option value="block.h2">Heading 2</option>
+          <option value="block.h3">Heading 3</option>
+          <option value="block.h4">Heading 4</option>
+          <option value="block.list">List item</option>
+        </select>
+        <span class="rule"></span>
+        <button id="t-bold" type="button" class="icon toggle" title="Bold (Ctrl+B)">
+          <span class="glyph bold">B</span><span class="sr">Bold</span>
+        </button>
+        <button id="t-italic" type="button" class="icon toggle" title="Italic (Ctrl+I)">
+          <span class="glyph italic">I</span><span class="sr">Italic</span>
+        </button>
+        <button id="t-underline" type="button" class="icon toggle" title="Underline (Ctrl+U)">
+          <span class="glyph underline">U</span><span class="sr">Underline</span>
+        </button>
+        <button id="t-strike" type="button" class="icon toggle" title="Strikethrough">
+          <span class="glyph strike">S</span><span class="sr">Strikethrough</span>
+        </button>
+        <div class="swatch-host">
+          <button id="t-color" type="button" class="icon swatch-button" title="Text colour">
+            <span class="glyph">A</span>
+            <span id="t-color-bar" class="swatch-bar"></span>
+            <span class="sr">Text colour</span>
+          </button>
+        </div>
+        <div class="swatch-host">
+          <button id="t-highlight" type="button" class="icon swatch-button" title="Highlight">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 11 9.5 5.5l2 2L6 13H4z" />
+              <path d="M2 15h12" />
+            </svg>
+            <span id="t-highlight-bar" class="swatch-bar"></span>
+            <span class="sr">Highlight</span>
+          </button>
+        </div>
+        <span class="rule"></span>
+        <button id="t-clear" type="button" class="text" title="Clear formatting">Clear</button>
+      </div>
+    </div>
+
     <div id="formula-bar" class="bar formula-bar">
-      <span id="address" class="address">A1</span>
+      <!-- An input, not a label: typing an address here goes there, which is the
+           one navigation a spreadsheet cannot do without. -->
+      <input
+        id="address"
+        class="address"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Go to cell or range"
+        value="A1"
+      />
       <input
         id="formula"
         type="text"
@@ -51,11 +207,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          shell claims arrives here. -->
     <main id="surface" class="surface" tabindex="0">
       <table class="grid">
+        <colgroup id="cols"></colgroup>
         <thead>
           <tr id="head-row"></tr>
         </thead>
         <tbody id="body"></tbody>
       </table>
+      <!-- Charts float over the cells they sit above, positioned from the frame's
+           own svg:x/svg:y — the same shape `table:shapes` has in the file. -->
+      <div id="charts" class="charts"></div>
     </main>
 
     <!--
@@ -69,10 +229,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <footer class="bar status">
       <nav id="tabs" aria-label="Sheets"></nav>
+      <button id="sheet-add" type="button" class="icon tab-add" title="Add a sheet">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
+        <span class="sr">Add a sheet</span>
+      </button>
       <span id="summary"></span>
       <span class="gap"></span>
       <span id="message" role="status" aria-live="polite"></span>
     </footer>
+
+    <!-- The command palette: this shell's menu bar, and its go-to box. -->
+    <div id="palette" class="palette" hidden>
+      <div id="palette-sheet" class="palette-sheet" role="dialog" aria-label="Commands">
+        <input
+          id="palette-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Type a command, or somewhere to go…"
+          aria-label="Command or destination"
+        />
+        <ul id="palette-list" class="palette-list" role="listbox"></ul>
+        <p id="palette-empty" class="palette-empty" hidden>Nothing matches.</p>
+      </div>
+    </div>
+
+    <!-- The colour grid, moved under whichever swatch button opened it. -->
+    <div id="swatches" class="swatches" hidden></div>
+
+    <!-- Shown while a file is being dragged over the page. -->
+    <div id="drop" class="drop" hidden><span>Drop to open</span></div>
 
     <script type="module">
       import init from "./grind_web.js";

@@ -483,11 +483,12 @@ the window is the real product and the rest is a demo. The matrix is full:
 | | `grind` (CLI) | `grind-tui` | GTK | `grind-web` |
 |---|---|---|---|---|
 | **sheet** | done | done | done | done, with named gaps |
-| **text** | S6 | S8 | S9 — minimal, gaps in `doc/text-shell.md` | S10 — minimal, same list |
+| **text** | S6 | S8 | S9 — minimal, gaps in `doc/text-shell.md` | S10, since grown — gaps in `doc/web-shell.md` |
 | *slides* | *reserved* | *reserved* | *reserved* | *reserved* |
 
-**Full does not mean identical.** `ui_web` already ships deliberate spreadsheet gaps — no point
-mode, no styling controls, one column width — and that is fine and stays fine. What R10 forbids
+**Full does not mean identical.** `ui_web` ships deliberate spreadsheet gaps — no point mode,
+no fill handle, a chart it draws but cannot edit (`doc/web-shell.md`) — and that is fine and
+stays fine. What R10 forbids
 is a shell that cannot **open and edit a document type at all**. A per-shell feature gap is
 allowed and must be *named* in that shell's gap list; a missing cell in the matrix above is a
 build failure.

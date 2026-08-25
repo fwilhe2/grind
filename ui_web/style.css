@@ -7,14 +7,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 /* Colours come from the platform (`Canvas`, `AccentColor`, …) rather than a palette
    of literals, so light and dark follow the reader's own setting — the same rule
    `ui_sheet_gtk` follows with the GTK theme. A colour the *document* chose is written
-   inline by the shell and outranks everything here. */
+   inline by the shell and outranks everything here.
+
+   This page does not imitate a desktop application: no title bar, no menu bar, no
+   pretend window chrome. It is a web page — one bar of verbs, one row of tools, and
+   a palette for everything else. */
 :root {
   color-scheme: light dark;
   --line: color-mix(in srgb, CanvasText 20%, Canvas);
+  --faint: color-mix(in srgb, CanvasText 10%, Canvas);
   --head: color-mix(in srgb, CanvasText 6%, Canvas);
   --pick: color-mix(in srgb, AccentColor 18%, Canvas);
+  --hover: color-mix(in srgb, CanvasText 8%, Canvas);
+  --sunk: color-mix(in srgb, AccentColor 28%, Canvas);
+  --shadow: color-mix(in srgb, CanvasText 22%, transparent);
   --cell-w: 96px;
   --cell-h: 24px;
+  --radius: 7px;
 }
 
 * {
@@ -42,48 +51,262 @@ body {
   color: CanvasText;
 }
 
+/* Screen-reader text for a button whose face is a glyph. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .bar {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  gap: 0.25rem;
+  padding: 0.3rem 0.5rem;
   border-bottom: 1px solid var(--line);
   background: var(--head);
+}
+
+.app {
+  gap: 0.35rem;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.5;
+  padding-right: 0.3rem;
+  text-transform: lowercase;
+}
+
+.tools {
+  gap: 0.15rem;
+  /* The tool row is denser than the app bar: it is pressed at, not read. */
+  padding: 0.25rem 0.5rem;
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-wrap: wrap;
 }
 
 .status {
   border-bottom: none;
   border-top: 1px solid var(--line);
   font-size: 0.85em;
+  gap: 0.5rem;
 }
 
 .gap {
   flex: 1;
 }
 
+.rule {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.15rem 0.3rem;
+  background: var(--line);
+}
+
 .name {
   opacity: 0.7;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 button {
   font: inherit;
-  padding: 0.2rem 0.6rem;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
+button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+button:active:not(:disabled) {
+  background: var(--faint);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid AccentColor;
+  outline-offset: 1px;
+}
+
+button.icon {
+  padding: 0.2rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  justify-content: center;
+  position: relative;
+}
+
+/* Every icon in this page is stroked, never filled: one rule keeps them one family. */
+button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.glyph {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.glyph.small {
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.glyph.bold {
+  font-weight: 700;
+}
+
+.glyph.italic {
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+
+.glyph.underline {
+  text-decoration: underline;
+}
+
+.glyph.strike {
+  text-decoration: line-through;
+}
+
+/* A toggle that is on reads as pressed rather than merely hovered. */
+button.toggle[aria-pressed="true"] {
+  background: var(--sunk);
+  border-color: color-mix(in srgb, AccentColor 45%, transparent);
+}
+
+.keyed {
+  gap: 0.4rem;
+}
+
+kbd {
+  font: 0.72em/1 ui-monospace, monospace;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.2em 0.35em;
+  opacity: 0.75;
+}
+
+select {
+  font: inherit;
+  color: inherit;
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.15rem 0.3rem;
+}
+
+input[type="text"] {
+  font: inherit;
+  color: inherit;
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.45rem;
+}
+
+/* --- the colour buttons and their grid ---------------------------------- */
+
+.swatch-host {
+  position: relative;
+  display: inline-flex;
+}
+
+.swatch-button {
+  flex-direction: column;
+  gap: 0;
+  padding-bottom: 0.3rem;
+}
+
+.swatch-bar {
+  position: absolute;
+  left: 0.28rem;
+  right: 0.28rem;
+  bottom: 0.18rem;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.swatches {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(6, 1.35rem);
+  gap: 0.25rem;
+  padding: 0.45rem;
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+.swatches button {
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.swatches button.none {
+  grid-column: 1 / -1;
+  width: auto;
+  height: auto;
+  padding: 0.2rem;
+  justify-content: center;
+  background: transparent;
+  font-size: 0.85em;
+}
+
+/* --- the formula bar ------------------------------------------------------ */
+
 .formula-bar {
-  gap: 0.6rem;
+  gap: 0.4rem;
 }
 
 .address {
-  min-width: 5rem;
+  width: 7rem;
+  flex: none;
   font-variant-numeric: tabular-nums;
 }
 
 #formula {
   flex: 1;
-  font: 14px/1.4 ui-monospace, monospace;
-  padding: 0.2rem 0.4rem;
+  font: 13px/1.4 ui-monospace, monospace;
 }
 
 .surface {
@@ -91,6 +314,7 @@ button {
   min-height: 0;
   overflow: auto;
   outline: none;
+  position: relative;
 }
 
 /* --- the document pane ---------------------------------------------------
@@ -109,7 +333,7 @@ button {
 
 .flow {
   max-width: var(--measure, 640px);
-  margin: 2rem auto;
+  margin: 2rem auto 6rem;
   /* A word processor is not a UI: the reader's own text settings decide nothing
      here, because what is on screen has to be what would be printed. */
   color: CanvasText;
@@ -123,6 +347,26 @@ button {
    shell's flow applies, so a document has one shape in both. */
 .h {
   margin-top: calc(var(--heading-gap, 24px) - var(--block-gap, 14px));
+}
+
+/* The two named paragraph styles this shell gives a face to. The font itself is
+   inline, from the face that measured the text; these are only the space around
+   them, which no measurement decides. */
+.title {
+  margin-bottom: calc(var(--block-gap, 14px) / 2);
+}
+
+.subtitle {
+  margin-bottom: var(--heading-gap, 24px);
+  opacity: 0.75;
+}
+
+.picture {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-bottom: 0.5rem;
+  border-radius: 3px;
 }
 
 .li {
@@ -140,6 +384,39 @@ button {
 .line {
   /* The core decided where this line ends; the browser must not decide again. */
   white-space: pre;
+}
+
+/* A run's own formatting, drawn as the document asked for it. Colour and
+   background are inline — those are values the document chose. */
+.run.b {
+  font-weight: 700;
+}
+
+.run.i {
+  font-style: italic;
+}
+
+.run.u {
+  text-decoration: underline;
+}
+
+.run.s {
+  text-decoration: line-through;
+}
+
+.run.u.s {
+  text-decoration: underline line-through;
+}
+
+.run.link {
+  color: AccentColor;
+  text-decoration: underline;
+}
+
+/* The selection, drawn per line-piece rather than with the browser's own — the
+   core owns where it starts and ends. */
+.sel {
+  background: var(--pick);
 }
 
 /* Between two pieces of text rather than at a measured x, so the browser places it
@@ -171,16 +448,14 @@ button {
   table-layout: fixed;
   /* The width the columns add up to, never the width of the surface. An auto-width
      table is stretched to its container and its columns squeezed to fit, which is
-     not what `--cell-w` says and not what the shell renders — it asks for as many
-     columns as fit at that width, and a narrower one means one more of them. */
+     not what the shell renders — it asks for as many columns as fit at the widths
+     the document gave them. */
   width: max-content;
 }
 
 .grid th,
 .grid td {
-  width: var(--cell-w);
   height: var(--cell-h);
-  max-width: var(--cell-w);
   padding: 0 4px;
   border: 1px solid var(--line);
   /* Clipping rather than growing: a row that fits its content would change the
@@ -189,6 +464,7 @@ button {
   white-space: nowrap;
   text-align: left;
   font-weight: normal;
+  vertical-align: middle;
 }
 
 .head {
@@ -197,6 +473,7 @@ button {
   text-align: center;
   font-size: 0.85em;
   opacity: 0.8;
+  user-select: none;
 }
 
 .head.col,
@@ -210,6 +487,7 @@ button {
   left: 0;
   width: 3.5rem;
   max-width: 3.5rem;
+  z-index: 1;
 }
 
 .head.corner {
@@ -231,11 +509,175 @@ button {
   outline-offset: -2px;
 }
 
+/* --- charts ------------------------------------------------------------- */
+
+.charts {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* The layer is a pass-through; each chart takes its own pointer events back. */
+  pointer-events: none;
+}
+
+.chart {
+  position: absolute;
+  pointer-events: auto;
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chart .axis {
+  stroke: var(--line);
+  fill: none;
+}
+
+.chart .tick {
+  fill: CanvasText;
+  opacity: 0.7;
+  font: 10px system-ui, sans-serif;
+}
+
+.chart .axis-title {
+  fill: CanvasText;
+  opacity: 0.85;
+  font: 11px system-ui, sans-serif;
+}
+
+/* --- sheet tabs ---------------------------------------------------------- */
+
 #tabs {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.2rem;
+}
+
+.tab {
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius);
+  font-size: 1em;
 }
 
 .tab.current {
-  font-weight: bold;
+  font-weight: 600;
+  background: var(--pick);
+}
+
+.tab-add {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.tab-add svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+/* --- the command palette -------------------------------------------------
+   A dialog the page owns rather than the platform's: it has to work the same in
+   every browser, and `<dialog>`'s top layer is more than this needs. */
+
+.palette {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in srgb, CanvasText 22%, transparent);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 1rem 1rem;
+}
+
+.palette-sheet {
+  width: min(34rem, 100%);
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px var(--shadow);
+  overflow: hidden;
+}
+
+#palette-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.7rem 0.9rem;
+  font-size: 1.05rem;
+  background: transparent;
+}
+
+#palette-input:focus-visible {
+  outline: none;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  max-height: min(24rem, 50vh);
+  overflow: auto;
+}
+
+.palette-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.palette-list li[aria-selected="true"] {
+  background: var(--pick);
+}
+
+.palette-list .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-list .what b {
+  font-weight: 700;
+  color: AccentColor;
+}
+
+.palette-list .where {
+  font-size: 0.8em;
+  opacity: 0.55;
+}
+
+.palette-empty {
+  margin: 0;
+  padding: 0.9rem;
+  opacity: 0.6;
+}
+
+/* --- dropping a file ------------------------------------------------------ */
+
+.drop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, AccentColor 18%, transparent);
+  pointer-events: none;
+}
+
+.drop span {
+  padding: 0.9rem 1.6rem;
+  border-radius: 12px;
+  border: 2px dashed AccentColor;
+  background: Canvas;
+  font-size: 1.1rem;
 }
