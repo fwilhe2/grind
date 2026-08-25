@@ -55,7 +55,7 @@ what a person expects.
 
 ## Editing at a caret
 
-The four operations a cursor performs, as opposed to the ones a script performs. They are in
+The five operations a cursor performs, as opposed to the ones a script performs. They are in
 the core rather than in a shell because the terminal, GTK and web shells would otherwise each
 answer "what happens when you press Return at the end of a heading?" separately and disagree
 (`doc/suite.md` S7); they are on the CLI because rule 4 does not make an exception for the
@@ -73,6 +73,9 @@ operations that feel like they belong to a UI.
   kind and style, except that a heading split at its very end leaves a body paragraph
 - `join_block` — `grind text join <at>`. The Backspace key, named from the block above it. The
   first block's kind and style are what survive
+- `insert_image` — `grind text image <at> --from <path>`. One caret position, like a tab — the
+  MIME type is guessed from the file's extension unless `--mime` overrides it, and
+  `--width`/`--height` are ODF lengths, both optional
 
 ## Layout
 

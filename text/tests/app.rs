@@ -143,6 +143,37 @@ fn typing_puts_characters_at_a_caret() {
 }
 
 #[test]
+fn an_inserted_image_is_one_caret_position_like_a_tab() {
+    let app = app(&["hello world"]);
+    app.insert_image(
+        caret(&app, "p1+5"),
+        "image/png".to_owned(),
+        vec![1, 2, 3, 4],
+        Some("5cm".to_owned()),
+        Some("5cm".to_owned()),
+    )
+    .expect("inserts the image");
+
+    // The object replacement character stands in for it in plain text, one character wide —
+    // what `Block::len` and every caret arithmetic in this crate count against.
+    assert_eq!(text(&app), "hello\u{fffc} world");
+    assert_eq!(app.input_text(0).expect("reads").chars().count(), 12);
+
+    // Backspace at the position right after it removes it whole, not by however many bytes
+    // its data happens to be.
+    let after = caret(&app, "p1+6");
+    let before = grind_text::Caret {
+        block: 0,
+        offset: 5,
+    };
+    app.erase(before, after).expect("erases");
+    assert_eq!(text(&app), "hello world");
+
+    assert!(app.undo() && app.undo());
+    assert_eq!(text(&app), "hello world");
+}
+
+#[test]
 fn typed_text_takes_the_formatting_of_the_run_at_the_caret() {
     // "plain" then "bold" in a span, which is what reading `<text:span>` produces.
     let app = App::new();
@@ -793,4 +824,48 @@ fn reusing_a_style_the_file_already_has_still_splices() {
         "no new lines"
     );
     assert_eq!(changed, 1, "one paragraph edited, one line different");
+}
+
+/// The bug a real `grind text image` run found: a document with no image never declared
+/// `draw:`/`svg:`, and splicing patches one block element without ever touching the root tag
+/// that would have to carry the declaration — so an image inserted into one of those has to
+/// force a regenerate, or the spliced file comes back with an undeclared namespace prefix that
+/// nothing, including this crate's own reader, can parse as the image it is.
+#[test]
+fn an_image_that_needs_a_namespace_the_file_never_declared_forces_a_regenerate() {
+    let app = app(&["a tiny picture"]);
+    let bytes = app.save_bytes(Form::Flat).expect("saves");
+    assert!(
+        !String::from_utf8_lossy(&bytes).contains("xmlns:draw"),
+        "the fixture must not already declare it, or this proves nothing"
+    );
+
+    let opened = App::new();
+    opened.open_bytes("doc.fodt", &bytes).expect("opens");
+    opened
+        .insert_image(
+            caret(&opened, "p1+0"),
+            "image/png".to_owned(),
+            vec![1, 2, 3],
+            None,
+            None,
+        )
+        .expect("inserts");
+    let after = opened.save_bytes(Form::Flat).expect("saves");
+    let after = String::from_utf8(after).expect("utf-8");
+    assert!(
+        after.contains("xmlns:draw") && after.contains("xmlns:svg"),
+        "a regenerated document declares what it now uses: {after}"
+    );
+
+    // And the result is not just well-formed-looking but actually readable — the same image
+    // comes back out.
+    let reread = App::new();
+    reread
+        .open_bytes("doc.fodt", after.as_bytes())
+        .expect("the regenerated document parses");
+    assert_eq!(
+        reread.input_text(0).expect("reads"),
+        "\u{fffc}a tiny picture"
+    );
 }

@@ -83,6 +83,7 @@ pub fn implemented() -> Vec<&'static str> {
         "text:line-break",
         "text:a",
         "text:bookmark",
+        "draw:frame",
     ]
 }
 
@@ -178,6 +179,13 @@ pub struct RunView {
     pub style: Option<String>,
     /// `xlink:href`, when the run is inside a link.
     pub href: Option<String>,
+    /// The image this run is, if it is one — `Some` only for a [`Run::Image`], and what a
+    /// shell that wants to draw an actual picture rather than the placeholder character reads.
+    ///
+    /// ponytail: clones the bytes on every [`App::get_viewport`] call, the same trade every
+    /// other field here already makes for text. Worth a cache keyed by identity rather than
+    /// content if a profile ever blames a document with many large images; nothing has yet.
+    pub image: Option<ImageView>,
 }
 
 impl RunView {
@@ -185,6 +193,17 @@ impl RunView {
     pub fn end(&self) -> usize {
         self.start + self.text.chars().count()
     }
+}
+
+/// One embedded image, as a reader sees it — the data half of [`RunView::image`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageView {
+    pub mime: String,
+    pub data: Vec<u8>,
+    /// `svg:width` / `svg:height`, ODF lengths kept verbatim (`"5cm"`) and optional, exactly
+    /// as a document's own frequently are.
+    pub width: Option<String>,
+    pub height: Option<String>,
 }
 
 impl Viewport {
@@ -657,6 +676,46 @@ impl App {
                 style,
                 props,
                 href,
+            });
+            runs.extend(tail);
+            model::coalesce(&mut runs);
+            block.runs = runs;
+            Self::commit(
+                state,
+                Action::SetBlock {
+                    index: at.block,
+                    block: Box::new(block),
+                },
+            )
+        })
+    }
+
+    /// Insert an image at a caret — a fifth caret-level edit, alongside `insert_text`, for the
+    /// one kind of content that is not text (`doc/text-core.md`'s `draw:frame` row).
+    ///
+    /// One [`Run::Image`], occupying exactly one caret position the way a tab does, so
+    /// `erase`, `split_block` and Backspace already handle it correctly with no change to any
+    /// of them: it is removed, carried across a split, or backspaced over as a whole, never a
+    /// character at a time. `mime` is a MIME type (`image/jpeg`, `image/png`, …); `width` and
+    /// `height` are ODF lengths (`"5cm"`), kept verbatim and optional, exactly as a document's
+    /// own would be.
+    pub fn insert_image(
+        &self,
+        at: Caret,
+        mime: String,
+        data: Vec<u8>,
+        width: Option<String>,
+        height: Option<String>,
+    ) -> Result<()> {
+        self.mutate(|state| {
+            let mut block = block_at(state, at.block)?;
+            let offset = at.offset.min(block.len());
+            let (mut runs, tail) = model::split_runs(&block.runs, offset);
+            runs.push(Run::Image {
+                mime,
+                data,
+                width,
+                height,
             });
             runs.extend(tail);
             model::coalesce(&mut runs);
@@ -1283,12 +1342,27 @@ fn run_views(block: &Block) -> Vec<RunView> {
             Run::Text { style, href, .. } => (style.clone(), href.clone()),
             _ => (None, None),
         };
+        let image = match run {
+            Run::Image {
+                mime,
+                data,
+                width,
+                height,
+            } => Some(ImageView {
+                mime: mime.clone(),
+                data: data.clone(),
+                width: width.clone(),
+                height: height.clone(),
+            }),
+            _ => None,
+        };
         out.push(RunView {
             start,
             text: run.text().to_owned(),
             props: run.props().cloned().unwrap_or_default(),
             style,
             href,
+            image,
         });
         start += len;
     }

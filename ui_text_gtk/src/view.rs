@@ -121,7 +121,7 @@ mod imp {
 
     use crate::geom;
     use crate::keymap::{self, Action, Key, Mods, Motion};
-    use crate::metrics::{Faces, run_attributes};
+    use crate::metrics::{Face, Faces, run_attributes};
     use crate::theme::Palette;
 
     type NoticeHook = Box<dyn Fn(String)>;
@@ -379,6 +379,35 @@ mod imp {
                 let Some(block) = viewport.get(slot.index) else {
                     continue;
                 };
+                let x = left + slot.indent;
+                let y = slot.top - scroll;
+
+                // A block that is a picture — optionally with its caption's text — is drawn as
+                // one rather than as the placeholder character `Run::Image::text()` returns
+                // everywhere else. `doc/text-shell.md` has the rest of what a run that is not
+                // text still cannot do (sit mid-sentence and lay out correctly, in particular).
+                if let Some((image, caption)) = picture_of(block) {
+                    let Some(texture) = texture_of(image) else {
+                        continue;
+                    };
+                    let (w, h) = image_size(&texture, column - slot.indent);
+                    snapshot.append_texture(&texture, &rect(x, y, w, h));
+                    if selection.is_none() && slot.index == caret.block && widget.is_focus() {
+                        snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
+                    }
+                    if let Some(caption) = caption {
+                        let caption_y = y + h + CAPTION_GAP;
+                        draw_at(
+                            snapshot,
+                            faces.body().draw_wrapped(caption, column - slot.indent),
+                            x,
+                            caption_y,
+                            palette.dim,
+                        );
+                    }
+                    continue;
+                }
+
                 let style = block.style.as_deref();
                 let face = faces.of(&block.kind, style);
                 let Ok(layout) = app.layout_block(slot.index, (column - slot.indent) as f32, face)
@@ -386,8 +415,6 @@ mod imp {
                     continue;
                 };
                 let text: Vec<char> = block.text.chars().collect();
-                let x = left + slot.indent;
-                let y = slot.top - scroll;
                 let ink = match style {
                     Some("Subtitle") => palette.dim,
                     _ => palette.foreground,
@@ -535,12 +562,28 @@ mod imp {
             let viewport = app.get_viewport(0..app.block_count());
             for block in viewport.iter() {
                 let style = block.style.as_deref();
-                let face = faces.of(&block.kind, style);
                 let indent = indent_of(&block.kind);
-                let height = app
-                    .layout_block(block.index, (column - indent) as f32, face)
-                    .map(|layout| f64::from(layout.height()))
-                    .unwrap_or_else(|_| face.height());
+                let height = match picture_of(block)
+                    .and_then(|(image, caption)| Some((texture_of(image)?, caption)))
+                {
+                    Some((texture, caption)) => {
+                        let picture = image_size(&texture, column - indent).1;
+                        match caption {
+                            Some(caption) => {
+                                picture
+                                    + CAPTION_GAP
+                                    + caption_height(faces.body(), caption, column - indent)
+                            }
+                            None => picture,
+                        }
+                    }
+                    None => {
+                        let face = faces.of(&block.kind, style);
+                        app.layout_block(block.index, (column - indent) as f32, face)
+                            .map(|layout| f64::from(layout.height()))
+                            .unwrap_or_else(|_| face.height())
+                    }
+                };
                 let space = match (style, &block.kind) {
                     (Some("Title" | "Subtitle"), _) | (_, BlockKind::Heading { .. }) => {
                         geom::HEADING_GAP
@@ -1010,6 +1053,62 @@ mod imp {
         Some((left, right - left))
     }
 
+    /// Whether a block is a picture, optionally followed by its caption's plain text — the
+    /// shape `App::insert_image` produces into an empty paragraph (no caption) and the shape
+    /// a real ODF frame reads as (an image run, then the caption paragraph's text, `doc/
+    /// odt-format.md`'s "An inserted image is a frame inside a frame"). Both are drawn as a
+    /// picture rather than the placeholder character every other block context sees. An image
+    /// sitting mid-sentence with other text around it still draws as `\u{fffc}`, which is the
+    /// gap `doc/text-shell.md` names.
+    pub(super) fn picture_of(
+        block: &grind_text::BlockView,
+    ) -> Option<(&grind_text::ImageView, Option<&str>)> {
+        match block.runs.as_slice() {
+            [run] => run.image.as_ref().map(|image| (image, None)),
+            [run, caption] if caption.image.is_none() => run
+                .image
+                .as_ref()
+                .map(|image| (image, Some(caption.text.as_str()))),
+            _ => None,
+        }
+    }
+
+    /// Decode an embedded image's bytes into something [`gtk::Snapshot`] can paint. `None` for
+    /// anything gdk-pixbuf has no loader for — a corrupt file, a format nobody installed —
+    /// which is not a reason to refuse the rest of the document (§9's tolerance, over a
+    /// picture instead of an XML element).
+    ///
+    /// ponytail: decodes on every repaint rather than caching the texture, so a document with
+    /// a large image pays for it on every cursor blink. Worth a cache keyed by `BlockId`,
+    /// invalidated the way `Doc::flow` already is, once a document with more than one real
+    /// image makes the cost visible.
+    pub(super) fn texture_of(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
+        gtk::gdk::Texture::from_bytes(&glib::Bytes::from(&image.data)).ok()
+    }
+
+    /// How big to draw a texture: fit inside the column, keeping its aspect ratio, and never
+    /// larger than its own pixels. ODF's own `svg:width`/`svg:height` are not used for this —
+    /// turning a length like `13.229cm` into device pixels needs a resolution this shell does
+    /// not otherwise track, and "fit the column" is the same default a simple viewer takes.
+    pub(super) fn image_size(texture: &gtk::gdk::Texture, column: f64) -> (f64, f64) {
+        let (w, h) = (
+            f64::from(texture.width()).max(1.0),
+            f64::from(texture.height()).max(1.0),
+        );
+        let width = w.min(column.max(1.0));
+        (width, h * (width / w))
+    }
+
+    /// The gap between a picture and its caption — small, since the two read as one figure.
+    const CAPTION_GAP: f64 = 4.0;
+
+    /// How tall a caption's text comes out, wrapped to the column — measured with the same
+    /// layout it will later be drawn with (`Face::draw_wrapped`), so the flow's reserved space
+    /// and the paint always agree.
+    pub(super) fn caption_height(face: &Face, text: &str, width: f64) -> f64 {
+        f64::from(face.draw_wrapped(text, width).pixel_size().1)
+    }
+
     /// How far a block's text is indented — a list's nesting, and nothing else.
     fn indent_of(kind: &BlockKind) -> f64 {
         match kind {
@@ -1167,7 +1266,9 @@ pub fn caret_of(app: &App, address: &str) -> Result<Caret, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom;
     use grind_text::BlockKind;
+    use imp::{caption_height, image_size, picture_of, texture_of};
 
     /// A widget with a document in it and a size to lay it out at — **or `None` where there
     /// is no display**, which is where CI runs (`.github/workflows/gtk.yml` installs the GTK
@@ -1369,6 +1470,116 @@ mod tests {
             faces.of(&BlockKind::Paragraph, Some("Title")).height()
                 > faces.of(&BlockKind::Paragraph, None).height(),
             "a title reads larger than a plain paragraph"
+        );
+    }
+
+    /// A 4×4 red PNG — small enough to embed, and square, so a correct fit-to-column scale
+    /// keeps its height equal to its width.
+    const DOT_PNG: &[u8] = &[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4, 0, 0, 0, 4, 8, 2,
+        0, 0, 0, 38, 147, 9, 41, 0, 0, 0, 16, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 0, 71,
+        12, 196, 113, 0, 174, 147, 15, 241, 208, 95, 35, 158, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66,
+        96, 130,
+    ];
+
+    /// A picture followed by its caption's text is still drawn as a picture — not the
+    /// placeholder character a run of plain text next to an image draws everywhere else — with
+    /// the flow reserving room under it for the caption, wrapped to the column. This is the
+    /// real shape `doc/odt-format.md`'s "An inserted image is a frame inside a frame" reads,
+    /// and the bug this pins is the caption vanishing rather than the picture.
+    #[test]
+    fn a_picture_with_a_caption_reserves_room_for_both() {
+        let Some((doc, app)) = shell(&[""]) else {
+            return;
+        };
+        app.insert_image(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            "image/png".to_owned(),
+            DOT_PNG.to_vec(),
+            None,
+            None,
+        )
+        .expect("inserts");
+        app.insert_text(
+            Caret {
+                block: 0,
+                offset: 1,
+            },
+            "Figure 1: a photograph.",
+        )
+        .expect("inserts the caption");
+        doc.invalidate();
+
+        let imp = doc.imp();
+        let width = f64::from(doc.width());
+        let (_, column) = geom::column(width);
+        let viewport = app.get_viewport(0..1);
+        let block = viewport.get(0).expect("the block");
+        let (image, caption) = picture_of(block).expect("still reads as a picture");
+        assert_eq!(caption, Some("Figure 1: a photograph."));
+
+        let texture = texture_of(image).expect("decodes");
+        let (_, picture_height) = image_size(&texture, column);
+        let text_height = caption_height(imp.faces().body(), caption.unwrap(), column);
+
+        let flow = imp.flow(width);
+        let slot = flow.slot(0).expect("one block");
+        assert!(
+            slot.height >= picture_height + text_height,
+            "the flow leaves room for the picture and its caption, not just one of them"
+        );
+    }
+
+    /// A block that is only an image is drawn as one — decoded, scaled to fit the column, and
+    /// tall enough in the flow that nothing after it overlaps.
+    #[test]
+    fn a_block_that_is_only_an_image_is_sized_from_the_picture_not_a_line_of_text() {
+        let Some((doc, app)) = shell(&[""]) else {
+            return;
+        };
+        app.insert_image(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            "image/png".to_owned(),
+            DOT_PNG.to_vec(),
+            None,
+            None,
+        )
+        .expect("inserts");
+        // No observer is wired up in this harness, so nothing calls this on its own the way a
+        // real window's bridge would — `Doc::flow`'s cache otherwise still holds the empty
+        // paragraph's height from `shell`'s own `allocate`.
+        doc.invalidate();
+
+        let imp = doc.imp();
+        let width = f64::from(doc.width());
+        let (_, column) = geom::column(width);
+        let viewport = app.get_viewport(0..1);
+        let block = viewport.get(0).expect("the block");
+        assert!(picture_of(block).is_some(), "the whole block is the image");
+
+        let texture = texture_of(picture_of(block).unwrap().0).expect("decodes");
+        let (w, h) = image_size(&texture, column);
+        assert!((w - h).abs() < 0.01, "a 4x4 image stays square when scaled");
+        assert!(
+            w <= 4.0,
+            "a 4-pixel-wide image is never stretched past its own size"
+        );
+
+        // The flow's own height for this block has to come from the same arithmetic, not from
+        // laying out the empty paragraph the image replaced — which would give one line of the
+        // body face (`imp.faces().body().height()`), a different number for almost any image.
+        let flow = imp.flow(width);
+        let slot = flow.slot(0).expect("one block");
+        assert!(
+            (slot.height - h).abs() < 0.01,
+            "the flow's height for this block is the picture's ({h}), not {}",
+            imp.faces().body().height()
         );
     }
 

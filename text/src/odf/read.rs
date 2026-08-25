@@ -74,6 +74,38 @@ pub struct Builder {
     href: Option<String>,
     /// How deep in `text:list` elements we are. 0 outside any list.
     list_depth: u32,
+    /// The image being assembled out of the `draw:frame`(s) currently open, if any — see
+    /// [`PendingImage`].
+    image: Option<PendingImage>,
+    /// How many `draw:frame` are open right now. LibreOffice wraps a resizable frame's image
+    /// in a second, inner frame (through a `draw:text-box`), so this is what tells the
+    /// outermost one's `end` from the inner one's — only the outermost emits a [`Run::Image`].
+    frame_depth: u32,
+    /// The original bytes, kept only when they are a package — a zip has parts outside
+    /// `content.xml` (`Pictures/foo.jpg`) that a `draw:image`'s `xlink:href` may point at, and
+    /// resolving one means going back to the archive it came from.
+    package: Option<Vec<u8>>,
+}
+
+/// One `draw:frame` (rng:5089) being read, gathered from however many of them turn out to be
+/// nested around the actual `draw:image` — LibreOffice always wraps one in a second frame for
+/// resizing, and this build does not distinguish that from a document that only had one.
+#[derive(Default)]
+struct PendingImage {
+    /// `draw:mime-type` off the `draw:image` itself.
+    mime: Option<String>,
+    /// The bytes, once `office:binary-data` has been read out and decoded.
+    data: Option<Vec<u8>>,
+    /// `svg:width` / `svg:height` off whichever frame had them first — outermost preferred,
+    /// since that is the size a person actually sees.
+    width: Option<String>,
+    height: Option<String>,
+    /// The plain text of the frame's own caption paragraph (`text:p text:style-name="Figure"`
+    /// or whatever a document called it) — everything [`TextBoxSearch`] sees that is not the
+    /// nested resizing frame itself. Not a separate run until the outermost frame closes, so
+    /// it lands *after* the image rather than before it however the caption's text nodes and
+    /// its sequence field arrive.
+    caption: String,
 }
 
 /// One `style:style` of family `text`, as the document declared it.
@@ -95,7 +127,22 @@ impl Builder {
             fonts: HashMap::new(),
             href: None,
             list_depth: 0,
+            image: None,
+            frame_depth: 0,
+            package: None,
         }
+    }
+
+    /// Record the package this document is being read from, so a `draw:image`'s `xlink:href`
+    /// can later be resolved against it. Called from `odf::read` before parsing starts.
+    pub fn set_package(&mut self, bytes: Vec<u8>) {
+        self.package = Some(bytes);
+    }
+
+    /// A part of the package this document was read from, by path — `None` for the flat form
+    /// (nothing to resolve against) and for anything the archive does not actually hold.
+    fn resolve_part(&self, path: &str) -> Option<Vec<u8>> {
+        super::package::part(self.package.as_deref()?, path)
     }
 
     /// Open a `text:span`, resolving its style name into a name the model keeps and the
@@ -521,7 +568,143 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             }
             None
         }
+        (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
         _ => None,
+    }
+}
+
+/// Open a `draw:frame`, whether it is the outermost one or one LibreOffice nested inside it
+/// (through a `draw:text-box`) purely for resizing. Only the first frame's size is kept unless
+/// it did not say, and only the outermost frame's [`Frame::end`] turns any of this into a run.
+fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
+    let pending = b.image.get_or_insert_with(PendingImage::default);
+    if pending.width.is_none() {
+        pending.width = attrs.get(Ns::Svg, "width").map(str::to_owned);
+    }
+    if pending.height.is_none() {
+        pending.height = attrs.get(Ns::Svg, "height").map(str::to_owned);
+    }
+    b.frame_depth += 1;
+    Box::new(Frame)
+}
+
+/// `draw:frame` (rng:5089) — a picture, and the only content of one this build reads.
+/// Everything else a frame can hold (`draw:object`, `draw:applet`, a plain shape) is out of
+/// scope and inert, exactly like any other unmodelled element.
+struct Frame;
+
+impl Context<Builder> for Frame {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
+            (Ns::Draw, "image") => {
+                let mime = attrs.get(Ns::Draw, "mime-type").map(str::to_owned);
+                // `common-draw-data-attlist` (rng:1621) vs. `office-binary-data` (rng:5383):
+                // the schema's own choice between a reference and inline bytes. A package
+                // form's picture is usually the first — `Pictures/foo.jpg`, resolved against
+                // the archive this document was opened from — so it is fetched eagerly, before
+                // `b.image` is borrowed, rather than waiting on a child element that never
+                // comes.
+                let href = attrs.get(Ns::Xlink, "href").map(str::to_owned);
+                let resolved = href.as_deref().and_then(|href| b.resolve_part(href));
+                if let Some(pending) = &mut b.image {
+                    pending.mime = mime;
+                    if let Some(data) = resolved {
+                        pending.data = Some(data);
+                    }
+                }
+                match href {
+                    Some(_) => None,
+                    None => Some(Box::new(ImageData)),
+                }
+            }
+            // The frame's own caption text, read for its plain text alone — its own styling
+            // and its sequence field's structure are out of scope, exactly like everywhere
+            // else a run only keeps text (`doc/text-core.md`).
+            (Ns::Draw, "text-box") => Some(Box::new(TextBoxSearch)),
+            _ => None,
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        b.frame_depth = b.frame_depth.saturating_sub(1);
+        // Only the outermost frame's close turns what was gathered into a run — an inner one
+        // closing first would otherwise emit a second, empty image from what is left.
+        if b.frame_depth == 0
+            && let Some(pending) = b.image.take()
+            && let (Some(mime), Some(data)) = (pending.mime, pending.data)
+        {
+            b.push_run(Run::Image {
+                mime,
+                data,
+                width: pending.width,
+                height: pending.height,
+            });
+            // After the image, never before it — whatever order its text nodes and its
+            // sequence field arrived in while the text-box was still open.
+            if !pending.caption.is_empty() {
+                b.push_run(Run::plain(pending.caption));
+            }
+        }
+    }
+}
+
+/// `draw:text-box` — a frame's caption. Modelled enough to find an image LibreOffice nests
+/// inside one *and* to keep the caption's own plain text (`text:p`/`text:h`'s character data,
+/// plus a `text:sequence` field's computed value, rng:8655's `<rng:text/>`) — everything else
+/// the caption paragraph could carry (its own styling, a hyperlink) is out of scope the same
+/// way it would be anywhere else a run keeps only text.
+struct TextBoxSearch;
+
+impl Context<Builder> for TextBoxSearch {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Text, "p" | "h" | "sequence") => Some(Box::new(TextBoxSearch)),
+            (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
+            _ => None,
+        }
+    }
+
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        if let Some(pending) = &mut b.image {
+            pending.caption.push_str(text);
+        }
+    }
+}
+
+/// `draw:image` (rng:5380) — its own attributes are read by [`Frame::start_child`], which also
+/// resolves an `xlink:href` reference eagerly. This context is only reached when there was
+/// none, so it has to find the `office:binary-data` (rng:7681) inline instead.
+struct ImageData;
+
+impl Context<Builder> for ImageData {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        name.is(Ns::Office, "binary-data")
+            .then(|| Box::new(BinaryData::default()) as Ctx)
+    }
+}
+
+/// `office:binary-data` — base64, wrapped across many lines by every writer that produces it,
+/// this one included. Whitespace is not part of the alphabet, so it is stripped before
+/// decoding rather than tripping the decoder over a document being pretty-printed.
+#[derive(Default)]
+struct BinaryData {
+    base64: String,
+}
+
+impl Context<Builder> for BinaryData {
+    fn text(&mut self, text: &str, _b: &mut Builder) {
+        self.base64.push_str(text);
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        use base64::Engine as _;
+        let cleaned: String = self.base64.chars().filter(|c| !c.is_whitespace()).collect();
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(cleaned)
+            && let Some(pending) = &mut b.image
+        {
+            pending.data = Some(bytes);
+        }
     }
 }
 

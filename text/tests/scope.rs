@@ -29,7 +29,8 @@ fn subject(line: &'static str) -> Option<&'static str> {
         return None;
     }
     let name = line.split('`').nth(1)?;
-    (name.starts_with("text:") || name.starts_with("table:")).then_some(name)
+    (name.starts_with("text:") || name.starts_with("table:") || name.starts_with("draw:"))
+        .then_some(name)
 }
 
 /// Every element the document lists as **In**.

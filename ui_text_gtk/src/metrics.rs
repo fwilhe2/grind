@@ -96,6 +96,9 @@ impl Face {
         // Clear whatever a previous line's `draw_styled` left on the same shared layout —
         // the bullet drawn after a bold heading must not come out bold with it.
         self.drawing.set_attributes(None::<&pango::AttrList>);
+        // And whatever `draw_wrapped` left the width at — every other caller already knows
+        // its own line's width from the core's own layout and draws one line at a time.
+        self.drawing.set_width(-1);
         &self.drawing
     }
 
@@ -105,6 +108,19 @@ impl Face {
     pub fn draw_styled(&self, text: &str, attrs: &pango::AttrList) -> &pango::Layout {
         self.drawing.set_text(text);
         self.drawing.set_attributes(Some(attrs));
+        self.drawing.set_width(-1);
+        &self.drawing
+    }
+
+    /// A layout wrapped to `width` pixels, word by word — the one caller that is not drawing a
+    /// line the core's own layout already broke for it: an image's caption, which this shell
+    /// lays out itself the same way it draws a list's bullet outside the model.
+    pub fn draw_wrapped(&self, text: &str, width: f64) -> &pango::Layout {
+        self.drawing.set_text(text);
+        self.drawing.set_attributes(None::<&pango::AttrList>);
+        self.drawing
+            .set_width((width * f64::from(pango::SCALE)) as i32);
+        self.drawing.set_wrap(pango::WrapMode::WordChar);
         &self.drawing
     }
 

@@ -64,11 +64,21 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
 /// written minimally — ours is — leaves it out. A document referencing a style that lived
 /// only there loses the style, never the document, so every failure here is `None`.
 pub fn styles_xml(bytes: &[u8]) -> Option<Vec<u8>> {
+    part(bytes, "styles.xml")
+}
+
+/// Any other part of a package, by its path inside the zip — `Pictures/foo.jpg`, the target of
+/// a `draw:image`'s `xlink:href` (rng:1626), being the reason this exists rather than only
+/// [`content_xml`] and [`styles_xml`]. `None` for the flat form (there is no separate part to
+/// fetch — everything is already in the one file a caller has) and for anything the zip does
+/// not actually hold, on the same "lose the picture, not the document" principle as
+/// [`styles_xml`].
+pub fn part(bytes: &[u8], path: &str) -> Option<Vec<u8>> {
     if !is_package(bytes) {
         return None;
     }
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
-    let mut file = archive.by_name("styles.xml").ok()?;
+    let mut file = archive.by_name(path).ok()?;
     let mut out = Vec::with_capacity(file.size() as usize);
     file.read_to_end(&mut out).ok()?;
     Some(out)

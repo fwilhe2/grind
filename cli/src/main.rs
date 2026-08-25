@@ -241,6 +241,23 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             finish_text(&app, cli, file, !text.is_empty())
         }
 
+        TextCommand::Image {
+            file,
+            at: address,
+            from,
+            mime,
+            width,
+            height,
+        } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            let data = std::fs::read(from).map_err(|e| format!("{}: {e}", from.display()))?;
+            let mime = mime.clone().unwrap_or_else(|| sniff_image_mime(from));
+            app.insert_image(caret, mime, data, width.clone(), height.clone())
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
         TextCommand::Erase { file, range } => {
             let app = open_text(file)?;
             let (from, to) = caret_span(&app, range)?;
@@ -456,6 +473,27 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             )))
         }
     }
+}
+
+/// Guess a MIME type from a file's extension — good enough for `grind text image`'s default,
+/// and always overridable with `--mime` for anything this misses.
+fn sniff_image_mime(path: &Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        _ => "application/octet-stream",
+    }
+    .to_owned()
 }
 
 fn describe_kind(kind: &grind_text::BlockKind) -> String {
@@ -691,6 +729,31 @@ enum TextCommand {
         /// The text; "-" reads it from stdin
         #[arg(allow_hyphen_values = true)]
         text: String,
+    },
+
+    /// Insert an image at a caret, from a file on disk
+    ///
+    /// One caret position, like a tab: `erase`, `split` and `join` already handle it correctly
+    /// with no change to any of them, because none of them edits *inside* a run that is not
+    /// text. The MIME type is guessed from the file's extension unless `--mime` says otherwise;
+    /// `--width`/`--height` are ODF lengths, e.g. `5cm`, and are optional the way a document's
+    /// own frequently are.
+    Image {
+        file: PathBuf,
+        /// Where it goes, e.g. p3+12 — an address with no offset means the front of its block
+        at: String,
+        /// The picture to embed
+        #[arg(long, value_name = "PATH")]
+        from: PathBuf,
+        /// Override the guessed MIME type, e.g. image/jpeg
+        #[arg(long, value_name = "TYPE")]
+        mime: Option<String>,
+        /// Width, e.g. 5cm
+        #[arg(long)]
+        width: Option<String>,
+        /// Height, e.g. 5cm
+        #[arg(long)]
+        height: Option<String>,
     },
 
     /// Erase a range of characters, leaving the blocks that hold them

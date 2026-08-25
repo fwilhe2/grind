@@ -35,6 +35,10 @@ pub enum Ns {
     /// LibreOffice's calc extension namespace. Recognised because it carries a legitimate
     /// alias for `office:value-type` (§9).
     Calcext,
+    /// `draw:` — `draw:frame`, `draw:image`, and everything else a drawing shape is made of.
+    /// Only the two above are resolved by anything today; the rest route to `Ignore` like any
+    /// other unrecognised content.
+    Draw,
     Other,
 }
 
@@ -48,6 +52,7 @@ pub const SVG: &str = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
 /// W3C, not OASIS — the one namespace here that ODF borrows rather than defines.
 pub const XLINK: &str = "http://www.w3.org/1999/xlink";
 pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
+pub const DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 
 impl Ns {
     pub fn from_uri(uri: &[u8]) -> Ns {
@@ -61,6 +66,7 @@ impl Ns {
             b if b == SVG.as_bytes() => Ns::Svg,
             b if b == XLINK.as_bytes() => Ns::Xlink,
             b if b == CALCEXT.as_bytes() => Ns::Calcext,
+            b if b == DRAW.as_bytes() => Ns::Draw,
             _ => Ns::Other,
         }
     }

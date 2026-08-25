@@ -74,6 +74,7 @@ free under R6; the first is a feature with a gate.
 | `text:line-break` | rng:8418 | — | A break *within* a paragraph, which is not a new paragraph |
 | `text:a` | rng:16453 | `xlink:href` | Cannot nest inside itself, per the schema |
 | `text:bookmark` | rng:16801 | `text:name` | **The named-range analogue** — what `loc.rs` resolves `#intro` against |
+| `draw:frame` | rng:5089 | `svg:width`, `svg:height` | Holds a `draw:image` (rng:5380). One `Run`, occupying one caret position like a tab — `text:anchor-type="char"` and `"paragraph"` are both this variant, since either way the frame is one child of a `text:p` (rng:8405 lists it in `paragraph-content` directly). LibreOffice nests a second frame inside a `draw:text-box` purely for resizing; both are read as one image, the outermost frame's size preferred over the inner one's. The image itself is `common-draw-data-attlist`'s `xlink:href` (rng:1621, a package's own `Pictures/foo.jpg`) or `office-binary-data` (rng:5383, inline base64) — the schema's own choice, and both are read, the first resolved against the package this document came from. The text-box's own caption paragraph — plain text and a `text:sequence` field's computed value (rng:8655's `<rng:text/>`) — becomes a second run, right after the image |
 
 ### Styles
 

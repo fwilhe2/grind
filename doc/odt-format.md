@@ -435,6 +435,81 @@ than a second loosening — a regenerated document has lost its `office:styles`,
 reorganises what is left and most paragraphs hoist. When the writer learns to declare styles and
 the reader to read paragraph properties, both exclusions go and the comparison is total.
 
+### An inserted image is a frame inside a frame — VERIFIED
+
+Not from the corpus — from a `.fodt` LibreOffice 26.2.5.2 wrote for a single pasted picture,
+one heading and nothing else. Insert Image produces:
+
+```xml
+<text:p text:style-name="P1">
+ <draw:frame draw:name="Frame1" text:anchor-type="char" svg:width="13.229cm">
+  <draw:text-box fo:min-height="13.229cm">
+   <text:p text:style-name="Figure">
+    <draw:frame draw:name="Image1" text:anchor-type="paragraph"
+                svg:width="13.229cm" svg:height="13.229cm"
+                style:rel-width="100%" style:rel-height="scale">
+     <draw:image draw:mime-type="image/jpeg"><office:binary-data>…</office:binary-data></draw:image>
+    </draw:frame>
+   </text:p>
+  </draw:text-box>
+ </draw:frame>
+</text:p>
+```
+
+An **outer** `draw:frame` (rng:5089) anchored `char` — the resizable object a person sees and
+drags — wrapping a `draw:text-box` (rng:5939, itself just a `text:p` sequence, empty here) that
+holds a **second, inner** frame anchored `paragraph`, which is the one actually holding the
+`draw:image`. The outer frame carries a width and no height; the inner carries both. Nothing
+here is undocumented by the schema — `draw-frame`'s content is `zeroOrMore` over a choice that
+includes both `draw-text-box` and `draw-image` (so a bare `draw:frame` holding `draw:image`
+directly, with no text-box, is equally valid) — but which shape a real Insert Image menu item
+produces is not, and it is this one, not the simpler one.
+
+`grind_text`'s reader (`text/src/odf/read.rs`) tunnels through the text-box looking for a
+nested frame, taking the outer frame's `svg:width`/`svg:height` and falling back to the inner
+frame's for whichever the outer did not say — reading the fixture above back gives one
+`Run::Image` sized `13.229cm × 13.229cm`, matching what Writer actually draws. The writer never
+reproduces the nesting: R3 (minimal boilerplate) says the flat shape — one `draw:frame`, no
+text-box — and the schema above says that shape is equally valid ODF, so a document with an
+image this build *edited* comes back simpler than one LibreOffice would have written, and loads
+back into LibreOffice unchanged; see `text/tests/image.rs`. An *unedited* image keeps the exact
+bytes above, nested frame and all, through R6.
+
+**The `draw:text-box`'s own paragraph is not always empty.** A picture inserted with a caption —
+*Insert → Caption* rather than the bare *Insert → Image* above — puts the frame *and* a caption
+into the same paragraph the text-box wraps around the inner frame:
+
+```xml
+<text:p text:style-name="Figure">
+ <draw:frame draw:name="Image1" …>…</draw:frame>Figure
+ <text:sequence text:ref-name="refFigure0" text:name="Figure"
+                text:formula="ooow:Figure+1" style:num-format="1">1</text:sequence>:
+ a photograph.
+</text:p>
+```
+
+measured from a real `Earthrise.fodt`/`Earthrise.odt` pair (a NASA photograph, public domain,
+captioned by hand — not from the corpus). `text:sequence` (rng:8655) is a field: `<rng:text/>`
+is its own computed display value, "1" here, standing for a figure number LibreOffice
+maintains. Fields are out of scope (`doc/text-core.md`), but the plain text around this one is
+not, and dropping the whole paragraph silently — an earlier build of this reader did — loses a
+caption a person wrote on purpose. `TextBoxSearch` (`text/src/odf/read.rs`) reads the caption
+paragraph's own text nodes, including a `text:sequence`'s, and the outermost frame's `end`
+appends it as a second `Run::Text`, right after the `Run::Image` — after, never before,
+regardless of the order its pieces arrived while the text-box was still open.
+
+**The image itself may be a reference rather than bytes.** `draw:image`'s content is a *choice*
+(rng:5382): `common-draw-data-attlist` (rng:1621, `xlink:href` into the package's own files —
+what `Earthrise.odt`, the package form of the same document, actually has: `xlink:href=
+"Pictures/10000000000001F4000001F4E8BF0916.jpg"`) or `office-binary-data` (rng:5383, inline
+base64 — the flat form's only option, and what a package *may* choose too). Both are read: an
+`xlink:href` is resolved eagerly, against the archive `odf::read` was handed
+(`grind_core::odf::package::part`, a generic zip-entry fetch alongside `content_xml` and
+`styles_xml`), the moment `draw:image`'s own attributes are seen — before `Frame::start_child`
+returns, so there is no child element to wait for. Losing the picture rather than the document
+if the path is not actually in the zip, the same "keep the document, drop the one thing that
+did not resolve" rule `styles_xml` already followed.
+
 ### The oracle: the pin had no Writer in it, and now does
 
 **`ci/libreoffice-image` could not serve `grind-text`.** The image these figures were first

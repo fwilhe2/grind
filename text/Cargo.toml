@@ -14,7 +14,14 @@ repository.workspace = true
 # The [GENERIC] half: packaging, namespaces, the context stack, style primitives, `kind`.
 # Everything this crate adds is the office:text content model (doc/odt-format.md).
 grind-core = { path = "../core" }
+# `office:binary-data`'s own encoding (rng:7681) — an embedded image is base64 and nothing else
+# in the schema says otherwise.
+base64 = "0.22"
 
 [dev-dependencies]
 # Loop A matches on `grind_core::Error::Encrypted` directly — the one documented loosening.
 grind-core = { path = "../core" }
+base64 = "0.22"
+# Building a synthetic package (a `Pictures/` entry an `xlink:href` points at) to test against,
+# rather than vendoring a real `.odt` for it.
+zip = { version = "2", default-features = false, features = ["deflate"] }

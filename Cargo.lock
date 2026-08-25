@@ -924,7 +924,9 @@ dependencies = [
 name = "grind-text"
 version = "0.0.0"
 dependencies = [
+ "base64",
  "grind-core",
+ "zip",
 ]
 
 [[package]]

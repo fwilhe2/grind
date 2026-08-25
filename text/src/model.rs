@@ -104,6 +104,30 @@ pub enum Run {
     /// it is *in* the text, which is what lets `loc.rs` offer `#intro` as an address that
     /// survives editing.
     Bookmark { name: String },
+    /// `draw:frame` holding a `draw:image` (rng:7932 inside `paragraph-content`, rng:5380) —
+    /// anchored `char` or `paragraph` (`doc/suite.md`'s proposed scope for this crate; both
+    /// anchor types are one child of a `text:p` regardless, so both are this one variant).
+    /// One caret position, like a tab: it can be typed over, erased and backspaced across as
+    /// a whole, but never edited a character at a time.
+    Image {
+        /// `draw:mime-type` on `draw:image` (rng:5397).
+        mime: String,
+        /// The decoded bytes.
+        ///
+        /// Only `office:binary-data` (rng:7681) is read — the flat form every `.fodt` uses,
+        /// and what a package regenerates into on write (R3). A package's own
+        /// `xlink:href` into its `Pictures/` entries (rng:5383's other choice) is a named
+        /// gap: resolving it needs the archive's other files threaded through the reader,
+        /// which nothing else here does yet, so such an image is inert content today —
+        /// preserved by R6 whenever the paragraph around it is never edited, invisible to
+        /// this model when it is.
+        data: Vec<u8>,
+        /// `svg:width` / `svg:height`, ODF lengths kept verbatim (`common-draw-size-attlist`,
+        /// rng:1778) — off whichever of the frame and its image carries them, outermost
+        /// preferred, since that is the size a person actually sees.
+        width: Option<String>,
+        height: Option<String>,
+    },
 }
 
 impl Run {
@@ -136,6 +160,10 @@ impl Run {
             Run::Tab => "\t",
             Run::Break => "\n",
             Run::Bookmark { .. } => "",
+            // The object replacement character — Unicode's own placeholder for exactly this,
+            // so a caret has one position to sit at and `Block::text()` has one character to
+            // count, the same trade `Run::Tab` makes.
+            Run::Image { .. } => "\u{fffc}",
         }
     }
 

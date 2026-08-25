@@ -29,6 +29,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | — (named gap) |
 | Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | — (named gap) |
 | Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; `Title`/`Subtitle` paragraphs and every run's own formatting are drawn, not only measured | — (named gap) |
+| Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | — (named gap) |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
 
@@ -96,13 +97,31 @@ the other unless it says so, and everything here is reachable from the CLI (R9).
 **Both shells.** No copy, cut or paste — `App::erase` takes two carets, and a selection can now
 name them in `grind-text-gtk`, but nothing yet puts either end on a clipboard. No find/replace UI
 (`grind text find`/`replace` exist). No lists UI: a list item read from a file draws with its
-bullet and its indent, and nothing creates or renests one. No tables, footnotes, fields or
-images, because the core has none. No pages, no print, no zoom. No RTL — excluded by decision in
-`doc/text-layout.md`. Tab stops are measured per run rather than per line, so a line with several
-tabs drifts from where a word processor would put them. A named-style picker stays out: a run's
-*named* style (as opposed to its direct formatting) is a name this build keeps and does not
-interpret, and turning `Emphasis` into a set of checkboxes would throw that structure away to
-draw it (`doc/text-core.md`).
+bullet and its indent, and nothing creates or renests one. No tables or footnotes, because the
+core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
+`text:file-name`) are also out, both for the same reason `doc/text-core.md` gives. No pages, no
+print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are measured per
+run rather than per line, so a line with several tabs drifts from where a word processor would
+put them. A named-style picker stays out: a run's *named* style (as opposed to its direct
+formatting) is a name this build keeps and does not interpret, and turning `Emphasis` into a set
+of checkboxes would throw that structure away to draw it (`doc/text-core.md`).
+
+**`grind-web`'s document pane only, for images.** `grind-text-gtk` decodes and draws one — the
+CLI's own `--render-to` proof is `Earthrise.fodt` and `Earthrise.odt`, a real photograph and
+caption LibreOffice wrote in both physical forms, opening with the picture and its caption both
+visible rather than either dropped. The browser pane still has neither the model call nor the
+drawing; the second is now most of the work, since `App::insert_image` and the reader/writer
+support underneath it are shared by every shell already. Two things are true in `grind-text-gtk`
+alone even once the browser catches up: an image sitting *mid-sentence* — the
+`text:anchor-type="char"` case, as opposed to a paragraph that is only a picture (optionally
+followed by its caption's text, which reads the same way) — still draws as the placeholder
+character (`\u{fffc}`) rather than the picture, because nothing here lays inline content out
+around one yet; and an image is fit to the column width on its own terms, ignoring the
+document's own `svg:width`/`svg:height` (`RunView::image`'s `ImageView::width`/`height`), because
+turning an ODF length into device pixels needs a resolution this shell does not otherwise track.
+A package's picture referenced by `xlink:href` into `Pictures/` (as opposed to embedded
+`office:binary-data`) now resolves at read time in every shell (`doc/odt-format.md`'s "The image
+itself may be a reference rather than bytes"), so this is no longer a gap.
 
 **`grind-web`'s document pane only, now.** No selection — no shift-click, no shift-arrow, no
 dragging — and no styling UI, which used to be a *both-shells* gap blocked on the model carrying

@@ -28,7 +28,7 @@
 use std::fmt::Write as _;
 
 use grind_core::Result;
-use grind_core::odf::names::{FO, OFFICE, STYLE, TEXT, XLINK};
+use grind_core::odf::names::{DRAW, FO, OFFICE, STYLE, SVG, TEXT, XLINK};
 use grind_core::odf::package::{VERSION, write_package};
 use grind_core::odf::xml::esc;
 
@@ -69,6 +69,25 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     if doc.edits.structural {
         return None;
     }
+    // A document that never carried an image never declared `draw:`/`svg:` either, and
+    // splicing patches individual block elements without ever touching the root tag that
+    // would have to carry the declaration — so an image appearing for the first time forces a
+    // regenerate, the same way a style name the file has no room for does, just below. A
+    // document read *with* an image already has the declaration on its own root, so this only
+    // ever fires for one a person just added.
+    if doc
+        .blocks
+        .iter()
+        .flat_map(|b| b.runs.iter())
+        .any(|r| matches!(r, Run::Image { .. }))
+        && !source
+            .bytes
+            .windows(DRAW.len())
+            .any(|w| w == DRAW.as_bytes())
+    {
+        return None;
+    }
+
     // Every character style the document now needs, under the name this *file* gives it. A
     // formatting the file has no name for cannot be spliced, because the declaration would have
     // to go somewhere these patches do not reach.
@@ -126,17 +145,18 @@ struct Used {
     /// `style:` and `fo:`, which arrive together: the only thing this writer puts in either is
     /// a `style:style` full of `fo:` properties, so one flag covers both.
     styles: bool,
+    /// `draw:` and `svg:`, which arrive together for the same reason — the only thing either
+    /// namespace carries here is one image's frame and its size.
+    image: bool,
 }
 
 impl Used {
     fn of(doc: &Document, pool: &Pool) -> Self {
+        let runs = || doc.blocks.iter().flat_map(|b| b.runs.iter());
         Used {
-            xlink: doc.blocks.iter().any(|b| {
-                b.runs
-                    .iter()
-                    .any(|r| matches!(r, Run::Text { href: Some(_), .. }))
-            }),
+            xlink: runs().any(|r| matches!(r, Run::Text { href: Some(_), .. })),
             styles: !pool.is_empty(),
+            image: runs().any(|r| matches!(r, Run::Image { .. })),
         }
     }
 }
@@ -235,6 +255,10 @@ fn content(doc: &Document, form: Form) -> String {
     // `style:` and `fo:` only in one that formats something.
     if used.styles {
         let _ = write!(out, " xmlns:style=\"{STYLE}\" xmlns:fo=\"{FO}\"");
+    }
+    // `draw:` and `svg:` only in one that has a picture in it.
+    if used.image {
+        let _ = write!(out, " xmlns:draw=\"{DRAW}\" xmlns:svg=\"{SVG}\"");
     }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
@@ -391,7 +415,34 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
         Run::Bookmark { name } => {
             let _ = write!(out, "<text:bookmark text:name=\"{}\"/>", esc(name));
         }
+        Run::Image {
+            mime,
+            data,
+            width,
+            height,
+        } => image(out, mime, data, width.as_deref(), height.as_deref()),
     }
+}
+
+/// One `draw:frame` holding a `draw:image` — always the flat shape (no `draw:text-box`
+/// wrapper, `text:anchor-type="paragraph"` always), regardless of what a document this build
+/// read might have nested it in. R3's rule applied to a new element: minimal boilerplate over
+/// reproducing a producer's own habits, and R6 means this only fires for an image a person
+/// actually inserted or a paragraph a person actually edited — everything else splices its
+/// source bytes back verbatim, wrapper and all.
+fn image(out: &mut String, mime: &str, data: &[u8], width: Option<&str>, height: Option<&str>) {
+    use base64::Engine as _;
+    let _ = write!(out, "<draw:frame text:anchor-type=\"paragraph\"");
+    if let Some(width) = width {
+        let _ = write!(out, " svg:width=\"{}\"", esc(width));
+    }
+    if let Some(height) = height {
+        let _ = write!(out, " svg:height=\"{}\"", esc(height));
+    }
+    let _ = write!(out, "><draw:image draw:mime-type=\"{}\">", esc(mime));
+    out.push_str("<office:binary-data>");
+    out.push_str(&base64::engine::general_purpose::STANDARD.encode(data));
+    out.push_str("</office:binary-data></draw:image></draw:frame>");
 }
 
 /// Character data, with every piece of significant whitespace written as the element ODF has
