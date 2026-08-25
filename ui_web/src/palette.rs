@@ -6,7 +6,7 @@
 //!
 //! It knows nothing about what any command *means* — it shows [`Entry`] values, remembers
 //! which row is picked, and hands back the id of the one that was chosen. What goes in the
-//! list is [`crate::command`]'s and the pane's; what happens next is [`crate::Shell::run`]'s.
+//! list is [`crate::command`]'s and the pane's; what happens next is the shell's own `run`.
 //!
 //! Not a `<dialog>`: the top layer is more than a list needs, and a plain element behaves the
 //! same in every browser and in jsdom, where the smoke test drives it.

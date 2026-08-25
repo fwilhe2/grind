@@ -274,7 +274,7 @@ impl Ticks {
 }
 
 /// The ticks a value axis running from zero to `max` gets — a step of 1, 2 or 5 times a power
-/// of ten, chosen as the smallest that keeps the count near [`TICK_TARGET`]. The "nice
+/// of ten, chosen as the smallest that keeps the count near `TICK_TARGET`. The "nice
 /// numbers" rule, which is a presentation decision this build makes once rather than one each
 /// shell makes differently.
 pub fn axis_ticks(max: f64) -> Ticks {
