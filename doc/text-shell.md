@@ -27,7 +27,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Editing | type, Enter, Backspace, Delete | the same four |
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
 | Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | — (named gap) |
-| Selection | Shift+arrow, Shift+click; typing or Enter over one replaces it | — (named gap) |
+| Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | — (named gap) |
 | Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; `Title`/`Subtitle` paragraphs and every run's own formatting are drawn, not only measured | — (named gap) |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
@@ -104,16 +104,17 @@ tabs drifts from where a word processor would put them. A named-style picker sta
 interpret, and turning `Emphasis` into a set of checkboxes would throw that structure away to
 draw it (`doc/text-core.md`).
 
-**`grind-web`'s document pane only, now.** No selection — no shift-click, no shift-arrow — and
-no styling UI, which used to be a *both-shells* gap blocked on the model carrying only a run's
-style name. That blocker is gone (`App::set_char_style`/`char_style`, `doc/text-core.md`) and
-`grind-text-gtk` closed both halves of it: an anchor alongside the caret (`Doc::selection`,
-Shift+arrow and Shift+click extend it, typing or Enter over one erases it first the way every
-other editor's Shift key does), a toolbar of four toggles that read the selection's common
-formatting and write through `set_char_style`, and the drawing fix in the section above so a
-toggle's effect is visible rather than only present in the file. The browser pane has none of
-it yet — the first candidate when it grows, the same way the outline dialog and go-to-address
-field are (below).
+**`grind-web`'s document pane only, now.** No selection — no shift-click, no shift-arrow, no
+dragging — and no styling UI, which used to be a *both-shells* gap blocked on the model carrying
+only a run's style name. That blocker is gone (`App::set_char_style`/`char_style`,
+`doc/text-core.md`) and `grind-text-gtk` closed both halves of it: an anchor alongside the caret
+(`Doc::selection`, Shift+arrow and Shift+click extend it, dragging with the button down grows it
+continuously through `GestureDrag`'s own `drag-begin`/`drag-update`, typing or Enter over one
+erases it first the way every other editor's Shift key does), a toolbar of four toggles that
+read the selection's common formatting and write through `set_char_style`, and the drawing fix
+in the section above so a toggle's effect is visible rather than only present in the file. The
+browser pane has none of it yet — the first candidate when it grows, the same way the outline
+dialog and go-to-address field are (below).
 
 **`grind-text-gtk` only.** No `grind-ui` crate: `doc/suite.md` says to extract the shared GTK
 plumbing "on evidence, at S9, when the second shell shows the seam", and one *minimal* shell

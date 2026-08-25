@@ -295,11 +295,14 @@ mod imp {
             ));
             widget.add_controller(focus);
 
-            let click = gtk::GestureClick::new();
-            click.connect_pressed(glib::clone!(
+            // A drag rather than a click: dragging with the button down is how a mouse
+            // selects, and a plain click is just a drag whose `drag-update` never fires —
+            // one gesture serves both instead of two that would have to agree.
+            let drag = gtk::GestureDrag::new();
+            drag.connect_drag_begin(glib::clone!(
                 #[weak(rename_to = doc)]
                 widget,
-                move |gesture, _, x, y| {
+                move |gesture, x, y| {
                     doc.grab_focus();
                     let shift = gesture
                         .current_event_state()
@@ -307,7 +310,16 @@ mod imp {
                     doc.imp().click(x, y, shift);
                 }
             ));
-            widget.add_controller(click);
+            drag.connect_drag_update(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |gesture, offset_x, offset_y| {
+                    if let Some((start_x, start_y)) = gesture.start_point() {
+                        doc.imp().drag_to(start_x + offset_x, start_y + offset_y);
+                    }
+                }
+            ));
+            widget.add_controller(drag);
         }
     }
 
@@ -722,36 +734,49 @@ mod imp {
                 .unwrap_or(0)
         }
 
-        /// Where a click landed: the block under the pointer, and the offset nearest to x on
-        /// the line it hit. Shift extends the selection from wherever the caret already was,
-        /// the way Shift+arrow does; a plain click starts fresh.
-        fn click(&self, x: f64, y: f64, shift: bool) {
+        /// The block and offset a point in the widget lands on: which block the pointer is
+        /// over, then which line, then where on it — the same two questions in the same
+        /// order the core answers them, so a click and a Down-arrow land on the same offset.
+        fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
             let width = f64::from(self.obj().width());
             let flow = self.flow(width);
             let (left, _) = geom::column(width);
             let scroll = self.scroll();
-            let Some(slot) = flow.at_y(y + scroll).and_then(|index| flow.slot(index)) else {
-                return;
-            };
-            let Some((layout, _, _)) = self.measured(slot.index) else {
-                return;
-            };
-            // Which line, then where on it: the same two questions in the same order the
-            // core answers them, so a click and a Down-arrow land on the same offset.
+            let slot = flow.at_y(y + scroll).and_then(|index| flow.slot(index))?;
+            let (layout, _, _) = self.measured(slot.index)?;
             let line = line_at_y(&layout, y + scroll - slot.top);
             let offset = layout.offset_at(line, (x - left - slot.indent) as f32);
+            Some(Caret {
+                block: slot.index,
+                offset,
+            })
+        }
+
+        /// The press that starts either a click or a drag — there is no telling which yet,
+        /// so both are seeded the same way. Shift extends the selection from wherever the
+        /// caret already was, the way Shift+arrow does; a plain press starts a fresh one
+        /// anchored here, which is what turns a subsequent [`Doc::drag_to`] into a mouse
+        /// selection and costs nothing when the button just comes back up in place — a
+        /// selection of zero characters is [`Doc::selection`]'s "no selection" case.
+        pub fn click(&self, x: f64, y: f64, shift: bool) {
+            let Some(caret) = self.caret_at(x, y) else {
+                return;
+            };
             match shift {
                 true if self.anchor.get().is_none() => self.anchor.set(Some(self.caret.get())),
-                false => self.anchor.set(None),
+                false => self.anchor.set(Some(caret)),
                 true => {}
             }
-            self.move_caret(
-                Caret {
-                    block: slot.index,
-                    offset,
-                },
-                true,
-            );
+            self.move_caret(caret, true);
+        }
+
+        /// Dragging with the button down: the anchor [`Doc::click`] planted stays put and
+        /// only the caret follows the pointer, which is what grows the highlighted band.
+        pub fn drag_to(&self, x: f64, y: f64) {
+            let Some(caret) = self.caret_at(x, y) else {
+                return;
+            };
+            self.move_caret(caret, true);
         }
 
         // --- selection ---
@@ -1218,6 +1243,55 @@ mod tests {
         assert_eq!(text(&app), "goodbye world");
         assert_eq!(doc.selection(), None, "typing collapses the selection");
         assert_eq!(doc.caret().offset, 7);
+    }
+
+    /// A mouse selects by dragging: the press plants the anchor, and the drag's own updates
+    /// move the caret without disturbing it — the two halves `GestureDrag` was wired to
+    /// drive, exercised here without one.
+    #[test]
+    fn dragging_the_mouse_selects_text() {
+        let Some((doc, _app)) = shell(&["hello world"]) else {
+            return;
+        };
+        let imp = doc.imp();
+        let (layout, _, _) = imp.measured(0).expect("the block lays out");
+        let flow = imp.flow(f64::from(doc.width()));
+        let slot = flow.slot(0).expect("one block");
+        let (left, _) = crate::geom::column(f64::from(doc.width()));
+        let x_of = |offset: usize| left + f64::from(layout.x_at(offset));
+        let y = slot.top + 1.0;
+
+        imp.click(x_of(0), y, false);
+        assert_eq!(
+            doc.selection(),
+            None,
+            "a press alone is not yet a selection"
+        );
+
+        imp.drag_to(x_of(5), y);
+        assert_eq!(
+            doc.selection(),
+            Some((
+                Caret {
+                    block: 0,
+                    offset: 0
+                },
+                Caret {
+                    block: 0,
+                    offset: 5
+                }
+            )),
+            "dragging from before \"h\" to just past \"hello\" selects it"
+        );
+
+        // Dragging back past where the press started still reports one range in document
+        // order, whichever end the pointer is actually over.
+        imp.drag_to(x_of(0), y);
+        assert_eq!(
+            doc.selection(),
+            None,
+            "back where the press started, nothing is selected"
+        );
     }
 
     /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes
