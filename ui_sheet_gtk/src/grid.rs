@@ -58,6 +58,12 @@ const MIN_TRACK: f64 = 6.0;
 /// bigger than the chart itself.
 const MIN_CHART: f64 = 24.0;
 
+/// Below this many pixels of total offset, a press-and-release on a chart's body is a click
+/// rather than a move — the colour popover's own gesture, distinguished from a drag the same
+/// way [`gtk::GestureClick`] distinguishes a click from the start of a drag elsewhere in this
+/// widget.
+const CHART_CLICK_THRESHOLD: f64 = 4.0;
+
 /// What a filter button is marked with. A glyph rather than a drawn triangle: the layout is
 /// already here for every other piece of text in the grid, and a path builder for one arrow
 /// is a second way of drawing.
@@ -941,11 +947,11 @@ mod imp {
             drag.connect_drag_end(glib::clone!(
                 #[weak(rename_to = grid)]
                 widget,
-                move |_, _, _| {
+                move |_, offset_x, offset_y| {
                     grid.imp().drag.set(None);
                     grid.imp().commit_resize();
                     grid.imp().commit_fill();
-                    grid.imp().commit_chart_drag();
+                    grid.imp().commit_chart_drag(offset_x, offset_y);
                 }
             ));
             widget.add_controller(drag);
@@ -2314,27 +2320,25 @@ mod imp {
                 let Ok(data) = app.chart_data(sheet, index) else {
                     continue;
                 };
-                // One colour per series (bar, line) or per category (pie) — whichever this
-                // chart's kind needs more of — cycling `grind_sheet::series_color` exactly the
-                // way the writer does, so a chart drawn here matches what gets saved.
-                let n = data
-                    .series
-                    .len()
-                    .max(data.series.first().map_or(0, |(_, v)| v.len()))
-                    .max(1);
-                let colors: Vec<gtk::gdk::RGBA> = (0..n)
-                    .map(|k| {
-                        crate::theme::color(grind_sheet::series_color(k))
-                            .unwrap_or(f.palette.foreground)
-                    })
-                    .collect();
+                // Every mark's colour resolved the same way the writer resolves one —
+                // `grind_sheet::chart::effective_color`, an override if the user picked one
+                // else the default cycle — so what is drawn here always matches what gets
+                // saved.
+                let color = |series: usize, point: Option<usize>| {
+                    crate::theme::color(&grind_sheet::effective_color(chart, series, point))
+                        .unwrap_or(f.palette.foreground)
+                };
                 crate::chart::draw(
+                    &*self.obj(),
                     f.snapshot,
                     at,
                     &data,
-                    &colors,
+                    &color,
                     f.palette.background,
                     f.palette.lines,
+                    f.palette.foreground,
+                    chart.x_axis_label.as_deref(),
+                    chart.y_axis_label.as_deref(),
                 );
                 // The resize handle, the same square the fill handle is — a chart being
                 // dragged also gets an accent outline, so the whole shape being moved reads
@@ -2351,7 +2355,7 @@ mod imp {
 
         /// The end of a chart drag: the widget-space rect becomes ODF lengths and one undo
         /// entry — moving and resizing are otherwise the same call, `App::reshape_chart`.
-        fn commit_chart_drag(&self) {
+        fn commit_chart_drag(&self, offset_x: f64, offset_y: f64) {
             let Some(drag) = self.chart_drag.take() else {
                 return;
             };
@@ -2361,6 +2365,21 @@ mod imp {
             let Some(app) = self.app.borrow().clone() else {
                 return;
             };
+            // A press that never moved is a click rather than a move — the resize handle has
+            // no such thing, since a resize starting and ending on the same pixel is a
+            // no-op reshape either way.
+            if let ChartDrag::Move {
+                index,
+                grab_dx,
+                grab_dy,
+            } = drag
+                && offset_x.abs() < CHART_CLICK_THRESHOLD
+                && offset_y.abs() < CHART_CLICK_THRESHOLD
+            {
+                self.obj().queue_draw();
+                self.open_chart_color_popover(index, rect.x + grab_dx, rect.y + grab_dy);
+                return;
+            }
             let geom = self.geom();
             let zoom = self.zoom.get();
             let to_mm = |px: f64| px / zoom / PX_PER_MM;
@@ -2373,6 +2392,80 @@ mod imp {
                 self.notice(Notice::Refused(error.to_string()));
             }
             self.obj().queue_draw();
+        }
+
+        /// A click that landed on a bar, a pie slice or a line: a palette popover at the
+        /// click point, picking from [`crate::formatting::palette_grid`] — the same swatches
+        /// a cell's own colour button offers — writes the mark's colour through
+        /// `App::set_chart_style` as one undo step. *Automatic* clears the override, back to
+        /// [`grind_sheet::series_color`]'s default cycle.
+        fn open_chart_color_popover(&self, chart_index: usize, x: f64, y: f64) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            let Ok(charts) = app.charts(sheet) else {
+                return;
+            };
+            let Some(chart) = charts.get(chart_index) else {
+                return;
+            };
+            let Some(rect) = self.chart_widget_rect(&self.geom(), chart) else {
+                return;
+            };
+            let Ok(data) = app.chart_data(sheet, chart_index) else {
+                return;
+            };
+            let Some((series, point)) = crate::chart::mark_at(
+                rect,
+                &data,
+                x,
+                y,
+                chart.x_axis_label.as_deref(),
+                chart.y_axis_label.as_deref(),
+            ) else {
+                return;
+            };
+
+            let shown = crate::theme::color(&grind_sheet::effective_color(chart, series, point))
+                .unwrap_or(gtk::gdk::RGBA::BLACK);
+            let x_axis_label = chart.x_axis_label.clone();
+            let y_axis_label = chart.y_axis_label.clone();
+            let series_vec = chart.series.clone();
+
+            let popover = gtk::Popover::new();
+            popover.set_parent(&*self.obj());
+            popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.connect_closed(|popover| popover.unparent());
+
+            let widget = self.obj().clone();
+            let choices = crate::formatting::palette_grid(&popover, shown, move |picked| {
+                let mut series_vec = series_vec.clone();
+                let Some(s) = series_vec.get_mut(series) else {
+                    return;
+                };
+                match point {
+                    Some(p) => {
+                        if s.point_colors.len() <= p {
+                            s.point_colors.resize(p + 1, None);
+                        }
+                        s.point_colors[p] = picked.clone();
+                    }
+                    None => s.color = picked.clone(),
+                }
+                if let Err(error) = app.set_chart_style(
+                    sheet,
+                    chart_index,
+                    x_axis_label.as_deref(),
+                    y_axis_label.as_deref(),
+                    series_vec,
+                ) {
+                    widget.imp().notice(Notice::Refused(error.to_string()));
+                }
+                widget.queue_draw();
+            });
+            popover.set_child(Some(&choices));
+            popover.popup();
         }
 
         /// Double-clicking a column boundary: wide enough for the widest thing in the

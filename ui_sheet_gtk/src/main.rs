@@ -155,6 +155,11 @@ impl Ui {
             .build();
         header.pack_end(&menu);
 
+        let insert_chart = gtk::Button::from_icon_name("view-object-select-symbolic");
+        insert_chart.set_tooltip_text(Some("Insert Chart"));
+        insert_chart.set_action_name(Some("win.chart-insert"));
+        header.pack_start(&insert_chart);
+
         let banner = adw::Banner::new("");
         let add_sheet = gtk::Button::from_icon_name("list-add-symbolic");
         add_sheet.set_tooltip_text(Some("Add Sheet"));
@@ -711,6 +716,203 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
+    // --- charts ---
+
+    /// Insert a chart, prefilled from the current selection when one spans more than one row
+    /// and more than one column: the first column becomes categories, the first row becomes
+    /// each remaining column's own label, and each remaining column becomes a series — the
+    /// shape a user selecting "Party" and a column of vote counts already has in mind. A
+    /// smaller selection leaves the fields blank, the same as typing `grind sheet chart-add`
+    /// with nothing pre-filled.
+    fn insert_chart_dialog(self: &Rc<Self>) {
+        let (start, end) = self.grid.selection().rect();
+        let multi = end.row > start.row && end.col > start.col;
+        let categories_default = match multi {
+            true => format!(
+                "{}:{}",
+                a1::format(None, grind_sheet::Pos::new(start.row + 1, start.col)),
+                a1::format(None, grind_sheet::Pos::new(end.row, start.col))
+            ),
+            false => String::new(),
+        };
+        let mut series_defaults: Vec<String> = Vec::new();
+        if multi {
+            for col in (start.col + 1)..=end.col {
+                let values = format!(
+                    "{}:{}",
+                    a1::format(None, grind_sheet::Pos::new(start.row + 1, col)),
+                    a1::format(None, grind_sheet::Pos::new(end.row, col))
+                );
+                let label = a1::format(None, grind_sheet::Pos::new(start.row, col));
+                series_defaults.push(format!("{values}={label}"));
+            }
+        }
+        if series_defaults.is_empty() {
+            series_defaults.push(String::new());
+        }
+
+        let kind = adw::ComboRow::builder()
+            .title("Type")
+            .model(&gtk::StringList::new(&["Bar", "Line", "Pie"]))
+            .build();
+        let categories = adw::EntryRow::builder()
+            .title("Categories (x axis), e.g. B3:B9")
+            .text(&categories_default)
+            .build();
+
+        let series_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        series_list.add_css_class("boxed-list");
+        for text in &series_defaults {
+            series_list.append(&series_row(text));
+        }
+        let add_series = gtk::Button::with_label("+ Add Series");
+        add_series.set_halign(gtk::Align::Start);
+        add_series.connect_clicked(glib::clone!(
+            #[weak]
+            series_list,
+            move |_| series_list.append(&series_row(""))
+        ));
+
+        let x_axis_label = adw::EntryRow::builder().title("X axis label").build();
+        let y_axis_label = adw::EntryRow::builder().title("Y axis label").build();
+        let labels_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        labels_list.add_css_class("boxed-list");
+        labels_list.append(&x_axis_label);
+        labels_list.append(&y_axis_label);
+
+        let type_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        type_list.add_css_class("boxed-list");
+        type_list.append(&kind);
+        type_list.append(&categories);
+
+        let insert = gtk::Button::with_label("Insert");
+        insert.add_css_class("suggested-action");
+        insert.set_halign(gtk::Align::End);
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        for widget in [
+            type_list.upcast_ref::<gtk::Widget>(),
+            series_list.upcast_ref(),
+            add_series.upcast_ref(),
+            labels_list.upcast_ref(),
+            insert.upcast_ref(),
+        ] {
+            content.append(widget);
+        }
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .child(&content)
+            .build();
+        let view = adw::ToolbarView::builder().content(&scroller).build();
+        view.add_top_bar(&adw::HeaderBar::new());
+        let dialog = adw::Dialog::builder()
+            .title("Insert Chart")
+            .content_width(420)
+            .content_height(480)
+            .child(&view)
+            .build();
+
+        insert.connect_clicked(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            #[weak]
+            dialog,
+            #[weak]
+            kind,
+            #[weak]
+            categories,
+            #[weak]
+            series_list,
+            #[weak]
+            x_axis_label,
+            #[weak]
+            y_axis_label,
+            move |_| {
+                let chart_kind = match kind.selected() {
+                    1 => grind_sheet::ChartKind::Line,
+                    2 => grind_sheet::ChartKind::Pie,
+                    _ => grind_sheet::ChartKind::Bar,
+                };
+                let categories_text = categories.text();
+                let categories_range =
+                    (!categories_text.trim().is_empty()).then(|| categories_text.trim().to_owned());
+
+                let mut series_texts = Vec::new();
+                let mut row = series_list.first_child();
+                while let Some(r) = row {
+                    if let Some(entry) = r.downcast_ref::<adw::EntryRow>() {
+                        let text = entry.text();
+                        if !text.trim().is_empty() {
+                            series_texts.push(text.trim().to_owned());
+                        }
+                    }
+                    row = r.next_sibling();
+                }
+                if series_texts.is_empty() {
+                    ui.toast("At least one series is required");
+                    return;
+                }
+                let series: Vec<(String, Option<String>)> = series_texts
+                    .iter()
+                    .map(|s| match s.split_once('=') {
+                        Some((values, label)) => (values.to_owned(), Some(label.to_owned())),
+                        None => (s.clone(), None),
+                    })
+                    .collect();
+                let series: Vec<(&str, Option<&str>)> = series
+                    .iter()
+                    .map(|(v, l)| (v.as_str(), l.as_deref()))
+                    .collect();
+
+                let x_label = x_axis_label.text();
+                let y_label = y_axis_label.text();
+                let x_label = (!x_label.trim().is_empty()).then(|| x_label.trim().to_owned());
+                let y_label = (!y_label.trim().is_empty()).then(|| y_label.trim().to_owned());
+
+                let sheet = ui.grid.sheet();
+                // Successive inserts land at slightly different spots, so they don't stack
+                // exactly on top of each other — a user repositions by dragging afterward
+                // either way.
+                let n = ui.app.charts(sheet).map(|c| c.len()).unwrap_or(0) as f64;
+                let x = grind_sheet::style::mm_length(20.0 + n * 5.0);
+                let y = grind_sheet::style::mm_length(20.0 + n * 5.0);
+                match ui.app.add_chart(
+                    sheet,
+                    chart_kind,
+                    categories_range.as_deref(),
+                    &series,
+                    &x,
+                    &y,
+                    "12cm",
+                    "8cm",
+                    x_label.as_deref(),
+                    y_label.as_deref(),
+                ) {
+                    Ok(()) => {
+                        dialog.close();
+                    }
+                    Err(error) => ui.toast(&error.to_string()),
+                }
+            }
+        ));
+
+        dialog.present(Some(&self.window));
+    }
+
     // --- sheets ---
 
     fn add_sheet(self: &Rc<Self>) {
@@ -1002,6 +1204,30 @@ fn name_row(
     row
 }
 
+/// One series in the insert-chart dialog: `RANGE[=LABEL]`, the same vocabulary
+/// `chart-add --series` already accepts, plus a button that removes the row.
+fn series_row(text: &str) -> adw::EntryRow {
+    let row = adw::EntryRow::builder()
+        .title("Series (range or range=label-range)")
+        .text(text)
+        .build();
+    let delete = gtk::Button::from_icon_name("user-trash-symbolic");
+    delete.set_tooltip_text(Some("Remove"));
+    delete.set_valign(gtk::Align::Center);
+    delete.add_css_class("flat");
+    delete.connect_clicked(glib::clone!(
+        #[weak]
+        row,
+        move |_| {
+            if let Some(list) = row.parent().and_downcast::<gtk::ListBox>() {
+                list.remove(&row);
+            }
+        }
+    ));
+    row.add_suffix(&delete);
+    row
+}
+
 /// What a calculation's row says first: the friendly rendering of its formula when there is
 /// one, and the formula itself otherwise.
 ///
@@ -1131,6 +1357,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.grid.toggle_filter()
         }),
         ("names", &[][..], |ui| ui.manage_names()),
+        ("chart-insert", &[][..], |ui| ui.insert_chart_dialog()),
         ("calculations", &["<Control><Shift>f"][..], |ui| {
             ui.explore_calculations()
         }),
@@ -1161,6 +1388,7 @@ fn primary_menu() -> gio::Menu {
     sheets.append(Some("Add Sheet"), Some("win.sheet-add"));
     sheets.append(Some("Rename Sheet…"), Some("win.sheet-rename"));
     sheets.append(Some("Delete Sheet"), Some("win.sheet-delete"));
+    sheets.append(Some("Insert Chart…"), Some("win.chart-insert"));
     menu.append_section(None, &sheets);
 
     let rest = gio::Menu::new();

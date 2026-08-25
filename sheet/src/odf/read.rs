@@ -131,6 +131,14 @@ struct PendingChart {
     y: Option<String>,
     width: Option<String>,
     height: Option<String>,
+    x_axis_label: Option<String>,
+    y_axis_label: Option<String>,
+    /// Every `style:style style:family="chart"` this chart's own
+    /// `office:automatic-styles` declares, name → `draw:fill-color` — collected before
+    /// `chart:plot-area` is reached (the schema puts automatic-styles ahead of the body,
+    /// `write.rs`'s own comment relies on the same ordering) so a `chart:series`/
+    /// `chart:data-point`'s own `chart:style-name` can be resolved by the time it is seen.
+    styles: HashMap<String, String>,
 }
 
 /// One cell of the buffered row. A struct rather than a tuple since the day it grew a
@@ -522,6 +530,9 @@ impl Context<Builder> for Frame {
                         main.kind = found.kind;
                         main.categories = found.categories;
                         main.series = found.series;
+                        main.x_axis_label = found.x_axis_label;
+                        main.y_axis_label = found.y_axis_label;
+                        main.styles = found.styles;
                     }
                 }
                 Some(Box::new(super::context::Ignore))
@@ -550,6 +561,8 @@ impl Context<Builder> for Frame {
             y: pending.y.unwrap_or_else(|| "0cm".to_owned()),
             width,
             height,
+            x_axis_label: pending.x_axis_label,
+            y_axis_label: pending.y_axis_label,
         };
         let sheet = &mut b.doc.sheets[b.sheet];
         let index = sheet.charts().len();
@@ -576,8 +589,43 @@ struct ChartPartRoot;
 
 impl Context<Builder> for ChartPartRoot {
     fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        name.is(Ns::Office, "body")
-            .then(|| Box::new(OfficeBody) as Ctx)
+        match (name.ns, name.local.as_str()) {
+            (Ns::Office, "body") => Some(Box::new(OfficeBody) as Ctx),
+            (Ns::Office, "automatic-styles") => Some(Box::new(ChartAutomaticStyles) as Ctx),
+            _ => None,
+        }
+    }
+}
+
+/// `office:automatic-styles`, inside a chart's own document — `style:style
+/// style:family="chart"` entries only, collected into [`PendingChart::styles`].
+struct ChartAutomaticStyles;
+
+impl Context<Builder> for ChartAutomaticStyles {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Style, "style") || attrs.get(Ns::Style, "family") != Some("chart") {
+            return None;
+        }
+        let name = attrs.get(Ns::Style, "name")?.to_owned();
+        Some(Box::new(ChartStyleStyle { name }) as Ctx)
+    }
+}
+
+/// One `style:style style:family="chart"` — only its `style:graphic-properties`' own
+/// `draw:fill-color` (rng:10941) is read back out of it.
+struct ChartStyleStyle {
+    name: String,
+}
+
+impl Context<Builder> for ChartStyleStyle {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "graphic-properties")
+            && let Some(color) = attrs.get(Ns::Draw, "fill-color")
+            && let Some(pending) = &mut b.pending_chart
+        {
+            pending.styles.insert(self.name.clone(), color.to_owned());
+        }
+        None
     }
 }
 
@@ -634,14 +682,20 @@ impl Context<Builder> for ChartChart {
     }
 }
 
-/// `chart:plot-area` (rng:776) — the x axis' categories, and every series.
+/// `chart:plot-area` (rng:776) — the x and y axes, and every series.
 struct ChartPlotArea;
 
 impl Context<Builder> for ChartPlotArea {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            (Ns::Chart, "axis") => (attrs.get(Ns::Chart, "dimension") == Some("x"))
-                .then(|| Box::new(ChartAxisX) as Ctx),
+            (Ns::Chart, "axis") => {
+                let dim = match attrs.get(Ns::Chart, "dimension") {
+                    Some("x") => AxisDim::X,
+                    Some("y") => AxisDim::Y,
+                    _ => return None,
+                };
+                Some(Box::new(ChartAxis { dim }) as Ctx)
+            }
             (Ns::Chart, "series") => {
                 let values = attrs
                     .get(Ns::Chart, "values-cell-range-address")?
@@ -649,32 +703,134 @@ impl Context<Builder> for ChartPlotArea {
                 let label = attrs
                     .get(Ns::Chart, "label-cell-address")
                     .map(str::to_owned);
-                if let Some(pending) = &mut b.pending_chart {
-                    pending.series.push(crate::chart::Series { values, label });
-                }
-                // `chart:data-point` carries only styling (`doc/chart-format.md`'s colour
-                // section) — nothing this build reads back out of one.
-                Some(Box::new(super::context::Ignore))
+                let series_style = attrs.get(Ns::Chart, "style-name").map(str::to_owned);
+                let (index, kind) = {
+                    let pending = b.pending_chart.as_ref()?;
+                    (pending.series.len(), pending.kind)
+                };
+                // Only `Line` still carries one colour on the series element itself
+                // (`doc/chart-format.md`) — `Bar` and `Pie` colour per point, read below
+                // from each `chart:data-point`. A colour identical to the default cycle at
+                // this position is treated as unset, so an unmodified chart keeps
+                // re-cycling — see [`crate::chart::effective_color`].
+                let color = match kind {
+                    Some(crate::chart::ChartKind::Line) => {
+                        series_style.as_deref().and_then(|name| {
+                            let pending = b.pending_chart.as_ref()?;
+                            let hex = pending.styles.get(name)?;
+                            (hex.as_str() != crate::chart::series_color(index)).then(|| hex.clone())
+                        })
+                    }
+                    _ => None,
+                };
+                let pending = b.pending_chart.as_mut()?;
+                pending.series.push(crate::chart::Series {
+                    values,
+                    label,
+                    color,
+                    point_colors: Vec::new(),
+                });
+                Some(Box::new(ChartSeries {
+                    series_index: index,
+                    point: 0,
+                }) as Ctx)
             }
             _ => None,
         }
     }
 }
 
-/// `chart:axis` (rng:423) for `chart:dimension="x"` — the one axis a chart's categories hang
-/// off. The y axis (and any chart with more than these two) is out of scope and ignored.
-struct ChartAxisX;
+/// One of `chart:series`' own `chart:data-point` children (rng:552) — colour only, read into
+/// [`crate::chart::Series::point_colors`] for `Bar`/`Pie` the same way [`ChartPlotArea`]
+/// reads `Line`'s own series-level colour, comparing to the default cycle at each point's
+/// position so an unmodified chart keeps re-cycling.
+struct ChartSeries {
+    series_index: usize,
+    point: usize,
+}
 
-impl Context<Builder> for ChartAxisX {
+impl Context<Builder> for ChartSeries {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        if name.is(Ns::Chart, "categories")
-            && let Some(pending) = &mut b.pending_chart
-        {
-            pending.categories = attrs
-                .get(Ns::Table, "cell-range-address")
-                .map(str::to_owned);
+        if !name.is(Ns::Chart, "data-point") {
+            return None;
         }
+        let repeated: usize = attrs
+            .get(Ns::Chart, "repeated")
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(1)
+            .max(1);
+        if let Some(style_name) = attrs.get(Ns::Chart, "style-name")
+            && let Some(pending) = &mut b.pending_chart
+            && let Some(hex) = pending.styles.get(style_name).cloned()
+            && hex != crate::chart::series_color(self.point)
+            && let Some(series) = pending.series.get_mut(self.series_index)
+        {
+            if series.point_colors.len() <= self.point {
+                series.point_colors.resize(self.point + 1, None);
+            }
+            series.point_colors[self.point] = Some(hex);
+        }
+        self.point += repeated;
         None
+    }
+}
+
+/// Which axis a [`ChartAxis`]/[`ChartAxisTitle`] belongs to.
+#[derive(Clone, Copy)]
+enum AxisDim {
+    X,
+    Y,
+}
+
+/// `chart:axis` (rng:423) — categories (x only) and a title (either axis).
+struct ChartAxis {
+    dim: AxisDim,
+}
+
+impl Context<Builder> for ChartAxis {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str(), self.dim) {
+            (Ns::Chart, "categories", AxisDim::X) => {
+                if let Some(pending) = &mut b.pending_chart {
+                    pending.categories = attrs
+                        .get(Ns::Table, "cell-range-address")
+                        .map(str::to_owned);
+                }
+                None
+            }
+            (Ns::Chart, "title", _) => Some(Box::new(ChartAxisTitle { dim: self.dim }) as Ctx),
+            _ => None,
+        }
+    }
+}
+
+/// An axis' own `chart:title` (rng:934) — plain text via [`Paragraph`]. Distinct from
+/// `chart:chart`'s own title/subtitle/legend, which this build never reads
+/// (`doc/not-doing.md`).
+struct ChartAxisTitle {
+    dim: AxisDim,
+}
+
+impl Context<Builder> for ChartAxisTitle {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Text, "p") {
+            return None;
+        }
+        b.text.clear();
+        Some(Box::new(Paragraph) as Ctx)
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let text = std::mem::take(&mut b.text);
+        if text.is_empty() {
+            return;
+        }
+        if let Some(pending) = &mut b.pending_chart {
+            match self.dim {
+                AxisDim::X => pending.x_axis_label = Some(text),
+                AxisDim::Y => pending.y_axis_label = Some(text),
+            }
+        }
     }
 }
 

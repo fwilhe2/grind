@@ -39,7 +39,9 @@ pub mod style;
 pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
-pub use chart::{Chart, ChartData, ChartKind, Series as ChartSeries, series_color};
+pub use chart::{
+    Chart, ChartData, ChartKind, Series as ChartSeries, effective_color, series_color,
+};
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
 
@@ -1338,6 +1340,8 @@ impl App {
         y: &str,
         width: &str,
         height: &str,
+        x_axis_label: Option<&str>,
+        y_axis_label: Option<&str>,
     ) -> Result<()> {
         let categories = categories
             .map(|addr| chart::parse_range(self, sheet, addr))
@@ -1350,6 +1354,8 @@ impl App {
                     label: label
                         .map(|addr| chart::parse_range(self, sheet, addr))
                         .transpose()?,
+                    color: None,
+                    point_colors: Vec::new(),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -1362,6 +1368,8 @@ impl App {
         );
         chart.categories = categories;
         chart.series = series;
+        chart.x_axis_label = x_axis_label.map(str::to_owned);
+        chart.y_axis_label = y_axis_label.map(str::to_owned);
 
         self.mutate(|state| {
             let sheet_len = state
@@ -1428,6 +1436,36 @@ impl App {
                     y: y.to_owned(),
                     width: width.to_owned(),
                     height: height.to_owned(),
+                })
+                .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// Replace a chart's axis labels and its series (colours included) wholesale, one undo
+    /// step — the same "send the whole mutable bundle" shape [`Self::reshape_chart`] uses.
+    /// A caller reads the chart's current state through [`Self::charts`], mutates the one
+    /// field it cares about (an axis label, or one series' `color`/`point_colors`), and calls
+    /// this with the rest unchanged.
+    pub fn set_chart_style(
+        &self,
+        sheet: usize,
+        index: usize,
+        x_axis_label: Option<&str>,
+        y_axis_label: Option<&str>,
+        series: Vec<chart::Series>,
+    ) -> Result<()> {
+        self.mutate(|state| {
+            let inverse = state
+                .doc
+                .apply(Action::SetChartStyle {
+                    sheet,
+                    index,
+                    x_axis_label: x_axis_label.map(str::to_owned),
+                    y_axis_label: y_axis_label.map(str::to_owned),
+                    series,
                 })
                 .ok_or_else(|| Error::BadSheet(format!("sheet {sheet} has no chart {index}")))?;
             state.undo.push(inverse);

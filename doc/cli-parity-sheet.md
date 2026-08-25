@@ -63,10 +63,16 @@ stops ratcheting.
   JSON report. Not a command of its own, because the answer is only interesting *after* an
   edit — asking it of an untouched document is what `grind sheet recalc --dry-run` is for.
 - `add_chart` — `grind sheet chart-add --type bar|line|pie --categories <range> --series
-  <range>[=<label-range>] …` (`doc/chart-format.md`)
+  <range>[=<label-range>] … [--x-axis-label <text>] [--y-axis-label <text>]`
+  (`doc/chart-format.md`)
 - `charts` — `grind sheet chart-list`
 - `remove_chart` — `grind sheet chart-remove <index>`
 - `reshape_chart` — `grind sheet chart-reshape <index> --x --y --width --height`
+- `set_chart_style` — `grind sheet chart-style <index> [--x-axis-label <text>]
+  [--y-axis-label <text>] [--series-color <series>=<color>]…
+  [--point-color <series>.<point>=<color>]…` — an axis' own title, and the colour a line
+  series or a bar/pie point gets, overriding `series_color`'s default cycle
+  (`doc/chart-format.md`)
 - `chart_data` — not exposed: nothing here draws a chart. `chart-list`'s ranges are read
   back through `charts`; `grind-sheet-gtk` is the shell that resolves them against the live
   sheet and draws one, and the CLI has no drawing surface of its own to reach this from.

@@ -514,7 +514,10 @@ separators · **moving over a filtered-out or manually hidden row**: the arrow k
 step onto a row that has no height, so the selection appears to stick until it passes the
 run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
 handing it the hidden set — worth doing the first time it annoys somebody, not before).
-CSV, sort, find/replace, the chart and print keep their existing not-doing rows and gates.
+CSV, sort, find/replace and print keep their existing not-doing rows and gates. The chart's
+own gaps moved: creating one from the GUI, assigning a colour by hand and an axis title are
+now built (`doc/chart-format.md`) — no keyboard-driven repositioning is what remains of that
+row.
 
 **Filtering is built** (§9.4): the dropdown button in each heading cell of the range, a
 value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L on the tool strip to

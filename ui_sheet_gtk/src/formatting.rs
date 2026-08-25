@@ -316,76 +316,7 @@ impl Swatches {
             .build();
         button.add_css_class("flat");
 
-        let choices = gtk::Grid::builder()
-            .row_spacing(4)
-            .column_spacing(4)
-            .margin_top(6)
-            .margin_bottom(6)
-            .margin_start(6)
-            .margin_end(6)
-            .build();
-        // Six to a row, which puts the greys on the last one — the palette's own order, so a
-        // user reading clrs.cc and a user reading this menu see the same thing.
-        for (index, (name, hex)) in style::PALETTE.iter().enumerate() {
-            let Some(rgba) = crate::theme::color(hex) else {
-                continue;
-            };
-            let swatch = gtk::Button::builder()
-                .child(&area(Rc::new(Cell::new(rgba)), 20, 20))
-                .tooltip_text(capitalised(name))
-                .build();
-            swatch.add_css_class("flat");
-            swatch.connect_clicked(glib::clone!(
-                #[weak]
-                popover,
-                #[strong]
-                pick,
-                move |_| {
-                    popover.popdown();
-                    pick(Some((*hex).to_owned()));
-                }
-            ));
-            choices.attach(&swatch, (index % 6) as i32, (index / 6) as i32, 1, 1);
-        }
-
-        let automatic = gtk::Button::with_label("Automatic");
-        automatic.connect_clicked(glib::clone!(
-            #[weak]
-            popover,
-            #[strong]
-            pick,
-            move |_| {
-                popover.popdown();
-                pick(None);
-            }
-        ));
-        choices.attach(&automatic, 0, 3, 3, 1);
-
-        let custom = gtk::Button::with_label("Custom…");
-        custom.connect_clicked(glib::clone!(
-            #[weak]
-            popover,
-            #[strong]
-            pick,
-            #[strong]
-            shown,
-            move |button| {
-                popover.popdown();
-                let window = button.root().and_downcast::<gtk::Window>();
-                let pick = pick.clone();
-                gtk::ColorDialog::new().choose_rgba(
-                    window.as_ref(),
-                    Some(&shown.get()),
-                    gtk::gio::Cancellable::NONE,
-                    move |chosen| {
-                        if let Ok(rgba) = chosen {
-                            pick(Some(hex(rgba)));
-                        }
-                    },
-                );
-            }
-        ));
-        choices.attach(&custom, 3, 3, 3, 1);
+        let choices = palette_grid(&popover, shown.get(), move |v| pick(v));
         popover.set_child(Some(&choices));
 
         Rc::new(Self {
@@ -442,6 +373,87 @@ fn area(color: Rc<Cell<gdk::RGBA>>, width: i32, height: i32) -> gtk::DrawingArea
         let _ = cr.stroke();
     });
     area
+}
+
+/// The palette grid plus *Automatic*/*Custom…* every colour picker in this shell offers —
+/// [`Swatches::new`]'s own content, and [`crate::grid`]'s chart-mark colour popover, which has
+/// no cell to hang a `MenuButton` off of and builds a bare [`gtk::Popover`] around this instead.
+/// `shown` seeds *Custom…*'s dialog; `popover` is closed once a choice is made.
+pub(crate) fn palette_grid(
+    popover: &gtk::Popover,
+    shown: gdk::RGBA,
+    pick: impl Fn(Option<String>) + 'static,
+) -> gtk::Grid {
+    let pick = Rc::new(pick);
+    let choices = gtk::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(4)
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    // Six to a row, which puts the greys on the last one — the palette's own order, so a
+    // user reading clrs.cc and a user reading this menu see the same thing.
+    for (index, (name, hex)) in style::PALETTE.iter().enumerate() {
+        let Some(rgba) = crate::theme::color(hex) else {
+            continue;
+        };
+        let swatch = gtk::Button::builder()
+            .child(&area(Rc::new(Cell::new(rgba)), 20, 20))
+            .tooltip_text(capitalised(name))
+            .build();
+        swatch.add_css_class("flat");
+        swatch.connect_clicked(glib::clone!(
+            #[weak]
+            popover,
+            #[strong]
+            pick,
+            move |_| {
+                popover.popdown();
+                pick(Some((*hex).to_owned()));
+            }
+        ));
+        choices.attach(&swatch, (index % 6) as i32, (index / 6) as i32, 1, 1);
+    }
+
+    let automatic = gtk::Button::with_label("Automatic");
+    automatic.connect_clicked(glib::clone!(
+        #[weak]
+        popover,
+        #[strong]
+        pick,
+        move |_| {
+            popover.popdown();
+            pick(None);
+        }
+    ));
+    choices.attach(&automatic, 0, 3, 3, 1);
+
+    let custom = gtk::Button::with_label("Custom…");
+    custom.connect_clicked(glib::clone!(
+        #[weak]
+        popover,
+        #[strong]
+        pick,
+        move |button| {
+            popover.popdown();
+            let window = button.root().and_downcast::<gtk::Window>();
+            let pick = pick.clone();
+            gtk::ColorDialog::new().choose_rgba(
+                window.as_ref(),
+                Some(&shown),
+                gtk::gio::Cancellable::NONE,
+                move |chosen| {
+                    if let Ok(rgba) = chosen {
+                        pick(Some(hex(rgba)));
+                    }
+                },
+            );
+        }
+    ));
+    choices.attach(&custom, 3, 3, 3, 1);
+    choices
 }
 
 /// A palette name as a menu shows it. The names are ASCII and lower-case by construction

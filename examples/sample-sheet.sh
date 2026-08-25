@@ -150,6 +150,22 @@ run width "$book" A:A 4cm
 run width "$book" H:H 3.5cm
 run height "$book" 1:1 8mm
 
+# A chart tracks ranges, not values, the way a formula does — moving the data it points at
+# moves the chart with no separate step. Bar and pie colour per bar or slice by default
+# (`series_color`'s own cycle); a colour picked by hand — `--point-color`/`--series-color` —
+# is a sticky override that survives every later save, which is what `chart-style` is for.
+say "chart: bar, line and pie, tracking ranges rather than values"
+run chart-add "$book" --type bar --categories A2:A7 --series B2:B7=B1 --series C2:C7=C1 \
+  --x-axis-label Category --y-axis-label Budgeted \
+  --x 1cm --y 30cm --width 12cm --height 8cm
+sheet chart-list "$book"
+run chart-style "$book" 0 --point-color 0.0=red   # Housing's budgeted bar, picked by hand
+run chart-reshape "$book" 0 --x 1cm --y 30cm --width 14cm --height 9cm
+
+say "chart: a pie of the same categories, coloured per slice by default"
+run chart-add "$book" --type pie --categories A2:A7 --series C2:C7 \
+  --x 16cm --y 30cm --width 10cm --height 8cm
+
 say "hide: a column or row by hand"
 run hide "$book" D
 sheet hide "$book"

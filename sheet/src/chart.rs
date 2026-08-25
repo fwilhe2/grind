@@ -58,11 +58,22 @@ impl ChartKind {
 pub struct Series {
     pub values: String,
     pub label: Option<String>,
+    /// A user-assigned override for this whole series' colour — consulted for [`ChartKind::Line`]
+    /// only, an ODF colour (`"#rrggbb"`). `None` means "use the default cycle" — see
+    /// [`effective_color`].
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Per-point overrides, sparse by position within this series' own `values` range —
+    /// consulted for [`ChartKind::Bar`] and [`ChartKind::Pie`] only. A missing index, or `None`
+    /// at one, means "use the default cycle colour for this position" — see [`effective_color`].
+    #[serde(default)]
+    pub point_colors: Vec<Option<String>>,
 }
 
 /// A chart, as this build models it — `doc/chart-format.md`'s scope line is the whole of what
-/// is missing: no title, no subtitle, no legend, one categories range and one values range per
-/// series.
+/// is missing: no chart-level title, no subtitle, no legend, one categories range and one
+/// values range per series. An axis title is in scope (`chart:axis`'s own `chart:title`, a
+/// different element from the chart-level one `doc/not-doing.md` excludes).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chart {
     pub kind: ChartKind,
@@ -75,6 +86,12 @@ pub struct Chart {
     pub y: String,
     pub width: String,
     pub height: String,
+    /// The x axis' own `chart:title` (rng:422-434), plain text.
+    #[serde(default)]
+    pub x_axis_label: Option<String>,
+    /// The y axis' own `chart:title`.
+    #[serde(default)]
+    pub y_axis_label: Option<String>,
 }
 
 impl Chart {
@@ -88,7 +105,35 @@ impl Chart {
             y,
             width,
             height,
+            x_axis_label: None,
+            y_axis_label: None,
         }
+    }
+}
+
+/// The colour a mark actually gets: a bar, a pie slice, or a line — the single place the
+/// writer and every shell's painter both resolve this, so they can never disagree.
+///
+/// `point` is `Some` for [`ChartKind::Bar`] and [`ChartKind::Pie`] (one colour per bar or per
+/// slice, an override in [`Series::point_colors`] else the default cycle at that position,
+/// resetting per series — a pie's own rule, applied to bar too); `None` for
+/// [`ChartKind::Line`] (one colour per line, [`Series::color`] else the default cycle at the
+/// series' own position).
+pub fn effective_color(chart: &Chart, series: usize, point: Option<usize>) -> String {
+    let s = &chart.series[series];
+    match chart.kind {
+        ChartKind::Bar | ChartKind::Pie => {
+            let point = point.expect("Bar and Pie marks are per-point");
+            s.point_colors
+                .get(point)
+                .cloned()
+                .flatten()
+                .unwrap_or_else(|| series_color(point).to_owned())
+        }
+        ChartKind::Line => s
+            .color
+            .clone()
+            .unwrap_or_else(|| series_color(series).to_owned()),
     }
 }
 
@@ -227,5 +272,77 @@ mod tests {
     fn the_colour_table_cycles_rather_than_panics_past_its_own_length() {
         let first = series_color(0);
         assert_eq!(series_color(SERIES_COLORS.len()), first);
+    }
+
+    fn series(values: &str) -> Series {
+        Series {
+            values: values.to_owned(),
+            label: None,
+            color: None,
+            point_colors: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_bar_colours_per_point_by_default_like_a_pie() {
+        let mut chart = Chart::new(
+            ChartKind::Bar,
+            "0cm".into(),
+            "0cm".into(),
+            "1cm".into(),
+            "1cm".into(),
+        );
+        chart.series = vec![series("B1:B3")];
+        assert_ne!(
+            effective_color(&chart, 0, Some(0)),
+            effective_color(&chart, 0, Some(1))
+        );
+        assert_eq!(effective_color(&chart, 0, Some(0)), series_color(0));
+        assert_eq!(effective_color(&chart, 0, Some(1)), series_color(1));
+    }
+
+    #[test]
+    fn a_line_colours_per_series_by_default() {
+        let mut chart = Chart::new(
+            ChartKind::Line,
+            "0cm".into(),
+            "0cm".into(),
+            "1cm".into(),
+            "1cm".into(),
+        );
+        chart.series = vec![series("B1:B3"), series("C1:C3")];
+        assert_eq!(effective_color(&chart, 0, None), series_color(0));
+        assert_eq!(effective_color(&chart, 1, None), series_color(1));
+    }
+
+    #[test]
+    fn a_point_override_beats_the_default_cycle() {
+        let mut chart = Chart::new(
+            ChartKind::Pie,
+            "0cm".into(),
+            "0cm".into(),
+            "1cm".into(),
+            "1cm".into(),
+        );
+        let mut s = series("B1:B3");
+        s.point_colors = vec![None, Some("#123456".to_owned())];
+        chart.series = vec![s];
+        assert_eq!(effective_color(&chart, 0, Some(0)), series_color(0));
+        assert_eq!(effective_color(&chart, 0, Some(1)), "#123456");
+    }
+
+    #[test]
+    fn a_series_colour_override_beats_the_default_cycle_for_a_line() {
+        let mut chart = Chart::new(
+            ChartKind::Line,
+            "0cm".into(),
+            "0cm".into(),
+            "1cm".into(),
+            "1cm".into(),
+        );
+        let mut s = series("B1:B3");
+        s.color = Some("#abcdef".to_owned());
+        chart.series = vec![s];
+        assert_eq!(effective_color(&chart, 0, None), "#abcdef");
     }
 }

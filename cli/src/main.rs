@@ -1322,6 +1322,12 @@ enum Command {
         width: String,
         #[arg(long, default_value = "8cm")]
         height: String,
+        /// The x axis' own title
+        #[arg(long, value_name = "TEXT")]
+        x_axis_label: Option<String>,
+        /// The y axis' own title
+        #[arg(long, value_name = "TEXT")]
+        y_axis_label: Option<String>,
     },
 
     /// List a sheet's charts
@@ -1356,6 +1362,36 @@ enum Command {
         /// Defaults to the first
         #[arg(long)]
         sheet: Option<String>,
+    },
+
+    /// Set a chart's axis labels or a mark's colour
+    ///
+    /// `sheet chart-style book.ods 0 --x-axis-label Party --y-axis-label Votes` titles a
+    /// chart's axes. `--series-color 0=navy` sets a whole line series' colour (line charts
+    /// only — a bar or a pie colours per bar/slice instead: `--point-color 0.2=red` is the
+    /// third bar or slice of series 0). Either repeatable flag with nothing after `=` — `
+    /// --series-color 0=` — goes back to the default cycle. `doc/chart-format.md`.
+    ChartStyle {
+        file: PathBuf,
+        /// The chart's position in `chart-list`, 0-based
+        index: usize,
+        /// Defaults to the first
+        #[arg(long)]
+        sheet: Option<String>,
+        /// The x axis' own title; pass an empty string to clear it
+        #[arg(long, value_name = "TEXT")]
+        x_axis_label: Option<String>,
+        /// The y axis' own title; pass an empty string to clear it
+        #[arg(long, value_name = "TEXT")]
+        y_axis_label: Option<String>,
+        /// A line series' whole colour, as `SERIES=COLOR` (a palette name or `#rrggbb`) —
+        /// `SERIES=` clears it. Repeat for more than one series.
+        #[arg(long = "series-color", value_name = "SERIES=COLOR")]
+        series_color: Vec<String>,
+        /// One bar's or slice's colour, as `SERIES.POINT=COLOR` — `SERIES.POINT=` clears it.
+        /// Repeat for more than one.
+        #[arg(long = "point-color", value_name = "SERIES.POINT=COLOR")]
+        point_color: Vec<String>,
     },
 }
 
@@ -2048,6 +2084,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             y,
             width,
             height,
+            x_axis_label,
+            y_axis_label,
         } => {
             let app = load(file, cli)?;
             let sheet_index = chart_sheet(&app, sheet.as_deref())?;
@@ -2071,6 +2109,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 y,
                 width,
                 height,
+                x_axis_label.as_deref(),
+                y_axis_label.as_deref(),
             )
             .say()?;
             finish(&app, cli, file, true)
@@ -2120,6 +2160,86 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             let sheet_index = chart_sheet(&app, sheet.as_deref())?;
             app.reshape_chart(sheet_index, *index, x, y, width, height)
                 .say()?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::ChartStyle {
+            file,
+            index,
+            sheet,
+            x_axis_label,
+            y_axis_label,
+            series_color,
+            point_color,
+        } => {
+            let app = load(file, cli)?;
+            let sheet_index = chart_sheet(&app, sheet.as_deref())?;
+            let charts = app.charts(sheet_index).say()?;
+            let chart = charts
+                .get(*index)
+                .ok_or_else(|| format!("sheet {sheet_index} has no chart {index}"))?;
+            let mut series = chart.series.clone();
+            for entry in series_color {
+                let (n, hex) = entry
+                    .split_once('=')
+                    .ok_or_else(|| format!("{entry}: expected SERIES=COLOR"))?;
+                let n: usize = n
+                    .parse()
+                    .map_err(|_| format!("{entry}: expected a series index"))?;
+                let s = series
+                    .get_mut(n)
+                    .ok_or_else(|| format!("{entry}: chart has no series {n}"))?;
+                s.color = if hex.is_empty() {
+                    None
+                } else {
+                    Some(color(hex)?)
+                };
+            }
+            for entry in point_color {
+                let (pos, hex) = entry
+                    .split_once('=')
+                    .ok_or_else(|| format!("{entry}: expected SERIES.POINT=COLOR"))?;
+                let (n, p) = pos
+                    .split_once('.')
+                    .ok_or_else(|| format!("{entry}: expected SERIES.POINT=COLOR"))?;
+                let n: usize = n
+                    .parse()
+                    .map_err(|_| format!("{entry}: expected a series index"))?;
+                let p: usize = p
+                    .parse()
+                    .map_err(|_| format!("{entry}: expected a point index"))?;
+                let s = series
+                    .get_mut(n)
+                    .ok_or_else(|| format!("{entry}: chart has no series {n}"))?;
+                if hex.is_empty() {
+                    if p < s.point_colors.len() {
+                        s.point_colors[p] = None;
+                    }
+                } else {
+                    if s.point_colors.len() <= p {
+                        s.point_colors.resize(p + 1, None);
+                    }
+                    s.point_colors[p] = Some(color(hex)?);
+                }
+            }
+            let x_axis_label = match x_axis_label {
+                None => chart.x_axis_label.clone(),
+                Some(s) if s.is_empty() => None,
+                Some(s) => Some(s.clone()),
+            };
+            let y_axis_label = match y_axis_label {
+                None => chart.y_axis_label.clone(),
+                Some(s) if s.is_empty() => None,
+                Some(s) => Some(s.clone()),
+            };
+            app.set_chart_style(
+                sheet_index,
+                *index,
+                x_axis_label.as_deref(),
+                y_axis_label.as_deref(),
+                series,
+            )
+            .say()?;
             finish(&app, cli, file, true)
         }
     }

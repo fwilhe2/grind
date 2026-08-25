@@ -124,6 +124,15 @@ pub enum Action {
         width: String,
         height: String,
     },
+    /// Replace a chart's axis labels and its series (colours included) wholesale — one undo
+    /// step, whatever single field a caller actually changed. See `App::set_chart_style`.
+    SetChartStyle {
+        sheet: usize,
+        index: usize,
+        x_axis_label: Option<String>,
+        y_axis_label: Option<String>,
+        series: Vec<crate::chart::Series>,
+    },
     /// Many changes, one undo step. Recalculation is why this exists: a user who types
     /// `recalc` and then `undo` means the whole recalculation, not its last cell.
     Batch(Vec<Action>),
@@ -326,6 +335,27 @@ impl Document {
                     height: previous_height,
                 })
             }
+            Action::SetChartStyle {
+                sheet,
+                index,
+                x_axis_label,
+                y_axis_label,
+                series,
+            } => {
+                let chart = self.sheet_mut(sheet)?.chart_mut(index)?;
+                let previous_x_axis_label =
+                    std::mem::replace(&mut chart.x_axis_label, x_axis_label);
+                let previous_y_axis_label =
+                    std::mem::replace(&mut chart.y_axis_label, y_axis_label);
+                let previous_series = std::mem::replace(&mut chart.series, series);
+                Some(Action::SetChartStyle {
+                    sheet,
+                    index,
+                    x_axis_label: previous_x_axis_label,
+                    y_axis_label: previous_y_axis_label,
+                    series: previous_series,
+                })
+            }
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
@@ -395,7 +425,8 @@ impl Document {
             // Not a cell either: `table:shapes` is a sibling of the rows, not a splice site.
             Action::InsertChart { .. }
             | Action::RemoveChart { .. }
-            | Action::ReshapeChart { .. } => self.edits.only_values = false,
+            | Action::ReshapeChart { .. }
+            | Action::SetChartStyle { .. } => self.edits.only_values = false,
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }
@@ -422,10 +453,11 @@ impl Document {
             Action::InsertChart { sheet, index, .. } => self
                 .sheet(*sheet)
                 .is_some_and(|s| *index <= s.charts().len()),
-            Action::RemoveChart { sheet, index } | Action::ReshapeChart { sheet, index, .. } => {
-                self.sheet(*sheet)
-                    .is_some_and(|s| *index < s.charts().len())
-            }
+            Action::RemoveChart { sheet, index }
+            | Action::ReshapeChart { sheet, index, .. }
+            | Action::SetChartStyle { sheet, index, .. } => self
+                .sheet(*sheet)
+                .is_some_and(|s| *index < s.charts().len()),
             Action::Batch(actions) => actions.iter().all(|a| self.addressable(a)),
         }
     }

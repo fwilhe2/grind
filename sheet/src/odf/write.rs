@@ -169,8 +169,10 @@ fn content(doc: &Document, form: Form) -> String {
         "<{root} xmlns:office=\"{OFFICE}\" xmlns:table=\"{TABLE}\" xmlns:text=\"{TEXT}\""
     );
     // The style namespaces appear only in a document that has styles (§1.4), and the two
-    // that only a *cell* style uses only when one does.
-    if !pool.is_empty() {
+    // that only a *cell* style uses only when one does. A chart's own `style:style
+    // style:family="chart"` needs the same prefix even when no cell in the sheet is styled at
+    // all, or `style:` would go undeclared.
+    if !pool.is_empty() || doc.sheets.iter().any(|s| !s.charts().is_empty()) {
         let _ = write!(out, " xmlns:style=\"{STYLE}\"");
     }
     if pool.styles_cells() {
@@ -681,19 +683,28 @@ fn write_shapes(out: &mut String, sheet: &Sheet) {
 /// `draw:object` may hold (R3).
 fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
     // Every `style:style style:family="chart"` this chart's document needs, one
-    // [`crate::chart::series_color`] each — a series' own colour (bar, line) or one per data
-    // point (pie, which has no axis to share a colour down). Built before anything is
-    // written, so the automatic-styles section — which the schema puts ahead of the body —
-    // never has to forward-reference a name the body decides on later.
-    let mut styles: Vec<(String, &'static str)> = Vec::new();
-    for (n, _) in chart.series.iter().enumerate() {
+    // [`crate::chart::effective_color`] each — one per bar or slice (`Bar`, `Pie`, neither of
+    // which has an axis to share a colour down between their own points) or one per series
+    // (`Line`). Built before anything is written, so the automatic-styles section — which the
+    // schema puts ahead of the body — never has to forward-reference a name the body decides
+    // on later.
+    let mut styles: Vec<(String, String)> = Vec::new();
+    for (n, series) in chart.series.iter().enumerate() {
         match chart.kind {
-            crate::chart::ChartKind::Pie => {
-                for point in 0..cell_count(&chart.series[n].values) {
-                    styles.push((format!("gch{n}-{point}"), crate::chart::series_color(point)));
+            crate::chart::ChartKind::Bar | crate::chart::ChartKind::Pie => {
+                for point in 0..cell_count(&series.values) {
+                    styles.push((
+                        format!("gch{n}-{point}"),
+                        crate::chart::effective_color(chart, n, Some(point)),
+                    ));
                 }
             }
-            _ => styles.push((format!("gch{n}"), crate::chart::series_color(n))),
+            crate::chart::ChartKind::Line => {
+                styles.push((
+                    format!("gch{n}"),
+                    crate::chart::effective_color(chart, n, None),
+                ));
+            }
         }
     }
 
@@ -731,25 +742,24 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
         chart.kind.class()
     );
     out.push_str("          <chart:plot-area>\n");
-    if let Some(categories) = &chart.categories {
-        out.push_str("           <chart:axis chart:dimension=\"x\">\n");
-        let _ = writeln!(
-            out,
-            "            <chart:categories table:cell-range-address=\"{}\"/>",
-            esc(categories)
-        );
-        out.push_str("           </chart:axis>\n");
-    }
-    out.push_str("           <chart:axis chart:dimension=\"y\"/>\n");
+    write_axis(
+        out,
+        "x",
+        chart.categories.as_deref(),
+        chart.x_axis_label.as_deref(),
+    );
+    write_axis(out, "y", None, chart.y_axis_label.as_deref());
     for (n, series) in chart.series.iter().enumerate() {
         let label = series
             .label
             .as_deref()
             .map(|l| format!(" chart:label-cell-address=\"{}\"", esc(l)))
             .unwrap_or_default();
+        // Only `Line` still carries one colour on the series element itself — `Bar` and
+        // `Pie` colour per point, below.
         let style = match chart.kind {
-            crate::chart::ChartKind::Pie => String::new(),
-            _ => format!(" chart:style-name=\"gch{n}\""),
+            crate::chart::ChartKind::Line => format!(" chart:style-name=\"gch{n}\""),
+            crate::chart::ChartKind::Bar | crate::chart::ChartKind::Pie => String::new(),
         };
         let _ = writeln!(
             out,
@@ -759,9 +769,9 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
             esc(&series.values)
         );
         match chart.kind {
-            // A pie has no axis to share one colour down, so every slice is its own
-            // `chart:data-point` and its own colour.
-            crate::chart::ChartKind::Pie => {
+            // Neither a bar nor a pie has an axis to share one colour down between its own
+            // points, so every one is its own `chart:data-point` and its own colour.
+            crate::chart::ChartKind::Bar | crate::chart::ChartKind::Pie => {
                 for point in 0..cell_count(&series.values) {
                     let _ = writeln!(
                         out,
@@ -769,8 +779,8 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
                     );
                 }
             }
-            // A bar or a line series shares one colour across every point in it.
-            _ => {
+            // A line series shares one colour across every point in it.
+            crate::chart::ChartKind::Line => {
                 let _ = writeln!(
                     out,
                     "            <chart:data-point chart:repeated=\"{}\"/>",
@@ -786,6 +796,38 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
     out.push_str("       </office:document>\n");
     out.push_str("      </draw:object>\n");
     out.push_str("     </draw:frame>\n");
+}
+
+/// One `chart:axis` (rng:423): categories (x only, `None` for y) and a title, either or both
+/// absent — self-closed when it would otherwise be empty, the same as the y axis always used
+/// to be before it could carry a title.
+fn write_axis(out: &mut String, dimension: &str, categories: Option<&str>, title: Option<&str>) {
+    if categories.is_none() && title.is_none() {
+        let _ = writeln!(
+            out,
+            "           <chart:axis chart:dimension=\"{dimension}\"/>"
+        );
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "           <chart:axis chart:dimension=\"{dimension}\">"
+    );
+    if let Some(title) = title {
+        let _ = writeln!(
+            out,
+            "            <chart:title><text:p>{}</text:p></chart:title>",
+            esc(title)
+        );
+    }
+    if let Some(categories) = categories {
+        let _ = writeln!(
+            out,
+            "            <chart:categories table:cell-range-address=\"{}\"/>",
+            esc(categories)
+        );
+    }
+    out.push_str("           </chart:axis>\n");
 }
 
 const CHART_MIMETYPE: &str = "application/vnd.oasis.opendocument.chart";
