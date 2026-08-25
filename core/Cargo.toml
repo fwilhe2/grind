@@ -15,7 +15,7 @@ repository.workspace = true
 # exactly what doc/ods-format.md §8.1 requires. Never match on prefixes.
 quick-xml = "0.37"
 # The ODF package is a plain zip. deflate only; ODF uses nothing exotic.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 # For `Locale` only, which each document type's session/model may carry.
 serde = { version = "1", features = ["derive"] }
 unicode-linebreak = "0.1.5"

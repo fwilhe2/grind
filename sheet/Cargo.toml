@@ -18,7 +18,7 @@ grind-core = { path = "../core" }
 # exactly what doc/ods-format.md §8.1 requires. Never match on prefixes.
 quick-xml = "0.37"
 # The ODF package is a plain zip. deflate only; ODF uses nothing exotic.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 # For `Session` only — so an undo stack can outlive the process that built it and a CLI can
 # offer undo across stateless invocations. The document format is ODF and owes serde nothing.
 serde = { version = "1", features = ["derive"] }
