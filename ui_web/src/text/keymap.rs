@@ -115,6 +115,14 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
         "Tab" => Some(Action::Tab { back: chord.shift }),
         // Exactly one character is a typed character; anything longer is a named key this
         // shell does not claim — "F5", "Escape", "Shift".
+        //
+        // TODO: **and "Dead"**, which is what a dead key reports — `` ` ``, `´`, `^` and `~` on
+        // German, French, Spanish and other layouts. Four characters is no character here, so
+        // the key is dropped and nothing is ever composed from it: on those keyboards
+        // `` `code` `` cannot be typed into this pane at all. The prime suspect in
+        // `text/src/markdown.rs`'s TODO. The fix is a composition, not a bigger match arm —
+        // `compositionend` carries what the dead key finally produced, and this shell has no
+        // input method at all (`doc/web-shell.md` names that gap).
         key if key.chars().count() == 1 => Some(Action::Type(key)),
         _ => None,
     }

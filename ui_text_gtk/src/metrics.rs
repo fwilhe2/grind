@@ -212,6 +212,10 @@ impl Faces {
     /// first. A heading deeper than the six levels this shell has faces for is drawn as the
     /// last of them rather than refused: the reader is *tolerant* (R5), so a level-9 heading
     /// loads, and a shell that panicked on one would undo that.
+    // TODO: no `Preformatted Text` arm, so a fenced code block (`grind_text::markdown`) draws
+    // in the body face and typing ``` in this window looks like nothing happened. `ui_web` has
+    // the arm and the face; adding one here is the easy half. See the TODO at the top of
+    // `text/src/markdown.rs` for the hard half, which is `run_attributes` below.
     pub fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
         match style {
             Some("Title") => return &self.title,
@@ -273,6 +277,10 @@ pub fn run_attributes(
             attr.set_end_index(e);
             attrs.insert(attr);
         };
+        // TODO: no `AttrString::new_family` here, so a `` `code` `` run draws in the block's
+        // face. Not safe to add alone: `Face::advances` measures every run in the block's own
+        // face regardless of its `TextStyle`, so a family drawn but not measured drifts the
+        // caret through the run. `text/src/markdown.rs`'s TODO has the whole picture.
         if run.props.is_bold() {
             mark(pango::AttrInt::new_weight(pango::Weight::Bold).into());
         }

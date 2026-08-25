@@ -78,7 +78,9 @@ Deferred by decision, not omission. Everything here is reachable from the CLI (R
 stored and not drawn, and a monospace family cannot be drawn as a different font — everything
 in a terminal already is one. A `` `code` `` run and a preformatted block are **dimmed**
 instead, so they are at least visible as their own kind of text; the document carries the
-family either way, and the browser draws both in an actual monospace face. Sixteen colours, so a
+family either way, and the browser draws both in an actual monospace face. **Open:** SGR 2 is
+optional and many terminals ignore it, so this may be showing nothing at all — part of the
+`TODO:` at the top of `text/src/markdown.rs`, which is where the whole backtick report lives. Sixteen colours, so a
 document's `#ff4136` is drawn as the nearest of them — `nearest_color` in
 `ui_tui/src/text/app.rs`, by squared distance in RGB.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here

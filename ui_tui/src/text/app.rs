@@ -1143,7 +1143,11 @@ fn terminal_style(props: &CharStyle) -> Style {
     // **A terminal has one font**, so a monospace run cannot be drawn as a different one —
     // everything here already is monospace. It is dimmed instead, so `code` is at least
     // visible as its own kind of text rather than silently indistinguishable. The *document*
-    // carries the family either way, and the two windows draw it as one.
+    // carries the family either way, and the browser draws it as one.
+    //
+    // TODO: SGR 2 is optional and plenty of emulators and themes draw it identically to normal
+    // text, so "it did nothing" and "it worked and you cannot see it" look the same here —
+    // part of the report in `text/src/markdown.rs`'s TODO.
     if props.font_family.is_some() {
         style = style.add_modifier(Modifier::DIM);
     }

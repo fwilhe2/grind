@@ -313,6 +313,10 @@ before it can be answered.
   in exactly one place — `sheet/src/a1.rs`.
 - **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and upgrade path.
   They're a tracked ledger — don't silently "fix" one without reading the reason.
+- **`TODO:` comments** are different: something *reported or suspected wrong* and not yet
+  reproduced. Each one says what is already checked, what that check did not cover, and the
+  named suspects — so the next person starts where the evidence stops rather than re-proving
+  the half that works. `grep -rn 'TODO:' --include='*.rs'` is the list.
 - Deferred on purpose, documented where it lives: corrupt-zip recovery (no corpus file needs
   it; belongs with the spec's explicit repair mode).
 
