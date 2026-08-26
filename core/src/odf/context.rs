@@ -23,6 +23,7 @@
 use std::io::BufRead;
 
 use quick_xml::NsReader;
+use quick_xml::XmlVersion;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
 
@@ -126,35 +127,66 @@ fn collect_attrs<R: BufRead>(
     for attr in e.attributes() {
         // A malformed attribute is not worth failing a document over; skip it.
         let Ok(attr) = attr else { continue };
-        let (rr, local) = reader.resolve_attribute(attr.key);
+        let (rr, local) = reader.resolver().resolve_attribute(attr.key);
         let ns = match rr {
             ResolveResult::Bound(n) => Ns::from_uri(n.as_ref()),
             // Unprefixed attributes are in no namespace at all — not the default one.
             _ => Ns::Other,
         };
-        let Ok(value) = attr.decode_and_unescape_value(reader.decoder()) else {
+        // XML attribute-value normalization (§3.3.3): entity references resolved, literal
+        // tabs and newlines folded to spaces. ODF documents carry no XML declaration saying
+        // 1.1, so 1.0's rules are the ones that apply.
+        let Ok(value) = attr.normalized_value(XmlVersion::Implicit1_0) else {
             continue;
         };
-        items.push((
-            Name::new(ns, String::from_utf8_lossy(local.as_ref()).into_owned()),
-            value.into_owned(),
-        ));
+        items.push((Name::new(ns, local.as_ref()), value.into_owned()));
     }
     Ok(Attrs { items, span })
 }
 
 fn resolved_name<R: BufRead>(reader: &NsReader<R>, e: &BytesStart) -> Name {
-    let (rr, local) = reader.resolve_element(e.name());
+    let (rr, local) = reader.resolver().resolve_element(e.name());
     let ns = match rr {
         ResolveResult::Bound(n) => Ns::from_uri(n.as_ref()),
         _ => Ns::Other,
     };
-    Name::new(ns, String::from_utf8_lossy(local.as_ref()).into_owned())
+    Name::new(ns, local.as_ref())
+}
+
+/// Replace every byte that is not part of a valid UTF-8 sequence with `?`, **one byte for one
+/// byte**.
+///
+/// §9 tolerance, at the one layer below the element stack that cannot express it: a parser
+/// working in `str` refuses a document with a stray byte in it outright, and there is no
+/// context to hand an `Ignore` to. A corpus file does hold one (loop A's
+/// `sw/qa/extras/layout/data/ofz64109-1.fodt`, a fuzzer's output), and losing the whole
+/// document over one byte is exactly the intolerance the reader exists to avoid.
+///
+/// Length-preserving is the requirement, not an optimisation: `Attrs::span` indexes into the
+/// caller's *original* bytes for R6, so a repair that changed any offset would splice edits
+/// into the wrong place. `U+FFFD` is three bytes and therefore not an option; `?` is one, and
+/// is not markup.
+fn repair_utf8(bytes: &mut [u8]) {
+    let mut at = 0;
+    while let Err(e) = std::str::from_utf8(&bytes[at..]) {
+        let start = at + e.valid_up_to();
+        // `None` means the input ends mid-sequence: everything left is unusable.
+        let len = e.error_len().unwrap_or(bytes.len() - start);
+        bytes[start..start + len].fill(b'?');
+        at = start + len;
+    }
 }
 
 /// Drive `root` over the XML in `input`, mutating `sink`.
-pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -> Result<()> {
-    let mut reader = NsReader::from_reader(input);
+pub fn parse<R: BufRead, S>(mut input: R, root: Box<dyn Context<S>>, sink: &mut S) -> Result<()> {
+    // Read it all up front rather than streaming: every caller already holds the whole part in
+    // memory (a `content.xml` out of a zip, or a flat document's bytes), and [`repair_utf8`]
+    // has to see a whole sequence at a time to know whether it is broken.
+    let mut input_bytes = Vec::new();
+    input.read_to_end(&mut input_bytes)?;
+    repair_utf8(&mut input_bytes);
+
+    let mut reader = NsReader::from_reader(input_bytes.as_slice());
     let config = reader.config_mut();
     config.trim_text(false);
     // Entity expansion is off by default in quick-xml, so the billion-laughs class of
@@ -211,9 +243,10 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
                 }
             }
             Event::Text(t) => {
-                // Entities (`&amp;`, `&#10;`) are the document's, not ours — resolve them
-                // here so contexts only ever see real characters.
-                let Ok(text) = t.unescape() else { continue };
+                // Line endings are normalized (XML 1.0 §2.11) — a document written on
+                // Windows must not put a stray `\r` into a cell. Entity references are not
+                // in here at all: the parser hands each one over as its own `GeneralRef`.
+                let text = t.xml10_content();
                 if !text.is_empty() {
                     stack
                         .last_mut()
@@ -221,13 +254,32 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
                         .text(&text, sink);
                 }
             }
-            Event::CData(t) => {
-                if let Ok(text) = std::str::from_utf8(&t) {
+            // `&amp;`, `&quot;`, `&#10;` — one event each, and a *character* of the
+            // document's content rather than markup, so it is handed to the same `text`
+            // callback and lands between the two text runs it sits between.
+            //
+            // An entity this parser cannot resolve is dropped, not fatal: only the five
+            // predefined ones and numeric references can appear without a DTD, and §9's
+            // tolerance says a document naming something else still loads.
+            Event::GeneralRef(r) => {
+                let resolved = match r.resolve_char_ref() {
+                    Ok(Some(c)) => Some(c.to_string()),
+                    Ok(None) => quick_xml::escape::resolve_predefined_entity(&r).map(str::to_owned),
+                    Err(_) => None,
+                };
+                if let Some(text) = resolved {
                     stack
                         .last_mut()
                         .expect("stack never empties")
-                        .text(text, sink);
+                        .text(&text, sink);
                 }
+            }
+            Event::CData(t) => {
+                // CDATA is verbatim by definition: no entity references inside it.
+                stack
+                    .last_mut()
+                    .expect("stack never empties")
+                    .text(&t.into_inner(), sink);
             }
             Event::Eof => break,
             _ => {}
@@ -244,4 +296,63 @@ pub fn parse<R: BufRead, S>(input: R, root: Box<dyn Context<S>>, sink: &mut S) -
         root.end(sink);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The contexts below use a made-up `x:` vocabulary rather than a real ODF one, and
+    /// deliberately: nothing in this module knows a document type (R8).
+    #[derive(Default)]
+    struct Collect;
+
+    impl Context<String> for Collect {
+        fn start_child(
+            &mut self,
+            _name: &Name,
+            _attrs: &Attrs,
+            _sink: &mut String,
+        ) -> Option<Box<dyn Context<String>>> {
+            Some(Box::new(Collect))
+        }
+
+        fn text(&mut self, text: &str, sink: &mut String) {
+            sink.push_str(text);
+        }
+    }
+
+    fn text_of(xml: &str) -> String {
+        let mut out = String::new();
+        parse(xml.as_bytes(), Box::new(Collect), &mut out).expect("parses");
+        out
+    }
+
+    /// An entity reference is a character of the document, and arrives from the parser as its
+    /// own event: the run it sits between must not lose it.
+    #[test]
+    fn an_entity_reference_is_content_and_not_markup() {
+        assert_eq!(text_of("<x:p>a&amp;b</x:p>"), "a&b");
+        assert_eq!(text_of("<x:p>&quot;𧌒&quot;</x:p>"), "\"𧌒\"");
+        assert_eq!(text_of("<x:p>a&#10;b&#x41;</x:p>"), "a\nbA");
+        // Undefined without a DTD, and §9 says the document still loads without it.
+        assert_eq!(text_of("<x:p>a&nosuch;b</x:p>"), "ab");
+    }
+
+    #[test]
+    fn a_stray_byte_costs_that_byte_and_not_the_document() {
+        let mut bytes = b"<x:p>a\xffb</x:p>".to_vec();
+        let mut out = String::new();
+        parse(bytes.as_slice(), Box::new(Collect), &mut out).expect("parses");
+        assert_eq!(out, "a?b");
+
+        // Length-preserving, byte for byte — R6's spans index the caller's original bytes.
+        let before = bytes.len();
+        repair_utf8(&mut bytes);
+        assert_eq!(bytes.len(), before);
+        // A truncated multi-byte sequence at the very end goes the same way.
+        let mut cut = "é".as_bytes()[..1].to_vec();
+        repair_utf8(&mut cut);
+        assert_eq!(cut, b"?");
+    }
 }
