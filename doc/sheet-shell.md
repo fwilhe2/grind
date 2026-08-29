@@ -541,6 +541,24 @@ hidden run collapses its two neighbours' headers together, so `geom::Hit` gained
 there finds the right run from either side) — a thin accent bar, clickable to unhide the
 whole run in one step.
 
+**Inline name hints are built** (`doc/view-modes.md` V4, normative there): View → Names, or
+Ctrl+Shift+N, draws each named expression inside the cell it is bound to, once per anchor, with a
+range outlined; and the formula bar gains a third stack page reading a formula through its names
+(§3.3). Both are *readings* — the file is byte-identical with the mode on, which is what lets
+them sit on a toolbar with no confirmation, no dirty flag and no undo entry. The arithmetic is in
+`geom.rs` (`hint_rect`, `GridGeom::hint_cell`) and tests with no display.
+
+**Role mode is built too** (V6): View → Roles, or Ctrl+Shift+R, colours every cell's text by what
+it is and suppresses the document's own colours while it is on — §4.5's decision, with a hairline
+under any cell whose styling is being hidden and a **Roles** button in the status bar, since the
+mode has to say it is on somewhere always visible. Its accessibility floor shipped in the same
+commit rather than after it (§4.6): one distinct glyph per role at each cell's leading edge, a
+corner triangle for the roles that are also diagnostics, and `Accessible::announce` speaking the
+role and the name on every selection move. `theme::role_color` takes the hues from
+`style::PALETTE` and walks each towards the theme's foreground until it separates from the
+theme's background, so the mode reads on a dark sheet without a second table of colours;
+`--render-to --overlay names|roles|all` renders a frame with the modes on.
+
 M7 added four of its own, each named where it lives — three of them closed by M10 above.
 What is left: a border's *line style* is ignored, so `dashed` and
 `double` draw solid (`draw_borders`) · formatting a **whole column** formats its used part rather than putting a

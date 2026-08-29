@@ -111,6 +111,28 @@ impl Grid {
         self.queue_draw();
     }
 
+    /// Which of `doc/view-modes.md`'s overlays this view draws.
+    pub fn overlays(&self) -> grind_sheet::view::Overlays {
+        self.imp().overlays.get()
+    }
+
+    /// Draw the overlays, or stop drawing them — a **reading** of the document and never a
+    /// write, so this changes nothing but the paint. Toggling one back off restores exactly
+    /// what was on screen before, because nothing was stored in the first place.
+    pub fn set_overlays(&self, overlays: grind_sheet::view::Overlays) {
+        self.imp().overlays.set(overlays);
+        self.queue_draw();
+        for hook in self.imp().on_overlays.borrow().iter() {
+            hook(overlays);
+        }
+    }
+
+    /// Told whenever an overlay is switched on or off — the status bar's indication that
+    /// role mode is on, which `doc/view-modes.md` §9 asks for by name.
+    pub fn connect_overlays_changed(&self, f: impl Fn(grind_sheet::view::Overlays) + 'static) {
+        self.imp().on_overlays.borrow_mut().push(Box::new(f));
+    }
+
     pub fn zoom(&self) -> f64 {
         self.imp().zoom.get()
     }
@@ -304,6 +326,26 @@ impl Default for Grid {
     }
 }
 
+/// One character per role — `doc/view-modes.md` §4.6's second channel.
+///
+/// Chosen to be readable at seven pixels and to mean something without a legend: `=` is
+/// a formula, `→` is one reading another sheet, `!` is the constant nobody named. The
+/// mode has to be usable with no colour discrimination at all, and this is how.
+fn role_glyph(role: grind_sheet::view::CellRole) -> &'static str {
+    use grind_sheet::view::CellRole as R;
+    match role {
+        R::Empty => "",
+        R::InputNamed => "◆",
+        R::InputUnnamed => "◇",
+        R::ConstantUnnamed => "!",
+        R::ComputedLocal => "=",
+        R::ComputedCrossSheet => "→",
+        R::Label => "T",
+        R::Error => "✕",
+        R::Stale => "~",
+    }
+}
+
 /// What clicking on something selects, as arithmetic — free of the widget so it can be
 /// tested without a display. See `Grid::selection_for` for why the ends are this way round.
 fn selection_for_hit(hit: crate::geom::Hit) -> Selection {
@@ -369,6 +411,27 @@ fn hide_range_for_hit(selection: Selection, hit: crate::geom::Hit) -> Option<(bo
 mod tests {
     use super::*;
     use crate::geom::Hit;
+
+    /// `doc/view-modes.md` §4.6 and §9: the mode must be usable with no colour
+    /// discrimination at all, so every role a reader can see needs its **own** glyph. A
+    /// duplicate here is a role that becomes invisible to somebody, which is exactly the
+    /// failure a "ship the colours now, the markers later" plan produces.
+    #[test]
+    fn every_role_a_reader_can_see_has_a_glyph_of_its_own() {
+        use grind_sheet::view::CellRole;
+        let mut seen: Vec<&str> = Vec::new();
+        for role in CellRole::ALL {
+            let glyph = role_glyph(role);
+            if role == CellRole::Empty {
+                assert!(glyph.is_empty(), "the empty cell is drawn as nothing");
+                continue;
+            }
+            assert!(!glyph.is_empty(), "{} has no glyph", role.name());
+            assert_eq!(glyph.chars().count(), 1, "{} is not one glyph", role.name());
+            assert!(!seen.contains(&glyph), "{} repeats {glyph}", role.name());
+            seen.push(glyph);
+        }
+    }
 
     /// The whole point of the anchor/active order: the cell the view scrolls to stays next
     /// to the header that was clicked, while the rectangle still covers the whole track.
@@ -476,9 +539,14 @@ mod imp {
     type EditingHook = Box<dyn Fn(bool)>;
     type CaretHook = Box<dyn Fn()>;
     type ZoomHook = Box<dyn Fn(f64)>;
+    type OverlaysHook = Box<dyn Fn(grind_sheet::view::Overlays)>;
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
+    /// The width reserved at a cell's leading edge for `doc/view-modes.md`'s role marker —
+    /// §4.6's second channel, so the mode is usable with no colour discrimination at all.
+    /// A distance on screen, so it zooms with everything else.
+    const ROLE_MARK: f64 = 9.0;
     /// Slack added on top of a measured autofit width. The same text gets measured twice —
     /// once unzoomed here, once at zoom when it is actually drawn — and Pango's own
     /// sub-pixel rounding does not round the same way both times, so a width fit exactly to
@@ -576,6 +644,11 @@ mod imp {
         /// nothing per frame; add the cache when a profiler blames shaping rather than
         /// before.
         pub layout: RefCell<Option<pango::Layout>>,
+        /// Which of `doc/view-modes.md`'s overlays this view is drawing — a *reading* of
+        /// the document, never a change to it, so it belongs with the presentation state
+        /// rather than in the core's document.
+        pub overlays: Cell<grind_sheet::view::Overlays>,
+        pub on_overlays: RefCell<Vec<OverlaysHook>>,
         /// Presentation state, and the only state this widget has.
         pub selection: Cell<Selection>,
         /// What a drag started on, so that dragging across headers selects whole columns
@@ -714,6 +787,8 @@ mod imp {
                 auto_rows: RefCell::new(None),
                 palette: RefCell::new(None),
                 layout: RefCell::new(None),
+                overlays: Cell::new(grind_sheet::view::Overlays::NONE),
+                on_overlays: RefCell::new(Vec::new()),
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
                 resize: Cell::new(None),
@@ -1234,6 +1309,12 @@ mod imp {
             // table look ruled rather than slightly darker.
             self.draw_borders(&frame);
             self.draw_cells(&frame);
+            // The role marks go over the values for the same reason the hints do: both are
+            // drawn in the room `draw_cells` left them.
+            self.draw_roles(&frame);
+            // Over the values, because a hint is drawn in the room the value left and has
+            // to be able to sit on the space an overflowing neighbour would otherwise use.
+            self.draw_hints(&frame);
             // Charts float over the sheet body (`table:shapes` is a sibling of the rows, not
             // inside one), so they are drawn over every cell's own text.
             self.draw_charts(&frame);
@@ -1437,7 +1518,8 @@ mod imp {
             let app = app.as_ref()?;
             let fetch = cols.start.saturating_sub(OVERFLOW_MARGIN)
                 ..(cols.end.saturating_add(OVERFLOW_MARGIN)).min(MAX_COLS);
-            app.get_viewport(self.sheet.get(), rows.clone(), fetch).ok()
+            app.get_viewport_with(self.sheet.get(), rows.clone(), fetch, self.overlays.get())
+                .ok()
         }
 
         fn palette(&self) -> Palette {
@@ -3049,15 +3131,31 @@ mod imp {
                 return;
             };
             let address = a1::format(None, pos);
-            let message = match app.get_viewport(
+            // The overlays are read here too, and that is `doc/view-modes.md` §4.6 rather
+            // than a nicety: a mode whose entire output is colour has to say what it is
+            // showing out loud, or it is a feature only some people have.
+            let overlays = self.overlays.get();
+            let message = match app.get_viewport_with(
                 self.sheet.get(),
                 pos.row..pos.row + 1,
                 pos.col..pos.col + 1,
+                overlays,
             ) {
-                Ok(viewport) => match viewport.text(pos.row, pos.col) {
-                    Some(text) if !text.is_empty() => format!("{address}: {text}"),
-                    _ => address,
-                },
+                Ok(viewport) => {
+                    let mut message = match viewport.text(pos.row, pos.col) {
+                        Some(text) if !text.is_empty() => format!("{address}: {text}"),
+                        _ => address,
+                    };
+                    if let Some(role) = viewport.role(pos.row, pos.col) {
+                        message.push_str(", ");
+                        message.push_str(role.name());
+                    }
+                    if let Some(name) = viewport.name_at(pos.row, pos.col) {
+                        message.push_str(", named ");
+                        message.push_str(name);
+                    }
+                    message
+                }
                 Err(_) => address,
             };
             self.obj()
@@ -3338,6 +3436,14 @@ mod imp {
         /// cell can be filled too, so this cannot ride along with the text.
         fn draw_backgrounds(&self, f: &Frame) {
             let Some(cells) = &f.cells else { return };
+            // `doc/view-modes.md` §4.5: **in role mode, colour means role, exclusively.**
+            // A wash layered over a document that already chose its colours produces cells
+            // whose colour has two causes and no way to tell them apart, which is worse than
+            // either alone. So the document's own fills are suppressed while the mode is on
+            // — and `draw_roles` marks the cells that had one, so nothing is hidden silently.
+            if self.overlays.get().roles {
+                return;
+            }
             for row in f.rows.clone() {
                 for col in f.cols.clone() {
                     let Some(fill) = cells.style(row, col).and_then(|s| s.background.as_deref())
@@ -3414,6 +3520,14 @@ mod imp {
             let layout = self.layout();
             // The padding is a distance on screen like everything else here, so it zooms.
             let pad = PAD * self.zoom.get();
+            // Role mode puts a one-glyph marker at each cell's leading edge (§4.6), so
+            // anything drawn from that edge starts after it. A right-aligned number is
+            // untouched: it is at the other end.
+            let roles = self.overlays.get().roles;
+            let lead = match roles {
+                true => pad + ROLE_MARK * self.zoom.get(),
+                false => pad,
+            };
             for row in rows.clone() {
                 for col in fetch.clone() {
                     if editing == Some(Pos::new(row, col)) {
@@ -3433,9 +3547,17 @@ mod imp {
                     // text sits — but not the *fallbacks*, which stay the value's own rules.
                     let style = viewport.style(row, col);
                     layout.set_attributes(self.attrs(style.and_then(font)).as_ref());
-                    let color = style
-                        .and_then(|s| s.color.as_deref())
-                        .and_then(crate::theme::color)
+                    // In role mode the colour says what the cell *is*, and the document's
+                    // own text colour is suppressed with its fill (§4.5). The font is not:
+                    // bold is structure a reader put there, not a second colour channel.
+                    let role = roles.then(|| viewport.role(row, col)).flatten();
+                    let color = role
+                        .and_then(|role| crate::theme::role_color(role, palette))
+                        .or_else(|| {
+                            style
+                                .and_then(|s| s.color.as_deref())
+                                .and_then(crate::theme::color)
+                        })
                         .unwrap_or(palette.foreground);
                     let align = style
                         .and_then(|s| s.align.as_deref())
@@ -3494,13 +3616,193 @@ mod imp {
                         text_w,
                         text_h,
                         (align, valign),
-                        pad,
+                        match align {
+                            Align::Right => pad,
+                            _ => lead,
+                        },
                     );
                 }
             }
             // The layout is shared and reused, so anything set for one cell has to be unset
             // or the headers inherit it.
             layout.set_attributes(None);
+            layout.set_width(-1);
+        }
+
+        /// `doc/view-modes.md` Part II in the grid: what every cell *is*, in two channels.
+        ///
+        /// The colour is `draw_cells`' business — a role is the cell's text colour, which is
+        /// the financial-modelling convention this borrows and the reason the document's own
+        /// colours are suppressed while the mode is on (§4.5). What is here is everything
+        /// that is **not** colour, and §4.6 is why it is not optional: a feature whose entire
+        /// output is colour and which ships without a second channel excludes people, and
+        /// does not get fixed later.
+        ///
+        /// * **A one-glyph marker** at each cell's leading edge, one per role, in the role's
+        ///   colour but readable without it. `draw_cells` leaves the room for it.
+        /// * **A corner triangle** for a role that is also a *diagnostic* — an error, a stale
+        ///   value, an unnamed constant. §4.3's distinction, drawn: roles get the colour,
+        ///   problems get a mark, and painting both in one channel makes an ordinary model
+        ///   look like a wall of warnings.
+        /// * **A mark for suppressed styling**, bottom-left, on a cell whose own fill or text
+        ///   colour the mode is hiding — so nothing is hidden silently.
+        fn draw_roles(&self, f: &Frame) {
+            if !self.overlays.get().roles {
+                return;
+            }
+            let Some(viewport) = &f.cells else { return };
+            let (geom, palette) = (&f.geom, &f.palette);
+            let zoom = self.zoom.get();
+            let layout = self.layout();
+            layout.set_attributes(
+                self.attrs(Some({
+                    let list = pango::AttrList::new();
+                    list.insert(pango::AttrFloat::new_scale(0.7));
+                    list
+                }))
+                .as_ref(),
+            );
+            let muted = crate::theme::with_alpha(palette.foreground, 0.4);
+            for row in f.rows.clone() {
+                for col in f.cols.clone() {
+                    let Some(role) = viewport.role(row, col) else {
+                        continue;
+                    };
+                    let Some(color) = crate::theme::role_color(role, palette) else {
+                        continue; // an empty cell is the one role drawn as nothing at all.
+                    };
+                    let cell = geom.cell_rect(row, col);
+                    if cell.w <= 0.0 || cell.h <= 0.0 {
+                        continue;
+                    }
+                    layout.set_text(crate::grid::role_glyph(role));
+                    let (glyph_w, glyph_h) = layout.pixel_size();
+                    f.snapshot.push_clip(&rect(cell.x, cell.y, cell.w, cell.h));
+                    f.snapshot.save();
+                    f.snapshot.translate(&graphene::Point::new(
+                        (cell.x + (ROLE_MARK * zoom - f64::from(glyph_w)).max(0.0) / 2.0) as f32,
+                        (cell.y + (cell.h - f64::from(glyph_h)) / 2.0) as f32,
+                    ));
+                    f.snapshot.append_layout(&layout, &color);
+                    f.snapshot.restore();
+                    f.snapshot.pop();
+
+                    if role.is_diagnostic() {
+                        corner(f.snapshot, cell, color, (5.0 * zoom).min(cell.h / 2.0));
+                    }
+                    // Suppressed styling: a hairline along the bottom edge, so a reader can
+                    // see that this cell looks different outside the mode.
+                    let styled = viewport
+                        .style(row, col)
+                        .is_some_and(|s| s.background.is_some() || s.color.is_some());
+                    if styled {
+                        f.snapshot.append_color(
+                            &muted,
+                            &rect(cell.x, cell.y + cell.h - 1.0, cell.w, 1.0),
+                        );
+                    }
+                }
+            }
+            layout.set_attributes(None);
+        }
+
+        /// `doc/view-modes.md` Part I in the grid: where a named expression *lives*, drawn
+        /// inside the cell it is bound to.
+        ///
+        /// The point of it is that a model does not need a label cell beside every constant
+        /// — IntelliJ's inlay hints, for a grid. It is a reading of the document and writes
+        /// nothing, which is why it can be turned on and off with one key and why the file
+        /// is byte-identical either way.
+        ///
+        /// Three rules, all of them from §3.2 and all of them about *not* becoming noise:
+        /// the hint sits at the end opposite the value, the value never yields to it
+        /// ([`crate::geom::hint_rect`] elides and then drops), and a hint for a **range** is
+        /// drawn once at the first visible cell of it with the rectangle outlined, rather
+        /// than forty-nine times.
+        fn draw_hints(&self, f: &Frame) {
+            if !self.overlays.get().names {
+                return;
+            }
+            let Some(viewport) = &f.cells else { return };
+            if viewport.names().is_empty() {
+                return;
+            }
+            let (geom, palette) = (&f.geom, &f.palette);
+            let muted = crate::theme::with_alpha(palette.foreground, 0.55);
+            let layout = self.layout();
+            let pad = PAD * self.zoom.get();
+            for anchor in viewport.names() {
+                // A range says how far it reaches by being outlined; a single cell needs no
+                // outline, since the hint is already inside the only cell it means.
+                if anchor.is_range() {
+                    let first = geom.cell_rect(anchor.rows.start, anchor.cols.start);
+                    let last = geom.cell_rect(anchor.rows.end - 1, anchor.cols.end - 1);
+                    outline(
+                        f.snapshot,
+                        Rect {
+                            x: first.x,
+                            y: first.y,
+                            w: last.x + last.w - first.x,
+                            h: last.y + last.h - first.y,
+                        },
+                        muted,
+                        1.0,
+                    );
+                }
+                let Some((row, col)) = geom.hint_cell(
+                    (anchor.rows.clone(), anchor.cols.clone()),
+                    (f.rows.clone(), f.cols.clone()),
+                ) else {
+                    continue;
+                };
+                // With role mode on as well, the leading edge is already spoken for by the
+                // role marker, so the hint gets the cell minus that — the same rule the
+                // value is drawn under, applied to the other thing sharing the cell.
+                let mut cell = geom.cell_rect(row, col);
+                if self.overlays.get().roles {
+                    let lead = ROLE_MARK * self.zoom.get();
+                    cell.x += lead;
+                    cell.w -= lead;
+                }
+                // What the value takes is measured rather than guessed, because that is the
+                // whole of "the value never yields".
+                let value = viewport.get(row, col);
+                let text = viewport.text(row, col).unwrap_or_default();
+                layout.set_width(-1);
+                layout.set_text(text);
+                let value_w = f64::from(layout.pixel_size().0);
+                let style = viewport.style(row, col);
+                let align = style
+                    .and_then(|s| s.align.as_deref())
+                    .and_then(aligned)
+                    .or_else(|| value.map(alignment))
+                    .unwrap_or(Align::Right);
+                layout.set_text(&anchor.name);
+                let (hint_w, hint_h) = layout.pixel_size();
+                let Some(at) = crate::geom::hint_rect(
+                    cell,
+                    value_w,
+                    f64::from(hint_w),
+                    align == Align::Right,
+                    pad,
+                ) else {
+                    continue;
+                };
+                // Elided into whatever room it got — Pango's ellipsis rather than a second
+                // opinion about where a word can be cut.
+                layout.set_ellipsize(pango::EllipsizeMode::End);
+                layout.set_width((at.w * f64::from(pango::SCALE)) as i32);
+                f.snapshot.push_clip(&rect(at.x, at.y, at.w, at.h));
+                f.snapshot.save();
+                f.snapshot.translate(&graphene::Point::new(
+                    at.x as f32,
+                    (cell.y + (cell.h - f64::from(hint_h)) / 2.0) as f32,
+                ));
+                f.snapshot.append_layout(&layout, &muted);
+                f.snapshot.restore();
+                f.snapshot.pop();
+            }
+            layout.set_ellipsize(pango::EllipsizeMode::None);
             layout.set_width(-1);
         }
 
@@ -3954,6 +4256,18 @@ mod imp {
     /// An outlined rectangle with softened corners — the active cell's cursor and the
     /// reference outlines. The radius is small enough that the rectangle still reads as
     /// exactly the cells it covers; the grid lines and the selection wash stay square.
+    /// A filled triangle in a cell's top-right corner — §4.3's diagnostic mark, the same
+    /// shape a spreadsheet has used for "there is something here" since forever.
+    fn corner(snapshot: &gtk::Snapshot, cell: Rect, color: gtk::gdk::RGBA, size: f64) {
+        let builder = gsk::PathBuilder::new();
+        let (x, y) = ((cell.x + cell.w) as f32, cell.y as f32);
+        builder.move_to(x - size as f32, y);
+        builder.line_to(x, y);
+        builder.line_to(x, y + size as f32);
+        builder.close();
+        snapshot.append_fill(&builder.to_path(), gsk::FillRule::Winding, &color);
+    }
+
     fn outline(snapshot: &gtk::Snapshot, r: Rect, color: gtk::gdk::RGBA, t: f64) {
         let bounds =
             gsk::RoundedRect::from_rect(rect(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0), 3.0);

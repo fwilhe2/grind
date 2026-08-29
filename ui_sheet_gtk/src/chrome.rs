@@ -163,9 +163,30 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         grid,
         move |_| grid.begin_edit(false)
     ));
+    // `doc/view-modes.md` §3.3's half of inline names, and the same stand-in shape for the
+    // same reason: what it shows is a **reading**, so it must not be what a commit takes
+    // back in. `=tax_rate*subtotal` typed into the entry would store the names; shown here
+    // it is a label, and clicking it swaps the entry — holding the formula the file has —
+    // back in front.
+    let named_label = gtk::Label::builder()
+        .xalign(0.0)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .build();
+    let named_view = gtk::Button::builder()
+        .child(&named_label)
+        .has_frame(false)
+        .hexpand(true)
+        .tooltip_text("Click to edit the formula this build stores")
+        .build();
+    named_view.connect_clicked(glib::clone!(
+        #[weak]
+        grid,
+        move |_| grid.begin_edit(false)
+    ));
     let stack = gtk::Stack::builder().hexpand(true).build();
     stack.add_named(&entry, Some("raw"));
     stack.add_named(&friendly_view, Some("friendly"));
+    stack.add_named(&named_view, Some("named"));
 
     // The multi-line rendering of the same formula, for when one line is not enough. Built
     // on every popup, so there is nothing to keep in step while it is closed.
@@ -264,6 +285,8 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         #[weak]
         friendly_label,
         #[weak]
+        named_label,
+        #[weak]
         explain,
         #[strong]
         app,
@@ -281,12 +304,29 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
             //
             let explained = (!grid.is_editing()).then(|| friendly_line(&text)).flatten();
             explain.set_visible(explained.is_some());
-            match explained.filter(|_| friendly.get()) {
-                Some(explained) => {
+            // The name reading, when the overlay is on and the formula actually mentions a
+            // named place — a reading identical to what the entry already shows is not a
+            // reading worth swapping the entry out for.
+            let named = (!grid.is_editing() && grid.overlays().names)
+                .then(|| {
+                    app.named_formula(grid.sheet(), grid.selection().active)
+                        .ok()
+                        .flatten()
+                })
+                .flatten()
+                .filter(|reading| *reading != text);
+            // Friendly wins where both are on: it is the more thorough reading of the two,
+            // and two readings at once is one too many.
+            match (explained.filter(|_| friendly.get()), named) {
+                (Some(explained), _) => {
                     friendly_label.set_label(&explained);
                     stack.set_visible_child_name("friendly");
                 }
-                None => stack.set_visible_child_name("raw"),
+                (None, Some(named)) => {
+                    named_label.set_label(&named);
+                    stack.set_visible_child_name("named");
+                }
+                _ => stack.set_visible_child_name("raw"),
             }
 
             // The caret is the focused editable's; when the formula bar does not have it,
@@ -720,6 +760,34 @@ fn view_tools(grid: &Grid) -> gtk::Box {
         .build();
     friendly.add_css_class("flat");
 
+    // `doc/view-modes.md`'s overlays, linked because they are two readings of the same
+    // document and a reader turns one on to answer a question and off again. Neither
+    // changes the file, which is the whole reason they can live on a toolbar rather than
+    // behind a confirmation.
+    let modes = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    modes.add_css_class("linked");
+    for (label, action, tooltip) in [
+        (
+            "Names",
+            "win.show-names",
+            "Show where each named expression lives, inside the cell it is bound to",
+        ),
+        (
+            "Roles",
+            "win.show-roles",
+            "Colour every cell by what it is: an input, a computed value, a label, \
+             an unnamed constant",
+        ),
+    ] {
+        let toggle = gtk::ToggleButton::builder()
+            .label(label)
+            .action_name(action)
+            .tooltip_text(tooltip)
+            .build();
+        toggle.add_css_class("flat");
+        modes.append(&toggle);
+    }
+
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     row.append(&zoom);
     row.append(&tool_button(
@@ -729,6 +797,7 @@ fn view_tools(grid: &Grid) -> gtk::Box {
         "Resize every column and row to fit what is in it",
     ));
     row.append(&friendly);
+    row.append(&modes);
     row
 }
 
@@ -875,6 +944,27 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         }
     ));
     bar.append(&zoom);
+
+    // `doc/view-modes.md` §9: role mode suppresses the document's own colours, which is the
+    // right call and still a surprise. It needs an indication that is *always* visible —
+    // the toolbar toggles live on the View row, which is one tab of three — and this is it:
+    // a button that says the mode is on and, being a button, turns it off.
+    let modes = gtk::Button::builder()
+        .visible(false)
+        .action_name("win.show-roles")
+        .tooltip_text(
+            "Cell colours say what each cell is, not what the document chose — \
+                       click to go back",
+        )
+        .label("Roles")
+        .build();
+    modes.add_css_class("flat");
+    grid.connect_overlays_changed(glib::clone!(
+        #[weak]
+        modes,
+        move |overlays| modes.set_visible(overlays.roles)
+    ));
+    bar.append(&modes);
 
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
     let app = app.clone();

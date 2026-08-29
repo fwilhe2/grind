@@ -233,7 +233,92 @@ const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
 /// [`EDGE_GRAB`] carves a boundary's hit zone out of the header on either side.
 pub const HIDDEN_MARKER: f64 = 6.0;
 
+/// The clear space between a value and the name hint sharing its cell — enough that the two
+/// read as two things rather than as one run of text.
+const HINT_GAP: f64 = 8.0;
+
+/// The narrowest hint worth drawing, in pixels and as a fraction of the name's own width.
+///
+/// `doc/view-modes.md` §3.2 says a hint is elided and then **dropped**, and this is where
+/// dropped begins. Both halves are needed: the pixel floor keeps a hint from being an
+/// ellipsis and one letter, and the fraction keeps a *long* name from being elided down to
+/// a stub that names nothing — at which point the cell is showing punctuation where a
+/// reader expects a word, which is worse than showing nothing at all.
+const HINT_MIN: f64 = 16.0;
+const HINT_KEEP: f64 = 0.5;
+
+/// How much room a name hint gets inside a cell, and where — `doc/view-modes.md` §3.2.
+///
+/// `value_w` is the measured width of what the cell already draws and `hint_w` the natural
+/// width of the name. `value_right` says which end the value is at, and the hint goes to the
+/// other one: a number is right-aligned and its hint sits left, a label is left-aligned and
+/// its hint sits right.
+///
+/// **The value never yields.** The returned width is what is left after the value and the
+/// gap have taken theirs, so a hint is elided into it (`Rect::w` below `hint_w`) and then
+/// dropped entirely (`None`) rather than pushing a digit off the end of a number. A
+/// spreadsheet whose figures are cut off to make room for their labels is worse than one
+/// with no labels.
+pub fn hint_rect(
+    cell: Rect,
+    value_w: f64,
+    hint_w: f64,
+    value_right: bool,
+    pad: f64,
+) -> Option<Rect> {
+    let room = cell.w - 2.0 * pad - value_w - HINT_GAP;
+    if room < HINT_MIN || room < hint_w * HINT_KEEP {
+        return None;
+    }
+    let w = hint_w.min(room);
+    Some(Rect {
+        x: match value_right {
+            true => cell.x + pad,
+            false => cell.x + cell.w - pad - w,
+        },
+        y: cell.y,
+        w,
+        h: cell.h,
+    })
+}
+
 impl GridGeom {
+    /// Which cell of a name's rectangle carries its hint: the **first cell of it a reader
+    /// can actually see**, in row-major order — `doc/view-modes.md` §3.2's "drawn once".
+    ///
+    /// A name over `A2:A50` is one anchor, not forty-nine, and scrolling must not make it
+    /// disappear: the hint follows the top-left corner of whatever part of the anchor is on
+    /// screen. `None` when no part of it is.
+    ///
+    /// Hidden tracks are skipped rather than counted, and that is not a detail: a filter
+    /// hides the rows it filters out by giving them a height of zero, so a hint placed on
+    /// the anchor's first row alone would be drawn into a cell nought pixels tall and the
+    /// mode would look broken on exactly the documents that use it.
+    pub fn hint_cell(
+        &self,
+        anchor: (std::ops::Range<u32>, std::ops::Range<u32>),
+        visible: (std::ops::Range<u32>, std::ops::Range<u32>),
+    ) -> Option<(u32, u32)> {
+        let (rows, cols) = anchor;
+        let (in_rows, in_cols) = visible;
+        let shown = |from: u32, end: u32, limit: u32, sizes: &Sizes| {
+            (from..end.min(limit)).find(|i| !sizes.is_hidden(*i))
+        };
+        let row = shown(
+            rows.start.max(in_rows.start),
+            rows.end,
+            in_rows.end,
+            &self.rows,
+        )?;
+        let col = shown(
+            cols.start.max(in_cols.start),
+            cols.end,
+            in_cols.end,
+            &self.cols,
+        )?;
+        Some((row, col))
+    }
+
     /// The row containing a content-space y, clamped to the sheet.
     pub fn row_at(&self, y: f64) -> u32 {
         self.rows.at(y)
@@ -833,5 +918,72 @@ mod tests {
         let row_marker = g.hidden_row_marker(1);
         assert_eq!(row_marker.y + row_marker.h / 2.0, g.header_h + 20.0);
         assert_eq!((row_marker.x, row_marker.w), (0.0, g.header_w));
+    }
+
+    /// `doc/view-modes.md` §3.2, which is one rule with three consequences: the hint takes
+    /// the end the value is not at, it is elided into whatever is left, and it is dropped
+    /// before the value gives up a pixel.
+    #[test]
+    fn a_name_hint_takes_what_the_value_leaves_and_never_the_other_way_round() {
+        let g = geom();
+        let cell = g.cell_rect(0, 0); // 80 wide
+        let pad = 3.0;
+
+        // A number sits right, so its hint sits left, at its natural width.
+        let left = hint_rect(cell, 20.0, 30.0, true, pad).expect("room for both");
+        assert_eq!((left.x, left.w), (cell.x + pad, 30.0));
+
+        // A label sits left, so its hint sits right, hard against the padding.
+        let right = hint_rect(cell, 20.0, 30.0, false, pad).expect("room for both");
+        assert_eq!(right.x + right.w, cell.x + cell.w - pad);
+
+        // A wide value squeezes the hint rather than being squeezed by it…
+        let squeezed = hint_rect(cell, 45.0, 30.0, true, pad).expect("room for some of it");
+        assert!(squeezed.w < 30.0, "elided: {squeezed:?}");
+
+        // …and past a point the hint goes rather than shrink to a stub. Both floors bite:
+        // too few pixels, and too little of the name left to read.
+        assert_eq!(hint_rect(cell, 55.0, 30.0, true, pad), None, "the pixels");
+        assert_eq!(hint_rect(cell, 30.0, 90.0, true, pad), None, "the fraction");
+        assert_eq!(hint_rect(cell, 100.0, 30.0, false, pad), None);
+
+        // Whatever it gets, it stays inside the cell it belongs to.
+        for value_w in [0.0, 10.0, 40.0] {
+            for value_right in [true, false] {
+                let Some(r) = hint_rect(cell, value_w, 30.0, value_right, pad) else {
+                    continue;
+                };
+                assert!(
+                    r.x >= cell.x + pad && r.x + r.w <= cell.x + cell.w - pad,
+                    "{r:?} outside {cell:?}"
+                );
+            }
+        }
+    }
+
+    /// A name over a range is one hint at the first visible cell of it — so scrolling moves
+    /// the hint rather than losing it, and forty-nine copies never happen.
+    #[test]
+    fn a_range_hint_follows_the_first_visible_cell_of_the_anchor() {
+        let anchor = (1..50, 0..1);
+        let g = geom();
+        assert_eq!(g.hint_cell(anchor.clone(), (0..10, 0..5)), Some((1, 0)));
+        // Scrolled past the anchor's top: the hint moves down to the first row on screen.
+        assert_eq!(g.hint_cell(anchor.clone(), (20..30, 0..5)), Some((20, 0)));
+        // Scrolled past it entirely, or sideways off it: no hint at all.
+        assert_eq!(g.hint_cell(anchor.clone(), (60..70, 0..5)), None);
+        assert_eq!(g.hint_cell(anchor.clone(), (0..10, 3..5)), None);
+        // A single-cell anchor is the same rule with a rectangle of one.
+        assert_eq!(g.hint_cell((4..5, 2..3), (0..10, 0..5)), Some((4, 2)));
+
+        // A filter gives the rows it hides a height of zero, and a hint drawn into one of
+        // those is a hint nobody sees — so the first *shown* row carries it.
+        let filtered = GridGeom {
+            rows: Sizes::new(20.0, MAX_ROWS, vec![(1, 0.0), (2, 0.0)]),
+            ..geom()
+        };
+        assert_eq!(filtered.hint_cell(anchor, (0..10, 0..5)), Some((3, 0)));
+        // An anchor entirely inside hidden rows has nowhere to put its hint.
+        assert_eq!(filtered.hint_cell((1..3, 0..1), (0..10, 0..5)), None);
     }
 }

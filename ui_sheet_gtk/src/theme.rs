@@ -141,6 +141,68 @@ pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
     })
 }
 
+/// The colour `doc/view-modes.md`'s role mode draws a cell's text in, or `None` for a role
+/// that is drawn as nothing at all.
+///
+/// **Hues from `style::PALETTE`, readability from the theme** (§4.5). The palette is the
+/// project's own seventeen — *a default a shell offers and never a limit* — so a role has
+/// the same hue wherever it is drawn; `readable` then walks that hue towards the theme's
+/// foreground until it separates from the theme's background, which is what makes navy on a
+/// dark sheet a colour a reader can actually see rather than a decision about dark mode
+/// taken here.
+///
+/// Two roles take the theme directly rather than a hue, and that is the convention rather
+/// than a shortcut: a computed cell is "black" in every financial model ever coloured by
+/// hand, and black in a dark theme is the foreground. A label is that foreground, muted.
+pub fn role_color(role: grind_sheet::view::CellRole, palette: &Palette) -> Option<gdk::RGBA> {
+    use grind_sheet::view::CellRole as R;
+    let named = |name: &str| {
+        grind_sheet::style::palette(name)
+            .and_then(|hex| hex.parse::<gdk::RGBA>().ok())
+            .map(|hue| readable(hue, palette))
+    };
+    match role {
+        R::Empty => None,
+        // The financial-modelling convention this borrows: inputs blue, formulas black,
+        // another sheet green. The named/unnamed split is ours, and it is one hue apart
+        // rather than a different colour — both are inputs.
+        R::InputNamed => named("blue"),
+        R::InputUnnamed => named("navy"),
+        R::ConstantUnnamed => named("orange"),
+        R::ComputedLocal => Some(palette.foreground),
+        R::ComputedCrossSheet => named("olive"),
+        R::Label => Some(with_alpha(palette.foreground, 0.6)),
+        R::Error => named("red"),
+        R::Stale => named("maroon"),
+    }
+}
+
+/// A hue moved towards the theme's foreground until it is legible against the theme's
+/// background — the "resolved against the theme" half of §4.5.
+///
+/// Towards the *foreground* rather than towards white or black, so a high-contrast or
+/// hand-rolled theme lands where that theme's own text does instead of where a guess about
+/// dark mode would put it.
+fn readable(hue: gdk::RGBA, palette: &Palette) -> gdk::RGBA {
+    let luminance = |c: gdk::RGBA| 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue();
+    let background = luminance(palette.background);
+    let mix = |t: f32| {
+        let blend = |a: f32, b: f32| a + (b - a) * t;
+        gdk::RGBA::new(
+            blend(hue.red(), palette.foreground.red()),
+            blend(hue.green(), palette.foreground.green()),
+            blend(hue.blue(), palette.foreground.blue()),
+            1.0,
+        )
+    };
+    // Ten steps is enough resolution for a colour and terminates whatever the theme is; the
+    // last one is the foreground itself, which is legible by definition.
+    (0..=10)
+        .map(|step| mix(step as f32 / 10.0))
+        .find(|c| (luminance(*c) - background).abs() >= 0.35)
+        .unwrap_or(palette.foreground)
+}
+
 /// Which colour each reference in a formula gets: one per **distinct** reference, so the
 /// same range mentioned twice is the same colour in both places and in the grid.
 ///
@@ -215,4 +277,64 @@ pub fn color(value: &str) -> Option<gdk::RGBA> {
 
 pub fn with_alpha(color: gdk::RGBA, alpha: f32) -> gdk::RGBA {
     gdk::RGBA::new(color.red(), color.green(), color.blue(), alpha)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grind_sheet::view::CellRole;
+
+    fn ground(background: gdk::RGBA, foreground: gdk::RGBA) -> Palette {
+        Palette {
+            background,
+            foreground,
+            lines: foreground,
+            header: background,
+            header_text: foreground,
+            accent: BLUE,
+        }
+    }
+
+    /// `doc/view-modes.md` §4.5: the hues are the project's palette and the *readability* is
+    /// the theme's. A role mode that is unreadable on a dark sheet is a role mode nobody
+    /// turns on twice, and this is the check that it separates from the ground it is drawn
+    /// on — on both grounds, from one table of hues.
+    #[test]
+    fn every_role_colour_separates_from_the_ground_it_is_drawn_on() {
+        let luminance = |c: gdk::RGBA| 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue();
+        for palette in [ground(WHITE, BLACK), ground(BLACK, WHITE)] {
+            let ground = luminance(palette.background);
+            for role in CellRole::ALL {
+                let Some(color) = role_color(role, &palette) else {
+                    assert_eq!(role, CellRole::Empty, "{} has no colour", role.name());
+                    continue;
+                };
+                // A label is the foreground, muted — legible by construction, and the alpha
+                // is what makes its luminance say otherwise.
+                if role == CellRole::Label {
+                    continue;
+                }
+                assert!(
+                    (luminance(color) - ground).abs() >= 0.35,
+                    "{} is {color:?} on a ground of {ground}",
+                    role.name()
+                );
+            }
+        }
+    }
+
+    /// Roles are read by colour first, so two of them sharing one is the mode failing at the
+    /// thing it exists to do.
+    #[test]
+    fn the_roles_do_not_share_a_colour() {
+        let palette = ground(WHITE, BLACK);
+        let mut seen: Vec<gdk::RGBA> = Vec::new();
+        for role in CellRole::ALL {
+            let Some(color) = role_color(role, &palette) else {
+                continue;
+            };
+            assert!(!seen.contains(&color), "{} repeats a colour", role.name());
+            seen.push(color);
+        }
+    }
 }

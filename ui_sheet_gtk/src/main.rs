@@ -60,12 +60,36 @@ fn main() -> ExitCode {
     // how a machine checks that the grid still draws, since a custom-drawn widget has no
     // other assertable output and `editor`'s §5 rule is to exercise every boundary with a
     // program that runs where the UI cannot.
-    let render_to: Option<PathBuf> = match args.next() {
-        Some(flag) if flag == "--render-to" => Some(PathBuf::from(
-            args.next().unwrap_or_else(|| "grid.png".into()),
-        )),
-        _ => None,
-    };
+    let mut render_to: Option<PathBuf> = None;
+    // `--overlay names|roles|all` turns `doc/view-modes.md`'s overlays on for that frame,
+    // so the modes are assertable the same way the grid is: a refactor is proved one when
+    // the PNG comes back byte-identical. Not a user feature either — the window's own
+    // toggles are.
+    let mut overlays = grind_sheet::view::Overlays::NONE;
+    while let Some(flag) = args.next() {
+        match flag.to_str() {
+            Some("--render-to") => {
+                render_to = Some(PathBuf::from(
+                    args.next().unwrap_or_else(|| "grid.png".into()),
+                ));
+            }
+            Some("--overlay") => {
+                overlays = match args.next().as_deref().and_then(std::ffi::OsStr::to_str) {
+                    Some("names") => grind_sheet::view::Overlays::NAMES,
+                    Some("roles") => grind_sheet::view::Overlays::ROLES,
+                    Some("all") => grind_sheet::view::Overlays::ALL,
+                    other => {
+                        eprintln!(
+                            "grind-sheet-gtk: --overlay takes names, roles or all, not {}",
+                            other.unwrap_or("nothing")
+                        );
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
+            _ => {}
+        }
+    }
     if let Some(path) = &path
         && let Err(error) = app.open_file(path)
     {
@@ -77,6 +101,9 @@ fn main() -> ExitCode {
     application.connect_activate(move |application| {
         theme::install();
         let ui = Ui::build(application, &app, path.clone());
+        if overlays.any() {
+            ui.grid.set_overlays(overlays);
+        }
         ui.window.present();
         if let Some(target) = render_to.clone() {
             render_once(&ui.window, target);
@@ -288,6 +315,46 @@ impl Ui {
             }
         ));
         self.window.add_action(&friendly);
+
+        // `doc/view-modes.md`'s two overlays, stateful for the same reason: each is a way of
+        // *looking* at the document rather than something done to it, so the toggle carries
+        // its own on/off and turning it off leaves nothing behind. Neither writes a byte,
+        // which is why they need no confirmation, no dirty flag and no undo entry.
+        for (name, accels, names, roles) in [
+            ("show-names", &["<Control><Shift>n"][..], true, false),
+            ("show-roles", &["<Control><Shift>r"][..], false, true),
+        ] {
+            let on = match names {
+                true => self.grid.overlays().names,
+                false => self.grid.overlays().roles,
+            };
+            let action = gio::SimpleAction::new_stateful(name, None, &on.to_variant());
+            action.connect_activate(glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |action, _| {
+                    let mut overlays = ui.grid.overlays();
+                    let on = match (names, roles) {
+                        (true, _) => {
+                            overlays.names = !overlays.names;
+                            overlays.names
+                        }
+                        _ => {
+                            overlays.roles = !overlays.roles;
+                            overlays.roles
+                        }
+                    };
+                    ui.grid.set_overlays(overlays);
+                    action.set_state(&on.to_variant());
+                    // The formula bar reads the name overlay too (§3.3), and it refreshes
+                    // on a selection change rather than on a repaint — so tell it the
+                    // selection it already has.
+                    ui.grid.set_selection(ui.grid.selection());
+                }
+            ));
+            self.window.add_action(&action);
+            application.set_accels_for_action(&format!("win.{name}"), accels);
+        }
 
         self.window.connect_close_request(glib::clone!(
             #[strong(rename_to = ui)]
@@ -1150,6 +1217,19 @@ impl Ui {
             ("zoom-out", "Zoom Out"),
             ("zoom-reset", "Normal Size"),
         ];
+        // The two view modes are stateful actions rather than verbs, so they are not in
+        // `actions()` and are listed here with the accelerators `wire` gives them.
+        for (title, accelerator) in [
+            ("Show Names", "<Control><Shift>n"),
+            ("Show Roles", "<Control><Shift>r"),
+        ] {
+            group.add_shortcut(
+                &gtk::ShortcutsShortcut::builder()
+                    .title(title)
+                    .accelerator(accelerator)
+                    .build(),
+            );
+        }
         for (action, title) in named {
             for (name, accels, _) in actions() {
                 if name != action || accels.is_empty() {

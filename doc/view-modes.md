@@ -6,11 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # View modes — what a document *means*, drawn
 
-**Status: normative, and built through V3** — `sheet/src/graph.rs` is the reference index,
+**Status: normative, and built through V6** — `sheet/src/graph.rs` is the reference index,
 `sheet/src/view.rs` the roles and the name anchors, `App::get_viewport_with` the read, and
 `grind sheet view --roles/--names/--formulas` the CLI. §4.2's rule was **tightened twice
-against `examples/sample-sheet.sh`**; §4.2 below records what it is now and why. V4–V7 — the
-shells — are not built. Two features, written as one document
+against `examples/sample-sheet.sh`**; §4.2 below records what it is now and why. V4 and V5 are
+built: `grind-sheet-gtk` draws the name hints and reads a formula through its names, and
+`view::Names` is the substitution both that and the CLI go through. V6 is built too — the window
+has both modes, on Ctrl+Shift+N and Ctrl+Shift+R, with §4.6's glyph channel and announcement in
+the same commit as the colours. **V7 — the other three shells — is not built.** Two features, written as one document
 because they are one mechanism, one core API, one CLI shape and one verification story:
 
 - **Part I — inline names.** A cell that a name is bound to shows that name, so a model does
@@ -135,6 +138,14 @@ Two rules that keep it from becoming noise:
   marked for the rest — the same treatment a merged region gets. Forty-nine copies of `sales`
   is not a hint, it is a wallpaper.
 
+**As built** (V4), with the arithmetic in `ui_sheet_gtk/src/geom.rs` so it tests with no display:
+`hint_rect` gives the hint what the value leaves and returns `None` — dropped, not elided — when
+that is below a pixel floor *or* below half the name's own width, because a name elided to a stub
+is punctuation standing where a reader expects a word. `GridGeom::hint_cell` picks the cell that
+carries a range's one hint, and it skips **hidden** tracks rather than counting them: a filter
+hides a row by giving it a height of zero, so the first-row rule alone would draw the hint into a
+cell nought pixels tall, on exactly the documents most likely to use the mode.
+
 ### 3.3 Names inside formulas — the larger half
 
 The grid hint is the visible half; this is the useful one. `=[.B2]*[.B7]` renders in the
@@ -152,6 +163,30 @@ cell-shaped as a name, so the reverse direction exists.
 
 The check falls out of loop B for free: `display` round-trips 75845 corpus formulas today, and
 the substituted form must round-trip through the same assertion.
+
+**As built** (`view::Names`, V5), with two things the corpus decided rather than this document:
+
+* **"Exactly equals" is area equality, not text equality.** A name is stored fully qualified and
+  absolute — `[$Sheet1.$B$2]` — while the formula reading it says `[.B2]`, so comparing the two
+  spellings finds almost nothing. Both ends resolve through `Engine::area`, the function the
+  evaluator itself calls, which also makes the substitution *anchored*: `[.B2]` in one row and
+  `[.B2]` in another are different cells and only one of them can be `tax_rate`.
+* **A cell-shaped name is never substituted, though it is still hinted.** Loop B found 167 of
+  them at once: a document declaring `date1` printed `=DAYS360(date1;date2)`, which reads back as
+  cells DATE1 and DATE2 — the `LOG10` collision this module documents, from the other side.
+  `App::set_name` refuses to create such a name for exactly this reason, so the case is confined
+  to documents written elsewhere, and `display::reads_as_reference` asks the one scanner rather
+  than inventing a second rule about what a cell looks like. The *grid* hint still draws it:
+  nothing re-parses a hint.
+
+The range **operator** keeps its references for the same reason (`[Sheet2.C22]:[.C33]`, whose
+operands display form already leaves bracketed): unbracketed, a bare word either side of a `:`
+scans back as a reference.
+
+In the window it is the formula bar's third stack page, beside the friendly view and for the same
+reason that one is a page rather than the entry's text: what it shows is a **reading**, and a
+commit must take back the formula the file has. Friendly wins where both are on — two readings at
+once is one too many.
 
 ### 3.4 The line this must not cross
 
@@ -300,6 +335,22 @@ Colours come from `style::PALETTE` — the seventeen clrs.cc colours the project
 describes as *a default a shell offers and never a limit* — resolved against the theme, so the
 mode works on a dark ground.
 
+**As built** (V6, `ui_sheet_gtk/src/theme.rs`): a role is the cell's **text** colour rather than
+a fill, which is the convention this borrows in the form the convention actually takes — a
+financial modeller colours the numbers, not the cells — and it leaves the fill free to keep
+meaning *selected*. Inputs are blue (named) and navy (unnamed), an unnamed constant is orange, a
+cross-sheet formula is olive, a local one is the theme's own foreground (the convention's
+"black", which in a dark theme is white), a label is that foreground muted, an error is red and a
+stale value maroon. "Resolved against the theme" is `theme::readable`: the hue is walked towards
+the theme's foreground until its luminance separates from the theme's background — towards the
+*foreground* rather than towards white, so a high-contrast or hand-rolled theme lands where its
+own text does instead of where a guess about dark mode would put it. A test asserts that
+separation on a white ground and on a black one, from one table of hues.
+
+A cell whose own fill or colour is being suppressed gets a hairline along its bottom edge, so
+nothing is hidden silently, and the status bar grows a **Roles** button while the mode is on —
+§9 asks for an always-visible indication, and the toolbar toggle lives on one tab of three.
+
 ### 4.6 Colour is not the whole of it
 
 This feature's entire output is colour, which makes accessibility a requirement rather than a
@@ -310,6 +361,15 @@ courtesy:
 - **`Accessible::announce`**, which `ui_sheet_gtk` already calls on every selection move (and
   is why its `gtk4` feature is `v4_14`). Moving onto a cell in role mode announces the role.
 - **The CLI is the accessible surface of last resort**, and §5 is not optional for that reason.
+
+**As built** (V6, and all three in the commit that added the colours): each cell's leading edge
+carries one glyph — `◆` a named input, `◇` an unnamed one, `!` the constant nobody named, `=` a
+formula, `→` one reading another sheet, `T` a label, `✕` an error, `~` a stale value — with
+`draw_cells` leaving the room for it rather than the glyph overlapping the value. A test asserts
+every role's glyph is present, one character, and **distinct**, because a duplicate is a role
+that becomes invisible to somebody. Moving onto a cell announces its role and, where it has one,
+its name. A diagnostic role additionally gets §4.3's corner triangle, so *problem* and *what this
+cell is* stay in two channels rather than one.
 
 ---
 
@@ -347,9 +407,9 @@ That is not a gap; it is the point. So the checks are chosen to match the claim:
 | ✅ **The writes-nothing test** | Open every R7 document, request every overlay, read viewports across the whole sheet, save — and assert the bytes are **byte-identical** to the input. This is the headline check: the feature's entire promise is that it changes nothing, and this is that promise, mechanically. `sheet/tests/view_modes.rs`, and it never skips |
 | ✅ **Totality and disjointness** | Every cell in R7's fourteen documents gets exactly one role, and the roles seen across them cover the ordinary four. Disjointness is structural — `Analysis::role` is one function returning one value — so what is asserted is that it is *total* |
 | ✅ **Roles agree with the formulas** | A cell classified *computed, local* has a formula whose every reference is local; one classified *constant, unnamed* satisfies §4.2's three conditions mechanically. Re-derived from the index rather than from a second opinion, over the same corpus. Widening it to loop A's 359 documents and loop B's 75845 formulas is free and not yet done |
-| **Name substitution round-trips** | `display` with names on, re-parsed, yields the same AST — loop B's existing display assertion, with the option set |
-| **Layout arithmetic** | Hint elision, the range-anchor position, the corner marker — in `ui_sheet_gtk/src/geom.rs`'s shape: arithmetic with no toolkit in it, so no display is needed |
-| **`--render-to`** | A role-mode frame comes back byte-identical after a refactor, as every other grid change already proves itself |
+| ✅ **Name substitution round-trips** | `display` with names on, re-parsed, yields the same AST — loop B's existing display assertion with the option set (188/188), plus the same check over R7 in `view_modes.rs`, which never skips |
+| ✅ **Layout arithmetic** | Hint elision, the drop, the range-anchor position and hidden tracks — in `ui_sheet_gtk/src/geom.rs`'s shape: arithmetic with no toolkit in it, so no display is needed. Beside it, two checks that are about the *mode* rather than about pixels: every role's glyph is distinct (`grid.rs`) and every role's colour separates from the ground it is drawn on, light and dark (`theme.rs`) |
+| ✅ **`--render-to`** | `--overlay names\|roles\|all` turns the modes on for one frame, so a role-mode frame comes back byte-identical after a refactor, as every other grid change already proves itself |
 
 Three of those reuse corpora that already exist and already run. That is the cheapest
 verification story of any feature in this project, and it is cheap for the same reason the
@@ -386,13 +446,14 @@ feature is: **nothing new is being represented, only read.**
 | **V1** | ✅ `sheet/src/graph.rs` — the forward and reverse reference index (§4.4), one walk of the parsed ASTs, built on demand | It resolves every reference through `Engine::area`, the function the evaluator itself calls, so it *cannot* disagree with `eval.rs` about what a formula reads |
 | **V2** | ✅ `sheet/src/view.rs` — `CellRole`, `NameAnchor`, the classifier, `Analysis` cached on `App` and dropped in `mutate`, `App::get_viewport_with(…, Overlays)` | `sheet/tests/view_modes.rs`: the writes-nothing test, totality over R7, and the role/index agreement check |
 | **V3** | ✅ `grind sheet view --roles` / `--names` / `--formulas`, `--format json`, the parity row | The CLI answers everything before any shell draws it (R9, and §4.6's accessibility floor), and `examples/sample-sheet.sh` shows all three |
-| **V4** | Name anchors — the grid hint and the range case (§3.1–3.2) | The writes-nothing test is green, and `geom.rs` covers elision |
-| **V5** | Name substitution in `formula::display` (§3.3) | Loop B's display round-trip passes with the option on |
-| **V6** | Role mode in `grind-sheet-gtk` — the mode, the palette, the corner marks, `announce` | `--render-to` frames are stable; the a11y second channel is there from the first commit, not after |
+| **V4** | ✅ Name anchors — the grid hint and the range case (§3.1–3.2) | `geom.rs` covers the elision, the drop and the range anchor with no display; `--render-to --overlay names` draws them |
+| **V5** | ✅ Name substitution — `view::Names::display`, `App::named_formula`, `grind sheet view --formulas --names`, and the formula bar's third stack page | Loop B's display round-trip passes with the option on: 188 formulas mention a named place and all 188 come back |
+| **V6** | ✅ Role mode in `grind-sheet-gtk` — the mode, the palette, the corner marks, `announce` | `--render-to --overlay roles` draws a frame on both grounds; the glyph channel and the announcement landed in the same commit as the colours, not after |
 | **V7** | The other three shells, and `grind text --names` for bookmarks (§3.6) | Each shell's gap list is updated rather than each shell inventing colours |
 
 V1–V3 are the feature and they need no shell at all — **and they are done**. V4–V7 are four
-renderings of an answer already computed, and none of them is started.
+renderings of an answer already computed; **V4, V5 and V6 are done**, in `grind-sheet-gtk` and
+the CLI. V7 — `grind-tui`, `ui_web` and the word processor's bookmark anchors — is not started.
 
 Two decisions taken during V1–V3 that the plan had left open, recorded here rather than only
 in the code:
