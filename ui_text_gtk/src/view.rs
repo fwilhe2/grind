@@ -84,6 +84,19 @@ impl Doc {
         self.imp().caret.get()
     }
 
+    /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6.
+    pub fn names(&self) -> bool {
+        self.imp().names.get()
+    }
+
+    /// Draw them, or stop. A reading of the document rather than a change to it: the file is
+    /// byte-identical either way, which is why this needs no confirmation and leaves no undo
+    /// entry behind it.
+    pub fn set_names(&self, on: bool) {
+        self.imp().names.set(on);
+        self.queue_draw();
+    }
+
     /// The selected range, normalised to document order — `None` when the anchor and the
     /// caret coincide, which is what makes an empty selection and no selection the same case
     /// everywhere else in this file.
@@ -155,6 +168,11 @@ mod imp {
         pub flow: RefCell<Option<(f64, Rc<Flow>)>>,
         pub faces: RefCell<Option<Rc<Faces>>>,
         pub palette: Cell<Option<Palette>>,
+        /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
+        /// state like the caret beside it: a view mode is a **reading** of the document and
+        /// never a change to it, so turning it off puts the page back exactly and there is
+        /// nothing to save, undo or confirm.
+        pub names: Cell<bool>,
         pub hadjustment: RefCell<Option<gtk::Adjustment>>,
         pub vadjustment: RefCell<Option<gtk::Adjustment>>,
         pub hscroll_policy: Cell<gtk::ScrollablePolicy>,
@@ -181,6 +199,7 @@ mod imp {
                 flow: RefCell::new(None),
                 faces: RefCell::new(None),
                 palette: Cell::new(None),
+                names: Cell::new(false),
                 hadjustment: RefCell::new(None),
                 vadjustment: RefCell::new(None),
                 hscroll_policy: Cell::new(gtk::ScrollablePolicy::Minimum),
@@ -483,6 +502,34 @@ mod imp {
                         y + f64::from(line.top),
                         ink,
                     );
+                }
+
+                // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it
+                // contributes no characters, which makes it the one part of a text document
+                // a reader cannot see at all. This window can say *exactly* where one is —
+                // it already has `x_at` for the caret — so the anchor gets a tick at its own
+                // offset and the name is written at the end of the line it falls on, where
+                // there is room for a word and where it cannot push the text along.
+                if self.names.get() {
+                    for (at, name) in &block.marks {
+                        let line = layout.lines()[layout.line_at(*at)];
+                        snapshot.append_color(
+                            &palette.dim,
+                            &rect(
+                                x + f64::from(layout.x_at(*at)) - 1.0,
+                                y + f64::from(line.top),
+                                2.0,
+                                f64::from(line.height),
+                            ),
+                        );
+                        draw_at(
+                            snapshot,
+                            faces.body().draw(&format!("  \u{2039}{name}\u{203a}")),
+                            x + f64::from(line.width),
+                            y + f64::from(line.top),
+                            palette.dim,
+                        );
+                    }
                 }
 
                 if selection.is_none() && slot.index == caret.block && widget.is_focus() {

@@ -107,6 +107,19 @@ put them. A named-style picker stays out: a run's *named* style (as opposed to i
 formatting) is a name this build keeps and does not interpret, and turning `Emphasis` into a set
 of checkboxes would throw that structure away to draw it (`doc/text-core.md`).
 
+**Bookmarks are visible now** (`doc/view-modes.md` §3.6, V7). A bookmark is the named-range
+analogue and it contributes no characters, which made it the one part of a text document a reader
+could not see at all — a zero-width `Run` with nothing on screen to say it was there.
+`BlockView::marks` carries them, and every shell draws them: **Show Bookmarks** (Ctrl+Shift+N) in
+`grind-text-gtk`, `:names` in `grind-tui`, Ctrl+K → *Show where bookmarks are* in the browser, and
+`grind text view --names` down a pipe. Nothing is written by any of them, which is the whole
+claim; `--render-to --overlay names` draws a frame with the mode on. This window is the only one
+that can say *exactly* where an anchor is — it already has `x_at` for the caret, so the mark gets
+a tick at its own offset and its name at the end of the line it falls on. The terminal and the
+browser put the name at the end of the line and nothing at the offset, which their own gap lists
+say. **Not** a gap either shell closes: nothing here *creates* a bookmark — `grind text name` does
+— and there is no list of them to jump between, since the go-to field already takes `#intro`.
+
 **Images.** Both shells decode and draw one now — the CLI's own `--render-to` proof is
 `Earthrise.fodt` and `Earthrise.odt`, a real photograph and caption LibreOffice wrote in both
 physical forms, opening with the picture and its caption both visible rather than either

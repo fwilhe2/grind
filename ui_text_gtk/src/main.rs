@@ -63,6 +63,10 @@ fn main() -> ExitCode {
     // last is a flag somebody will report as broken.
     let mut path: Option<PathBuf> = None;
     let mut render_to: Option<PathBuf> = None;
+    // `--overlay names` turns `doc/view-modes.md` §3.6's bookmark anchors on for that frame,
+    // so the mode is assertable the same way the rest of this widget is. Not a user feature
+    // either — the window's own menu item is.
+    let mut names = false;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         match arg {
@@ -71,6 +75,16 @@ fn main() -> ExitCode {
                     args.next().unwrap_or_else(|| "document.png".into()),
                 ));
             }
+            arg if arg == "--overlay" => match args.next().as_deref().and_then(|a| a.to_str()) {
+                Some("names") => names = true,
+                other => {
+                    eprintln!(
+                        "grind-text-gtk: --overlay takes names, not {}",
+                        other.unwrap_or("nothing")
+                    );
+                    return ExitCode::FAILURE;
+                }
+            },
             arg if path.is_none() => path = Some(PathBuf::from(arg)),
             arg => {
                 eprintln!(
@@ -104,6 +118,9 @@ fn main() -> ExitCode {
     let application = adw::Application::builder().application_id(APP_ID).build();
     application.connect_activate(move |application| {
         let ui = Ui::build(application, &app, path.clone());
+        if names {
+            ui.doc.set_names(true);
+        }
         ui.window.present();
         if let Some(target) = render_to.clone() {
             render_once(&ui.window, target);
@@ -389,6 +406,23 @@ impl Ui {
                 application.set_accels_for_action(&format!("win.{name}"), accels);
             }
         }
+
+        // `doc/view-modes.md` §3.6, stateful because it is a *mode* rather than a verb: the
+        // menu item carries its own checkmark, and the same key turns it off. Nothing is
+        // written either way, which is why it needs no confirmation and leaves no undo entry.
+        let names =
+            gio::SimpleAction::new_stateful("show-names", None, &self.doc.names().to_variant());
+        names.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |action, _| {
+                let on = !ui.doc.names();
+                ui.doc.set_names(on);
+                action.set_state(&on.to_variant());
+            }
+        ));
+        self.window.add_action(&names);
+        application.set_accels_for_action("win.show-names", &["<Control><Shift>n"]);
 
         self.window.connect_close_request(glib::clone!(
             #[strong(rename_to = ui)]
@@ -777,6 +811,7 @@ fn primary_menu() -> gio::Menu {
     let structure = gio::Menu::new();
     structure.append(Some("Outline…"), Some("win.outline"));
     structure.append(Some("Go to Address"), Some("win.goto"));
+    structure.append(Some("Show Bookmarks"), Some("win.show-names"));
     structure.append(Some("Word Count"), Some("win.words"));
     menu.append_section(None, &structure);
 

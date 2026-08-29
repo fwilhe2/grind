@@ -14,8 +14,10 @@ built: `grind-sheet-gtk` draws the name hints and reads a formula through its na
 `view::Names` is the substitution both that and the CLI go through. V6 is built too — the window
 has both modes, on Ctrl+Shift+N and Ctrl+Shift+R, with §4.6's glyph channel and announcement in
 the same commit as the colours. V7 put both modes in `grind-tui` (`:roles`, `:names`) and in
-`ui_web` (Ctrl+K), and §3.6's bookmark anchors in the word processor's three surfaces —
-`grind text view --names`, `:names` in the terminal, Ctrl+K in the browser. Two features, written as one document
+`ui_web` (Ctrl+K), and §3.6's bookmark anchors in all four of the word processor's surfaces —
+`grind text view --names`, `:names` in the terminal, Ctrl+K in the browser, and **Show
+Bookmarks** (Ctrl+Shift+N) in `grind-text-gtk`, which is the only one that can put a mark at the
+exact offset an anchor sits at. Two features, written as one document
 because they are one mechanism, one core API, one CLI shape and one verification story:
 
 - **Part I — inline names.** A cell that a name is bound to shows that name, so a model does
@@ -451,7 +453,7 @@ feature is: **nothing new is being represented, only read.**
 | **V4** | ✅ Name anchors — the grid hint and the range case (§3.1–3.2) | `geom.rs` covers the elision, the drop and the range anchor with no display; `--render-to --overlay names` draws them |
 | **V5** | ✅ Name substitution — `view::Names::display`, `App::named_formula`, `grind sheet view --formulas --names`, and the formula bar's third stack page | Loop B's display round-trip passes with the option on: 188 formulas mention a named place and all 188 come back |
 | **V6** | ✅ Role mode in `grind-sheet-gtk` — the mode, the palette, the corner marks, `announce` | `--render-to --overlay roles` draws a frame on both grounds; the glyph channel and the announcement landed in the same commit as the colours, not after |
-| **V7** | ✅ The other three shells, and `grind text view --names` for bookmarks (§3.6) | `CellRole::marker` is in the core, so no shell invented a glyph table; each shell's gap list says what its medium could not do |
+| **V7** | ✅ The other three shells, and `grind text view --names` for bookmarks (§3.6) | All five surfaces draw it — both `grind-tui` panes, both `ui_web` panes and `grind-text-gtk`. `CellRole::marker` is in the core, so no shell invented a glyph table; each shell's gap list says what its medium could not do |
 
 V1–V3 are the feature and they need no shell at all — **and they are done**. V4–V7 are four
 renderings of an answer already computed, **and all four are done**.
