@@ -65,6 +65,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
+| `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -441,6 +442,18 @@ hoist.
 **The shell half is not built.** No GTK toolbar, no selection to apply one to, and neither GUI
 shell *draws* the formatting the core now measures — the gap list in `doc/text-shell.md` is the
 up-to-date statement of that, and selection is the piece everything else waits on.
+
+**View modes are built, V0 through V7** (`doc/view-modes.md`): `sheet/src/graph.rs` is the
+reference index — the forward and reverse dependency answers, resolved through `Engine::area` so
+it cannot disagree with the evaluator — and `sheet/src/view.rs` turns it into a `CellRole` for
+every cell and a `NameAnchor` for every named place. `App::get_viewport_with` carries both to a
+shell, `view::Names` reads a formula through the names it uses (`=tax_rate*subtotal`), and
+`grind sheet view --roles/--names/--formulas` and `grind text view --names` print all of it.
+**Nothing here is ever written to a document**, and the headline check is exactly that: open
+every R7 document, ask for every overlay, read the whole sheet, save, assert the bytes are
+identical. Loop C cannot verify a feature that writes nothing, which is the point rather than a
+gap. All four shells draw it; `CellRole::marker` is in the core so no shell invents a glyph
+table.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
