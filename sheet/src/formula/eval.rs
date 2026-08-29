@@ -27,7 +27,10 @@ use super::parse::{Expr, parse};
 use super::value::{FormulaError, Value};
 
 /// A cell, document-wide.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// Ordered so that a map keyed by one iterates in a stable, readable order — sheet by sheet,
+/// then row by row. [`crate::graph`] is what asked for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address {
     pub sheet: usize,
     pub pos: Pos,
@@ -326,7 +329,12 @@ impl<'a> Engine<'a> {
 
     /// A reference (§5.8) resolved against this document. `None` when the sheet does not
     /// exist — the caller turns that into `#REF!`.
-    fn area(&self, reference: &Reference, at: Address) -> Option<Area> {
+    ///
+    /// Public because resolving a reference is a question separate from evaluating one, and
+    /// [`crate::graph`] asks it without evaluating anything. That it is the *same* function
+    /// the evaluator calls is the whole point: an index that resolved references its own way
+    /// would disagree with what the document actually computes.
+    pub fn area(&self, reference: &Reference, at: Address) -> Option<Area> {
         // An external document is not open, so nothing in it can be read (§5.8 Source).
         if reference.source.is_some() {
             return None;
@@ -375,7 +383,7 @@ impl<'a> Engine<'a> {
     }
 }
 
-fn intersect(a: &Area, b: &Area) -> Option<Area> {
+pub(crate) fn intersect(a: &Area, b: &Area) -> Option<Area> {
     if a.sheet != b.sheet {
         return None;
     }

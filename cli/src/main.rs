@@ -22,11 +22,12 @@ use grind_sheet::a1;
 use grind_sheet::formula::lex::column_name;
 use grind_sheet::numfmt;
 use grind_sheet::style::{self, CellStyle};
+use grind_sheet::view::Overlays;
 use grind_sheet::{App, CellValue, DocumentKind, Pos, RecalcMode, Session};
 use grind_text::App as TextApp;
 
 use report::{
-    Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, TextDocumentReport,
+    Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, Shown, TextDocumentReport,
     TextReport,
 };
 
@@ -993,6 +994,11 @@ enum Command {
     },
 
     /// Print a rectangle of values, tab-separated
+    ///
+    /// The three overlay flags print `doc/view-modes.md`'s derived answers instead of the
+    /// values: what each cell *is*, what it is *called*, and what computes it. None of them
+    /// changes the document — reading a file this way leaves its bytes alone, which is the
+    /// feature's whole promise. `--format json` carries every column at once.
     View {
         file: PathBuf,
         /// Range to print; defaults to everything the sheet uses
@@ -1003,6 +1009,15 @@ enum Command {
         /// Print stored values rather than formatted display text
         #[arg(long)]
         raw: bool,
+        /// Print each cell's role: input-named, constant-unnamed, computed-local, …
+        #[arg(long, conflicts_with_all = ["raw", "names", "formulas"])]
+        roles: bool,
+        /// Print the named expression bound to each cell, where one is
+        #[arg(long, conflicts_with_all = ["raw", "roles", "formulas"])]
+        names: bool,
+        /// Print each cell's formula source rather than its value
+        #[arg(long, conflicts_with_all = ["raw", "roles", "names"])]
+        formulas: bool,
     },
 
     /// Set a cell's value or formula
@@ -1649,7 +1664,10 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 pos,
                 pos,
                 u32::MAX,
-                *raw,
+                match *raw {
+                    true => Shown::Value,
+                    false => Shown::Text,
+                },
             )?))
         }
 
@@ -1658,6 +1676,9 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             address,
             max_rows,
             raw,
+            roles,
+            names,
+            formulas,
         } => {
             let app = load(file, cli)?;
             let (sheet, start, end) = match address {
@@ -1669,8 +1690,15 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     (0, Pos::new(0, 0), last)
                 }
             };
+            let shown = match (*raw, *roles, *names, *formulas) {
+                (true, ..) => Shown::Value,
+                (_, true, ..) => Shown::Role,
+                (_, _, true, _) => Shown::Name,
+                (.., true) => Shown::Formula,
+                _ => Shown::Text,
+            };
             Ok(Report::Cells(cells(
-                &app, file, sheet, start, end, *max_rows, *raw,
+                &app, file, sheet, start, end, *max_rows, shown,
             )?))
         }
 
@@ -2673,6 +2701,10 @@ fn document(app: &App, file: &Path, changed: bool, written: bool, stale: usize) 
 }
 
 /// A rectangle of cells, read the only way a shell may read them.
+///
+/// `shown` decides the text column *and* whether the read asks for `doc/view-modes.md`'s
+/// overlays: deriving a role needs a document-wide analysis, so a plain `view` does not pay
+/// for one and a `--roles` view does.
 #[allow(clippy::too_many_arguments)]
 fn cells(
     app: &App,
@@ -2681,7 +2713,7 @@ fn cells(
     start: Pos,
     end: Pos,
     max_rows: u32,
-    raw: bool,
+    shown: Shown,
 ) -> Result<CellsReport, String> {
     let last_row = end
         .row
@@ -2689,7 +2721,14 @@ fn cells(
     let rows = start.row..last_row.saturating_add(1);
     let cols = start.col..end.col.saturating_add(1);
     let name = app.sheet_name(sheet).say()?;
-    let viewport = app.get_viewport(sheet, rows.clone(), cols.clone()).say()?;
+    let overlays = match shown {
+        Shown::Role => Overlays::ROLES,
+        Shown::Name => Overlays::NAMES,
+        _ => Overlays::NONE,
+    };
+    let viewport = app
+        .get_viewport_with(sheet, rows.clone(), cols.clone(), overlays)
+        .say()?;
 
     let mut out = Vec::new();
     for row in rows.clone() {
@@ -2702,13 +2741,15 @@ fn cells(
                 text: viewport.text(row, col).unwrap_or_default().to_owned(),
                 kind: report::kind(&value),
                 formula: app.formula(sheet, pos).say()?,
+                role: viewport.role(row, col).map(|r| r.name()),
+                name: viewport.name_at(row, col).map(str::to_owned),
             });
         }
     }
     Ok(CellsReport {
         path: show_path(file),
         sheet: name,
-        raw,
+        shown,
         cells: out,
         rows: rows.end - rows.start,
         cols: cols.end - cols.start,

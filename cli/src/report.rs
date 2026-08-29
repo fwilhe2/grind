@@ -44,10 +44,10 @@ pub enum Report {
 pub struct CellsReport {
     pub path: String,
     pub sheet: String,
-    /// Whether the text output prints stored values rather than display text (`--raw`).
-    /// Not serialised: JSON carries both spellings of every cell and lets the caller pick.
+    /// Which of a cell's spellings the *text* output prints. Not serialised: JSON carries
+    /// every one of them and lets the caller pick.
     #[serde(skip)]
-    pub raw: bool,
+    pub shown: Shown,
     /// Row-major, one entry per cell in the requested rectangle.
     pub cells: Vec<Cell>,
     pub rows: u32,
@@ -68,6 +68,33 @@ pub struct Cell {
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub formula: Option<String>,
+    /// What the cell *is* — `doc/view-modes.md`'s role, present only when it was asked for.
+    /// Deriving one costs a document-wide analysis, so a plain `view` does not pay for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<&'static str>,
+    /// The named expression bound to this cell, when one is (`--names`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Which column of a cell the text output prints — one per line of `view`, tab-separated.
+///
+/// JSON is unaffected: it carries every spelling the read produced, and this is only which
+/// one a terminal gets. Being an enum rather than a pile of booleans is what makes the
+/// flags mutually exclusive by construction.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Shown {
+    /// What the cell displays, its number format applied.
+    #[default]
+    Text,
+    /// The stored value, as the file spells it (`--raw`).
+    Value,
+    /// `doc/view-modes.md`'s role (`--roles`).
+    Role,
+    /// The name bound to the cell, or nothing (`--names`).
+    Name,
+    /// The formula source, or nothing (`--formulas`).
+    Formula,
 }
 
 /// Every mutating command, plus `new` and `info`.
@@ -181,9 +208,12 @@ impl Report {
                 for row in cells.cells.chunks(cells.cols.max(1) as usize) {
                     let line: Vec<&str> = row
                         .iter()
-                        .map(|c| match cells.raw {
-                            true => c.value.as_str(),
-                            false => c.text.as_str(),
+                        .map(|c| match cells.shown {
+                            Shown::Text => c.text.as_str(),
+                            Shown::Value => c.value.as_str(),
+                            Shown::Role => c.role.unwrap_or_default(),
+                            Shown::Name => c.name.as_deref().unwrap_or_default(),
+                            Shown::Formula => c.formula.as_deref().unwrap_or_default(),
                         })
                         .collect();
                     println!("{}", line.join("\t"));

@@ -24,11 +24,13 @@ pub mod action;
 pub mod chart;
 pub mod filter;
 pub mod formula;
+pub mod graph;
 pub mod grid;
 pub mod model;
 pub mod numfmt;
 pub mod odf;
 pub mod style;
+pub mod view;
 
 /// What this crate takes from `grind-core` and hands on under its own name.
 ///
@@ -217,6 +219,17 @@ pub struct Viewport {
     /// cell. Interning them — the writer already pools styles — is the upgrade, once a
     /// profile says a screenful of styled cells costs anything.
     styles: Vec<Option<style::CellStyle>>,
+    /// What each cell *is* — `doc/view-modes.md`'s role overlay, row-major and total.
+    ///
+    /// `None` when the read did not ask for it ([`view::Overlays`]), because deriving a role
+    /// needs a document-wide analysis and a shell that draws no roles must not pay for one.
+    /// A fourth parallel vector for the same reason the second and third are here: a
+    /// renderer asking per cell would take the lock per cell.
+    roles: Option<Vec<view::CellRole>>,
+    /// The name anchors *intersecting* this rectangle — a list rather than a per-cell
+    /// vector, because a name binds to a **range** as often as to a cell and `sales` over
+    /// `A2:A50` is one anchor, not forty-nine.
+    names: Vec<view::NameAnchor>,
 }
 
 impl Viewport {
@@ -248,6 +261,31 @@ impl Viewport {
         self.styles.get(self.at(row, col)?)?.as_ref()
     }
 
+    /// What one cell *is*, or `None` when the read did not ask for roles — and for a cell
+    /// outside the viewport.
+    ///
+    /// Unlike [`Viewport::style`], the two `None`s here mean different things and a caller
+    /// that cares knows which it is asking: a shell in role mode requested the overlay, so
+    /// `None` can only be a cell it is not drawing.
+    pub fn role(&self, row: u32, col: u32) -> Option<view::CellRole> {
+        self.roles.as_ref()?.get(self.at(row, col)?).copied()
+    }
+
+    /// Every name anchor intersecting this rectangle. Empty when the read did not ask for
+    /// them, and empty when there are none — a shell draws nothing either way.
+    pub fn names(&self) -> &[view::NameAnchor] {
+        &self.names
+    }
+
+    /// The name bound to one cell, if any — the per-cell question the CLI's `--names` asks
+    /// and a formula bar asks again.
+    pub fn name_at(&self, row: u32, col: u32) -> Option<&str> {
+        self.names
+            .iter()
+            .find(|a| a.rows.contains(&row) && a.cols.contains(&col))
+            .map(|a| a.name.as_str())
+    }
+
     /// One row of the viewport, left to right. `None` if the row is outside it.
     pub fn row(&self, row: u32) -> Option<&[CellValue]> {
         if !self.rows.contains(&row) {
@@ -274,6 +312,17 @@ struct State {
 pub struct App {
     state: RwLock<State>,
     observer: RwLock<Option<Arc<dyn Observer>>>,
+    /// `doc/view-modes.md`'s document-wide analysis, computed on first use and dropped on
+    /// every mutation.
+    ///
+    /// A cache with an invalidation rule is where correctness usually goes to die, so the
+    /// rule is kept trivial: it is emptied in [`App::mutate`], the one place a document
+    /// changes and observers are notified, and the first cut recomputes everything — which
+    /// means the only bug available here is a stale cache, never a wrong one.
+    ///
+    /// Its own lock rather than a `State` field, so a read that wants an overlay does not
+    /// have to take the write lock to fill it. The order is always state-then-analysis.
+    analysis: RwLock<Option<Arc<view::Analysis>>>,
 }
 
 impl App {
@@ -296,6 +345,9 @@ impl App {
             let mut state = self.state.write().unwrap();
             f(&mut state)
         };
+        // Before the notification, because an observer reads straight back in and must not
+        // be handed a reading of the document as it was.
+        *self.analysis.write().unwrap() = None;
         self.notify();
         result
     }
@@ -1048,11 +1100,35 @@ impl App {
     }
 
     /// Read a rectangle. The only way a shell reads cells.
+    ///
+    /// Plain values, texts and styles — `get_viewport_with(…, Overlays::NONE)`. The overlays
+    /// are a separate entry point rather than an argument here because Rust has no default
+    /// arguments and every ordinary paint in four shells asks for none of them.
     pub fn get_viewport(
         &self,
         sheet: usize,
         rows: Range<u32>,
         cols: Range<u32>,
+    ) -> Result<Viewport> {
+        self.get_viewport_with(sheet, rows, cols, view::Overlays::NONE)
+    }
+
+    /// Read a rectangle, with `doc/view-modes.md`'s derived overlays on it.
+    ///
+    /// Requested rather than always computed: roles and name anchors both need a
+    /// document-wide analysis — *nothing references this cell* cannot be answered inside a
+    /// viewport — and a shell that draws neither must not pay for one. The analysis is built
+    /// once per document state and cached; this read is viewport-shaped,
+    /// which is rule 1 unchanged.
+    ///
+    /// **Nothing about this writes to the document.** That is the feature's whole promise
+    /// and `sheet/tests/view_modes.rs` asserts it on the bytes.
+    pub fn get_viewport_with(
+        &self,
+        sheet: usize,
+        rows: Range<u32>,
+        cols: Range<u32>,
+        overlays: view::Overlays,
     ) -> Result<Viewport> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -1063,6 +1139,8 @@ impl App {
         let mut cells = Vec::with_capacity(size);
         let mut texts = Vec::with_capacity(size);
         let mut styles = Vec::with_capacity(size);
+        let analysis = overlays.any().then(|| self.analysis(&state.doc));
+        let mut roles = overlays.roles.then(|| Vec::with_capacity(size));
         for row in rows.clone() {
             for col in cols.clone() {
                 let pos = Pos::new(row, col);
@@ -1070,15 +1148,44 @@ impl App {
                 texts.push(render(s, pos, state.doc.null_date));
                 styles.push(s.style(pos).cloned());
                 cells.push(value);
+                if let Some(roles) = roles.as_mut() {
+                    let at = formula::eval::Address::new(sheet, pos);
+                    roles.push(analysis.as_ref().expect("requested").role(s, at));
+                }
             }
         }
+        let names = match (overlays.names, &analysis) {
+            (true, Some(analysis)) => analysis
+                .anchors_in(sheet, rows.clone(), cols.clone())
+                .cloned()
+                .collect(),
+            _ => Vec::new(),
+        };
         Ok(Viewport {
             rows,
             cols,
             cells,
             texts,
             styles,
+            roles,
+            names,
         })
+    }
+
+    /// The document-wide analysis, built if it is not already there.
+    ///
+    /// `doc` is passed in rather than read again because every caller already holds the read
+    /// lock — and taking it twice is how a lock order gets invented by accident.
+    fn analysis(&self, doc: &Document) -> Arc<view::Analysis> {
+        if let Some(analysis) = self.analysis.read().unwrap().clone() {
+            return analysis;
+        }
+        // Two threads may both build one here. That costs a duplicated walk and cannot give
+        // a wrong answer — both read the same document under the same read lock — and it is
+        // preferable to holding a write lock across the build.
+        let fresh = Arc::new(view::Analysis::build(doc));
+        *self.analysis.write().unwrap() = Some(fresh.clone());
+        fresh
     }
 
     pub fn sheet_count(&self) -> usize {

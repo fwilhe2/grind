@@ -6,7 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # View modes — what a document *means*, drawn
 
-**Status: proposed. Nothing here is normative yet.** Two features, written as one document
+**Status: normative, and built through V3** — `sheet/src/graph.rs` is the reference index,
+`sheet/src/view.rs` the roles and the name anchors, `App::get_viewport_with` the read, and
+`grind sheet view --roles/--names/--formulas` the CLI. §4.2's rule was **tightened twice
+against `examples/sample-sheet.sh`**; §4.2 below records what it is now and why. V4–V7 — the
+shells — are not built. Two features, written as one document
 because they are one mechanism, one core API, one CLI shape and one verification story:
 
 - **Part I — inline names.** A cell that a name is bound to shows that name, so a model does
@@ -70,9 +74,10 @@ copy of the document.* Overlays are a fourth and a fifth, on exactly that argume
 `names` is a list rather than a per-cell vector because a name binds to a **range** as often as
 to a cell, and `sales` over `A2:A50` is one anchor, not forty-nine.
 
-Requested, not always computed: `get_viewport` gains an `Overlays` argument — a small set of
-flags — so a shell that draws neither pays for neither, and the CLI asks for exactly what it
-prints.
+Requested, not always computed: the read takes an `Overlays` — a small set of flags — so a
+shell that draws neither pays for neither, and the CLI asks for exactly what it prints. As
+built, that is a second entry point rather than a fifth argument: `App::get_viewport_with`
+takes the flags and `App::get_viewport` is that call with `Overlays::NONE`. See §8.
 
 **The precedent this follows is already in the codebase.** `formula::display::spans` exposes
 the reference scanner in byte ranges *specifically* so that the in-cell editor's colourer and
@@ -190,11 +195,11 @@ mode legible — a wash with gaps in it reads as a bug.
 | Role | Derived from | Convention |
 |---|---|---|
 | **Input, named** | a literal, with a name bound to it | the good case |
-| **Input, unnamed** | a literal nothing else reads | ordinary data — a table of numbers is this, and it is not a problem |
-| **Constant, unnamed** | a literal that **at least one formula references**, with no name bound | **the magic number.** §4.2 |
+| **Input, unnamed** | a literal no formula singles out | ordinary data — a table of numbers under a total is this, and it is not a problem |
+| **Constant, unnamed** | a literal two or more formulas read *by address*, standing on its own, with no name bound | **the magic number.** §4.2, which is where the three conditions and the two rounds it took to find them are |
 | **Computed, local** | a formula whose references are all in this sheet | |
 | **Computed, cross-sheet** | a formula referencing another sheet | |
-| **Label** | text nothing references | the row and column headings a person writes |
+| **Label** | text | the row and column headings a person writes. A *referenced* text literal is a label too: a sum whose range overlaps its own heading references that heading, and calling it a magic constant is §9's false positive exactly |
 | **Error** | the value is an error | |
 | **Stale** | the cached value disagrees with re-evaluation | already counted by `grind sheet recalc` |
 
@@ -206,10 +211,33 @@ which is exactly the input/computed line.
 ### 4.2 A magic constant, defined precisely
 
 The user-facing claim is *"a constant with no name"*, and the definition has to be tighter than
-that or every number in a data table lights up:
+that or every number in a data table lights up. The first draft of this section said:
 
 > A cell is a **magic constant** when it holds a literal, **at least one formula references
 > it**, and no named expression is bound to it.
+
+**That is not the rule, and finding out cost two rounds against `examples/sample-sheet.sh`**
+— which is exactly what that script is for. The budget's actuals column sits under
+`=SUM([.C2:.C7])` and beside two per-row formulas that read each cell by address, so under
+the rule above every one of the six lit up as a decision nobody wrote down. It is data. So:
+
+> A cell is a **magic constant** when it holds a literal, no named expression is bound to it,
+> **two or more formulas read it through a single-cell reference**, and it is **not one of a
+> line of three or more literals** in its row or its column.
+
+Three conditions, each earning its place:
+>
+> * **Singled out, not covered.** A cell inside `SUM([.C2:.C7])` is not referenced *as a
+>   decision*; the range is. A cell some formula spells out by address was reached for.
+> * **From more than one place.** One reader is the ordinary shape of a spreadsheet — a
+>   column of data with a column of formulas beside it, each reading its own row. What §4.2
+>   was always describing is *a lone `0.2` that three formulas multiply by*.
+> * **Standing on its own.** Three literals in a line is a table. This is the half that
+>   cannot be derived from the reference graph at all, and it is what finally separated the
+>   sample's actuals column from the sample's tax rate.
+
+Every one of them errs towards a false **negative**, deliberately, on §9's judgement: an
+annoying lint gets switched off, and a lint that is switched off finds nothing at all.
 
 Being referenced is what makes it structural. A column of measurements nobody computes with is
 data; a lone `0.2` that three formulas multiply by is a decision somebody made and did not write
@@ -316,9 +344,9 @@ That is not a gap; it is the point. So the checks are chosen to match the claim:
 
 | Check | What it asserts |
 |---|---|
-| **The writes-nothing test** | Open every R7 document, request every overlay, read viewports across the whole sheet, save — and assert the bytes are **byte-identical** to the input. This is the headline check: the feature's entire promise is that it changes nothing, and this is that promise, mechanically |
-| **Totality and disjointness** | Every non-empty cell in the corpus gets exactly one role. A property test over loop A's 359 documents |
-| **Roles agree with the formulas** | A cell classified *computed, local* has a formula whose every reference is local — checked against loop B's 75845 already-parsed formulas, at zero corpus cost |
+| ✅ **The writes-nothing test** | Open every R7 document, request every overlay, read viewports across the whole sheet, save — and assert the bytes are **byte-identical** to the input. This is the headline check: the feature's entire promise is that it changes nothing, and this is that promise, mechanically. `sheet/tests/view_modes.rs`, and it never skips |
+| ✅ **Totality and disjointness** | Every cell in R7's fourteen documents gets exactly one role, and the roles seen across them cover the ordinary four. Disjointness is structural — `Analysis::role` is one function returning one value — so what is asserted is that it is *total* |
+| ✅ **Roles agree with the formulas** | A cell classified *computed, local* has a formula whose every reference is local; one classified *constant, unnamed* satisfies §4.2's three conditions mechanically. Re-derived from the index rather than from a second opinion, over the same corpus. Widening it to loop A's 359 documents and loop B's 75845 formulas is free and not yet done |
 | **Name substitution round-trips** | `display` with names on, re-parsed, yields the same AST — loop B's existing display assertion, with the option set |
 | **Layout arithmetic** | Hint elision, the range-anchor position, the corner marker — in `ui_sheet_gtk/src/geom.rs`'s shape: arithmetic with no toolkit in it, so no display is needed |
 | **`--render-to`** | A role-mode frame comes back byte-identical after a refactor, as every other grid change already proves itself |
@@ -354,17 +382,31 @@ feature is: **nothing new is being represented, only read.**
 
 | | What | Done when |
 |---|---|---|
-| **V0** | This document. The role set is fixed and the overlay API is designed | The names are settled |
-| **V1** | The forward and reverse reference index (§4.4) — one walk of the parsed ASTs, built on demand | It agrees with `eval.rs` about what every corpus formula reads |
-| **V2** | `CellRole`, the classifier, `Overlays` on `get_viewport` | Totality, disjointness and the formula-agreement checks pass over loops A and B |
-| **V3** | `grind sheet view --roles` / `--names` / `--formulas`, `--format json`, parity rows | The CLI can answer everything before any shell draws it (R9, and §4.6's accessibility floor) |
+| **V0** | ✅ This document. The role set is fixed and the overlay API is designed | The names are settled |
+| **V1** | ✅ `sheet/src/graph.rs` — the forward and reverse reference index (§4.4), one walk of the parsed ASTs, built on demand | It resolves every reference through `Engine::area`, the function the evaluator itself calls, so it *cannot* disagree with `eval.rs` about what a formula reads |
+| **V2** | ✅ `sheet/src/view.rs` — `CellRole`, `NameAnchor`, the classifier, `Analysis` cached on `App` and dropped in `mutate`, `App::get_viewport_with(…, Overlays)` | `sheet/tests/view_modes.rs`: the writes-nothing test, totality over R7, and the role/index agreement check |
+| **V3** | ✅ `grind sheet view --roles` / `--names` / `--formulas`, `--format json`, the parity row | The CLI answers everything before any shell draws it (R9, and §4.6's accessibility floor), and `examples/sample-sheet.sh` shows all three |
 | **V4** | Name anchors — the grid hint and the range case (§3.1–3.2) | The writes-nothing test is green, and `geom.rs` covers elision |
 | **V5** | Name substitution in `formula::display` (§3.3) | Loop B's display round-trip passes with the option on |
 | **V6** | Role mode in `grind-sheet-gtk` — the mode, the palette, the corner marks, `announce` | `--render-to` frames are stable; the a11y second channel is there from the first commit, not after |
 | **V7** | The other three shells, and `grind text --names` for bookmarks (§3.6) | Each shell's gap list is updated rather than each shell inventing colours |
 
-V1–V3 are the feature and they need no shell at all. V4–V7 are four renderings of an answer
-already computed.
+V1–V3 are the feature and they need no shell at all — **and they are done**. V4–V7 are four
+renderings of an answer already computed, and none of them is started.
+
+Two decisions taken during V1–V3 that the plan had left open, recorded here rather than only
+in the code:
+
+* **`get_viewport` did not gain an argument; it gained a twin.** `get_viewport_with` takes the
+  `Overlays`, and `get_viewport` is that call with `Overlays::NONE`. Rust has no default
+  arguments, every ordinary paint in four shells asks for no overlay, and threading a flag
+  through twenty untouched call sites would have been churn arguing for itself. One
+  implementation, two entry points; rule 1 is unchanged.
+* **A name anchors only when its expression names a sheet.** §3.5 asked for a fully-qualified
+  anchor and this is the enforceable form of it: `Document::names` carries no declaring sheet,
+  so an unqualified `[.B2]` cannot be anchored to one and is anchored *nowhere* rather than on
+  every sheet's B2. Our writer and LibreOffice both store a named range qualified, so the case
+  this declines is the ambiguous one.
 
 ---
 

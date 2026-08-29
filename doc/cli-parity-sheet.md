@@ -106,6 +106,13 @@ stops ratcheting.
 - `get` — `grind sheet get`
 - `get_viewport` — `grind sheet view` (its display text is what `view` prints; `--raw` prints the
   stored values instead)
+- `get_viewport_with` — `grind sheet view --roles` / `--names` / `--formulas`, which print
+  `doc/view-modes.md`'s derived overlays instead of the values: what each cell *is*, what it is
+  *called*, and what computes it. `--format json` carries every column of every cell at once, so
+  "find every magic constant in this repository" is a shell loop rather than a feature request.
+  The view mode is a **reading** of a document and writes nothing to it, which is why the CLI is
+  not a formality here — it is the accessible surface for a feature whose entire output in a GUI
+  is colour (`doc/view-modes.md` §4.6).
 - `formula` — `grind sheet get --formula`
 - `input_text` — `grind sheet get --input`, which prints what an editor would show for the cell:
   the text that, given back to `grind sheet set`, leaves it exactly as it is

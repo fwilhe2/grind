@@ -111,6 +111,13 @@ run set "$book" B18 '=TIME(9;30;0)'
 run set "$book" A19 'Is category text'
 run set "$book" B19 '=ISTEXT([.A2])'                         # information
 
+# A rate two formulas multiply by, and nobody wrote down what it is. Left unnamed on purpose:
+# it is what `view --roles` calls a `constant-unnamed`, and the point of finding one is that
+# `grind sheet name` is the fix. See doc/view-modes.md §4.2.
+run set "$book" B20 0.19
+run set "$book" C20 '=[.C8]*[.B20]'                          # tax on what was spent
+run set "$book" D20 '=[.B8]*[.B20]'                          # tax on what was budgeted
+
 # The twin of paste: replicate one cell's formula across a rectangle, the way a drag handle
 # or Ctrl+D does. Relative references shift with the target; `$`-anchored ones do not — D2's
 # [.B2]-[.C2] becomes [.B5]-[.C5] at row 5, but E2's [.$C$8] stays pinned to the total row
@@ -320,5 +327,23 @@ sheet get "$out/sample.fods" B8 --raw
 say "set --recalc: the edit and its ripple, in one step"
 run set "$out/sample.fods" B2 2250 --recalc                 # a further adjustment
 sheet get "$out/sample.fods" B8 --raw
+
+# --- view modes: what the document means, derived ------------------------------------------
+# `doc/view-modes.md`. Every cell already *has* a role — an input, a computed value, a label,
+# an unnamed constant three formulas multiply by — and the document implies which without
+# anybody applying a style by hand. None of this is written to the file: the three flags below
+# are readings of it, and the same document saved after them is byte-identical. That is why
+# they are here rather than in a GUI's menu, and it is the accessible surface for a feature
+# whose entire output in a window is colour.
+
+say "roles: what each cell is, derived and never stored"
+sheet view "$book" A1:D8 --roles
+sheet view "$book" B20:D20 --roles          # the unnamed rate two formulas multiply by
+
+say "names: where a named expression lives, shown in the grid"
+sheet view "$book" A1:D8 --names
+
+say "formulas: the source rather than the value"
+sheet view "$book" B8:E8 --formulas
 
 printf '\n%s and %s\n' "$book" "$out/sample.fods"
