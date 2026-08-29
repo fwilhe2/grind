@@ -84,6 +84,23 @@ fn caret_span(
     app.resolve_caret_range(&range).map_err(|e| e.to_string())
 }
 
+/// One block's text with its bookmark anchors written in — what `text view --names` prints,
+/// and `doc/view-modes.md` §3.6's whole point: a bookmark contributes no characters, so
+/// nothing a reader sees says it is there.
+///
+/// `‹name›` at the offset it anchors to, inserted from the end backwards so that inserting
+/// one does not move the next one's offset. The brackets are the marker rather than a
+/// colour, because this has to work down a pipe.
+fn with_marks(text: &str, marks: &[(usize, String)]) -> String {
+    let mut chars: Vec<char> = text.chars().collect();
+    for (at, name) in marks.iter().rev() {
+        let at = (*at).min(chars.len());
+        let mark: Vec<char> = format!("\u{2039}{name}\u{203a}").chars().collect();
+        chars.splice(at..at, mark);
+    }
+    chars.into_iter().collect()
+}
+
 /// One block's text, broken into lines at `width` — what `view --width` prints.
 ///
 /// The CLI measures one unit per character (`grind_text::Fixed`), so a width of 72 is 72
@@ -137,6 +154,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             file,
             range,
             marks,
+            names,
             width,
         } => {
             let app = open_text(file)?;
@@ -151,6 +169,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                 // With it, the core breaks the block and the CLI prints what any shell would
                 // draw at that width — the same engine, measured one unit per character.
                 let pieces = match width {
+                    None if *names => vec![with_marks(&block.text, &block.marks)],
                     None => vec![block.text.clone()],
                     Some(width) => wrapped(&app, block.index, *width)?,
                 };
@@ -678,6 +697,14 @@ enum TextCommand {
         /// Prefix each line with its address and kind
         #[arg(long)]
         marks: bool,
+        /// Show where each bookmark anchors, inline
+        ///
+        /// A bookmark is the named-range analogue and it is otherwise invisible: it
+        /// contributes no characters, so nothing a reader sees says it is there
+        /// (`doc/view-modes.md` §3.6). Not with --width: a mark is a position in the
+        /// block, and wrapping is a separate question about lines.
+        #[arg(long, conflicts_with = "width")]
+        names: bool,
         /// Wrap at this many characters, the way a shell would at its own width
         #[arg(long, value_name = "COLUMNS")]
         width: Option<u32>,

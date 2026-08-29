@@ -67,6 +67,10 @@ pub struct App {
     /// speak, and vi's register is the convention a reader of this shell already has.
     register: String,
     status: String,
+    /// Which of `doc/view-modes.md`'s overlays this pane is drawing — presentation state
+    /// like everything else here, because a view mode is a reading of the document and
+    /// never a change to it.
+    overlays: grind_sheet::view::Overlays,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
@@ -89,6 +93,7 @@ impl App {
             anchor: None,
             register: String::new(),
             status: String::new(),
+            overlays: grind_sheet::view::Overlays::NONE,
             help: crate::help::Help::default(),
             help_height: 20,
             quit: false,
@@ -460,6 +465,11 @@ impl App {
                 }
             }
             "recalc" => self.cmd_recalc(),
+            // `doc/view-modes.md`'s two overlays. Verbs rather than keys because they are
+            // *modes*, and this shell's keys are vi's motions; `:roles` off is `:roles`
+            // again, which is the whole of turning one off — nothing was written.
+            "roles" => self.cmd_overlay(true),
+            "names" => self.cmd_overlay(false),
             "bold" => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
             "italic" => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
             "wrap" => self.toggle_style(|style| toggle(&mut style.wrap, "wrap")),
@@ -480,6 +490,31 @@ impl App {
             // Anything else is a cell or range address, vi's `:{line}` counterpart.
             _ => self.cmd_jump(cmd),
         }
+    }
+
+    /// Turn one of `doc/view-modes.md`'s overlays on or off, and say which — a terminal has
+    /// no toolbar to show a mode is on, so the status line does it (§9 asks for an
+    /// indication that is always visible, and here that is the only place there is).
+    fn cmd_overlay(&mut self, roles: bool) {
+        let overlays = &mut self.overlays;
+        let on = match roles {
+            true => {
+                overlays.roles = !overlays.roles;
+                overlays.roles
+            }
+            false => {
+                overlays.names = !overlays.names;
+                overlays.names
+            }
+        };
+        let what = match roles {
+            true => "roles",
+            false => "names",
+        };
+        self.status = match on {
+            true => format!("{what} on — :{what} to turn it off"),
+            false => format!("{what} off"),
+        };
     }
 
     fn cmd_write(&mut self, path: Option<&str>) {
@@ -697,10 +732,11 @@ impl App {
 
         let viewport = self
             .core
-            .get_viewport(
+            .get_viewport_with(
                 self.sheet,
                 self.top.row..self.top.row + visible_rows,
                 self.top.col..self.top.col + visible_cols,
+                self.overlays,
             )
             .ok();
 
@@ -737,15 +773,41 @@ impl App {
                     viewport.as_ref().and_then(|v| v.get(r, c)),
                     Some(grind_sheet::CellValue::Number(_))
                 );
+                let role = viewport.as_ref().and_then(|v| v.role(r, c));
                 // The document's own styling, then the shell's own marks over it: the active
-                // cell and the selection are *not* the document, so they are drawn last.
-                let mut style = terminal_style(cell);
+                // cell and the selection are *not* the document, so they are drawn last. In
+                // role mode the document's colours are suppressed altogether (§4.5): colour
+                // means role, exclusively, or a cell's colour has two causes and no way to
+                // tell them apart.
+                let mut style = match role {
+                    Some(role) => Style::default().fg(role_color(role)),
+                    None => terminal_style(cell),
+                };
+                // The name overlay, in the one channel a ten-column cell has to spare:
+                // *underlined* means this cell has a name, and the name itself is spelled
+                // out for the active cell on the formula line below. Drawing `sales` inside
+                // a ten-character column would be the value yielding to the hint, which
+                // §3.2 forbids in every shell.
+                if viewport.as_ref().and_then(|v| v.name_at(r, c)).is_some() {
+                    style = style.add_modifier(Modifier::UNDERLINED);
+                }
                 let pos = Pos::new(r, c);
                 if pos == self.active || self.selected(pos) {
                     style = style.add_modifier(Modifier::REVERSED);
                 }
+                // §4.6's second channel, and a terminal needs it more than a window does:
+                // eight ANSI colours are what some of them have, and the glyph is what says
+                // the role where the colour cannot. It takes a column of the cell, which is
+                // the mode's price and is paid only while the mode is on.
+                if let Some(role) = role {
+                    spans.push(Span::styled(role.marker().to_string(), style));
+                }
+                let width = match role {
+                    Some(_) => COL_WIDTH as usize - 1,
+                    None => COL_WIDTH as usize,
+                };
                 spans.push(Span::styled(
-                    padded_as(text, COL_WIDTH as usize, alignment(cell, numeric)),
+                    padded_as(text, width, alignment(cell, numeric)),
                     style,
                 ));
             }
@@ -762,6 +824,29 @@ impl App {
                 .input_text(self.sheet, self.active)
                 .unwrap_or_default(),
         };
+        // What the modes have to say about the cell the cursor is on, spelled out rather
+        // than coloured — §4.6's floor, and in a terminal it is also the only place a long
+        // name fits. `named_formula` is §3.3: the formula read through the names it uses.
+        let mut reading = String::new();
+        if self.overlays.names {
+            if let Some(name) = viewport
+                .as_ref()
+                .and_then(|v| v.name_at(self.active.row, self.active.col))
+            {
+                reading.push_str(&format!("  \u{2039}{name}\u{203a}"));
+            }
+            if let Ok(Some(formula)) = self.core.named_formula(self.sheet, self.active)
+                && formula != content
+            {
+                reading.push_str(&format!("  {formula}"));
+            }
+        }
+        if let Some(role) = viewport
+            .as_ref()
+            .and_then(|v| v.role(self.active.row, self.active.col))
+        {
+            reading.push_str(&format!("  [{}]", role.name()));
+        }
         frame.render_widget(
             Line::from(vec![
                 Span::styled(
@@ -769,6 +854,7 @@ impl App {
                     Style::default().add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(content),
+                Span::styled(reading, Style::default().add_modifier(Modifier::DIM)),
             ]),
             formula_area,
         );
@@ -812,6 +898,31 @@ fn toggle(field: &mut Option<String>, value: &str) {
         true => None,
         false => Some(value.to_owned()),
     };
+}
+
+/// The colour a role is drawn in — `doc/view-modes.md` §4.5's convention, in the sixteen
+/// colours a terminal is guaranteed to have.
+///
+/// Named `ratatui` colours rather than an RGB one on purpose: an RGB escape is not what
+/// every terminal reads, and a role mode that is invisible in `screen` over `ssh` is a role
+/// mode half the people who would use this shell cannot use. The hues are the same
+/// convention `ui_sheet_gtk` draws from `style::PALETTE` — inputs blue, formulas the default
+/// foreground, another sheet green — quantised to what the medium has, which is the same
+/// trade [`terminal_style`] already makes for a document's own colours.
+fn role_color(role: grind_sheet::view::CellRole) -> Color {
+    use grind_sheet::view::CellRole as R;
+    match role {
+        R::InputNamed => Color::Blue,
+        R::InputUnnamed => Color::Cyan,
+        R::ConstantUnnamed => Color::Yellow,
+        // Not `Color::Reset`: the cell may be drawn reversed, and a role that is "whatever
+        // the terminal was doing" reads as a role that is missing.
+        R::ComputedLocal | R::Empty => Color::White,
+        R::ComputedCrossSheet => Color::Green,
+        R::Label => Color::DarkGray,
+        R::Error => Color::Red,
+        R::Stale => Color::Magenta,
+    }
 }
 
 /// A cell's own styling, as the attributes a terminal has.
@@ -936,6 +1047,77 @@ mod tests {
             .collect::<String>()
             .trim_end()
             .to_string()
+    }
+
+    /// The whole screen as lines, for the checks that are about what is *drawn*.
+    fn screen(app: &mut App, width: u16, height: u16) -> Vec<String> {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..height)
+            .map(|r| {
+                (0..width)
+                    .map(|c| buffer[(c, r)].symbol().to_string())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// `doc/view-modes.md` V7 in this shell: `:roles` draws the marker channel, and turning
+    /// it off leaves the screen as it was — a mode is a reading, so there is nothing to undo
+    /// and nothing to write.
+    #[test]
+    fn the_role_mode_marks_every_cell_and_puts_the_screen_back() {
+        let mut app = app();
+        app.core
+            .enter(0, Pos::new(0, 0), "Total", grind_sheet::RecalcMode::No)
+            .unwrap();
+        app.core
+            .enter(0, Pos::new(0, 1), "2", grind_sheet::RecalcMode::No)
+            .unwrap();
+        app.core
+            .enter(
+                0,
+                Pos::new(0, 2),
+                "=[.B1]*2",
+                grind_sheet::RecalcMode::Document,
+            )
+            .unwrap();
+        let before = screen(&mut app, 40, 8);
+
+        app.run_command("roles");
+        let with = screen(&mut app, 40, 8);
+        let row = &with[1];
+        // One glyph per cell, and the glyphs are the core's — a label, an input, a formula.
+        assert!(row.contains('T'), "no label marker in {row:?}");
+        assert!(row.contains('\u{25c7}'), "no input marker in {row:?}");
+        assert!(row.contains('='), "no formula marker in {row:?}");
+        // And it says what the cell under the cursor is, for a reader who cannot see colour
+        // and is not reading the grid a glyph at a time.
+        assert!(with[6].contains("[label]"), "no role said: {:?}", with[6]);
+
+        app.run_command("roles");
+        assert_eq!(screen(&mut app, 40, 8)[1], before[1]);
+    }
+
+    /// A named cell says so, and says *what* — the name in the formula line, since a
+    /// ten-column cell has no room for one and §3.2 does not let the value yield.
+    #[test]
+    fn the_name_mode_spells_out_the_name_of_the_cell_under_the_cursor() {
+        let mut app = app();
+        app.core
+            .enter(0, Pos::new(0, 0), "0.2", grind_sheet::RecalcMode::No)
+            .unwrap();
+        app.core.set_name("tax_rate", "[$Sheet1.$A$1]").unwrap();
+        app.run_command("names");
+        let screen = screen(&mut app, 40, 8);
+        assert!(
+            screen[6].contains("tax_rate"),
+            "the name is not said: {:?}",
+            screen[6]
+        );
     }
 
     #[test]

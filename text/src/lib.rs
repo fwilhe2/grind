@@ -160,6 +160,20 @@ pub struct BlockView {
     /// Whether anything about this block is *directly* formatted rather than inherited from
     /// its named style — what `grind text formatting` lists.
     pub styled: bool,
+    /// The bookmarks anchored inside this block, as (character offset, name), in order —
+    /// `doc/view-modes.md` §3.6, the word processor's half of inline names.
+    ///
+    /// A bookmark is the exact analogue of a named range and it is **invisible**: a
+    /// zero-width `Run` that contributes no characters, so nothing a reader sees says it is
+    /// there. This is what an overlay draws, and it is carried here for the reason every
+    /// other field is — a shell drawing a paragraph needs its text and its anchors at the
+    /// same moment, and two calls would be two moments.
+    ///
+    /// Always filled, with no flag to ask for it, and that is the difference from the
+    /// spreadsheet's overlays rather than an inconsistency: a role costs a document-wide
+    /// analysis and this costs a walk of the block's own runs, which the line above already
+    /// does.
+    pub marks: Vec<(usize, String)>,
 }
 
 /// One run of uniformly formatted characters, as a reader sees it.
@@ -374,6 +388,7 @@ impl App {
                 text: block.text(),
                 runs: run_views(block),
                 styled: block.is_styled(),
+                marks: marks(block),
             })
             .collect();
         Viewport {
@@ -1475,6 +1490,22 @@ fn restyled(block: &Block, start: usize, end: usize, style: &CharStyle) -> Optio
 ///
 /// Bookmarks are dropped rather than carried as empty runs: they contribute no characters, and
 /// a shell walking runs alongside a [`Layout`] would otherwise have to know to skip them.
+/// Where each bookmark in a block sits, in characters from its start — [`BlockView::marks`].
+///
+/// The offsets are counted the way [`run_views`] counts them and the way a [`Caret`] does, so
+/// a mark's offset is an offset a shell can already put a caret at.
+fn marks(block: &Block) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    for run in &block.runs {
+        match run {
+            Run::Bookmark { name } => out.push((at, name.clone())),
+            _ => at += run.len(),
+        }
+    }
+    out
+}
+
 fn run_views(block: &Block) -> Vec<RunView> {
     let mut out = Vec::new();
     let mut start = 0usize;

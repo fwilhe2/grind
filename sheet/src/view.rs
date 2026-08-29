@@ -94,6 +94,33 @@ impl CellRole {
         }
     }
 
+    /// One character standing for the role — `doc/view-modes.md` §4.6's second channel.
+    ///
+    /// In the core beside [`CellRole::name`] and for the same reason: this is the role's
+    /// *name in one character*, and four shells inventing four tables would mean the same
+    /// document said different things in different windows. What a shell chooses is where to
+    /// put it and what colour to draw it, which is all a shell should be choosing.
+    ///
+    /// It is not a decoration. A feature whose entire output is colour excludes anyone who
+    /// cannot discriminate colour, and §9's judgement is that such a feature does not get
+    /// fixed later — so the glyph ships with the colours or the mode does not ship. Every
+    /// role's is distinct; `◆` is a named input, `◇` an unnamed one, `!` the constant nobody
+    /// named, `=` a formula, `→` one reading another sheet, `T` a label, `✕` an error and
+    /// `~` a value that disagrees with its own formula.
+    pub fn marker(self) -> &'static str {
+        match self {
+            CellRole::Empty => "",
+            CellRole::InputNamed => "◆",
+            CellRole::InputUnnamed => "◇",
+            CellRole::ConstantUnnamed => "!",
+            CellRole::ComputedLocal => "=",
+            CellRole::ComputedCrossSheet => "→",
+            CellRole::Label => "T",
+            CellRole::Error => "✕",
+            CellRole::Stale => "~",
+        }
+    }
+
     /// Whether this role is also a **diagnostic** — something wrong rather than something
     /// true (§4.3).
     ///
@@ -585,6 +612,30 @@ mod tests {
                 view.role(pos.row, pos.col).unwrap().name()
             })
             .collect()
+    }
+
+    /// §4.6 and §9: the mode must be usable with no colour discrimination at all, so every
+    /// role a reader can see needs its **own** glyph. A duplicate is a role that becomes
+    /// invisible to somebody, which is exactly what a "ship the colours now, the markers
+    /// later" plan produces.
+    #[test]
+    fn every_role_a_reader_can_see_has_a_marker_of_its_own() {
+        let mut seen: Vec<&str> = Vec::new();
+        for role in CellRole::ALL {
+            let marker = role.marker();
+            if role == CellRole::Empty {
+                assert!(marker.is_empty(), "the empty cell is drawn as nothing");
+                continue;
+            }
+            assert_eq!(
+                marker.chars().count(),
+                1,
+                "{} is not one glyph",
+                role.name()
+            );
+            assert!(!seen.contains(&marker), "{} repeats {marker}", role.name());
+            seen.push(marker);
+        }
     }
 
     #[test]

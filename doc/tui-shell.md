@@ -62,6 +62,7 @@ which every shell carries and none of them reads.
 | Number formats | `:format` over eight presets, `:general` | — |
 | Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete` | `:h <level>`, `:li [depth]`, `:style [name]`, `:outline`, `:words` |
 | Find | — | `:find <text>`, `:s/old/new/` |
+| View modes | `:roles` — what each cell is, coloured and marked with one glyph; `:names` — a named cell underlined, the name and the formula read through its names on the formula line | `:names` — where each bookmark anchors, after the line it falls on |
 | Help | `:help` — the key list, over the document, scrollable | the same, with its own section |
 | Drawn from the document | bold, italic, colour, background, alignment; filtered and hidden rows are folded away | bold, italic, underline, strikethrough, colour, background; monospace runs and preformatted blocks dimmed; headings and `Title`/`Subtitle` emphasised; the block's kind in the gutter |
 | Addressing | `:<address>` — a cell or a range | `:<address>` — `p12`, `p12+40`, `#bookmark`, `§2.1.3` |
@@ -97,6 +98,16 @@ is one line. No conditional formatting UI, no find/replace over cells.
 footnotes or fields, because the core has none. `:outline` prints to the status line rather
 than opening a pane. An image in a file is kept and not drawn, and a named *character* style
 is kept and not interpreted (`doc/text-core.md`).
+
+**The view modes** (`doc/view-modes.md` V7). The role glyph takes a column of the ten a cell
+has, which is the mode's price and is paid only while it is on. A name is *not* drawn inside its
+cell — ten characters cannot hold a value and a hint, and §3.2 does not let the value yield — so
+an anchored cell is underlined and the name itself is spelled out on the formula line for the
+cell under the cursor. Sixteen colours again: the roles are drawn in named terminal colours
+rather than the palette's own hexes, because an RGB escape is not what every terminal reads and a
+mode invisible over `ssh` is a mode half this shell's readers cannot use. A range anchor is not
+outlined, and the marks in the word processor sit after the line rather than at their offset in
+it — an offset inside the line is an offset the caret counts.
 
 **Both.** `:help` is a pane over the document rather than a window beside it, and it takes the
 whole screen while it is open — a key list is what the reader asked to look at, and half of one

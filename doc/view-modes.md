@@ -6,14 +6,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # View modes — what a document *means*, drawn
 
-**Status: normative, and built through V6** — `sheet/src/graph.rs` is the reference index,
+**Status: normative, and built — V0 to V7** — `sheet/src/graph.rs` is the reference index,
 `sheet/src/view.rs` the roles and the name anchors, `App::get_viewport_with` the read, and
 `grind sheet view --roles/--names/--formulas` the CLI. §4.2's rule was **tightened twice
 against `examples/sample-sheet.sh`**; §4.2 below records what it is now and why. V4 and V5 are
 built: `grind-sheet-gtk` draws the name hints and reads a formula through its names, and
 `view::Names` is the substitution both that and the CLI go through. V6 is built too — the window
 has both modes, on Ctrl+Shift+N and Ctrl+Shift+R, with §4.6's glyph channel and announcement in
-the same commit as the colours. **V7 — the other three shells — is not built.** Two features, written as one document
+the same commit as the colours. V7 put both modes in `grind-tui` (`:roles`, `:names`) and in
+`ui_web` (Ctrl+K), and §3.6's bookmark anchors in the word processor's three surfaces —
+`grind text view --names`, `:names` in the terminal, Ctrl+K in the browser. Two features, written as one document
 because they are one mechanism, one core API, one CLI shape and one verification story:
 
 - **Part I — inline names.** A cell that a name is bound to shows that name, so a model does
@@ -449,11 +451,24 @@ feature is: **nothing new is being represented, only read.**
 | **V4** | ✅ Name anchors — the grid hint and the range case (§3.1–3.2) | `geom.rs` covers the elision, the drop and the range anchor with no display; `--render-to --overlay names` draws them |
 | **V5** | ✅ Name substitution — `view::Names::display`, `App::named_formula`, `grind sheet view --formulas --names`, and the formula bar's third stack page | Loop B's display round-trip passes with the option on: 188 formulas mention a named place and all 188 come back |
 | **V6** | ✅ Role mode in `grind-sheet-gtk` — the mode, the palette, the corner marks, `announce` | `--render-to --overlay roles` draws a frame on both grounds; the glyph channel and the announcement landed in the same commit as the colours, not after |
-| **V7** | The other three shells, and `grind text --names` for bookmarks (§3.6) | Each shell's gap list is updated rather than each shell inventing colours |
+| **V7** | ✅ The other three shells, and `grind text view --names` for bookmarks (§3.6) | `CellRole::marker` is in the core, so no shell invented a glyph table; each shell's gap list says what its medium could not do |
 
 V1–V3 are the feature and they need no shell at all — **and they are done**. V4–V7 are four
-renderings of an answer already computed; **V4, V5 and V6 are done**, in `grind-sheet-gtk` and
-the CLI. V7 — `grind-tui`, `ui_web` and the word processor's bookmark anchors — is not started.
+renderings of an answer already computed, **and all four are done**.
+
+What V7 proved is the thing §2 claimed: *one classifier, in the core; shells that choose colours
+and nothing else*. Three shells drew the roles and not one of them needed a core change — but
+one thing did move into the core on the way, and it is worth writing down. `CellRole::marker`,
+the one-glyph second channel, started as a table in `ui_sheet_gtk` and was **wrong there**: it
+is the role's name in one character, exactly as `CellRole::name` is the role's name in one word,
+and four shells with four tables would have meant the same document saying different things in
+different windows. A shell chooses where to put the glyph and what colour to draw it. That is
+all a shell should be choosing.
+
+Each shell's gap list names what its own medium could not do, which is the honest form of R10:
+a ten-column terminal cell cannot hold a value *and* a hint, so the terminal underlines the cell
+and spells the name out on the formula line; the browser has no measurement at render time, so
+it elides a hint with CSS where the window drops it; neither draws a range anchor's outline.
 
 Two decisions taken during V1–V3 that the plan had left open, recorded here rather than only
 in the code:

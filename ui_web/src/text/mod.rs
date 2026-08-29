@@ -275,6 +275,9 @@ pub struct Ui {
     resume: RefCell<Option<CharStyle>>,
     /// Whether the pointer is down and dragging out a selection.
     dragging: Cell<bool>,
+    /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
+    /// state: it is a reading of the document rather than a change to it.
+    names: Cell<bool>,
     /// Pictures already turned into a `data:` URL, by the block they are in.
     ///
     /// ponytail: keyed by *index*, so an insertion above an image invalidates nothing and the
@@ -318,6 +321,7 @@ impl Ui {
             goal_x: Cell::new(None),
             resume: RefCell::new(None),
             dragging: Cell::new(false),
+            names: Cell::new(false),
             images: RefCell::new(HashMap::new()),
             message: RefCell::new(String::new()),
         });
@@ -424,6 +428,22 @@ impl Ui {
                 let here = (block.index == caret.block && layout.line_at(caret.offset) == number)
                     .then_some(caret.offset);
                 self.draw_line(&row, block, line.start..line.end, &selection, here)?;
+                // `doc/view-modes.md` §3.6: a bookmark contributes no characters, so it is
+                // the one part of a text document a reader cannot see at all. With the mode
+                // on, each one is named on the line it falls on — after the text rather than
+                // inside it, because an offset inside the line is an offset the caret counts
+                // and a mark drawn there would move it.
+                if self.names.get() {
+                    for (at, name) in &block.marks {
+                        if !(line.start..line.end.max(line.start + 1)).contains(at) {
+                            continue;
+                        }
+                        let mark = self.dom.document.create_element("span")?;
+                        mark.set_class_name("mark-name");
+                        mark.set_text_content(Some(&format!("\u{2039}{name}\u{203a}")));
+                        row.append_child(&mark)?;
+                    }
+                }
                 element.append_child(&row)?;
             }
             self.dom.flow.append_child(&element)?;
@@ -604,6 +624,16 @@ impl Ui {
             "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
             "block.indent" => self.renest(1),
             "block.outdent" => self.renest(-1),
+            "view.names" => {
+                let on = !self.names.get();
+                self.names.set(on);
+                self.set_message(match on {
+                    true => "Bookmarks are shown where they anchor — nothing was written; \
+                             run it again to stop"
+                        .to_owned(),
+                    false => "Bookmarks are invisible again".to_owned(),
+                });
+            }
             id => match id.strip_prefix("goto:") {
                 Some(where_) => self.go_to(where_),
                 None => self.set_message(format!("No such command: {id}")),
@@ -1361,6 +1391,7 @@ mod tests {
             text: String::new(),
             runs: Vec::new(),
             styled: false,
+            marks: Vec::new(),
         }
     }
 

@@ -124,7 +124,11 @@ had no width and therefore no lines.
 ## Reading
 
 - `get_viewport` — `grind text view [<range>]`, one block per line; `--marks` prefixes each with
-  its address and kind
+  its address and kind, and `--names` writes each bookmark in where it anchors, as `‹intro›`
+  (`doc/view-modes.md` §3.6). That last one is not decoration: a bookmark contributes no
+  characters, so it is the one part of a text document a reader cannot see at all, and
+  `BlockView::marks` is what every shell draws it from. Not with `--width` — a mark is a
+  position in a block and wrapping is a separate question about lines
 - `block_count` — `grind text words`, and `grind info`
 - `input_text` — `grind text get <at>`, which prints what an editor would show for the block:
   the text that, given back to `grind text set`, leaves it exactly as it is

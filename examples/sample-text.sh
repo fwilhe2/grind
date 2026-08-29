@@ -184,6 +184,14 @@ text formatting "$doc"
 say "name with no name: every bookmark"
 text name "$doc"
 
+# A bookmark contributes no characters, which makes it the one part of a text document a
+# reader cannot see at all — `doc/view-modes.md` §3.6. This is what an overlay draws, in the
+# only place a pipe has for one: written into the text at the offset it anchors to. It is a
+# reading and not an edit; the document is byte-identical after it.
+
+say "view --names: where each bookmark anchors, which is otherwise invisible"
+text view "$doc" --names | sed -n '1,14p'
+
 say "words: what a status bar shows"
 text words "$doc"
 

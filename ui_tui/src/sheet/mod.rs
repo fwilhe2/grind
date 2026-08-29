@@ -20,6 +20,8 @@ Spreadsheet:
   :align l|c|r            :color <name|#rrggbb>   :fill <name|#rrggbb>
   :format general|int|number [n]|percent|currency|date|time|datetime
   :general                :recalc
+  :roles  :names          — what each cell is, and what it is called (a reading;
+                            nothing is written, and the same word turns it off)
   :sheet <name>  :sheet-new  :sheet-rename <name>  :sheet-delete
   :<address>              — a cell or a range, e.g. B12 or Data.A1
 ";

@@ -55,6 +55,7 @@ because a page has no icon theme to ask.
 | Pictures | — | decoded and drawn, as a `data:` URL |
 | Charts | **drawn as SVG** — bar, line and pie, scaled against `grind_sheet::axis_ticks` so the axis is the one the GTK shell draws | — |
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
+| View modes | Ctrl+K → *Show what each cell is* / *Show where names live*: `doc/view-modes.md`'s two overlays, as one attribute per cell and no extra elements | Ctrl+K → *Show where bookmarks are* (§3.6) |
 | Assertable output | `ui_web/smoke.js` — the real wasm module against the real page, in jsdom, no browser | the same |
 
 ## What it does not do
@@ -81,6 +82,16 @@ image sitting *mid-sentence* (`text:anchor-type="char"`) still draws as the plac
 character, and an image is fit to the column rather than to its own `svg:width` — both are
 `grind-text-gtk`'s gaps too. A named *character* style is kept and not interpreted
 (`doc/text-core.md`), so there is no style picker for one.
+
+**The view modes** (`doc/view-modes.md` V7). Drawn entirely in the stylesheet: `data-role`,
+`data-mark` and `data-name` on a cell, and `content: attr(…)` for the marker and the hint, so a
+mode costs one attribute per cell rather than a second element per cell. The hues are
+`style::PALETTE`'s, mixed towards `CanvasText` — the CSS form of `ui_sheet_gtk`'s
+`theme::readable`, so they separate from whichever ground the browser is painting. What is
+missing beside the GTK window: a range anchor is not outlined, the hint is not *measured* against
+the value (CSS ellipsis rather than §3.2's drop, so a narrow column shows a truncated name where
+the window would show none), and the word processor's marks sit at the end of the line they fall
+on rather than at their offset in it.
 
 **Both.** The whole document is in the DOM — no windowing, because a document has as many
 blocks as somebody typed and a scroll-position-to-block map only pays for itself on documents

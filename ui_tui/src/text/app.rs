@@ -80,6 +80,10 @@ pub struct App {
     /// register is the convention every reader of this shell already has.
     register: String,
     status: String,
+    /// Whether the bookmark anchors are being drawn — `doc/view-modes.md` §3.6, and
+    /// presentation state like everything else here, since it is a reading of the document
+    /// rather than a change to it.
+    names: bool,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
@@ -106,6 +110,7 @@ impl App {
             anchor: None,
             register: String::new(),
             status: String::new(),
+            names: false,
             help: crate::help::Help::default(),
             help_height: 20,
             quit: false,
@@ -669,6 +674,15 @@ impl App {
                 }
             }
             "outline" => self.cmd_outline(),
+            // The word processor's half of inline names (§3.6). A verb rather than a key,
+            // and the same word turns it off: nothing is written either way.
+            "names" => {
+                self.names = !self.names;
+                self.status = match self.names {
+                    true => "names on — :names to turn it off".to_string(),
+                    false => "names off".to_string(),
+                };
+            }
             "words" => self.cmd_words(),
             "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
             _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
@@ -1080,6 +1094,22 @@ impl App {
             let caret =
                 ((block, n) == (self.caret.block, caret_line.0)).then_some(self.caret.offset);
             spans.extend(self.line_spans(view, range, &selection, caret));
+            // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it is the
+            // one part of a text document a reader cannot see at all — it contributes no
+            // characters. With `:names` on, the block that holds one says so, after its
+            // text rather than inside it, because an offset inside the line is an offset the
+            // caret counts and a mark drawn there would move it.
+            if self.names && n == 0 && !view.marks.is_empty() {
+                let marks: Vec<String> = view
+                    .marks
+                    .iter()
+                    .map(|(at, name)| format!("\u{2039}{name}\u{203a}+{at}"))
+                    .collect();
+                spans.push(Span::styled(
+                    format!("  {}", marks.join(" ")),
+                    Style::default().add_modifier(Modifier::DIM),
+                ));
+            }
             lines.push(Line::from(spans));
         }
         frame.render_widget(Paragraph::new(lines), body);
@@ -1256,6 +1286,26 @@ mod tests {
             .map(|b| b.text.clone())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// `doc/view-modes.md` §3.6 in this shell. A bookmark contributes no characters, so
+    /// without the mode there is nothing on screen to say it exists — and with it on, the
+    /// text is untouched, because the mark goes after the line rather than into it.
+    #[test]
+    fn a_bookmark_is_invisible_until_the_name_mode_says_where_it_is() {
+        let mut app = app(&["Introduction"]);
+        app.core.set_bookmark("intro", Some(0)).unwrap();
+        let plain = render(&mut app, 40, 6);
+        assert!(!plain[0].contains("intro"), "{:?}", plain[0]);
+
+        app.run_command("names");
+        let shown = render(&mut app, 40, 6);
+        assert!(shown[0].contains("intro"), "{:?}", shown[0]);
+        assert!(shown[0].contains("Introduction"), "the text yielded");
+        assert_eq!(text(&app), "Introduction", "a reading changed the document");
+
+        app.run_command("names");
+        assert_eq!(render(&mut app, 40, 6)[0], plain[0]);
     }
 
     #[test]

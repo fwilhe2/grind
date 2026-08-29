@@ -117,6 +117,13 @@ pub const SHEET: &[Command] = &[
     cmd("format.time", "Number: time", "Number", "", false),
     cmd("format.more", "More decimal places", "Number", "", false),
     cmd("format.fewer", "Fewer decimal places", "Number", "", false),
+    // --- what it is, rather than what it says ---
+    //
+    // `doc/view-modes.md`. Neither writes anything: they are readings of the document, and
+    // the same command turns one off, which is why they sit beside the verbs rather than
+    // behind a confirmation.
+    cmd("view.roles", "Show what each cell is", "View", "", true),
+    cmd("view.names", "Show where names live", "View", "", false),
     // --- the workbook ---
     cmd("sheet.add", "Add a sheet", "Sheets", "", true),
     cmd("sheet.rename", "Rename this sheet…", "Sheets", "", false),
@@ -166,6 +173,9 @@ pub const TEXT: &[Command] = &[
         "Shift+Tab",
         false,
     ),
+    // §3.6, the word processor's half of inline names: a bookmark is the one part of a text
+    // document a reader cannot see at all, because it contributes no characters.
+    cmd("view.names", "Show where bookmarks are", "View", "", false),
 ];
 
 /// `const fn` so the tables above stay readable — a struct literal per row is the same

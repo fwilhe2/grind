@@ -32,6 +32,7 @@ Word processor:
   :color <name>  :highlight <name>  :plain
   :h <level>     :li [depth]        :style [name]
   :find <text>   :s/old/new/        :outline   :words
+  :names         — show where each bookmark anchors, which is otherwise invisible
   :<address>     — p12, p12+40, #bookmark or \u{a7}2.1.3
 ";
 

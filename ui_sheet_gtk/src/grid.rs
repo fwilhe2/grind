@@ -326,26 +326,6 @@ impl Default for Grid {
     }
 }
 
-/// One character per role — `doc/view-modes.md` §4.6's second channel.
-///
-/// Chosen to be readable at seven pixels and to mean something without a legend: `=` is
-/// a formula, `→` is one reading another sheet, `!` is the constant nobody named. The
-/// mode has to be usable with no colour discrimination at all, and this is how.
-fn role_glyph(role: grind_sheet::view::CellRole) -> &'static str {
-    use grind_sheet::view::CellRole as R;
-    match role {
-        R::Empty => "",
-        R::InputNamed => "◆",
-        R::InputUnnamed => "◇",
-        R::ConstantUnnamed => "!",
-        R::ComputedLocal => "=",
-        R::ComputedCrossSheet => "→",
-        R::Label => "T",
-        R::Error => "✕",
-        R::Stale => "~",
-    }
-}
-
 /// What clicking on something selects, as arithmetic — free of the widget so it can be
 /// tested without a display. See `Grid::selection_for` for why the ends are this way round.
 fn selection_for_hit(hit: crate::geom::Hit) -> Selection {
@@ -411,27 +391,6 @@ fn hide_range_for_hit(selection: Selection, hit: crate::geom::Hit) -> Option<(bo
 mod tests {
     use super::*;
     use crate::geom::Hit;
-
-    /// `doc/view-modes.md` §4.6 and §9: the mode must be usable with no colour
-    /// discrimination at all, so every role a reader can see needs its **own** glyph. A
-    /// duplicate here is a role that becomes invisible to somebody, which is exactly the
-    /// failure a "ship the colours now, the markers later" plan produces.
-    #[test]
-    fn every_role_a_reader_can_see_has_a_glyph_of_its_own() {
-        use grind_sheet::view::CellRole;
-        let mut seen: Vec<&str> = Vec::new();
-        for role in CellRole::ALL {
-            let glyph = role_glyph(role);
-            if role == CellRole::Empty {
-                assert!(glyph.is_empty(), "the empty cell is drawn as nothing");
-                continue;
-            }
-            assert!(!glyph.is_empty(), "{} has no glyph", role.name());
-            assert_eq!(glyph.chars().count(), 1, "{} is not one glyph", role.name());
-            assert!(!seen.contains(&glyph), "{} repeats {glyph}", role.name());
-            seen.push(glyph);
-        }
-    }
 
     /// The whole point of the anchor/active order: the cell the view scrolls to stays next
     /// to the header that was clicked, while the rectangle still covers the whole track.
@@ -3675,7 +3634,7 @@ mod imp {
                     if cell.w <= 0.0 || cell.h <= 0.0 {
                         continue;
                     }
-                    layout.set_text(crate::grid::role_glyph(role));
+                    layout.set_text(role.marker());
                     let (glyph_w, glyph_h) = layout.pixel_size();
                     f.snapshot.push_clip(&rect(cell.x, cell.y, cell.w, cell.h));
                     f.snapshot.save();

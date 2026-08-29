@@ -689,3 +689,87 @@ input[type="text"] {
   background: Canvas;
   font-size: 1.1rem;
 }
+
+/* --- view modes --------------------------------------------------------- *
+ *
+ * `doc/view-modes.md`, both overlays. Two attributes on a cell and no extra elements:
+ * the marker and the hint are drawn with `content: attr(…)`, so a mode costs one
+ * attribute per cell rather than a second DOM node per cell.
+ *
+ * The hues are `style::PALETTE`'s, mixed towards `CanvasText` so they separate from
+ * whichever ground the browser is painting — the same rule `ui_sheet_gtk`'s
+ * `theme::readable` applies, said in CSS. In role mode a cell's own colours are
+ * suppressed (§4.5): colour means role, exclusively. */
+
+.cell[data-mark]::before {
+  content: attr(data-mark) " ";
+  opacity: 0.75;
+  font-family: ui-monospace, monospace;
+}
+
+.cell[data-name]::after {
+  content: " " attr(data-name);
+  opacity: 0.55;
+  font-style: italic;
+  /* The value never yields (§3.2): the hint is what is cut off when the two do not
+     fit, never the number it belongs to. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell[data-role="input-named"] {
+  color: color-mix(in srgb, #0074d9 75%, CanvasText);
+}
+
+.cell[data-role="input-unnamed"] {
+  color: color-mix(in srgb, #001f3f 60%, CanvasText);
+}
+
+.cell[data-role="constant-unnamed"] {
+  color: color-mix(in srgb, #ff851b 75%, CanvasText);
+}
+
+.cell[data-role="computed-cross-sheet"] {
+  color: color-mix(in srgb, #3d9970 75%, CanvasText);
+}
+
+.cell[data-role="computed-local"] {
+  color: CanvasText;
+}
+
+.cell[data-role="label"] {
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
+.cell[data-role="error"] {
+  color: color-mix(in srgb, #ff4136 75%, CanvasText);
+}
+
+.cell[data-role="stale"] {
+  color: color-mix(in srgb, #85144b 70%, CanvasText);
+}
+
+/* §4.3: a role is neutral and a diagnostic is a problem, so they go in two channels.
+   A corner triangle for the three that are problems, the same mark a spreadsheet has
+   used for "there is something here" since forever. */
+.cell[data-role="error"],
+.cell[data-role="stale"],
+.cell[data-role="constant-unnamed"] {
+  background-image: linear-gradient(
+    225deg,
+    currentColor 0 0.4rem,
+    transparent 0.4rem
+  );
+  background-repeat: no-repeat;
+  background-position: top right;
+  background-size: 0.4rem 0.4rem;
+}
+
+/* The word processor's half (§3.6): a bookmark contributes no characters, so this is
+   the only thing on the page that says it is there. */
+.mark-name {
+  opacity: 0.55;
+  font-size: 0.8em;
+  font-style: italic;
+  vertical-align: super;
+}

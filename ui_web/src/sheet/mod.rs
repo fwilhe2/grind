@@ -160,6 +160,10 @@ pub struct Ui {
     editing: Cell<bool>,
     /// Whether the pointer is down and dragging a rectangle out.
     dragging: Cell<bool>,
+    /// Which of `doc/view-modes.md`'s overlays this pane draws. Presentation state, like
+    /// everything else here: a view mode is a reading of the document and never a change to
+    /// it, so turning one off puts the page back exactly.
+    overlays: Cell<grind_sheet::view::Overlays>,
     message: RefCell<String>,
 }
 
@@ -181,6 +185,7 @@ impl Ui {
             scroll: Cell::new(Pos::new(0, 0)),
             editing: Cell::new(false),
             dragging: Cell::new(false),
+            overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             message: RefCell::new(String::new()),
         });
         wire_grid(&ui)?;
@@ -225,9 +230,10 @@ impl Ui {
         let visible = self.visible_with(&widths, &heights);
         let rows = scroll.row..scroll.row.saturating_add(visible.0);
         let cols = scroll.col..scroll.col.saturating_add(visible.1);
+        let overlays = self.overlays.get();
         let viewport = self
             .app
-            .get_viewport(sheet, rows.clone(), cols.clone())
+            .get_viewport_with(sheet, rows.clone(), cols.clone(), overlays)
             .map_err(js)?;
         // Filtered *and* manually hidden, which is what `hidden_rows` already unions —
         // a row with no height is one the document says is not there.
@@ -313,9 +319,30 @@ impl Ui {
                 };
                 cell.set_text_content(Some(&text));
                 let numeric = matches!(viewport.get(row, col), Some(CellValue::Number(_)));
-                let css = css_of(viewport.style(row, col), numeric);
-                if !css.is_empty() {
-                    cell.set_attribute("style", &css)?;
+                // `doc/view-modes.md`, both overlays, in two attributes and no extra
+                // elements: the stylesheet draws the marker and the hint with
+                // `content: attr(…)`, so a mode costs one attribute per cell rather than a
+                // second DOM node per cell. In role mode the document's own colours are
+                // suppressed (§4.5) — colour means role, exclusively.
+                match viewport.role(row, col) {
+                    Some(role) => {
+                        cell.set_attribute("data-role", role.name())?;
+                        if !role.marker().is_empty() {
+                            cell.set_attribute("data-mark", role.marker())?;
+                        }
+                    }
+                    None => {
+                        let css = css_of(viewport.style(row, col), numeric);
+                        if !css.is_empty() {
+                            cell.set_attribute("style", &css)?;
+                        }
+                    }
+                }
+                if overlays.names
+                    && let Some(name) = viewport.name_at(row, col)
+                    && hint_here(&viewport, &hidden, row, col)
+                {
+                    cell.set_attribute("data-name", name)?;
                 }
                 line.append_child(&cell)?;
             }
@@ -525,6 +552,8 @@ impl Ui {
         let style = |set: fn(&mut CellStyle)| self.merge_style(set);
         match id {
             "sheet.recalc" => self.recalc(),
+            "view.roles" => self.overlay(true),
+            "view.names" => self.overlay(false),
             "edit.clear" => self.clear(),
             "edit.fill-down" => self.fill(true),
             "edit.fill-right" => self.fill(false),
@@ -1053,6 +1082,34 @@ impl Ui {
         }
     }
 
+    /// Turn one of `doc/view-modes.md`'s overlays on or off, and say which.
+    ///
+    /// The message is not a nicety: role mode suppresses the document's own colours (§4.5),
+    /// which is the right call and still a surprise, and §9 asks for the mode to say it is
+    /// on somewhere a reader will see it.
+    fn overlay(&self, roles: bool) {
+        let mut overlays = self.overlays.get();
+        let on = match roles {
+            true => {
+                overlays.roles = !overlays.roles;
+                overlays.roles
+            }
+            false => {
+                overlays.names = !overlays.names;
+                overlays.names
+            }
+        };
+        self.overlays.set(overlays);
+        let what = match roles {
+            true => "Cell colours say what each cell is",
+            false => "Names are shown where they live",
+        };
+        self.set_message(match on {
+            true => format!("{what} — nothing was written; run it again to stop"),
+            false => "Back to the document's own colours".to_owned(),
+        });
+    }
+
     fn recalc(&self) {
         match self.app.recalc() {
             Ok(recalc) => self.set_message(match recalc.spoiled {
@@ -1227,6 +1284,22 @@ fn named_format(format: Option<&numfmt::Format>) -> String {
 /// spells them, which is not a coincidence — both took them from XSL. The values
 /// stay exactly as the document wrote them (doc/ods-format.md's rule), so anything
 /// this shell does not understand is passed to the browser rather than dropped.
+/// Whether this cell is the one that carries its anchor's hint — `doc/view-modes.md` §3.2's
+/// "drawn once".
+///
+/// A name over `A2:A50` is one anchor, not forty-nine, and scrolling must move the hint
+/// rather than lose it: it goes on the first cell of the anchor that is actually on screen.
+/// Rows the document says are not there — filtered or hidden — are skipped, because a hint
+/// drawn into one of those is a hint nobody sees.
+fn hint_here(viewport: &grind_sheet::Viewport, hidden: &[u32], row: u32, col: u32) -> bool {
+    viewport.names().iter().any(|anchor| {
+        let first_col = anchor.cols.start.max(viewport.cols.start);
+        let first_row = (anchor.rows.start.max(viewport.rows.start)..anchor.rows.end)
+            .find(|r| !hidden.contains(r));
+        first_row == Some(row) && first_col == col
+    })
+}
+
 fn css_of(style: Option<&CellStyle>, numeric: bool) -> String {
     let mut css = String::new();
     // A number right-aligns unless the document says otherwise — the convention
