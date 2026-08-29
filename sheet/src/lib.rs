@@ -1284,6 +1284,34 @@ impl App {
         Ok(s.format(pos).cloned())
     }
 
+    /// A cell's formula in display form, **with the document's names substituted** —
+    /// `doc/view-modes.md` §3.3. `None` for a cell holding a plain value.
+    ///
+    /// [`App::input_text`]'s reading rather than its replacement: what comes back here is
+    /// for *showing*, and typing it back in would store the names rather than the
+    /// references. A formula bar that lets a name be edited is a shell decision and this is
+    /// the answer it reads either way.
+    ///
+    /// A formula that will not parse comes back exactly as it is stored, which is what
+    /// [`App::input_text`] does with one and for the same reason.
+    pub fn named_formula(&self, sheet: usize, pos: Pos) -> Result<Option<String>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        let Some(formula) = s.formula(pos) else {
+            return Ok(None);
+        };
+        let at = formula::eval::Address::new(sheet, pos);
+        // `view::Names` rather than the cached [`view::Analysis`] on purpose: this needs the
+        // name anchors and nothing else, and building those is one parse per declared name
+        // where an analysis recalculates the document. A formula bar asks per selection
+        // change, and it must not cost a recalculation to read one cell.
+        Ok(Some(
+            view::Names::build(&state.doc)
+                .display(&state.doc, at, formula)
+                .unwrap_or_else(|_| formula.to_owned()),
+        ))
+    }
+
     /// A cell's formula source, or `None` if it holds a plain value.
     pub fn formula(&self, sheet: usize, pos: Pos) -> Result<Option<String>> {
         let state = self.state.read().unwrap();

@@ -68,6 +68,15 @@ pub struct Cell {
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub formula: Option<String>,
+    /// The same formula read through the document's names — `=tax_rate*subtotal` where
+    /// `formula` says `=[.B2]*[.B7]` (`doc/view-modes.md` §3.3). Present only when `--names`
+    /// asked for it, because it costs the document-wide analysis that resolves them.
+    ///
+    /// A separate field rather than a different spelling of `formula`: one is what the file
+    /// stores and the other is a reading of it, and a consumer that wants the source must
+    /// not have to know which flags produced its input.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub named_formula: Option<String>,
     /// What the cell *is* — `doc/view-modes.md`'s role, present only when it was asked for.
     /// Deriving one costs a document-wide analysis, so a plain `view` does not pay for it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -213,7 +222,13 @@ impl Report {
                             Shown::Value => c.value.as_str(),
                             Shown::Role => c.role.unwrap_or_default(),
                             Shown::Name => c.name.as_deref().unwrap_or_default(),
-                            Shown::Formula => c.formula.as_deref().unwrap_or_default(),
+                            // `--formulas --names` prints the reading; `--formulas` alone
+                            // prints the source.
+                            Shown::Formula => c
+                                .named_formula
+                                .as_deref()
+                                .or(c.formula.as_deref())
+                                .unwrap_or_default(),
                         })
                         .collect();
                     println!("{}", line.join("\t"));

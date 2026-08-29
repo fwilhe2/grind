@@ -346,4 +346,11 @@ sheet view "$book" A1:D8 --names
 say "formulas: the source rather than the value"
 sheet view "$book" B8:E8 --formulas
 
+# The larger half of inline names: a formula bar that says what a formula *means*. The file
+# stores `[$Sheet1.$B$2:.$B$7]` and the reading says `budgeted`, and it is one option on the
+# same printer rather than a second grammar — what it prints reads back in.
+
+say "formulas --names: the same formulas, read through the names"
+sheet view "$book" B8:E8 --formulas --names
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

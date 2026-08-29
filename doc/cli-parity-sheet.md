@@ -114,6 +114,12 @@ stops ratcheting.
   not a formality here — it is the accessible surface for a feature whose entire output in a GUI
   is colour (`doc/view-modes.md` §4.6).
 - `formula` — `grind sheet get --formula`
+- `named_formula` — `grind sheet view --formulas --names`, the same formula read through the
+  document's names: `=tax_rate*subtotal` where the file stores `=[.B2]*[.B7]`
+  (`doc/view-modes.md` §3.3). Substitution is by resolved **area** rather than by matching the
+  reference text, so a name stored absolute and qualified is still found by a formula spelling
+  it relatively. `--format json` carries it as `named_formula`, beside the source rather than
+  in place of it.
 - `input_text` — `grind sheet get --input`, which prints what an editor would show for the cell:
   the text that, given back to `grind sheet set`, leaves it exactly as it is
 - `value_text` — `grind sheet get --value`, a formula's calculated, formatted result rather than

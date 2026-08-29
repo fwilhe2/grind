@@ -1013,10 +1013,14 @@ enum Command {
         #[arg(long, conflicts_with_all = ["raw", "names", "formulas"])]
         roles: bool,
         /// Print the named expression bound to each cell, where one is
-        #[arg(long, conflicts_with_all = ["raw", "roles", "formulas"])]
+        #[arg(long, conflicts_with_all = ["raw", "roles"])]
         names: bool,
         /// Print each cell's formula source rather than its value
-        #[arg(long, conflicts_with_all = ["raw", "roles", "names"])]
+        ///
+        /// With --names as well, the formula is printed the way a formula bar reads it:
+        /// display form with every reference that a name stands for spelled as that name
+        /// (`doc/view-modes.md` §3.3).
+        #[arg(long, conflicts_with_all = ["raw", "roles"])]
         formulas: bool,
     },
 
@@ -1668,6 +1672,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     true => Shown::Value,
                     false => Shown::Text,
                 },
+                Overlays::NONE,
             )?))
         }
 
@@ -1690,15 +1695,21 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     (0, Pos::new(0, 0), last)
                 }
             };
+            // `--formulas --names` is the one combination that means something together:
+            // the formula column, read through the names. The rest are one column each.
             let shown = match (*raw, *roles, *names, *formulas) {
                 (true, ..) => Shown::Value,
                 (_, true, ..) => Shown::Role,
-                (_, _, true, _) => Shown::Name,
                 (.., true) => Shown::Formula,
+                (_, _, true, _) => Shown::Name,
                 _ => Shown::Text,
             };
+            let overlays = Overlays {
+                roles: *roles,
+                names: *names,
+            };
             Ok(Report::Cells(cells(
-                &app, file, sheet, start, end, *max_rows, shown,
+                &app, file, sheet, start, end, *max_rows, shown, overlays,
             )?))
         }
 
@@ -2714,6 +2725,7 @@ fn cells(
     end: Pos,
     max_rows: u32,
     shown: Shown,
+    overlays: Overlays,
 ) -> Result<CellsReport, String> {
     let last_row = end
         .row
@@ -2721,11 +2733,6 @@ fn cells(
     let rows = start.row..last_row.saturating_add(1);
     let cols = start.col..end.col.saturating_add(1);
     let name = app.sheet_name(sheet).say()?;
-    let overlays = match shown {
-        Shown::Role => Overlays::ROLES,
-        Shown::Name => Overlays::NAMES,
-        _ => Overlays::NONE,
-    };
     let viewport = app
         .get_viewport_with(sheet, rows.clone(), cols.clone(), overlays)
         .say()?;
@@ -2741,6 +2748,10 @@ fn cells(
                 text: viewport.text(row, col).unwrap_or_default().to_owned(),
                 kind: report::kind(&value),
                 formula: app.formula(sheet, pos).say()?,
+                named_formula: match overlays.names {
+                    true => app.named_formula(sheet, pos).say()?,
+                    false => None,
+                },
                 role: viewport.role(row, col).map(|r| r.name()),
                 name: viewport.name_at(row, col).map(str::to_owned),
             });

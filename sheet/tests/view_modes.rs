@@ -23,8 +23,9 @@
 
 use std::path::{Path, PathBuf};
 
+use grind_sheet::formula::display::from_display;
 use grind_sheet::formula::eval::Address;
-use grind_sheet::view::{Analysis, CellRole, Overlays};
+use grind_sheet::view::{Analysis, CellRole, Names, Overlays};
 use grind_sheet::{App, Form, Pos};
 
 /// Every R7 document, as (directory, file name) — the same list `kb.rs` requires, and for
@@ -192,6 +193,33 @@ fn a_role_says_what_the_formulas_and_the_index_say() {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_formula_read_through_its_names_reads_back() {
+    // §3.3's check, on the corpus that never skips. Loop B runs the same assertion over
+    // 75845 formulas where a LibreOffice checkout exists; this is the half that runs
+    // everywhere, and it is the one that gates a `cargo test` with no corpus.
+    for path in required() {
+        let doc = grind_sheet::read_file(&path).unwrap();
+        let names = Names::build(&doc);
+        for (index, sheet) in doc.sheets.iter().enumerate() {
+            for (pos, formula) in sheet.formulas() {
+                let Ok(expr) = grind_sheet::formula::parse::parse(formula) else {
+                    continue; // loop B owns parsing.
+                };
+                let at = Address::new(index, pos);
+                let shown = names.display(&doc, at, formula).expect("it just parsed");
+                let want = format!("={}", names.substitute(&doc, at, &expr));
+                assert_eq!(
+                    from_display(&shown).as_deref(),
+                    Ok(want.as_str()),
+                    "{} {index}:{pos:?}: {formula} -> {shown}",
+                    path.display()
+                );
             }
         }
     }

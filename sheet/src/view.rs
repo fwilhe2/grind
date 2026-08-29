@@ -25,7 +25,9 @@
 use std::ops::Range;
 
 use crate::formula::eval::{Address, Area, Engine, to_cell};
+use crate::formula::lex::{Op, Reference, SyntaxError};
 use crate::formula::parse::{Expr, parse};
+use crate::formula::serialize::Bare;
 use crate::graph::RefIndex;
 use crate::model::{CellValue, Document, Pos, Sheet};
 
@@ -158,17 +160,18 @@ impl NameAnchor {
 #[derive(Clone, Debug, Default)]
 pub struct Analysis {
     refs: RefIndex,
-    anchors: Vec<NameAnchor>,
+    names: Names,
     /// The role of every **formula** cell, which is the half that needs evaluating. A
-    /// literal's role is answered from `refs` and `anchors` on demand, in [`Analysis::role`]
-    /// — which is what keeps this from being a vector the size of the used area.
+    /// literal's role is answered from `refs` and the anchors on demand, in
+    /// [`Analysis::role`] — which is what keeps this from being a vector the size of the
+    /// used area.
     formulas: std::collections::BTreeMap<Address, CellRole>,
 }
 
 impl Analysis {
     pub fn build(doc: &Document) -> Self {
         let refs = RefIndex::build(doc);
-        let anchors = anchors(doc);
+        let names = Names::build(doc);
         let mut formulas = std::collections::BTreeMap::new();
         let mut engine = Engine::new(doc);
         for (index, sheet) in doc.sheets.iter().enumerate() {
@@ -189,7 +192,7 @@ impl Analysis {
         }
         Self {
             refs,
-            anchors,
+            names,
             formulas,
         }
     }
@@ -210,7 +213,7 @@ impl Analysis {
         if value.is_empty() {
             return CellRole::Empty;
         }
-        if self.anchors.iter().any(|a| a.contains(at)) {
+        if self.names.at(at).is_some() {
             return CellRole::InputNamed;
         }
         // A **text** literal is never a magic constant, even when a formula reads it. A sum
@@ -233,10 +236,100 @@ impl Analysis {
 
     /// Every name anchor in the document, in declaration order.
     pub fn anchors(&self) -> &[NameAnchor] {
-        &self.anchors
+        self.names.anchors()
     }
 
     /// The anchors intersecting a rectangle — what a viewport carries.
+    pub fn anchors_in(
+        &self,
+        sheet: usize,
+        rows: Range<u32>,
+        cols: Range<u32>,
+    ) -> impl Iterator<Item = &NameAnchor> {
+        self.names.anchors_in(sheet, rows, cols)
+    }
+
+    /// The name bound to one cell, if any.
+    pub fn name_at(&self, at: Address) -> Option<&str> {
+        self.names.at(at)
+    }
+
+    /// The names this was built on, for [`Names::display`] and the rest of Part I.
+    pub fn names(&self) -> &Names {
+        &self.names
+    }
+
+    /// The reference index this was built on — §4.4's graph, for a caller that wants the
+    /// dependency answers rather than the colours.
+    pub fn refs(&self) -> &RefIndex {
+        &self.refs
+    }
+}
+
+/// Every named expression in a document that denotes a **place**, resolved — Part I's half
+/// of the analysis, and the whole of what inline names need.
+///
+/// Separate from [`Analysis`] because it is enormously cheaper: this is one parse per
+/// declared name, where an [`Analysis`] recalculates the document. A caller that only wants
+/// to read formulas through their names — the formula bar, and loop B's check of it — pays
+/// for that and nothing else.
+#[derive(Clone, Debug, Default)]
+pub struct Names {
+    anchors: Vec<NameAnchor>,
+}
+
+impl Names {
+    /// **A name anchors only when its expression names a sheet**, and that is §3.5 rather
+    /// than a shortcut. `Document::names` is one flat map, so a sheet-local name is visible
+    /// document-wide (`model.rs`); a hint drawn from an unqualified `[.B2]` would appear on
+    /// *every* sheet's B2, which is worse than no hint at all. Our writer stores a named
+    /// range fully qualified, and so does LibreOffice, so the case this declines is the
+    /// ambiguous one.
+    pub fn build(doc: &Document) -> Self {
+        let engine = Engine::new(doc);
+        let mut anchors = Vec::new();
+        for (name, expression) in &doc.names {
+            let Ok(expr) = parse(expression) else {
+                continue;
+            };
+            let mut expr = &expr;
+            while let Expr::Paren(inner) = expr {
+                expr = inner;
+            }
+            let Expr::Ref(reference) = expr else { continue };
+            let Some(sheet_name) = reference.start.sheet.as_deref() else {
+                continue;
+            };
+            let Some(sheet) = doc
+                .sheets
+                .iter()
+                .position(|s| s.name.eq_ignore_ascii_case(sheet_name))
+            else {
+                continue;
+            };
+            // The far end of a range is written `[$Sheet1.$A$1:.$A$50]` — a bare `.`,
+            // meaning "the sheet this is evaluated on". So it is resolved *as if from* the
+            // sheet the near end named, which is the only reading that makes the range one
+            // rectangle.
+            let Some(Area { sheet, rows, cols }) =
+                engine.area(reference, Address::new(sheet, Pos::new(0, 0)))
+            else {
+                continue;
+            };
+            anchors.push(NameAnchor {
+                name: name.clone(),
+                sheet,
+                rows,
+                cols,
+            });
+        }
+        Self { anchors }
+    }
+
+    pub fn anchors(&self) -> &[NameAnchor] {
+        &self.anchors
+    }
+
     pub fn anchors_in(
         &self,
         sheet: usize,
@@ -253,65 +346,109 @@ impl Analysis {
     }
 
     /// The name bound to one cell, if any.
-    pub fn name_at(&self, at: Address) -> Option<&str> {
+    pub fn at(&self, at: Address) -> Option<&str> {
         self.anchors
             .iter()
             .find(|a| a.contains(at))
             .map(|a| a.name.as_str())
     }
 
-    /// The reference index this was built on — §4.4's graph, for a caller that wants the
-    /// dependency answers rather than the colours.
-    pub fn refs(&self) -> &RefIndex {
-        &self.refs
+    /// One formula in display form **with its names substituted** — §3.3, and the larger
+    /// half of Part I: `=[.B2]*[.B7]` reads `=tax_rate*subtotal` rather than `=B2*B7`.
+    ///
+    /// The grid hint (§3.2) is the visible half of inline names; this is the useful one,
+    /// because a formula bar is where a person actually asks what a cell computes.
+    ///
+    /// **Not a second grammar, and it must not become one.** `formula::display` already
+    /// parses and re-serialises through the canonical printer; this substitutes into the
+    /// *parsed expression* and hands the result to that same printer. So precedence,
+    /// parenthesisation and every other spelling decision stay in the one place that makes
+    /// them, and the reverse direction already exists — `from_display` resolves a bare
+    /// identifier that is not cell-shaped as a name.
+    ///
+    /// `at` is the cell the formula lives in, and it is not decoration: a reference is
+    /// resolved from where it sits, so `[.B2]` in one row and `[.B2]` in another are
+    /// different cells and only one of them can be `tax_rate`.
+    pub fn display(
+        &self,
+        doc: &Document,
+        at: Address,
+        canonical: &str,
+    ) -> Result<String, SyntaxError> {
+        let expr = parse(canonical)?;
+        Ok(format!("={}", Bare(&self.substitute(doc, at, &expr))))
     }
-}
 
-/// Every named expression that denotes a place, resolved.
-///
-/// **A name anchors only when its expression names a sheet**, and that is §3.5 rather than a
-/// shortcut. `Document::names` is one flat map, so a sheet-local name is visible
-/// document-wide (`model.rs`); a hint drawn from an unqualified `[.B2]` would appear on
-/// *every* sheet's B2, which is worse than no hint at all. Our writer stores a named range
-/// fully qualified, and so does LibreOffice, so the case this declines is the ambiguous one.
-fn anchors(doc: &Document) -> Vec<NameAnchor> {
-    let engine = Engine::new(doc);
-    let mut out = Vec::new();
-    for (name, expression) in &doc.names {
-        let Ok(expr) = parse(expression) else {
-            continue;
-        };
-        let mut expr = &expr;
-        while let Expr::Paren(inner) = expr {
-            expr = inner;
-        }
-        let Expr::Ref(reference) = expr else { continue };
-        let Some(sheet_name) = reference.start.sheet.as_deref() else {
-            continue;
-        };
-        let Some(sheet) = doc
-            .sheets
-            .iter()
-            .position(|s| s.name.eq_ignore_ascii_case(sheet_name))
-        else {
-            continue;
-        };
-        // The far end of a range is written `[$Sheet1.$A$1:.$A$50]` — a bare `.`, meaning
-        // "the sheet this is evaluated on". So it is resolved *as if from* the sheet the
-        // near end named, which is the only reading that makes the range one rectangle.
-        let Some(Area { sheet, rows, cols }) =
-            engine.area(reference, Address::new(sheet, Pos::new(0, 0)))
-        else {
-            continue;
-        };
-        out.push(NameAnchor {
-            name: name.clone(),
-            sheet,
-            rows,
-            cols,
-        });
+    /// The same substitution, stopping at the expression — every reference that denotes
+    /// exactly what a name denotes replaced by [`Expr::Name`].
+    ///
+    /// Exposed beside [`Names::display`] because the *check* needs it: loop B asserts that
+    /// display form re-parses to the expression it was printed from, and with names on, the
+    /// expression it must come back to is this one rather than the original.
+    pub fn substitute(&self, doc: &Document, at: Address, expr: &Expr) -> Expr {
+        self.rewrite(&Engine::new(doc), at, expr)
     }
-    out
+
+    /// The name denoting exactly this reference, resolved from `at`.
+    ///
+    /// **Area equality, not text equality**, and that is the whole of it. A name is stored
+    /// fully qualified and absolute (`[$Rates.$A$1]`) while the formula reading it says
+    /// `[Rates.A1]`, so comparing the two spellings would find almost nothing; resolving
+    /// both through [`Engine::area`] — the function the evaluator itself calls — finds them
+    /// whenever they mean the same rectangle, which is the question being asked.
+    pub fn of(&self, doc: &Document, at: Address, reference: &Reference) -> Option<&str> {
+        self.resolve(&Engine::new(doc), at, reference)
+    }
+
+    fn rewrite(&self, engine: &Engine, at: Address, expr: &Expr) -> Expr {
+        let recur = |e: &Expr| Box::new(self.rewrite(engine, at, e));
+        match expr {
+            Expr::Ref(reference) => match self.resolve(engine, at, reference) {
+                Some(name) => Expr::Name(name.to_owned()),
+                None => expr.clone(),
+            },
+            Expr::Call { name, args } => Expr::Call {
+                name: name.clone(),
+                args: args.iter().map(|a| self.rewrite(engine, at, a)).collect(),
+            },
+            Expr::Prefix(op, operand) => Expr::Prefix(*op, recur(operand)),
+            Expr::Postfix(op, operand) => Expr::Postfix(*op, recur(operand)),
+            // The **range operator** is left alone, for the reason display form already
+            // keeps its operands bracketed: `[Sheet2.C22]:[.C33]` is not one reference, and
+            // unbracketed a bare word either side of a `:` scans as a *reference* rather
+            // than a name (`display`'s disambiguation rules). Substituting there would
+            // print something that does not read back, which is the one outcome §3.3
+            // forbids.
+            Expr::Binary(Op::Range, lhs, rhs) => Expr::Binary(Op::Range, lhs.clone(), rhs.clone()),
+            Expr::Binary(op, lhs, rhs) => Expr::Binary(*op, recur(lhs), recur(rhs)),
+            Expr::Paren(inner) => Expr::Paren(recur(inner)),
+            other => other.clone(),
+        }
+    }
+
+    fn resolve(&self, engine: &Engine, at: Address, reference: &Reference) -> Option<&str> {
+        // An external-source reference denotes a document nothing here has open, so no name
+        // in *this* document can be standing for it.
+        if reference.source.is_some() {
+            return None;
+        }
+        let Area { sheet, rows, cols } = engine.area(reference, at)?;
+        self.anchors
+            .iter()
+            .find(|a| {
+                a.sheet == sheet
+                    && a.rows == rows
+                    && a.cols == cols
+                    // A **cell-shaped name** is never substituted, and the corpus is what
+                    // found this: `date1` printed bare reads back as cell DATE1, so the
+                    // reading would mean something the formula does not. `App::set_name`
+                    // refuses to create such a name for the same reason, which keeps this
+                    // to documents written elsewhere. The *grid* hint still draws it —
+                    // nothing re-parses a hint (§3.2).
+                    && !crate::formula::display::reads_as_reference(&a.name)
+            })
+            .map(|a| a.name.as_str())
+    }
 }
 
 /// Whether a cell is one of a **line of literals** — three or more in its column or in its
@@ -580,6 +717,164 @@ mod tests {
         app.enter(0, cell_of("C1"), "=[.A1]+1", RecalcMode::No)
             .unwrap();
         assert_eq!(roles(&app, 0, &["A1"]), ["constant-unnamed"]);
+    }
+
+    /// §3.3's example, end to end: the reading, and that it reads *back*.
+    #[test]
+    fn a_formula_reads_through_the_names_it_uses() {
+        let app = App::new();
+        app.enter(0, cell_of("B2"), "0.2", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("B7"), "500", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("C2"), "=[.B2]*[.B7]", RecalcMode::Document)
+            .unwrap();
+        app.set_name("tax_rate", "[$Sheet1.$B$2]").unwrap();
+        app.set_name("subtotal", "[$Sheet1.$B$7]").unwrap();
+        assert_eq!(
+            app.named_formula(0, cell_of("C2")).unwrap().as_deref(),
+            Some("=tax_rate*subtotal")
+        );
+        // And it is not a one-way rendering: the reverse direction already exists, because
+        // `from_display` resolves a bare identifier that is not cell-shaped as a name.
+        assert_eq!(
+            crate::formula::display::from_display("=tax_rate*subtotal").unwrap(),
+            "=tax_rate*subtotal"
+        );
+    }
+
+    /// The name is stored `[$Sheet1.$B$2]` and the formula says `[.B2]`. Comparing the two
+    /// spellings finds nothing; comparing the rectangles they resolve to finds this.
+    #[test]
+    fn substitution_matches_on_the_area_rather_than_on_the_spelling() {
+        let app = App::new();
+        app.enter(0, cell_of("B2"), "1", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("B3"), "1", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("D1"), "=[.B2]+[.B3]", RecalcMode::Document)
+            .unwrap();
+        app.set_name("rate", "[$Sheet1.$B$2]").unwrap();
+        // Only the reference that denotes exactly what the name denotes is replaced.
+        assert_eq!(
+            app.named_formula(0, cell_of("D1")).unwrap().as_deref(),
+            Some("=rate+B3")
+        );
+    }
+
+    /// A name over a range names the *whole* rectangle and nothing inside it — `SUM(sales)`
+    /// where the range matches, `SUM(A1:A3)` where it does not.
+    #[test]
+    fn a_range_name_stands_for_the_whole_rectangle_and_not_for_a_cell_in_it() {
+        let app = App::new();
+        for row in 0..5 {
+            app.enter(0, Pos::new(row, 0), "1", RecalcMode::No).unwrap();
+        }
+        app.enter(0, cell_of("C1"), "=SUM([.A1:.A5])", RecalcMode::Document)
+            .unwrap();
+        app.enter(0, cell_of("C2"), "=SUM([.A1:.A3])", RecalcMode::Document)
+            .unwrap();
+        app.enter(0, cell_of("C3"), "=[.A1]", RecalcMode::Document)
+            .unwrap();
+        app.set_name("sales", "[$Sheet1.$A$1:.$A$5]").unwrap();
+        let named = |cell: &str| app.named_formula(0, cell_of(cell)).unwrap().unwrap();
+        assert_eq!(named("C1"), "=SUM(sales)");
+        assert_eq!(named("C2"), "=SUM(A1:A3)");
+        assert_eq!(named("C3"), "=A1");
+    }
+
+    /// A name is anchored, so the same *text* in two rows is two different cells and only
+    /// one of them is the name — which is why the substitution takes an address.
+    #[test]
+    fn a_relative_reference_is_resolved_from_where_it_sits() {
+        let app = App::new();
+        app.enter(0, cell_of("A1"), "1", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("A2"), "2", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("B1"), "=[.A1]", RecalcMode::Document)
+            .unwrap();
+        app.enter(0, cell_of("B2"), "=[.A2]", RecalcMode::Document)
+            .unwrap();
+        app.set_name("first", "[$Sheet1.$A$1]").unwrap();
+        assert_eq!(
+            app.named_formula(0, cell_of("B1")).unwrap().as_deref(),
+            Some("=first")
+        );
+        assert_eq!(
+            app.named_formula(0, cell_of("B2")).unwrap().as_deref(),
+            Some("=A2")
+        );
+    }
+
+    /// §3.1: a computed name denotes no place, so nothing is ever printed as it.
+    #[test]
+    fn a_computed_name_is_never_substituted_into_a_formula() {
+        let app = App::new();
+        app.enter(0, cell_of("A1"), "1", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("B1"), "=[.A1]", RecalcMode::Document)
+            .unwrap();
+        app.set_name("doubled", "[$Sheet1.$A$1]*2").unwrap();
+        assert_eq!(
+            app.named_formula(0, cell_of("B1")).unwrap().as_deref(),
+            Some("=A1")
+        );
+    }
+
+    /// The range **operator** keeps its operands, because unbracketed a bare word either
+    /// side of a `:` scans back as a reference rather than as a name.
+    #[test]
+    fn the_range_operator_keeps_its_references() {
+        let app = App::new();
+        app.add_sheet("Sheet2").unwrap();
+        app.enter(1, cell_of("C22"), "1", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("C33"), "1", RecalcMode::No).unwrap();
+        app.enter(
+            0,
+            cell_of("A1"),
+            "=SUM([Sheet2.C22]:[.C33])",
+            RecalcMode::Document,
+        )
+        .unwrap();
+        app.set_name("corner", "[$Sheet1.$C$33]").unwrap();
+        let shown = app.named_formula(0, cell_of("A1")).unwrap().unwrap();
+        assert_eq!(shown, "=SUM([Sheet2.C22]:[.C33])");
+        // Which is the point: what it prints reads back unchanged.
+        assert_eq!(
+            crate::formula::display::from_display(&shown).unwrap(),
+            "=SUM([Sheet2.C22]:[.C33])"
+        );
+    }
+
+    /// A **cell-shaped** name is anchored but never substituted — the corpus found this,
+    /// and it is the `LOG10` collision from the other side.
+    #[test]
+    fn a_cell_shaped_name_is_hinted_but_never_printed_into_a_formula() {
+        // Built by hand because `App::set_name` refuses to create such a name; a document
+        // written elsewhere can and does.
+        let mut doc = Document::default();
+        doc.names
+            .insert("date1".to_owned(), "[$Sheet1.$G$1]".to_owned());
+        let names = Names::build(&doc);
+        let at = Address::new(0, Pos::new(4, 0));
+        // The anchor exists, so the grid draws the hint: nothing re-parses a hint.
+        assert_eq!(names.at(Address::new(0, Pos::new(0, 6))), Some("date1"));
+        // The formula reading does not, because `DATE1` reads back as a cell address.
+        assert_eq!(
+            names
+                .display(&doc, at, "of:=DAYS360([.G$1];[.G$2])")
+                .unwrap(),
+            "=DAYS360(G$1;G$2)"
+        );
+    }
+
+    /// A cell that holds no formula has no reading, and a document with no names reads the
+    /// same as `input_text` — the overlay is off by being empty rather than by a flag.
+    #[test]
+    fn a_document_with_no_names_reads_exactly_as_display_form_does() {
+        let app = App::new();
+        app.enter(0, cell_of("A1"), "1", RecalcMode::No).unwrap();
+        app.enter(0, cell_of("B1"), "=[.A1]*2", RecalcMode::Document)
+            .unwrap();
+        assert_eq!(
+            app.named_formula(0, cell_of("B1")).unwrap(),
+            Some(app.input_text(0, cell_of("B1")).unwrap())
+        );
+        assert_eq!(app.named_formula(0, cell_of("A1")).unwrap(), None);
     }
 
     #[test]

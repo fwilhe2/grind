@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use grind_sheet::formula::display::{from_display, to_display};
+use grind_sheet::formula::eval::Address;
 use grind_sheet::formula::lex::Token;
 use grind_sheet::formula::parse::parse;
 
@@ -180,12 +181,50 @@ fn every_corpus_formula_parses_and_survives_display_form() {
     let mut trips = 0usize;
     let mut trip_excuses: BTreeMap<&str, usize> = BTreeMap::new();
     let mut trip_failures: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
+    // `doc/view-modes.md` V5's check, riding on the same corpus: the *named* display form
+    // has to survive the same round trip, and the expression it comes back to is the
+    // substituted one rather than the original.
+    let mut named = 0usize;
+    let mut named_failures: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
     for path in &files {
         let Ok(doc) = grind_sheet::read_file(path) else {
             continue; // loop A owns reading; a document it cannot open is its problem.
         };
-        for sheet in &doc.sheets {
-            for (_, formula) in sheet.formulas() {
+        let names = grind_sheet::view::Names::build(&doc);
+        for (index, sheet) in doc.sheets.iter().enumerate() {
+            for (pos, formula) in sheet.formulas() {
+                if !names.anchors().is_empty()
+                    && let Ok(expr) = parse(formula)
+                {
+                    let at = Address::new(index, pos);
+                    let substituted = names.substitute(&doc, at, &expr);
+                    // Identity when no reference in this formula denotes a name — most of
+                    // them — and the round trip is then already counted above.
+                    if substituted != expr {
+                        named += 1;
+                        let want = format!("={substituted}");
+                        let shown = names.display(&doc, at, formula).expect("it just parsed");
+                        let got = from_display(&shown);
+                        if got.as_deref() != Ok(want.as_str()) {
+                            let entry = named_failures
+                                .entry(match &got {
+                                    Ok(_) => "came back different".to_owned(),
+                                    Err(e) => e.message.clone(),
+                                })
+                                .or_default();
+                            entry.0 += 1;
+                            if entry.1.len() < 3 {
+                                entry.1.push(format!(
+                                    "{formula}  ->  {shown}  ->  {}",
+                                    match &got {
+                                        Ok(back) => back.clone(),
+                                        Err(e) => e.to_string(),
+                                    }
+                                ));
+                            }
+                        }
+                    }
+                }
                 total += 1;
                 let e = match parse(formula) {
                     // The other half of loop B's front end: canonical → display →
@@ -271,9 +310,26 @@ fn every_corpus_formula_parses_and_survives_display_form() {
         }
     }
 
+    let named_failed: usize = named_failures.values().map(|(n, _)| n).sum();
+    eprintln!(
+        "loop B (names): {named} formulas mention a named place, {} round-tripped with the \
+         name substituted, {named_failed} failed",
+        named - named_failed,
+    );
+    for (message, (count, examples)) in &named_failures {
+        eprintln!("  {count:>5}  {message}");
+        for example in examples {
+            eprintln!("           {example}");
+        }
+    }
+
     assert!(failed == 0, "{failed} formulas failed to parse");
     assert!(
         trip_failed == 0,
         "{trip_failed} formulas did not survive display form"
+    );
+    assert!(
+        named_failed == 0,
+        "{named_failed} formulas did not survive display form with their names substituted"
     );
 }

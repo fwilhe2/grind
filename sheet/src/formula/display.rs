@@ -195,6 +195,23 @@ fn emit(out: &mut String, origin: &mut Vec<usize>, text: &str, src: usize, verba
     }
 }
 
+/// Whether a bare word, written into display form, would be read back as a **reference**
+/// rather than as the name it is — the `LOG10` collision, from the other side.
+///
+/// A document written elsewhere may declare a cell-shaped name (`date1`), which
+/// [`crate::App::set_name`] refuses to create precisely because of this. Printing one
+/// unbracketed produces text that means a different thing when it is read back, so anything
+/// that *substitutes* a name into display form has to ask this first — `view::Names` does.
+///
+/// Asked of the scanner rather than of a second rule about what a cell looks like: there is
+/// one scanner, and this is it answering a question about one word.
+pub fn reads_as_reference(word: &str) -> bool {
+    matches!(
+        spans(word).as_slice(),
+        [span] if span.kind == TokenKind::Ref && span.range == (0..word.len())
+    )
+}
+
 /// Scan display-form text into the runs that mean something, in byte ranges.
 ///
 /// Total: anything it does not recognise is a gap, so a half-typed formula scans without
