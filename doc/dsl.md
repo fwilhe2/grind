@@ -6,12 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is being built. D0, D1, D3 and D4 are done for the spreadsheet** —
-`core/src/projection/` and `sheet/src/projection/` exist, **loop F is green over 359/359 of
-loop A's corpus with nothing differing** (`sheet/tests/loop_f.rs`), the grammar is held to
-the model by `doc/projection-sheet.md` + `sheet/tests/projection_scope.rs`, and the projection
-is a `Form` — a third physical form beside the package and the flat file, reached by
-`grind convert` and by every shell's save dialog rather than by an export verb of its own. Layer 1 — the
+**Status: layer 0 is built for both document types. D0–D4 are done** —
+`core/src/projection/`, `sheet/src/projection/` and `text/src/projection/` exist; **loop F is
+green over 359/359 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with
+nothing differing** (`sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`); each grammar is held to
+its own scope line by `doc/projection-sheet.md` and `doc/projection-text.md` with a test apiece;
+and the projection is a `Form` — a third physical form beside the package and the flat file,
+reached by `grind convert` and by every shell's save dialog rather than by an export verb of its
+own. Layer 1 — the
 generator — is untouched and stays a proposal; §7's milestone table below records where each
 piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
 is the argument that the feature does not contradict either. Phase 11 is spoken for
@@ -206,15 +208,23 @@ Notes on the shape:
 h 1 "Field Notes"
 p "Written entirely from a shell, which is **rather** the point."
 h 2 "Addresses"
-p "p12 is a position. {#intro} and §2.1 survive edits above them."
-list {
-    li "by position"
-    li 2 "invalidated by an insert above"
-}
+p "{#intro}p12 is a position. §2.1 survives edits above it."
+li 1 "by position"
+li 2 "invalidated by an insert above"
 p #"a literal ** stays literal, and    four spaces survive"#
 p "name\tvalue\nsecond line"
-image "figures/plot.png" width="8cm" height="5cm"
 ```
+
+**What D2 changed about this sketch, and why.** Two things, both because the model won an
+argument the sketch had not had yet — `doc/projection-text.md` is the built grammar:
+
+* **A list is flat.** The sketch nested `li` inside a `list`. `model.rs` does not: the body is
+  a flat sequence (rng:16938) and a list item carries a *depth*, so nesting would be a shape the
+  reader has to invent and the writer has to fold. The reader still takes `list { li … }`,
+  because somebody hand-writing a list will type it — the second spelling of one state, exactly
+  as `at`/`row` and `cell` are on the sheet's side — and the writer only ever emits `li 2 "…"`.
+* **There is no `image` node**, and that is the milestone's one named gap. See §3.8 below, which
+  D2 amends.
 
 Three things fall out of KDL's string rules that would otherwise each be a decision:
 
@@ -255,6 +265,24 @@ document must come back as a literal `**`). Raw strings cover the common case; a
 mixes literal asterisks *and* formatting in one paragraph needs a backslash escape. This is
 where the projection actually touches existing code, and it is the piece to prototype first.
 
+**What D2 found when it did.** Three things, and the first is a correction to the sentence
+above:
+
+* **`markdown.rs` did *not* become bidirectional.** The other direction lives in
+  `text/src/projection/inline.rs`, beside it. Parsing a whole string and printing one back are
+  different questions from *what did the character just typed complete?*, and that module's
+  contract — a notation for typing, never for showing — is one three shells depend on. What must
+  not exist twice is the **table**, and it does not: `Emphasis::markers()` and
+  `Emphasis::style()` are read from `markdown.rs` and nothing restates them.
+* **One emphasis per marker pair; two at once is the attribute form.** `***x***` needs
+  CommonMark's delimiter-run algorithm to be unambiguous, and a file format whose meaning
+  depends on a heuristic loses documents. Bold-and-italic is written
+  `[x]{bold=#true italic=#true}`, marker content never nests, and the parser is therefore total.
+* **The escaping rule is narrower than "escape everything".** `_` and `~` open nothing unless
+  doubled and `{` opens nothing unless a `#` follows, so `snake_case` is written as itself. The
+  writer escapes exactly what would open something *there*, which is the same lookahead the
+  reader uses, from the other side.
+
 ### 3.7 The grammar cannot drift from the subset
 
 The requirement was "1:1 with **the subset we support** (which is still evolving)". That last
@@ -273,8 +301,9 @@ feature is affordable at all.
 
 **What building it found: the spreadsheet has no element scope line, and needs a different
 one.** For the *text* projection the paragraph above is literal — `doc/text-core.md`'s element
-table is the vocabulary, one node per element, and D2 will check it exactly that way. For the
-spreadsheet it cannot be. A formula reaches `formula::lex` as one verbatim string, so
+table is the vocabulary and `text/tests/projection_scope.rs` checks it exactly that way, so
+every element `grind_text::implemented()` returns has a node, a piece of inline notation, or a
+`gap:` with a reason. For the spreadsheet it cannot be. A formula reaches `formula::lex` as one verbatim string, so
 `doc/small-group.md`'s 110 functions sit behind a single `formula=` property and are not a
 vocabulary at all; and there is no `doc/ods-core.md` listing the elements a spreadsheet models.
 
@@ -299,6 +328,15 @@ being written.
   `.grind` document *two* filesystem objects for the first time in this project, and that is a
   real cost. The alternative, a `data:` URI, is honest and unreadable. Sidecar, and named as a
   cost.
+
+  **D4 took that answer away, and D2 records it rather than working around it.** A sidecar needs
+  a *path*, and D4 made the projection a `Form` — reached through `write_bytes` and `read_bytes`,
+  bytes and no path. Rule 5 says every `*_file` has a `*_bytes` twin, and `grind-web` is that
+  rule's honest test: a browser tab cannot write a sidecar and cannot read one. So a form that
+  only works when there is a directory to put things beside is not a form this project can have.
+  All three options are now real — `data:` (unreadable), sidecar (needs a path), bytes-only and
+  drop images (what D2 ships) — and choosing between them is an open question, written up in
+  `doc/projection-text.md` and failing loudly the day it changes.
 - **Number formats.** `numfmt::Format` is an ordered sequence of `Part`s, not a format string
   (deliberately — `doc/ods-format.md` §5.2). The projection must spell the parts, not invent
   Excel's `#,##0.00`. `numfmt::preset` covers the common case in one word (`currency="EUR"`);
@@ -594,11 +632,11 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 
 | | What | Done when | Status |
 |---|---|---|---|
-| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed | **done for the sheet** — `doc/projection-sheet.md` is the grammar note and `sheet/tests/projection_scope.rs` is the check. See the note under §3.7 about what the spreadsheet's scope line actually is |
+| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed | **done** — `doc/projection-sheet.md` and `doc/projection-text.md`, with `sheet/tests/projection_scope.rs` and `text/tests/projection_scope.rs`. The two are checked *differently*, and the note under §3.7 is why |
 | **D1** | `core/src/projection/` (generic) + `sheet/src/projection/`: KDL ⇄ `grind_sheet::Document` (§3.2) | Loop F green over `sheet/tests/data/kb/` and `data/samples/`; `core/tests/generic.rs` still passes | **done** — and `generic.rs` gained a third guard, `no_projection_node_name_is_spelled_in_the_shared_crate` |
-| **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | not started |
-| **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done for the sheet** — 359/359, nothing differing, `FLOOR = 359` |
-| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done for the sheet** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, and writing one from a crate that has no projection is an error naming D2 rather than XML under a `.grind` name. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
+| **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | **done** — and green over `sw/qa` too: 1755/1755, nothing differing. The notation went beside `markdown.rs` rather than into it, and §3.6 records why. Images are the one named gap, and §3.8 records what took its answer away |
+| **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done** — 359/359 and 1755/1755, nothing differing, `FLOOR = 359` and `FLOOR = 1755` |
+| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, for either application. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
 | **D5** | R6 for the projection: splice through `kdl-rs`'s document model | One cell edited changes one line; comments survive | not started |
 | **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | not started |
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |

@@ -1060,26 +1060,23 @@ fn ordinary_prose_types_as_itself() {
     }
 }
 
-/// `doc/dsl.md` D4: the third physical form exists for every document type in the *enum*, and
-/// for one of them in fact. The word processor's projection is D2.
+/// `doc/dsl.md` D2 + D4: the third physical form, through the same door as the other two.
 ///
-/// The assertion is that the gap is *named*, not that it is closed. A writer that quietly fell
-/// back to flat XML here would put OpenDocument inside a file the user asked for KDL in, and
-/// the next thing to read it would be a `grind` that trusts the extension — so the failure is
-/// the correct behaviour until D2 lands, and this test changes to a round trip on the day it
-/// does rather than being deleted.
+/// This test used to assert the opposite — that a text document *refused* to be written as a
+/// projection and named D2 while doing it. That was the honest behaviour for exactly as long as
+/// there was no text projection, and D2 is the milestone that turns it into a round trip. Loop
+/// F is where the property is really held (`text/tests/loop_f.rs`, over 1755 corpus documents);
+/// what is checked here is that `App` reaches it at all.
 #[test]
-fn writing_a_text_document_as_a_projection_names_the_milestone() {
+fn a_document_saves_as_a_projection_and_opens_again() {
     let app = App::new();
     app.insert(0, BlockKind::Paragraph, "Hello")
         .expect("inserts");
-    let error = app
-        .save_bytes(Form::Projection)
-        .expect_err("there is no text projection yet");
-    let message = error.to_string();
-    assert!(message.contains("projection"), "{message}");
-    assert!(
-        message.contains("D2"),
-        "it must name the milestone: {message}"
-    );
+    let bytes = app.save_bytes(Form::Projection).expect("writes");
+    let text = String::from_utf8(bytes.clone()).expect("a projection is text");
+    assert!(text.starts_with("grind text\n"), "{text}");
+
+    let reopened = App::new();
+    reopened.open_bytes("x.grind", &bytes).expect("opens");
+    assert_eq!(reopened.input_text(0).unwrap(), "Hello");
 }

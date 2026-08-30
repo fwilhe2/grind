@@ -51,13 +51,11 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     match form {
         Form::Flat => Ok(content(doc, form).into_bytes()),
         Form::Package => write_package(MIMETYPE, &content(doc, Form::Package)),
-        // The word processor's projection is D2 (`doc/dsl.md`). Naming the gap is the whole
-        // behaviour: the alternative is writing flat XML into a file called `.grind`, which
-        // would be a lie a shell's save dialog tells on the core's behalf.
-        Form::Projection => Err(grind_core::Error::Projection(
-            "a text document has no projection yet — `doc/dsl.md` D2; save it as .fodt or .odt"
-                .to_owned(),
-        )),
+        // The third form is not XML at all, so it leaves before any of this file runs
+        // (`doc/dsl.md` §9, D2). It is here rather than one layer up because `write_bytes` is
+        // the one door out of the crate, and a form that only *some* callers knew to handle
+        // would be a form that escapes through the others.
+        Form::Projection => Ok(crate::projection::project(doc).into_text().into_bytes()),
     }
 }
 

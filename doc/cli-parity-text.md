@@ -120,6 +120,13 @@ had no width and therefore no lines.
 - `save_file` — `grind text new`, and every command that changes something
 - `save_bytes` — not exposed: the `*_bytes` twin of `save_file`, for shells without a
   filesystem. Nothing a user can ask for is missing while `save_file` is here
+- `project` — `grind text project`, which prints the document as its projection
+  (`doc/dsl.md` §3, D2): the same plain text a `.grind` file holds and a shell's code view
+  shows, from the same function. `--tokens` prints the token map and `--anchors` the span map,
+  one line each. The span map is richer here than on the spreadsheet's side, because a block
+  answers to more than one address — `p12`, `#intro` and `§2.1.3` are all it, and all three are
+  anchored. Reading a projection back needs no verb: the form is sniffed from the bytes, so
+  every command already takes one. `grind convert report.fodt report.grind` writes one
 
 ## Reading
 

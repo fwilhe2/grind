@@ -204,4 +204,26 @@ say "convert: the same document as a package"
 "$GRIND" convert "$doc" "$out/sample.odt" >/dev/null
 "$GRIND" info "$out/sample.odt"
 
+# --- the projection: the whole document as plain text ------------------------------------------
+# `doc/dsl.md` layer 0, milestone D2. The same document a third way — after the package and the
+# flat form — spelled as something a person writes in any editor and a diff can read. A block is
+# a node; character formatting is the notation this build already reads while you *type*
+# (`**bold**`), so there is no fifth spelling of `**` anywhere in the suite.
+
+say "project: the document as its projection"
+text project "$doc" | sed -n '1,16p'
+
+# A block answers to every name `loc.rs` gives it, so one line can be several addresses: p12 is
+# where it *is*, #bookmark and §2.1.3 are what it *is*, and only the last two survive an edit
+# above them. That is the map a code view's go-to box reads.
+say "project --anchors: every address each line answers to"
+text project "$doc" --anchors | sed -n '1,12p'
+
+# It is a *form* as much as a view, so the verb that moves a document between forms reaches it.
+say "convert: the same document a third way"
+"$GRIND" convert "$doc" "$out/sample.grind" >/dev/null
+
+say "every command takes a projection, because kind decides and nothing else does"
+text view "$out/sample.grind" | sed -n '1,6p'
+
 printf '\n%s and %s\n' "$doc" "$out/sample.odt"

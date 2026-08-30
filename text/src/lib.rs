@@ -47,6 +47,7 @@ pub mod loc;
 pub mod markdown;
 pub mod model;
 pub mod odf;
+pub mod projection;
 pub mod style;
 
 pub use action::Action;
@@ -88,13 +89,20 @@ pub fn implemented() -> Vec<&'static str> {
     ]
 }
 
-/// Read a `.odt` (package) or `.fodt` (flat) document from bytes.
+/// Read a `.odt` (package), `.fodt` (flat) or `.grind` (projection) document from bytes.
 ///
 /// Paired with [`read_file`] from the start because the browser has no filesystem, and this
 /// is not retrofittable later (doc/plan.md, rule 5).
 ///
 /// The form is sniffed from the bytes, so `name` is only ever a label for diagnostics.
 pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
+    // The projection is the third physical form, and `grind_core::projection` decides whether
+    // these bytes are one from their first line — never from the file's name, which is the
+    // same rule `Form` and `kind` already follow.
+    if grind_core::projection::is_projection(bytes).is_some() {
+        let text = std::str::from_utf8(bytes).map_err(|e| Error::Projection(e.to_string()))?;
+        return projection::read(text);
+    }
     odf::read(bytes)
 }
 
@@ -395,6 +403,22 @@ impl App {
             blocks: start..end,
             items,
         }
+    }
+
+    /// The document as its **projection** — plain text, with the token and span maps beside it
+    /// (`doc/dsl.md` §3, D2).
+    ///
+    /// Two things at once, exactly as the spreadsheet's twin is: it is what a `.grind` file
+    /// holds, and it is what a code view shows of a document nobody has saved (§6). A shell
+    /// reads it, colours it from [`projection::Projection::tokens`], and asks
+    /// [`projection::Projection::address_at`] which block the caret is in — and here that
+    /// answers in `loc.rs`'s whole vocabulary, because a block is `p12` *and* `#intro` *and*
+    /// `§2.1.3` and the span map carries all three.
+    ///
+    /// **Nothing here writes to the document.** A projection is a view of a model, not a second
+    /// copy of one.
+    pub fn project(&self) -> projection::Projection {
+        projection::project(&self.state.read().unwrap().doc)
     }
 
     pub fn block_count(&self) -> usize {

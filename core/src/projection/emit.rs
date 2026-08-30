@@ -30,7 +30,10 @@ const INDENT: &str = "    ";
 /// anchors, so that [`Emitter::close`] can finish the span the whole block covers.
 struct Frame {
     start: usize,
-    anchor: Option<String>,
+    /// Every address this node is. Usually one — a cell is a cell — and sometimes several: a
+    /// heading is `p12` *and* `§2.1.3`, and both are addresses `loc.rs` resolves, so a span map
+    /// that could only hold one would answer half the go-to box's questions.
+    anchors: Vec<String>,
 }
 
 /// Builds a [`Projection`]: text, tokens and anchors in one pass.
@@ -90,7 +93,7 @@ impl Emitter {
         self.token(TokenKind::Node, start);
         self.line = Some(Frame {
             start,
-            anchor: None,
+            anchors: Vec::new(),
         });
     }
 
@@ -99,9 +102,13 @@ impl Emitter {
     /// The span is settled when the node ends: a leaf anchors its own line, and a node with
     /// children anchors the whole block, which is what makes *click the sheet, highlight the
     /// sheet* work at the same time as *click the cell, highlight the line*.
+    ///
+    /// Called more than once, a node is more than one address. That is not a spreadsheet's
+    /// shape — a cell is `B5` and nothing else — but it is a text document's: `p12`, `#intro`
+    /// and `§2.1.3` can all name the same paragraph, and `loc.rs` resolves all three.
     pub fn anchor(&mut self, address: impl Into<String>) {
         if let Some(line) = self.line.as_mut() {
-            line.anchor = Some(address.into());
+            line.anchors.push(address.into());
         }
     }
 
@@ -139,6 +146,55 @@ impl Emitter {
         self.text
             .push_str(&KdlValue::String(word.to_owned()).to_string());
         self.token(TokenKind::Keyword, start);
+    }
+
+    /// An argument that is always **quoted**, whatever is in it.
+    ///
+    /// [`Emitter::arg`] prints through `KdlValue`, which drops the quotes whenever a string
+    /// happens to be a bare identifier — excellent for `row North 4200`, and wrong for a
+    /// paragraph, since KDL's bare identifiers admit `*` and a paragraph beginning `**bold**`
+    /// would go to the page naked. Prose is a string and looks like one.
+    ///
+    /// Still `KdlValue`'s printer, per this module's rule: a value it decides to quote is taken
+    /// as it comes, and one it prints bare is *by definition* free of anything an escape covers,
+    /// so putting quotes round it is the whole of the difference.
+    pub fn arg_string(&mut self, text: &str) {
+        self.space();
+        let start = self.text.len();
+        let printed = KdlValue::String(text.to_owned()).to_string();
+        let printed = escape_disallowed(&printed);
+        match printed.starts_with('"') {
+            true => self.text.push_str(&printed),
+            false => {
+                self.text.push('"');
+                self.text.push_str(&printed);
+                self.text.push('"');
+            }
+        }
+        self.token(TokenKind::Text, start);
+    }
+
+    /// An argument as one of KDL's **raw** strings — `#"…"#`, where no escape means anything.
+    ///
+    /// A container-level feature (it is KDL's, not any document type's), and one an application
+    /// reaches for when its own notation would otherwise fill a line with backslashes:
+    /// `doc/dsl.md` §3.5's paragraph *about* markdown. The caller is responsible for the string
+    /// being one a raw form can hold — no `"#` in it — which is why this is `_raw` rather than
+    /// something that decides for itself.
+    pub fn arg_raw(&mut self, text: &str) {
+        // A raw string has no escapes by definition, so a code point KDL will not accept
+        // literally cannot be in one — the request falls back to the quoted form, which can
+        // spell it. Deciding that here rather than at the call site is the point: which
+        // characters KDL admits is the container's business and no document type's.
+        if text.chars().any(is_disallowed) {
+            return self.arg_string(text);
+        }
+        self.space();
+        let start = self.text.len();
+        self.text.push_str("#\"");
+        self.text.push_str(text);
+        self.text.push_str("\"#");
+        self.token(TokenKind::Text, start);
     }
 
     /// A `name=value` property.
@@ -199,7 +255,7 @@ impl Emitter {
     }
 
     fn close_anchor(&mut self, frame: Frame, end: usize) {
-        if let Some(address) = frame.anchor {
+        for address in frame.anchors {
             self.anchors.push(Anchor {
                 address,
                 span: frame.start..end,
@@ -227,6 +283,40 @@ impl Emitter {
             },
         });
     }
+}
+
+/// The code points KDL refuses to see *literally* in a document — the C0 controls it does not
+/// have an escape for, the Unicode direction controls, and the byte-order mark
+/// (`disallowed-literal-code-points`, and the reason for it is Trojan Source).
+///
+/// This exists because `kdl`'s own printer emits them raw, so its output does not always parse:
+/// one document in LibreOffice's Writer corpus carries a U+200E, and projecting it produced a
+/// file `kdl` itself rejected. Escaping them here is the narrowest possible fix and keeps this
+/// module's rule intact — the printer still decides how a string is spelled, and this only
+/// rewrites the characters it may not leave standing.
+fn is_disallowed(c: char) -> bool {
+    matches!(c,
+        '\u{0000}'..='\u{0008}'
+        | '\u{000E}'..='\u{001F}'
+        | '\u{200E}'..='\u{200F}'
+        | '\u{202A}'..='\u{202E}'
+        | '\u{2066}'..='\u{2069}'
+        | '\u{FEFF}'
+    )
+}
+
+/// Rewrite each of those as the `\u{…}` escape KDL does accept.
+fn escape_disallowed(printed: &str) -> String {
+    if !printed.chars().any(is_disallowed) {
+        return printed.to_owned();
+    }
+    printed
+        .chars()
+        .map(|c| match is_disallowed(c) {
+            true => format!("\\u{{{:x}}}", c as u32),
+            false => c.to_string(),
+        })
+        .collect()
 }
 
 /// Which token a value is. Strings that print bare are still text: how a value is *spelled* is

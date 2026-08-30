@@ -838,13 +838,18 @@ impl Observer for Bridge {
     }
 }
 
-/// One filter, both extensions — an *open* dialog must not ask which physical form a document
-/// the user is looking for happens to be in, because they do not know and it does not matter.
+/// One filter, all three extensions — an *open* dialog must not ask which physical form a
+/// document the user is looking for happens to be in, because they do not know and it does not
+/// matter.
 fn text_filters() -> gio::ListStore {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("OpenDocument Text"));
     filter.add_pattern("*.fodt");
     filter.add_pattern("*.odt");
+    // The third physical form (`doc/dsl.md` D2/D4). The window needed no other change to open
+    // one — `App::open_bytes` sniffs it — but a file a dialog filters out is a file the user
+    // cannot reach, so the pattern is not optional.
+    filter.add_pattern("*.grind");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
@@ -852,13 +857,18 @@ fn text_filters() -> gio::ListStore {
 }
 
 /// Saving is the other case: the question *does* have an answer there, and `doc/flat-first.md`
-/// is that answer. Two filters rather than one, flat first, so the default selection writes the
-/// form that diffs and choosing the package is one deliberate click away.
+/// is that answer. Three filters rather than one, flat first, so the default selection writes
+/// the form that diffs and choosing another is one deliberate click away.
+///
+/// The projection is last on purpose. It diffs better than flat XML does, but it is this
+/// project's own spelling and nothing else reads it, whereas both ODF forms are a format other
+/// software opens — so it is offered rather than defaulted to.
 fn text_save_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     for (name, pattern) in [
         ("OpenDocument Text (flat XML)", "*.fodt"),
         ("OpenDocument Text (package)", "*.odt"),
+        ("Grind projection", "*.grind"),
     ] {
         let filter = gtk::FileFilter::new();
         filter.set_name(Some(name));

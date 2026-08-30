@@ -821,20 +821,37 @@ fn convert_reaches_the_projection_and_comes_back() {
     );
 }
 
-/// The word processor has no projection yet (D2), and the honest failure is the feature: a
-/// `.grind` full of flat XML would be a worse outcome than an error naming the milestone.
+/// The same verb, the other application. `grind convert` is suite level — it reads the kind out
+/// of the file — so a text document reaches the projection through exactly the same command,
+/// which is what makes the projection a *form* rather than a spreadsheet feature.
 #[test]
-fn a_text_document_says_it_has_no_projection_yet() {
-    let dir = Sandbox::new("text-projection-gap");
+fn convert_reaches_the_projection_for_a_text_document_too() {
+    let dir = Sandbox::new("text-projection");
     let fodt = dir.path("report.fodt");
     let out = dir.path("report.grind");
+    let back = dir.path("back.fodt");
     succeeds(grind(&["text", "new", &s(&fodt)]), &["text", "new"]);
+    succeeds(
+        grind(&[
+            "text",
+            "insert",
+            &s(&fodt),
+            "--heading",
+            "1",
+            "--text",
+            "Field Notes",
+        ]),
+        &["text", "insert"],
+    );
 
-    let refused = grind(&["convert", &s(&fodt), &s(&out)]);
-    assert!(!refused.status.success(), "it must not write XML as .grind");
-    let stderr = String::from_utf8_lossy(&refused.stderr);
-    assert!(stderr.contains("projection"), "got: {stderr}");
-    assert!(!out.exists(), "and nothing is left behind");
+    ok_top(&["convert", &s(&fodt), &s(&out)]);
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.starts_with("grind text\n"), "{text}");
+    assert!(text.contains("h 1 \"Field Notes\""), "{text}");
+
+    ok_top(&["convert", &s(&out), &s(&back)]);
+    let view = succeeds(grind(&["text", "view", &s(&back)]), &["text", "view"]);
+    assert!(view.contains("Field Notes"), "{view}");
 }
 
 /// `doc/flat-first.md`: naming `.ods` or `.odt` asks for a package and gets one; naming
