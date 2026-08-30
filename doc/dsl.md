@@ -650,19 +650,22 @@ Everything in this document is a core capability except the generator, and the e
 | The projection **as a view** — `App::project(range)` | same | ● | ● | ● | ● |
 | Syntax highlighting — the writer's token map | same | — | ● | ● | ● |
 | The span map, and selection sync both ways | same | — | ● | ● | ● |
-| `grind lint` | core, per app | ● | ○ | ○ | ○ |
+| `grind lint` | core, per app | ● | ● | ● | ● |
 | Refactorings — each one an `Action` | core, per app | ● | ● | ● | ● |
 | **`grind build`** — the generator | **its own crate** | ● | ✗ | ✗ | ✗ |
 | **`grind test`** | same | ● | ✗ | ✗ | ✗ |
 
 Three qualifications, because "in the core" is not the same as "free in every shell". (● is
-built, ○ is reachable in the core and not yet drawn, ✗ is by decision.)
+built, ✗ is by decision.)
 
-`grind lint` is ○ in the three shells and that is D6's **named gap**, not an oversight: the
-rules, their ids and their addresses are all in the core, so each shell owes a list and a way to
-jump to an address — the same "small work, four times" the next paragraph describes, and R10
-permits a shell to arrive late as long as the gap is written down. `doc/tui-shell.md`,
-`doc/text-shell.md`, `doc/sheet-shell.md` and `doc/web-shell.md` keep those lists.
+`grind lint` landed in the CLI first and in the other three a day later, which is the row's own
+evidence for the paragraph below: each shell owed a list and a way to jump to an address, and
+nothing else. `ui_sheet_gtk/src/lint.rs` and `ui_text_gtk/src/lint.rs` are a dialog each — the
+second a copy of the first with `loc` where it has `a1`, `code.rs`'s `ponytail` covering both —
+and `ui_tui/src/problems.rs` and `ui_web/src/problems.rs` are one pane each, *shared by both
+document types*, which `code.rs` is too but for a weaker reason: a projection is plain text
+either way, and a diagnostic is document-type-neutral by construction. Four widgets, one
+vocabulary, no rule anywhere but the core.
 
 **Shared logic still leaves each shell a widget to write.** This is Path C's shape exactly:
 `grind_core::layout` holds the line breaker, and three shells still implement `Metrics` and

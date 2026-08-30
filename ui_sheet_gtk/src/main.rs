@@ -25,6 +25,7 @@ mod formula_ux;
 mod geom;
 mod grid;
 mod keymap;
+mod lint;
 mod state;
 mod theme;
 
@@ -1346,6 +1347,7 @@ impl Ui {
             ("recalc", "Recalculate Now"),
             ("explain-formula", "Explain Formula"),
             ("calculations", "Find Calculations"),
+            ("lint", "Check Document"),
             ("filter", "Filter Rows"),
             ("zoom-in", "Zoom In"),
             ("zoom-out", "Zoom Out"),
@@ -1735,6 +1737,12 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("sheet-add", &[][..], |ui| ui.add_sheet()),
         ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
         ("sheet-delete", &[][..], |ui| ui.delete_sheet()),
+        // F8 is the "next problem" key every IDE has; nothing in the grid's own key map
+        // claims it. `doc/dsl.md` §4.3 — the rules are the core's, this is a list in front
+        // of them.
+        ("lint", &["F8"][..], |ui| {
+            lint::present(&ui.window, &ui.app, &ui.grid)
+        }),
         ("shortcuts", &["<Control>question"][..], |ui| ui.shortcuts()),
         ("about", &[][..], |ui| ui.about()),
     ]
@@ -1760,6 +1768,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &sheets);
 
     let rest = gio::Menu::new();
+    rest.append(Some("Check Document"), Some("win.lint"));
     rest.append(Some("Show Source"), Some("win.show-source"));
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));

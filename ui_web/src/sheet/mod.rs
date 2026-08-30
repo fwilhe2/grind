@@ -661,6 +661,12 @@ impl Ui {
     /// and answering a click on `sheet Sales {` with a jump to a cell nobody has used would be
     /// worse than doing nothing. The palette's own spelling for *that sheet* is a trailing dot,
     /// so this is the one place the two vocabularies meet.
+    /// What the document says about itself (`doc/dsl.md` §4.3, D6) — the core's rules, and
+    /// nothing decided here.
+    pub fn lint(&self) -> grind_core::lint::Report {
+        self.app.lint(&grind_core::lint::Options::default())
+    }
+
     pub fn select_projected(&self, address: &str) {
         match a1::sheet(&self.app, address) {
             Ok(_) => self.go_to(&format!("{address}.")),

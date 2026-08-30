@@ -127,6 +127,9 @@ pub const SHEET: &[Command] = &[
     // `doc/dsl.md` §6. The same command turns it off, like the two above, and for the same
     // reason: it is a *reading* of the document and writes nothing.
     cmd("view.source", "Show the source", "View", "", false),
+    // `doc/dsl.md` §4.3, D6 — what the document says about itself. A verb rather than a key,
+    // and the same word closes it, like the readings above.
+    cmd("view.problems", "Check the document", "View", "", false),
     // --- the workbook ---
     cmd("sheet.add", "Add a sheet", "Sheets", "", true),
     cmd("sheet.rename", "Rename this sheet…", "Sheets", "", false),
@@ -180,6 +183,7 @@ pub const TEXT: &[Command] = &[
     // document a reader cannot see at all, because it contributes no characters.
     cmd("view.names", "Show where bookmarks are", "View", "", false),
     cmd("view.source", "Show the source", "View", "", false),
+    cmd("view.problems", "Check the document", "View", "", false),
 ];
 
 /// `const fn` so the tables above stay readable — a struct literal per row is the same

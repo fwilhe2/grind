@@ -93,6 +93,9 @@ pub struct App {
     /// that is not one of its motions closes it, so the document cannot change underneath it.
     code: crate::code::Code,
     source: Option<grind_text::projection::Projection>,
+    /// `grind text lint`'s findings, when the pane is showing them (`doc/dsl.md` §4.3, D6) —
+    /// the same pane the spreadsheet half uses, because a diagnostic is document-type-neutral.
+    problems: crate::problems::Problems,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
     quit: bool,
@@ -121,6 +124,7 @@ impl App {
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
             source: None,
+            problems: crate::problems::Problems::default(),
             help_height: 20,
             quit: false,
         }
@@ -144,6 +148,10 @@ impl App {
         }
         if self.code.is_open() {
             self.on_code_key(key.code, key.modifiers);
+            return;
+        }
+        if self.problems.is_open() {
+            self.on_problems_key(key.code);
             return;
         }
         match self.mode {
@@ -687,6 +695,8 @@ impl App {
                 }
             }
             "source" => self.cmd_source(),
+            "lint" => self.cmd_lint(false),
+            "lint hints" | "lint!" => self.cmd_lint(true),
             "outline" => self.cmd_outline(),
             // The word processor's half of inline names (§3.6). A verb rather than a key,
             // and the same word turns it off: nothing is written either way.
@@ -923,6 +933,29 @@ impl App {
         self.source = Some(projection);
     }
 
+    /// `:lint` — check the document and show what it says about itself (`doc/dsl.md` §4.3).
+    fn cmd_lint(&mut self, hints: bool) {
+        let report = self.core.lint(&grind_text::lint::Options {
+            hints,
+            off: Vec::new(),
+        });
+        self.status = match report.is_empty() {
+            true => "no problems found".to_owned(),
+            false => format!("{} finding(s) — Enter goes to one", report.len()),
+        };
+        self.problems.open(report);
+    }
+
+    /// A key while the problems pane is open. Enter puts the caret where the finding is,
+    /// through `cmd_jump` — the same one `:p12` and the go-to box use, so a diagnostic's
+    /// address is an address like any other.
+    fn on_problems_key(&mut self, code: KeyCode) {
+        let height = self.help_height();
+        if let crate::problems::Nav::Chose(address) = self.problems.on_key(code, height) {
+            self.cmd_jump(&address);
+        }
+    }
+
     fn cmd_jump(&mut self, addr: &str) {
         match grind_text::loc::parse(addr).map_err(|e| e.to_string()) {
             Ok(loc) => match self.core.resolve_caret(&loc) {
@@ -1110,6 +1143,15 @@ impl App {
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
             self.help.draw(frame, area, &crate::text::help());
+            return;
+        }
+        if self.problems.is_open() {
+            let title = self
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "untitled".to_owned());
+            self.problems.draw(frame, area, &title);
             return;
         }
         if let Some(projection) = self.source.take() {

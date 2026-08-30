@@ -23,6 +23,7 @@
 mod code;
 mod geom;
 mod keymap;
+mod lint;
 mod metrics;
 mod theme;
 mod view;
@@ -774,6 +775,26 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
+    /// `grind text lint` with a list in front of it (`doc/dsl.md` §4.3, D6). The jump is this
+    /// window's own — an address goes through `view::caret_of`, which is `loc::parse` plus the
+    /// core's resolution, exactly as the outline dialog and the go-to box already do.
+    fn lint(self: &Rc<Self>) {
+        lint::present(
+            &self.window,
+            &self.app,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |address: &str| {
+                    if let Ok(caret) = view::caret_of(&ui.app, address) {
+                        ui.doc.go_to(caret);
+                        ui.doc.grab_focus();
+                    }
+                }
+            ),
+        );
+    }
+
     /// The other half of `grind text words`: what is in this document, counted.
     fn word_count(self: &Rc<Self>) {
         let counts = self.app.counts();
@@ -909,6 +930,9 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("goto", &["<Control>g"][..], |ui| ui.goto.popup()),
         ("outline", &["<Control><Shift>o"][..], |ui| ui.outline()),
         ("words", &[][..], |ui| ui.word_count()),
+        // F8, the "next problem" key, and the same one `grind-sheet-gtk` uses — one suite, one
+        // key for one job (`doc/dsl.md` §4.3, D6).
+        ("lint", &["F8"][..], |ui| ui.lint()),
         ("paragraph", &["<Control>0"][..], |ui| ui.set_kind(0)),
         ("heading-1", &["<Control>1"][..], |ui| ui.set_kind(1)),
         ("heading-2", &["<Control>2"][..], |ui| ui.set_kind(2)),
@@ -932,6 +956,7 @@ fn primary_menu() -> gio::Menu {
     structure.append(Some("Show Bookmarks"), Some("win.show-names"));
     structure.append(Some("Show Source"), Some("win.show-source"));
     structure.append(Some("Word Count"), Some("win.words"));
+    structure.append(Some("Check Document"), Some("win.lint"));
     menu.append_section(None, &structure);
 
     let kinds = gio::Menu::new();

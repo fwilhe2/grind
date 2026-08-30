@@ -840,3 +840,69 @@ input[type="text"] {
   color: color-mix(in srgb, CanvasText 50%, Canvas);
   font-style: italic;
 }
+
+/* --- the problems pane (doc/dsl.md §4.3, D6) -------------------------------------------
+   `grind lint`'s findings, one row each. A fourth surface beside the two documents and the
+   code view, and the same rule: it is *shown instead of* the document rather than beside it,
+   because a browser tab has no window manager to keep a second window in front of the first.
+
+   The severity colours are `style::PALETTE`'s three, mixed towards `CanvasText` exactly as
+   the code view's token colours and the grid's role colours are — the reader chose the
+   ground, and a literal would ignore it. */
+.problems {
+  flex: 1;
+  overflow: auto;
+  padding: 0.5rem 0 1rem;
+  font: 13px/1.6 system-ui, sans-serif;
+}
+
+.problems-summary {
+  padding: 0.5rem 1rem 0.75rem;
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
+.problem {
+  display: grid;
+  grid-template-columns: 1.5rem auto 1fr auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.35rem 1rem;
+  cursor: default;
+}
+
+.problem:hover,
+.problem:focus-visible {
+  background: var(--hover);
+}
+
+.problem-mark {
+  text-align: center;
+}
+
+/* The address, in the same face the code view uses: it is a thing to *type*, at the palette
+   or at `grind lint`, so it is spelled as code rather than as prose. */
+.problem-at {
+  font: 12px/1.6 ui-monospace, monospace;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The rule id, dimmed: it is the word `--off` takes, worth having and not worth reading
+   first. */
+.problem-rule {
+  font: 12px/1.6 ui-monospace, monospace;
+  color: color-mix(in srgb, CanvasText 45%, Canvas);
+  white-space: nowrap;
+}
+
+.problem-error .problem-mark {
+  color: color-mix(in srgb, #ff4136 80%, CanvasText);
+}
+
+.problem-warning .problem-mark {
+  color: color-mix(in srgb, #ff851b 80%, CanvasText);
+}
+
+.problem-hint .problem-mark {
+  color: color-mix(in srgb, #0074d9 70%, CanvasText);
+}

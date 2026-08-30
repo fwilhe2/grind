@@ -57,15 +57,18 @@ because a page has no icon theme to ask.
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
 | View modes | Ctrl+K → *Show what each cell is* / *Show where names live*: `doc/view-modes.md`'s two overlays, as one attribute per cell and no extra elements | Ctrl+K → *Show where bookmarks are* (§3.6) |
 | Code view | Ctrl+K → *Show the source*: `doc/dsl.md` §6's read-only projection, one `<div>` per line, a class per `TokenKind`, the selection's own line drawn as current and clicking a line selecting what it projects | the same |
+| Problems | Ctrl+K → *Check the document*: `grind lint`'s findings, one row each, clicking one goes where it points | the same pane, the same rows |
 | Assertable output | `ui_web/smoke.js` — the real wasm module against the real page, in jsdom, no browser | the same |
+
+**Check the document** — `grind lint`'s findings as a fourth surface (`doc/dsl.md` §4.3, D6),
+from the palette like every other verb. One row per finding, carrying the address it is about;
+clicking a row goes there and puts the document back. A pane rather than a dialog, which is this
+shell's one design decision applied again: a browser tab has no window manager to keep a second
+window in front of the first. `problems.rs` is shared by both panes, like `code.rs`.
 
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
-
-**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
-core now holds, and every finding carries an address this shell can already go to; what is
-missing is a list and a way to jump from a row. Nothing about the rules is a shell's.
 
 **The code view is read-only, and shown instead of the document rather than beside it.** §6.2 is
 right that a split is what a person eventually wants; it is also a second viewport to keep in step

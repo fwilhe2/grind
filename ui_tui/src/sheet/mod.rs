@@ -24,6 +24,7 @@ Spreadsheet:
                             nothing is written, and the same word turns it off)
   :source                 — the document as its projection, read-only; j/k moves and
                             selects the cell that line is
+  :lint  :lint hints      — what the document says about itself; Enter goes to a finding
   :sheet <name>  :sheet-new  :sheet-rename <name>  :sheet-delete
   :<address>              — a cell or a range, e.g. B12 or Data.A1
 ";

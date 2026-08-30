@@ -21,6 +21,7 @@
 mod app;
 mod code;
 mod help;
+mod problems;
 mod sheet;
 mod text;
 

@@ -546,6 +546,25 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("running it again puts the document back", byId("code").hidden, true);
   check("and the pane is showing", byId("page").hidden, false);
 
+  // The problems pane (doc/dsl.md §4.3, D6): `grind lint`'s findings, and a row that goes
+  // where it points. This document is a text one, so the rules that can fire are the word
+  // processor's — what is checked here is the pane, not which rule spoke.
+  await command("Check the document");
+  check("the problems pane opens", byId("problems").hidden, false);
+  check("the document pane is off screen while it shows", byId("page").hidden, true);
+  check("and it says what it found", byId("problems").textContent.length > 0, true);
+
+  const problem = document.querySelector("#problems .problem");
+  if (problem) {
+    problem.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    await frame();
+    check("clicking a finding puts the document back", byId("problems").hidden, true);
+  } else {
+    await command("Check the document");
+    check("running it again puts the document back", byId("problems").hidden, true);
+  }
+  check("and the pane is showing", byId("page").hidden, false);
+
   // A repaint that changes nothing must still be safe — a resize borrows the same
   // message it writes back.
   const message = byId("message").textContent;

@@ -728,6 +728,11 @@ impl Ui {
     /// The span map may hand back `p12`, `#intro` or `§2.1.3`, and `loc::parse` takes all three,
     /// so this needs no vocabulary of its own — which is `loc.rs` earning its keep for the third
     /// time.
+    /// What the document says about itself (`doc/dsl.md` §4.3, D6).
+    pub fn lint(&self) -> grind_core::lint::Report {
+        self.app.lint(&grind_core::lint::Options::default())
+    }
+
     pub fn select_projected(&self, address: &str) {
         let Ok(caret) = grind_text::loc::parse(address)
             .map_err(|e| e.to_string())

@@ -16,7 +16,11 @@
 //! Addresses are `loc.rs`'s, so every one of them is a string a user can type straight back at
 //! `grind text get`.
 
-use grind_core::lint::{Diagnostic, Options, Report, Rule, Severity};
+/// The vocabulary a diagnostic is made of, re-exported so a shell reaches it through the
+/// application crate it already depends on — the same ergonomics `grind_sheet::odf` offers for
+/// the generic reader modules. The types are `grind_core`'s and there is no second definition.
+pub use grind_core::lint::{Diagnostic, Options, Report, Rule, Severity};
+
 use grind_core::style::PALETTE;
 
 use crate::loc;

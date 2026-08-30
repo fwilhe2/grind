@@ -63,6 +63,7 @@ which every shell carries and none of them reads.
 | Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete` | `:h <level>`, `:li [depth]`, `:style [name]`, `:outline`, `:words` |
 | Find | — | `:find <text>`, `:s/old/new/` |
 | View modes | `:roles` — what each cell is, coloured and marked with one glyph; `:names` — a named cell underlined, the name and the formula read through its names on the formula line | `:names` — where each bookmark anchors, after the line it falls on |
+| Problems | `:lint`, `:lint hints` — what the document says about itself; `j`/`k` moves, `Enter` goes to the finding | the same pane, the same keys |
 | Help | `:help` — the key list, over the document, scrollable | the same, with its own section |
 | Drawn from the document | bold, italic, colour, background, alignment; filtered and hidden rows are folded away | bold, italic, underline, strikethrough, colour, background; monospace runs and preformatted blocks dimmed; headings and `Title`/`Subtitle` emphasised; the block's kind in the gutter |
 | Addressing | `:<address>` — a cell or a range | `:<address>` — `p12`, `p12+40`, `#bookmark`, `§2.1.3` |
@@ -71,13 +72,16 @@ which every shell carries and none of them reads.
 Both are renderers that own nothing: every paint reads `App::get_viewport` (and
 `App::layout_block`) and throws the result away.
 
+**`:lint`** — `grind lint`'s findings in a pane (`doc/dsl.md` §4.3, D6), `:lint hints` for the
+house-style ones. `j`/`k` moves, `Enter` goes to the finding, any other key closes — the pane
+vocabulary this shell already has. `problems.rs` is **shared by both halves**, like `code.rs`
+and for a stronger reason: a diagnostic is document-type-neutral by construction, so the two
+halves differ only in what an address means, and each resolves one the way it already resolves
+any other.
+
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
-
-**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
-core now holds, and every finding carries an address this shell can already go to; what is
-missing is a list and a way to jump from a row. Nothing about the rules is a shell's.
 
 **The medium's own limits, which are not gaps.** One font at one size, so a font *size* is
 stored and not drawn, and a monospace family cannot be drawn as a different font — everything

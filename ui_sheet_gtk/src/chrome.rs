@@ -694,6 +694,13 @@ fn calculate_tools() -> gtk::Box {
             "Find everything this document calculates (Ctrl+Shift+F)",
         ),
         (
+            "dialog-warning-symbolic",
+            "Check",
+            "win.lint",
+            "Check the document against `grind lint`'s rules — a stale value, a formula \
+             naming a sheet that is gone, anything the projection cannot carry (F8)",
+        ),
+        (
             "user-bookmarks-symbolic",
             "Names",
             "win.names",

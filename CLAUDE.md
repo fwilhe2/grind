@@ -529,8 +529,12 @@ build and so does a row naming no rule), reached as `grind sheet lint`, `grind t
 `grind_core::lint` and nothing else (R8); every rule is asked through the machinery that already
 answers its question — `RefIndex` for what a formula reads, one recalculation walk for whether a
 cached value is still true — so the linter cannot disagree with the document's own behaviour.
-**Nothing is written**, and an *error* exits non-zero so CI can gate on it. No shell draws a
-findings list yet, which is a named gap in all four shell documents. **D10's first row is done**: renaming a sheet now carries every reference
+**Nothing is written**, and an *error* exits non-zero so CI can gate on it. **All four shells
+show the findings**: F8 opens a *Check Document* dialog in both GTK windows
+(`ui_*_gtk/src/lint.rs`), `:lint` opens a pane in `grind-tui` and Ctrl+K → *Check the document*
+one in `grind-web` (`ui_tui/src/problems.rs`, `ui_web/src/problems.rs`, each shared by both
+document types). Every row is a jump, because a diagnostic's address is a string the shell's own
+parser already takes. **D10's first row is done**: renaming a sheet now carries every reference
 that named it — formulas, named expressions and chart ranges — in one `Action::Batch`, so it is
 one Ctrl+Z and `doc/not-doing.md`'s row says *deleting* rather than "renaming or deleting". The
 rewrite is `formula::rename`, an AST substitution re-serialised by the printer, never a textual

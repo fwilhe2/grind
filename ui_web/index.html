@@ -234,6 +234,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     -->
     <main id="code" class="code" tabindex="0" hidden></main>
 
+    <!--
+      The problems pane: what `grind lint` found (doc/dsl.md §4.3). One row per finding,
+      built by ui_web/src/problems.rs; each carries the address it is about, and clicking a
+      row goes there. A fourth surface, shown instead of the document like the code view.
+    -->
+    <main id="problems" class="problems" tabindex="0" hidden></main>
+
     <footer class="bar status">
       <nav id="tabs" aria-label="Sheets"></nav>
       <button id="sheet-add" type="button" class="icon tab-add" title="Add a sheet">

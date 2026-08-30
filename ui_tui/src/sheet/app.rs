@@ -81,6 +81,10 @@ pub struct App {
     /// cannot change while a projection of it is on screen.
     code: crate::code::Code,
     source: Option<grind_sheet::projection::Projection>,
+    /// `grind sheet lint`'s findings, when the pane is showing them (`doc/dsl.md` §4.3, D6).
+    /// A snapshot, like the projection above and for the same reason: linting costs a
+    /// recalculation, so it is taken when `:lint` is typed and not once per keystroke.
+    problems: crate::problems::Problems,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
     quit: bool,
@@ -105,6 +109,7 @@ impl App {
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
             source: None,
+            problems: crate::problems::Problems::default(),
             help_height: 20,
             quit: false,
         }
@@ -128,6 +133,10 @@ impl App {
         }
         if self.code.is_open() {
             self.on_code_key(key.code, key.modifiers);
+            return;
+        }
+        if self.problems.is_open() {
+            self.on_problems_key(key.code);
             return;
         }
         match self.mode {
@@ -190,6 +199,35 @@ impl App {
             .map(|name| grind_sheet::a1::format(Some(&name), self.active));
         self.code.open(&projection, here.as_deref());
         self.source = Some(projection);
+    }
+
+    /// `:lint` — check the document and show what it says about itself.
+    fn cmd_lint(&mut self, hints: bool) {
+        let report = self.core.lint(&grind_sheet::lint::Options {
+            hints,
+            off: Vec::new(),
+        });
+        self.status = match report.is_empty() {
+            true => "no problems found".to_owned(),
+            false => format!("{} finding(s) — Enter goes to one", report.len()),
+        };
+        self.problems.open(report);
+    }
+
+    /// A key while the problems pane is open. Enter selects the cell the finding is about,
+    /// through the same `locate` the code view uses — one answer to "what is this address".
+    fn on_problems_key(&mut self, code: KeyCode) {
+        let height = self.help_height();
+        if let crate::problems::Nav::Chose(address) = self.problems.on_key(code, height) {
+            match self.locate(&address) {
+                Some((sheet, pos)) => {
+                    self.sheet = sheet;
+                    self.active = pos;
+                    self.status = address;
+                }
+                None => self.status = format!("{address}: nothing here can show that"),
+            }
+        }
     }
 
     /// A key while the code view is open. Moving the cursor **selects the cell that line
@@ -553,6 +591,10 @@ impl App {
             // *modes*, and this shell's keys are vi's motions; `:roles` off is `:roles`
             // again, which is the whole of turning one off — nothing was written.
             "source" => self.cmd_source(),
+            // `doc/dsl.md` §4.3, D6 — the rules are the core's and this is a list in front of
+            // them. `:lint hints` is `--hints`, off by default here as everywhere.
+            "lint" => self.cmd_lint(false),
+            "lint hints" | "lint!" => self.cmd_lint(true),
             "roles" => self.cmd_overlay(true),
             "names" => self.cmd_overlay(false),
             "bold" => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
@@ -800,6 +842,15 @@ impl App {
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
             self.help.draw(frame, area, &crate::sheet::help());
+            return;
+        }
+        if self.problems.is_open() {
+            let title = self
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "untitled".to_owned());
+            self.problems.draw(frame, area, &title);
             return;
         }
         if let Some(projection) = self.source.take() {

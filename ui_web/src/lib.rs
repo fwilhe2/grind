@@ -35,6 +35,7 @@
 pub mod code;
 pub mod command;
 pub mod palette;
+pub mod problems;
 pub mod sheet;
 pub mod swatch;
 pub mod text;
@@ -106,6 +107,7 @@ pub fn start() -> Result<(), JsValue> {
         mode: Cell::new(Mode::Sheet),
         name: RefCell::new(String::new()),
         source: RefCell::new(None),
+        problems: RefCell::new(None),
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
@@ -115,6 +117,7 @@ pub fn start() -> Result<(), JsValue> {
     wire_file_input(&shell)?;
     wire_palette(&shell)?;
     wire_code(&shell)?;
+    wire_problems(&shell)?;
     wire_swatches(&shell)?;
     wire_clipboard(&shell, &document)?;
     wire_dropping(&shell, &document)?;
@@ -168,6 +171,8 @@ struct Chrome {
     /// The code view — a third pane, shown instead of whichever of the two is open
     /// (`doc/dsl.md` §6).
     code_pane: HtmlElement,
+    /// The problems pane — a fourth, and the same rule (`doc/dsl.md` §4.3, D6).
+    problems_pane: HtmlElement,
     /// The overlay shown while a file is being dragged across the page.
     drop: HtmlElement,
 }
@@ -179,6 +184,7 @@ impl Chrome {
             sheet_pane: element(document, "surface")?,
             text_pane: element(document, "page")?,
             code_pane: element(document, "code")?,
+            problems_pane: element(document, "problems")?,
             formula_bar: element(document, "formula-bar")?,
             sheet_tools: element(document, "sheet-tools")?,
             text_tools: element(document, "text-tools")?,
@@ -214,6 +220,12 @@ struct Shell {
     /// its cheapest form. `Some` *is* "the pane is open": one fact rather than two that can
     /// disagree.
     source: RefCell<Option<grind_core::projection::Projection>>,
+    /// The findings the problems pane is showing, when it is showing (`doc/dsl.md` §4.3, D6).
+    ///
+    /// A snapshot taken when the pane opens, for the projection's reason above and one more:
+    /// linting costs a recalculation, so re-running it on every repaint would make a document
+    /// with the pane open the slowest one in the shell. `Some` *is* "the pane is open".
+    problems: RefCell<Option<grind_core::lint::Report>>,
 }
 
 impl Shell {
@@ -264,9 +276,12 @@ impl Shell {
         // decides which surface. Having one function answer both is what stops the two from
         // disagreeing: this used to be two, and closing the command palette closed the code view.
         let code = self.source.borrow().is_some();
-        self.dom.sheet_pane.set_hidden(!sheet || code);
-        self.dom.text_pane.set_hidden(sheet || code);
+        let problems = self.problems.borrow().is_some();
+        let document_pane = !code && !problems;
+        self.dom.sheet_pane.set_hidden(!sheet || !document_pane);
+        self.dom.text_pane.set_hidden(sheet || !document_pane);
         self.dom.code_pane.set_hidden(!code);
+        self.dom.problems_pane.set_hidden(!problems);
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
         self.dom.sheet_add.set_hidden(!sheet);
@@ -275,10 +290,11 @@ impl Shell {
         // Recalculation is a spreadsheet's word. The button goes rather than greying out:
         // there is no such thing as an unrecalculated paragraph.
         self.dom.recalc.set_hidden(!sheet);
-        match (code, sheet) {
-            (true, _) => self.dom.code_pane.focus(),
-            (false, true) => self.sheet.focus(),
-            (false, false) => self.text.focus(),
+        match (code, problems, sheet) {
+            (true, _, _) => self.dom.code_pane.focus(),
+            (_, true, _) => self.dom.problems_pane.focus(),
+            (false, false, true) => self.sheet.focus(),
+            (false, false, false) => self.text.focus(),
         }
     }
 
@@ -324,6 +340,7 @@ impl Shell {
             "edit.cut" => self.copy_out(true),
             "edit.paste" => self.paste_in(),
             "view.source" => self.toggle_source(),
+            "view.problems" => self.toggle_problems(),
             _ => match self.mode.get() {
                 Mode::Sheet => self.sheet.run(id),
                 Mode::Text => self.text.run(id),
@@ -367,6 +384,53 @@ impl Shell {
         self.dom
             .code_pane
             .set_inner_html(&code::html(projection, cursor));
+    }
+
+    // --- the problems pane (doc/dsl.md §4.3, D6) ---
+
+    /// Check the document and show what it says about itself, or put the document back.
+    ///
+    /// A pane rather than a dialog, unlike the GTK shells: a browser tab has no window manager
+    /// to keep a second window in front of the first, and `doc/web-shell.md`'s one design
+    /// decision is that this page does not pretend otherwise. It is the code view's shape, with
+    /// a list where the projection is — and the same command turns it off.
+    fn toggle_problems(&self) {
+        let open = self.problems.borrow().is_some();
+        *self.problems.borrow_mut() = match open {
+            true => None,
+            false => Some(match self.mode.get() {
+                Mode::Sheet => self.sheet.lint(),
+                Mode::Text => self.text.lint(),
+            }),
+        };
+        if !open {
+            self.render_problems();
+        }
+        let _ = self.show(self.mode.get());
+    }
+
+    fn render_problems(&self) {
+        let borrowed = self.problems.borrow();
+        let Some(report) = borrowed.as_ref() else {
+            return;
+        };
+        self.dom
+            .problems_pane
+            .set_inner_html(&problems::html(report));
+    }
+
+    /// A click on a finding: select what it is about, and put the document back — the pane is
+    /// consulted and acted on, and what the reader wants next is the place it named.
+    fn problem_clicked(&self, address: &str) {
+        if address.is_empty() {
+            return;
+        }
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.select_projected(address),
+            Mode::Text => self.text.select_projected(address),
+        }
+        *self.problems.borrow_mut() = None;
+        let _ = self.show(self.mode.get());
     }
 
     /// Where the showing pane's selection is, in the span map's own spelling.
@@ -1136,6 +1200,31 @@ fn wire_code(shell: &Rc<Shell>) -> Result<(), JsValue> {
             return;
         };
         shell.source_clicked(line);
+    })
+}
+
+/// Clicking a finding goes to the place it is about (`doc/dsl.md` §4.3, D6).
+///
+/// One listener on the pane, for `wire_code`'s reason — the pane is rebuilt whole and a
+/// listener per row would be a hundred closures to leak. `data-address` is what
+/// [`problems::html`] wrote onto each row, and it is the diagnostic's own address: the string
+/// `grind lint` prints and a user could type into the palette.
+fn wire_problems(shell: &Rc<Shell>) -> Result<(), JsValue> {
+    let pane = shell.dom.problems_pane.clone();
+    let shell = shell.clone();
+    listen(&pane, "click", move |event: MouseEvent| {
+        let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
+            return;
+        };
+        let Some(address) = target
+            .closest(".problem")
+            .ok()
+            .flatten()
+            .and_then(|row| row.get_attribute("data-address"))
+        else {
+            return;
+        };
+        shell.problem_clicked(&address);
     })
 }
 

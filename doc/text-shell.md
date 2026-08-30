@@ -103,10 +103,11 @@ both GTK shells could use, since `grind-core` may not hold GTK types and neither
 may depend on the other (R8); the `ponytail` in both files says what the upgrade is and what
 triggers it. The widget half is tested once, in `view.rs`'s `the_widget` harness.
 
-**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
-core now holds — a stale cached value, a dead bookmark link, a construct the projection cannot
-spell — and every finding carries an address this shell can already go to. What is missing is a
-list and a way to click a row; nothing about the rules is a shell's.
+**Check Document** — `grind lint`'s findings, as a list (`doc/dsl.md` §4.3, D6). F8, the same
+key `grind-sheet-gtk` uses, or the menu. `ui_text_gtk/src/lint.rs` is `ui_sheet_gtk/src/lint.rs`
+with `loc` where that one has `a1`, and the two are copies for `code.rs`'s reason — the
+`ponytail` there covers both. Activating a row puts the caret where the finding is, through the
+same `view::caret_of` the outline dialog and the go-to box already use.
 
 **Both shells.** No copy, cut or paste — `App::erase` takes two carets, and a selection can now
 name them in `grind-text-gtk`, but nothing yet puts either end on a clipboard. No find/replace UI

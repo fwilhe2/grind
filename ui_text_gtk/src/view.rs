@@ -1386,7 +1386,41 @@ mod tests {
             "the code view shows the projection, tagged and marked",
             the_code_view_shows_the_projection,
         ),
+        (
+            "the problems dialog builds from a document's findings",
+            the_problems_dialog_builds,
+        ),
     ];
+
+    /// **D6** (`doc/dsl.md` §4.3). The findings dialog, built against a document that really has
+    /// one — a heading level skipped, which is the word processor's own first rule.
+    ///
+    /// It is here for `the_code_view_shows_the_projection`'s reason: every widget call in
+    /// `lint.rs` — the builders, `add_prefix`, `connect_activated` — needs a display and the one
+    /// thread GTK was initialised on, and a table of pure functions cannot catch a dialog that
+    /// panics on its first row. `ui_sheet_gtk/src/lint.rs` is the same file with `a1` where this
+    /// one has `loc`, so this covers the shape of both.
+    fn the_problems_dialog_builds() {
+        let app = Arc::new(App::new());
+        app.insert(0, BlockKind::Heading { level: 1 }, "One")
+            .expect("inserts");
+        app.insert(1, BlockKind::Heading { level: 3 }, "Too deep")
+            .expect("inserts");
+        let report = app.lint(&grind_text::lint::Options::default());
+        assert!(
+            report.diagnostics.iter().any(|d| d.rule == "heading-skip"),
+            "the document really does have something to report: {:?}",
+            report.diagnostics
+        );
+
+        let went = Rc::new(std::cell::RefCell::new(String::new()));
+        let dialog = crate::lint::dialog(&app, {
+            let went = went.clone();
+            move |address: &str| went.borrow_mut().push_str(address)
+        });
+        assert_eq!(dialog.title().as_str(), "Check Document");
+        assert!(dialog.child().is_some(), "it has content to show");
+    }
 
     /// **D9** (`doc/dsl.md` §6). The other page of the window: the buffer holds the projection
     /// exactly, every token carries the tag the *writer* named it with, and the marked line is

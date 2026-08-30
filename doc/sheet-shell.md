@@ -506,10 +506,14 @@ marked and moving the cursor in it selecting the cell that line projects. A stac
 paned split — §6.2 is right that a split is what a person eventually wants, and it is also a
 second viewport to keep in step. Editing it is gated in §6.4.
 
-**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
-core now holds — a stale cached value, a dead bookmark link, a construct the projection cannot
-spell — and every finding carries an address this shell can already go to. What is missing is a
-list and a way to click a row; nothing about the rules is a shell's.
+**Check Document** — `grind lint`'s findings, as a list (`doc/dsl.md` §4.3, D6). F8, the
+*Check* button on the Calculate row, or the menu: a dialog of rows, each an icon, a message, the
+address it is about and the rule id that said it — the id because that is the word
+`grind sheet lint --off <rule>` takes, and a diagnostic nobody can name is one nobody can
+silence. Activating a row selects the cell and closes; the *Hints* toggle is `--hints`, off by
+default here as everywhere. A dialog rather than a docked panel for `Calculations`' reason: this
+list is consulted, acted on and closed, and `lint.rs` says so. **Nothing about the rules is in
+this shell** — a diagnostic arrives with its own address, and jumping to one is `a1`'s job.
 
 It also carries the one bug this window has had since M10, written down because the shape of it
 recurs: **a handler that runs because the cursor moved must not move the cursor.** Marking the
