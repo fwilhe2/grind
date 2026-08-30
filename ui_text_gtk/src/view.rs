@@ -1382,7 +1382,54 @@ mod tests {
             "markdown as it is typed reaches the document",
             typing_markdown_formats_the_span,
         ),
+        (
+            "the code view shows the projection, tagged and marked",
+            the_code_view_shows_the_projection,
+        ),
     ];
+
+    /// **D9** (`doc/dsl.md` §6). The other page of the window: the buffer holds the projection
+    /// exactly, every token carries the tag the *writer* named it with, and the marked line is
+    /// the one the cursor reports back.
+    ///
+    /// It is here rather than in `code.rs` because it needs a `gtk::TextView`, and a widget
+    /// needs the one thread that initialised GTK — which is what this whole harness exists for.
+    /// `ui_sheet_gtk/src/code.rs` is the same file with a different address vocabulary, so this
+    /// covers the shared half of both.
+    fn the_code_view_shows_the_projection() {
+        let app = Arc::new(App::new());
+        app.insert(0, BlockKind::Heading { level: 1 }, "Addresses")
+            .expect("inserts");
+        app.insert(1, BlockKind::Paragraph, "A paragraph.")
+            .expect("inserts");
+        let projection = app.project();
+
+        let view = crate::code::build();
+        crate::code::fill(&view, &projection, projection.line_of("p2"));
+        let buffer = view.buffer();
+        let text = buffer
+            .text(&buffer.start_iter(), &buffer.end_iter(), false)
+            .to_string();
+        assert_eq!(
+            text,
+            projection.text().trim_end_matches('\n'),
+            "the buffer is the projection"
+        );
+
+        // The node name of the first line carries the writer's own tag, which is the whole of
+        // "highlighting comes from the writer" made checkable.
+        let at = buffer.iter_at_offset(text.find('h').expect("a heading node") as i32);
+        assert!(
+            at.has_tag(&buffer.tag_table().lookup("node").expect("the tag exists")),
+            "`h` is tagged as a node"
+        );
+
+        // And the mark is where the caret's block is, both ways round.
+        let line = projection.line_of("p2").expect("the paragraph is anchored");
+        assert_eq!(crate::code::line_at_cursor(&view), line);
+        crate::code::mark(&view, 0);
+        assert_eq!(crate::code::line_at_cursor(&view), 0);
+    }
 
     /// A widget with a document in it and a size to lay it out at. Only ever called from
     /// [`the_widget`], which has already decided there is a display to build one on.

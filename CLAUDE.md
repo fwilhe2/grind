@@ -322,7 +322,7 @@ before it can be answered.
   physical form: the same document as plain KDL a person can write in any editor. The core half
   is the container and the two maps a code view is made of — the token map (highlighting comes
   from the *writer*, never from a highlighter) and the span map (address ⇄ byte range, both
-  ways) — and `source.rs`, R6 for the third form: the retained text plus the byte range of every
+  ways, plus the line-shaped questions a code view asks) — and `source.rs`, R6 for the third form: the retained text plus the byte range of every
   address in it, so one edit is one line and an untouched save is the bytes that were read. Each
   app half is that app's node vocabulary; the text one adds `inline.rs`, a
   paragraph's runs as one string and back, whose marker table is `markdown.rs`'s so no fifth
@@ -502,9 +502,14 @@ the byte range of every address in it — so saving splices rather than regenera
 one block edited changes one line; comments, blank lines and hand alignment survive; an untouched
 save returns the bytes that were read, asserted over both corpora. It is **not** `kdl-rs`'s
 mutation API, which reprints nothing and loses the alignment when forced to — `doc/dsl.md` §3.1
-records the measurement. **Layer 1 — the generator — is untouched and still a proposal**, and
-D6–D10 are the open list: `grind lint`, `grind build`, `grind test`, the code view in the shells,
-and the refactorings.
+records the measurement. **D9 is the code view**: every shell now shows the document as its projection, read-only, with the
+line the selection is on marked and moving in it selecting what that line projects — `:source` in
+`grind-tui`, *Show the source* in `grind-web`, Ctrl+Shift+U on the other page of a `gtk::Stack` in
+both GTK windows. The four line-shaped questions a code view asks (`line_count`, `line_span`,
+`line_pieces`, `address_on_line`) are `Projection`'s, so four shells cannot answer them four ways;
+each shell contributes one file and the drawing. **Layer 1 — the generator — is untouched and
+still a proposal**, and D6–D8 plus D10 are the open list: `grind lint`, `grind build`,
+`grind test`, and the refactorings.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which

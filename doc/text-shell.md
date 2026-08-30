@@ -95,6 +95,14 @@ own line arithmetic, which is the thing Path C exists to prevent.
 Deferred by decision, not omission. Nothing here is reachable in one shell and missing from
 the other unless it says so, and everything here is reachable from the CLI (R9).
 
+**The code view is read-only** (`doc/dsl.md` §6, D9). Ctrl+Shift+U puts the document's projection
+on the other page of a `gtk::Stack`; moving the cursor in it puts the caret in the block that line
+projects. A stack rather than a paned split, for `doc/web-shell.md`'s reason. `code.rs` is a copy
+of `ui_sheet_gtk/src/code.rs` with a different address vocabulary — there is no crate a widget
+both GTK shells could use, since `grind-core` may not hold GTK types and neither application crate
+may depend on the other (R8); the `ponytail` in both files says what the upgrade is and what
+triggers it. The widget half is tested once, in `view.rs`'s `the_widget` harness.
+
 **Both shells.** No copy, cut or paste — `App::erase` takes two carets, and a selection can now
 name them in `grind-text-gtk`, but nothing yet puts either end on a clipboard. No find/replace UI
 (`grind text find`/`replace` exist). No lists UI: a list item read from a file draws with its

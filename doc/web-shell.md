@@ -56,11 +56,19 @@ because a page has no icon theme to ask.
 | Charts | **drawn as SVG** — bar, line and pie, scaled against `grind_sheet::axis_ticks` so the axis is the one the GTK shell draws | — |
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
 | View modes | Ctrl+K → *Show what each cell is* / *Show where names live*: `doc/view-modes.md`'s two overlays, as one attribute per cell and no extra elements | Ctrl+K → *Show where bookmarks are* (§3.6) |
+| Code view | Ctrl+K → *Show the source*: `doc/dsl.md` §6's read-only projection, one `<div>` per line, a class per `TokenKind`, the selection's own line drawn as current and clicking a line selecting what it projects | the same |
 | Assertable output | `ui_web/smoke.js` — the real wasm module against the real page, in jsdom, no browser | the same |
 
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
+
+**The code view is read-only, and shown instead of the document rather than beside it.** §6.2 is
+right that a split is what a person eventually wants; it is also a second viewport to keep in step
+and a resize handle to build, and what pays for itself first is the correspondence. `show()` is
+the one function that decides which of the three panes is on screen, from the mode and from
+whether a projection is open — it was two, and closing the command palette closed the code view.
+Editing it is gated in `doc/dsl.md` §6.4.
 
 **The grid.** No point mode, autocomplete or signature hints while typing a formula — the
 three things `doc/sheet-shell.md`'s M7 gave the GTK window, and the largest remaining gap.

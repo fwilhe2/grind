@@ -499,6 +499,13 @@ mouse-only.
 
 ## The gaps, written down
 
+**The code view is read-only** (`doc/dsl.md` §6, D9), and is the one thing in this window that
+arrived after M10. Ctrl+Shift+U, the *Source* toggle beside *Names* and *Roles*, or the menu:
+the document's projection on the other page of a `gtk::Stack`, with the active cell's own line
+marked and moving the cursor in it selecting the cell that line projects. A stack rather than a
+paned split — §6.2 is right that a split is what a person eventually wants, and it is also a
+second viewport to keep in step. Editing it is gated in §6.4.
+
 Deferred by decision, not omission — each either has a not-doing.md row already or gets
 one as its milestone lands: pointing at cells on *another* sheet (the qualified form is
 written correctly, but switching sheets mid-edit is not wired) · a clipboard cell holding a

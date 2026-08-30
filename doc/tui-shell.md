@@ -109,7 +109,17 @@ mode invisible over `ssh` is a mode half this shell's readers cannot use. A rang
 outlined, and the marks in the word processor sit after the line rather than at their offset in
 it — an offset inside the line is an offset the caret counts.
 
-**Both.** `:help` is a pane over the document rather than a window beside it, and it takes the
+**Both.** The **code view** (`:source`, `doc/dsl.md` §6) is a pane over the document like `:help`
+and not a split, and it is **read-only**: `j`/`k` move a line cursor and put the selection on
+whatever that line projects, and any other key closes it. A split is what a person eventually
+wants and it is two viewports to keep in step; what pays for itself first is the correspondence.
+Editing it is gated in `doc/dsl.md` §6.4. It is a `:` command rather than a key for the reason
+`:roles` and `:names` are — a mode, and this shell's keys are vi's motions — and it does not
+reopen decision 2 above: markdown is still never *drawn* as markers, and the projection is a
+separate pane showing a different notation, which is exactly how a source view avoids the problem
+that rules the inline one out.
+
+`:help` is a pane over the document rather than a window beside it, and it takes the
 whole screen while it is open — a key list is what the reader asked to look at, and half of one
 is worse than none. The register is this shell's own, not the system clipboard — a terminal cannot reach
 one without a protocol the host may not speak, and vi's register is the convention a reader of

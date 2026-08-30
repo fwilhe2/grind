@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is built for both document types. D0–D5 are done** —
+**Status: layer 0 is built for both document types. D0–D5 and D9 are done** —
 `core/src/projection/`, `sheet/src/projection/` and `text/src/projection/` exist; **loop F is
 green over 359/359 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with
 nothing differing** (`sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`); each grammar is held to
@@ -14,7 +14,10 @@ its own scope line by `doc/projection-sheet.md` and `doc/projection-text.md` wit
 and the projection is a `Form` — a third physical form beside the package and the flat file,
 reached by `grind convert` and by every shell's save dialog rather than by an export verb of its
 own; and **R6 holds for it** — `grind sheet set book.grind B1 4300` rewrites that value and
-nothing else in the file, comments and hand alignment included, in both applications. Layer 1 — the
+nothing else in the file, comments and hand alignment included, in both applications; and **every
+shell shows the projection** (D9) — the grid or the page on one tab and its source on the other,
+with the line the selection is on marked and moving in it selecting what that line projects.
+Layer 1 — the
 generator — is untouched and stays a proposal; §7's milestone table below records where each
 piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
 is the argument that the feature does not contradict either. Phase 11 is spoken for
@@ -511,6 +514,15 @@ and every shell already shows text:
 | `grind-sheet-gtk`, `grind-text-gtk` | a `GtkTextView` in a `GtkStack`, with the stack switcher as the Delphi tab | Small |
 | `grind-web` | a `<pre>` of `<span>`s, which `ui_web`'s line-cutting already builds for the text pane | Small |
 
+**What it actually cost.** The table above was an estimate and it was close. What it missed is
+that four shells would each have written the same *line cutting* — how many lines, what is on
+one, which address a line belongs to — so those four questions moved into `Projection` before any
+shell was written (`line_count`, `line_span`, `line_pieces`, `address_on_line`, plus `byte_at`).
+Each shell then contributed one file: a pane in `grind-tui`, a `<div>` per line in `grind-web`, a
+`gtk::TextView` with a tag per kind in each GTK window. `address_on_line` needed a rule that was
+not obvious — see it for why "the narrowest anchor" answers a grid row with whichever cell had
+the shortest value on it.
+
 **Syntax highlighting comes from the writer, not from a highlighter.** The projection writer
 knows what every byte it emits *is*; a highlighter would re-derive that with regexes and get it
 wrong at the edges. So `project()` returns the text and a token map beside it, and no shell
@@ -660,7 +672,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | not started |
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |
 | **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
-| **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **the CLI half is done** — `App::project` and `grind sheet project`, with `--tokens` and `--anchors` printing the two maps. The span map is built and tested; no shell draws it |
+| **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |
 | **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | not started |
 
 D1–D5 are the feature. D6–D8 are the reason to want it. **D9 is the cheapest milestone on the

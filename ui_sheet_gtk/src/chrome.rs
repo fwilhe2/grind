@@ -778,6 +778,13 @@ fn view_tools(grid: &Grid) -> gtk::Box {
             "Colour every cell by what it is: an input, a computed value, a label, \
              an unnamed constant",
         ),
+        // `doc/dsl.md` §6 — the third reading, and the only one that shows the *whole*
+        // document rather than marking up the cells on screen.
+        (
+            "Source",
+            "win.show-source",
+            "Show the document as its projection — the same document, spelled as plain text",
+        ),
     ] {
         let toggle = gtk::ToggleButton::builder()
             .label(label)

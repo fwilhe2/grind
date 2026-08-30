@@ -20,6 +20,7 @@
 //! `grind-ui` crate yet, since `doc/suite.md` puts that extraction *on evidence* and one
 //! minimal shell is not yet evidence of which seam to cut.
 
+mod code;
 mod geom;
 mod keymap;
 mod metrics;
@@ -160,6 +161,9 @@ struct Ui {
     /// without it, painting the toolbar's state would immediately rewrite the document it
     /// was reporting on.
     updating: Cell<bool>,
+    /// The two pages of the window: the document, and its projection (`doc/dsl.md` §6, D9).
+    stack: gtk::Stack,
+    source: gtk::TextView,
     path: RefCell<Option<PathBuf>>,
     /// The document a banner is offering to hand to the spreadsheet.
     handoff: RefCell<Option<PathBuf>>,
@@ -181,8 +185,23 @@ impl Ui {
             .child(&doc)
             .build();
 
+        // The code view, on the other page of a stack (`doc/dsl.md` §6.1: "a `GtkTextView` in a
+        // `GtkStack`, with the stack switcher as the Delphi tab"). A stack rather than a paned
+        // split: §6.2 is right that a split is what a person eventually wants, and it is also a
+        // second viewport to keep in step. What pays for itself first is the correspondence, and
+        // one page at a time carries it.
+        let source = code::build();
+        let source_scroller = gtk::ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .child(&source)
+            .build();
+        let stack = gtk::Stack::new();
+        stack.add_named(&scroller, Some("document"));
+        stack.add_named(&source_scroller, Some("source"));
+
         let toasts = adw::ToastOverlay::new();
-        toasts.set_child(Some(&scroller));
+        toasts.set_child(Some(&stack));
 
         let title = adw::WindowTitle::new(&document_name(path.as_deref()), "");
         let header = adw::HeaderBar::new();
@@ -296,6 +315,8 @@ impl Ui {
             app: app.clone(),
             window,
             doc,
+            stack,
+            source,
             title,
             toasts,
             banner,
@@ -424,11 +445,93 @@ impl Ui {
         self.window.add_action(&names);
         application.set_accels_for_action("win.show-names", &["<Control><Shift>n"]);
 
+        // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the stack.
+        // Stateful like `show-names` and for the same reason: it is a *reading* of the document,
+        // it writes nothing, and the same item turns it off.
+        let source = gio::SimpleAction::new_stateful("show-source", None, &false.to_variant());
+        source.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |action, _| {
+                let on = ui.stack.visible_child_name().as_deref() != Some("source");
+                ui.show_source(on);
+                action.set_state(&on.to_variant());
+            }
+        ));
+        self.window.add_action(&source);
+        application.set_accels_for_action("win.show-source", &["<Control><Shift>u"]);
+
+        // Moving the cursor in the source selects the block that line projects — §6.2's map in
+        // the direction that has to be built rather than assumed. `notify::cursor-position`
+        // rather than a key handler, so a click, a drag and an arrow all reach it.
+        self.source
+            .buffer()
+            .connect_cursor_position_notify(glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |_| ui.source_moved()
+            ));
+
         self.window.connect_close_request(glib::clone!(
             #[strong(rename_to = ui)]
             self,
             move |_| ui.confirm_close()
         ));
+    }
+
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// Switch between the document and its source.
+    fn show_source(self: &Rc<Self>, on: bool) {
+        self.stack.set_visible_child_name(match on {
+            true => "source",
+            false => "document",
+        });
+        match on {
+            true => {
+                self.fill_source();
+                let _ = self.source.grab_focus();
+            }
+            false => {
+                gtk::prelude::GtkWindowExt::set_focus(&self.window, Some(&self.doc));
+            }
+        }
+    }
+
+    /// Paint the projection, with the caret's own block marked.
+    ///
+    /// `updating` is raised for the same reason the toolbar raises it: placing the cursor in the
+    /// buffer fires `cursor-position`, and answering that by moving the document's caret would
+    /// be the view rewriting the thing it is reporting on.
+    fn fill_source(self: &Rc<Self>) {
+        let projection = self.app.project();
+        let line = projection.line_of(&grind_text::loc::format(self.doc.caret().block));
+        self.updating.set(true);
+        code::fill(&self.source, &projection, line);
+        self.updating.set(false);
+    }
+
+    /// The source's cursor moved: put the document's caret in the block that line projects.
+    ///
+    /// The span map may hand back `p12`, `#intro` or `§2.1.3`, and `loc::parse` takes all three,
+    /// so this needs no vocabulary of its own — `loc.rs` earning its keep again.
+    fn source_moved(self: &Rc<Self>) {
+        if self.updating.get() || self.stack.visible_child_name().as_deref() != Some("source") {
+            return;
+        }
+        let line = code::line_at_cursor(&self.source);
+        let projection = self.app.project();
+        let Some(address) = projection.address_on_line(line) else {
+            return;
+        };
+        let Ok(caret) = view::caret_of(&self.app, address) else {
+            return;
+        };
+        self.doc.go_to(caret);
+        self.updating.set(true);
+        code::mark(&self.source, line);
+        self.updating.set(false);
+        self.refresh();
     }
 
     /// Everything derived from the document, in one place, run after every change.
@@ -812,6 +915,7 @@ fn primary_menu() -> gio::Menu {
     structure.append(Some("Outline…"), Some("win.outline"));
     structure.append(Some("Go to Address"), Some("win.goto"));
     structure.append(Some("Show Bookmarks"), Some("win.show-names"));
+    structure.append(Some("Show Source"), Some("win.show-source"));
     structure.append(Some("Word Count"), Some("win.words"));
     menu.append_section(None, &structure);
 

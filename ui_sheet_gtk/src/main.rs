@@ -18,6 +18,7 @@
 
 mod chart;
 mod chrome;
+mod code;
 mod filter_ui;
 mod formatting;
 mod formula_ux;
@@ -125,6 +126,12 @@ struct Ui {
     app: Arc<App>,
     window: adw::ApplicationWindow,
     grid: Grid,
+    /// The two pages of the window: the grid, and its projection (`doc/dsl.md` §6, D9).
+    stack: gtk::Stack,
+    source: gtk::TextView,
+    /// Raised while the code view is being filled, so placing its cursor does not read back as
+    /// the reader moving it — `formatting::Strip`'s latch, for the same reason.
+    updating: Cell<bool>,
     title: adw::WindowTitle,
     toasts: adw::ToastOverlay,
     banner: adw::Banner,
@@ -151,8 +158,22 @@ impl Ui {
             .child(&grid)
             .build();
 
+        // The code view, on the other page of a stack (`doc/dsl.md` §6.1). A stack rather than a
+        // paned split: §6.2 is right that a split is what a person eventually wants, and it is
+        // also a second viewport to keep in step. The correspondence is what pays for itself
+        // first, and one page at a time carries it.
+        let source = code::build();
+        let source_scroller = gtk::ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .child(&source)
+            .build();
+        let stack = gtk::Stack::new();
+        stack.add_named(&scroller, Some("grid"));
+        stack.add_named(&source_scroller, Some("source"));
+
         let toasts = adw::ToastOverlay::new();
-        toasts.set_child(Some(&scroller));
+        toasts.set_child(Some(&stack));
 
         let title = adw::WindowTitle::new(&document_name(path.as_deref()), "");
         let header = adw::HeaderBar::new();
@@ -231,6 +252,9 @@ impl Ui {
             app: app.clone(),
             window,
             grid,
+            stack,
+            source,
+            updating: Cell::new(false),
             title,
             toasts,
             banner,
@@ -356,11 +380,99 @@ impl Ui {
             application.set_accels_for_action(&format!("win.{name}"), accels);
         }
 
+        // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the
+        // stack. Stateful like the two overlays above and for the same reason: it is a way of
+        // *looking* at the document, it writes nothing, and the same item turns it off.
+        let source = gio::SimpleAction::new_stateful("show-source", None, &false.to_variant());
+        source.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |action, _| {
+                let on = ui.stack.visible_child_name().as_deref() != Some("source");
+                ui.show_source(on);
+                action.set_state(&on.to_variant());
+            }
+        ));
+        self.window.add_action(&source);
+        application.set_accels_for_action("win.show-source", &["<Control><Shift>u"]);
+
+        // Moving the cursor in the source selects the cell that line projects — §6.2's map in
+        // the direction that has to be built rather than assumed. `notify::cursor-position`
+        // rather than a key handler, so a click, a drag and an arrow all reach it.
+        self.source
+            .buffer()
+            .connect_cursor_position_notify(glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |_| ui.source_moved()
+            ));
+
         self.window.connect_close_request(glib::clone!(
             #[strong(rename_to = ui)]
             self,
             move |_| ui.confirm_close()
         ));
+    }
+
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// Switch between the grid and its source.
+    fn show_source(self: &Rc<Self>, on: bool) {
+        self.stack.set_visible_child_name(match on {
+            true => "source",
+            false => "grid",
+        });
+        match on {
+            true => {
+                self.fill_source();
+                let _ = self.source.grab_focus();
+            }
+            false => {
+                gtk::prelude::GtkWindowExt::set_focus(&self.window, Some(&self.grid));
+            }
+        }
+    }
+
+    /// Paint the projection, with the active cell's own line marked.
+    fn fill_source(self: &Rc<Self>) {
+        let projection = self.app.project();
+        let line = self
+            .app
+            .sheet_name(self.grid.sheet())
+            .ok()
+            .map(|name| a1::format(Some(&name), self.grid.selection().active))
+            .and_then(|address| projection.line_of(&address));
+        self.updating.set(true);
+        code::fill(&self.source, &projection, line);
+        self.updating.set(false);
+    }
+
+    /// The source's cursor moved: select the cell that line projects.
+    ///
+    /// A **sheet's own name** is checked first, because a `sheet` node anchors one and a bare
+    /// name is also a perfectly good cell address — `Sheet1` parses as column `SHEET`, row 1, and
+    /// answering a click on `sheet Sales {` with a jump to a cell nobody has ever used would be
+    /// worse than doing nothing.
+    fn source_moved(self: &Rc<Self>) {
+        if self.updating.get() || self.stack.visible_child_name().as_deref() != Some("source") {
+            return;
+        }
+        let line = code::line_at_cursor(&self.source);
+        let projection = self.app.project();
+        let Some(address) = projection.address_on_line(line) else {
+            return;
+        };
+        if let Ok(sheet) = a1::sheet(&self.app, address) {
+            self.grid.set_sheet(sheet);
+        } else if let Ok((sheet, start, _end)) =
+            a1::parse(address).and_then(|reference| a1::resolve(&self.app, &reference))
+        {
+            self.grid.set_sheet(sheet);
+            self.grid.set_selection(keymap::Selection::at(start));
+        }
+        self.updating.set(true);
+        code::mark(&self.source, line);
+        self.updating.set(false);
     }
 
     /// Everything derived from the document, in one place, run after every change.
@@ -1222,6 +1334,7 @@ impl Ui {
         for (title, accelerator) in [
             ("Show Names", "<Control><Shift>n"),
             ("Show Roles", "<Control><Shift>r"),
+            ("Show Source", "<Control><Shift>u"),
         ] {
             group.add_shortcut(
                 &gtk::ShortcutsShortcut::builder()
@@ -1625,6 +1738,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &sheets);
 
     let rest = gio::Menu::new();
+    rest.append(Some("Show Source"), Some("win.show-source"));
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));
     menu.append_section(None, &rest);
