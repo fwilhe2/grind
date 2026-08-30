@@ -436,6 +436,114 @@ fn a_sheet_can_be_added_renamed_and_removed() {
     assert_eq!(app.sheet_count(), 1);
 }
 
+/// **`doc/dsl.md` §6.5's first refactoring, D10.** Renaming a sheet used to leave every formula
+/// naming it pointing at nothing — `doc/not-doing.md` recorded that as a known loss. Now the
+/// rename carries them, and this is the test that says which "them": a formula on another sheet,
+/// a named expression, and a chart's ranges.
+#[test]
+fn renaming_a_sheet_carries_every_reference_that_named_it() {
+    let app = App::new();
+    app.add_sheet("Data").unwrap();
+    app.set_cell(1, p(0, 0), 10.0).unwrap();
+    app.set_cell(1, p(1, 0), 20.0).unwrap();
+    // A formula on the first sheet reading the second, and one on the second reading itself
+    // without naming it — the second must not change.
+    app.set_formula(0, p(0, 0), "=SUM([Data.A1:.A2])").unwrap();
+    app.set_formula(1, p(2, 0), "=[.A1]+1").unwrap();
+    app.set_name("total", "SUM([$Data.$A$1:.$A$2])").unwrap();
+    app.add_chart(
+        0,
+        grind_sheet::ChartKind::Bar,
+        None,
+        &[("Data.A1:Data.A2", None)],
+        "2cm",
+        "2cm",
+        "8cm",
+        "6cm",
+        Default::default(),
+        Default::default(),
+    )
+    .unwrap();
+
+    let before = app.get(0, p(0, 0)).unwrap();
+    let rewritten = app.rename_sheet(1, "Figures").unwrap();
+    assert!(
+        rewritten >= 3,
+        "formula, name and chart, at least: {rewritten}"
+    );
+
+    assert_eq!(
+        app.formula(0, p(0, 0)).unwrap().as_deref(),
+        Some("=SUM([Figures.A1:.A2])")
+    );
+    assert_eq!(
+        app.formula(1, p(2, 0)).unwrap().as_deref(),
+        Some("=[.A1]+1"),
+        "a reference that named no sheet is not given one"
+    );
+    assert_eq!(
+        app.names()
+            .into_iter()
+            .find(|(name, _)| name == "total")
+            .map(|(_, e)| e),
+        Some("SUM([$Figures.$A$1:.$A$2])".to_owned())
+    );
+    let chart = app.charts(0).unwrap().remove(0);
+    assert_eq!(chart.series[0].values, "Figures.A1:Figures.A2");
+
+    // The value is untouched: what the reference is *called* changed, not what it reads. So
+    // nothing went stale, which is the whole point of the refactoring.
+    assert_eq!(app.get(0, p(0, 0)).unwrap(), before);
+    assert_eq!(app.stale().changed, 0, "nothing disagrees with its formula");
+
+    // **One undo step**, however many references it touched (`doc/plan.md` rule 2).
+    assert!(app.undo());
+    assert_eq!(app.sheet_name(1).unwrap(), "Data");
+    assert_eq!(
+        app.formula(0, p(0, 0)).unwrap().as_deref(),
+        Some("=SUM([Data.A1:.A2])")
+    );
+    assert_eq!(
+        app.charts(0).unwrap()[0].series[0].values,
+        "Data.A1:Data.A2"
+    );
+    // One step forward again: redo brings the whole rename back, not its last cell.
+    assert!(app.redo());
+    assert_eq!(app.sheet_name(1).unwrap(), "Figures");
+    assert_eq!(
+        app.formula(0, p(0, 0)).unwrap().as_deref(),
+        Some("=SUM([Figures.A1:.A2])")
+    );
+}
+
+/// A formula this build cannot parse is left exactly as it was — rewriting text nobody
+/// understood is how a refactoring corrupts a document. `grind sheet lint` is what finds the
+/// leftovers afterwards.
+#[test]
+fn a_rename_leaves_a_formula_it_cannot_read_alone() {
+    let app = App::new();
+    app.add_sheet("Data").unwrap();
+    app.set_formula(0, p(0, 0), "=[Data.A1]").unwrap();
+    // A formula that will not parse is stored verbatim rather than refused — `App::input_text`
+    // hands one back the way it found it, and so does this.
+    app.set_formula(0, p(1, 0), "=SUM([Data.A1]").unwrap();
+
+    assert_eq!(
+        app.rename_sheet(1, "Figures").unwrap(),
+        1,
+        "one reference rewritten, and the unreadable formula is not one of them"
+    );
+    assert_eq!(
+        app.formula(0, p(0, 0)).unwrap().as_deref(),
+        Some("=[Figures.A1]")
+    );
+    assert_eq!(
+        app.formula(0, p(1, 0)).unwrap().as_deref(),
+        Some("=SUM([Data.A1]"),
+        "left exactly as it was"
+    );
+}
+
 /// A sheet name is how a reference names one (§5.8), and that lookup is case-insensitive —
 /// so two sheets differing only in case would make `[$data.$A$1]` mean either.
 #[test]

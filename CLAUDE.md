@@ -530,9 +530,13 @@ build and so does a row naming no rule), reached as `grind sheet lint`, `grind t
 answers its question — `RefIndex` for what a formula reads, one recalculation walk for whether a
 cached value is still true — so the linter cannot disagree with the document's own behaviour.
 **Nothing is written**, and an *error* exits non-zero so CI can gate on it. No shell draws a
-findings list yet, which is a named gap in all four shell documents. **Layer 1 — the generator —
-is untouched and still a proposal**, and D7, D8 and D10 are the open list: `grind build`,
-`grind test`, and the refactorings.
+findings list yet, which is a named gap in all four shell documents. **D10's first row is done**: renaming a sheet now carries every reference
+that named it — formulas, named expressions and chart ranges — in one `Action::Batch`, so it is
+one Ctrl+Z and `doc/not-doing.md`'s row says *deleting* rather than "renaming or deleting". The
+rewrite is `formula::rename`, an AST substitution re-serialised by the printer, never a textual
+one; a formula this build cannot parse is left alone and `grind lint` finds it. **Layer 1 — the
+generator — is untouched and still a proposal**, and D7, D8 and the rest of §6.5's table are the
+open list: `grind build`, `grind test`, and the other refactorings.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which

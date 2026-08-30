@@ -14,6 +14,7 @@ pub mod friendly;
 pub mod funcs;
 pub mod lex;
 pub mod parse;
+pub mod rename;
 pub mod serialize;
 pub mod shift;
 pub mod value;

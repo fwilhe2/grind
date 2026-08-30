@@ -222,6 +222,37 @@ pub fn parse_range(app: &App, sheet: usize, addr: &str) -> Result<String> {
     ))
 }
 
+/// One stored range with a sheet renamed — `doc/dsl.md` §6.5's first row reaching the charts.
+///
+/// A chart holds its ranges as address strings rather than as parsed references, so renaming a
+/// sheet has to come back through the parser: the string is read the way [`resolve_range`] reads
+/// it, the sheet locator is replaced by `formula::rename`, and both ends are printed the way
+/// [`parse_range`] prints them — fully qualified, which is the spelling every chart in this
+/// build already holds.
+///
+/// `None` when nothing changed, when the range will not parse, and when an end is missing an
+/// axis (a whole-column range, which nothing here produces): a chart whose range this build
+/// cannot re-spell keeps the one it has rather than being handed a guess.
+pub(crate) fn rename_sheet_in_range(addr: &str, from: &str, to: &str) -> Option<String> {
+    let reference = a1::parse_bracketed(&format!("[{addr}]")).ok()?;
+    let renamed = crate::formula::rename::rename_in_reference(&reference, from, to);
+    if renamed == reference {
+        return None;
+    }
+    let end = renamed.end.clone().unwrap_or_else(|| renamed.start.clone());
+    let spell = |cell: &crate::formula::lex::CellRef| {
+        let pos = crate::Pos::new(cell.row?.index, cell.col?.index);
+        Some(a1::format(cell.sheet.as_deref(), pos))
+    };
+    let (start, stop) = (spell(&renamed.start)?, spell(&end)?);
+    // A one-cell address — `chart:label-cell-address` — stays one cell rather than becoming a
+    // range of itself.
+    Some(match renamed.end.is_some() {
+        true => format!("{start}:{stop}"),
+        false => start,
+    })
+}
+
 /// The colours a chart this build **regenerates** assigns to its series (bar, line — one per
 /// series) or its data points (pie — one per slice, since a pie has no axis to share a colour
 /// down). [`grind_core::style::PALETTE`] minus the neutrals (`black`, `white`, `gray`,

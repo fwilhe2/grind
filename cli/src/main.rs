@@ -2320,7 +2320,17 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         Command::Rename { file, sheet, name } => {
             let app = load(file, cli)?;
             let index = a1::sheet(&app, sheet).say()?;
-            app.rename_sheet(index, name).say()?;
+            // A rename is a document-wide edit now (`doc/dsl.md` §6.5, D10): every formula,
+            // named expression and chart range that named the old sheet follows it, in one undo
+            // step. Said on stderr rather than in the report, exactly like the staleness
+            // warning — stdout is the report a script parses.
+            let rewritten = app.rename_sheet(index, name).say()?;
+            if rewritten > 0 {
+                eprintln!(
+                    "grind: {rewritten} reference(s) rewritten to name {name:?}; \
+                     `grind sheet undo` undoes the whole rename"
+                );
+            }
             finish(&app, cli, file, true)
         }
 

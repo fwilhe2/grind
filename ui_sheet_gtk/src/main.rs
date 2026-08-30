@@ -1233,11 +1233,16 @@ impl Ui {
                     if response != "rename" {
                         return;
                     }
-                    // A rename does not rewrite the formulas that name the old sheet — they
-                    // go stale, which `App::stale` counts and a recalculation turns into
-                    // errors. Saying so here is what keeps that from being a surprise.
-                    if let Err(error) = ui.app.rename_sheet(sheet, entry.text().trim()) {
-                        ui.toast(&error.to_string());
+                    // A rename carries every reference with it (`doc/dsl.md` §6.5, D10) —
+                    // formulas, named expressions, chart ranges — in one undo step. The toast
+                    // says how many, because a document-wide edit a user did not see happen is
+                    // one they cannot trust; Ctrl+Z takes all of it back.
+                    match ui.app.rename_sheet(sheet, entry.text().trim()) {
+                        Ok(0) => {}
+                        Ok(rewritten) => {
+                            ui.toast(&format!("{rewritten} reference(s) rewritten"));
+                        }
+                        Err(error) => ui.toast(&error.to_string()),
                     }
                 }
             ),

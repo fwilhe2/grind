@@ -675,29 +675,44 @@ impl App {
         })
     }
 
-    /// Rename a sheet.
+    /// Rename a sheet, **and everything in the document that names it** — `doc/dsl.md` §6.5's
+    /// first refactoring, D10. Returns how many references were rewritten.
     ///
-    /// Formulas naming the old sheet are **not** rewritten, so `[$Old.$A$1]` becomes a
-    /// reference to a sheet that no longer exists. That is visible rather than silent: the
-    /// cells go stale, [`App::stale`] counts them, and recalculating turns them into `#REF!`.
+    /// A formula naming the old sheet, a named expression defined in terms of it, and a chart
+    /// range built from it all follow the rename. It used to be a documented loss
+    /// (`doc/not-doing.md`: the cells went stale and recalculated to `#REF!`), and the fix is the
+    /// shape §6.5 argues every refactoring should have: **one [`Action::Batch`]**, so three
+    /// hundred rewritten formulas are one Ctrl+Z and a failure part-way is not a half-renamed
+    /// document.
     ///
-    /// ponytail: rewriting them means walking every formula's AST and re-serialising it,
-    /// which is a document-wide edit that also has to reach named expressions. Worth doing
-    /// when a shell makes renaming ordinary; the reference rewrite belongs in `formula::`,
-    /// beside the serialiser that already prints one.
-    pub fn rename_sheet(&self, sheet: usize, name: &str) -> Result<()> {
+    /// The rewrite is an AST substitution re-serialised by the printer
+    /// ([`formula::rename`]), never a textual one — `Sales` occurs inside `SalesTax` and inside
+    /// `"Sales"`, and a name that needs quoting is not spelled the same before and after. A
+    /// formula this build cannot *parse* is left exactly as it was and is not counted: rewriting
+    /// text nobody understood is how a refactoring corrupts a document. `grind sheet lint`'s
+    /// `missing-sheet` is what finds one afterwards.
+    pub fn rename_sheet(&self, sheet: usize, name: &str) -> Result<usize> {
         self.mutate(|state| {
             check_sheet_name(&state.doc, name, Some(sheet))?;
+            let from = state
+                .doc
+                .sheet(sheet)
+                .ok_or(Error::NoSuchSheet(sheet))?
+                .name
+                .clone();
+            let mut actions = vec![Action::RenameSheet {
+                index: sheet,
+                name: name.to_owned(),
+            }];
+            actions.extend(references_renamed(&state.doc, &from, name));
+            let rewritten = actions.len() - 1;
             let inverse = state
                 .doc
-                .apply(Action::RenameSheet {
-                    index: sheet,
-                    name: name.to_owned(),
-                })
+                .apply(Action::Batch(actions))
                 .ok_or(Error::NoSuchSheet(sheet))?;
             state.undo.push(inverse);
             state.redo.clear();
-            Ok(())
+            Ok(rewritten)
         })
     }
 
@@ -2082,6 +2097,71 @@ fn differences(doc: &Document) -> Vec<(usize, Pos, CellValue, bool)> {
         }
     }
     out
+}
+
+/// Every edit a sheet rename implies, besides the rename itself — `doc/dsl.md` §6.5, D10.
+///
+/// Three kinds of thing in a document name a sheet, and a refactoring that reached only the
+/// first would be worse than none at all: a cell's **formula**, a **named expression**'s
+/// definition (which every formula using that name reads through), and a **chart**'s ranges,
+/// which are address strings rather than formulas and so come through `chart::rename_sheet_in_range`.
+///
+/// A separate function from [`App::rename_sheet`] because it takes the document rather than the
+/// lock, which is what makes it testable and what keeps the mutation itself three lines.
+fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
+    let mut actions = Vec::new();
+    for (index, sheet) in doc.sheets.iter().enumerate() {
+        for (pos, text) in sheet.formulas() {
+            if let Some(formula) = formula::rename::rename_in_formula(text, from, to) {
+                actions.push(Action::SetFormula {
+                    sheet: index,
+                    pos,
+                    formula: Some(formula),
+                    // The cached value is untouched: pointing a reference at a renamed sheet
+                    // changes what it is *called* and not what it reads, so nothing about the
+                    // answer has changed and marking the cell stale would be a lie.
+                    value: sheet.get(pos),
+                });
+            }
+        }
+    }
+    for (name, expression) in &doc.names {
+        if let Some(expression) = formula::rename::rename_in_formula(expression, from, to) {
+            actions.push(Action::SetName {
+                name: name.clone(),
+                expression: Some(expression),
+            });
+        }
+    }
+    for (index, sheet) in doc.sheets.iter().enumerate() {
+        for (position, chart) in sheet.charts().iter().enumerate() {
+            let mut renamed = chart.clone();
+            let mut changed = false;
+            let mut retarget = |addr: &mut String| {
+                if let Some(new) = chart::rename_sheet_in_range(addr, from, to) {
+                    *addr = new;
+                    changed = true;
+                }
+            };
+            if let Some(categories) = renamed.categories.as_mut() {
+                retarget(categories);
+            }
+            for series in &mut renamed.series {
+                retarget(&mut series.values);
+                if let Some(label) = series.label.as_mut() {
+                    retarget(label);
+                }
+            }
+            if changed {
+                actions.push(Action::ReplaceChart {
+                    sheet: index,
+                    index: position,
+                    chart: Box::new(renamed),
+                });
+            }
+        }
+    }
+    actions
 }
 
 /// The cells [`lint::STALE_VALUE`] reports: a disagreement this build can actually settle.

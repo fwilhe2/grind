@@ -717,12 +717,15 @@ impl App {
     }
 
     fn cmd_sheet_rename(&mut self, name: &str) {
-        // A rename does not rewrite the formulas that name the old sheet — they go stale,
-        // which `App::stale` counts and `:recalc` turns into errors. Saying so is what keeps
-        // it from being a surprise.
+        // A rename now rewrites everything that named the old sheet — formulas, named
+        // expressions, chart ranges — in one undo step (`doc/dsl.md` §6.5, D10). Saying how many
+        // is what tells a user the document-wide edit really happened, and that `u` undoes all
+        // of it.
         match self.core.rename_sheet(self.sheet, name) {
-            Ok(()) => {
-                self.status = format!("renamed to {name} — formulas naming the old name go stale")
+            Ok(0) => self.status = format!("renamed to {name}"),
+            Ok(rewritten) => {
+                self.status =
+                    format!("renamed to {name} — {rewritten} reference(s) rewritten, u undoes all")
             }
             Err(e) => self.status = e.to_string(),
         }

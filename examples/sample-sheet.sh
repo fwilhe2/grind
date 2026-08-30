@@ -385,6 +385,19 @@ cp "$out/sample.grind" "$out/sample-before.grind"
 sheet set "$out/sample.grind" B2 9999 >/dev/null
 diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
 
+# --- rename: a refactoring, not a relabelling ----------------------------------------------
+# `doc/dsl.md` §6.5's first row, D10. Renaming a sheet used to leave every formula naming it
+# pointing at nothing; now the rename carries them — formulas, named expressions and chart
+# ranges alike — in one undo step. It is an AST rewrite re-serialised by the printer, never a
+# textual substitution, so a name that needs quoting comes back quoted and a string that happens
+# to spell the old name is left alone.
+
+say "rename: the sheet, and everything that named it"
+cp "$book" "$out/renamed.fods"
+sheet rename "$out/renamed.fods" Budget Ledger >/dev/null
+sheet view "$out/renamed.fods" B8:B8 --formulas
+sheet name "$out/renamed.fods" budgeted   # the named expression followed too
+
 # --- lint: what the document says about itself ---------------------------------------------
 # `doc/dsl.md` §4.3, D6. The rules are about *documents*, which is why no third-party linter can
 # have them: a cached value that disagrees with its formula, a formula naming a sheet that is

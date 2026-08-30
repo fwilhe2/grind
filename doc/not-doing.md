@@ -152,7 +152,7 @@ the code, and this table is an index rather than a second source of truth.
 | **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `CLAUDE.md` |
 | **Loop C's `back` direction** | Skips formula-bearing documents. | `roundtrip.rs` |
 | **Named expressions** | One flat map, so a sheet-local name is visible document-wide. | `model.rs:258` |
-| **Renaming or deleting a sheet** | Formulas naming it are not rewritten, so they go stale and recalculate to an error. Visible rather than silent: every write warns, and `sheet recalc` counts it. | `App::rename_sheet` |
+| **Deleting a sheet** | Formulas naming it are not rewritten, so they go stale and recalculate to an error. Visible rather than silent: every write warns, `sheet recalc` counts it, and `grind sheet lint`'s `missing-sheet` names each one. *Renaming* one no longer belongs here — it carries its formulas, named expressions and chart ranges with it (`doc/dsl.md` §6.5, D10). | `App::remove_sheet` |
 
 ### The word processor
 

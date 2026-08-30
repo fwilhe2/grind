@@ -626,7 +626,7 @@ makes a rename touching three hundred formulas one undo step — the argument
 |---|---|---|
 | **Go to definition** | a bookmark, a named expression, a sheet, a style name | The addressing exists — `loc.rs`'s `#intro` and `§2.1.3`, `Document::names`. `grind-web`'s Ctrl+K palette is already this, without the name |
 | **Find references** | which formulas name this cell or sheet; which blocks point at this bookmark | The spreadsheet half is the dependency graph `eval.rs` already walks to recalculate |
-| **Rename** | rename a sheet and rewrite every formula naming it; rename a bookmark, a style, a named expression | **Closes a documented bug rather than adding a feature.** `doc/not-doing.md` §3: *"Renaming or deleting a sheet — formulas naming it are not rewritten, so they go stale."* This is the row that pays for itself, and it is the one to do first |
+| **Rename** | rename a sheet and rewrite every formula naming it; rename a bookmark, a style, a named expression | **Done for a sheet** — `formula::rename` is the AST rewrite, `App::rename_sheet` the one `Action::Batch` that carries formulas, named expressions *and* chart ranges, and `doc/not-doing.md`'s row now says *deleting* rather than "renaming or deleting". Never a textual substitution: `Sales` occurs inside `SalesTax` and inside `"Sales"`, and a name needing quotes is spelled differently before and after. A formula this build cannot parse is left alone and `grind lint`'s `missing-sheet` finds it. A bookmark, a style and a named expression are the same shape and not built |
 | **Extract** | a repeated formula into a named expression | Named expressions exist; finding the repetition is the new part |
 | **Inline** | a named expression back into the formulas using it | The inverse, same machinery |
 | **Fold** | a section by outline level; a sheet | `Document::section()` and `outline()` already compute the extents |
@@ -699,7 +699,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |
 | **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
 | **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |
-| **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | not started |
+| **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | **first row done** — rename-a-sheet, which closed a documented bug rather than adding a feature. One `Action::Batch` reached from `grind sheet rename` and from all four shells, undone by one Ctrl+Z, and it counts what it rewrote so a document-wide edit is visible. The rest of §6.5's table is open and moves one row at a time, on evidence |
 
 D1–D5 are the feature. D6–D8 are the reason to want it. **D9 is the cheapest milestone on the
 list and possibly the most visible** — it needs no new dependency, no new format and no core

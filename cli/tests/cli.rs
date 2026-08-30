@@ -1273,3 +1273,42 @@ fn lint_reports_what_a_document_says_about_itself_and_writes_nothing() {
         "so does the suite-level verb"
     );
 }
+
+/// **`doc/dsl.md` §6.5's first refactoring, D10**, from the outside: renaming a sheet carries
+/// the formulas that named it, in one undo step, and the document is clean afterwards.
+#[test]
+fn renaming_a_sheet_rewrites_the_formulas_that_named_it() {
+    let dir = Sandbox::new("rename");
+    let file = dir.path("book.fods");
+    let f = s(&file);
+
+    ok(&["new", &f]);
+    ok(&["add", &f, "Data"]);
+    ok(&["set", &f, "Data.A1", "10"]);
+    ok(&["set", &f, "A1", "=SUM([Data.A1:.A2])"]);
+    ok(&["name", &f, "total", "Data.A1:A2"]);
+
+    ok(&["rename", &f, "Data", "Figures"]);
+    assert_eq!(
+        ok(&["get", &f, "A1", "--formula"]).trim(),
+        "=SUM([Figures.A1:.A2])",
+        "the formula follows the sheet"
+    );
+    assert!(
+        ok(&["name", &f, "total"]).contains("Figures"),
+        "and so does the named expression"
+    );
+    // Which is the whole point: the document no longer names a sheet that is not there.
+    assert!(ok(&["lint", &f]).contains("no problems found"));
+
+    // One undo step, however many references it touched — which needs a session file, since
+    // the CLI's history has to outlive the process (`grind sheet undo`).
+    let session = s(&dir.path("session.json"));
+    ok(&["--session", &session, "rename", &f, "Figures", "Ledger"]);
+    ok(&["--session", &session, "undo", &f]);
+    assert_eq!(
+        ok(&["get", &f, "A1", "--formula"]).trim(),
+        "=SUM([Figures.A1:.A2])",
+        "one undo took the whole rename back, references and all"
+    );
+}

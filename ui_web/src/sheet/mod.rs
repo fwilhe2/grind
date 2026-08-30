@@ -933,10 +933,13 @@ impl Ui {
         let Ok(Some(name)) = window.prompt_with_message_and_default("Sheet name", &current) else {
             return;
         };
-        // A rename does not rewrite the formulas that name the old sheet — they go stale,
-        // which `App::stale` counts. Saying so is what keeps it from being a surprise.
-        if let Err(error) = self.app.rename_sheet(sheet, name.trim()) {
-            self.set_message(error.to_string());
+        // A rename carries every reference with it (`doc/dsl.md` §6.5, D10) — formulas, named
+        // expressions, chart ranges — in one undo step. Saying how many is what makes a
+        // document-wide edit visible.
+        match self.app.rename_sheet(sheet, name.trim()) {
+            Ok(0) => {}
+            Ok(rewritten) => self.set_message(format!("{rewritten} reference(s) rewritten")),
+            Err(error) => self.set_message(error.to_string()),
         }
     }
 

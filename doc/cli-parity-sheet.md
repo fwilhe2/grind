@@ -56,7 +56,11 @@ stops ratcheting.
 - `set_name` — `grind sheet name <name> <address-or-=expression>`
 - `clear_name` — `grind sheet name <name> --delete`
 - `add_sheet` — `grind sheet add <name>`
-- `rename_sheet` — `grind sheet rename <sheet> <name>`
+- `rename_sheet` — `grind sheet rename <sheet> <name>`, which carries every reference that named
+  the old sheet with it: formulas, named expressions and chart ranges, in one `Action::Batch` so
+  `grind sheet undo` takes the whole rename back (`doc/dsl.md` §6.5, D10). It returns how many
+  references were rewritten, and the command says so on stderr — stdout stays the report a
+  script parses
 - `remove_sheet` — `grind sheet remove <sheet>`
 - `recalc` — `grind sheet recalc`
 - `stale` — every command that writes: the warning on stderr, and the `stale` field of its

@@ -95,6 +95,16 @@ fn shift(e: SyntaxError, by: usize) -> SyntaxError {
     SyntaxError { at: e.at + by, ..e }
 }
 
+/// What a formula says before its expression — `"of:="`, `"="`, `"of:=="`, or nothing.
+///
+/// The complement of [`strip_intro`], and public because a *rewriter* has to put back what it
+/// took off: `formula::rename` re-serialises an expression and a document that spells its
+/// formulas `of:=` must keep spelling them that way, or renaming one sheet respells every
+/// formula in the file (R6).
+pub fn intro(formula: &str) -> &str {
+    &formula[..formula.len() - strip_intro(formula).len()]
+}
+
 /// `of:=` / `=` / `==` → the expression after it (§5.2).
 fn strip_intro(formula: &str) -> &str {
     let rest = match formula.find('=') {
