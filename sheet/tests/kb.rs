@@ -162,10 +162,32 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
     let app = grind_sheet::App::new();
     app.open_file(&data("kb", "fizzbuzz.fods")).unwrap();
     assert_eq!(app.formula_count(0).unwrap(), 18);
+    // **Eighteen rows, and not one value in them.** This used to assert `(0, 0)` — the used
+    // extent counted values and nothing else — and that turned out to be a data loss rather
+    // than a curiosity: `odf::write` emits the rectangle the extent describes, so regenerating
+    // this document wrote a sheet with no rows at all. `grind convert fizzbuzz.fods
+    // fizzbuzz.ods` gave back a file with zero formulas in it, and the round-trip test above
+    // could not see it, because `digest` walks the same extent and was comparing nothing with
+    // nothing. The assertion below is the one that would have caught it.
     assert_eq!(
         app.used_extent(0).unwrap(),
-        (0, 0),
-        "no cached values to read"
+        (18, 1),
+        "a formula is content even with no cached value to show for it"
+    );
+
+    // The regenerating writer, which is the path that lost them. R6's splice hands a document
+    // its own bytes back when nothing has changed, so a `.fods` to `.fods` conversion was never
+    // going to show this — the form has to change for the writer to actually run.
+    let package = grind_sheet::write_bytes(
+        &regenerating("kb", "fizzbuzz.fods"),
+        grind_sheet::Form::Package,
+    )
+    .expect("writes");
+    let back = grind_sheet::read_bytes("fizzbuzz.ods", &package).expect("reads back");
+    assert_eq!(
+        back.sheet(0).map(|s| s.formulas().count()),
+        Some(18),
+        "eighteen formulas out, eighteen back"
     );
 
     app.recalc().unwrap();

@@ -437,14 +437,56 @@ impl Sheet {
         }
     }
 
-    /// One past the last row holding a value, across all columns.
+    /// One past the last row holding **anything** — a value, a formula, a date, a number
+    /// format or a cell style.
+    ///
+    /// **Not just the values, and that was a silent data loss.** `odf::write` emits the
+    /// rectangle this describes and nothing outside it, so a formula, a style or a format on a
+    /// cell past the last *value* was dropped on save. Reachable three ways: `grind sheet style
+    /// book.fods A5 --bold` on an empty A5, a `.fods` whose author styled an empty cell (R5 says
+    /// those files load), and — the one that found it — a projection written by hand, where
+    /// `cell B5 "=SUM([.B2:.B4])"` with no cached value is the *normal* way to say it
+    /// (`doc/dsl.md` §3.4: a spreadsheet you can write without doing the arithmetic).
+    ///
+    /// The four side tables are the four things a cell can carry besides its value, so the
+    /// extent is their union with the value store's. Each is a `BTreeMap<Pos, _>` ordered by
+    /// row then column, so the last key is the last row for free; the column needs a scan, and
+    /// these maps hold one entry per *styled* cell rather than one per cell.
     pub fn used_rows(&self) -> u32 {
-        self.cols.iter().map(Column::len).max().unwrap_or(0)
+        let values = self.cols.iter().map(Column::len).max().unwrap_or(0);
+        let extra = self
+            .side_tables()
+            .filter_map(|last| last.map(|pos| pos.row + 1))
+            .max()
+            .unwrap_or(0);
+        values.max(extra)
     }
 
-    /// One past the last column holding a value.
+    /// One past the last column holding anything — [`Sheet::used_rows`]'s twin, same reason.
     pub fn used_cols(&self) -> u32 {
-        self.cols.len() as u32
+        let extra = [
+            self.formulas.keys().map(|pos| pos.col).max(),
+            self.kinds.keys().map(|pos| pos.col).max(),
+            self.formats.keys().map(|pos| pos.col).max(),
+            self.styles.keys().map(|pos| pos.col).max(),
+        ]
+        .into_iter()
+        .flatten()
+        .max()
+        .map_or(0, |col| col + 1);
+        (self.cols.len() as u32).max(extra)
+    }
+
+    /// The last `Pos` of each cell-keyed side table, which is its last *row* — a `BTreeMap<Pos,
+    /// _>` orders by row and then by column.
+    fn side_tables(&self) -> impl Iterator<Item = Option<Pos>> {
+        [
+            self.formulas.keys().next_back().copied(),
+            self.kinds.keys().next_back().copied(),
+            self.formats.keys().next_back().copied(),
+            self.styles.keys().next_back().copied(),
+        ]
+        .into_iter()
     }
 }
 

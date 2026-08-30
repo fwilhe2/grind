@@ -907,6 +907,68 @@ fn editing_a_projection_in_place_rewrites_one_line() {
     );
 }
 
+/// **A spreadsheet written without doing the arithmetic** (`doc/projection-sheet.md`).
+///
+/// The cached value is optional: `cell B5 "=SUM([.B2:.B4])"` is a whole cell, and `recalc` is
+/// what fills the answers in. The reason this is a CLI test is that the interesting half is what
+/// happens *between* the forms — a formula with no cached value used to be outside the used
+/// extent, which is the rectangle the ODF writer emits, so converting a hand-written model to
+/// `.fods` gave back a file with no formulas in it at all.
+#[test]
+fn a_model_written_without_its_answers_keeps_them_through_every_form() {
+    let dir = Sandbox::new("no-math");
+    let model = dir.path("model.grind");
+    std::fs::write(
+        &model,
+        "grind spreadsheet
+
+// Written by hand. No arithmetic was done by the author.
+         sheet Budget {
+    at A1 {
+        row Rent      1800
+        row Food      520
+    }
+         
+    cell B3 \"=SUM([.B1:.B2])\"
+    cell B4 \"=[.B3]*12\"
+}
+",
+    )
+    .unwrap();
+
+    // It reads, and the formulas are there with nothing cached for them.
+    assert_eq!(
+        ok(&["get", &s(&model), "B3", "--formula"]).trim(),
+        "of:=SUM([.B1:.B2])"
+    );
+    assert_eq!(ok(&["get", &s(&model), "B3"]).trim(), "", "no answer yet");
+
+    // Through ODF — both forms, since the package regenerates and the flat one splices.
+    for (name, form) in [("model.fods", "flat"), ("model.ods", "package")] {
+        let out = dir.path(name);
+        ok_top(&["convert", &s(&model), &s(&out)]);
+        assert_eq!(
+            ok(&["get", &s(&out), "B4", "--formula"]).trim(),
+            "of:=[.B3]*12",
+            "{form}: the formula did not survive the conversion"
+        );
+    }
+
+    // And `recalc` is the step that gives it answers — in the projection itself, one line of
+    // diff per cell, with everything the model has no room for still there (D5).
+    let before = std::fs::read_to_string(&model).unwrap();
+    ok(&["recalc", &s(&model)]);
+    let after = std::fs::read_to_string(&model).unwrap();
+    assert_eq!(ok(&["get", &s(&model), "B3"]).trim(), "2320");
+    assert_eq!(ok(&["get", &s(&model), "B4"]).trim(), "27840");
+    assert_eq!(
+        changed_lines(&before, &after).len(),
+        2,
+        "one line per formula"
+    );
+    assert!(after.contains("// Written by hand."), "{after}");
+}
+
 /// Which lines two texts differ on, as `(before, after)`.
 fn changed_lines<'a>(before: &'a str, after: &'a str) -> Vec<(&'a str, &'a str)> {
     let (a, b): (Vec<_>, Vec<_>) = (before.lines().collect(), after.lines().collect());

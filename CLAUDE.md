@@ -264,6 +264,13 @@ before it can be answered.
 
 - **`sheet/src/a1.rs`** — addressing. The *only* 0↔1 conversion in the workspace; a shell
   never does its own index arithmetic. Parses by wrapping in `[…]` and calling `lex::lex`.
+- **`sheet/src/model.rs`** — `Sheet::used_rows`/`used_cols` are the extent of **everything a
+  cell can carry**, not just of the values: a formula, a date/time spelling, a number format or a
+  cell style all count. `odf::write` emits exactly that rectangle (`carries` is the same five
+  questions on the way out), so a narrower answer is silent data loss — regenerating
+  `kb/fizzbuzz.fods`, eighteen formulas with no cached values, used to write a sheet with no rows
+  in it. A `TODO:` in `odf/read.rs` holds the remaining half: a *styled empty* cell is still
+  dropped on read, and the measurement that says why is with it.
 - **`sheet/src/grid.rs`** — the column store: a run-length sequence of typed blocks
   (LibreOffice's `mdds` shape). Invariants restored by `normalize()`, asserted by `check()`.
 - **`sheet/src/numfmt/`** — number formats (§5.2). Display only, never touches the value. No

@@ -55,6 +55,38 @@ body — one or more document-level nodes — and it is executable, not illustra
 | `keep` | one field of `Filter::keep`: the values that field keeps | `sheet S { filter "f" A1:C4 { keep 0 North South } }` |
 | `map` | one `numfmt::Map` — a `style:map` branch, its comparison, its operand and its own format | `sheet S { format A1 number { map ">=" "0" number { number decimals=2 } } }` |
 
+### A formula does not need its answer
+
+**The cached value is optional, and leaving it out is the point.** `cell B5 "=SUM([.B2:.B4])"`
+is a whole cell: the reader takes a bare `=…` in the value position as the formula, and the
+cached value stays empty. So a model can be written by hand without doing any of its arithmetic,
+which is most of why a person would write one by hand at all.
+
+```kdl
+sheet Budget {
+    at A1 {
+        row Rent      1800
+        row Food      520
+    }
+    cell B3 "=SUM([.B1:.B2])"    // no answer, and none needed
+}
+```
+
+`grind sheet recalc` fills them in, and D5's splice makes that one line of diff per cell — the
+comments and the alignment are untouched, so a hand-written model stays hand-written after its
+first recalculation.
+
+**ODF's side of it is a real difference and not a formality.** `doc/ods-format.md` §4: a formula
+written without a cached value is schema-legal and renders **blank** in LibreOffice until
+something recalculates it. So `grind convert model.grind model.fods` gives a file that opens
+empty, and `grind sheet recalc` is the step that makes it show anything. The CLI says so — the
+staleness warning on every write is exactly this — and `fizzbuzz.fods` in `sheet/tests/data/kb/`
+is a document LibreOffice itself wrote that way.
+
+That file is also what this cost to get right: a formula with no cached value used to be outside
+`Sheet::used_rows`, which is the rectangle `odf::write` emits, so **regenerating fizzbuzz wrote a
+sheet with no rows in it** — eighteen formulas in, zero out. `sheet/tests/kb.rs` pins it now.
+
 ### The parts of a number format
 
 `numfmt::Format` is an ordered sequence of `Part`s and not a format string, deliberately

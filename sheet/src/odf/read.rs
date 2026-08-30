@@ -1313,6 +1313,18 @@ impl Context<Builder> for Cell {
             });
         }
 
+        // TODO: a *styled* empty cell is dropped here, so `grind sheet style book.fods A5
+        // --bold` on a cell with nothing in it survives the save — `odf::write::carries` spells
+        // it out now — and is lost on the next read. Already checked: the write side is right,
+        // and the model holds it happily. What that check did *not* cover is the cost of
+        // recording it, and measuring settled the question: keeping a style for every empty cell
+        // whose element covers at most `MAX_TRACK_RUN` columns took `corpus_eval` from 77
+        // seconds to over twelve minutes and 15% of the machine's memory, because a corpus
+        // document's background formatting is millions of styled blanks. The named suspects for
+        // a real fix are all "where does column-level formatting live": a `col_styles` side
+        // table the way `col_widths` is one (`style:default-cell-style-name` is the ODF
+        // spelling), or an interned style id per cell rather than a clone. Neither is a bound on
+        // this line, which is why there is no bound on this line.
         if value.is_empty() && formula.is_none() {
             return; // Nothing to write; the columns were claimed at start.
         }

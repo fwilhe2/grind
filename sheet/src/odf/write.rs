@@ -988,11 +988,24 @@ fn last_index(indices: impl Iterator<Item = u32>) -> u32 {
     indices.map(|i| i.saturating_add(1)).max().unwrap_or(0)
 }
 
+/// Whether a cell carries anything the file has to spell.
+///
+/// **Five things, not two.** It used to be a value or a formula, and a cell holding only a
+/// number format or a cell style was therefore "blank" — dropped by [`is_blank`] below when its
+/// whole row was, and cut off by `write_row`'s trailing-cell trim when it was at the end of one.
+/// `Sheet::used_rows` has the same story and the same three ways in; a hand-written projection
+/// is the one that found it, because `cell B5 "=SUM([.B2:.B4])"` with no cached value is the
+/// *normal* way to write a spreadsheet you have not done the arithmetic for.
+fn carries(sheet: &Sheet, pos: Pos) -> bool {
+    !sheet.get(pos).is_empty()
+        || sheet.formula(pos).is_some()
+        || sheet.kind(pos).is_some()
+        || sheet.format(pos).is_some()
+        || sheet.style(pos).is_some()
+}
+
 fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
-    (0..cols).all(|col| {
-        let pos = Pos::new(row, col);
-        sheet.get(pos).is_empty() && sheet.formula(pos).is_none()
-    })
+    (0..cols).all(|col| !carries(sheet, Pos::new(row, col)))
 }
 
 /// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
@@ -1021,12 +1034,11 @@ fn write_row(
         visibility
     );
     // Trailing empty cells are simply not written: unmentioned is the same as empty
-    // (§3.3), and the row is known non-blank so at least one cell survives.
+    // (§3.3), and the row is known non-blank so at least one cell survives. "Empty" is
+    // `carries` — a cell whose only content is a style still has to be spelled, or the style
+    // is what the trim throws away.
     let last = (0..cols)
-        .rposition(|col| {
-            let pos = Pos::new(row, col);
-            !sheet.get(pos).is_empty() || sheet.formula(pos).is_some()
-        })
+        .rposition(|col| carries(sheet, Pos::new(row, col)))
         .map_or(0, |c| c as u32);
 
     let mut col = 0;
