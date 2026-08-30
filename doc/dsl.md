@@ -6,9 +6,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is being built. D1 and D3 are done for the spreadsheet** —
-`core/src/projection/` and `sheet/src/projection/` exist, and **loop F is green over
-359/359 of loop A's corpus with nothing differing** (`sheet/tests/loop_f.rs`). Layer 1 — the
+**Status: layer 0 is being built. D0, D1 and D3 are done for the spreadsheet** —
+`core/src/projection/` and `sheet/src/projection/` exist, **loop F is green over 359/359 of
+loop A's corpus with nothing differing** (`sheet/tests/loop_f.rs`), and the grammar is held to
+the model by `doc/projection-sheet.md` + `sheet/tests/projection_scope.rs`. Layer 1 — the
 generator — is untouched and stays a proposal; §7's milestone table below records where each
 piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
 is the argument that the feature does not contradict either. Phase 11 is spoken for
@@ -267,6 +268,26 @@ behind it fails it too.
 
 That is the mechanical answer to "the subset is still evolving", and it is the reason this
 feature is affordable at all.
+
+**What building it found: the spreadsheet has no element scope line, and needs a different
+one.** For the *text* projection the paragraph above is literal — `doc/text-core.md`'s element
+table is the vocabulary, one node per element, and D2 will check it exactly that way. For the
+spreadsheet it cannot be. A formula reaches `formula::lex` as one verbatim string, so
+`doc/small-group.md`'s 110 functions sit behind a single `formula=` property and are not a
+vocabulary at all; and there is no `doc/ods-core.md` listing the elements a spreadsheet models.
+
+What a spreadsheet has instead is a **model**, and the model's fields are the thing that grows.
+So the spreadsheet's version of this rule is checked against `sheet/src/model.rs` itself: every
+field of `Document` and `Sheet` has a node or a named gap, read out of the source at compile
+time. That is the check that would have caught charts, and it is the shape
+`doc/cli-parity-sheet.md` already uses for `App`'s methods.
+
+`doc/projection-sheet.md` is the grammar note, and it is executable rather than descriptive:
+each node's row carries a one-line **example**, and `sheet/tests/projection_scope.rs` reads
+every example, projects the model it produced, and requires the node to come back. That last
+step is what separates *accepted* from *carried* — a node the reader parses and then throws
+away passes a parse check and fails this one. It caught its first mistake while the table was
+being written.
 
 ### 3.8 The parts that are genuinely awkward
 
@@ -571,7 +592,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 
 | | What | Done when | Status |
 |---|---|---|---|
-| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed | **partly** — the spreadsheet's grammar is settled and written down in `sheet/src/projection/mod.rs`; the §3.7 vocabulary check against the scope lines is *not* built, and is the one piece of D1 still owed |
+| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed | **done for the sheet** — `doc/projection-sheet.md` is the grammar note and `sheet/tests/projection_scope.rs` is the check. See the note under §3.7 about what the spreadsheet's scope line actually is |
 | **D1** | `core/src/projection/` (generic) + `sheet/src/projection/`: KDL ⇄ `grind_sheet::Document` (§3.2) | Loop F green over `sheet/tests/data/kb/` and `data/samples/`; `core/tests/generic.rs` still passes | **done** — and `generic.rs` gained a third guard, `no_projection_node_name_is_spelled_in_the_shared_crate` |
 | **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | not started |
 | **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done for the sheet** — 359/359, nothing differing, `FLOOR = 359` |

@@ -60,6 +60,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-layout.md` | **Where layout lives — decided, Path C.** Normative for it, including the five answers at its end (RTL out, `Layout` in `grind-core`, the CLI's unit). Outranks `doc/suite.md`'s fork section, which is the record of an argument rather than the answer |
 | `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
+| `doc/projection-sheet.md` | **The projection's grammar for the spreadsheet, executable rather than descriptive.** Every node with a one-line example the test really reads, and every field of `Document`/`Sheet` with the node that carries it or a named gap. `sheet/tests/projection_scope.rs` is `doc/dsl.md` §3.7 made mechanical |
 | `doc/sheet-shell.md` | Phase 9's work plan for the **spreadsheet's** GTK shell — normative for that phase |
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
@@ -316,6 +317,10 @@ before it can be answered.
   from the *writer*, never from a highlighter) and the span map (address ⇄ byte range, both
   ways). The sheet half is the node vocabulary. Reached as `grind sheet project`, and by
   `read_bytes`, which sniffs the form from the first line. **Charts are the one named gap.**
+  The grammar cannot drift from the model: `doc/projection-sheet.md` lists every node with an
+  example the test executes, and every field of `Document`/`Sheet` with its node or a reason
+  there is none — read out of `sheet/src/model.rs` at compile time, so a new side table fails
+  the build until it has a spelling.
 - **`cli/`** — `main.rs` (clap, one arm per subcommand) + `report.rs`. A subcommand is a few
   lines driving `App`; anything longer belongs in the core. `doc/cli-parity-sheet.md` +
   `cli/tests/parity.rs` are the parity ratchet: every public `App` method needs a reaching
