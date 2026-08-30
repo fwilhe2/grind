@@ -97,7 +97,7 @@ fn shift(e: SyntaxError, by: usize) -> SyntaxError {
 
 /// What a formula says before its expression — `"of:="`, `"="`, `"of:=="`, or nothing.
 ///
-/// The complement of [`strip_intro`], and public because a *rewriter* has to put back what it
+/// The complement of `strip_intro`, and public because a *rewriter* has to put back what it
 /// took off: `formula::rename` re-serialises an expression and a document that spells its
 /// formulas `of:=` must keep spelling them that way, or renaming one sheet respells every
 /// formula in the file (R6).
