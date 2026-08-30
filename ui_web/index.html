@@ -227,6 +227,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <article id="flow" class="flow"></article>
     </main>
 
+    <!--
+      The code view: the document as its projection (doc/dsl.md §6). One `<div>` per line,
+      built by ui_web/src/code.rs — the colours are classes, because the projection *writer*
+      knows what every byte it emits is and a highlighter would have to guess.
+    -->
+    <main id="code" class="code" tabindex="0" hidden></main>
+
     <footer class="bar status">
       <nav id="tabs" aria-label="Sheets"></nav>
       <button id="sheet-add" type="button" class="icon tab-add" title="Add a sheet">

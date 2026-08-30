@@ -86,6 +86,13 @@ pub struct App {
     names: bool,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
+    /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
+    ///
+    /// Projected once when the pane opens and dropped when it closes, which §6.3's `ponytail`
+    /// allows and which is exact here rather than approximate: the pane is read-only and any key
+    /// that is not one of its motions closes it, so the document cannot change underneath it.
+    code: crate::code::Code,
+    source: Option<grind_text::projection::Projection>,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
     quit: bool,
@@ -112,6 +119,8 @@ impl App {
             status: String::new(),
             names: false,
             help: crate::help::Help::default(),
+            code: crate::code::Code::default(),
+            source: None,
             help_height: 20,
             quit: false,
         }
@@ -131,6 +140,10 @@ impl App {
             let text = crate::text::help();
             self.help
                 .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
+        if self.code.is_open() {
+            self.on_code_key(key.code, key.modifiers);
             return;
         }
         match self.mode {
@@ -673,6 +686,7 @@ impl App {
                     self.quit = true;
                 }
             }
+            "source" => self.cmd_source(),
             "outline" => self.cmd_outline(),
             // The word processor's half of inline names (§3.6). A verb rather than a key,
             // and the same word turns it off: nothing is written either way.
@@ -856,6 +870,57 @@ impl App {
             Ok(()) => self.status.clear(),
             Err(e) => self.status = e.to_string(),
         }
+    }
+
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// `:source` — the document as its projection, with the cursor on the block the caret is in.
+    ///
+    /// A `:` command for the reason `:names` is one: it is a *mode*, and this shell's keys are
+    /// vi's motions. `doc/tui-shell.md`'s second decision rules out drawing markdown markers
+    /// *inline*, and this is not that — it is a separate pane showing a different notation, which
+    /// is exactly how a source view avoids the problem that rules the inline one out.
+    fn cmd_source(&mut self) {
+        let projection = self.core.project();
+        // `p12` — the address every block has, whatever else it answers to.
+        self.code.open(
+            &projection,
+            Some(&grind_text::loc::format(self.caret.block)),
+        );
+        self.source = Some(projection);
+    }
+
+    /// A key while the code view is open. Moving puts the caret in the block that line projects,
+    /// which is §6.2's map in the direction that makes the pane worth having.
+    fn on_code_key(&mut self, code: KeyCode, mods: KeyModifiers) {
+        let Some(projection) = self.source.take() else {
+            self.code.close();
+            return;
+        };
+        let height = self.help_height();
+        let nav = match (code, mods.contains(KeyModifiers::CONTROL)) {
+            (KeyCode::Char('f'), true) => self.code.page(true, &projection, height),
+            (KeyCode::Char('b'), true) => self.code.page(false, &projection, height),
+            _ => self.code.on_key(code, &projection, height),
+        };
+        if nav == crate::code::Nav::Closed {
+            self.status.clear();
+            return;
+        }
+        // A block answers to `p12`, `#intro` and `§2.1.3` alike, and `loc::parse` takes all
+        // three — so whichever spelling the span map hands back resolves, and this needs no
+        // vocabulary of its own.
+        if nav == crate::code::Nav::Moved
+            && let Some(address) = self.code.address(&projection)
+            && let Ok(caret) = grind_text::loc::parse(address)
+                .map_err(|e| e.to_string())
+                .and_then(|loc| self.core.resolve_caret(&loc).map_err(|e| e.to_string()))
+        {
+            self.caret = caret;
+            self.anchor = None;
+            self.goal_x = None;
+        }
+        self.source = Some(projection);
     }
 
     fn cmd_jump(&mut self, addr: &str) {
@@ -1045,6 +1110,16 @@ impl App {
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
             self.help.draw(frame, area, &crate::text::help());
+            return;
+        }
+        if let Some(projection) = self.source.take() {
+            let title = self
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "untitled".to_owned());
+            self.code.draw(frame, area, &projection, &title);
+            self.source = Some(projection);
             return;
         }
         let [body, status_area] =
@@ -1262,6 +1337,40 @@ mod tests {
             core.insert(i, BlockKind::Paragraph, text).expect("inserts");
         }
         App::new(core, Arc::new(RedrawFlag::default()), None)
+    }
+
+    /// **D9 in this shell.** `:source` shows the projection, opens on the block the caret is in,
+    /// and moving in it puts the caret in the block that line projects.
+    #[test]
+    fn the_code_view_shows_the_source_and_moving_in_it_moves_the_caret() {
+        let mut app = app(&["first", "second", "third"]);
+        app.caret = Caret {
+            block: 2,
+            offset: 0,
+        };
+        let before = render(&mut app, 46, 10);
+
+        app.run_command("source");
+        let shown = render(&mut app, 46, 10).join("\n");
+        assert!(shown.contains("— source"), "{shown}");
+        assert!(shown.contains("p \"third\""), "the projection: {shown}");
+        assert!(
+            shown.contains("p3"),
+            "opened on the caret's own block, named the way every block is: {shown}"
+        );
+
+        press(&mut app, KeyCode::Char('k'));
+        assert!(
+            render(&mut app, 46, 10).join("\n").contains("p2"),
+            "the pane says which block this line is"
+        );
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.caret.block, 1, "and the caret went there");
+        assert_eq!(
+            render(&mut app, 46, 10)[0],
+            before[0],
+            "closing puts the document back"
+        );
     }
 
     fn render(app: &mut App, width: u16, height: u16) -> Vec<String> {

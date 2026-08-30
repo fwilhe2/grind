@@ -33,6 +33,8 @@ Word processor:
   :h <level>     :li [depth]        :style [name]
   :find <text>   :s/old/new/        :outline   :words
   :names         — show where each bookmark anchors, which is otherwise invisible
+  :source        — the document as its projection, read-only; j/k moves and puts the
+                   caret in the block that line is
   :<address>     — p12, p12+40, #bookmark or \u{a7}2.1.3
 ";
 

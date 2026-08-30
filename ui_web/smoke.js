@@ -522,6 +522,30 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("the palette offers the outline", paletteRows().some((row) => row.includes("A Heading")), true);
   palette("Escape");
 
+  // The code view (doc/dsl.md §6, D9): the document as its projection, the caret's own line
+  // drawn as current, and clicking a line putting the caret in the block it projects.
+  await command("source");
+  const codeLines = () => [...document.querySelectorAll("#code .code-line")];
+  check("the code view shows the projection", codeLines().length > 0, true);
+  check("with the writer's own colours",
+        document.querySelectorAll("#code .code-node").length > 0, true);
+  check("and the caret's line is current",
+        document.querySelectorAll("#code .code-line-current").length, 1);
+  check("the document pane is off screen while it shows", byId("page").hidden, true);
+
+  const firstLine = codeLines().find((line) => line.textContent.includes("h 1"))
+    || codeLines().find((line) => line.querySelector(".code-node"));
+  firstLine.querySelector(".code-node").dispatchEvent(
+    new dom.window.MouseEvent("click", { bubbles: true })
+  );
+  await frame();
+  check("clicking a line makes it the current one",
+        document.querySelector("#code .code-line-current"), firstLine);
+
+  await command("source");
+  check("running it again puts the document back", byId("code").hidden, true);
+  check("and the pane is showing", byId("page").hidden, false);
+
   // A repaint that changes nothing must still be safe — a resize borrows the same
   // message it writes back.
   const message = byId("message").textContent;

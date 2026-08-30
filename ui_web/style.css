@@ -773,3 +773,70 @@ input[type="text"] {
   font-style: italic;
   vertical-align: super;
 }
+
+/* --- the code view (doc/dsl.md §6, D9) ------------------------------------------------ */
+
+/* A pane like the grid and the flow, and shown instead of whichever of them is open: a code
+   view is what the reader asked to look at, and a third of one is the worst of both. */
+.code {
+  flex: 1;
+  overflow: auto;
+  padding: 0.5rem 0;
+  font: 13px/1.5 ui-monospace, monospace;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.code-line {
+  padding-right: 0.75rem;
+  cursor: default;
+}
+
+.code-line:hover {
+  background: var(--hover);
+}
+
+/* Where the selection is — the same job the grid's active cell outline does, drawn as a
+   ground rather than a border so the line does not shift when it lands. */
+.code-line-current {
+  background: var(--pick);
+}
+
+.code-gutter {
+  display: inline-block;
+  width: 4em;
+  padding-right: 1em;
+  text-align: right;
+  color: color-mix(in srgb, CanvasText 45%, Canvas);
+  user-select: none;
+}
+
+/* One rule per `TokenKind`, named with the core's own word for each — so this block reads as
+   the enum, and a kind added there is uncoloured rather than mis-coloured. The hues are
+   `style::PALETTE`'s, mixed towards `CanvasText` exactly as the role colours above are, for
+   the same reason: the reader chose the ground, and a literal would ignore it. */
+.code-node {
+  color: color-mix(in srgb, #0074d9 75%, CanvasText);
+  font-weight: 600;
+}
+
+.code-property {
+  color: color-mix(in srgb, #b10dc9 70%, CanvasText);
+}
+
+.code-text {
+  color: color-mix(in srgb, #3d9970 75%, CanvasText);
+}
+
+.code-number {
+  color: color-mix(in srgb, #ff851b 75%, CanvasText);
+}
+
+.code-keyword {
+  color: color-mix(in srgb, #85144b 70%, CanvasText);
+}
+
+.code-comment {
+  color: color-mix(in srgb, CanvasText 50%, Canvas);
+  font-style: italic;
+}

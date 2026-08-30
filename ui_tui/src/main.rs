@@ -19,6 +19,7 @@
 //! with a shell that no longer echoes. [`restore_terminal`] and the panic hook are for that.
 
 mod app;
+mod code;
 mod help;
 mod sheet;
 mod text;

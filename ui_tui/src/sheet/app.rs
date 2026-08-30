@@ -73,6 +73,14 @@ pub struct App {
     overlays: grind_sheet::view::Overlays,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
+    /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
+    ///
+    /// Projected **once, when the pane opens**, and dropped when it closes — which is §6.3's
+    /// `ponytail` in its cheapest possible form and is exact rather than approximate here: the
+    /// pane is read-only and every key that is not one of its motions closes it, so the document
+    /// cannot change while a projection of it is on screen.
+    code: crate::code::Code,
+    source: Option<grind_sheet::projection::Projection>,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
     quit: bool,
@@ -95,6 +103,8 @@ impl App {
             status: String::new(),
             overlays: grind_sheet::view::Overlays::NONE,
             help: crate::help::Help::default(),
+            code: crate::code::Code::default(),
+            source: None,
             help_height: 20,
             quit: false,
         }
@@ -114,6 +124,10 @@ impl App {
             let text = crate::sheet::help();
             self.help
                 .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
+        if self.code.is_open() {
+            self.on_code_key(key.code, key.modifiers);
             return;
         }
         match self.mode {
@@ -153,6 +167,76 @@ impl App {
                 self.mode = Mode::Normal;
             }
         }
+    }
+
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// `:source` — show the document as its projection, with the cursor on the active cell's own
+    /// line.
+    ///
+    /// A `:` command rather than a key, which is this shell's rule for a *mode* (`:roles`,
+    /// `:names`): keys here are vi's motions, and a pane that came and went under one of them
+    /// would be a motion that sometimes moved the cursor and sometimes did not. Turning it off is
+    /// any other key, which is what the help pane already does.
+    fn cmd_source(&mut self) {
+        let projection = self.core.project();
+        // The address the *projection* spells this cell as: sheet-qualified, because two sheets
+        // have an `A1` and the span map has to tell them apart. `a1::format` is the one place
+        // that spelling is made, here as everywhere else.
+        let here = self
+            .core
+            .sheet_name(self.sheet)
+            .ok()
+            .map(|name| grind_sheet::a1::format(Some(&name), self.active));
+        self.code.open(&projection, here.as_deref());
+        self.source = Some(projection);
+    }
+
+    /// A key while the code view is open. Moving the cursor **selects the cell that line
+    /// projects**, which is §6.2's map in the direction that makes the pane worth having.
+    fn on_code_key(&mut self, code: KeyCode, mods: KeyModifiers) {
+        let Some(projection) = self.source.take() else {
+            self.code.close();
+            return;
+        };
+        let height = self.help_height();
+        let nav = match (code, mods.contains(KeyModifiers::CONTROL)) {
+            (KeyCode::Char('f'), true) => self.code.page(true, &projection, height),
+            (KeyCode::Char('b'), true) => self.code.page(false, &projection, height),
+            _ => self.code.on_key(code, &projection, height),
+        };
+        if nav == crate::code::Nav::Closed {
+            self.status.clear();
+            return;
+        }
+        if nav == crate::code::Nav::Moved
+            && let Some(address) = self.code.address(&projection)
+            && let Some((sheet, pos)) = self.locate(address)
+        {
+            self.sheet = sheet;
+            self.active = pos;
+            self.anchor = None;
+        }
+        self.source = Some(projection);
+    }
+
+    /// An address the span map handed back, resolved to a place in this document.
+    ///
+    /// Two spellings, and the order matters. A **sheet's own name** is checked first, because a
+    /// `sheet` node anchors one and a bare name is also a perfectly good cell address — `Sheet1`
+    /// parses as column `SHEET`, row 1, and a code view that answered a click on `sheet Sales {`
+    /// by jumping to a cell nobody has ever used would be worse than useless. Naming a sheet
+    /// means its top-left, which is where opening that sheet puts you anyway.
+    ///
+    /// Otherwise it is `a1::parse` and `a1::resolve`, the same pair `:{address}` already uses —
+    /// the projection spells a cell the way `a1.rs` does, which is the point of `a1.rs`.
+    fn locate(&self, address: &str) -> Option<(usize, Pos)> {
+        if let Ok(sheet) = grind_sheet::a1::sheet(&self.core, address) {
+            return Some((sheet, Pos::new(0, 0)));
+        }
+        let reference = grind_sheet::a1::parse(address).ok()?;
+        let (sheet, start, _end) = grind_sheet::a1::resolve(&self.core, &reference).ok()?;
+        Some((sheet, start))
     }
 
     // --- Visual mode ---
@@ -468,6 +552,7 @@ impl App {
             // `doc/view-modes.md`'s two overlays. Verbs rather than keys because they are
             // *modes*, and this shell's keys are vi's motions; `:roles` off is `:roles`
             // again, which is the whole of turning one off — nothing was written.
+            "source" => self.cmd_source(),
             "roles" => self.cmd_overlay(true),
             "names" => self.cmd_overlay(false),
             "bold" => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
@@ -712,6 +797,16 @@ impl App {
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
             self.help.draw(frame, area, &crate::sheet::help());
+            return;
+        }
+        if let Some(projection) = self.source.take() {
+            let title = self
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "untitled".to_owned());
+            self.code.draw(frame, area, &projection, &title);
+            self.source = Some(projection);
             return;
         }
         let [col_header_area, grid_area, formula_area, status_area] = Layout::vertical([
@@ -1063,6 +1158,55 @@ mod tests {
                     .to_string()
             })
             .collect()
+    }
+
+    /// **D9 in this shell.** `:source` shows the projection, the cursor lands on the active
+    /// cell's line, moving it selects the cell that line projects, and any other key puts the
+    /// grid back exactly as it was — a code view is a reading, so there is nothing to undo.
+    #[test]
+    fn the_code_view_shows_the_source_and_moving_in_it_selects_the_cell() {
+        let mut app = app();
+        for (pos, value) in [
+            (Pos::new(0, 0), "North"),
+            (Pos::new(0, 1), "4200"),
+            (Pos::new(2, 1), "=[.B1]*2"),
+        ] {
+            app.core
+                .enter(0, pos, value, grind_sheet::RecalcMode::Document)
+                .unwrap();
+        }
+        app.active = Pos::new(2, 1);
+        let before = screen(&mut app, 46, 10);
+
+        app.run_command("source");
+        let shown = screen(&mut app, 46, 10).join("\n");
+        assert!(shown.contains("— source"), "{shown}");
+        assert!(
+            shown.contains("cell B3"),
+            "the projection is drawn: {shown}"
+        );
+        assert!(
+            shown.contains("Sheet1.B3"),
+            "and it opened on the active cell's own line: {shown}"
+        );
+
+        // Up to the grid row, and the cell it projects becomes the selection — the half of
+        // §6.2's map that a shell cannot fake.
+        for _ in 0..3 {
+            press(&mut app, KeyCode::Char('k'));
+        }
+        assert!(
+            screen(&mut app, 46, 10).join("\n").contains("Sheet1.A1"),
+            "the pane says which cell this line is"
+        );
+
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.active, Pos::new(0, 0), "and the grid went there");
+        assert_eq!(
+            screen(&mut app, 46, 10)[1],
+            before[1],
+            "closing puts the grid back"
+        );
     }
 
     /// `doc/view-modes.md` V7 in this shell: `:roles` draws the marker channel, and turning

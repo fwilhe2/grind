@@ -32,6 +32,7 @@
 //! including going somewhere. A file dropped on the page opens; the clipboard is the
 //! browser's own, through the events every browser already sends.
 
+pub mod code;
 pub mod command;
 pub mod palette;
 pub mod sheet;
@@ -104,6 +105,7 @@ pub fn start() -> Result<(), JsValue> {
         pending,
         mode: Cell::new(Mode::Sheet),
         name: RefCell::new(String::new()),
+        source: RefCell::new(None),
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
@@ -112,6 +114,7 @@ pub fn start() -> Result<(), JsValue> {
     wire_toolbar(&shell)?;
     wire_file_input(&shell)?;
     wire_palette(&shell)?;
+    wire_code(&shell)?;
     wire_swatches(&shell)?;
     wire_clipboard(&shell, &document)?;
     wire_dropping(&shell, &document)?;
@@ -162,6 +165,9 @@ struct Chrome {
     recalc: HtmlButtonElement,
     palette_open: HtmlButtonElement,
     file_input: HtmlInputElement,
+    /// The code view — a third pane, shown instead of whichever of the two is open
+    /// (`doc/dsl.md` §6).
+    code_pane: HtmlElement,
     /// The overlay shown while a file is being dragged across the page.
     drop: HtmlElement,
 }
@@ -172,6 +178,7 @@ impl Chrome {
             document: document.clone(),
             sheet_pane: element(document, "surface")?,
             text_pane: element(document, "page")?,
+            code_pane: element(document, "code")?,
             formula_bar: element(document, "formula-bar")?,
             sheet_tools: element(document, "sheet-tools")?,
             text_tools: element(document, "text-tools")?,
@@ -201,6 +208,12 @@ struct Shell {
     /// The name the document arrived under, so a download has something to be called. Not a
     /// path — there are none here.
     name: RefCell<String>,
+    /// The projection the code view is showing, when it is showing (`doc/dsl.md` §6, D9).
+    ///
+    /// Projected when the pane opens and dropped when it closes, which is §6.3's `ponytail` in
+    /// its cheapest form. `Some` *is* "the pane is open": one fact rather than two that can
+    /// disagree.
+    source: RefCell<Option<grind_core::projection::Projection>>,
 }
 
 impl Shell {
@@ -210,6 +223,9 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.refresh(),
             Mode::Text => self.text.refresh(),
+        }
+        if self.source.borrow().is_some() {
+            self.render_source();
         }
         if let Err(error) = self.refresh_chrome() {
             web_sys::console::error_1(&error);
@@ -242,19 +258,27 @@ impl Shell {
     fn show(&self, mode: Mode) -> Result<(), JsValue> {
         self.mode.set(mode);
         let sheet = mode == Mode::Sheet;
-        self.dom.sheet_pane.set_hidden(!sheet);
+        // **Three panes, one on screen.** The code view is not a fourth mode — the document is
+        // still a spreadsheet or a text document while its source is showing, and every verb in
+        // the tool row still applies to it. So the *mode* decides which chrome, and the code view
+        // decides which surface. Having one function answer both is what stops the two from
+        // disagreeing: this used to be two, and closing the command palette closed the code view.
+        let code = self.source.borrow().is_some();
+        self.dom.sheet_pane.set_hidden(!sheet || code);
+        self.dom.text_pane.set_hidden(sheet || code);
+        self.dom.code_pane.set_hidden(!code);
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
         self.dom.sheet_add.set_hidden(!sheet);
         self.dom.sheet_tools.set_hidden(!sheet);
         self.dom.text_tools.set_hidden(sheet);
-        self.dom.text_pane.set_hidden(sheet);
         // Recalculation is a spreadsheet's word. The button goes rather than greying out:
         // there is no such thing as an unrecalculated paragraph.
         self.dom.recalc.set_hidden(!sheet);
-        match sheet {
-            true => self.sheet.focus(),
-            false => self.text.focus(),
+        match (code, sheet) {
+            (true, _) => self.dom.code_pane.focus(),
+            (false, true) => self.sheet.focus(),
+            (false, false) => self.text.focus(),
         }
     }
 
@@ -299,11 +323,82 @@ impl Shell {
             "edit.copy" => self.copy_out(false),
             "edit.cut" => self.copy_out(true),
             "edit.paste" => self.paste_in(),
+            "view.source" => self.toggle_source(),
             _ => match self.mode.get() {
                 Mode::Sheet => self.sheet.run(id),
                 Mode::Text => self.text.run(id),
             },
         }
+    }
+
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// Show the document as its projection, or put the document back.
+    ///
+    /// A third pane rather than a split: §6.2 is right that a split is what a person eventually
+    /// wants, and it is also two viewports to keep in step and a resize handle to build. What
+    /// pays for itself first is the *correspondence*, and one pane at a time carries it — the
+    /// line the selection is on is drawn as current, and clicking a line selects what it
+    /// projects.
+    fn toggle_source(&self) {
+        let open = self.source.borrow().is_some();
+        *self.source.borrow_mut() = match open {
+            true => None,
+            false => Some(match self.mode.get() {
+                Mode::Sheet => self.sheet.project(),
+                Mode::Text => self.text.project(),
+            }),
+        };
+        if !open {
+            self.render_source();
+        }
+        let _ = self.show(self.mode.get());
+    }
+
+    /// Paint it, with the selection's own line current.
+    fn render_source(&self) {
+        let borrowed = self.source.borrow();
+        let Some(projection) = borrowed.as_ref() else {
+            return;
+        };
+        let cursor = self
+            .projection_address()
+            .and_then(|address| projection.line_of(&address));
+        self.dom
+            .code_pane
+            .set_inner_html(&code::html(projection, cursor));
+    }
+
+    /// Where the showing pane's selection is, in the span map's own spelling.
+    fn projection_address(&self) -> Option<String> {
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.projection_address(),
+            Mode::Text => self.text.projection_address(),
+        }
+    }
+
+    /// A click on a line of the code view: select what that line projects.
+    ///
+    /// §6.2's map in the direction that has to be *built* — address to span is the writer's own
+    /// bookkeeping, and span back to address is what makes the pane worth having. The document
+    /// underneath moves even though it is not on screen, so closing the pane lands the reader
+    /// where they were looking.
+    fn source_clicked(&self, line: usize) {
+        let address = {
+            let borrowed = self.source.borrow();
+            let Some(projection) = borrowed.as_ref() else {
+                return;
+            };
+            projection.address_on_line(line).map(str::to_owned)
+        };
+        let Some(address) = address.as_deref() else {
+            return;
+        };
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.select_projected(address),
+            Mode::Text => self.text.select_projected(address),
+        }
+        self.render_source();
     }
 
     // --- the clipboard ---
@@ -490,6 +585,9 @@ impl Shell {
         match opened {
             Ok(mode) => {
                 *self.name.borrow_mut() = name.clone();
+                // A document arriving closes the code view: what is on screen is a projection of
+                // the document that just went away.
+                *self.source.borrow_mut() = None;
                 if let Err(error) = self.show(mode) {
                     web_sys::console::error_1(&error);
                 }
@@ -1013,6 +1111,31 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
         };
         // Reading a file is a promise; nothing else in this shell is async.
         spawn_local(shell.clone().load(file));
+    })
+}
+
+/// Clicking a line of the code view selects what that line projects (`doc/dsl.md` §6.2).
+///
+/// One listener on the pane rather than one per line, because the pane is rebuilt on every
+/// repaint and a listener per line would be a hundred closures to leak. `data-line` is the
+/// line number [`code::html`] wrote onto each row, which is why it is there.
+fn wire_code(shell: &Rc<Shell>) -> Result<(), JsValue> {
+    let pane = shell.dom.code_pane.clone();
+    let shell = shell.clone();
+    listen(&pane, "click", move |event: MouseEvent| {
+        let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
+            return;
+        };
+        let Some(line) = target
+            .closest(".code-line")
+            .ok()
+            .flatten()
+            .and_then(|row| row.get_attribute("data-line"))
+            .and_then(|value| value.parse::<usize>().ok())
+        else {
+            return;
+        };
+        shell.source_clicked(line);
     })
 }
 

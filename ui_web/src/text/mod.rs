@@ -710,6 +710,35 @@ impl Ui {
         out
     }
 
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// The document as its projection, for the code view.
+    pub fn project(&self) -> grind_text::projection::Projection {
+        self.app.project()
+    }
+
+    /// Which block the caret is in, spelled the way the span map spells it. `p12` — the address
+    /// every block has, whatever else it also answers to.
+    pub fn projection_address(&self) -> Option<String> {
+        Some(grind_text::loc::format(self.caret.get().block))
+    }
+
+    /// Put the caret in whatever block a code-view line projects.
+    ///
+    /// The span map may hand back `p12`, `#intro` or `§2.1.3`, and `loc::parse` takes all three,
+    /// so this needs no vocabulary of its own — which is `loc.rs` earning its keep for the third
+    /// time.
+    pub fn select_projected(&self, address: &str) {
+        let Ok(caret) = grind_text::loc::parse(address)
+            .map_err(|e| e.to_string())
+            .and_then(|loc| self.app.resolve_caret(&loc).map_err(|e| e.to_string()))
+        else {
+            return;
+        };
+        self.anchor.set(None);
+        self.set_caret(caret);
+    }
+
     fn go_to(&self, where_: &str) {
         let Ok(index) = where_.parse::<usize>() else {
             return;

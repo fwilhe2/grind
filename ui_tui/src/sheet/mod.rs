@@ -22,6 +22,8 @@ Spreadsheet:
   :general                :recalc
   :roles  :names          — what each cell is, and what it is called (a reading;
                             nothing is written, and the same word turns it off)
+  :source                 — the document as its projection, read-only; j/k moves and
+                            selects the cell that line is
   :sheet <name>  :sheet-new  :sheet-rename <name>  :sheet-delete
   :<address>              — a cell or a range, e.g. B12 or Data.A1
 ";

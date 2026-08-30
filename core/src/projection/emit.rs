@@ -440,6 +440,108 @@ mod tests {
         assert_eq!(comments, ["// Q3 forecast."]);
     }
 
+    /// **D9's floor.** Whatever a shell does with the pieces of a line, concatenating them has to
+    /// give the line back — otherwise a code view silently drops a brace or an indent and nobody
+    /// notices until a screenshot.
+    #[test]
+    fn every_piece_of_every_line_puts_the_line_back_together() {
+        let projection = sample();
+        assert_eq!(
+            projection.line_count(),
+            projection.text().lines().count(),
+            "the header, the blank, the comment, the block and its close"
+        );
+        for line in 0..projection.line_count() {
+            let span = projection.line_span(line).expect("a line in range");
+            let pieces = projection.line_pieces(line);
+            assert_eq!(
+                pieces.iter().map(|p| p.text).collect::<String>(),
+                projection.text()[span],
+                "line {line} does not survive being cut into pieces"
+            );
+        }
+        assert_eq!(projection.line_span(99), None);
+        assert!(projection.line_pieces(99).is_empty());
+    }
+
+    /// A blank line has one empty piece or none, and either way is still a line: an off-by-one
+    /// here is a code view that scrolls out of step with the document it is showing.
+    #[test]
+    fn a_blank_line_is_a_line() {
+        let projection = sample();
+        let blank = projection
+            .text()
+            .lines()
+            .position(str::is_empty)
+            .expect("`sample` has one");
+        assert_eq!(projection.line_span(blank), Some(18..18));
+        assert!(
+            projection
+                .line_pieces(blank)
+                .iter()
+                .all(|p| p.text.is_empty()),
+            "nothing on it"
+        );
+    }
+
+    /// The uncoloured stretches are pieces too, and the coloured ones say what they are.
+    #[test]
+    fn a_line_says_which_of_its_pieces_are_what() {
+        let projection = sample();
+        let line = projection
+            .text()
+            .lines()
+            .position(|l| l.contains("leaf"))
+            .expect("`sample` has one");
+        let pieces = projection.line_pieces(line);
+        let named: Vec<_> = pieces
+            .iter()
+            .map(|p| (p.kind.map(TokenKind::name), p.text))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                (None, "    "),
+                (Some("node"), "leaf"),
+                (None, " "),
+                (Some("keyword"), "A1"),
+                (None, " "),
+                (Some("text"), "Region"),
+                (None, " "),
+                (Some("number"), "4200.0"),
+                (None, " "),
+                (Some("property"), "bold="),
+                (Some("keyword"), "#true"),
+            ],
+            "the indentation is a piece, and so is every space between values"
+        );
+    }
+
+    /// The span map, asked line by line — which is how a code view whose cursor is a whole line
+    /// answers *what am I looking at*.
+    #[test]
+    fn a_line_reports_the_address_it_belongs_to() {
+        let projection = sample();
+        let leaf = projection.line_of("Sales.A1").expect("anchored");
+        assert_eq!(projection.address_on_line(leaf), Some("Sales.A1"));
+        // The block's opening line belongs to the block: the leaf's anchor does not reach it.
+        let block = projection.line_of("Sales").expect("anchored");
+        assert_eq!(projection.address_on_line(block), Some("Sales"));
+        assert_eq!(
+            projection.address_on_line(0),
+            None,
+            "the header is nobody's"
+        );
+
+        // And the exact half, through a column on a line.
+        let byte = projection.byte_at(leaf, 4).expect("a column on that line");
+        assert_eq!(projection.address_at(byte), Some("Sales.A1"));
+        let past = projection
+            .byte_at(leaf, 9_999)
+            .expect("clamped, not refused");
+        assert_eq!(past, projection.line_span(leaf).expect("a line").end);
+    }
+
     #[test]
     fn a_value_that_would_be_mistaken_for_something_else_is_quoted() {
         let mut out = Emitter::new();

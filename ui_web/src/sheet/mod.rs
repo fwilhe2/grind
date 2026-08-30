@@ -640,6 +640,34 @@ impl Ui {
         out
     }
 
+    // --- the code view (doc/dsl.md §6, D9) ---
+
+    /// The document as its projection, for the code view.
+    pub fn project(&self) -> grind_sheet::projection::Projection {
+        self.app.project()
+    }
+
+    /// Where the selection is, spelled the way the span map spells it — sheet-qualified,
+    /// because two sheets have an `A1` and the map has to tell them apart.
+    pub fn projection_address(&self) -> Option<String> {
+        let name = self.app.sheet_name(self.sheet.get()).ok()?;
+        Some(a1::format(Some(&name), self.selection.get().active))
+    }
+
+    /// Select whatever a code-view line projects.
+    ///
+    /// A **sheet's own name** is checked first, because a `sheet` node anchors one and a bare
+    /// name is also a perfectly good cell address — `Sheet1` parses as column `SHEET`, row 1,
+    /// and answering a click on `sheet Sales {` with a jump to a cell nobody has used would be
+    /// worse than doing nothing. The palette's own spelling for *that sheet* is a trailing dot,
+    /// so this is the one place the two vocabularies meet.
+    pub fn select_projected(&self, address: &str) {
+        match a1::sheet(&self.app, address) {
+            Ok(_) => self.go_to(&format!("{address}.")),
+            Err(_) => self.go_to(address),
+        }
+    }
+
     /// Go where an address says. A trailing dot is a *sheet* with no cell — `Data.` means
     /// "that sheet, wherever I was" — which is the one spelling `a1` already refuses and the
     /// palette needs.

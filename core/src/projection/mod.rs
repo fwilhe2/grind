@@ -128,6 +128,17 @@ pub struct Anchor {
     pub span: Range<usize>,
 }
 
+/// One stretch of a line of the projection, and what it is.
+///
+/// `kind` is `None` for what the writer never called anything — the indentation, the braces, the
+/// spaces between values. A shell paints those in its ordinary text colour, and it must paint
+/// them, because the pieces of a line are the line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Piece<'a> {
+    pub kind: Option<TokenKind>,
+    pub text: &'a str,
+}
+
 /// A projected document: the text, and the two maps beside it.
 ///
 /// Produced by [`Emitter`], which is to say by an application's projection *writer* — the maps
@@ -189,6 +200,123 @@ impl Projection {
 
     pub fn into_text(self) -> String {
         self.text
+    }
+
+    // --- the code view (D9, §6) ---
+    //
+    // A code view is a widget that shows lines, so what it needs from here is *lines*: how many,
+    // what is on one, and which address a place on one belongs to. All four of these could be
+    // written in a shell out of `text()` and `tokens()`; the reason they are not is that they
+    // would then be written four times, and the first person to compare two of them would find
+    // they disagree about a tab or an empty line. Same argument as `CellRole::marker` and
+    // `layout`: what a shell contributes is the drawing.
+
+    /// How many lines the projection has.
+    ///
+    /// The text always ends in a newline, and the empty stretch after it is not a line — so this
+    /// is the number of `\n`s, and a projection of nothing at all has none.
+    pub fn line_count(&self) -> usize {
+        self.text.matches('\n').count()
+    }
+
+    /// A line's byte range, **without** its newline.
+    pub fn line_span(&self, line: usize) -> Option<Range<usize>> {
+        let mut start = 0usize;
+        for (index, piece) in self.text.split_inclusive('\n').enumerate() {
+            if index == line {
+                let end = start + piece.trim_end_matches('\n').len();
+                return Some(start..end);
+            }
+            start += piece.len();
+        }
+        None
+    }
+
+    /// A line cut into pieces, in order, covering every byte of it exactly once.
+    ///
+    /// The uncoloured stretches between tokens — indentation, the `{` and `}` of a block — come
+    /// back as pieces with no kind rather than being dropped, because a shell concatenating what
+    /// it is given has to get the line back. That is the property `every_piece_of_every_line`
+    /// asserts, and it is what makes this safe to render blindly.
+    pub fn line_pieces(&self, line: usize) -> Vec<Piece<'_>> {
+        let Some(span) = self.line_span(line) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let mut at = span.start;
+        for token in &self.tokens {
+            if token.span.end <= span.start {
+                continue;
+            }
+            if token.span.start >= span.end {
+                break;
+            }
+            // A token that runs past either end of the line is clipped to it: a multi-line
+            // string is one token and several lines, and each of them shows its own part.
+            let start = token.span.start.max(span.start);
+            let end = token.span.end.min(span.end);
+            if start > at {
+                out.push(Piece {
+                    kind: None,
+                    text: &self.text[at..start],
+                });
+            }
+            out.push(Piece {
+                kind: Some(token.kind),
+                text: &self.text[start..end],
+            });
+            at = end;
+        }
+        if at < span.end {
+            out.push(Piece {
+                kind: None,
+                text: &self.text[at..span.end],
+            });
+        }
+        out
+    }
+
+    /// What address a whole line belongs to — the coarse half of *put the caret there, select
+    /// that cell*, for a shell whose code cursor is a line rather than a character.
+    ///
+    /// Two rules, in order, and the second is the fallback rather than the answer:
+    ///
+    /// 1. **An anchor that fits inside the line wins, leftmost first.** A grid row is one line
+    ///    and a dozen anchors — one per cell — and the useful answer for *this line* is the cell
+    ///    it starts with. Picking the narrowest instead would answer with whichever cell happened
+    ///    to have the shortest value on it, which is arbitrary and looks like a bug.
+    /// 2. **Otherwise the narrowest anchor overlapping it**, which is how a line inside a block
+    ///    reports the block, and how a node's own line reports that node — a node's anchor runs
+    ///    to the end of its line *including* the newline, so it never "fits".
+    ///
+    /// Ties go to whichever was emitted first, which for a text block is `p12` rather than
+    /// `#intro` or `§2.1.3`: all three name it and one of them has to be the one shown, so it is
+    /// the one every block has.
+    ///
+    /// A shell with a column to offer should use [`Projection::address_at`] on
+    /// [`Projection::byte_at`] instead, which is exact rather than per line.
+    pub fn address_on_line(&self, line: usize) -> Option<&str> {
+        let span = self.line_span(line)?;
+        let overlapping = || {
+            self.anchors
+                .iter()
+                .filter(move |anchor| anchor.span.start < span.end && span.start < anchor.span.end)
+        };
+        overlapping()
+            .filter(|anchor| anchor.span.start >= span.start && anchor.span.end <= span.end)
+            .min_by_key(|anchor| anchor.span.start)
+            .or_else(|| overlapping().min_by_key(|anchor| anchor.span.end - anchor.span.start))
+            .map(|anchor| anchor.address.as_str())
+    }
+
+    /// The byte offset of a column on a line, clamped to the line's end.
+    ///
+    /// `column` is a **byte** offset into the line, which is what a shell that has already cut
+    /// the line into pieces is holding. Clamped rather than optional because a caret past the end
+    /// of a line is an ordinary thing for an editor to have.
+    pub fn byte_at(&self, line: usize, column: usize) -> Option<usize> {
+        let span = self.line_span(line)?;
+        Some((span.start + column).min(span.end))
     }
 }
 
