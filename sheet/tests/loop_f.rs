@@ -86,6 +86,38 @@ fn every_document_survives_being_projected_and_read_back() {
     assert!(checked >= 14, "loop F ran over {checked} documents");
 }
 
+/// **D4 — the projection is a `Form`.** The same property as above, one layer out: through
+/// `write_bytes`/`read_bytes` rather than through `projection::` directly.
+///
+/// It is a separate test because it asserts a different thing. The one above says the grammar
+/// is bijective; this one says the *crate's own door* knows about it — that a caller who never
+/// heard of `grind_sheet::projection` and only ever asks for a form gets a projection out and
+/// the same document back in. Every shell and every CLI verb is such a caller, which is how D4
+/// is reached without any of them changing (rule 5).
+#[test]
+fn the_projection_is_a_form_like_the_other_two() {
+    for path in corpus() {
+        let bytes = std::fs::read(&path).expect("a readable document");
+        let name = path.display().to_string();
+        let original = grind_sheet::read_bytes(&name, &bytes).expect("loop A reads this");
+
+        let written = grind_sheet::write_bytes(&original, grind_sheet::Form::Projection)
+            .unwrap_or_else(|e| panic!("{name}: will not write as a projection: {e}"));
+        // Sniffed from the bytes, not from the name — `book.fods` here holds KDL, and reading
+        // has to notice. This is the half of D4 that was already true and is asserted anyway,
+        // because it is what makes the other half safe.
+        let back = grind_sheet::read_bytes(&name, &written)
+            .unwrap_or_else(|e| panic!("{name}: its own projection will not read back: {e}"));
+
+        let differences = differences(&original, &back);
+        assert!(
+            differences.is_empty(),
+            "{name} does not survive Form::Projection:\n  {}",
+            differences.join("\n  ")
+        );
+    }
+}
+
 /// **D3 — loop F at corpus scale.** The same property over LibreOffice's own `sc/qa` corpus,
 /// which is loop A's, so it costs no corpus of its own.
 ///

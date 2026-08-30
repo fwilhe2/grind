@@ -50,6 +50,11 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     match form {
         Form::Flat => Ok(content(doc, form).into_bytes()),
         Form::Package => Ok(write_package(MIMETYPE, &content(doc, Form::Package))?),
+        // The third form is not XML at all, so it leaves before any of this file runs
+        // (`doc/dsl.md` §9). It is here rather than one layer up because `write_bytes` is the
+        // one door out of the crate, and a form that only *some* callers knew to handle would
+        // be a form that escapes through the others.
+        Form::Projection => Ok(crate::projection::project(doc).into_text().into_bytes()),
     }
 }
 
@@ -157,8 +162,10 @@ fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) ->
 /// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3).
 fn content(doc: &Document, form: Form) -> String {
     let root = match form {
-        Form::Flat => "office:document",
         Form::Package => "office:document-content",
+        // The flat form is one XML document; the projection never reaches here, because
+        // `write` dispatches it before there is any XML to name a root of.
+        Form::Flat | Form::Projection => "office:document",
     };
 
     let pool = Pool::new(doc);

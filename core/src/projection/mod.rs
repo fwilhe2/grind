@@ -187,7 +187,7 @@ impl Projection {
 
 /// The kind a projection declares, from its header alone.
 ///
-/// A scan rather than a parse, and on purpose: [`crate::kind`] has to answer for *any* pile of
+/// A scan rather than a parse, and on purpose: [`crate::kind()`] has to answer for *any* pile of
 /// bytes, including bytes that are not a projection and would fail to parse. Blank lines and
 /// `//` comments are skipped, so a file may open with a copyright header the way every source
 /// file in this repository does.

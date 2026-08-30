@@ -779,6 +779,64 @@ fn convert_moves_between_the_package_and_flat_forms() {
     assert_eq!(ok(&["view", &s(&back), "A1:B1"]), "1.5\ttext\n");
 }
 
+/// `doc/dsl.md` D4: the projection is a *form*, so it is reached by the verb that moves a
+/// document between forms rather than by an export verb of its own.
+///
+/// Out and back, because that is the claim being made. A conversion to a lossy format is a
+/// one-way trip and this is not one: the projection is bijective with the model, so the
+/// document that comes back from `.grind` is the document that went in — a formula still a
+/// formula, and a style still a style.
+#[test]
+fn convert_reaches_the_projection_and_comes_back() {
+    let dir = Sandbox::new("convert-projection");
+    let fods = dir.path("book.fods");
+    let grind_file = dir.path("book.grind");
+    let back = dir.path("back.fods");
+    ok(&["new", &s(&fods)]);
+    ok(&["set", &s(&fods), "A1", "1.5"]);
+    ok(&["set", &s(&fods), "A2", "=[.A1]*2"]);
+    ok(&["style", &s(&fods), "A1", "--bold"]);
+
+    ok_top(&["convert", &s(&fods), &s(&grind_file)]);
+    let text = std::fs::read_to_string(&grind_file).unwrap();
+    assert!(
+        text.starts_with("grind spreadsheet\n"),
+        "the projection names its kind in its first line: {text}"
+    );
+
+    // And every command already reads one, because `read_bytes` sniffs the form (D4's other
+    // half, landed with D1).
+    assert_eq!(ok(&["view", &s(&grind_file), "A1:A2"]), "1.5\n3\n");
+
+    ok_top(&["convert", &s(&grind_file), &s(&back)]);
+    assert_eq!(
+        ok(&["view", &s(&back), "A2", "--formulas"]).trim(),
+        "=[.A1]*2",
+        "the formula is still a formula, in ODF syntax verbatim"
+    );
+    assert_eq!(
+        ok(&["style", &s(&back), "A1", "--show"]).trim(),
+        "fo:font-weight\tbold",
+        "and the style is still a style"
+    );
+}
+
+/// The word processor has no projection yet (D2), and the honest failure is the feature: a
+/// `.grind` full of flat XML would be a worse outcome than an error naming the milestone.
+#[test]
+fn a_text_document_says_it_has_no_projection_yet() {
+    let dir = Sandbox::new("text-projection-gap");
+    let fodt = dir.path("report.fodt");
+    let out = dir.path("report.grind");
+    succeeds(grind(&["text", "new", &s(&fodt)]), &["text", "new"]);
+
+    let refused = grind(&["convert", &s(&fodt), &s(&out)]);
+    assert!(!refused.status.success(), "it must not write XML as .grind");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("projection"), "got: {stderr}");
+    assert!(!out.exists(), "and nothing is left behind");
+}
+
 /// `doc/flat-first.md`: naming `.ods` or `.odt` asks for a package and gets one; naming
 /// anything else — a bare stem most of all — gets flat XML, because the whole point of R6's
 /// diffable writer is lost the moment the file it applies to is a zip.

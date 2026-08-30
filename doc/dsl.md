@@ -6,10 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is being built. D0, D1 and D3 are done for the spreadsheet** —
+**Status: layer 0 is being built. D0, D1, D3 and D4 are done for the spreadsheet** —
 `core/src/projection/` and `sheet/src/projection/` exist, **loop F is green over 359/359 of
-loop A's corpus with nothing differing** (`sheet/tests/loop_f.rs`), and the grammar is held to
-the model by `doc/projection-sheet.md` + `sheet/tests/projection_scope.rs`. Layer 1 — the
+loop A's corpus with nothing differing** (`sheet/tests/loop_f.rs`), the grammar is held to
+the model by `doc/projection-sheet.md` + `sheet/tests/projection_scope.rs`, and the projection
+is a `Form` — a third physical form beside the package and the flat file, reached by
+`grind convert` and by every shell's save dialog rather than by an export verb of its own. Layer 1 — the
 generator — is untouched and stays a proposal; §7's milestone table below records where each
 piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
 is the argument that the feature does not contradict either. Phase 11 is spoken for
@@ -596,7 +598,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D1** | `core/src/projection/` (generic) + `sheet/src/projection/`: KDL ⇄ `grind_sheet::Document` (§3.2) | Loop F green over `sheet/tests/data/kb/` and `data/samples/`; `core/tests/generic.rs` still passes | **done** — and `generic.rs` gained a third guard, `no_projection_node_name_is_spelled_in_the_shared_crate` |
 | **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | not started |
 | **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done for the sheet** — 359/359, nothing differing, `FLOOR = 359` |
-| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **half** — `kind` sniffs it and `read_bytes` accepts one, so every command and shell already *opens* a projection. `Form::Projection` and therefore *writing* one from `grind convert` is not there yet |
+| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done for the sheet** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, and writing one from a crate that has no projection is an error naming D2 rather than XML under a `.grind` name. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
 | **D5** | R6 for the projection: splice through `kdl-rs`'s document model | One cell edited changes one line; comments survive | not started |
 | **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | not started |
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |

@@ -1088,6 +1088,9 @@ mod tests {
         assert_eq!(form_of("report.fodt"), Form::Flat);
         assert_eq!(form_of("book.ods"), Form::Package);
         assert_eq!(form_of("report.odt"), Form::Package);
+        // And a projection goes back as one: a `.grind` opened here downloads as KDL rather
+        // than quietly turning into XML under the same name (`doc/dsl.md` D4).
+        assert_eq!(form_of("book.grind"), Form::Projection);
         // A name that asks for nothing gets the form that diffs — `doc/flat-first.md`, decided
         // once in `Form::from_path` and reached from here rather than restated.
         assert_eq!(form_of("book"), Form::Flat);

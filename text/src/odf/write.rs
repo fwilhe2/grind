@@ -51,6 +51,13 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     match form {
         Form::Flat => Ok(content(doc, form).into_bytes()),
         Form::Package => write_package(MIMETYPE, &content(doc, Form::Package)),
+        // The word processor's projection is D2 (`doc/dsl.md`). Naming the gap is the whole
+        // behaviour: the alternative is writing flat XML into a file called `.grind`, which
+        // would be a lie a shell's save dialog tells on the core's behalf.
+        Form::Projection => Err(grind_core::Error::Projection(
+            "a text document has no projection yet — `doc/dsl.md` D2; save it as .fodt or .odt"
+                .to_owned(),
+        )),
     }
 }
 
@@ -237,8 +244,9 @@ fn props_of(doc: &Document) -> impl Iterator<Item = &CharStyle> {
 /// The `content.xml` payload, which in the flat form is the whole document.
 fn content(doc: &Document, form: Form) -> String {
     let root = match form {
-        Form::Flat => "office:document",
         Form::Package => "office:document-content",
+        // The projection never reaches here — `write` refuses it before there is any XML.
+        Form::Flat | Form::Projection => "office:document",
     };
     let pool = Pool::of(doc);
     let used = Used::of(doc, &pool);

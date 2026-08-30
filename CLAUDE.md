@@ -67,7 +67,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
-| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/` and `sheet/src/projection/`, which are built (D1/D3). Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips) and layer 1 (a generator, one direction, not built and still a proposal) |
+| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/` and `sheet/src/projection/`, which are built (D0/D1/D3/D4 for the spreadsheet). Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips) and layer 1 (a generator, one direction, not built and still a proposal) |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -315,8 +315,12 @@ before it can be answered.
   physical form: the same document as plain KDL a person can write in any editor. The core half
   is the container and the two maps a code view is made of — the token map (highlighting comes
   from the *writer*, never from a highlighter) and the span map (address ⇄ byte range, both
-  ways). The sheet half is the node vocabulary. Reached as `grind sheet project`, and by
-  `read_bytes`, which sniffs the form from the first line. **Charts are the one named gap.**
+  ways). The sheet half is the node vocabulary. Reached as `grind sheet project`, as
+  **`Form::Projection`** — the third arm of the form enum, so `grind convert book.fods
+  book.grind` writes one and every shell's save dialog offers it — and by `read_bytes`, which
+  sniffs the form from the first line rather than from the name. Writing one from a crate that
+  has no projection (text, until D2) is an error naming the milestone, never XML under a
+  `.grind` name. **Charts are the one named gap.**
   The grammar cannot drift from the model: `doc/projection-sheet.md` lists every node with an
   example the test executes, and every field of `Document`/`Sheet` with its node or a reason
   there is none — read out of `sheet/src/model.rs` at compile time, so a new side table fails

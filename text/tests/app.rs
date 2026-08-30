@@ -1059,3 +1059,27 @@ fn ordinary_prose_types_as_itself() {
         assert!(!app.get_viewport(0..1).get(0).unwrap().styled, "{source}");
     }
 }
+
+/// `doc/dsl.md` D4: the third physical form exists for every document type in the *enum*, and
+/// for one of them in fact. The word processor's projection is D2.
+///
+/// The assertion is that the gap is *named*, not that it is closed. A writer that quietly fell
+/// back to flat XML here would put OpenDocument inside a file the user asked for KDL in, and
+/// the next thing to read it would be a `grind` that trusts the extension — so the failure is
+/// the correct behaviour until D2 lands, and this test changes to a round trip on the day it
+/// does rather than being deleted.
+#[test]
+fn writing_a_text_document_as_a_projection_names_the_milestone() {
+    let app = App::new();
+    app.insert(0, BlockKind::Paragraph, "Hello")
+        .expect("inserts");
+    let error = app
+        .save_bytes(Form::Projection)
+        .expect_err("there is no text projection yet");
+    let message = error.to_string();
+    assert!(message.contains("projection"), "{message}");
+    assert!(
+        message.contains("D2"),
+        "it must name the milestone: {message}"
+    );
+}

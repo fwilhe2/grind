@@ -601,7 +601,7 @@ struct Cli {
 /// The first level: which application, or a verb that needs no application.
 ///
 /// A suite-level verb is one whose answer does not depend on knowing what is *in* the
-/// document — what kind it is, and moving it between the two physical forms. Everything else
+/// document — what kind it is, and moving it between the three physical forms. Everything else
 /// belongs to an app, because "set a cell" and "insert a paragraph" are not the same verb with
 /// a different noun (doc/suite.md, "The CLI").
 #[derive(Subcommand)]
@@ -628,10 +628,16 @@ enum Top {
     /// entry, or the flat root's `office:mimetype`) rather than guessed from its name.
     Info { file: PathBuf },
 
-    /// Convert between the package and flat forms — `.ods` to `.fods` and back
+    /// Convert between the three physical forms — .ods, .fods and .grind
     ///
     /// The form comes from the output extension. Never between document *kinds*: a
     /// spreadsheet does not become a text document by being written differently.
+    ///
+    /// The projection (.grind, doc/dsl.md) is a form like the other two rather than an export:
+    /// it is bijective with the *model*, so converting out to it and back returns the document
+    /// this build understands. What it does not understand is not in the file — but that is
+    /// true of every conversion here, because R6's splice keeps the original bytes only when
+    /// the form does not change. A text document has no projection yet and says so.
     Convert { file: PathBuf, out: PathBuf },
 }
 
@@ -989,8 +995,9 @@ enum Command {
     /// Create an empty document
     ///
     /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
-    /// write a zip, anything else — including a name with no extension at all — writes one XML
-    /// file that git diff can read (doc/flat-first.md).
+    /// write a zip, .grind writes the projection (doc/dsl.md), and anything else — including a
+    /// name with no extension at all — writes one XML file that git diff can read
+    /// (doc/flat-first.md).
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists

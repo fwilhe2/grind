@@ -1634,14 +1634,18 @@ fn primary_menu() -> gio::Menu {
 /// The file filter, in the words a user knows the format by. Nothing user-facing names
 /// another program (`CONTRIBUTING.md`).
 ///
-/// One filter, both extensions: packaged and flat are the same document to everyone but the
-/// writer, so an *open* dialog that makes the user pick between them is asking a question that
-/// has no answer at the point it is asked.
+/// One filter, all three extensions: packaged, flat and projected are the same document to
+/// everyone but the writer, so an *open* dialog that makes the user pick between them is asking
+/// a question that has no answer at the point it is asked.
 fn spreadsheet_filters() -> gio::ListStore {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("OpenDocument Spreadsheet"));
     filter.add_pattern("*.fods");
     filter.add_pattern("*.ods");
+    // The third physical form (`doc/dsl.md` §9). The window needed no other change to open
+    // one — `App::open_bytes` sniffs it — but a file a dialog filters out is a file the user
+    // cannot reach, so the pattern is not optional.
+    filter.add_pattern("*.grind");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
@@ -1649,13 +1653,18 @@ fn spreadsheet_filters() -> gio::ListStore {
 }
 
 /// Saving is the other case: the question *does* have an answer there, and `doc/flat-first.md`
-/// is that answer. Two filters rather than one, flat first, so the default selection writes the
-/// form that diffs and choosing the package is one deliberate click away.
+/// is that answer. Three filters rather than one, flat first, so the default selection writes
+/// the form that diffs and choosing another is one deliberate click away.
+///
+/// The projection is last on purpose. It diffs better than flat XML does, but it is this
+/// project's own spelling and nothing else reads it, whereas both ODF forms are a format other
+/// software opens — so it is offered rather than defaulted to.
 fn spreadsheet_save_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     for (name, pattern) in [
         ("OpenDocument Spreadsheet (flat XML)", "*.fods"),
         ("OpenDocument Spreadsheet (package)", "*.ods"),
+        ("Grind projection", "*.grind"),
     ] {
         let filter = gtk::FileFilter::new();
         filter.set_name(Some(name));

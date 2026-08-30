@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 > **In doubt, write the form that diffs.**
 
 One decision, stated once and implemented everywhere. Normative for every place this project
-chooses between the two physical forms of an ODF document without being told which to use.
+chooses between the physical forms of an ODF document without being told which to use.
 
 ## The two forms, and why there is a choice at all
 
@@ -77,7 +77,8 @@ documents it is currently better for *fidelity*.
 One rule, one function, and everything else reaches it:
 
 - **`grind_core::odf::Form::from_path`** — the rule. Names the package extensions exhaustively
-  and returns `Form::Flat` for everything else. Nothing anywhere may spell a second extension
+  — and `.grind`, the projection, for the same reason: naming one is a decision and not doubt —
+  then returns `Form::Flat` for everything else. Nothing anywhere may spell a second extension
   list; `grind-web` reaches this through a `Path` built from a download's name rather than
   restating it, which is the shape of that rule made mechanical.
 - **`grind_core::odf::Form::extension`** — the inverse, so a shell naming a new document and the
@@ -90,6 +91,17 @@ One rule, one function, and everything else reaches it:
 - **`grind-cli`** — `grind sheet new book` and `grind text new report` write flat XML, through
   `Form::from_path` like everything else. `grind convert` is the explicit escape hatch in both
   directions and is what a user reaches for when they want the other form on purpose.
+
+## The third form, which diffs better still
+
+`doc/dsl.md`'s projection — `.grind` — is a physical form like these two, and by the standard
+this document is named after it wins outright: it is the form a diff reads *best*. It is
+nevertheless not the default, and the reason is that "the form that diffs" was never the whole
+rule. **The default is the best-diffing form that other software opens**, and nothing but this
+build reads a projection.
+
+So the rule stands unchanged and gains one clause: `.grind` is named exhaustively like the
+package extensions, because asking for it is a decision; doubt still resolves to flat XML.
 
 ## What this decision is not
 

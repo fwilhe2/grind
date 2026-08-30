@@ -366,9 +366,13 @@ sheet project "$book"
 say "project --anchors: which cell each piece of that text is"
 sheet project "$book" --anchors
 
+# It is a *form* as much as a view, so the verb that moves a document between forms reaches it
+# — no `export` verb, because an export is one-way and this is not (`doc/dsl.md` D4).
+say "convert: the same document a third way"
+"$GRIND" convert "$book" "$out/sample.grind" >/dev/null   # suite level, like info
+
 # And it reads back: the form is sniffed from the first line, never from the name, so every
 # command already takes one.
-sheet project "$book" > "$out/sample.grind"
 say "every command takes a projection, because kind decides and nothing else does"
 sheet view "$out/sample.grind" A1:D8
 

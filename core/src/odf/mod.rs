@@ -25,12 +25,26 @@ use std::path::Path;
 /// Reading sniffs the form from the bytes, because an extension is a hint from a filesystem
 /// rather than a fact about the data. Writing has to *choose* one, so this is the only place
 /// the distinction is an input rather than an observation.
+///
+/// **Three forms, not two.** The projection (`doc/dsl.md` §9) is the third, and it is a peer
+/// of the other two rather than an export: it is bijective with the model, so a document
+/// written as one and read back is the same document. That is exactly what the other two
+/// promise, and it is why it belongs in this enum instead of in a `grind export` verb — every
+/// caller that already asks "which form?" gets the answer without knowing the projection
+/// exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
     /// A zip package — `.ods`, `.odt` (§1.1).
     Package,
     /// One flat XML file — `.fods`, `.fodt` (§1.2).
     Flat,
+    /// The projection — `.grind`, KDL rather than XML (`doc/dsl.md`).
+    ///
+    /// Whether an application *has* one is per document type: the spreadsheet does, and the
+    /// word processor's is D2. Writing this form from a crate that has no projection is an
+    /// error naming the gap, not a silent fall back to XML — a caller that asked for a
+    /// `.grind` and got flat XML under that name has been lied to.
+    Projection,
 }
 
 impl Form {
@@ -57,6 +71,9 @@ impl Form {
             {
                 Form::Package
             }
+            // The projection is named exhaustively too, and for the same reason: `.grind` is
+            // a decision, not doubt.
+            Some(ext) if ext.eq_ignore_ascii_case(crate::projection::EXTENSION) => Form::Projection,
             _ => Form::Flat,
         }
     }
@@ -74,6 +91,10 @@ impl Form {
             (Form::Package, Spreadsheet) => "ods",
             (Form::Package, Text) => "odt",
             (Form::Package, Presentation) => "odp",
+            // One extension for every kind, because the kind is *in the file* — its first
+            // line is `grind spreadsheet` (`doc/dsl.md` §3.1). The ODF forms need six
+            // extensions to say the same thing.
+            (Form::Projection, _) => crate::projection::EXTENSION,
         }
     }
 }
@@ -93,6 +114,13 @@ mod tests {
         }
         for flat in ["a.fods", "a.fodt", "a.FODT", "a.xml"] {
             assert_eq!(Form::from_path(Path::new(flat)), Form::Flat, "{flat}");
+        }
+        for projection in ["a.grind", "a.GRIND"] {
+            assert_eq!(
+                Form::from_path(Path::new(projection)),
+                Form::Projection,
+                "{projection}"
+            );
         }
     }
 
@@ -116,9 +144,12 @@ mod tests {
         assert_eq!(Form::Flat.extension(Text), "fodt");
         assert_eq!(Form::Package.extension(Spreadsheet), "ods");
         assert_eq!(Form::Package.extension(Text), "odt");
+        // One extension for both kinds, because the projection says its kind in its first line.
+        assert_eq!(Form::Projection.extension(Spreadsheet), "grind");
+        assert_eq!(Form::Projection.extension(Text), "grind");
         // And the pair round-trips: an extension this hands out is one `from_path` reads back.
         for kind in [Spreadsheet, Text] {
-            for form in [Form::Flat, Form::Package] {
+            for form in [Form::Flat, Form::Package, Form::Projection] {
                 let name = format!("a.{}", form.extension(kind));
                 assert_eq!(Form::from_path(Path::new(&name)), form, "{name}");
             }
