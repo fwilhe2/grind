@@ -29,6 +29,7 @@ pub mod grid;
 pub mod model;
 pub mod numfmt;
 pub mod odf;
+pub mod projection;
 pub mod style;
 pub mod view;
 
@@ -1091,6 +1092,26 @@ impl App {
         write_file(&self.state.read().unwrap().doc, path)
     }
 
+    /// The document as its **projection** — plain text, with the token and span maps beside it
+    /// (`doc/dsl.md` §3).
+    ///
+    /// Two things at once, and that is the point of the milestone order: it is what a `.grind`
+    /// file holds, and it is what a code view shows of a document nobody has saved (§6). A
+    /// shell reads it, colours it from [`projection::Projection::tokens`], and asks
+    /// [`projection::Projection::address_at`] which cell the caret is in.
+    ///
+    /// Whole-document rather than range-taking, which is a real tension with rule 1 and is
+    /// resolved rather than ignored: §6.3 makes a code view an `Observer` over *its own*
+    /// scroll window, and the range-taking call is D9's. Until a shell has one, the only
+    /// caller is `grind sheet project`, for which the whole document is the request.
+    ///
+    /// **Nothing here writes to the document** — the same promise `get_viewport_with`'s
+    /// overlays make, and for the same reason: a projection is a view of a model, not a
+    /// second copy of one.
+    pub fn project(&self) -> projection::Projection {
+        projection::project(&self.state.read().unwrap().doc)
+    }
+
     // --- reading ---
 
     pub fn get(&self, sheet: usize, pos: Pos) -> Result<CellValue> {
@@ -2071,9 +2092,17 @@ pub fn read_file(path: &Path) -> Result<Document> {
 /// Read a document from bytes. Paired with [`read_file`] from the start because the
 /// browser has no filesystem, and this is not retrofittable later (doc/plan.md, rule 5).
 ///
-/// The form — zip package or flat XML — is sniffed from the bytes, so `name` is only ever
-/// a label for diagnostics.
+/// The form — zip package, flat XML, or the projection (`doc/dsl.md`) — is sniffed from the
+/// bytes, so `name` is only ever a label for diagnostics.
 pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
+    // The projection is the third physical form, and `grind_core::projection` decides whether
+    // these bytes are one from their first line — never from the file's name, which is the
+    // same rule `Form` and `kind` already follow.
+    if grind_core::projection::is_projection(bytes).is_some() {
+        let text =
+            std::str::from_utf8(bytes).map_err(|e| grind_core::Error::Projection(e.to_string()))?;
+        return projection::read(text);
+    }
     odf::read(bytes)
 }
 

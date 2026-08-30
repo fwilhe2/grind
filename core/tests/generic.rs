@@ -24,7 +24,7 @@ const MANIFEST: &str = include_str!("../Cargo.toml");
 /// Listed rather than walked, for the same reason the parity ratchet lists its inputs: a walk
 /// that finds nothing passes vacuously, and a vacuous ratchet has quietly stopped ratcheting.
 /// A new module here is one line, and the count assertion below is what notices a missing one.
-const SOURCES: [(&str, &str); 12] = [
+const SOURCES: [(&str, &str); 14] = [
     ("lib.rs", include_str!("../src/lib.rs")),
     ("build_info.rs", include_str!("../src/build_info.rs")),
     ("kind.rs", include_str!("../src/kind.rs")),
@@ -32,6 +32,14 @@ const SOURCES: [(&str, &str); 12] = [
     ("locale.rs", include_str!("../src/locale.rs")),
     ("observer.rs", include_str!("../src/observer.rs")),
     ("style.rs", include_str!("../src/style.rs")),
+    (
+        "projection/mod.rs",
+        include_str!("../src/projection/mod.rs"),
+    ),
+    (
+        "projection/emit.rs",
+        include_str!("../src/projection/emit.rs"),
+    ),
     ("odf/mod.rs", include_str!("../src/odf/mod.rs")),
     ("odf/context.rs", include_str!("../src/odf/context.rs")),
     ("odf/names.rs", include_str!("../src/odf/names.rs")),
@@ -96,6 +104,65 @@ fn no_document_body_element_is_spelled_in_the_shared_crate() {
     }
 }
 
+/// Source with its `#[cfg(test)]` module cut away as well as its comments.
+///
+/// Only the projection guard needs this, and the reason is that its tripwires are ordinary
+/// English words in quotes rather than qualified XML names: `"sheet"` turns up in `locale.rs`
+/// as a *config directory*, and `"row"` or `"at"` would eventually turn up in a test fixture.
+/// A guard that has to be exempted once a month is a guard people learn to edit rather than
+/// obey, so it looks at the code that ships and nothing else.
+fn production(source: &str) -> String {
+    let code = code(source);
+    match code.find("#[cfg(test)]") {
+        Some(at) => code[..at].to_owned(),
+        None => code,
+    }
+}
+
+/// The same rule, for the *third* serialisation (`doc/dsl.md` §3.2).
+///
+/// The projection splits exactly where `odf/` splits, and for the same reason: a single
+/// `grind-projection` crate would have to spell both applications' body vocabularies and would
+/// then depend on both app crates, dragging the word processor into the spreadsheet's window.
+/// `core/src/projection/` is the container — the KDL syntax, the kind header, the two maps —
+/// and every node name belongs to `sheet/src/projection/` or `text/src/projection/`.
+#[test]
+fn no_projection_node_name_is_spelled_in_the_shared_crate() {
+    // The node names of the two projections, as a string literal would spell them. Written
+    // with their quotes so the guard is about *code that emits or matches one*, not about a
+    // module that happens to use the English word "cell" in an identifier.
+    const NODES: [&str; 10] = [
+        "\"sheet\"",
+        "\"cell\"",
+        "\"row\"",
+        "\"col\"",
+        "\"at\"",
+        "\"p\"",
+        "\"h\"",
+        "\"li\"",
+        "\"list\"",
+        "\"image\"",
+    ];
+
+    for (file, source) in SOURCES {
+        for node in NODES {
+            // `DocumentKind::command()` answers *which `grind` verb opens this*, and that verb
+            // is spelled `sheet`. A subcommand name is not a body vocabulary — it is the name
+            // of an application, which this crate is allowed and required to know, since the
+            // whole point of `kind` is telling a user which one to reach for.
+            if (file, node) == ("kind.rs", "\"sheet\"") {
+                continue;
+            }
+            assert!(
+                !production(source).contains(node),
+                "core/src/{file} spells the projection node {node}, which belongs to one \
+                 document type. R8: the shared crate owns the container and the two maps, and \
+                 nothing about what a document is made of (doc/dsl.md §3.2)."
+            );
+        }
+    }
+}
+
 #[test]
 fn no_body_namespace_is_dispatched_on_in_the_shared_crate() {
     // The check that would actually catch a reader growing here. Element dispatch is on a
@@ -132,6 +199,18 @@ fn the_one_exemption_is_still_earning_it() {
         code(names).contains("Ns::Table"),
         "odf/names.rs no longer defines the namespace variants it is excused for naming — \
          drop the exemption in the test above rather than leaving a standing excuse."
+    );
+
+    // The projection guard's one exemption, checked the same way: `kind.rs` is excused for
+    // `"sheet"` only because it hands out the *subcommand* that opens a spreadsheet.
+    let (_, kind) = SOURCES
+        .iter()
+        .find(|(name, _)| *name == "kind.rs")
+        .expect("kind.rs is one of this crate's sources");
+    assert!(
+        code(kind).contains("Some(\"sheet\")"),
+        "kind.rs no longer names the `sheet` subcommand it is excused for spelling — drop the \
+         exemption in the projection guard rather than leaving a standing excuse."
     );
 }
 

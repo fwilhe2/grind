@@ -66,6 +66,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
+| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/` and `sheet/src/projection/`, which are built (D1/D3). Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips) and layer 1 (a generator, one direction, not built and still a proposal) |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -158,6 +159,7 @@ against exactly what CI uses.
 | **C** — round-trip differential | write → `soffice --convert-to` → read back → identical, and reverse | `sheet/tests/roundtrip.rs` |
 | **C** — round-trip differential, text | the same, both directions, over `sw/qa` | `text/tests/roundtrip.rs` |
 | **E** — generated differential | formulas generated from the catalog's signatures, evaluated by us and by LO | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
+| **F** — projection differential | project → read back → the two models are identical, both directions | `sheet/tests/loop_f.rs`, `doc/dsl.md` §8 |
 
 `sheet/tests/kb.rs` is the fourth check and never skips: R7's vendored documents. It also
 validates the writer against the schema (`jing -i`) and measures R3/R6.
@@ -188,6 +190,10 @@ was a Calc-only LibreOffice when the text loop was written, so `oracle_ready` in
 `text/tests/roundtrip.rs` probes whether the `soffice` on `PATH` can convert a text document at
 all rather than assuming it; the image has since been rebuilt with Writer, and that half started
 gating with no file changed. The probe stays for a developer whose own `soffice` has no Writer.
+Loop F is green in both directions: R7's fourteen vendored documents, which never skip, and —
+as D3 — **359/359 of loop A's corpus with nothing differing** (`FLOOR = 359`, and it only goes
+up). It costs no corpus of its own, which is the point of building it on loop A's. Its one
+named exclusion is charts, with a test that fails the day they are projected.
 Loop E is at 913/1000 on the pinned
 image at its default seed (same binary locally and in CI, so the figure should match), with
 the untriaged disagreements classified in `doc/differential-fuzz.md`. All four
@@ -224,8 +230,8 @@ rather than a guest:
 
 | Crate | Directory | Holds |
 |---|---|---|
-| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, and `kind` (which document type some bytes are) |
-| `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App` |
+| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header and the token and span maps of `doc/dsl.md`'s third physical form |
+| `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
 | `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
@@ -234,8 +240,9 @@ rather than a guest:
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
-which asserts the manifest names no document-type crate and that no source dispatches on
-`Ns::Table` or `Ns::Text`. `grind-sheet` re-exports the generic modules (`grind_sheet::odf`
+which asserts the manifest names no document-type crate, that no source dispatches on
+`Ns::Table` or `Ns::Text`, and — since the projection — that no source spells a projection node
+name either (`doc/dsl.md` §3.2: the projection splits exactly where `odf/` splits). `grind-sheet` re-exports the generic modules (`grind_sheet::odf`
 hands on `context`, `names`, `package`, `Form`), so the reader and writer reach them by the
 paths they always used — the crate boundary is the seam, those aliases are ergonomics.
 
@@ -303,6 +310,12 @@ before it can be answered.
   layout arithmetic and no GTK types, so it's unit-testable with no display. Every colour
   comes from the theme, never a literal, except the reference palette and a colour the
   document itself chose.
+- **`core/src/projection/`** + **`sheet/src/projection/`** — `doc/dsl.md` layer 0, the third
+  physical form: the same document as plain KDL a person can write in any editor. The core half
+  is the container and the two maps a code view is made of — the token map (highlighting comes
+  from the *writer*, never from a highlighter) and the span map (address ⇄ byte range, both
+  ways). The sheet half is the node vocabulary. Reached as `grind sheet project`, and by
+  `read_bytes`, which sniffs the form from the first line. **Charts are the one named gap.**
 - **`cli/`** — `main.rs` (clap, one arm per subcommand) + `report.rs`. A subcommand is a few
   lines driving `App`; anything longer belongs in the core. `doc/cli-parity-sheet.md` +
   `cli/tests/parity.rs` are the parity ratchet: every public `App` method needs a reaching

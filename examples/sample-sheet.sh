@@ -353,4 +353,23 @@ sheet view "$book" B8:E8 --formulas
 say "formulas --names: the same formulas, read through the names"
 sheet view "$book" B8:E8 --formulas --names
 
+# --- the projection: the whole document as plain text --------------------------------------
+# `doc/dsl.md` layer 0. The same document a third way — after the package and the flat form —
+# spelled as something a person writes in any editor and a diff can read. It is a *file format*
+# and a *view*: this is what a `.grind` holds and what a shell's code view will show, from one
+# function. The token map and the span map come from the writer rather than from a highlighter,
+# which is why `--tokens` and `--anchors` exist here before any window draws them.
+
+say "project: the document as its projection"
+sheet project "$book"
+
+say "project --anchors: which cell each piece of that text is"
+sheet project "$book" --anchors
+
+# And it reads back: the form is sniffed from the first line, never from the name, so every
+# command already takes one.
+sheet project "$book" > "$out/sample.grind"
+say "every command takes a projection, because kind decides and nothing else does"
+sheet view "$out/sample.grind" A1:D8
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

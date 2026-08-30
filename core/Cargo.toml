@@ -19,3 +19,8 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 # For `Locale` only, which each document type's session/model may carry.
 serde = { version = "1", features = ["derive"] }
 unicode-linebreak = "0.1.5"
+# The projection's container (doc/dsl.md §3.1). Taken for one property above every other:
+# it is a *formatting-preserving* document model, which is R6 for a second format without
+# building the retain-and-splice machinery a third time. `span` is not optional here — the
+# span map (§6.2) is what a code view's selection sync is made of.
+kdl = "6.7.1"

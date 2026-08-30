@@ -6,10 +6,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: proposed. Nothing here is normative yet** — `doc/plan.md`'s requirements and
-`doc/not-doing.md` are, and §2 below is the argument that this feature does not contradict
-either. Phase 11 is already spoken for (`doc/xlsx-import.md`); this is a candidate for
-**phase 12**.
+**Status: layer 0 is being built. D1 and D3 are done for the spreadsheet** —
+`core/src/projection/` and `sheet/src/projection/` exist, and **loop F is green over
+359/359 of loop A's corpus with nothing differing** (`sheet/tests/loop_f.rs`). Layer 1 — the
+generator — is untouched and stays a proposal; §7's milestone table below records where each
+piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
+is the argument that the feature does not contradict either. Phase 11 is spoken for
+(`doc/xlsx-import.md`); the rest of this is a candidate for **phase 12**.
 
 ---
 
@@ -118,7 +121,8 @@ the ODF model. They survive an edit for exactly the reason `office:settings` sur
 to a `.fods`: **the writer never regenerates what nobody touched.** R6, applied to a second
 format, with the same honest limit — a *structural* change regenerates and loses them.
 
-Nine transitive crates, Apache-2.0.
+Nine transitive crates, Apache-2.0 — **four**, as it resolved when it was actually added
+(`kdl`, `miette`, `winnow`, `unicode-width`).
 
 ### 3.2 Where it lives — the `odf/` seam again, not a new crate
 
@@ -565,19 +569,19 @@ D4, where a shell that could not open a `.grind` at all *would*.
 Layer 0 ships alone and is useful alone. The generator is a late milestone on purpose:
 its language choice is reversible (§1) and layer 0's bijection is not.
 
-| | What | Done when |
-|---|---|---|
-| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed |
-| **D1** | `core/src/projection/` (generic) + `sheet/src/projection/`: KDL ⇄ `grind_sheet::Document` (§3.2) | Loop F green over `sheet/tests/data/kb/` and `data/samples/`; `core/tests/generic.rs` still passes |
-| **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` |
-| **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets |
-| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) |
-| **D5** | R6 for the projection: splice through `kdl-rs`'s document model | One cell edited changes one line; comments survive |
-| **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test |
-| **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated |
-| **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI |
-| **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin |
-| **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z |
+| | What | Done when | Status |
+|---|---|---|---|
+| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed | **partly** — the spreadsheet's grammar is settled and written down in `sheet/src/projection/mod.rs`; the §3.7 vocabulary check against the scope lines is *not* built, and is the one piece of D1 still owed |
+| **D1** | `core/src/projection/` (generic) + `sheet/src/projection/`: KDL ⇄ `grind_sheet::Document` (§3.2) | Loop F green over `sheet/tests/data/kb/` and `data/samples/`; `core/tests/generic.rs` still passes | **done** — and `generic.rs` gained a third guard, `no_projection_node_name_is_spelled_in_the_shared_crate` |
+| **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | not started |
+| **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done for the sheet** — 359/359, nothing differing, `FLOOR = 359` |
+| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **half** — `kind` sniffs it and `read_bytes` accepts one, so every command and shell already *opens* a projection. `Form::Projection` and therefore *writing* one from `grind convert` is not there yet |
+| **D5** | R6 for the projection: splice through `kdl-rs`'s document model | One cell edited changes one line; comments survive | not started |
+| **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | not started |
+| **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |
+| **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
+| **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **the CLI half is done** — `App::project` and `grind sheet project`, with `--tokens` and `--anchors` printing the two maps. The span map is built and tested; no shell draws it |
+| **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | not started |
 
 D1–D5 are the feature. D6–D8 are the reason to want it. **D9 is the cheapest milestone on the
 list and possibly the most visible** — it needs no new dependency, no new format and no core
@@ -597,6 +601,13 @@ read the projection back, and assert the two models are identical. It runs over 
 on day one, at zero corpus cost, and it ratchets exactly as loop B does. A document that
 cannot round-trip is either a scope-line gap (name it) or a bug (fix it), and the difference
 is what the counter measures.
+
+Built, in `sheet/tests/loop_f.rs`, and at **359/359 of the spreadsheet corpus with nothing
+differing** — plus R7's fourteen vendored documents, which never skip. It compares in both
+directions: `document → projection → document` catches a writer that drops something, and
+re-projecting the result catches a *reader* that drops it instead. One named exclusion, charts
+(§3.8), with a test that fails the day they are projected so the exclusion cannot outlive the
+gap.
 
 That is the bijection proof, and the whole of layer 0 stands on it.
 

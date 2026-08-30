@@ -100,6 +100,12 @@ stops ratcheting.
 - `save_file` — `grind sheet new`, `grind sheet set`, `grind sheet clear`, `grind sheet recalc`, `grind convert`
 - `save_bytes` — not exposed: the `*_bytes` twin of `save_file`, for shells without a
   filesystem. Nothing a user can ask for is missing while `save_file` is here.
+- `project` — `grind sheet project`, which prints the document as its projection
+  (`doc/dsl.md` §3): the same plain text a `.grind` file holds and a shell's code view shows,
+  from the same function. `--tokens` prints the token map and `--anchors` the span map, one
+  line each — the two things §6 is built on, made readable before any shell draws them.
+  Reading a projection back needs no verb: `grind_core::kind` sniffs the form from the bytes,
+  so every command already takes one.
 
 ## Reading
 

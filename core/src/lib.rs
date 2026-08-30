@@ -28,6 +28,7 @@ pub mod layout;
 pub mod locale;
 pub mod observer;
 pub mod odf;
+pub mod projection;
 pub mod style;
 
 pub use kind::{DocumentKind, kind};
@@ -51,6 +52,11 @@ pub enum Error {
     /// Password-protected. The document is fine; we have no key. Distinct from [`Error::Xml`]
     /// so callers can tell "cannot open" from "will not parse".
     Encrypted,
+    /// A projection (`doc/dsl.md` layer 0) that will not parse, or that does not declare what
+    /// kind of document it is. Distinct from [`Error::Xml`] because a projection is a *third*
+    /// physical form beside the package and the flat one, and "line 12, column 4" is a
+    /// different apology from "this zip has no content.xml".
+    Projection(String),
     /// A document whose kind this build has no reader for — a presentation, say — or bytes
     /// that are not an ODF document at all. Carries what `kind` made of it, because "this is a
     /// presentation" and "this is not a document" want different words in front of a user.
@@ -64,6 +70,7 @@ impl fmt::Display for Error {
             Error::Xml(e) => write!(f, "xml: {e}"),
             Error::Package(e) => write!(f, "package: {e}"),
             Error::Encrypted => write!(f, "password-protected document"),
+            Error::Projection(e) => write!(f, "projection: {e}"),
             Error::UnsupportedKind(Some(kind)) => match kind.command() {
                 Some(command) => write!(f, "that is a {}; try `grind {command}`", kind.label()),
                 None => write!(f, "{}s are not something this build opens", kind.label()),

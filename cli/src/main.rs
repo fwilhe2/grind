@@ -1051,6 +1051,28 @@ enum Command {
         formulas: bool,
     },
 
+    /// Print the document as its projection — the plain-text form (doc/dsl.md)
+    ///
+    /// The same text a `.grind` file holds, and the same text a shell's code view shows, from
+    /// the same function: §6.1 makes this the CLI twin of that view, and it lands before any
+    /// shell has one. Reading a `.grind` back needs no verb of its own — `grind_core::kind`
+    /// sniffs the form from the bytes, so every command here already takes one.
+    Project {
+        file: PathBuf,
+        /// Print the token map instead: one `kind<TAB>start<TAB>end` line per token
+        ///
+        /// What a shell colours from. Highlighting comes from the writer rather than from a
+        /// highlighter (§6.1), and this is that map, readable.
+        #[arg(long, conflicts_with = "anchors")]
+        tokens: bool,
+        /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
+        ///
+        /// Which cell each piece of the text is — the correspondence a split view draws
+        /// (§6.2), and the thing every later IDE feature is built on.
+        #[arg(long)]
+        anchors: bool,
+    },
+
     /// Set a cell's value or formula
     ///
     /// A leading '=' makes it a formula and a leading apostrophe forces text; otherwise the
@@ -1738,6 +1760,49 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             Ok(Report::Cells(cells(
                 &app, file, sheet, start, end, *max_rows, shown, overlays,
             )?))
+        }
+
+        Command::Project {
+            file,
+            tokens,
+            anchors,
+        } => {
+            let app = load(file, cli)?;
+            let projection = app.project();
+            let text = projection.text();
+            // The line a byte offset is on, 1-based — the number an editor puts in its gutter,
+            // so that a span map printed here can be fed straight to one.
+            let line = |offset: usize| text[..offset].matches('\n').count() + 1;
+            text_lines(match (*tokens, *anchors) {
+                (true, _) => projection
+                    .tokens()
+                    .iter()
+                    .map(|token| {
+                        format!(
+                            "{}\t{}\t{}",
+                            token.kind.name(),
+                            token.span.start,
+                            token.span.end
+                        )
+                    })
+                    .collect(),
+                (_, true) => projection
+                    .anchors()
+                    .iter()
+                    .map(|anchor| {
+                        format!(
+                            "{}\t{}\t{}\t{}",
+                            anchor.address,
+                            line(anchor.span.start),
+                            anchor.span.start,
+                            anchor.span.end
+                        )
+                    })
+                    .collect(),
+                // `lines()` drops the trailing newline the projection ends with; `text_lines`
+                // puts one back, so this is the file byte for byte.
+                _ => text.lines().map(str::to_owned).collect(),
+            })
         }
 
         Command::Set {

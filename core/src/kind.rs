@@ -120,6 +120,13 @@ pub fn kind(bytes: &[u8]) -> Option<DocumentKind> {
     if is_package(bytes) {
         return package_kind(bytes);
     }
+    // The projection is the third physical form (`doc/dsl.md` §3), and it is asked first
+    // because it is the cheapest question: one line, no parse. It also cannot be confused
+    // with the other two — `grind spreadsheet` is not XML and not a zip — so the order is
+    // about speed rather than about precedence.
+    if let Some(kind) = crate::projection::is_projection(bytes) {
+        return Some(kind);
+    }
     flat_kind(bytes)
 }
 
