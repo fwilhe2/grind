@@ -134,16 +134,22 @@ pub fn fill(view: &gtk::TextView, projection: &Projection, cursor: Option<usize>
         }
     }
     if let Some(line) = cursor {
-        mark(view, line);
+        go_to(view, line);
     }
 }
 
-/// Mark a line as the document's own, and bring it into view.
+/// Mark a line as the document's own — the tag, and nothing else.
+///
+/// **It must not move the cursor.** This is called from the handler that runs *because* the
+/// cursor moved, and placing it again there is a feedback loop: GTK delivers
+/// `notify::cursor-position` for the placement, the handler runs again, and the window stops
+/// answering. It did, and this split is the fix — [`go_to`] is the half that drives the view,
+/// and it is only ever called when the shell already knows where the document is.
 pub fn mark(view: &gtk::TextView, line: usize) {
     let buffer = view.buffer();
     let (start, end) = (buffer.start_iter(), buffer.end_iter());
     buffer.remove_tag_by_name(CURRENT, &start, &end);
-    let Some(mut from) = buffer.iter_at_line(line as i32) else {
+    let Some(from) = buffer.iter_at_line(line as i32) else {
         return;
     };
     let mut to = from;
@@ -151,8 +157,18 @@ pub fn mark(view: &gtk::TextView, line: usize) {
         to.forward_to_line_end();
     }
     buffer.apply_tag_by_name(CURRENT, &from, &to);
-    buffer.place_cursor(&from);
-    view.scroll_to_iter(&mut from, 0.1, false, 0.0, 0.5);
+}
+
+/// Mark a line *and* put the view's own cursor on it, scrolled into sight — what the shell calls
+/// when the document moved and the source has to follow.
+pub fn go_to(view: &gtk::TextView, line: usize) {
+    mark(view, line);
+    let buffer = view.buffer();
+    let Some(mut at) = buffer.iter_at_line(line as i32) else {
+        return;
+    };
+    buffer.place_cursor(&at);
+    view.scroll_to_iter(&mut at, 0.1, false, 0.0, 0.5);
 }
 
 /// Which line the view's own cursor is on — the question the shell asks after the cursor moved,

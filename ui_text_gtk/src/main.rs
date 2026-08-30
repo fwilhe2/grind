@@ -164,6 +164,14 @@ struct Ui {
     /// The two pages of the window: the document, and its projection (`doc/dsl.md` §6, D9).
     stack: gtk::Stack,
     source: gtk::TextView,
+    /// The code view line the caret's block is on, as last marked.
+    ///
+    /// `updating` is not enough on its own: GTK does not always deliver
+    /// `notify::cursor-position` inside the call that caused it, so a handler that answers by
+    /// touching the cursor is a loop the latch never sees the re-entry of. This makes the
+    /// handler *idempotent* instead — the same line twice does nothing — which holds however the
+    /// signal is scheduled.
+    marked: Cell<Option<usize>>,
     path: RefCell<Option<PathBuf>>,
     /// The document a banner is offering to hand to the spreadsheet.
     handoff: RefCell<Option<PathBuf>>,
@@ -317,6 +325,7 @@ impl Ui {
             doc,
             stack,
             source,
+            marked: Cell::new(None),
             title,
             toasts,
             banner,
@@ -508,6 +517,7 @@ impl Ui {
         let line = projection.line_of(&grind_text::loc::format(self.doc.caret().block));
         self.updating.set(true);
         code::fill(&self.source, &projection, line);
+        self.marked.set(line);
         self.updating.set(false);
     }
 
@@ -520,6 +530,11 @@ impl Ui {
             return;
         }
         let line = code::line_at_cursor(&self.source);
+        // Already answered — see `marked`. Without this the window hangs.
+        if self.marked.get() == Some(line) {
+            return;
+        }
+        self.marked.set(Some(line));
         let projection = self.app.project();
         let Some(address) = projection.address_on_line(line) else {
             return;
@@ -528,9 +543,9 @@ impl Ui {
             return;
         };
         self.doc.go_to(caret);
-        self.updating.set(true);
+        // The tag only — moving the cursor from the handler that runs because the cursor moved
+        // is the loop this guard exists for. See `code::mark`.
         code::mark(&self.source, line);
-        self.updating.set(false);
         self.refresh();
     }
 

@@ -132,6 +132,14 @@ struct Ui {
     /// Raised while the code view is being filled, so placing its cursor does not read back as
     /// the reader moving it — `formatting::Strip`'s latch, for the same reason.
     updating: Cell<bool>,
+    /// The code view line the grid's selection is on, as last marked.
+    ///
+    /// The latch above is not enough on its own: GTK does not always deliver
+    /// `notify::cursor-position` inside the call that caused it, so a handler that answers by
+    /// touching the cursor is a loop the latch never sees the re-entry of. This makes the
+    /// handler *idempotent* instead — the same line twice does nothing — which holds however
+    /// the signal is scheduled.
+    marked: Cell<Option<usize>>,
     title: adw::WindowTitle,
     toasts: adw::ToastOverlay,
     banner: adw::Banner,
@@ -255,6 +263,7 @@ impl Ui {
             stack,
             source,
             updating: Cell::new(false),
+            marked: Cell::new(None),
             title,
             toasts,
             banner,
@@ -444,6 +453,7 @@ impl Ui {
             .and_then(|address| projection.line_of(&address));
         self.updating.set(true);
         code::fill(&self.source, &projection, line);
+        self.marked.set(line);
         self.updating.set(false);
     }
 
@@ -458,6 +468,13 @@ impl Ui {
             return;
         }
         let line = code::line_at_cursor(&self.source);
+        // Already answered. Without this the window hangs: `set_selection` below leads to a
+        // repaint, GTK delivers the cursor notify again afterwards, and the handler answers a
+        // move that never happened.
+        if self.marked.get() == Some(line) {
+            return;
+        }
+        self.marked.set(Some(line));
         let projection = self.app.project();
         let Some(address) = projection.address_on_line(line) else {
             return;
@@ -470,9 +487,9 @@ impl Ui {
             self.grid.set_sheet(sheet);
             self.grid.set_selection(keymap::Selection::at(start));
         }
-        self.updating.set(true);
+        // The tag only — moving the cursor from the handler that runs because the cursor moved
+        // is the loop this whole guard exists for. See `code::mark`.
         code::mark(&self.source, line);
-        self.updating.set(false);
     }
 
     /// Everything derived from the document, in one place, run after every change.

@@ -506,6 +506,14 @@ marked and moving the cursor in it selecting the cell that line projects. A stac
 paned split — §6.2 is right that a split is what a person eventually wants, and it is also a
 second viewport to keep in step. Editing it is gated in §6.4.
 
+It also carries the one bug this window has had since M10, written down because the shape of it
+recurs: **a handler that runs because the cursor moved must not move the cursor.** Marking the
+current line by placing the cursor on it made GTK deliver `notify::cursor-position` again — not
+inside the call, so the "I am updating" latch never saw the re-entry — and the window stopped
+answering. `code::mark` now applies the tag and nothing else, `code::go_to` is the half that
+drives the view, and the handler is idempotent per line so any scheduling of the signal is safe.
+`ui_text_gtk`'s widget test asserts that `mark` moves nothing.
+
 Deferred by decision, not omission — each either has a not-doing.md row already or gets
 one as its milestone lands: pointing at cells on *another* sheet (the qualified form is
 written correctly, but switching sheets mid-edit is not wired) · a clipboard cell holding a

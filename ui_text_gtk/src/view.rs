@@ -1427,8 +1427,19 @@ mod tests {
         // And the mark is where the caret's block is, both ways round.
         let line = projection.line_of("p2").expect("the paragraph is anchored");
         assert_eq!(crate::code::line_at_cursor(&view), line);
-        crate::code::mark(&view, 0);
+        crate::code::go_to(&view, 0);
         assert_eq!(crate::code::line_at_cursor(&view), 0);
+
+        // **The hang this split fixes.** `mark` is called from the handler that runs *because*
+        // the cursor moved, so it must not move the cursor — a `place_cursor` there makes GTK
+        // deliver the notify again and the window stops answering. Measured rather than
+        // asserted in a comment: marking a different line leaves the cursor where it was.
+        crate::code::mark(&view, line);
+        assert_eq!(
+            crate::code::line_at_cursor(&view),
+            0,
+            "`mark` tags a line and moves nothing"
+        );
     }
 
     /// A widget with a document in it and a size to lay it out at. Only ever called from
