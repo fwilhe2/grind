@@ -55,7 +55,7 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         // (`doc/dsl.md` §9, D2). It is here rather than one layer up because `write_bytes` is
         // the one door out of the crate, and a form that only *some* callers knew to handle
         // would be a form that escapes through the others.
-        Form::Projection => Ok(crate::projection::project(doc).into_text().into_bytes()),
+        Form::Projection => Ok(crate::projection::save(doc)),
     }
 }
 

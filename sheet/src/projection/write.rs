@@ -28,6 +28,67 @@ use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
 
+/// The projection this document was read from, with the edited cells put back in place.
+///
+/// R6 for the third form (D5). `None` means *not applicable, regenerate* and never *failed* —
+/// every condition below is one of the boundaries `grind_core::projection::source` writes down,
+/// and regenerating is always correct because it is what saving a `.grind` did before this
+/// existed.
+///
+/// What is **not** here, and is in `odf::write::splice`, is the autofilter check: a value edit
+/// there can change which rows a filter hides, and `table:visibility` lives on the row element
+/// rather than in the cell being spliced. A projection has no such derived state — `tracks`
+/// writes the rows a *person* hid and nothing a filter implies — so a cell's value is the only
+/// thing its site spells.
+pub fn splice(doc: &Document) -> Option<String> {
+    let source = doc.projection_source.as_deref()?;
+    // A style, a format, a track, a name, a sheet added or renamed: all of them are somewhere a
+    // cell's site does not reach, and `Edits::only_values` is already the flag that says so.
+    if !doc.edits.only_values {
+        return None;
+    }
+    let mut patches = Vec::with_capacity(doc.edits.cells.len());
+    for (index, pos) in &doc.edits.cells {
+        let sheet = doc.sheet(*index)?;
+        let site = source.site(&address(sheet, *pos))?;
+        patches.push((site.span.clone(), replacement(sheet, *pos, site.shape)?));
+    }
+    source.splice(patches)
+}
+
+/// What goes into a site, or `None` when the cell no longer fits the shape the file spelled it
+/// in.
+///
+/// This is the second boundary, and the case that makes it necessary is ordinary: a cell holding
+/// `4200` sits in a grid row, and typing `=B1*2` into it turns it into something a grid cannot
+/// hold. Writing the formula over the value would produce a file that reads back as the *string*
+/// `=B1*2` in a grid — bijectivity lost, silently. So the shapes have to agree, and when they do
+/// not the document regenerates and the cell moves to a `cell` node of its own.
+fn replacement(sheet: &Sheet, pos: Pos, shape: grind_core::projection::Shape) -> Option<String> {
+    use grind_core::projection::Shape;
+    let needs_a_node = sheet.formula(pos).is_some() || sheet.kind(pos).is_some();
+    match shape {
+        Shape::Value => {
+            let value = sheet.get(pos);
+            // An emptied cell is a hole, and a hole is `#null` — which the reader treats as *no
+            // cell here*, so the grid would come back one cell short of what the model says.
+            // Structural, therefore, and regenerated.
+            (!needs_a_node && !value.is_empty())
+                .then(|| grind_core::projection::emit::repr(&value_of(&value)))
+        }
+        Shape::Node => {
+            if !needs_a_node {
+                return None;
+            }
+            let mut out = Emitter::new();
+            cell_node(&mut out, sheet, pos);
+            // The emitter ends a node with a newline; the span it is going into stops before
+            // the one already in the file.
+            Some(out.finish().into_text().trim_end().to_owned())
+        }
+    }
+}
+
 /// Project a whole document.
 pub fn project(doc: &Document) -> Projection {
     let mut out = Emitter::new();
@@ -224,31 +285,42 @@ fn plain_rows(sheet: &Sheet) -> Vec<(u32, Vec<(u32, CellValue)>)> {
 
 /// The cells a grid cannot hold: a formula, a date, a time.
 fn cells(out: &mut Emitter, sheet: &Sheet) {
-    let extra: BTreeSet<Pos> = sheet
-        .formulas()
-        .map(|(pos, _)| pos)
-        .chain(sheet.kinds().map(|(pos, _)| pos))
-        .collect();
+    let extra = needs_a_node(sheet);
     if extra.is_empty() {
         return;
     }
     out.blank();
     for pos in extra {
-        out.begin("cell");
-        out.arg_word(&a1::format(None, pos));
-        let value = sheet.get(pos);
-        if !value.is_empty() {
-            out.arg(value_of(&value));
-        }
-        out.prop_some("formula", sheet.formula(pos));
-        match sheet.kind(pos) {
-            Some(NumberKind::Date) => out.prop("date", true),
-            Some(NumberKind::Time) => out.prop("time", true),
-            None => {}
-        }
-        out.anchor(address(sheet, pos));
-        out.end();
+        cell_node(out, sheet, pos);
     }
+}
+
+/// Which cells of a sheet need a `cell` node rather than a place in a grid.
+fn needs_a_node(sheet: &Sheet) -> BTreeSet<Pos> {
+    sheet
+        .formulas()
+        .map(|(pos, _)| pos)
+        .chain(sheet.kinds().map(|(pos, _)| pos))
+        .collect()
+}
+
+/// One `cell` node. Its own function because D5's splice emits exactly one of these into the
+/// retained text, and a second spelling of a node is a second grammar (`emit`'s rule).
+fn cell_node(out: &mut Emitter, sheet: &Sheet, pos: Pos) {
+    out.begin("cell");
+    out.arg_word(&a1::format(None, pos));
+    let value = sheet.get(pos);
+    if !value.is_empty() {
+        out.arg(value_of(&value));
+    }
+    out.prop_some("formula", sheet.formula(pos));
+    match sheet.kind(pos) {
+        Some(NumberKind::Date) => out.prop("date", true),
+        Some(NumberKind::Time) => out.prop("time", true),
+        None => {}
+    }
+    out.anchor(address(sheet, pos));
+    out.end();
 }
 
 /// `style` — one node per distinct cell style, over the rectangles it covers.
@@ -529,7 +601,7 @@ fn number(n: f64) -> KdlValue {
 
 /// A cell's address as the span map spells it: sheet-qualified, so two sheets' `A1` are two
 /// anchors.
-fn address(sheet: &Sheet, pos: Pos) -> String {
+pub(super) fn address(sheet: &Sheet, pos: Pos) -> String {
     a1::format(Some(&sheet.name), pos)
 }
 

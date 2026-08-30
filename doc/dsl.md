@@ -6,14 +6,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is built for both document types. D0–D4 are done** —
+**Status: layer 0 is built for both document types. D0–D5 are done** —
 `core/src/projection/`, `sheet/src/projection/` and `text/src/projection/` exist; **loop F is
 green over 359/359 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with
 nothing differing** (`sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`); each grammar is held to
 its own scope line by `doc/projection-sheet.md` and `doc/projection-text.md` with a test apiece;
 and the projection is a `Form` — a third physical form beside the package and the flat file,
 reached by `grind convert` and by every shell's save dialog rather than by an export verb of its
-own. Layer 1 — the
+own; and **R6 holds for it** — `grind sheet set book.grind B1 4300` rewrites that value and
+nothing else in the file, comments and hand alignment included, in both applications. Layer 1 — the
 generator — is untouched and stays a proposal; §7's milestone table below records where each
 piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
 is the argument that the feature does not contradict either. Phase 11 is spoken for
@@ -128,6 +129,24 @@ format, with the same honest limit — a *structural* change regenerates and los
 
 Nine transitive crates, Apache-2.0 — **four**, as it resolved when it was actually added
 (`kdl`, `miette`, `winnow`, `unicode-width`).
+
+**What D5 found when it built that.** The promise above holds and the *route* to it was not the
+obvious one, which is worth writing down because the obvious one looks like it works:
+
+* **`kdl`'s mutation API does not reprint what you change.** Setting an entry's value leaves the
+  printed output byte-identical, because a parsed entry retains the text it was spelled as and
+  that text wins. `clear_format()` forces a reprint and also drops the whitespace around the
+  value, so `row "North"  4200` comes back as `row "North" 4300` — a one-line diff that has eaten
+  the alignment the file was keeping.
+* **So D5 splices bytes**, at the spans `kdl` reports. That is the machinery
+  `sheet/src/odf/source.rs` and `text/src/odf/source.rs` already are, it needs no second document
+  model in memory, and it keeps `kdl` as the authority on the two things it is actually best at:
+  where the spans are, and how a value is spelled.
+* **The map is nearly free, which is the part that was predicted correctly.** The projection
+  *reader* already computes an address for every node it walks — that is what makes the format
+  bijective — so recording a span beside each one is bookkeeping rather than a pass.
+* **An untouched save is byte-identical**, which is the strongest form of "the writer never
+  regenerates what nobody touched" and is asserted over both corpora rather than argued for.
 
 ### 3.2 Where it lives — the `odf/` seam again, not a new crate
 
@@ -637,7 +656,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | **done** — and green over `sw/qa` too: 1755/1755, nothing differing. The notation went beside `markdown.rs` rather than into it, and §3.6 records why. Images are the one named gap, and §3.8 records what took its answer away |
 | **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done** — 359/359 and 1755/1755, nothing differing, `FLOOR = 359` and `FLOOR = 1755` |
 | **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, for either application. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
-| **D5** | R6 for the projection: splice through `kdl-rs`'s document model | One cell edited changes one line; comments survive | not started |
+| **D5** | R6 for the projection: splice at the spans `kdl-rs` reports | One cell edited changes one line; comments survive | **done**, both document types — `grind_core::projection::Source` plus a splice per app. An untouched save returns the bytes that were read, over both corpora. Not through `kdl-rs`'s *mutation* API, and §3.1 records why |
 | **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | not started |
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |
 | **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |

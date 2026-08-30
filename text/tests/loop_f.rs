@@ -274,6 +274,141 @@ fn the_span_map_finds_a_block_by_every_name_it_has() {
     );
 }
 
+// --- D5: R6 for the projection ---
+
+/// A hand-written projection with everything in it the model has no room for: a comment, blank
+/// lines, and the `list { … }` authoring spelling the writer never emits.
+const BY_HAND: &str = r#"grind text
+
+// The chapter this file is about. None of this is in the model.
+h 1 "Addresses"
+
+p "{#intro}A paragraph, with a **bold** word in it."
+
+list {
+    li "invalidated by an insert above"
+    li "which is what a named target is for"
+}
+"#;
+
+/// Which lines two texts differ on — "one keystroke is one line of diff", measured.
+fn changed_lines<'a>(before: &'a str, after: &'a str) -> Vec<(&'a str, &'a str)> {
+    let (a, b): (Vec<_>, Vec<_>) = (before.lines().collect(), after.lines().collect());
+    assert_eq!(a.len(), b.len(), "a splice does not change the line count");
+    a.into_iter().zip(b).filter(|(x, y)| x != y).collect()
+}
+
+/// `BY_HAND` opened through the crate's own door, so that what is tested is what a shell does.
+fn opened() -> grind_text::App {
+    let app = grind_text::App::new();
+    app.open_bytes("by-hand.grind", BY_HAND.as_bytes())
+        .expect("a projection opens");
+    app
+}
+
+fn saved(app: &grind_text::App) -> String {
+    String::from_utf8(app.save_bytes(grind_text::Form::Projection).expect("saves")).expect("utf-8")
+}
+
+/// **D5's headline for text.** Typing into one paragraph rewrites one line, and everything the
+/// model has no room for is still there.
+#[test]
+fn one_paragraph_typed_into_changes_one_line() {
+    let app = opened();
+    app.insert_text(
+        grind_text::loc::Caret {
+            block: 1,
+            offset: 1,
+        },
+        "nother",
+    )
+    .expect("types");
+    let after = saved(&app);
+    assert_eq!(
+        changed_lines(BY_HAND, &after),
+        [(
+            "p \"{#intro}A paragraph, with a **bold** word in it.\"",
+            "p \"{#intro}Another paragraph, with a **bold** word in it.\""
+        )]
+    );
+    assert!(after.contains("// The chapter this file is about."));
+    assert!(
+        after.contains("list {"),
+        "the authoring spelling nobody touched is not rewritten into the flat one"
+    );
+}
+
+/// A list item is inside a `list` block, and a splice reaches into one — the site is the `li`
+/// node wherever it sits. What comes back is the *flat* spelling of its depth, which is what the
+/// writer emits, and the two mean the same document.
+#[test]
+fn an_item_inside_the_authoring_spelling_splices_too() {
+    let app = opened();
+    app.insert_text(
+        grind_text::loc::Caret {
+            block: 2,
+            offset: 0,
+        },
+        "still ",
+    )
+    .expect("types");
+    let after = saved(&app);
+    assert_eq!(
+        changed_lines(BY_HAND, &after),
+        [(
+            "    li \"invalidated by an insert above\"",
+            "    li 1 \"still invalidated by an insert above\""
+        )],
+        "the depth becomes explicit, the indentation stays the file's"
+    );
+}
+
+/// Saving a projection nobody edited gives back the bytes that were read.
+#[test]
+fn saving_an_untouched_projection_returns_the_file() {
+    assert_eq!(saved(&opened()), BY_HAND);
+}
+
+/// The same over every vendored document: project one, read it back, save it untouched, and the
+/// bytes have to be the projection they came from.
+#[test]
+fn every_projected_document_saves_back_unchanged() {
+    for path in vendored() {
+        let bytes = std::fs::read(&path).expect("a readable document");
+        let name = path.display().to_string();
+        let original = grind_text::read_bytes(&name, &bytes).expect("loop A reads this");
+        let projected = projection::project(&original).into_text();
+        let reopened = projection::read(&projected).expect("its own projection reads back");
+        let saved = grind_text::write_bytes(&reopened, grind_text::Form::Projection)
+            .expect("saves as a projection");
+        assert_eq!(
+            String::from_utf8(saved).expect("utf-8"),
+            projected,
+            "{name}: an untouched save is not the file that was read"
+        );
+    }
+}
+
+/// The **structural boundary**: the sequence moved, so `p12` in the file and `p12` in the model
+/// are no longer the same paragraph, and every site is keyed by exactly that. The document
+/// regenerates — the comment is lost, the meaning is not.
+#[test]
+fn a_block_inserted_regenerates_rather_than_splicing_into_the_wrong_line() {
+    let app = opened();
+    app.split_block(grind_text::loc::Caret {
+        block: 1,
+        offset: 1,
+    })
+    .expect("splits");
+    let after = saved(&app);
+    assert!(
+        !after.contains("// The chapter this file is about."),
+        "this is the honest cost of the boundary"
+    );
+    let back = projection::read(&after).expect("parses");
+    assert_eq!(back.blocks.len(), 5, "and the new block is really there");
+}
+
 // --- comparison ---
 
 /// Every difference between two documents, in the terms the projection is responsible for.

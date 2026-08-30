@@ -226,4 +226,11 @@ say "convert: the same document a third way"
 say "every command takes a projection, because kind decides and nothing else does"
 text view "$out/sample.grind" | sed -n '1,6p'
 
+# R6 for the third form (D5): one keystroke is one line of diff. A block is one node, so typing
+# into a paragraph rewrites that node and nothing else in the file.
+say "one keystroke is one line of diff"
+cp "$out/sample.grind" "$out/sample-before.grind"
+text type "$out/sample.grind" p2 "Still " >/dev/null
+diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
+
 printf '\n%s and %s\n' "$doc" "$out/sample.odt"

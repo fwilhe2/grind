@@ -29,6 +29,43 @@ pub fn project(doc: &Document) -> Projection {
     out.finish()
 }
 
+/// The projection this document was read from, with the edited blocks put back in place.
+///
+/// R6 for the third form (D5). `None` means *not applicable, regenerate* and never *failed*, and
+/// the two conditions are the same two `odf::write::splice` has, for the same reasons — the
+/// sequence must not have moved, and every edited block must sit somewhere the file actually
+/// spelled.
+///
+/// **A block is one node, so a block is one patch.** That is the whole of why the text side
+/// needs no equivalent of the spreadsheet's shape check: a paragraph whose runs, level or style
+/// changed is still a paragraph node, and re-emitting it is re-emitting one line. The one thing
+/// a re-emitted node loses is an image, which this writer has no spelling for either way
+/// (`doc/projection-text.md`), so splicing and regenerating drop exactly the same thing.
+pub fn splice(doc: &Document) -> Option<String> {
+    let source = doc.projection_source.as_deref()?;
+    // The block sequence moved, so `p12` in the file and `p12` in the model are not the same
+    // paragraph any more — and `p12` is the address every site is keyed by.
+    if doc.edits.structural {
+        return None;
+    }
+    let mut patches = Vec::with_capacity(doc.edits.blocks.len());
+    for (index, block) in doc.blocks.iter().enumerate() {
+        if !doc.edits.blocks.contains(&block.id) {
+            continue;
+        }
+        let site = source.site(&loc::format(index))?;
+        let mut out = Emitter::new();
+        write_block(&mut out, doc, index, block);
+        // The emitter ends a node with a newline; the span it is going into stops before the one
+        // already in the file.
+        patches.push((
+            site.span.clone(),
+            out.finish().into_text().trim_end().to_owned(),
+        ));
+    }
+    source.splice(patches)
+}
+
 fn write_block(out: &mut Emitter, doc: &Document, index: usize, block: &Block) {
     match &block.kind {
         BlockKind::Paragraph => out.begin("p"),

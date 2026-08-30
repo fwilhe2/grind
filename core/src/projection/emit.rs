@@ -131,7 +131,7 @@ impl Emitter {
         let value = value.into();
         self.space();
         let start = self.text.len();
-        self.text.push_str(&value.to_string());
+        self.text.push_str(&repr(&value));
         self.token(kind_of(&value), start);
     }
 
@@ -283,6 +283,17 @@ impl Emitter {
             },
         });
     }
+}
+
+/// How a value is spelled in a projection — the one function that answers it.
+///
+/// `KdlValue`'s own `Display`, per this module's rule, with the escaping the container has to add
+/// on top — the code points KDL will not see literally. It is public because the *splice* needs
+/// the same answer as the writer: `source.rs` replaces one value in the retained text, and a
+/// value spelled two ways by two functions is a bijection that holds until the first file that
+/// exercises the difference.
+pub fn repr(value: &KdlValue) -> String {
+    escape_disallowed(&value.to_string())
 }
 
 /// The code points KDL refuses to see *literally* in a document — the C0 controls it does not

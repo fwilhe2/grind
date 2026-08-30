@@ -16,6 +16,7 @@
 //! as one cell covers one cell.
 
 use grind_core::projection::kdl::{KdlDocument, KdlNode, KdlValue};
+use grind_core::projection::{Shape, Source, entry_span, node_span};
 
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Map, Op, Part};
@@ -23,11 +24,18 @@ use crate::style::CellStyle;
 use crate::{Error, Result, a1, filter, formula, locale, style};
 
 /// Read a projection.
+///
+/// The `Source` built alongside is R6 for this form (D5, `grind_core::projection::source`): the
+/// text as it came in, and where every cell sits in it, so that saving one edited cell rewrites
+/// one value and leaves the comments, the blank lines and the hand alignment alone. It costs one
+/// `record` per cell in the two places that read one, because the reader is already computing
+/// the address — which is the argument for building the map here rather than in a second pass.
 pub fn read(text: &str) -> Result<Document> {
     let (kind, body) = grind_core::projection::parse(text)?;
     if kind != grind_core::DocumentKind::Spreadsheet {
         return Err(Error::Odf(grind_core::Error::UnsupportedKind(Some(kind))));
     }
+    let mut source = Source::new(text);
     let mut doc = Document {
         sheets: Vec::new(),
         ..Document::default()
@@ -44,7 +52,7 @@ pub fn read(text: &str) -> Result<Document> {
                 let expression = text_arg(node, 1)?;
                 doc.names.insert(name.to_lowercase(), expression);
             }
-            "sheet" => doc.sheets.push(sheet(node)?),
+            "sheet" => doc.sheets.push(sheet(node, &mut source)?),
             other => return Err(unknown(node, other, "a document")),
         }
     }
@@ -54,12 +62,13 @@ pub fn read(text: &str) -> Result<Document> {
     if doc.sheets.is_empty() {
         doc.sheets.push(Sheet::new("Sheet1"));
     }
+    doc.projection_source = Some(Box::new(source));
     Ok(doc)
 }
 
 // --- a sheet ---
 
-fn sheet(node: &KdlNode) -> Result<Sheet> {
+fn sheet(node: &KdlNode, source: &mut Source) -> Result<Sheet> {
     let mut sheet = Sheet::new(text_arg(node, 0)?);
     for child in children(node) {
         match child.name().value() {
@@ -81,8 +90,8 @@ fn sheet(node: &KdlNode) -> Result<Sheet> {
                     sheet.set_row_hidden(row, true);
                 }
             }
-            "at" => at_block(&mut sheet, child)?,
-            "cell" => cell(&mut sheet, child)?,
+            "at" => at_block(&mut sheet, child, source)?,
+            "cell" => cell(&mut sheet, child, source)?,
             "style" => {
                 let value = cell_style(child)?;
                 for pos in cells_of(child)? {
@@ -103,7 +112,7 @@ fn sheet(node: &KdlNode) -> Result<Sheet> {
 }
 
 /// `at A1 { row … }` — a grid of plain values, laid down from a top-left corner.
-fn at_block(sheet: &mut Sheet, node: &KdlNode) -> Result<()> {
+fn at_block(sheet: &mut Sheet, node: &KdlNode, source: &mut Source) -> Result<()> {
     let start = position(node, 0)?;
     for (row, child) in (start.row..).zip(children(node)) {
         if child.name().value() != "row" {
@@ -120,6 +129,13 @@ fn at_block(sheet: &mut Sheet, node: &KdlNode) -> Result<()> {
             // the cell between its neighbours has nothing in it.
             if !matches!(entry.value(), KdlValue::Null) {
                 sheet.set(pos, value(entry.value()));
+                // A grid row is one line and a dozen splice sites: writing 4300 over 4200
+                // changes those four bytes and nothing else on the line, which is what makes
+                // `git diff` on a `.grind` read like a spreadsheet edit rather than a rewrite.
+                // The hole is deliberately not a site — there is nothing there to replace, and
+                // a cell that appears where one was is a structural change (D5's second
+                // boundary, `grind_core::projection::source`).
+                source.record(mark(sheet, pos), entry_span(entry), Shape::Value);
             }
         }
     }
@@ -127,8 +143,12 @@ fn at_block(sheet: &mut Sheet, node: &KdlNode) -> Result<()> {
 }
 
 /// `cell B5 15400 formula="of:=SUM(…)" date=#true` — one cell that carries more than a value.
-fn cell(sheet: &mut Sheet, node: &KdlNode) -> Result<()> {
+fn cell(sheet: &mut Sheet, node: &KdlNode, source: &mut Source) -> Result<()> {
     let pos = position(node, 0)?;
+    // The whole node, because everything about this cell is on it: editing the formula rewrites
+    // one line, and the `kdl` span stops before the indentation and the newline, so what is
+    // spliced in is exactly what the writer would emit for a node at the left margin.
+    source.record(mark(sheet, pos), node_span(node), Shape::Node);
     let mut formula = string_prop(node, "formula");
     if let Some(entry) = argument(node, 1) {
         match entry {
@@ -380,6 +400,12 @@ fn text_of(value: &KdlValue) -> String {
         KdlValue::String(text) => text.clone(),
         other => other.to_string(),
     }
+}
+
+/// The address a cell is recorded under — the writer's own [`super::write::address`], so that a
+/// site recorded on the way in is looked up by the same string on the way out.
+fn mark(sheet: &Sheet, pos: Pos) -> String {
+    super::write::address(sheet, pos)
 }
 
 fn argument(node: &KdlNode, index: usize) -> Option<&KdlValue> {

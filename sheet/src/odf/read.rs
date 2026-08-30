@@ -188,6 +188,7 @@ impl Builder {
                 null_date: date::DEFAULT_NULL_DATE,
                 null_year: date::DEFAULT_NULL_YEAR,
                 source: None,
+                projection_source: None,
                 edits: Default::default(),
             },
             sheet: 0,

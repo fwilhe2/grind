@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
-| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/` and `text/src/projection/`, which are built (D0–D4, both document types). Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips) and layer 1 (a generator, one direction, not built and still a proposal) |
+| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/` and `text/src/projection/`, which are built (D0–D5, both document types). Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips) and layer 1 (a generator, one direction, not built and still a proposal) |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -237,7 +237,7 @@ rather than a guest:
 
 | Crate | Directory | Holds |
 |---|---|---|
-| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header and the token and span maps of `doc/dsl.md`'s third physical form |
+| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header, the token and span maps of `doc/dsl.md`'s third physical form, and `projection/source.rs`, which is R6 for it |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
 | `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-cli` | `cli/` | The `grind` binary |
@@ -322,15 +322,17 @@ before it can be answered.
   physical form: the same document as plain KDL a person can write in any editor. The core half
   is the container and the two maps a code view is made of — the token map (highlighting comes
   from the *writer*, never from a highlighter) and the span map (address ⇄ byte range, both
-  ways). Each app half is that app's node vocabulary; the text one adds `inline.rs`, a
+  ways) — and `source.rs`, R6 for the third form: the retained text plus the byte range of every
+  address in it, so one edit is one line and an untouched save is the bytes that were read. Each
+  app half is that app's node vocabulary; the text one adds `inline.rs`, a
   paragraph's runs as one string and back, whose marker table is `markdown.rs`'s so no fifth
   reading of `**` exists anywhere in the suite. A text block anchors *every* address `loc.rs`
   gives it — `p12`, `#intro` and `§2.1.3` are one line and three rows of the span map. Reached as `grind sheet project`, as
   **`Form::Projection`** — the third arm of the form enum, so `grind convert book.fods
   book.grind` writes one and every shell's save dialog offers it — and by `read_bytes`, which
-  sniffs the form from the first line rather than from the name. Writing one from a crate that
-  has no projection (text, until D2) is an error naming the milestone, never XML under a
-  `.grind` name. **Charts are the one named gap.**
+  sniffs the form from the first line rather than from the name. Each app's `projection::save` is
+  the one door out — splice if it can, regenerate if it cannot — so no caller can write a
+  projection without R6. **Charts are the one named gap for the sheet, images for text.**
   The grammar cannot drift from the model: `doc/projection-sheet.md` lists every node with an
   example the test executes, and every field of `Document`/`Sheet` with its node or a reason
   there is none — read out of `sheet/src/model.rs` at compile time, so a new side table fails
@@ -487,17 +489,22 @@ identical. Loop C cannot verify a feature that writes nothing, which is the poin
 gap. All four shells draw it; `CellRole::marker` is in the core so no shell invents a glyph
 table.
 
-**The projection is built for both document types, D0 through D4** (`doc/dsl.md` layer 0): a
+**The projection is built for both document types, D0 through D5** (`doc/dsl.md` layer 0): a
 `.grind` is a **third physical form** beside the package and the flat file — `Form::Projection`,
 so `grind convert book.fods book.grind` and back both work, for either application, and every
 shell opens one because `read_bytes` sniffs the form from the first line rather than the name.
 `grind <app> project` prints it, with `--tokens` and `--anchors` for the two maps §6 is built
 on. Each grammar is held to its own scope line by a document with executable examples
 (`doc/projection-sheet.md` against `sheet/src/model.rs`'s fields, `doc/projection-text.md`
-against `doc/text-core.md`'s elements) and loop F holds the bijection over both corpora. **Layer
-1 — the generator — is untouched and still a proposal**, and D5–D10 are the open list: R6 for
-the projection, `grind lint`, `grind build`, `grind test`, the code view in the shells, and the
-refactorings.
+against `doc/text-core.md`'s elements) and loop F holds the bijection over both corpora. **D5 is
+R6 for it**: a `.grind` is read with a `grind_core::projection::Source` beside it — the text, and
+the byte range of every address in it — so saving splices rather than regenerates. One cell or
+one block edited changes one line; comments, blank lines and hand alignment survive; an untouched
+save returns the bytes that were read, asserted over both corpora. It is **not** `kdl-rs`'s
+mutation API, which reprints nothing and loses the alignment when forced to — `doc/dsl.md` §3.1
+records the measurement. **Layer 1 — the generator — is untouched and still a proposal**, and
+D6–D10 are the open list: `grind lint`, `grind build`, `grind test`, the code view in the shells,
+and the refactorings.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which

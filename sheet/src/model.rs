@@ -480,6 +480,15 @@ pub struct Document {
     /// only large-and-usually-absent field on a `Document`, and an `Option<Box<_>>` keeps
     /// the common case a pointer.
     pub source: Option<Box<crate::odf::source::Source>>,
+    /// The **projection** this document was read from, when it was read from one (`doc/dsl.md`
+    /// §3.1, D5).
+    ///
+    /// A second slot rather than a variant of the first, because the two retain different
+    /// things: [`crate::odf::source::Source`] keeps XML elements and the attributes of them
+    /// this crate does not model, and `grind_core::projection::Source` keeps a map from
+    /// address to byte range. A document has at most one of them — it was read from one file —
+    /// and which one is decided by the form those bytes were.
+    pub projection_source: Option<Box<grind_core::projection::Source>>,
     /// What has changed since. See [`Edits`].
     pub edits: Edits,
 }
@@ -525,6 +534,7 @@ impl Default for Document {
             null_date: crate::formula::date::DEFAULT_NULL_DATE,
             null_year: crate::formula::date::DEFAULT_NULL_YEAR,
             source: None,
+            projection_source: None,
             edits: Edits::default(),
         }
     }

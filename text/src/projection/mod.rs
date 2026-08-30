@@ -73,3 +73,14 @@ pub fn project(doc: &Document) -> Projection {
 pub fn read(text: &str) -> Result<Document> {
     read::read(text)
 }
+
+/// The bytes a `.grind` is saved as — the file it came from with the edited blocks put back when
+/// that is possible (R6, D5), and a fresh projection when it is not.
+///
+/// The one door out, so that no caller can save a projection *without* R6.
+pub fn save(doc: &Document) -> Vec<u8> {
+    match write::splice(doc) {
+        Some(text) => text.into_bytes(),
+        None => project(doc).into_text().into_bytes(),
+    }
+}

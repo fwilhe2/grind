@@ -376,4 +376,13 @@ say "convert: the same document a third way"
 say "every command takes a projection, because kind decides and nothing else does"
 sheet view "$out/sample.grind" A1:D8
 
+# R6 for the third form (D5). Editing one cell of a `.grind` rewrites one *value* and leaves the
+# rest of the file — its comments, its blank lines, the columns somebody lined up by eye — byte
+# for byte as it was. That is the same promise a `.fods` gets from `odf/source.rs`, and it is why
+# a projection is worth keeping in git.
+say "one cell edited is one line of diff"
+cp "$out/sample.grind" "$out/sample-before.grind"
+sheet set "$out/sample.grind" B2 9999 >/dev/null
+diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

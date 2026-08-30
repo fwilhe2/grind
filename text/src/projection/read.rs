@@ -18,25 +18,32 @@
 //!   and a depth is a number rather than a shape (`model.rs`, rng:16938).
 
 use grind_core::projection::kdl::{KdlDocument, KdlNode, KdlValue};
+use grind_core::projection::{Shape, Source, node_span};
 
 use crate::model::{Block, BlockKind, Document};
-use crate::{Error, Result};
+use crate::{Error, Result, loc};
 
 /// Read a projection.
+///
+/// The `Source` built alongside is R6 for this form (D5): the text as it came in, and where every
+/// block sits in it, so that typing into one paragraph rewrites one line and leaves the comments,
+/// the blank lines and the `list` nesting somebody wrote by hand alone.
 pub fn read(text: &str) -> Result<Document> {
     let (kind, body) = grind_core::projection::parse(text)?;
     if kind != grind_core::DocumentKind::Text {
         return Err(grind_core::Error::UnsupportedKind(Some(kind)));
     }
     let mut doc = Document::new();
-    blocks(&mut doc, body.nodes(), 0)?;
+    let mut source = Source::new(text);
+    blocks(&mut doc, body.nodes(), 0, &mut source)?;
     doc.reindex_bookmarks();
+    doc.projection_source = Some(Box::new(source));
     Ok(doc)
 }
 
 /// One level of nodes. `depth` is how many `list` blocks are open around them, which is zero
 /// everywhere except inside the authoring spelling.
-fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32) -> Result<()> {
+fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32, source: &mut Source) -> Result<()> {
     for node in nodes {
         let kind = match node.name().value() {
             "p" => BlockKind::Paragraph,
@@ -49,11 +56,18 @@ fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32) -> Result<()> {
                 depth: number(node, 0).unwrap_or(depth.max(1)),
             },
             "list" => {
-                blocks(doc, children(node), depth + 1)?;
+                blocks(doc, children(node), depth + 1, source)?;
                 continue;
             }
             other => return Err(unknown(node, other)),
         };
+
+        // The whole node, not just its string: a block *is* one node, so everything an edit can
+        // change about it — its text, its level, its style name — is inside this span, and the
+        // `kdl` span stops before the indentation and the newline. One block is one line, so one
+        // keystroke is one line of `git diff`, which is the property `text/src/odf/source.rs`
+        // already gives a `.fodt` and D5 gives the third form.
+        source.record(loc::format(doc.blocks.len()), node_span(node), Shape::Node);
 
         let id = doc.next_id();
         let mut block = Block::new(id, kind);

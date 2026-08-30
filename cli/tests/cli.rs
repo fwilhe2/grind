@@ -854,6 +854,66 @@ fn convert_reaches_the_projection_for_a_text_document_too() {
     assert!(view.contains("Field Notes"), "{view}");
 }
 
+/// **D5 through the CLI, both applications**: editing a `.grind` in place rewrites one line and
+/// leaves everything the model has no room for exactly as it was.
+///
+/// It is a CLI test rather than a core one because the core tests can only prove that
+/// `write_bytes` splices; this proves that the *product* does — that `grind sheet set book.grind`
+/// picks the projection form from the name, finds the retained text on the document it just
+/// read, and puts the file back. R6 has never been a library property here.
+#[test]
+fn editing_a_projection_in_place_rewrites_one_line() {
+    let dir = Sandbox::new("projection-r6");
+
+    let book = dir.path("book.grind");
+    std::fs::write(
+        &book,
+        "grind spreadsheet\n\n// Q3 forecast, by hand.\nsheet Sales {\n    at A1 {\n        \
+         row North   4200    4800\n    }\n}\n",
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&book).unwrap();
+    ok(&["set", &s(&book), "B1", "4300"]);
+    let after = std::fs::read_to_string(&book).unwrap();
+    assert_eq!(
+        changed_lines(&before, &after),
+        [(
+            "        row North   4200    4800",
+            "        row North   4300    4800"
+        )],
+        "one value, and the alignment either side of it is the file's own"
+    );
+    assert!(after.contains("// Q3 forecast, by hand."), "{after}");
+
+    let report = dir.path("report.grind");
+    std::fs::write(
+        &report,
+        "grind text\n\n// The chapter this file is about.\nh 1 \"Addresses\"\n\np \"A paragraph.\"\n",
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&report).unwrap();
+    succeeds(
+        grind(&["text", "type", &s(&report), "p2", "Another "]),
+        &["text", "type"],
+    );
+    let after = std::fs::read_to_string(&report).unwrap();
+    assert_eq!(
+        changed_lines(&before, &after),
+        [("p \"A paragraph.\"", "p \"Another A paragraph.\"")]
+    );
+    assert!(
+        after.contains("// The chapter this file is about."),
+        "{after}"
+    );
+}
+
+/// Which lines two texts differ on, as `(before, after)`.
+fn changed_lines<'a>(before: &'a str, after: &'a str) -> Vec<(&'a str, &'a str)> {
+    let (a, b): (Vec<_>, Vec<_>) = (before.lines().collect(), after.lines().collect());
+    assert_eq!(a.len(), b.len(), "a splice does not change the line count");
+    a.into_iter().zip(b).filter(|(x, y)| x != y).collect()
+}
+
 /// `doc/flat-first.md`: naming `.ods` or `.odt` asks for a package and gets one; naming
 /// anything else — a bare stem most of all — gets flat XML, because the whole point of R6's
 /// diffable writer is lost the moment the file it applies to is a zip.

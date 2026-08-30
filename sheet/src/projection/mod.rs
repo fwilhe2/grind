@@ -95,6 +95,20 @@ pub fn project(doc: &Document) -> Projection {
     write::project(doc)
 }
 
+/// The bytes a `.grind` is saved as — the file it came from with the edited cells put back when
+/// that is possible (R6, D5), and a fresh projection when it is not.
+///
+/// The one door out, so that no caller can save a projection *without* R6: `odf::write` reaches
+/// this and nothing reaches [`project`] to make a file. That is the same shape `odf::write`
+/// already has — splice first, regenerate otherwise — and the reason it is here rather than in
+/// the two places that write bytes.
+pub fn save(doc: &Document) -> Vec<u8> {
+    match write::splice(doc) {
+        Some(text) => text.into_bytes(),
+        None => project(doc).into_text().into_bytes(),
+    }
+}
+
 /// Read a projection back into a document.
 pub fn read(text: &str) -> Result<Document> {
     read::read(text)

@@ -98,7 +98,8 @@ thing that grows.
 | `Document::names` | `name` |
 | `Document::null_date` | `null-date` |
 | `Document::null_year` | `null-year` |
-| `Document::source` | gap: R6's retained bytes of the form the document was *read* from. Not state a document has — a physical form does — and a projection is a third form, which D5 gives a splice of its own |
+| `Document::source` | gap: R6's retained bytes of the form the document was *read* from. Not state a document has — a physical form does — and a projection is a third form, which D5 gave a splice of its own |
+| `Document::projection_source` | gap: **that splice** — the projection's own retained text and the byte range of every cell in it. The same argument one row up, and the reason it is a second field rather than a variant of the first is that the two retain different things (`grind_core::projection::source`) |
 | `Document::edits` | gap: what has changed since the read, which is a fact about a session rather than about a document |
 | `Sheet::name` | `sheet` |
 | `Sheet::cols` | `at` and `cell` — the column store is the cell values, and those are what a grid row and a `cell` node hold |

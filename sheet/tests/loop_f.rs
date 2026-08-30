@@ -319,6 +319,178 @@ fn the_span_map_finds_a_cell_and_a_cell_finds_its_line() {
     );
 }
 
+// --- D5: R6 for the projection ---
+
+/// A hand-written projection, with everything in it the model has no room for: a comment, blank
+/// lines, a column of numbers lined up by eye, and a value spelled `4200.0` where the writer
+/// would have said `4200`.
+const BY_HAND: &str = r#"grind spreadsheet
+
+// Q3 forecast. Nothing below this line is in the model.
+sheet Sales {
+    at A1 {
+        row Region  Q1      Q2
+        row North   4200.0  4800
+        row South   3100    3300
+    }
+
+    cell B5 15400 formula="of:=SUM([.B2:.B3])"
+}
+"#;
+
+/// Which lines two texts differ on, as `(before, after)` — what "one cell edited changes one
+/// line" is measured with rather than asserted about.
+fn changed_lines<'a>(before: &'a str, after: &'a str) -> Vec<(&'a str, &'a str)> {
+    let (a, b): (Vec<_>, Vec<_>) = (before.lines().collect(), after.lines().collect());
+    assert_eq!(a.len(), b.len(), "a splice does not change the line count");
+    a.into_iter().zip(b).filter(|(x, y)| x != y).collect()
+}
+
+/// Read `BY_HAND`, apply `edit`, and save it back as a projection through the crate's own door.
+fn edited(edit: grind_sheet::action::Action) -> String {
+    let mut doc = projection::read(BY_HAND).expect("parses");
+    doc.apply(edit).expect("applies");
+    String::from_utf8(grind_sheet::write_bytes(&doc, grind_sheet::Form::Projection).expect("saves"))
+        .expect("utf-8")
+}
+
+/// **D5's headline.** One cell edited is one line of `git diff`, and everything the model does
+/// not carry is still there afterwards.
+#[test]
+fn one_cell_edited_changes_one_line() {
+    let after = edited(grind_sheet::action::Action::SetCell {
+        sheet: 0,
+        pos: Pos::new(1, 1),
+        value: grind_sheet::model::CellValue::Number(4300.0),
+    });
+    assert_eq!(
+        changed_lines(BY_HAND, &after),
+        [(
+            "        row North   4200.0  4800",
+            "        row North   4300  4800"
+        )],
+        "one line, and the alignment on either side of the value is the file's own"
+    );
+    assert!(
+        after.contains("// Q3 forecast."),
+        "a comment the model has no room for survives an edit (doc/dsl.md §3.1)"
+    );
+    assert_eq!(
+        projection::read(&after)
+            .expect("parses")
+            .sheet(0)
+            .unwrap()
+            .get(Pos::new(1, 1)),
+        grind_sheet::model::CellValue::Number(4300.0),
+        "and the file still means what the model says"
+    );
+}
+
+/// A `cell` node is replaced whole, because everything about that cell is on it — and the
+/// indentation in front of it and the newline after it are still the file's.
+#[test]
+fn a_formula_edited_changes_its_own_line() {
+    let after = edited(grind_sheet::action::Action::SetFormula {
+        sheet: 0,
+        pos: Pos::new(4, 1),
+        formula: Some("of:=SUM([.B2:.B4])".to_owned()),
+        value: grind_sheet::model::CellValue::Number(15400.0),
+    });
+    assert_eq!(
+        changed_lines(BY_HAND, &after),
+        [(
+            "    cell B5 15400 formula=\"of:=SUM([.B2:.B3])\"",
+            "    cell B5 15400 formula=\"of:=SUM([.B2:.B4])\""
+        )]
+    );
+}
+
+/// Saving a projection nobody edited gives back the bytes that were read — the strongest form of
+/// "the writer never regenerates what nobody touched", and the one that covers hand alignment,
+/// blank lines and comments in a single assertion.
+#[test]
+fn saving_an_untouched_projection_returns_the_file() {
+    let doc = projection::read(BY_HAND).expect("parses");
+    let out = grind_sheet::write_bytes(&doc, grind_sheet::Form::Projection).expect("saves");
+    assert_eq!(String::from_utf8(out).expect("utf-8"), BY_HAND);
+}
+
+/// The same, over every document the corpus has: project one, read *that* back, save it
+/// untouched, and the bytes have to be the projection they came from.
+#[test]
+fn every_projected_document_saves_back_unchanged() {
+    for path in corpus() {
+        let bytes = std::fs::read(&path).expect("a readable document");
+        let name = path.display().to_string();
+        let original = grind_sheet::read_bytes(&name, &bytes).expect("loop A reads this");
+        let projected = projection::project(&original).into_text();
+        let reopened = projection::read(&projected).expect("its own projection reads back");
+        let saved = grind_sheet::write_bytes(&reopened, grind_sheet::Form::Projection)
+            .expect("saves as a projection");
+        assert_eq!(
+            String::from_utf8(saved).expect("utf-8"),
+            projected,
+            "{name}: an untouched save is not the file that was read"
+        );
+    }
+}
+
+/// The **shape boundary** (`grind_core::projection::source`), and the case that makes it
+/// necessary: a plain number in a grid row turns into a formula, which a grid cannot hold. The
+/// splice refuses and the document regenerates — the comment is lost, the meaning is not.
+#[test]
+fn a_value_that_becomes_a_formula_regenerates_rather_than_lying() {
+    let after = edited(grind_sheet::action::Action::SetFormula {
+        sheet: 0,
+        pos: Pos::new(1, 1),
+        formula: Some("of:=4200*2".to_owned()),
+        value: grind_sheet::model::CellValue::Number(8400.0),
+    });
+    assert!(
+        !after.contains("// Q3 forecast."),
+        "this is the honest cost of the boundary, and it is what makes the next line true"
+    );
+    let back = projection::read(&after).expect("parses");
+    assert_eq!(
+        back.sheet(0).unwrap().formula(Pos::new(1, 1)),
+        Some("of:=4200*2"),
+        "a spliced value would have read back as the *string* `=4200*2` in a grid"
+    );
+}
+
+/// A style is a `style` node over a range, which no cell's site reaches. `Edits::only_values` is
+/// already the flag that says so, and this is it doing the same job for a second form.
+#[test]
+fn a_style_edit_regenerates() {
+    let after = edited(grind_sheet::action::Action::SetStyle {
+        sheet: 0,
+        pos: Pos::new(0, 0),
+        style: Some(Box::new(grind_sheet::style::CellStyle {
+            font_weight: Some("bold".to_owned()),
+            ..Default::default()
+        })),
+    });
+    assert!(!after.contains("// Q3 forecast."), "regenerated");
+    assert!(after.contains("style A1 bold=#true"), "and it says so");
+}
+
+/// A document that came from a `.fods` has no projection to splice into, so asking for one
+/// writes a fresh projection rather than nothing.
+#[test]
+fn a_document_read_from_odf_has_no_projection_to_splice() {
+    let mut doc = Document::default();
+    doc.apply(grind_sheet::action::Action::SetCell {
+        sheet: 0,
+        pos: Pos::new(0, 0),
+        value: grind_sheet::model::CellValue::Number(1.0),
+    })
+    .expect("applies");
+    let out = grind_sheet::write_bytes(&doc, grind_sheet::Form::Projection).expect("saves");
+    let text = String::from_utf8(out).expect("utf-8");
+    assert!(text.starts_with("grind spreadsheet\n"), "{text}");
+    assert!(text.contains("row 1"), "{text}");
+}
+
 // --- comparing two models ---
 
 /// Every way the two documents differ, in words. A `Vec` rather than a bool because the whole

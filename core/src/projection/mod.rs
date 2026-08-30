@@ -27,6 +27,11 @@
 //!    it. Both directions: [`Projection::span_of`] for *select a cell, highlight its line*,
 //!    and [`Projection::address_at`] for the reverse.
 //!
+//! 4. **The retained text** (§3.1, D5). [`Source`] is R6 for the third form: the bytes a
+//!    document was read from, and where each address sits in them, so that saving edits the
+//!    file instead of replacing it. The same retain-and-splice trick `odf/source.rs` uses, and
+//!    the reason a `.grind` may hold comments and hand alignment at all.
+//!
 //! Reading is [`kdl`]'s, re-exported below so every crate in the workspace parses with one
 //! version of it. What this module adds on the way in is [`parse`], which checks the header
 //! and hands back the body — after which an application walks nodes it named itself.
@@ -36,8 +41,10 @@ use std::ops::Range;
 use crate::{DocumentKind, Error, Result};
 
 pub mod emit;
+pub mod source;
 
 pub use emit::Emitter;
+pub use source::{Shape, Site, Source, entry_span, node_span};
 
 /// The KDL implementation, re-exported.
 ///

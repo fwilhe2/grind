@@ -350,6 +350,13 @@ pub struct Document {
     /// `None` for a document this program authored — there is no diff to preserve — and for
     /// one read from a package, which is a zip.
     pub source: Option<Box<crate::odf::source::Source>>,
+    /// The **projection** this document was read from, when it was read from one (`doc/dsl.md`
+    /// §3.1, D5), and where each block sits in it.
+    ///
+    /// A second slot rather than a variant of the first, for the reason
+    /// `grind_core::projection::source` gives: the two retain different things, and a document
+    /// has at most one of them because it was read from one file.
+    pub projection_source: Option<Box<grind_core::projection::Source>>,
     /// What has changed since it was read. See [`crate::odf::source::Edits`].
     pub edits: crate::odf::source::Edits,
 }
