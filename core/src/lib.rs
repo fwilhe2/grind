@@ -9,7 +9,9 @@
 //! paragraph or a heading is. What it knows is the container (`odf::package`), the namespace
 //! vocabulary (`odf::names`), the tolerant reading architecture (`odf::context`), the
 //! styling primitives every family of style is built from (`style`), and how to tell one
-//! document type from another before parsing it (`kind`).
+//! document type from another before parsing it (`kind`). `lint` is the same split once more:
+//! what a *diagnostic* is lives here, and every rule that could produce one lives with the
+//! document type it is about (`doc/dsl.md` §4.3).
 //!
 //! `doc/ods-format.md` marked these sections `[GENERIC]` from the beginning and §10 predicted
 //! this split; extracting them was a move rather than a redesign. Each document type builds on
@@ -25,6 +27,7 @@ use std::fmt;
 pub mod build_info;
 pub mod kind;
 pub mod layout;
+pub mod lint;
 pub mod locale;
 pub mod observer;
 pub mod odf;

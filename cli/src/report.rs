@@ -13,6 +13,7 @@
 use std::fmt;
 
 use clap::ValueEnum;
+use grind_core::lint::Diagnostic;
 use grind_sheet::CellValue;
 use grind_sheet::formula::value::format_number;
 use grind_sheet::numfmt;
@@ -37,6 +38,8 @@ pub enum Report {
     /// A text document's shape — `grind info` over a `.odt`, and every `grind text` command
     /// that writes.
     TextDocument(TextDocumentReport),
+    /// What `grind lint` found (`doc/dsl.md` §4.3, D6).
+    Lint(LintReport),
 }
 
 /// `get` and `view`.
@@ -198,7 +201,42 @@ pub struct TextDocumentReport {
     pub can_redo: bool,
 }
 
+/// `grind lint`, for either application.
+///
+/// One shape whichever kind of document was linted: `main.rs` picks the rules by reading the
+/// file's kind, and a diagnostic is already document-type-neutral (`grind_core::lint`). So a
+/// consumer of `--format json` parses one thing and a shell renders one thing.
+#[derive(Debug, Serialize)]
+pub struct LintReport {
+    pub path: String,
+    pub diagnostics: Vec<Diagnostic>,
+    /// Whether looking stopped at `grind_core::lint::MAX_DIAGNOSTICS`. Serialised always,
+    /// because a consumer that reports "clean" has to know the list is complete.
+    pub truncated: bool,
+    pub errors: usize,
+    pub warnings: usize,
+    pub hints: usize,
+}
+
+impl LintReport {
+    /// Whether this is a failure — what `grind lint`'s exit status is made of.
+    ///
+    /// Errors only. A warning is a document saying something it probably did not mean and a
+    /// hint is house style; gating CI on either would mean nobody could turn the rule on for
+    /// an existing document, which is how a linter ends up permanently disabled.
+    pub fn failed(&self) -> bool {
+        self.errors > 0
+    }
+}
+
 impl Report {
+    /// Whether the command found something that should fail a script. Only `lint` ever does:
+    /// every other report here is the result of an operation that either worked or returned an
+    /// `Err`, and a no-op is a success.
+    pub fn failed(&self) -> bool {
+        matches!(self, Report::Lint(lint) if lint.failed())
+    }
+
     pub fn print(&self, format: Format) {
         match format {
             Format::Json => println!(
@@ -265,6 +303,27 @@ impl Report {
                 for line in &text.lines {
                     println!("{line}");
                 }
+            }
+            // One diagnostic per line, in the shape every compiler prints — so an editor's
+            // error parser and a person reading a terminal both already understand it.
+            Report::Lint(lint) => {
+                for diagnostic in &lint.diagnostics {
+                    println!("{diagnostic}");
+                }
+                if lint.truncated {
+                    println!("(stopped after {} findings)", lint.diagnostics.len());
+                }
+                println!(
+                    "{}: {}",
+                    lint.path,
+                    match lint.diagnostics.is_empty() {
+                        true => "no problems found".to_owned(),
+                        false => format!(
+                            "{} error(s), {} warning(s), {} hint(s)",
+                            lint.errors, lint.warnings, lint.hints
+                        ),
+                    }
+                );
             }
             Report::TextDocument(doc) => {
                 if let Some(kind) = doc.kind {

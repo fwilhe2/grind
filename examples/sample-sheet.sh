@@ -385,4 +385,24 @@ cp "$out/sample.grind" "$out/sample-before.grind"
 sheet set "$out/sample.grind" B2 9999 >/dev/null
 diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
 
+# --- lint: what the document says about itself ---------------------------------------------
+# `doc/dsl.md` §4.3, D6. The rules are about *documents*, which is why no third-party linter can
+# have them: a cached value that disagrees with its formula, a formula naming a sheet that is
+# gone or reading a cell that is empty, and — the row that earns the feature — anything a
+# `.grind` of this document would not carry, by name and by address. Nothing is written.
+
+say "lint --rules: what it checks"
+sheet lint "$book" --rules
+
+say "lint: this document — the two charts are the projection's one named gap, by name"
+sheet lint "$book"
+
+# A stale cached value is the case worth showing, so one is made on purpose: setting a cell a
+# formula reads, without recalculating, leaves the document saying two different things about
+# the same cell. `grind lint` is how a script finds that out; `grind sheet recalc` fixes it.
+say "lint: a cached value that no longer agrees with its formula"
+cp "$book" "$out/stale.fods"
+sheet set "$out/stale.fods" B2 1 >/dev/null
+sheet lint "$out/stale.fods" || true       # an error exits non-zero, so CI can gate on it
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

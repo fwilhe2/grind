@@ -339,16 +339,29 @@ impl Context<Builder> for FontFaces {
 
 /// `office:automatic-styles` or `office:styles` — the `style:style` declarations.
 ///
-/// Only family `text` is collected. A paragraph or table style is a `None` here and therefore
+/// Only family `text` is *collected*. A paragraph or table style is a `None` here and therefore
 /// an `Ignore` subtree, exactly as any other unmodelled element is: the block's own
 /// `text:style-name` is kept verbatim and never resolved (`doc/text-core.md` gates that).
+///
+/// Its **name** is recorded whatever the family, into [`Document::styles`]. That is a different
+/// question from what the style contains — *does this name refer to anything the document
+/// declares?* — and a paragraph style is exactly the case that makes it worth asking, since a
+/// block's `text:style-name` is one (`doc/dsl.md` §4.3, `undeclared-style`).
 struct Styles {
     automatic: bool,
 }
 
 impl Context<Builder> for Styles {
-    fn start_child(&mut self, name: &Name, attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        if !name.is(Ns::Style, "style") || attrs.get(Ns::Style, "family") != Some("text") {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Style, "style") {
+            return None;
+        }
+        if let Some(declared) = attrs.get(Ns::Style, "name")
+            && b.doc.styles.len() < MAX_STYLES
+        {
+            b.doc.styles.insert(declared.to_owned());
+        }
+        if attrs.get(Ns::Style, "family") != Some("text") {
             return None;
         }
         Some(Box::new(TextStyleDef {

@@ -24,11 +24,12 @@ const MANIFEST: &str = include_str!("../Cargo.toml");
 /// Listed rather than walked, for the same reason the parity ratchet lists its inputs: a walk
 /// that finds nothing passes vacuously, and a vacuous ratchet has quietly stopped ratcheting.
 /// A new module here is one line, and the count assertion below is what notices a missing one.
-const SOURCES: [(&str, &str); 15] = [
+const SOURCES: [(&str, &str); 16] = [
     ("lib.rs", include_str!("../src/lib.rs")),
     ("build_info.rs", include_str!("../src/build_info.rs")),
     ("kind.rs", include_str!("../src/kind.rs")),
     ("layout.rs", include_str!("../src/layout.rs")),
+    ("lint.rs", include_str!("../src/lint.rs")),
     ("locale.rs", include_str!("../src/locale.rs")),
     ("observer.rs", include_str!("../src/observer.rs")),
     ("style.rs", include_str!("../src/style.rs")),

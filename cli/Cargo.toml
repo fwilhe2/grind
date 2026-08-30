@@ -15,6 +15,9 @@ name = "grind"
 path = "src/main.rs"
 
 [dependencies]
+# The suite-level half: `kind`, `Form`, and what a lint diagnostic is — the vocabulary a
+# command has to speak *before* it knows which application it is talking to.
+grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 clap = { version = "4", features = ["derive"] }

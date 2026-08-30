@@ -1198,3 +1198,78 @@ fn the_text_sample_script_still_builds_its_document() {
         Err(_) => eprintln!("skipping: no `jing` on PATH; schema validity unchecked"),
     }
 }
+
+/// `grind lint` — `doc/dsl.md` §4.3, D6 — from the outside: the exit status, the two
+/// application verbs, the suite-level one, and the promise that nothing is written.
+#[test]
+fn lint_reports_what_a_document_says_about_itself_and_writes_nothing() {
+    let dir = Sandbox::new("lint");
+    let file = dir.path("book.fods");
+    let f = s(&file);
+
+    ok(&["new", &f]);
+    ok(&["set", &f, "A1", "2"]);
+    ok(&["set", &f, "A2", "=[.A1]*2"]);
+    ok(&["recalc", &f]);
+    assert!(
+        ok(&["lint", &f]).contains("no problems found"),
+        "a document that agrees with itself has nothing to say"
+    );
+
+    // Edit a cell the formula reads, without recalculating: the document now says two
+    // different things about A2, which is exactly the rule.
+    ok(&["set", &f, "A1", "5"]);
+    let before = std::fs::read(&file).expect("the document is there");
+    let report = ok(&["lint", &f]);
+    assert!(report.contains("stale-value"), "{report}");
+    assert!(report.contains("Sheet1.A2"), "{report}");
+    assert_eq!(
+        std::fs::read(&file).expect("still there"),
+        before,
+        "linting a document must leave its bytes exactly as they were"
+    );
+
+    // A warning is not a failure — CI gates on errors only — and `--off` silences a rule.
+    assert!(sheet(&["lint", &f]).status.success());
+    assert!(!ok(&["lint", &f, "--off", "stale-value"]).contains("stale-value"));
+
+    // `--rules` is the list, from the same array the linter runs.
+    let rules = ok(&["lint", &f, "--rules"]);
+    for id in [
+        "stale-value",
+        "missing-sheet",
+        "empty-reference",
+        "unspellable",
+    ] {
+        assert!(rules.contains(id), "--rules omits {id}:\n{rules}");
+    }
+
+    // An error exits non-zero. A formula naming a sheet that is gone is one.
+    ok(&["set", &f, "B1", "=[Gone.A1]"]);
+    let failed = sheet(&["lint", &f]);
+    assert!(!failed.status.success(), "an error fails the command");
+    assert!(String::from_utf8_lossy(&failed.stdout).contains("missing-sheet"));
+
+    // The suite-level verb reads the kind out of the file and runs the same rules.
+    let top = grind(&["lint", &f]);
+    assert!(String::from_utf8_lossy(&top.stdout).contains("missing-sheet"));
+
+    // And the word processor's half, through the same shape of report.
+    let doc = dir.path("report.fodt");
+    let d = s(&doc);
+    succeeds(grind(&["text", "new", &d]), &["text", "new"]);
+    succeeds(
+        grind(&["text", "insert", &d, "--heading", "1", "--text", "One"]),
+        &["text", "insert"],
+    );
+    succeeds(
+        grind(&["text", "insert", &d, "--heading", "3", "--text", "Too deep"]),
+        &["text", "insert"],
+    );
+    let text_report = ok_top(&["text", "lint", &d]);
+    assert!(text_report.contains("heading-skip"), "{text_report}");
+    assert!(
+        ok_top(&["lint", &d]).contains("heading-skip"),
+        "so does the suite-level verb"
+    );
+}

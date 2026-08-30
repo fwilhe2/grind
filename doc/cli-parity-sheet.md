@@ -148,6 +148,13 @@ stops ratcheting.
 - `sheet_name` — `grind info`, and any sheet-qualified address
 - `used_extent` — `grind info`, and `grind sheet view` with no range
 - `names` — `grind info`, and `grind sheet name <name>` for one
+- `lint` — `grind sheet lint`, and `grind lint` at the suite level, which reads the kind out of
+  the file. `doc/dsl.md` §4.3's rules over one document: a cached value that disagrees with its
+  formula, a formula naming a sheet that is gone or reading a cell that is empty, an off-palette
+  colour (`--hints`, off by default) and anything a `.grind` of the document would not carry.
+  `--rules` lists them, `--off <rule>` silences one, and an *error*-severity finding exits
+  non-zero so CI can gate on it. Nothing is written — linting a file leaves its bytes exactly as
+  they were, the same promise view modes make
 - `calculations` — `grind sheet calculations`, one line per calculated cell (address, formula,
   result, the functions it calls) plus a tally of which functions the document uses.
   `--filter` narrows it by sheet, address, formula text or function name, through

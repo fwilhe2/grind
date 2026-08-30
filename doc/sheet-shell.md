@@ -506,6 +506,11 @@ marked and moving the cursor in it selecting the cell that line projects. A stac
 paned split — §6.2 is right that a split is what a person eventually wants, and it is also a
 second viewport to keep in step. Editing it is gated in §6.4.
 
+**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
+core now holds — a stale cached value, a dead bookmark link, a construct the projection cannot
+spell — and every finding carries an address this shell can already go to. What is missing is a
+list and a way to click a row; nothing about the rules is a shell's.
+
 It also carries the one bug this window has had since M10, written down because the shape of it
 recurs: **a handler that runs because the cursor moved must not move the cursor.** Marking the
 current line by placing the cursor on it made GTK deliver `notify::cursor-position` again — not

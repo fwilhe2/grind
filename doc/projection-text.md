@@ -97,6 +97,17 @@ them is obviously right. Choosing between them is a design question **D2 reopens
 answers**, and until it is answered a paragraph's image is dropped and the prose around it is
 not. `text/tests/loop_f.rs`'s `images_are_the_one_named_gap` fails the day that changes.
 
+## What a projection does not carry, and why that is not a gap
+
+`Document::styles` — the set of style names the file this document was read from *declares* —
+has no node here and needs none. It is read and never written, by anything: this build carries
+style names and not style definitions (`doc/text-core.md`), so a `.grind` has nothing to declare
+and an `.fodt` this build regenerates declares nothing either. The set exists so that
+`grind text lint`'s `undeclared-style` rule can ask whether a name points at anything
+(`doc/dsl.md` §4.3), and a document read back from its own projection reporting every style as
+undeclared is that known loss stated out loud rather than a round-trip failure — loop F compares
+blocks, runs and bookmarks, which is what the projection is bijective with.
+
 ## What this document is not
 
 It is not the *design* — `doc/dsl.md` is, and it outranks this file on every question of why.

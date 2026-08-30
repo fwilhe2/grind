@@ -158,6 +158,11 @@ had no width and therefore no lines.
   the span agrees about. What a toolbar reads before it writes, and the reason a mixed selection
   shows neither state: agreement is the answer, not the first character's opinion
 - `find` — `grind text find <needle>`, with a `p12+40` address per hit
+- `lint` — `grind text lint`, and `grind lint` at the suite level. `doc/dsl.md` §4.3's rules
+  over one document: a heading level skipped, a link to a bookmark nothing declares, a style name
+  the document never declares, an off-palette colour (`--hints`) and anything a `.grind` of it
+  would not carry. `--rules` lists them, `--off <rule>` silences one, and an *error*-severity
+  finding exits non-zero. Nothing is written
 - `counts` — `grind text words` — blocks, headings, words, characters
 - `bookmarks` — `grind text name` with no name, which lists them all; and `grind text name
   <name>` prints where one is

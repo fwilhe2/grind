@@ -63,6 +63,10 @@ because a page has no icon theme to ask.
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
 
+**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
+core now holds, and every finding carries an address this shell can already go to; what is
+missing is a list and a way to jump from a row. Nothing about the rules is a shell's.
+
 **The code view is read-only, and shown instead of the document rather than beside it.** §6.2 is
 right that a split is what a person eventually wants; it is also a second viewport to keep in step
 and a resize handle to build, and what pays for itself first is the correspondence. `show()` is

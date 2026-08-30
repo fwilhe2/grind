@@ -428,18 +428,37 @@ projection is line-oriented enough to template well. It loses on the value model
 the interesting rules are about documents, not about scripts. No third-party linter knows what
 a heading is.
 
-| Rule | Applies to |
-|---|---|
-| A heading level skipped (1 → 3) | text |
-| A bookmark referenced and never declared | text |
-| A style name used and never declared in `office:styles` | both — this is `doc/text-core.md`'s known loss, made visible |
-| A formula referencing an empty cell, or a deleted sheet | sheet |
-| A cell whose cached value disagrees with its formula | sheet — loop B's check, pointed at one document |
-| A colour outside `style::PALETTE` | both, as a hint, off by default |
-| A construct the projection cannot spell | both — the bijectivity guard, as a diagnostic |
+**Built — D6.** The table below is the rule list, and it is *executable*: `cli/tests/lint.rs`
+reads this section and checks every id against `grind_sheet::lint::RULES` and
+`grind_text::lint::RULES`, in both directions. A rule with no row fails the build, and so does a
+row naming a rule nothing implements — the mechanism `doc/small-group.md` uses against
+`funcs::implemented()`, which is D6's exit criterion ("every rule named in a table and covered
+by a test") made mechanical rather than promised.
+
+| Rule | Id | Applies to |
+|---|---|---|
+| A heading level skipped (1 → 3) | `heading-skip` | text — after the first heading, which sets the baseline |
+| A bookmark referenced and never declared | `unknown-bookmark` | text — an error: the link is dead |
+| A style name used and never declared in `office:styles` | `undeclared-style` | text — this is `doc/text-core.md`'s known loss, made visible. `Document::styles` is the set of declared names, read and never written |
+| A formula referencing an empty cell | `empty-reference` | sheet — single-cell references only; an empty cell inside a range is ordinary |
+| A formula referencing a deleted sheet | `missing-sheet` | sheet — an error, and `doc/not-doing.md` §3's known bug seen from the other side |
+| A cell whose cached value disagrees with its formula | `stale-value` | sheet — loop B's check, pointed at one document |
+| A colour outside `style::PALETTE` | `off-palette` | both, as a hint, off by default |
+| A construct the projection cannot spell | `unspellable` | both — the bijectivity guard, as a diagnostic. Charts for the sheet, images for text |
+
+Two rows of the original table became two rules rather than one (`empty-reference` and
+`missing-sheet`): they share a sentence and nothing else — one is an error and the other is a
+warning, and a user who wants to silence "reads an empty cell" on a template full of them must
+not thereby silence "reads a sheet that is gone".
 
 The last row is the one that earns the feature: opening a LibreOffice document with change
 tracking and three indices in it and being *told*, by name, what the projection will not carry.
+
+**What a rule may not do is write.** Linting a document leaves its bytes exactly as they were —
+the promise `doc/view-modes.md` makes for the overlays, for the same reason: a diagnostic stored
+in a file goes stale, and a derived one cannot. `grind lint` exits non-zero on an *error* and
+not on a warning or a hint, so CI can gate on a document contradicting itself without every
+existing warning breaking a build.
 
 ### 4.4 Testing
 
@@ -631,12 +650,19 @@ Everything in this document is a core capability except the generator, and the e
 | The projection **as a view** — `App::project(range)` | same | ● | ● | ● | ● |
 | Syntax highlighting — the writer's token map | same | — | ● | ● | ● |
 | The span map, and selection sync both ways | same | — | ● | ● | ● |
-| `grind lint` | core, per app | ● | ● | ● | ● |
+| `grind lint` | core, per app | ● | ○ | ○ | ○ |
 | Refactorings — each one an `Action` | core, per app | ● | ● | ● | ● |
 | **`grind build`** — the generator | **its own crate** | ● | ✗ | ✗ | ✗ |
 | **`grind test`** | same | ● | ✗ | ✗ | ✗ |
 
-Three qualifications, because "in the core" is not the same as "free in every shell":
+Three qualifications, because "in the core" is not the same as "free in every shell". (● is
+built, ○ is reachable in the core and not yet drawn, ✗ is by decision.)
+
+`grind lint` is ○ in the three shells and that is D6's **named gap**, not an oversight: the
+rules, their ids and their addresses are all in the core, so each shell owes a list and a way to
+jump to an address — the same "small work, four times" the next paragraph describes, and R10
+permits a shell to arrive late as long as the gap is written down. `doc/tui-shell.md`,
+`doc/text-shell.md`, `doc/sheet-shell.md` and `doc/web-shell.md` keep those lists.
 
 **Shared logic still leaves each shell a widget to write.** This is Path C's shape exactly:
 `grind_core::layout` holds the line breaker, and three shells still implement `Metrics` and
@@ -669,7 +695,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done** — 359/359 and 1755/1755, nothing differing, `FLOOR = 359` and `FLOOR = 1755` |
 | **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, for either application. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
 | **D5** | R6 for the projection: splice at the spans `kdl-rs` reports | One cell edited changes one line; comments survive | **done**, both document types — `grind_core::projection::Source` plus a splice per app. An untouched save returns the bytes that were read, over both corpora. Not through `kdl-rs`'s *mutation* API, and §3.1 records why |
-| **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | not started |
+| **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | **done**, both applications — eight rules, five per app with two shared, each in §4.3's table and each with a test. `grind sheet lint` / `grind text lint`, plus `grind lint` at the suite level, which reads the kind out of the file. What a diagnostic *is* is `grind_core::lint` (R8); every rule is asked through machinery that already answers its question, so the linter cannot disagree with the document's own behaviour |
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |
 | **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
 | **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |

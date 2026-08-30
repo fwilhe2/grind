@@ -233,4 +233,18 @@ cp "$out/sample.grind" "$out/sample-before.grind"
 text type "$out/sample.grind" p2 "Still " >/dev/null
 diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
 
+# --- lint: what the document says about itself ---------------------------------------------
+# The word processor's half of `doc/dsl.md` §4.3: a heading level skipped, a link to a bookmark
+# nothing declares, a style name the document never declares, and anything a `.grind` of it
+# would not carry. Nothing is written — linting a file leaves its bytes exactly as they were.
+
+say "lint --rules: what it checks"
+text lint "$doc" --rules
+
+# The one finding here is `doc/text-core.md`'s known loss, said out loud: this build carries
+# style *names* and not style *definitions*, so a document it has written declares none — and
+# the style `grind text style` put on a block really does point at nothing.
+say "lint: this document"
+text lint "$doc" || true
+
 printf '\n%s and %s\n' "$doc" "$out/sample.odt"

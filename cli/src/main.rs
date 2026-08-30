@@ -26,9 +26,10 @@ use grind_sheet::view::Overlays;
 use grind_sheet::{App, CellValue, DocumentKind, Pos, RecalcMode, Session};
 use grind_text::App as TextApp;
 
+use grind_core::lint::{Options as LintOptions, Report as LintFindings, Rule, Severity};
 use report::{
-    Cell, CellsReport, DocumentReport, Format, Name, Report, SheetInfo, Shown, TextDocumentReport,
-    TextReport,
+    Cell, CellsReport, DocumentReport, Format, LintReport, Name, Report, SheetInfo, Shown,
+    TextDocumentReport, TextReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -380,6 +381,19 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             anchors,
         } => project_report(&open_text(file)?.project(), *tokens, *anchors),
 
+        TextCommand::Lint {
+            file,
+            hints,
+            off,
+            rules,
+        } => match rules {
+            true => Ok(rule_list(&grind_text::lint::RULES)),
+            false => Ok(lint_report(
+                file,
+                open_text(file)?.lint(&lint_options(*hints, off)),
+            )),
+        },
+
         TextCommand::Delete { file, range } => {
             let app = open_text(file)?;
             let blocks = span(&app, range)?;
@@ -679,6 +693,20 @@ enum Top {
     /// Works on any ODF document: the kind is read out of the file (the package `mimetype`
     /// entry, or the flat root's `office:mimetype`) rather than guessed from its name.
     Info { file: PathBuf },
+
+    /// Check a document against `doc/dsl.md` §4.3's rules, whatever kind it is
+    ///
+    /// The suite-level twin of `grind sheet lint` and `grind text lint`: the kind is read out
+    /// of the file and the right rules run. Exits non-zero when it found an error.
+    Lint {
+        file: PathBuf,
+        /// Report the house-style hints too, which are off by default
+        #[arg(long)]
+        hints: bool,
+        /// Silence one rule, by id; repeatable
+        #[arg(long, value_name = "RULE")]
+        off: Vec<String>,
+    },
 
     /// Convert between the three physical forms — .ods, .fods and .grind
     ///
@@ -1019,6 +1047,26 @@ enum TextCommand {
         background: Option<String>,
     },
 
+    /// Check the document against `doc/dsl.md` §4.3's rules
+    ///
+    /// The word processor's half: a heading level skipped, a link to a bookmark nothing
+    /// declares, a style name the document never declares, and anything a `.grind` of it would
+    /// not carry. Nothing is written.
+    ///
+    /// Exits non-zero when it found an error, so CI can gate on it.
+    Lint {
+        file: PathBuf,
+        /// Report the house-style hints too, which are off by default
+        #[arg(long)]
+        hints: bool,
+        /// Silence one rule, by id; repeatable
+        #[arg(long, value_name = "RULE")]
+        off: Vec<String>,
+        /// List the rules instead of running them
+        #[arg(long)]
+        rules: bool,
+    },
+
     /// Print every block carrying a style of its own
     ///
     /// "Why is this paragraph different?" — answered in one place, which is the thing no
@@ -1148,6 +1196,28 @@ enum Command {
         /// (§6.2), and the thing every later IDE feature is built on.
         #[arg(long)]
         anchors: bool,
+    },
+
+    /// Check the document against `doc/dsl.md` §4.3's rules
+    ///
+    /// The rules are about *documents*, which is why they are here and not in a third-party
+    /// linter: a cached value that disagrees with its formula, a formula naming a sheet that is
+    /// gone or reading a cell that is empty, and — the row that earns the feature — anything a
+    /// `.grind` of this document would not carry, by name and by address. Nothing is written:
+    /// linting a file leaves its bytes exactly as they were.
+    ///
+    /// Exits non-zero when it found an error, so CI can gate on it. Warnings and hints do not.
+    Lint {
+        file: PathBuf,
+        /// Report the house-style hints too, which are off by default
+        #[arg(long)]
+        hints: bool,
+        /// Silence one rule, by id; repeatable
+        #[arg(long, value_name = "RULE")]
+        off: Vec<String>,
+        /// List the rules instead of running them
+        #[arg(long)]
+        rules: bool,
     },
 
     /// Set a cell's value or formula
@@ -1649,7 +1719,13 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(report) => {
             report.print(cli.format);
-            ExitCode::SUCCESS
+            // Only `lint` can fail this way, and only on an *error*-severity finding — so CI
+            // can gate on a document contradicting itself without every warning breaking a
+            // build (`report::LintReport::failed`).
+            match report.failed() {
+                true => ExitCode::FAILURE,
+                false => ExitCode::SUCCESS,
+            }
         }
         Err(message) => {
             eprintln!("grind: {message}");
@@ -1684,6 +1760,20 @@ fn run(cli: &Cli) -> Result<Report, String> {
             kind => Err(unsupported(file, Some(kind))),
         },
 
+        // The suite-level third: the kind decides which application's rules run, and the
+        // answer has one shape either way because a diagnostic is document-type-neutral.
+        Top::Lint { file, hints, off } => {
+            let options = lint_options(*hints, off);
+            let findings = match document_kind(file)? {
+                DocumentKind::Spreadsheet => {
+                    open_as(file, DocumentKind::Spreadsheet, cli)?.lint(&options)
+                }
+                DocumentKind::Text => open_text(file)?.lint(&options),
+                kind => return Err(unsupported(file, Some(kind))),
+            };
+            Ok(lint_report(file, findings))
+        }
+
         Top::Convert { file, out } => match document_kind(file)? {
             DocumentKind::Spreadsheet => {
                 let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
@@ -1696,6 +1786,46 @@ fn run(cli: &Cli) -> Result<Report, String> {
             kind => Err(unsupported(file, Some(kind))),
         },
     }
+}
+
+fn lint_options(hints: bool, off: &[String]) -> LintOptions {
+    LintOptions {
+        hints,
+        off: off.to_vec(),
+    }
+}
+
+/// The core's findings as the CLI's report: the same list, with the counts a script reads
+/// instead of re-deriving and the path that says what was linted.
+fn lint_report(file: &Path, findings: LintFindings) -> Report {
+    let count = |severity| {
+        findings
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == severity)
+            .count()
+    };
+    Report::Lint(LintReport {
+        path: file.display().to_string(),
+        errors: count(Severity::Error),
+        warnings: count(Severity::Warning),
+        hints: count(Severity::Hint),
+        truncated: findings.truncated,
+        diagnostics: findings.diagnostics,
+    })
+}
+
+/// `--rules`: the rule table, `id<TAB>severity<TAB>what`.
+///
+/// Printed from the same `RULES` array the linter runs, so the list cannot describe rules that
+/// do not exist — the `funcs::implemented()` argument, one crate over.
+fn rule_list(rules: &[Rule]) -> Report {
+    Report::Text(TextReport {
+        lines: rules
+            .iter()
+            .map(|rule| format!("{}\t{}\t{}", rule.id, rule.severity, rule.what))
+            .collect(),
+    })
 }
 
 /// What kind of document a file holds, read from its bytes.
@@ -1844,6 +1974,19 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             tokens,
             anchors,
         } => project_report(&load(file, cli)?.project(), *tokens, *anchors),
+
+        Command::Lint {
+            file,
+            hints,
+            off,
+            rules,
+        } => match rules {
+            true => Ok(rule_list(&grind_sheet::lint::RULES)),
+            false => Ok(lint_report(
+                file,
+                load(file, cli)?.lint(&lint_options(*hints, off)),
+            )),
+        },
 
         Command::Set {
             file,

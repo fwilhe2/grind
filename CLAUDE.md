@@ -86,7 +86,7 @@ reuse lint                               # must stay compliant; CI gates on this
 ```
 
 `grind` is the CLI — `grind <app> <verb>`, plus a few suite-level verbs that read the
-document's kind out of the file (`info`, `convert`). Every core capability is reachable from
+document's kind out of the file (`info`, `convert`, `lint`). Every core capability is reachable from
 it, enforced by
 `cli/tests/parity.rs`:
 
@@ -344,6 +344,14 @@ before it can be answered.
   example the test executes, and every field of `Document`/`Sheet` with its node or a reason
   there is none — read out of `sheet/src/model.rs` at compile time, so a new side table fails
   the build until it has a spelling.
+- **`core/src/lint.rs`** + **`sheet/src/lint.rs`** + **`text/src/lint.rs`** — `doc/dsl.md` §4.3,
+  D6. The core half is what a *diagnostic* is — a rule id, a severity, an address in the
+  application's own spelling, a sentence — and nothing about documents (R8). Each app half is its
+  `RULES` array, checked against §4.3's table in both directions by `cli/tests/lint.rs`. A rule
+  never writes and never stores: linting leaves a file's bytes exactly as they were, which is
+  `doc/view-modes.md`'s promise for the same reason. `Document::styles` on the text side is read
+  and never written, and exists only so `undeclared-style` can ask whether a name points at
+  anything.
 - **`cli/`** — `main.rs` (clap, one arm per subcommand) + `report.rs`. A subcommand is a few
   lines driving `App`; anything longer belongs in the core. `doc/cli-parity-sheet.md` +
   `cli/tests/parity.rs` are the parity ratchet: every public `App` method needs a reaching
@@ -514,8 +522,16 @@ line the selection is on marked and moving in it selecting what that line projec
 `grind-tui`, *Show the source* in `grind-web`, Ctrl+Shift+U on the other page of a `gtk::Stack` in
 both GTK windows. The four line-shaped questions a code view asks (`line_count`, `line_span`,
 `line_pieces`, `address_on_line`) are `Projection`'s, so four shells cannot answer them four ways;
-each shell contributes one file and the drawing. **Layer 1 — the generator — is untouched and
-still a proposal**, and D6–D8 plus D10 are the open list: `grind lint`, `grind build`,
+each shell contributes one file and the drawing. **D6 is `grind lint`**: eight rules over the two
+applications (§4.3's table, which `cli/tests/lint.rs` executes — a rule with no row fails the
+build and so does a row naming no rule), reached as `grind sheet lint`, `grind text lint` and
+`grind lint` at the suite level, which reads the kind out of the file. What a diagnostic *is* is
+`grind_core::lint` and nothing else (R8); every rule is asked through the machinery that already
+answers its question — `RefIndex` for what a formula reads, one recalculation walk for whether a
+cached value is still true — so the linter cannot disagree with the document's own behaviour.
+**Nothing is written**, and an *error* exits non-zero so CI can gate on it. No shell draws a
+findings list yet, which is a named gap in all four shell documents. **Layer 1 — the generator —
+is untouched and still a proposal**, and D7, D8 and D10 are the open list: `grind build`,
 `grind test`, and the refactorings.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto

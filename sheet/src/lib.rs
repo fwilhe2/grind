@@ -26,6 +26,7 @@ pub mod filter;
 pub mod formula;
 pub mod graph;
 pub mod grid;
+pub mod lint;
 pub mod model;
 pub mod numfmt;
 pub mod odf;
@@ -1340,6 +1341,17 @@ impl App {
         Ok(s.formula(pos).map(str::to_owned))
     }
 
+    /// Check the document against [`lint`]'s rules — `doc/dsl.md` §4.3, D6.
+    ///
+    /// A read: nothing is stored, nothing is marked, and linting a document leaves its bytes
+    /// exactly as they were — the same promise view modes make, and for the same reason (a
+    /// stored classification goes stale and a derived one cannot). `grind sheet lint` is the
+    /// CLI twin, and a shell that wants squiggles turns each address into a byte range through
+    /// the projection's span map (§6.2) rather than by inventing a second addressing.
+    pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
+        lint::lint(&self.state.read().unwrap().doc, options)
+    }
+
     /// Every calculated cell in the document, sheet by sheet and address by address.
     ///
     /// What a "where is this number coming from" question needs answered in one place: a
@@ -2034,8 +2046,26 @@ fn validate_name(name: &str) -> Result<()> {
 /// One walk, shared by [`App::recalc`] (which applies it) and [`App::stale`] (which counts
 /// it), so "what recalculating would do" and "what recalculating does" cannot drift apart.
 fn recalculated(doc: &Document) -> (Vec<Action>, usize) {
-    let mut updates = Vec::new();
-    let mut spoiled = 0;
+    let differences = differences(doc);
+    let spoiled = differences.iter().filter(|(.., spoiled)| *spoiled).count();
+    let updates = differences
+        .into_iter()
+        .map(|(sheet, pos, value, _)| Action::SetCell { sheet, pos, value })
+        .collect();
+    (updates, spoiled)
+}
+
+/// Every formula cell whose computed value differs from its cached one: where it is, what the
+/// formula computes, and whether the difference is *this build's* gap rather than the
+/// document's — `true` when a good value would be replaced by an error, which is what
+/// [`Recalc::spoiled`] counts.
+///
+/// One walk, because two callers ask the same question for different reasons: recalculating
+/// writes the new values, and [`lint::STALE_VALUE`] reports that the old ones are wrong. A
+/// second implementation of "what counts as stale" is exactly the kind of disagreement
+/// `doc/dsl.md` §4.3 exists to catch in *documents*, and it would be worse in the code.
+fn differences(doc: &Document) -> Vec<(usize, Pos, CellValue, bool)> {
+    let mut out = Vec::new();
     // The engine borrows the document immutably and memoises per cell, so this is one pass
     // whatever the dependency order.
     let mut engine = formula::eval::Engine::new(doc);
@@ -2047,17 +2077,23 @@ fn recalculated(doc: &Document) -> (Vec<Action>, usize) {
             if value == previous {
                 continue;
             }
-            if is_error(&value) && !is_error(&previous) && !previous.is_empty() {
-                spoiled += 1;
-            }
-            updates.push(Action::SetCell {
-                sheet: index,
-                pos,
-                value,
-            });
+            let spoiled = is_error(&value) && !is_error(&previous) && !previous.is_empty();
+            out.push((index, pos, value, spoiled));
         }
     }
-    (updates, spoiled)
+    out
+}
+
+/// The cells [`lint::STALE_VALUE`] reports: a disagreement this build can actually settle.
+///
+/// The spoiled ones are dropped here rather than in the rule, because *which* differences are
+/// this engine's fault is a fact about the evaluator and belongs beside it.
+fn stale_cells(doc: &Document) -> Vec<(usize, Pos, CellValue)> {
+    differences(doc)
+        .into_iter()
+        .filter(|(.., spoiled)| !spoiled)
+        .map(|(sheet, pos, value, _)| (sheet, pos, value))
+        .collect()
 }
 
 /// Whether a cell holds one of §4.6's error names. Errors live in a cell as their name in

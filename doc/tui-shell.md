@@ -75,6 +75,10 @@ Both are renderers that own nothing: every paint reads `App::get_viewport` (and
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
 
+**No lint pane** (`doc/dsl.md` §4.3, D6). `grind lint` checks a document against the rules the
+core now holds, and every finding carries an address this shell can already go to; what is
+missing is a list and a way to jump from a row. Nothing about the rules is a shell's.
+
 **The medium's own limits, which are not gaps.** One font at one size, so a font *size* is
 stored and not drawn, and a monospace family cannot be drawn as a different font — everything
 in a terminal already is one. A `` `code` `` run and a preformatted block are **dimmed**

@@ -342,6 +342,19 @@ pub struct Document {
     /// `grind_sheet`'s filter does not store which rows it hides: two copies of one fact
     /// disagree eventually.
     pub bookmarks: BTreeMap<String, BlockId>,
+    /// Every style name the file this document was read from **declares** — every
+    /// `style:style`, of every family, in `office:styles` and `office:automatic-styles` alike.
+    ///
+    /// Not a style *definition*: `doc/text-core.md` gates resolving a named style's properties,
+    /// and this changes nothing about that. It is the set of names the document said exist, and
+    /// it exists so that one question can be answered — *is this `text:style-name` pointing at
+    /// anything?* — which is `doc/dsl.md` §4.3's `undeclared-style` rule and nothing else.
+    ///
+    /// Empty for a document this build wrote or generated, and for one read from a projection,
+    /// because neither carries style definitions. That is not a hole in this field: it is
+    /// `doc/text-core.md`'s known loss, and `undeclared-style` reporting every style of a
+    /// round-tripped document is the loss made visible rather than a false positive.
+    pub styles: std::collections::BTreeSet<String>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,

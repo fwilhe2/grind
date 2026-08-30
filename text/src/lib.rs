@@ -43,6 +43,7 @@
 //! reads here as formatting lost; pages.
 
 pub mod action;
+pub mod lint;
 pub mod loc;
 pub mod markdown;
 pub mod model;
@@ -540,6 +541,17 @@ impl App {
             counts.headings += usize::from(block.outline_level().is_some());
         }
         counts
+    }
+
+    /// Check the document against [`lint`]'s rules — `doc/dsl.md` §4.3, D6.
+    ///
+    /// A read, so it takes the read lock and hands back a plain value like every other one
+    /// here: nothing is stored, nothing is marked, and linting a document leaves its bytes
+    /// exactly as they were. `grind text lint` is the CLI twin, and a shell that wants
+    /// squiggles turns each address into a byte range through the projection's span map (§6.2)
+    /// rather than by inventing a second addressing.
+    pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
+        lint::lint(&self.state.read().unwrap().doc, options)
     }
 
     /// Every bookmark, name and the block it sits in.

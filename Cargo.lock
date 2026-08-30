@@ -858,6 +858,7 @@ name = "grind-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "grind-core",
  "grind-sheet",
  "grind-text",
  "serde",
