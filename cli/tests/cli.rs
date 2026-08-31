@@ -411,6 +411,44 @@ fn a_script_builds_the_budget() {
     ok_top(&["lint", &s(&out)]);
 }
 
+/// **Data and code, separated** (`doc/generator-spec.md` §3.5): the numbers live in
+/// `examples/prices.json` and the script says only what the document is. The walls around that
+/// are `grind-build`'s and tested there; this is the end-to-end half — the default data
+/// directory is the script's own, so `json("prices.json")` finds the file beside it.
+#[test]
+fn a_script_reads_its_data_from_beside_itself() {
+    let dir = Sandbox::new("build-data");
+    let out = dir.path("prices.fods");
+    ok_top(&["build", &s(&example("prices.rhai")), "-o", &s(&out)]);
+
+    // A row per item in the JSON, its value computed, and the total over all five.
+    assert_eq!(ok(&["get", &s(&out), "B2"]).trim(), "Oak board, 2m");
+    assert_eq!(ok(&["get", &s(&out), "F2", "--raw"]).trim(), "414");
+    assert_eq!(ok(&["get", &s(&out), "F7", "--raw"]).trim(), "1550.45");
+    // The currency symbol and the VAT rate came out of the same file.
+    assert!(ok(&["get", &s(&out), "F7"]).contains('\u{20ac}'));
+    assert_eq!(
+        ok(&["get", &s(&out), "F8", "--formula"]).trim(),
+        "=[.F7]*0.19"
+    );
+}
+
+/// The wall, from the outside: a script may not read its way out of the data directory. The
+/// message says which wall it hit, because "no such file" would send somebody looking for the
+/// file rather than reading the rule.
+#[test]
+fn a_script_cannot_read_outside_its_data_directory() {
+    let dir = Sandbox::new("build-escape");
+    let script = dir.path("escape.rhai");
+    std::fs::write(&script, "json(\"../../etc/hosts\"); sheet(\"S\")\n").expect("write");
+
+    let output = grind(&["build", &s(&script), "-o", &s(&dir.path("out.fods"))]);
+    assert!(!output.status.success());
+    let message = String::from_utf8_lossy(&output.stderr);
+    assert!(message.contains("`..` leaves it"), "{message}");
+    assert!(!dir.path("out.fods").exists(), "nothing was written");
+}
+
 /// §2's promise that a generator is testable before it is safe: **the same source produces the
 /// same bytes**. No clock, no randomness, and a hasher whose seed is fixed at build time —
 /// which is why `Cargo.toml` turns Rhai's default features off.

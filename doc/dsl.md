@@ -92,7 +92,7 @@ That row stays, unchanged, and this feature does not reopen it. The distinction 
 | Runs | when the document is **opened** | when the author types `grind build` |
 | Triggered by | the reader, implicitly | a person, explicitly |
 | Threat | *I open your file and your code runs* | *I ran a program I wrote* |
-| Reaches | the document, the host, the network | a value tree, and nothing else |
+| Reaches | the document, the host, the network | a value tree, and JSON data in one directory a person named |
 
 A `.fods`, `.odt` or `.grind` **never contains executable content**, and no code path that
 opens a document may evaluate anything. That is a requirement, not an intention, and it needs
@@ -116,6 +116,18 @@ claim:
 - **No I/O, no clock, no randomness.** No filesystem, no network, no environment, no time.
   The same source produces the same bytes on every machine, which is a testability property
   before it is a security one.
+
+  **Amended once, deliberately, and the amendment is narrower than the rule it replaces:** a
+  script may read **data** — JSON, never code — from **one directory a person named**, which
+  `grind build` roots at the script's own unless `--data` says otherwise. Separating what a
+  document *is* from what is *in it* is most of why a generator is worth having, and the
+  alternative is a `const` at the top of the script that only a programmer can edit. The four
+  walls (JSON only; one directory, with `..`, absolute paths and symlinks out all refused;
+  bounded in size and count; read-only and cached) are `build/src/data.rs`, and
+  `doc/generator-spec.md` §3.5 is the reference. Determinism is restated rather than dropped:
+  *the same source and the same data* produce the same bytes, which is a build system's
+  contract. Nothing else about §2 moves — a script still cannot write, cannot reach the
+  network, and still runs only when somebody types the command.
 - **Bounded.** An operation limit, a call-depth limit and a string-size limit, all set by the
   host. A generator that does not terminate is a build error with a line number, not a hang.
 
@@ -872,7 +884,7 @@ document maps to a range whose text contains it, and back — in the shape of
 | **Make the projection a general-purpose data format** | It spells this build's subset and nothing else. Widening it is widening the subset, one item at a time, by the `doc/not-doing.md` rule |
 | **Standardise it** | It is this project's third serialisation, not a proposal to anyone |
 | **A diagram projection** | MPS's other axis, and the honest answer is that a spreadsheet grid *is* the diagram projection and it already exists |
-| **Import a script from anywhere but the project directory** | An `import` that reaches a URL is the supply chain this project does not have |
+| **Import a script from anywhere but the project directory** | An `import` that reaches a URL is the supply chain this project does not have. Modules are off entirely (`set_max_modules(0)`), and the one thing a script *may* read is **data, not code**, from one directory: `doc/generator-spec.md` §3.5 |
 | **Preserve unmodelled ODF through the projection** | It cannot: a construct with no projection node is not in the file. R6 preserves it in a `.fods`; converting *to* a `.grind` drops it, exactly as regenerating does today. `grind lint` says which, by name, before it happens |
 | **A general-purpose text editor inside a shell** | The code view shows the projection of *this* document and nothing else. It does not open other files, it is not a place to keep notes, and it never grows a second buffer. That is somebody else's program and it is already installed |
 | **Tooling for the generator** — an LSP, a formatter, a debugger for `.rhai` | Rhai has its own language server and its own ecosystem. Writing a second one is how a document project becomes a language project |

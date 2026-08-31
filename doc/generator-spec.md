@@ -76,7 +76,8 @@ enough to read in one sitting (`build/src/engine.rs`).
 
 | Not available | How | Why (`doc/dsl.md` §2) |
 |---|---|---|
-| The filesystem, the network, the environment | never in core Rhai; the crates that add them are not taken | a generator reaches a value tree and nothing else |
+| The network, the environment | never in core Rhai; the crates that add them are not taken | a generator reaches a value tree and nothing else |
+| The filesystem — **except reading data** | the same, plus one function this project registers: `json(…)`, §3.5, which reads JSON from one directory a person named and nothing else | separating what a document *is* from what is *in it* is most of why a generator is worth having; the walls are what keep it an exception |
 | Randomness | the same | the same source must produce the same bytes |
 | `timestamp()`, and every clock | the `no_time` **feature** removes it from the language | as above, and a fact about the build rather than about this project remembering to unregister a function |
 | Map iteration seeded by the OS | `ahash/runtime-rng` **off**, by taking Rhai's default features off | determinism at the level of the language |
@@ -100,7 +101,9 @@ kill.
 | `MAX_STRING` | `1_000_000` | a string grows past a megabyte; `s += s` doubles, so this is what the operation limit alone would not catch | *String too large* |
 | `MAX_ARRAY` | `1_000_000` | an array or an object map grows past a million entries | *Array too large* / *Map too large* |
 
-Two further bounds belong to the document rather than to the language, and are §6.5's.
+Two more bounds belong to the *document* rather than to the language and are §6.5's, and two
+belong to the data a script reads and are §3.5's. All eight are read out of the source by
+`build/tests/spec.rs`, so a number here is the number the build uses.
 
 `examples/budget.rhai` uses on the order of four thousand operations, which is the scale these
 numbers are set against: far enough above a real script to be invisible, far enough below
@@ -210,6 +213,41 @@ Each is the core's, so a script, a command line and a GUI cannot disagree.
 | a locale | a language tag — `de-DE` | `grind_core::locale::Locale::parse` |
 
 An unknown word is an error listing what was allowed.
+
+### 3.5 Data
+
+**A script may read data, and only data.** Separating what a document *is* from what is *in it*
+is the reason to have a generator at all: the shape belongs in a script and the numbers belong
+in a file somebody who does not read Rhai can edit.
+
+| Call | Returns | Meaning |
+|---|---|---|
+| `json(name)` | the file's value | one JSON file from the data directory, as Rhai values |
+
+This is the only exception to §2.3's "no filesystem", and it is bounded so that it stays an
+exception rather than becoming a door:
+
+| Wall | What it means |
+|---|---|
+| **JSON only** | parsed by a real JSON parser (`serde_json`). JSON has no references, no includes, no functions and no side effects — reading one cannot *do* anything. The function is named for the parser that ran, so a `csv(…)` later is a peer rather than a surprise |
+| **One directory, named by a person** | `grind build` roots it at the **script's own directory**; `--data <DIR>` names another. `..` is refused before the filesystem is touched, an absolute path is refused, and the resolved path is canonicalised and checked to be inside the root — which is what stops a symlink pointing out |
+| **`MAX_BYTES`** | `8 * 1024 * 1024` — the largest a data file may be |
+| **`MAX_FILES`** | `64` — how many *distinct* files one script may read |
+| **Read only, and cached** | there is no writing, and reading the same name twice returns the same value without touching the filesystem again, so `json(…)` inside a loop is harmless |
+
+The mapping is one to one with what a script already has: an object is a map, an array is an
+array, a string is a string, `null` is `()`, and a number is an integer when it is one and a
+float otherwise. **Object keys come back sorted** — JSON says an object is unordered, and a
+script that needs the author's order wants an array.
+
+Reading is a *host capability*, not a language one: `grind_build::Data` is a trait,
+`Directory` is the implementation with the walls above, and a caller that supplies `NoData` —
+which is the default, and what `build()` uses — gets an error naming `--data` instead. A host
+with no filesystem can therefore still run every script that does not ask for a file.
+
+**Determinism, restated honestly.** §2.5 promised that the same source produces the same bytes.
+With data it is *the same source and the same data*: a build system's contract rather than a
+weakening of one, with the inputs named in the script and living beside it.
 
 ---
 

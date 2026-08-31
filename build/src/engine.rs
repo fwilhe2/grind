@@ -21,7 +21,11 @@
 //!
 //! **What this file takes away**: `eval`, module imports, and unbounded anything.
 
+use std::rc::Rc;
+
 use rhai::Engine;
+
+use crate::data::Data;
 
 /// How many operations a script may perform before it is a build error.
 ///
@@ -45,7 +49,7 @@ const MAX_ARRAY: usize = 1_000_000;
 ///
 /// Every restriction is here rather than spread over the callers, so that "what may a script
 /// do" is answered by reading one function.
-pub fn engine() -> Engine {
+pub fn engine(data: Rc<dyn Data>) -> Engine {
     let mut engine = Engine::new();
 
     // `eval` is a script rewriting itself at run time. Nothing a generator wants needs it, and
@@ -74,6 +78,8 @@ pub fn engine() -> Engine {
 
     crate::sheet::register(&mut engine);
     crate::text::register(&mut engine);
+    // The one door outward, and `data.rs` is the whole of what it opens onto.
+    crate::data::register(&mut engine, data);
     engine
 }
 
@@ -85,7 +91,7 @@ mod tests {
     /// `Cargo.toml`. This test is what notices somebody taking the feature flag back off.
     #[test]
     fn there_is_no_clock() {
-        let error = super::engine()
+        let error = super::engine(std::rc::Rc::new(crate::data::NoData))
             .eval::<Dynamic>("timestamp()")
             .expect_err("timestamp() is not a function this build has");
         assert!(error.to_string().contains("Function not found"), "{error}");
@@ -93,7 +99,7 @@ mod tests {
 
     #[test]
     fn a_script_cannot_rewrite_itself() {
-        let error = super::engine()
+        let error = super::engine(std::rc::Rc::new(crate::data::NoData))
             .eval::<Dynamic>(r#"eval("1 + 1")"#)
             .expect_err("eval is disabled");
         assert!(error.to_string().contains("eval"), "{error}");
@@ -103,7 +109,7 @@ mod tests {
     /// attacker: a loop that never ends stops, and says where.
     #[test]
     fn a_loop_that_does_not_terminate_is_an_error_with_a_line_number() {
-        let error = super::engine()
+        let error = super::engine(std::rc::Rc::new(crate::data::NoData))
             .eval::<Dynamic>("let i = 0;\nloop { i += 1; }")
             .expect_err("the operation limit is reached");
         assert!(error.to_string().contains("operations"), "{error}");
@@ -112,7 +118,7 @@ mod tests {
 
     #[test]
     fn a_string_cannot_be_grown_without_bound() {
-        let error = super::engine()
+        let error = super::engine(std::rc::Rc::new(crate::data::NoData))
             .eval::<Dynamic>("let s = \"x\";\nloop { s += s; }")
             .expect_err("the string limit is reached");
         assert!(error.to_string().contains("too large"), "{error}");
@@ -127,7 +133,7 @@ mod tests {
             "read_file(\"x\")",
             "system(\"ls\")",
         ] {
-            let error = super::engine()
+            let error = super::engine(std::rc::Rc::new(crate::data::NoData))
                 .eval::<Dynamic>(call)
                 .expect_err("no I/O is registered");
             assert!(error.to_string().contains("Function not found"), "{error}");

@@ -1,0 +1,12 @@
+{
+    "title": "Trade prices",
+    "currency": "€",
+    "vat": 0.19,
+    "items": [
+        { "sku": "A-1001", "name": "Oak board, 2m", "unit": "each", "price": 34.5, "quantity": 12 },
+        { "sku": "A-1002", "name": "Oak board, 3m", "unit": "each", "price": 49.9, "quantity": 8 },
+        { "sku": "B-2010", "name": "Wood glue, 750ml", "unit": "bottle", "price": 11.25, "quantity": 24 },
+        { "sku": "B-2011", "name": "Wood glue, 5l", "unit": "canister", "price": 62.0, "quantity": 3 },
+        { "sku": "C-3300", "name": "Sanding disc, 120g", "unit": "pack of 50", "price": 18.75, "quantity": 15 }
+    ]
+}

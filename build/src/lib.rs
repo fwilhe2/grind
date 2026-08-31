@@ -52,13 +52,17 @@
 //! written: recalculate it, lint it, or (D8) assert something about a total. Writing it is
 //! then the ordinary `save_file`, and `grind build` is a dozen lines in `cli/src/main.rs`.
 
+pub mod data;
 pub mod engine;
 pub mod sheet;
 pub mod text;
 
 use std::fmt;
+use std::rc::Rc;
 
 use rhai::Dynamic;
+
+pub use data::{Data, Directory, NoData};
 
 /// What a script produced: one document, of one of the two kinds this suite has.
 ///
@@ -120,12 +124,21 @@ impl Error {
     }
 }
 
-/// Run a script and return the document it built.
+/// Run a script and return the document it built, with no data to read.
 ///
 /// `script` is what to call the source in an error — a path, usually. Nothing here reads a
 /// file: rule 5 has no exception for a generator, and `grind-cli` is the one that owns paths.
 pub fn build(source: &str, script: &str) -> Result<Artifact, Error> {
-    let engine = engine::engine();
+    build_with(source, script, Rc::new(NoData))
+}
+
+/// [`build`], with somewhere for `json(…)` to read from.
+///
+/// The data is a [`Data`] rather than a path for the reason `build` takes a string rather than
+/// a file: this crate has no filesystem. `grind build` hands over a [`Directory`] rooted at the
+/// script's own directory, and `build/src/data.rs` is where the four walls around that are.
+pub fn build_with(source: &str, script: &str, data: Rc<dyn Data>) -> Result<Artifact, Error> {
+    let engine = engine::engine(data);
     let value = engine
         .eval::<Dynamic>(source)
         .map_err(|e| self::position(script, &e))?;

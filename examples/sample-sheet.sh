@@ -437,6 +437,17 @@ say "build: a document generated from a script"
 sheet view "$out/generated.fods" A1:E9
 sheet view "$out/generated.fods" B8:E8 --formulas   # the totals the loop wrote
 
+# Data and code, separated: `examples/prices.rhai` says what the document *is* and
+# `examples/prices.json` beside it says what is *in* it, which somebody who has never read a
+# line of Rhai can edit. A script reads JSON and nothing else, from one directory a person
+# named — the script's own, or `--data` — with `..`, absolute paths and symlinks pointing out
+# all refused (doc/generator-spec.md §3.5).
+
+say "build: the numbers in a JSON file, the shape in the script"
+"$GRIND" build "$here/prices.rhai" -o "$out/prices.fods"
+sheet view "$out/prices.fods" A1:F9
+sheet view "$out/prices.fods" F7:F9 --formulas
+
 # It is an ordinary document from here on: it lints, it projects, every verb takes it.
 say "the generated document is a document like any other"
 "$GRIND" lint "$out/generated.fods"

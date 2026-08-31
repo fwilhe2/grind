@@ -728,6 +728,14 @@ enum Top {
         /// Where to write the document it built — .ods/.fods, .odt/.fodt, or .grind
         #[arg(short, long, value_name = "PATH")]
         out: PathBuf,
+        /// Directory the script may read data from, instead of its own
+        ///
+        /// A script reads JSON and nothing else, from inside this one directory and nowhere
+        /// else: `..` and an absolute path are refused, and so is a symlink pointing out. The
+        /// default is the directory the script itself is in, so `json("prices.json")` means the
+        /// file beside it.
+        #[arg(long, value_name = "DIR")]
+        data: Option<PathBuf>,
         /// Skip the document-wide recalculation at the end
         ///
         /// Each formula is answered where it lands, so this only matters for one that reads a
@@ -1811,11 +1819,27 @@ fn run(cli: &Cli) -> Result<Report, String> {
             script,
             out,
             no_recalc,
+            data,
         } => {
             let source = std::fs::read_to_string(script)
                 .map_err(|e| format!("cannot read {}: {e}", script.display()))?;
-            let built = grind_build::build(&source, &script.display().to_string())
-                .map_err(|e| e.to_string())?;
+            // Data comes from one directory a *person* named — `--data`, or the one the script
+            // is in, which is what makes `json("prices.json")` mean the file beside it. The
+            // walls around it are `grind_build::Directory`'s, not this file's (doc/dsl.md §2).
+            let root = match data {
+                Some(dir) => dir.clone(),
+                None => match script.parent() {
+                    Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+                    _ => PathBuf::from("."),
+                },
+            };
+            let root = grind_build::Directory::new(&root).map_err(|e| format!("--data {e}"))?;
+            let built = grind_build::build_with(
+                &source,
+                &script.display().to_string(),
+                std::rc::Rc::new(root),
+            )
+            .map_err(|e| e.to_string())?;
             match built {
                 grind_build::Artifact::Spreadsheet(app) => {
                     if !no_recalc {

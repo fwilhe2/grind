@@ -911,6 +911,7 @@ dependencies = [
  "grind-sheet",
  "grind-text",
  "rhai",
+ "serde_json",
 ]
 
 [[package]]

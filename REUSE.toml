@@ -7,6 +7,14 @@ SPDX-PackageName = "grind"
 SPDX-PackageSupplier = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-PackageDownloadLocation = "https://github.com/fwilhe2/grind"
 
+# A generator's data (doc/generator-spec.md §3.5). JSON has no comments, so it cannot carry a
+# header — and a header would be worse than the problem here, since the point of the file is
+# that a `json(…)` call reads it as data. Same licence as the script beside it.
+[[annotations]]
+path = "examples/*.json"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
 # Editor configuration. JSON has no comments, so these cannot carry a header; declared here
 # for the same reason `Cargo.lock` is. What they do: recommend the KDL and Rhai extensions —
 # the two languages this project invented (doc/dsl.md) — and tell the editor that a `.grind`

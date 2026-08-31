@@ -34,3 +34,9 @@ grind-text = { path = "../text" }
 # network and no environment in the core language, and no randomness — those live in crates
 # one simply does not take.
 rhai = { version = "1.26", default-features = false, features = ["std", "no_time"] }
+
+# JSON, for the one thing a script may read: data beside it (`build/src/data.rs`). A real
+# parser rather than Rhai's own `parse_json`, which is its *script* parser pointed at JSON —
+# close enough for a config file and not what a file format deserves. `grind-cli` already
+# depends on it, so the workspace gains nothing new.
+serde_json = "1"

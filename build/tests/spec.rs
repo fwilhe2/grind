@@ -28,11 +28,51 @@
 const SPEC: &str = include_str!("../../doc/generator-spec.md");
 const ENGINE: &str = include_str!("../src/engine.rs");
 
-/// The two files that register anything, with the name the specification gives each half.
-const HOSTS: [(&str, &str); 2] = [
-    ("the spreadsheet (§4)", include_str!("../src/sheet.rs")),
-    ("the word processor (§5)", include_str!("../src/text.rs")),
+/// Every file that holds a limit, and the section of the specification that states it.
+///
+/// `data.rs` is here for the same reason it is in `HOSTS`: a bound nobody checks is a number in
+/// prose, and the one a person quotes when a script of theirs stops.
+const LIMITS: [(&str, &str); 2] = [
+    ("build/src/engine.rs", ENGINE),
+    ("build/src/data.rs", include_str!("../src/data.rs")),
 ];
+
+/// Every file that registers anything: its module, the name the specification gives that half,
+/// and its source.
+///
+/// The module names are checked against `engine()` itself below, because a *fourth* module
+/// registering functions is exactly how this scanner would start passing while covering less.
+const HOSTS: [(&str, &str, &str); 3] = [
+    (
+        "sheet",
+        "the spreadsheet (§4)",
+        include_str!("../src/sheet.rs"),
+    ),
+    (
+        "text",
+        "the word processor (§5)",
+        include_str!("../src/text.rs"),
+    ),
+    ("data", "data (§3.5)", include_str!("../src/data.rs")),
+];
+
+/// The modules `engine()` hands to — `crate::sheet::register(` names `sheet`.
+fn registrars() -> Vec<String> {
+    let mut modules = Vec::new();
+    for (at, _) in ENGINE.match_indices("crate::") {
+        let rest = &ENGINE[at + "crate::".len()..];
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if rest[name.len()..].starts_with("::register(") {
+            modules.push(name);
+        }
+    }
+    modules.sort();
+    modules.dedup();
+    modules
+}
 
 /// The smallest API that is plausibly complete — `cli/tests/parity.rs`'s `least`, for the same
 /// reason: a scanner that matched nothing would pass vacuously and quietly retire the check.
@@ -45,7 +85,7 @@ const LEAST: usize = 25;
 /// the most arguments.
 fn registered() -> Vec<String> {
     let mut names = Vec::new();
-    for (_, source) in HOSTS {
+    for (_, _, source) in HOSTS {
         for call in ["register_fn(", "register_get("] {
             for (at, _) in source.match_indices(call) {
                 let rest = &source[at + call.len()..];
@@ -74,6 +114,16 @@ fn documented() -> Vec<String> {
     for line in SPEC.lines() {
         if let Some(heading) = line.strip_prefix("## ") {
             inside = heading.starts_with("4.") || heading.starts_with("5.");
+            continue;
+        }
+        // §3.5 is the third API table: `json(…)` belongs to neither application, because it
+        // belongs to both, and it sits with the values it produces rather than in one half.
+        if let Some(heading) = line.strip_prefix("### ") {
+            if heading.starts_with("3.5") {
+                inside = true;
+            } else if heading.starts_with("3.") {
+                inside = false;
+            }
             continue;
         }
         if !inside {
@@ -113,8 +163,8 @@ fn every_registered_function_is_in_the_specification() {
     assert!(
         missing.is_empty(),
         "registered and undocumented: {missing:?}. Every function a script can call has a row \
-         in doc/generator-spec.md §4 or §5 — that is the check the specification exists to \
-         pass, since adding one is three lines in register()."
+         in doc/generator-spec.md §3.5, §4 or §5 — that is the check the specification \
+         exists to pass, since adding one is three lines in register()."
     );
 }
 
@@ -145,12 +195,28 @@ fn the_scanners_found_an_api() {
         "only {} calls found in the specification — its tables have changed shape",
         documented().len()
     );
-    for (which, source) in HOSTS {
+    for (_, which, source) in HOSTS {
         assert!(
             source.contains("register_fn("),
             "{which} registers nothing, which cannot be right"
         );
     }
+    // And the list above is every module that registers anything — the guard against a new
+    // module's functions being invisible to both directions of this test.
+    for module in registrars() {
+        assert!(
+            HOSTS.iter().any(|(name, ..)| *name == module),
+            "engine() calls crate::{module}::register, and HOSTS does not cover it — every \
+             function a script can call has to be scanned by this test"
+        );
+    }
+    assert_eq!(
+        registrars().len(),
+        HOSTS.len(),
+        "the engine hands to {:?} and HOSTS lists {} halves",
+        registrars(),
+        HOSTS.len()
+    );
 }
 
 /// §2.4's table against `engine.rs`: the numbers are the constants' own.
@@ -160,8 +226,27 @@ fn the_scanners_found_an_api() {
 #[test]
 fn every_limit_carries_the_value_the_engine_uses() {
     let mut found = 0;
-    for line in ENGINE.lines() {
-        let Some(rest) = line.trim().strip_prefix("const ") else {
+    for (file, source) in LIMITS {
+        found += self::limits(file, source);
+    }
+    assert!(
+        found >= 6,
+        "only {found} limits found across the {} files that hold them",
+        LIMITS.len()
+    );
+}
+
+/// Every `const NAME: TYPE = VALUE;` in one file, against the specification's table for it.
+fn limits(file: &str, source: &str) -> usize {
+    let mut found = 0;
+    for line in source.lines() {
+        // `pub const MAX_BYTES` and `const MAX_STRING` are both limits; whether a bound is part
+        // of the crate's API is not this test's business.
+        let line = line.trim();
+        let Some(rest) = line
+            .strip_prefix("pub const ")
+            .or_else(|| line.strip_prefix("const "))
+        else {
             continue;
         };
         let (name, value) = rest
@@ -171,15 +256,21 @@ fn every_limit_carries_the_value_the_engine_uses() {
         let value = value.trim_end_matches(';');
         let row = SPEC
             .lines()
-            .find(|line| line.trim().starts_with(&format!("| `{name}` |")))
+            .find(|line| {
+                let line = line.trim();
+                // A row may put the name in bold, which §3.5's table does — the emphasis is
+                // the document's business and the name is this test's.
+                line.starts_with(&format!("| `{name}` |"))
+                    || line.starts_with(&format!("| **`{name}`** |"))
+            })
             .unwrap_or_else(|| {
-                panic!("{name} is a limit with no row in doc/generator-spec.md §2.4")
+                panic!("{name} is a limit in {file} with no row in doc/generator-spec.md")
             });
         assert!(
             row.contains(&format!("`{value}`")),
-            "{name} is `{value}` in build/src/engine.rs, and §2.4 says: {row}"
+            "{name} is `{value}` in {file}, and the specification says: {row}"
         );
         found += 1;
     }
-    assert!(found >= 4, "only {found} limits found in engine.rs");
+    found
 }
