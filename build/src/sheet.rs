@@ -165,8 +165,8 @@ pub struct Style(CellStyle);
 
 /// How a value is spelled — `doc/projection-sheet.md`'s `format` node.
 ///
-/// A *request* for a format rather than one: `numfmt::preset` builds the real thing at
-/// [`Fmt::format`], so the generator cannot produce a format the format picker in a shell
+/// A *request* for a format rather than one: `numfmt::preset` builds the real thing when the
+/// format is used (`Fmt::format`), so the generator cannot produce a format the format picker in a shell
 /// could not also produce. A format outside that vocabulary is a named gap — the projection
 /// spells one part by part, and a generator that could too would be inventing Excel's format
 /// codes (`doc/dsl.md` §3.8).
