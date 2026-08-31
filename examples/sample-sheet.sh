@@ -21,6 +21,9 @@
 set -euo pipefail
 
 GRIND=${GRIND:-grind}
+# Where this script is, so the generator's source next to it can be found whatever the
+# working directory is.
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 out=${1:-sample}
 mkdir -p "$out"
 book="$out/sample.ods"
@@ -417,5 +420,26 @@ say "lint: a cached value that no longer agrees with its formula"
 cp "$book" "$out/stale.fods"
 sheet set "$out/stale.fods" B2 1 >/dev/null
 sheet lint "$out/stale.fods" || true       # an error exits non-zero, so CI can gate on it
+
+# --- build: the same table, generated ------------------------------------------------------
+# `doc/dsl.md` layer 1, D7. The document above was written a cell at a time; `examples/budget.rhai`
+# says the same table once, with the categories as data and a loop for the rows. The arrow
+# points one way — a script produces a document and is never recovered from one — which is why
+# this is `build` and not a form `convert` reaches.
+#
+# A script cannot open a file, reach the network, ask the clock or use a random number, and it
+# is bounded: the same source produces the same bytes on every machine, and one that does not
+# terminate is an error with a line number. It runs when a person types this, never when
+# somebody opens the result.
+
+say "build: a document generated from a script"
+"$GRIND" build "$here/budget.rhai" -o "$out/generated.fods"
+sheet view "$out/generated.fods" A1:E9
+sheet view "$out/generated.fods" B8:E8 --formulas   # the totals the loop wrote
+
+# It is an ordinary document from here on: it lints, it projects, every verb takes it.
+say "the generated document is a document like any other"
+"$GRIND" lint "$out/generated.fods"
+"$GRIND" convert "$out/generated.fods" "$out/generated.grind" >/dev/null
 
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

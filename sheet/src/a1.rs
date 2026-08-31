@@ -110,7 +110,22 @@ fn sheet_dot(part: &str) -> Option<usize> {
 /// has to ask, because the grammar reads a bare word as a whole column: `SALES` is
 /// `[.SALES]`, column 8708380, and a shell handed that scrolls off the end of the world.
 pub fn resolve(app: &App, reference: &Reference) -> Result<(usize, Pos, Pos)> {
-    let sheet = sheet_index(app, reference.start.sheet.as_deref())?;
+    resolve_in(app, 0, reference)
+}
+
+/// [`resolve`], for a caller that already knows which sheet an unqualified address means.
+///
+/// The only difference is the default: `resolve` reads `B2:B7` as the *first* sheet's, because
+/// that is what a user typing an address at a command line means. A caller holding a sheet of
+/// its own — a generator filling in one sheet of several (`grind_build`), a dialog opened on
+/// the sheet in front of somebody — means that one, and would otherwise have to re-implement
+/// the whole-column clamp to say so. A reference that names a sheet still wins: `data.B2` is
+/// `data`'s cell wherever it is read from.
+pub fn resolve_in(app: &App, sheet: usize, reference: &Reference) -> Result<(usize, Pos, Pos)> {
+    let sheet = match reference.start.sheet.as_deref() {
+        Some(name) => sheet_index(app, Some(name))?,
+        None => sheet,
+    };
     if reference.source.is_some() {
         return Err(Error::Formula(
             "external document references are out of scope".to_owned(),

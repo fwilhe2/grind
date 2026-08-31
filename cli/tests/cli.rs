@@ -370,6 +370,104 @@ fn formatting_an_absurd_rectangle_fails_instead_of_trying() {
 }
 
 /// `examples/sample-sheet.sh` is the inventory of what this build can do, and an inventory that
+/// `examples/*.rhai`, which is the file this repository's copy of the workspace root is.
+fn example(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the workspace root")
+        .join("examples")
+        .join(name)
+}
+
+/// **D7's exit criterion**: `examples/sample-sheet.sh`'s document, generated
+/// (`doc/dsl.md` §7). The script is the whole table said once — the categories are data and a
+/// loop writes the rows — and what comes out is an ordinary document with the same totals.
+#[test]
+fn a_script_builds_the_budget() {
+    let dir = Sandbox::new("build");
+    let out = dir.path("budget.fods");
+    ok_top(&["build", &s(&example("budget.rhai")), "-o", &s(&out)]);
+
+    // The totals `sum_above()` wrote, and the answer it came to: six categories summed, with
+    // no line in the script saying six.
+    assert_eq!(
+        ok(&["get", &s(&out), "B8", "--formula"]).trim(),
+        "=SUM([.B2:.B7])"
+    );
+    assert_eq!(ok(&["get", &s(&out), "B8", "--raw"]).trim(), "3260");
+    assert_eq!(ok(&["get", &s(&out), "C8", "--raw"]).trim(), "3243.29");
+    // A formula written for the row it landed on, so nothing is anchored with a `$`.
+    assert_eq!(
+        ok(&["get", &s(&out), "D5", "--formula"]).trim(),
+        "=[.B5]-[.C5]"
+    );
+    // The styling layered: the header row is bold *and* silver, from two separate lines.
+    let shown = ok(&["style", &s(&out), "A1", "--show"]);
+    assert!(shown.contains("fo:font-weight\tbold"), "{shown}");
+    assert!(shown.contains("fo:background-color\t#dddddd"), "{shown}");
+    // A second sheet, reaching back across to the first.
+    assert_eq!(ok(&["get", &s(&out), "Journal.B4", "--raw"]).trim(), "6");
+    // And it is a document like any other: nothing in it contradicts itself.
+    ok_top(&["lint", &s(&out)]);
+}
+
+/// §2's promise that a generator is testable before it is safe: **the same source produces the
+/// same bytes**. No clock, no randomness, and a hasher whose seed is fixed at build time —
+/// which is why `Cargo.toml` turns Rhai's default features off.
+#[test]
+fn building_the_same_script_twice_produces_the_same_bytes() {
+    let dir = Sandbox::new("build-twice");
+    let (one, two) = (dir.path("one.fods"), dir.path("two.fods"));
+    let script = s(&example("budget.rhai"));
+    ok_top(&["build", &script, "-o", &s(&one)]);
+    ok_top(&["build", &script, "-o", &s(&two)]);
+    assert_eq!(
+        std::fs::read(&one).expect("the first"),
+        std::fs::read(&two).expect("the second"),
+        "the same script built the same document twice"
+    );
+}
+
+/// The kind comes from what the script *returned*, never from the output's name — the same
+/// rule `grind_core::kind` follows on the way in.
+#[test]
+fn a_script_can_build_a_text_document() {
+    let dir = Sandbox::new("build-text");
+    let out = dir.path("report.fodt");
+    ok_top(&["build", &s(&example("report.rhai")), "-o", &s(&out)]);
+    let info = ok_top(&["info", &s(&out)]);
+    assert!(info.contains("headings"), "{info}");
+    assert!(
+        ok_top(&["text", "view", &s(&out)]).contains("North led on volume"),
+        "the loop wrote a section per region"
+    );
+}
+
+/// A script that fails says where, because a generator whose errors have no line number is a
+/// generator nobody debugs.
+#[test]
+fn a_broken_script_is_an_error_with_a_line_number() {
+    let dir = Sandbox::new("build-broken");
+    let script = dir.path("broken.rhai");
+    std::fs::write(&script, "let s = sheet(\"S\");\ns.push([nope()]);\ns\n").expect("write");
+
+    let output = grind(&["build", &s(&script), "-o", &s(&dir.path("out.fods"))]);
+    assert!(!output.status.success());
+    let message = String::from_utf8_lossy(&output.stderr);
+    assert!(message.contains("broken.rhai:2:"), "{message}");
+    assert!(!dir.path("out.fods").exists(), "nothing was written");
+}
+
+/// R11 from the outside: the verb exists at the *suite* level and nowhere else. There is no
+/// `grind sheet build`, because a script says which kind of document it built.
+#[test]
+fn build_is_a_suite_level_verb() {
+    assert!(!sheet(&["build", "x.rhai"]).status.success());
+    let help = ok_top(&["--help"]);
+    assert!(help.contains("build"), "{help}");
+}
+
+/// `examples/sample-sheet.sh` is the inventory of what this build can do, and an inventory that
 /// is not run is a wish list. Running it here means a feature that stops working, or a
 /// command that changes its flags, fails the build rather than the next reader.
 #[test]

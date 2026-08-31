@@ -22,6 +22,9 @@
 set -euo pipefail
 
 GRIND=${GRIND:-grind}
+# Where this script is, so the generator's source next to it can be found whatever the
+# working directory is.
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 out=${1:-sample}
 mkdir -p "$out"
 doc="$out/sample.fodt"
@@ -246,5 +249,16 @@ text lint "$doc" --rules
 # the style `grind text style` put on a block really does point at nothing.
 say "lint: this document"
 text lint "$doc" || true
+
+# --- build: a document generated from a script -------------------------------------------------
+# `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
+# loop write them, with the same inline notation this document was typed with. The arrow points
+# one way: a script produces a document and is never recovered from one.
+
+say "build: a document generated from a script"
+"$GRIND" build "$here/report.rhai" -o "$out/generated.fodt"
+text view "$out/generated.fodt" | sed -n '1,8p'
+text outline "$out/generated.fodt"
+"$GRIND" lint "$out/generated.fodt"
 
 printf '\n%s and %s\n' "$doc" "$out/sample.odt"

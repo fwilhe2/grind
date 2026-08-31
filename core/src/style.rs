@@ -65,6 +65,57 @@ pub fn palette(name: &str) -> Option<&'static str> {
         .map(|(_, hex)| *hex)
 }
 
+/// A colour as a *person* spelled it, resolved to what ODF stores.
+///
+/// A [`PALETTE`] name first, so `--color navy`, a GUI's navy swatch and a generator's
+/// `style().color("navy")` all write the same attribute; a `#rrggbb` or `transparent` is kept
+/// as it is; anything else is an error naming what was allowed.
+///
+/// **This is where a user's typing enters, which is not where a document's value does.** The
+/// module comment above is the rule: a colour read out of a file is whatever the file said and
+/// is never checked, because rejecting it would lose the element rather than the attribute. So
+/// this is deliberately not called by any reader — only by the surfaces where somebody
+/// *chooses* a colour, and it lives here so that those surfaces cannot disagree about what
+/// `navy` is.
+pub fn color(value: &str) -> Result<String, String> {
+    if let Some(hex) = palette(value) {
+        return Ok(hex.to_owned());
+    }
+    let hex = value.strip_prefix('#').unwrap_or_default();
+    if value == "transparent" || (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())) {
+        return Ok(value.to_owned());
+    }
+    Err(format!(
+        "{value}: expected #rrggbb, transparent, or a palette name ({})",
+        PALETTE
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+/// A border as a person spelled it — `"0.5pt solid navy"` — with its colour resolved by
+/// [`color`], so a typo becomes an error here rather than an attribute LibreOffice drops
+/// silently. The width is kept exactly as it was typed; only the colour is rewritten.
+pub fn border(value: &str) -> Result<String, String> {
+    let malformed = || {
+        format!(
+            "{value}: expected a width, a line and a colour, \
+             e.g. \"0.5pt solid #000000\""
+        )
+    };
+    let fields: Vec<&str> = value.split_whitespace().collect();
+    let [width, line, name] = fields[..] else {
+        return Err(malformed());
+    };
+    let resolved = format!("{width} {line} {}", color(name)?);
+    match border_parts(&resolved) {
+        Some(_) => Ok(resolved),
+        None => Err(malformed()),
+    }
+}
+
 /// A border as its three parts — width in points, line style, colour.
 ///
 /// Not how a border is *stored*: this exists because LibreOffice re-quantises the width

@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
-| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/` and `text/src/projection/`, which are built (D0–D5, both document types). Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips) and layer 1 (a generator, one direction, not built and still a proposal) |
+| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -86,7 +86,8 @@ reuse lint                               # must stay compliant; CI gates on this
 ```
 
 `grind` is the CLI — `grind <app> <verb>`, plus a few suite-level verbs that read the
-document's kind out of the file (`info`, `convert`, `lint`). Every core capability is reachable from
+document's kind out of the file (`info`, `convert`, `lint`) and one that has no document to read
+(`build`, which runs a generator script — `doc/dsl.md` layer 1). Every core capability is reachable from
 it, enforced by
 `cli/tests/parity.rs`:
 
@@ -97,6 +98,7 @@ cargo run -p grind-cli -- sheet set book.ods A2 '=[.A1]*2'   # ODF syntax, verba
 cargo run -p grind-cli -- sheet recalc book.ods
 cargo run -p grind-cli -- sheet view book.ods A1:A2
 cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
+cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
 ```
 
 The two GTK shells need `libgtk-4-dev` + `libadwaita-1-dev`, and are **not** in
@@ -240,6 +242,7 @@ rather than a guest:
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header, the token and span maps of `doc/dsl.md`'s third physical form, and `projection/source.rs`, which is R6 for it |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
 | `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
+| `grind-build` | `build/` | **The generator** (`doc/dsl.md` layer 1, D7): a Rhai script that *returns* a document, and the sandbox it runs in. `sheet.rs` and `text.rs` are the two host vocabularies — the projection's own nouns — and `engine.rs` is every restriction §2 promises, in one screen. **Nothing that opens a document may depend on this crate** (R11), which `build/tests/manifest.rs` reads the manifests to enforce |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
@@ -538,9 +541,23 @@ parser already takes. **D10's first row is done**: renaming a sheet now carries 
 that named it — formulas, named expressions and chart ranges — in one `Action::Batch`, so it is
 one Ctrl+Z and `doc/not-doing.md`'s row says *deleting* rather than "renaming or deleting". The
 rewrite is `formula::rename`, an AST substitution re-serialised by the printer, never a textual
-one; a formula this build cannot parse is left alone and `grind lint` finds it. **Layer 1 — the
-generator — is untouched and still a proposal**, and D7, D8 and the rest of §6.5's table are the
-open list: `grind build`, `grind test`, and the other refactorings.
+one; a formula this build cannot parse is left alone and `grind lint` finds it.
+
+**D7 is `grind build` — layer 1 has begun.** `grind build model.rhai -o model.fods` runs a Rhai
+script that **returns** a document and writes it, for either document type;
+`examples/budget.rhai` and `examples/report.rhai` are the two worked examples, and the first is
+D7's exit criterion — `examples/sample-sheet.sh`'s budget, said once with the categories as data
+and a loop for the rows. The arrow points one way: a script produces a document and is never
+recovered from one, so this is `build` rather than a form `convert` reaches. Three things hold
+the macro line (`doc/not-doing.md` §1, unchanged): **R11** — no crate that opens a document may
+depend on `grind-build`, checked by `build/tests/manifest.rs` against every manifest in the
+workspace *and* against the workspace's own member list; the language has no filesystem,
+network, environment, clock or randomness, two of those by feature flags rather than by
+unregistering; and everything is bounded, so a script that does not terminate is an error with a
+line number. The host vocabulary is `doc/projection-sheet.md`'s rather than a third spelling of
+one model, and the same source produces the same bytes — a test builds the budget twice and
+compares them. **D8 (`grind test`) is not built**, and it plus the rest of §6.5's table are the
+open list.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which

@@ -670,6 +670,10 @@ struct Cli {
 /// document — what kind it is, and moving it between the three physical forms. Everything else
 /// belongs to an app, because "set a cell" and "insert a paragraph" are not the same verb with
 /// a different noun (doc/suite.md, "The CLI").
+///
+/// `build` is here for the other reason: it has no document to read at all. A script says which
+/// kind it built, so there is nothing for a `grind sheet build` to know that `grind build` does
+/// not (doc/dsl.md §4).
 #[derive(Subcommand)]
 enum Top {
     /// Spreadsheets — cells, formulas, sheets, number formats
@@ -706,6 +710,31 @@ enum Top {
         /// Silence one rule, by id; repeatable
         #[arg(long, value_name = "RULE")]
         off: Vec<String>,
+    },
+
+    /// Build a document from a script (doc/dsl.md layer 1)
+    ///
+    /// The script returns a document and `grind build` writes it; it is not a document itself,
+    /// does not open one, and nothing ever writes one. The output's extension picks the form,
+    /// as it does for `convert`, and the *kind* comes from what the script returned rather than
+    /// from the name.
+    ///
+    /// A script has no filesystem, no network, no clock and no randomness, and is bounded: the
+    /// same source produces the same bytes on every machine, and one that does not terminate is
+    /// an error with a line number. This is the only verb in the suite that runs one.
+    Build {
+        /// The script to run
+        script: PathBuf,
+        /// Where to write the document it built — .ods/.fods, .odt/.fodt, or .grind
+        #[arg(short, long, value_name = "PATH")]
+        out: PathBuf,
+        /// Skip the document-wide recalculation at the end
+        ///
+        /// Each formula is answered where it lands, so this only matters for one that reads a
+        /// cell the script fills later — which is then left with the value it had at the time,
+        /// and reported as stale exactly as an edit would be.
+        #[arg(long)]
+        no_recalc: bool,
     },
 
     /// Convert between the three physical forms — .ods, .fods and .grind
@@ -1040,10 +1069,10 @@ enum TextCommand {
         #[arg(long)]
         size: Option<String>,
         /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
-        #[arg(long, value_parser = color)]
+        #[arg(long, value_parser = style::color)]
         color: Option<String>,
         /// Highlight behind the text: a palette name, #rrggbb, or "transparent"
-        #[arg(long, value_parser = color)]
+        #[arg(long, value_parser = style::color)]
         background: Option<String>,
     },
 
@@ -1343,10 +1372,10 @@ enum Command {
         #[arg(long)]
         italic: bool,
         /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
-        #[arg(long, value_parser = color)]
+        #[arg(long, value_parser = style::color)]
         color: Option<String>,
         /// Cell background: a palette name, #rrggbb, or "transparent"
-        #[arg(long, value_parser = color)]
+        #[arg(long, value_parser = style::color)]
         background: Option<String>,
         /// Horizontal alignment
         #[arg(long, value_enum)]
@@ -1361,7 +1390,7 @@ enum Command {
         #[arg(long)]
         size: Option<String>,
         /// Border on every edge, as width, line and colour: "0.5pt solid navy"
-        #[arg(long, value_parser = border)]
+        #[arg(long, value_parser = style::border)]
         border: Option<String>,
     },
 
@@ -1772,6 +1801,40 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 kind => return Err(unsupported(file, Some(kind))),
             };
             Ok(lint_report(file, findings))
+        }
+
+        // The one verb that runs a script, and the only place in the suite that links an
+        // evaluator (R11). Note what it does *not* do: it never reads the output, so building
+        // over an existing document replaces it rather than editing it — a build product is
+        // the script's answer, not a document with a history.
+        Top::Build {
+            script,
+            out,
+            no_recalc,
+        } => {
+            let source = std::fs::read_to_string(script)
+                .map_err(|e| format!("cannot read {}: {e}", script.display()))?;
+            let built = grind_build::build(&source, &script.display().to_string())
+                .map_err(|e| e.to_string())?;
+            match built {
+                grind_build::Artifact::Spreadsheet(app) => {
+                    if !no_recalc {
+                        // A generated document has no cached values until something computes
+                        // them, and a formula saved without one renders blank in LibreOffice.
+                        let recalc = app.recalc().say()?;
+                        if recalc.spoiled > 0 {
+                            eprintln!(
+                                "grind: {} cell(s) use a function this build does not \
+                                 implement and were left as the script wrote them; see \
+                                 `grind sheet functions`",
+                                recalc.spoiled
+                            );
+                        }
+                    }
+                    finish(&app, cli, out, true)
+                }
+                grind_build::Artifact::Text(app) => finish_text(&app, cli, out, true),
+            }
         }
 
         Top::Convert { file, out } => match document_kind(file)? {
@@ -2661,7 +2724,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 s.color = if hex.is_empty() {
                     None
                 } else {
-                    Some(color(hex)?)
+                    Some(style::color(hex)?)
                 };
             }
             for entry in point_color {
@@ -2688,7 +2751,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     if s.point_colors.len() <= p {
                         s.point_colors.resize(p + 1, None);
                     }
-                    s.point_colors[p] = Some(color(hex)?);
+                    s.point_colors[p] = Some(style::color(hex)?);
                 }
             }
             app.set_chart_style(
@@ -2816,50 +2879,6 @@ impl<T, E: std::fmt::Display> Say<T> for std::result::Result<T, E> {
 fn locale(value: &str) -> Result<grind_sheet::locale::Locale, String> {
     grind_sheet::locale::Locale::parse(value)
         .ok_or_else(|| format!("{value}: expected a language tag like de-DE"))
-}
-
-/// A colour as ODF spells one. Checked here rather than in the core: this is where a user's
-/// typing enters, and a *document's* value is whatever the document said.
-fn color(value: &str) -> Result<String, String> {
-    // A palette name first, so `--color navy` and a GUI's navy swatch write the same
-    // attribute (`style::PALETTE`). Anything else has to be a colour a document can hold.
-    if let Some(hex) = style::palette(value) {
-        return Ok(hex.to_owned());
-    }
-    let hex = value.strip_prefix('#').unwrap_or_default();
-    if value == "transparent" || (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())) {
-        return Ok(value.to_owned());
-    }
-    Err(format!(
-        "{value}: expected #rrggbb, transparent, or a palette name ({})",
-        style::PALETTE
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(", ")
-    ))
-}
-
-/// A border as its three parts, so a typo becomes an error here rather than an attribute
-/// LibreOffice silently drops. Its colour takes a palette name too, which means resolving
-/// one — a name reaching the file would be an attribute LibreOffice drops silently.
-fn border(value: &str) -> Result<String, String> {
-    let malformed = || {
-        format!(
-            "{value}: expected a width, a line and a colour, \
-                 e.g. \"0.5pt solid #000000\""
-        )
-    };
-    let fields: Vec<&str> = value.split_whitespace().collect();
-    let [width, line, name] = fields[..] else {
-        return Err(malformed());
-    };
-    // The width is kept as it was typed; only the colour is rewritten.
-    let resolved = format!("{width} {line} {}", color(name)?);
-    match style::border_parts(&resolved) {
-        Some(_) => Ok(resolved),
-        None => Err(malformed()),
-    }
 }
 
 /// The core's [`numfmt::Kind`] for a command-line style. `General` and `Datetime` never get

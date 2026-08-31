@@ -30,7 +30,9 @@
 use serde::{Deserialize, Serialize};
 
 /// The styling vocabulary, from the crate that has no opinion about document types.
-pub use grind_core::style::{EDGES, PALETTE, border_parts, length_mm, mm_length, palette};
+pub use grind_core::style::{
+    EDGES, PALETTE, border, border_parts, color, length_mm, mm_length, palette,
+};
 
 /// How one cell looks. Every field is an ODF attribute value, and `None` means the
 /// attribute is absent — which is not the same as a value of `"none"`, the spelling ODF

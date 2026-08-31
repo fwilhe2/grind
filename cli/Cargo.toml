@@ -20,6 +20,10 @@ path = "src/main.rs"
 grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# The generator (doc/dsl.md layer 1). **This is the only crate in the workspace that may name
+# it** — R11, checked by `build/tests/manifest.rs`: no code path that opens a document
+# evaluates anything, and `grind build` is a verb a person types.
+grind-build = { path = "../build" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -34,7 +34,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 
 | Not doing | Because |
 |---|---|
-| **Macros and Basic** | A scripting host is a second product with a second security model. A document that computes is the goal; a document that *executes* is not. |
+| **Macros and Basic** | A scripting host is a second product with a second security model. A document that computes is the goal; a document that *executes* is not. **Unchanged by `grind build`** (`doc/dsl.md` §2, D7): a generator is a source file *beside* a document, run when an author types a command, and no code path that opens a document may evaluate anything — R11, checked against every manifest in the workspace by `build/tests/manifest.rs`. The row this feature would reopen is a script *inside* a file, and nothing here does that. |
 | **Extensions** | An extension API freezes the core's internals into a contract. The core is 18 months old and the shape is still moving. |
 | **OLE embedding** | Embedding another application's document means hosting another application. |
 | **Change tracking** | Per-cell revision history is a data model of its own, layered under every mutation. Version control over `.fods` covers the real need — see `doc/cli-recipes-sheet.md`. |

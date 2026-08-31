@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-build"
+version = "0.0.0"
+description = "The generator — a script that returns a document, and nothing else (doc/dsl.md layer 1)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The two applications, because a generator's whole output is one of their documents. The
+# arrow points *this* way and never the other: R11 is that nothing on a read path depends on
+# this crate, and `tests/manifest.rs` reads every other manifest to say so.
+grind-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+
+# The scripting language, chosen in doc/dsl.md §4.2 and measured in §5.
+#
+# `default-features = false` on purpose, and both halves of it are load-bearing:
+#
+# * `std` is taken back explicitly — the default set is `std` plus `ahash/runtime-rng`, and
+#   the runtime RNG seeds the hasher from the operating system. Nothing in a script can read
+#   it, but it decides the iteration order of a map, and doc/dsl.md §2 promises the same
+#   source produces the same bytes on every machine. A fixed-key hasher is that promise
+#   holding at the level of the language rather than of a review.
+# * `no_time` removes `timestamp()` from the language altogether. §2's "no clock" is then a
+#   fact about the build rather than a function this crate remembered to unregister.
+#
+# Everything else §2 forbids is absent from Rhai to begin with: there is no filesystem, no
+# network and no environment in the core language, and no randomness — those live in crates
+# one simply does not take.
+rhai = { version = "1.26", default-features = false, features = ["std", "no_time"] }

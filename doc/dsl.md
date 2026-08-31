@@ -6,7 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is built for both document types. D0–D5 and D9 are done** —
+**Status: layer 0 is built for both document types, and layer 1 has begun. D0–D7, D9 and
+D10's first row are done** —
 `core/src/projection/`, `sheet/src/projection/` and `text/src/projection/` exist; **loop F is
 green over 359/359 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with
 nothing differing** (`sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`); each grammar is held to
@@ -17,9 +18,12 @@ own; and **R6 holds for it** — `grind sheet set book.grind B1 4300` rewrites t
 nothing else in the file, comments and hand alignment included, in both applications; and **every
 shell shows the projection** (D9) — the grid or the page on one tab and its source on the other,
 with the line the selection is on marked and moving in it selecting what that line projects.
-Layer 1 — the
-generator — is untouched and stays a proposal; §7's milestone table below records where each
-piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
+**Layer 1 has its first half** (D7): `grind build model.rhai -o model.fods` runs a Rhai script
+that *returns* a document and writes it — `grind-build`, the only crate in the workspace an
+evaluator reaches, and the CLI is the only binary that links it (R11, checked). A script has no
+filesystem, no network, no clock and no randomness, and is bounded; the same source produces the
+same bytes, asserted by building `examples/budget.rhai` twice. `grind test` (D8) is not built.
+§7's milestone table below records where each piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
 is the argument that the feature does not contradict either. Phase 11 is spoken for
 (`doc/xlsx-import.md`); the rest of this is a candidate for **phase 12**.
 
@@ -98,6 +102,13 @@ the same kind of mechanical guard R8 has:
 > `grind-core`, `grind-sheet`, `grind-text` or any shell. `grind build` and `grind test` are
 > the only binaries that link it. Checked the way R8 is checked (`core/tests/generic.rs`): a
 > test reads the manifests and fails if any of them names it.
+
+**Built with D7, in `build/tests/manifest.rs`**, and with one part the sentence above did not
+ask for: the test also reads the *workspace's* member list and fails when a member is in
+neither of its two lists. A shell added and not checked would leave the guard passing while
+covering one crate fewer, which is how a ratchet quietly stops. `grind-cli` is the one crate
+allowed to name it, and a third test asserts that it still does — a guard that passes because
+the feature vanished is not a guard.
 
 Two further restrictions on the generator itself, so that "a program I wrote" stays a small
 claim:
@@ -383,6 +394,10 @@ the macro shape §2 rules out. It returns a tree; `grind build` writes it.
 
 ### 4.2 The recommendation: Rhai
 
+**Built — D7.** `grind build model.rhai -o model.fods`, in `build/` (`grind-build`), reached
+from the CLI and from nowhere else. The sketch below is what this section proposed; the
+subsection after it is what changed when it was built, and why.
+
 ```rhai
 // Quarterly model. No I/O, no clock, no randomness — same source, same bytes.
 const REGIONS = ["North", "South", "East", "West"];
@@ -393,9 +408,9 @@ fn header(cells) { row(cells).bold() }
 let s = sheet("Sales");
 s.push(header(["Region"] + QUARTERS));
 for r in REGIONS {
-    s.push(row([r] + QUARTERS.map(|_| 0)).format(currency("EUR")));
+    s.push(row([r] + QUARTERS.map(|_| 0)).format(format("currency").symbol("EUR")));
 }
-s.push(header(["Total"] + QUARTERS.map(|q, i| sum_above(i + 1))));
+s.push(header(["Total"] + QUARTERS.map(|q, i| sum_above())));
 s
 ```
 
@@ -416,6 +431,59 @@ Why Rhai, against the measured field in §5:
    values (`assert(cell("B12").value == 4200)`), which a template engine cannot express and
    which would otherwise be a second mechanism. Rhai gets a different function set per verb:
    `build` gets the builders, `test` gets the assertions and a read-only document.
+
+#### What D7 found when it built that
+
+**The dependency was 13 crates, not 26** — `rhai` with `default-features = false` and
+`features = ["std", "no_time"]`, which is what `Cargo.lock` gained. Both flags are load-bearing
+rather than thrift: `no_time` removes `timestamp()` from the *language*, so §2's "no clock" is a
+fact about the build rather than a function this project remembered to unregister, and dropping
+the default `ahash/runtime-rng` takes the operating system's seed out of the hasher, so a map
+iterates in the same order on every machine. "The same source produces the same bytes" is then
+checked by a test that builds `examples/budget.rhai` twice and compares them, rather than
+argued.
+
+**The host vocabulary is the projection's**, and that was not a decision this section made. A
+generator that invented its own names for *sheet*, *row*, *style* and *format* would be a third
+spelling of one model, and §3.7's argument about two scope lines applies word for word to two
+vocabularies. So `doc/projection-sheet.md`'s nodes and attributes are the API:
+`style().background("silver").align("center")` is that document's
+`style … background=navy align=center`, and `format("currency").symbol("€").decimals(2)` is its
+`format … currency symbol="EUR" decimals=2`. Which is why the sketch's `currency("EUR")` became
+`format("currency").symbol("EUR")`: one constructor named after the node, and `currency`,
+`date` and `number` left free for a *script* to use as its own names.
+
+**`sum_above()` lost its argument.** The sketch passed the column (`sum_above(i + 1)`); the cell
+already knows which column it landed in, and a helper that can be told a different one is a
+helper that can disagree with where its answer sits. What it sums is the contiguous run of
+numbers or formulas directly above — an AutoSum's rule, which is the only one that does not
+reach up into a header and sum a heading.
+
+**Styles layer here and replace in the core**, and both are right for who they serve.
+`App::set_style` replaces because a toolbar's Bold button sets what a cell *is*, and a shell
+wanting "bold as well" reads first. A script is not a toolbar: it says `row(…).bold()` and then
+`style("A1:H1", style().background("silver"))` and means both, in the order a stylesheet means
+both. Replacing there would silently drop the bold, which is exactly the kind of loss a
+generated document is least likely to be checked for. The layering is `grind-build`'s, and what
+reaches the core is one ordinary `set_style` per run of cells that agree.
+
+**A script has types, so the host does no typing.** `App::enter`'s rule — `1800` is a number,
+`TRUE` is a logical — exists because a person typing has only characters to say it with. In a
+script `1800` is already an integer and `"2091"` is already a string, so re-deriving the type
+from the spelling would be a second rule that can disagree with the first. The one guess kept is
+the leading `=`, and even there both spellings are the suite's own: a `=` string is verbatim ODF
+(what the file holds and the projection writes), and `formula("SUM(B2:B7)")` is the display form
+put through `formula::display::from_display`, the converter already behind
+`grind sheet fmt --from-display`. **A date *value* has no spelling and is a named gap**:
+`App::enter` reads `2026-08-16` as a date only in a cell already known to hold one, which the
+cells of a document being generated are not, so a generated date is `=DATE(2026;8;16)` under a
+date format — what `examples/sample-sheet.sh` writes by hand.
+
+**Every builder is a shared handle** (`Rc<RefCell<…>>`). Rhai copies values on assignment, so a
+sheet pushed into a document and then written to again would have updated a *copy* — a script
+that looks right and a document missing its last rows. This is the one implementation detail
+worth stating out loud, because it is the difference between the API meaning what it reads as
+and not.
 
 **Runner-up: MiniJinja** (4 crates, Apache-2.0). If dependency weight turns out to dominate
 everything else, Jinja2 syntax is more widely known than any other candidate's and the
@@ -498,7 +566,7 @@ current versions. **For scale: `grind-core` + `grind-sheet` + `grind-text` + `gr
 
 | Candidate | Crates | Licence | Notes |
 |---|---|---|---|
-| **Rhai 1.26** | **26** | MIT/Apache-2.0 | **Chosen.** §4.2 |
+| **Rhai 1.26** | **26**, and **13** as taken | MIT/Apache-2.0 | **Chosen**, and built — §4.2. The lock gained thirteen packages rather than twenty-six, because `default-features = false` drops the runtime-seeded hasher, which §4.2 wanted gone anyway |
 | MiniJinja 2.24 | **4** | Apache-2.0 | Runner-up. Loops, macros, filters, a real sandbox, the most widely known syntax on the list. Stringly-typed output; no assertion story |
 | Tera 2.3 | 3 | MIT | Same family, smaller community, same objections |
 | Koto 0.16 | 37 | MIT | Well made, Rust-embedded, unfamiliar syntax, small community |
@@ -652,8 +720,8 @@ Everything in this document is a core capability except the generator, and the e
 | The span map, and selection sync both ways | same | — | ● | ● | ● |
 | `grind lint` | core, per app | ● | ● | ● | ● |
 | Refactorings — each one an `Action` | core, per app | ● | ● | ● | ● |
-| **`grind build`** — the generator | **its own crate** | ● | ✗ | ✗ | ✗ |
-| **`grind test`** | same | ● | ✗ | ✗ | ✗ |
+| **`grind build`** — the generator | **its own crate** (`grind-build`) | ● | ✗ | ✗ | ✗ |
+| **`grind test`** | same | ○ (D8, not built) | ✗ | ✗ | ✗ |
 
 Three qualifications, because "in the core" is not the same as "free in every shell". (● is
 built, ✗ is by decision.)
@@ -699,7 +767,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, for either application. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
 | **D5** | R6 for the projection: splice at the spans `kdl-rs` reports | One cell edited changes one line; comments survive | **done**, both document types — `grind_core::projection::Source` plus a splice per app. An untouched save returns the bytes that were read, over both corpora. Not through `kdl-rs`'s *mutation* API, and §3.1 records why |
 | **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | **done**, both applications — eight rules, five per app with two shared, each in §4.3's table and each with a test. `grind sheet lint` / `grind text lint`, plus `grind lint` at the suite level, which reads the kind out of the file. What a diagnostic *is* is `grind_core::lint` (R8); every rule is asked through machinery that already answers its question, so the linter cannot disagree with the document's own behaviour |
-| **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | not started |
+| **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | **done** — `build/` (`grind-build`), `grind build model.rhai -o model.fods`, **both document types**. `examples/budget.rhai` is the exit criterion: the budget's table, its formulas, formats, styles, widths, names and second sheet, with the categories as data and a loop for the rows, asserted in `cli/tests/cli.rs` and run by `examples/sample-sheet.sh`. The host vocabulary is `doc/projection-sheet.md`'s, `sum_above()` lost the argument the sketch gave it, styles layer where the core's replace, and the dependency was 13 crates rather than 26 — §4.2's own subsection is the record |
 | **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
 | **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |
 | **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | **first row done** — rename-a-sheet, which closed a documented bug rather than adding a feature. One `Action::Batch` reached from `grind sheet rename` and from all four shells, undone by one Ctrl+Z, and it counts what it rewrote so a document-wide edit is visible. The rest of §6.5's table is open and moves one row at a time, on evidence |
