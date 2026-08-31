@@ -559,6 +559,16 @@ one model, and the same source produces the same bytes — a test builds the bud
 compares them. **D8 (`grind test`) is not built**, and it plus the rest of §6.5's table are the
 open list.
 
+**Both languages are undocumented *as languages*, and §7's D11–D14 are that work.** What exists
+is a design record and a vocabulary check, not a specification somebody could implement against
+or a guide somebody could learn from: four documents are owed — a spec and a guide for the
+projection, a spec and a guide for the generator — each with the mechanical check its genre
+allows, because a document nothing checks drifts. **D13, the generator's spec, is the one to do
+first**: the host API is the surface most likely to grow a function nobody wrote down, since
+adding one is three lines in `register()`, and its check (the API reference against what
+`engine()` registers, in `doc/small-group.md`'s shape) is the guard the projection already has
+in §3.7 and the generator has not.
+
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
 is where `grind-text-gtk` gets its `.desktop` file, its metainfo, its icon and its packages.

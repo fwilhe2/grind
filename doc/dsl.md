@@ -771,6 +771,10 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
 | **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |
 | **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | **first row done** — rename-a-sheet, which closed a documented bug rather than adding a feature. One `Action::Batch` reached from `grind sheet rename` and from all four shells, undone by one Ctrl+Z, and it counts what it rewrote so a document-wide edit is visible. The rest of §6.5's table is open and moves one row at a time, on evidence |
+| **D11** | The projection's **specification** — the language, not the vocabulary (below) | Every production has an example a test runs; somebody with only that file can hand-write a `.grind` that opens | not started |
+| **D12** | The projection's **guide** — writing one by hand, keeping it in git, what converting to it drops | Every snippet is a real command with its real output, and the page runs top to bottom | not started |
+| **D13** | The generator's **specification** — the Rhai dialect, its limits, and the whole host API | The API reference is checked against what `engine()` registers, in `doc/small-group.md`'s shape, both directions | not started |
+| **D14** | The generator's **guide** — from a first script to `examples/budget.rhai` | Every script in it is a file under `examples/` that `cli/tests/cli.rs` builds | not started |
 
 D1–D5 are the feature. D6–D8 are the reason to want it. **D9 is the cheapest milestone on the
 list and possibly the most visible** — it needs no new dependency, no new format and no core
@@ -778,6 +782,44 @@ change beyond one range-taking method, because D1 already wrote the hard part.
 
 D10 is not a milestone in the sense the others are: it is an open table (§6.5) whose rows move
 by `doc/not-doing.md`'s rule, on evidence, one at a time.
+
+### D11–D14 — the two languages owe a specification and a guide each
+
+**This project has invented two languages and documented neither of them as a language.** What
+exists is a design record: this file argues *why* they are shaped as they are,
+`doc/projection-sheet.md` and `doc/projection-text.md` hold each grammar's vocabulary to the
+model, and the doc comments in `*/src/projection/` and `build/src/` say what each function
+does. None of that is what somebody writing a `.grind` or a `.rhai` needs. A person who wants
+to hand-write a projection has to read a Rust module to find out whether `#true` is spelled
+that way, and a person writing a generator has to read `build/src/sheet.rs` to find out that
+`format("currency")` exists at all.
+
+**Two documents per language, and they are different documents on purpose.** A specification
+answers *what is legal and what does it mean*, exhaustively, for somebody implementing against
+it or arguing with an edge case. A guide answers *how do I do the thing I came here to do*, by
+example, in the order a person meets the problems. Merging them produces a document that is
+too long to read and too vague to settle an argument, which is the failure mode
+`doc/cli-recipes-sheet.md` and `doc/cli-parity-sheet.md` already avoid by being two files.
+
+**The house rule applies to all four: a document that nothing checks drifts.** So each one
+carries the mechanical check its genre allows, in the shape §3.7 and §4.3 already use — an
+example that is executed rather than illustrated, a vocabulary read out of the source, or a
+snippet whose output is the real one.
+
+| | What | Done when |
+|---|---|---|
+| **D11** | **The projection's specification** — `doc/projection-spec.md`. The *language*, which the two grammar notes deliberately are not: the KDL subset in use and what is excluded from it, the `grind <kind>` header line, how a node, an argument and a property map onto the model, the value spellings (`#true`, `#null`, a number, a quoted string, a bare word) and which is required where, addresses and ranges, the inline notation's escaping rule from both sides (§3.6), what a reader must reject rather than tolerate, and the bijectivity contract with its two named gaps. It **references** `doc/projection-sheet.md` and `-text.md` for the vocabulary rather than restating it — one scope line, still | Every production has an example the test runs, in `doc/projection-sheet.md`'s shape; the escaping rule's table is executed against `inline.rs` in both directions; a reader who has only this file can write a `.grind` that opens |
+| **D12** | **The projection's guide** — `doc/projection-guide.md`. Task-shaped and short: write one by hand, keep it in git and read the diff, edit one cell and see one line change, convert to and from the other two forms, open it in every shell, and the honest list of what converting *to* it drops. The audience is somebody who liked `doc/flat-first.md`'s argument and wants to act on it | Every snippet is a real command with its real output, as `doc/cli-recipes-sheet.md` is; the whole thing is runnable top to bottom |
+| **D13** | **The generator's specification** — `doc/generator-spec.md`. Two halves. The *dialect*: which Rhai (version, the features taken and left), which constructs a script may use, every limit with its value, and exactly what determinism is promised and on what it rests. The *host API*: every registered function with its arity, its argument types, its return, and its errors — plus the rules that are not visible in a signature, which are the value-mapping table, the two-pass materialisation order, the layering of styles, and `sum_above()`'s run | The API reference is checked against what `engine()` actually registers, the way `doc/small-group.md` is checked against `funcs::implemented()`: a function documented and not registered fails the build, and so does one registered and not documented. Every limit's value is read from `build/src/engine.rs` rather than retyped |
+| **D14** | **The generator's guide** — `doc/generator-guide.md`. From a first three-line script to `examples/budget.rhai`, in the order the problems arrive: data at the top, a loop for the rows, a function for a repeated shape, formatting, several sheets, a text document, and reading an error message with a line number in it. It ends where §2 does — what a script may not do, and why that is the feature rather than the limitation | Every script in it is a file under `examples/` that `cli/tests/cli.rs` builds, so a guide that stops working fails the build rather than the reader |
+
+**D13's check is the load-bearing one**, and it is the reason to write these in this order: the
+host API is the surface most likely to grow a function nobody writes down, because adding one
+is three lines in `register()`. The projection has §3.7's guard already; the generator has
+nothing equivalent yet, and D13 is where it gets one.
+
+None of the four is scheduled. They are one item at a time by `doc/not-doing.md`'s rule, and
+the argument for doing D13 first is above.
 
 ---
 
