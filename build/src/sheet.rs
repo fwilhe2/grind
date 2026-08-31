@@ -66,6 +66,8 @@ use grind_sheet::style::CellStyle;
 use grind_sheet::{App, CellValue, Pos, a1, numfmt, style};
 use rhai::{Array, Dynamic, Engine, EvalAltResult};
 
+use crate::hint::{hint, hint_get};
+
 /// What a host function hands back — a value, or a message with the script's position on it.
 type Res<T> = Result<T, Box<EvalAltResult>>;
 
@@ -185,6 +187,12 @@ pub struct Fmt {
 // ---------------------------------------------------------------------------
 
 /// Everything a script may say about a spreadsheet.
+///
+/// **Every registration carries its own documentation**, and that is not decoration: `grind
+/// definitions` turns what is written here into a `.d.rhai` file, which is what an editor reads
+/// to complete a call and to show what it does while somebody is typing it
+/// (`doc/generator-spec.md` §9). A function registered without a comment is a function whose
+/// hover says nothing, so [`hint`] takes both and there is no shorter way to add one.
 pub fn register(engine: &mut Engine) {
     engine
         .register_type_with_name::<Book>("Spreadsheet")
@@ -195,166 +203,427 @@ pub fn register(engine: &mut Engine) {
         .register_type_with_name::<Fmt>("Format");
 
     // --- constructors ---
-    engine
-        .register_fn("spreadsheet", Book::default)
-        .register_fn("sheet", |name: &str| Sheet::named(name))
-        .register_fn("row", |cells: Array| -> Res<Row> { Row::of(cells) })
-        .register_fn("style", Style::default)
-        .register_fn("format", |kind: &str| -> Res<Fmt> { Fmt::named(kind) })
-        .register_fn("formula", |source: &str| -> Res<Cell> {
-            Cell::formula(source)
-        })
-        .register_fn("sum_above", || Cell::SumAbove);
+    hint(
+        engine,
+        "spreadsheet",
+        ["Spreadsheet"],
+        ["/// An empty document. Push a sheet into it, and return it at the end of the script."],
+        Book::default,
+    );
+    hint(
+        engine,
+        "sheet",
+        ["name: string", "Sheet"],
+        [
+            "/// A sheet, not yet in any document.",
+            "///",
+            "/// Returning one *is* a one-sheet spreadsheet, so a script that builds one sheet",
+            "/// may end with it rather than with a `spreadsheet()` around it.",
+        ],
+        |name: &str| Sheet::named(name),
+    );
+    hint(
+        engine,
+        "row",
+        ["cells: array", "Row"],
+        [
+            "/// A row of cells, ready to push.",
+            "///",
+            "/// A number is a number, a string is text, a string starting with `=` is a formula",
+            "/// in ODF syntax, `()` leaves the cell empty. `.bold()`, `.italic()`, `.style(…)`",
+            "/// and `.format(…)` cover the whole row.",
+        ],
+        |cells: Array| -> Res<Row> { Row::of(cells) },
+    );
+    hint(
+        engine,
+        "style",
+        ["Style"],
+        [
+            "/// Styling, with nothing set yet: `style().bold().background(\"silver\")`.",
+            "///",
+            "/// In a script styles *layer* — a later one adds to what is underneath.",
+        ],
+        Style::default,
+    );
+    hint(
+        engine,
+        "format",
+        ["kind: string", "Format"],
+        [
+            "/// A number format by name: `general`, `number`, `percent`, `currency`, `date`,",
+            "/// `datetime`, `time`, `boolean` or `text`.",
+            "///",
+            "/// Refine it with `.decimals(2)`, `.grouping()`, `.symbol(\"€\")`, `.locale(\"de-DE\")`.",
+        ],
+        |kind: &str| -> Res<Fmt> { Fmt::named(kind) },
+    );
+    hint(
+        engine,
+        "formula",
+        ["source: string", "Cell"],
+        [
+            "/// A formula written the way a formula bar shows one — `formula(\"SUM(B2:B7)\")`.",
+            "///",
+            "/// Converted to ODF syntax by the core's own converter, so a formula that does not",
+            "/// parse is an error here. The other spelling is a plain string starting with `=`,",
+            "/// which is stored exactly as written.",
+        ],
+        |source: &str| -> Res<Cell> { Cell::formula(source) },
+    );
+    hint(
+        engine,
+        "sum_above",
+        ["Cell"],
+        [
+            "/// The sum of the cells directly above this one.",
+            "///",
+            "/// Resolved where the cell lands, over the contiguous run of numbers or formulas",
+            "/// above it — an AutoSum's rule, so a header of text is not part of it.",
+        ],
+        || Cell::SumAbove,
+    );
 
     // --- the book ---
-    engine.register_fn("push", |book: &mut Book, sheet: Sheet| {
-        book.0.borrow_mut().push(sheet);
-        book.clone()
-    });
+    hint(
+        engine,
+        "push",
+        ["document: Spreadsheet", "sheet: Sheet", "Spreadsheet"],
+        ["/// Append a sheet. Sheets appear in the document in the order pushed."],
+        |book: &mut Book, sheet: Sheet| {
+            book.0.borrow_mut().push(sheet);
+            book.clone()
+        },
+    );
 
     // Every method that *asks for something* hands its receiver back, so a script may chain.
     // It is a shared handle, so the one that comes back is the one that went in — see [`Book`].
     // `push` is the exception and returns where the row landed, which is the answer a script
     // has no other way to get.
-    engine
-        .register_fn("push", |sheet: &mut Sheet, row: Row| -> Res<i64> {
-            sheet.push(row)
-        })
-        .register_fn("push", |sheet: &mut Sheet, cells: Array| -> Res<i64> {
+    hint(
+        engine,
+        "push",
+        ["sheet: Sheet", "row: Row", "int"],
+        [
+            "/// Append a row, and answer the index of the row it landed on (counted from 0).",
+            "///",
+            "/// `s.at(s.push(…), 2)` is an address in the row just written.",
+        ],
+        |sheet: &mut Sheet, row: Row| -> Res<i64> { sheet.push(row) },
+    );
+    hint(
+        engine,
+        "push",
+        ["sheet: Sheet", "cells: array", "int"],
+        ["/// Append a row from a bare array — `s.push([\"Housing\", 1800])`."],
+        |sheet: &mut Sheet, cells: Array| -> Res<i64> {
             let row = Row::of(cells)?;
             sheet.push(row)
-        })
-        .register_fn(
-            "set",
-            |sheet: &mut Sheet, at: &str, value: Dynamic| -> Res<Sheet> {
-                sheet.set(at, value)?;
-                Ok(sheet.clone())
-            },
-        )
-        .register_fn(
-            "format",
-            |sheet: &mut Sheet, range: &str, f: Fmt| -> Res<Sheet> {
-                sheet.format(range, &f)?;
-                Ok(sheet.clone())
-            },
-        )
-        .register_fn(
-            "format",
-            |sheet: &mut Sheet, range: &str, kind: &str| -> Res<Sheet> {
-                sheet.format(range, &Fmt::named(kind)?)?;
-                Ok(sheet.clone())
-            },
-        )
-        .register_fn("style", |sheet: &mut Sheet, range: &str, s: Style| {
+        },
+    );
+    hint(
+        engine,
+        "set",
+        ["sheet: Sheet", "at: string", "value: ?", "Sheet"],
+        [
+            "/// One cell at one address — `s.set(\"B7\", 1800)`. A range is an error.",
+            "///",
+            "/// A `set` below the rows pushed so far moves the next `push` under it, so mixing",
+            "/// the two cannot silently overwrite.",
+        ],
+        |sheet: &mut Sheet, at: &str, value: Dynamic| -> Res<Sheet> {
+            sheet.set(at, value)?;
+            Ok(sheet.clone())
+        },
+    );
+    hint(
+        engine,
+        "format",
+        ["sheet: Sheet", "range: string", "format: Format", "Sheet"],
+        ["/// A number format over a range — `s.format(\"B2:B8\", format(\"currency\"))`."],
+        |sheet: &mut Sheet, range: &str, f: Fmt| -> Res<Sheet> {
+            sheet.format(range, &f)?;
+            Ok(sheet.clone())
+        },
+    );
+    hint(
+        engine,
+        "format",
+        ["sheet: Sheet", "range: string", "kind: string", "Sheet"],
+        ["/// A number format by name over a range — `s.format(\"B17\", \"date\")`."],
+        |sheet: &mut Sheet, range: &str, kind: &str| -> Res<Sheet> {
+            sheet.format(range, &Fmt::named(kind)?)?;
+            Ok(sheet.clone())
+        },
+    );
+    hint(
+        engine,
+        "style",
+        ["sheet: Sheet", "range: string", "style: Style", "Sheet"],
+        [
+            "/// Styling over a range, laid over whatever is already there.",
+            "///",
+            "/// A whole column (`\"A:A\"`) means the column the script actually filled.",
+        ],
+        |sheet: &mut Sheet, range: &str, s: Style| {
             sheet.style(range, &s);
             sheet.clone()
-        })
-        .register_fn("width", |sheet: &mut Sheet, cols: &str, length: &str| {
+        },
+    );
+    hint(
+        engine,
+        "width",
+        ["sheet: Sheet", "columns: string", "length: string", "Sheet"],
+        [
+            "/// Column widths — `s.width(\"A:A\", \"4cm\")`. An ODF length: cm, mm, pt, in.",
+            "///",
+            "/// `\"A\"` and `\"A:A\"` mean the same run of one.",
+        ],
+        |sheet: &mut Sheet, cols: &str, length: &str| {
             sheet.track(true, cols, length);
             sheet.clone()
-        })
-        .register_fn("height", |sheet: &mut Sheet, rows: &str, length: &str| {
+        },
+    );
+    hint(
+        engine,
+        "height",
+        ["sheet: Sheet", "rows: string", "length: string", "Sheet"],
+        ["/// Row heights — `s.height(\"1:1\", \"8mm\")`. The twin of `width`."],
+        |sheet: &mut Sheet, rows: &str, length: &str| {
             sheet.track(false, rows, length);
             sheet.clone()
-        })
-        .register_fn("name", |sheet: &mut Sheet, name: &str, target: &str| {
+        },
+    );
+    hint(
+        engine,
+        "name",
+        ["sheet: Sheet", "name: string", "target: string", "Sheet"],
+        [
+            "/// A named range (`\"B2:B7\"`) or a named expression (`\"=MAX(budgeted)\"`).",
+            "///",
+            "/// Written out qualified with this sheet, so the name means the same range read",
+            "/// from anywhere in the document.",
+        ],
+        |sheet: &mut Sheet, name: &str, target: &str| {
             sheet.name(name, target);
             sheet.clone()
-        })
-        // Both spellings, because a script reaches for `s.rows` as often as `s.rows()` and
-        // being told which one this build wants is not a lesson worth teaching.
-        .register_fn("rows", |sheet: &mut Sheet| sheet.0.borrow().next_row as i64)
-        .register_get("rows", |sheet: &mut Sheet| sheet.0.borrow().next_row as i64)
-        .register_fn(
-            "at",
-            |sheet: &mut Sheet, row: i64, col: i64| -> Res<String> {
-                let _ = sheet;
-                address(row, col)
-            },
-        );
+        },
+    );
+    // Both spellings, because a script reaches for `s.rows` as often as `s.rows()` and being
+    // told which one this build wants is not a lesson worth teaching.
+    hint(
+        engine,
+        "rows",
+        ["sheet: Sheet", "int"],
+        ["/// How many rows have been written — where the next `push` will land."],
+        |sheet: &mut Sheet| sheet.0.borrow().next_row as i64,
+    );
+    hint_get(
+        engine,
+        "rows",
+        ["/// How many rows have been written — where the next `push` will land."],
+        |sheet: &mut Sheet| sheet.0.borrow().next_row as i64,
+    );
+    hint(
+        engine,
+        "at",
+        ["sheet: Sheet", "row: int", "column: int", "string"],
+        [
+            "/// The address of a cell, from indices counted from 0 — `s.at(0, 1)` is `\"B1\"`.",
+            "///",
+            "/// The one place a script converts between an index and an address; the `+ 1` a",
+            "/// spreadsheet's rows carry is the core's, not the script's.",
+        ],
+        |sheet: &mut Sheet, row: i64, col: i64| -> Res<String> {
+            let _ = sheet;
+            address(row, col)
+        },
+    );
 
     // --- a row ---
-    engine
-        .register_fn("bold", |row: &mut Row| {
-            row.with(|s| s.font_weight = weight())
-        })
-        .register_fn("italic", |row: &mut Row| {
-            row.with(|s| s.font_style = slant())
-        })
-        .register_fn("style", |row: &mut Row, style: Style| {
+    hint(
+        engine,
+        "bold",
+        ["row: Row", "Row"],
+        ["/// The whole row bold."],
+        |row: &mut Row| row.with(|s| s.font_weight = weight()),
+    );
+    hint(
+        engine,
+        "italic",
+        ["row: Row", "Row"],
+        ["/// The whole row italic."],
+        |row: &mut Row| row.with(|s| s.font_style = slant()),
+    );
+    hint(
+        engine,
+        "style",
+        ["row: Row", "style: Style", "Row"],
+        ["/// Styling over the row's own cells — as many as the row holds, and no more."],
+        |row: &mut Row, style: Style| {
             let mut out = row.clone();
             out.style = style.0;
             out
-        })
-        .register_fn("format", |row: &mut Row, format: Fmt| -> Res<Row> {
+        },
+    );
+    hint(
+        engine,
+        "format",
+        ["row: Row", "format: Format", "Row"],
+        ["/// A number format over the row's own cells."],
+        |row: &mut Row, format: Fmt| -> Res<Row> {
             let mut out = row.clone();
             out.format = Some(format.format()?);
             Ok(out)
-        })
-        .register_fn("format", |row: &mut Row, kind: &str| -> Res<Row> {
+        },
+    );
+    hint(
+        engine,
+        "format",
+        ["row: Row", "kind: string", "Row"],
+        ["/// A number format by name over the row's own cells — `.format(\"percent\")`."],
+        |row: &mut Row, kind: &str| -> Res<Row> {
             let mut out = row.clone();
             out.format = Some(Fmt::named(kind)?.format()?);
             Ok(out)
-        });
+        },
+    );
 
     // --- a style ---
-    engine
-        .register_fn("bold", |s: &mut Style| s.with(|c| c.font_weight = weight()))
-        .register_fn("italic", |s: &mut Style| s.with(|c| c.font_style = slant()))
-        .register_fn("wrap", |s: &mut Style| {
-            s.with(|c| c.wrap = Some("wrap".to_owned()))
-        })
-        .register_fn("size", |s: &mut Style, size: &str| {
+    hint(
+        engine,
+        "bold",
+        ["style: Style", "Style"],
+        ["/// `fo:font-weight` — bold."],
+        |s: &mut Style| s.with(|c| c.font_weight = weight()),
+    );
+    hint(
+        engine,
+        "italic",
+        ["style: Style", "Style"],
+        ["/// `fo:font-style` — italic."],
+        |s: &mut Style| s.with(|c| c.font_style = slant()),
+    );
+    hint(
+        engine,
+        "wrap",
+        ["style: Style", "Style"],
+        ["/// `fo:wrap-option` — wrap the text inside the cell."],
+        |s: &mut Style| s.with(|c| c.wrap = Some("wrap".to_owned())),
+    );
+    hint(
+        engine,
+        "size",
+        ["style: Style", "size: string", "Style"],
+        ["/// `fo:font-size` — an ODF length, `\"9pt\"`."],
+        |s: &mut Style, size: &str| {
             let size = size.to_owned();
             s.with(move |c| c.font_size = Some(size))
-        })
-        .register_fn("color", |s: &mut Style, color: &str| -> Res<Style> {
+        },
+    );
+    hint(
+        engine,
+        "color",
+        ["style: Style", "color: string", "Style"],
+        [
+            "/// `fo:color` — a palette name (`navy`, `red`, `silver`, …), `#rrggbb`, or",
+            "/// `transparent`.",
+        ],
+        |s: &mut Style, color: &str| -> Res<Style> {
             let color = style::color(color).map_err(bad)?;
             Ok(s.with(move |c| c.color = Some(color)))
-        })
-        .register_fn("background", |s: &mut Style, color: &str| -> Res<Style> {
+        },
+    );
+    hint(
+        engine,
+        "background",
+        ["style: Style", "color: string", "Style"],
+        ["/// `fo:background-color`, in the same colours `color` takes."],
+        |s: &mut Style, color: &str| -> Res<Style> {
             let color = style::color(color).map_err(bad)?;
             Ok(s.with(move |c| c.background = Some(color)))
-        })
-        .register_fn("align", |s: &mut Style, align: &str| -> Res<Style> {
+        },
+    );
+    hint(
+        engine,
+        "align",
+        ["style: Style", "align: string", "Style"],
+        ["/// `fo:text-align` — `left`, `center`, `right` or `justify`."],
+        |s: &mut Style, align: &str| -> Res<Style> {
             let align = self::align(align)?;
             Ok(s.with(move |c| c.align = Some(align)))
-        })
-        .register_fn("valign", |s: &mut Style, align: &str| -> Res<Style> {
+        },
+    );
+    hint(
+        engine,
+        "valign",
+        ["style: Style", "align: string", "Style"],
+        ["/// `style:vertical-align` — `top`, `middle` or `bottom`."],
+        |s: &mut Style, align: &str| -> Res<Style> {
             let align = self::valign(align)?;
             Ok(s.with(move |c| c.vertical_align = Some(align)))
-        })
-        .register_fn("border", |s: &mut Style, border: &str| -> Res<Style> {
+        },
+    );
+    hint(
+        engine,
+        "border",
+        ["style: Style", "border: string", "Style"],
+        ["/// All four edges — a width, a line and a colour: `\"0.5pt solid navy\"`."],
+        |s: &mut Style, border: &str| -> Res<Style> {
             let border = style::border(border).map_err(bad)?;
             Ok(s.with(move |c| c.set_border(Some(border))))
-        });
+        },
+    );
 
     // --- a format ---
-    engine
-        .register_fn("decimals", |f: &mut Fmt, decimals: i64| -> Res<Fmt> {
+    hint(
+        engine,
+        "decimals",
+        ["format: Format", "decimals: int", "Format"],
+        ["/// Fraction digits, 0 to 255. Exactly this many, never \"up to\"."],
+        |f: &mut Fmt, decimals: i64| -> Res<Fmt> {
             let mut out = f.clone();
             out.decimals = u8::try_from(decimals)
                 .map_err(|_| bad(format!("{decimals}: decimal places run from 0 to 255")))?;
             Ok(out)
-        })
-        .register_fn("grouping", |f: &mut Fmt| {
+        },
+    );
+    hint(
+        engine,
+        "grouping",
+        ["format: Format", "Format"],
+        ["/// Thousands separators."],
+        |f: &mut Fmt| {
             let mut out = f.clone();
             out.grouping = true;
             out
-        })
-        .register_fn("symbol", |f: &mut Fmt, symbol: &str| {
+        },
+    );
+    hint(
+        engine,
+        "symbol",
+        ["format: Format", "symbol: string", "Format"],
+        ["/// The currency symbol — `\"€\"`, `\"EUR\"`."],
+        |f: &mut Fmt, symbol: &str| {
             let mut out = f.clone();
             out.symbol = symbol.to_owned();
             out
-        })
-        .register_fn("locale", |f: &mut Fmt, tag: &str| -> Res<Fmt> {
+        },
+    );
+    hint(
+        engine,
+        "locale",
+        ["format: Format", "tag: string", "Format"],
+        ["/// The locale whose separators the format uses — `\"de-DE\"`."],
+        |f: &mut Fmt, tag: &str| -> Res<Fmt> {
             let mut out = f.clone();
             out.locale = Some(
                 Locale::parse(tag)
                     .ok_or_else(|| bad(format!("{tag}: expected a language tag like de-DE")))?,
             );
             Ok(out)
-        });
+        },
+    );
 }
 
 /// A message with no position of its own — Rhai adds the call site's.

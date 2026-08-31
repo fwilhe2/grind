@@ -745,6 +745,18 @@ enum Top {
         no_recalc: bool,
     },
 
+    /// Print what an editor needs to help you write a script
+    ///
+    /// Every function `grind build` gives a script, with its parameters, its types and its
+    /// documentation, as a Rhai definition file. Redirect it beside your scripts and an editor
+    /// that speaks Rhai offers completion and hover for all of it:
+    ///
+    ///   grind definitions > grind.d.rhai
+    ///
+    /// Rhai's own standard library is left out: an editor already knows those, and forty
+    /// functions buried in six hundred is not a reference anybody reads.
+    Definitions,
+
     /// Convert between the three physical forms — .ods, .fods and .grind
     ///
     /// The form comes from the output extension. Never between document *kinds*: a
@@ -1860,6 +1872,16 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 grind_build::Artifact::Text(app) => finish_text(&app, cli, out, true),
             }
         }
+
+        // No document, no script — the vocabulary itself, for an editor rather than for a
+        // person (doc/generator-spec.md §9). It is the engine's own answer: what this prints
+        // is what `grind build` registered, so it cannot describe a function that is not there.
+        Top::Definitions => Ok(Report::Text(TextReport {
+            lines: grind_build::definitions()
+                .lines()
+                .map(str::to_owned)
+                .collect(),
+        })),
 
         Top::Convert { file, out } => match document_kind(file)? {
             DocumentKind::Spreadsheet => {

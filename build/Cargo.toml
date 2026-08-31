@@ -33,7 +33,7 @@ grind-text = { path = "../text" }
 # Everything else §2 forbids is absent from Rhai to begin with: there is no filesystem, no
 # network and no environment in the core language, and no randomness — those live in crates
 # one simply does not take.
-rhai = { version = "1.26", default-features = false, features = ["std", "no_time"] }
+rhai = { version = "1.26", default-features = false, features = ["std", "no_time", "metadata", "internals"] }
 
 # JSON, for the one thing a script may read: data beside it (`build/src/data.rs`). A real
 # parser rather than Rhai's own `parse_json`, which is its *script* parser pointed at JSON —

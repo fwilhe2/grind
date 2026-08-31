@@ -69,7 +69,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
-| `doc/generator-spec.md` | **The generator's language — normative for `build/`.** The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
+| `doc/generator-spec.md` | **The generator's language — normative for `build/`.** §8 is the editor half: `grind definitions` writes a Rhai `.d.rhai` file from the engine itself, so completion and hover cover the whole vocabulary, and `build/src/hint.rs` is why every function has documentation to show — registering one *takes* the comment, so an undocumented function cannot be added by forgetting. The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -561,7 +561,10 @@ compares them. **D8 (`grind test`) is not built**, and it plus the rest of §6.5
 open list. A script may read JSON data beside itself (`json("prices.json")`,
 `examples/prices.rhai` + `prices.json`), which is the one amendment to §2's "no I/O" and is
 narrower than the rule it replaces — `doc/generator-spec.md` §3.5 has the four walls and
-`build/tests/data.rs` tests each of them, including a symlink pointing out.
+`build/tests/data.rs` tests each of them, including a symlink pointing out. **`grind
+definitions`** prints the vocabulary as a Rhai definition file for an editor (§8);
+`examples/grind.d.rhai` is a generated copy kept in the tree, with a test that fails when it
+goes stale.
 
 **The two languages owe four documents, and one of them is written** (§7, D11–D14). A design
 record is not a specification somebody can implement against, nor a guide somebody can learn

@@ -35,6 +35,8 @@ use std::rc::Rc;
 use grind_text::{App, BlockKind, Caret};
 use rhai::{Engine, EvalAltResult};
 
+use crate::hint::{hint, hint_get};
+
 type Res<T> = Result<T, Box<EvalAltResult>>;
 
 /// A text document, as a script builds it: blocks in the order they were said.
@@ -54,40 +56,85 @@ struct Block {
 
 /// Every method hands the document back, so a script may chain — and because it is a shared
 /// handle, the one that comes back is the one that went in.
+///
+/// Documented at the registration for the reason `crate::hint` gives: what an editor shows
+/// while somebody types is written here or nowhere.
 pub fn register(engine: &mut Engine) {
     engine.register_type_with_name::<Doc>("Text");
-    engine
-        .register_fn("text", Doc::default)
-        .register_fn("para", |doc: &mut Doc, text: &str| {
-            doc.push(BlockKind::Paragraph, text)
-        })
-        .register_fn(
-            "heading",
-            |doc: &mut Doc, level: i64, text: &str| -> Res<Doc> {
-                let level = u32::try_from(level)
-                    .ok()
-                    .filter(|level| (1..=6).contains(level))
-                    .ok_or_else(|| bad(format!("{level}: a heading is level 1 to 6")))?;
-                Ok(doc.push(BlockKind::Heading { level }, text))
-            },
-        )
-        .register_fn(
-            "item",
-            |doc: &mut Doc, depth: i64, text: &str| -> Res<Doc> {
-                let depth = u32::try_from(depth)
-                    .ok()
-                    .filter(|depth| (1..=9).contains(depth))
-                    .ok_or_else(|| bad(format!("{depth}: a list item nests 1 to 9 deep")))?;
-                Ok(doc.push(BlockKind::ListItem { depth }, text))
-            },
-        )
-        .register_fn("item", |doc: &mut Doc, text: &str| {
-            doc.push(BlockKind::ListItem { depth: 1 }, text)
-        })
-        // An anchor on the block last said, which is what `#intro` addresses and what makes a
-        // generated document navigable — `loc.rs`'s point that a named target survives edits
-        // elsewhere and `p12` does not.
-        .register_fn("bookmark", |doc: &mut Doc, name: &str| -> Res<Doc> {
+    hint(
+        engine,
+        "text",
+        ["Text"],
+        [
+            "/// An empty text document. Say headings, paragraphs and list items into it, and",
+            "/// return it at the end of the script.",
+        ],
+        Doc::default,
+    );
+    hint(
+        engine,
+        "para",
+        ["document: Text", "text: string", "Text"],
+        [
+            "/// A paragraph.",
+            "///",
+            "/// The text is read in the notation the whole suite types in: `**bold**`,",
+            "/// `_italic_`, `` `code` ``.",
+        ],
+        |doc: &mut Doc, text: &str| doc.push(BlockKind::Paragraph, text),
+    );
+    hint(
+        engine,
+        "heading",
+        ["document: Text", "level: int", "text: string", "Text"],
+        [
+            "/// A heading, level 1 to 6.",
+            "///",
+            "/// The outline is implied by the levels and by nothing else — a heading does not",
+            "/// contain what follows it.",
+        ],
+        |doc: &mut Doc, level: i64, text: &str| -> Res<Doc> {
+            let level = u32::try_from(level)
+                .ok()
+                .filter(|level| (1..=6).contains(level))
+                .ok_or_else(|| bad(format!("{level}: a heading is level 1 to 6")))?;
+            Ok(doc.push(BlockKind::Heading { level }, text))
+        },
+    );
+    hint(
+        engine,
+        "item",
+        ["document: Text", "depth: int", "text: string", "Text"],
+        ["/// A list item, nested 1 to 9 deep."],
+        |doc: &mut Doc, depth: i64, text: &str| -> Res<Doc> {
+            let depth = u32::try_from(depth)
+                .ok()
+                .filter(|depth| (1..=9).contains(depth))
+                .ok_or_else(|| bad(format!("{depth}: a list item nests 1 to 9 deep")))?;
+            Ok(doc.push(BlockKind::ListItem { depth }, text))
+        },
+    );
+    hint(
+        engine,
+        "item",
+        ["document: Text", "text: string", "Text"],
+        ["/// A list item at depth 1."],
+        |doc: &mut Doc, text: &str| doc.push(BlockKind::ListItem { depth: 1 }, text),
+    );
+    // An anchor on the block last said, which is what `#intro` addresses and what makes a
+    // generated document navigable — `loc.rs`'s point that a named target survives edits
+    // elsewhere and `p12` does not.
+    hint(
+        engine,
+        "bookmark",
+        ["document: Text", "name: string", "Text"],
+        [
+            "/// Anchor a bookmark at the start of the block last said.",
+            "///",
+            "/// `#name` then addresses it — an address that survives editing above it, which",
+            "/// `p12` does not.",
+        ],
+        |doc: &mut Doc, name: &str| -> Res<Doc> {
             let mut blocks = doc.0.borrow_mut();
             let last = blocks
                 .last_mut()
@@ -95,9 +142,21 @@ pub fn register(engine: &mut Engine) {
             last.bookmark = Some(name.to_owned());
             drop(blocks);
             Ok(doc.clone())
-        })
-        .register_fn("blocks", |doc: &mut Doc| doc.0.borrow().len() as i64)
-        .register_get("blocks", |doc: &mut Doc| doc.0.borrow().len() as i64);
+        },
+    );
+    hint(
+        engine,
+        "blocks",
+        ["document: Text", "int"],
+        ["/// How many blocks have been said."],
+        |doc: &mut Doc| doc.0.borrow().len() as i64,
+    );
+    hint_get(
+        engine,
+        "blocks",
+        ["/// How many blocks have been said."],
+        |doc: &mut Doc| doc.0.borrow().len() as i64,
+    );
 }
 
 fn bad(message: impl Into<String>) -> Box<EvalAltResult> {

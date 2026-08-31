@@ -271,5 +271,18 @@ fn dynamic(value: serde_json::Value) -> Dynamic {
 /// `json(name)`, the only door a script has to anything outside itself.
 pub(crate) fn register(engine: &mut Engine, data: Rc<dyn Data>) {
     let loaded = Loaded::new(data);
-    engine.register_fn("json", move |name: &str| loaded.json(name));
+    crate::hint::hint(
+        engine,
+        "json",
+        ["name: string", "?"],
+        [
+            "/// The data in one JSON file, as values a script can use.",
+            "///",
+            "/// An object is a map, an array is an array, `null` is `()`, and object keys come",
+            "/// back sorted. The file is read from the data directory — the script\'s own, or",
+            "/// the one `--data` names — and `..`, an absolute path and a symlink pointing out",
+            "/// are all refused. Reading the same file twice is free.",
+        ],
+        move |name: &str| loaded.json(name),
+    );
 }

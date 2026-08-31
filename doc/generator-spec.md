@@ -9,8 +9,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 **Normative for `build/` (`grind-build`).** `doc/dsl.md` §4 is the *argument* — why there is a
 generator at all, why Rhai, and why it is on the right side of `doc/not-doing.md`'s macro line.
 This is the *reference*: what a script may say, what each thing means, and what it may not do.
-`doc/dsl.md` outranks it on any question of intent; on a question of behaviour, the check in §8
-outranks both, because it reads the code.
+`doc/dsl.md` outranks it on any question of intent; on a question of behaviour, the check in §9
+outranks both, because it asks the engine.
 
 A guide is a different document and is not written yet (`doc/dsl.md` §7, D14). This one is for
 somebody arguing with an edge case, not for somebody learning. Everything here is true of the
@@ -449,14 +449,54 @@ and a script that needs one writes the document and then runs `grind` on it.
 
 ---
 
-## 8. How this document is checked
+## 8. Writing a script in an editor
+
+**Everything a script may say is available to an editor**, because Rhai has a format for it and
+this build generates it:
+
+```sh
+grind definitions > grind.d.rhai
+```
+
+That is a **Rhai definition file** — the language server's own format — holding every function
+`grind build` registers, with its parameter names, its types and its documentation:
+
+```rhai
+/// Append a row, and answer the index of the row it landed on (counted from 0).
+///
+/// `s.at(s.push(…), 2)` is an address in the row just written.
+fn push(sheet: Sheet, row: Row) -> int;
+```
+
+Put it beside the scripts, open the directory in an editor with Rhai support (the
+`rhaiscript.vscode-rhai` extension bundles the language server), and completion and hover work
+for the whole vocabulary. `examples/grind.d.rhai` is a generated copy kept in this repository,
+so the examples have it without anybody running the command first; `build/tests/spec.rs` fails
+when it goes stale and the message is the command that fixes it.
+
+**Where the text comes from, and why it cannot rot.** Every registration goes through
+`build/src/hint.rs`, which takes the parameter spelling and the doc comment *as arguments* —
+there is no shorter way to register a function, so an undocumented one cannot be added by
+forgetting. A test asserts that too, over what the engine really holds rather than over the
+source. The cost is named: `build/Cargo.toml` takes Rhai's `metadata` and `internals` features
+to carry those strings into the engine and read them back out.
+
+**What this is not.** It is a vocabulary, not a type checker: the language server offers names
+and shows what they do, and a script that hands a `Style` where a `Format` goes is still an
+error at build time rather than a red underline. Rhai's standard library is deliberately left
+out of the file — an editor already knows those, and forty functions buried in six hundred is
+not a reference anybody reads.
+
+---
+
+## 9. How this document is checked
 
 A specification nothing checks drifts, and this one has the same guard
 `doc/small-group.md` puts on `funcs::implemented()`, in `build/tests/spec.rs`.
 
-**Two conventions make it possible, and editing this file means keeping them.** The API is §4
+**Two conventions make it possible, and editing this file means keeping them.** The API is §3.5, §4
 and §5 and nowhere else, because the tables elsewhere name things that are deliberately *not*
-functions — `eval` in §2.3 is a row about its absence. And inside those two sections, a table
+functions — `eval` in §2.3 is a row about its absence. And inside those three sections, a table
 row's first cell is a code span holding the call as a script writes it: `` `sheet(name)` ``,
 `` `s.push(row)` ``, `` `s.rows` ``. The name is what is left after dropping the receiver and
 stopping at the parenthesis.
@@ -464,13 +504,17 @@ stopping at the parenthesis.
 Then:
 
 1. **Every function this document names is registered**, and
-2. **every function `register()` registers is named here** — read out of `build/src/sheet.rs`
-   and `build/src/text.rs` at compile time. Adding three lines to `register()` and not writing
-   them down fails the build, which is the whole reason this document exists: the host API is
-   the surface most likely to grow a function nobody documents.
-3. **Every limit's value in §2.4 is the constant's value**, read from `build/src/engine.rs`
-   rather than retyped.
+2. **every function the engine registers is named here** — asked of the engine itself through
+   `grind_build::definitions()` rather than scraped out of the source, which §8's metadata made
+   possible. Adding a function and not writing it down fails the build, which is the whole
+   reason this document exists: the host API is the surface most likely to grow a function
+   nobody documents.
+3. **Every function has documentation an editor can show** (§8).
+4. **The shipped `examples/grind.d.rhai` is current.**
+5. **Every limit's value in §2.4 and §3.5 is the constant's value**, read from
+   `build/src/engine.rs` and `build/src/data.rs` rather than retyped.
 
-What the check does not cover, and a reader should therefore treat as prose: argument types,
-return values, and every "meaning" column. Those are held by `build/tests/smoke.rs`, which
+What the check does not cover, and a reader should therefore treat as prose: the "meaning"
+columns. Argument types and return values are no longer only prose — §8's definition file has
+them from the engine, and the tables here are written to agree with it. Those are held by `build/tests/smoke.rs`, which
 executes most of them, and by the examples.

@@ -37,62 +37,33 @@ const LIMITS: [(&str, &str); 2] = [
     ("build/src/data.rs", include_str!("../src/data.rs")),
 ];
 
-/// Every file that registers anything: its module, the name the specification gives that half,
-/// and its source.
-///
-/// The module names are checked against `engine()` itself below, because a *fourth* module
-/// registering functions is exactly how this scanner would start passing while covering less.
-const HOSTS: [(&str, &str, &str); 3] = [
-    (
-        "sheet",
-        "the spreadsheet (§4)",
-        include_str!("../src/sheet.rs"),
-    ),
-    (
-        "text",
-        "the word processor (§5)",
-        include_str!("../src/text.rs"),
-    ),
-    ("data", "data (§3.5)", include_str!("../src/data.rs")),
-];
-
-/// The modules `engine()` hands to — `crate::sheet::register(` names `sheet`.
-fn registrars() -> Vec<String> {
-    let mut modules = Vec::new();
-    for (at, _) in ENGINE.match_indices("crate::") {
-        let rest = &ENGINE[at + "crate::".len()..];
-        let name: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
-        if rest[name.len()..].starts_with("::register(") {
-            modules.push(name);
-        }
-    }
-    modules.sort();
-    modules.dedup();
-    modules
-}
-
 /// The smallest API that is plausibly complete — `cli/tests/parity.rs`'s `least`, for the same
 /// reason: a scanner that matched nothing would pass vacuously and quietly retire the check.
 const LEAST: usize = 25;
 
-/// Every name handed to `register_fn` or `register_get`.
+/// The vocabulary the engine really has, from its own definitions.
 ///
-/// Both spellings of the call are read, because rustfmt breaks the longer ones over lines and a
-/// scanner that only saw `register_fn("name"` would silently miss exactly the functions with
-/// the most arguments.
+/// **Not read out of the source any more**, which the first version of this test had to do:
+/// taking Rhai's `metadata` feature for `grind definitions` (see `build/src/hint.rs`) means the
+/// engine can be *asked*, so the check now compares the specification against what a script can
+/// actually call rather than against what the registrations look like when written down. A
+/// registration moved into a helper, a macro or a plugin module changes nothing here.
 fn registered() -> Vec<String> {
+    let definitions = grind_build::definitions();
     let mut names = Vec::new();
-    for (_, _, source) in HOSTS {
-        for call in ["register_fn(", "register_get("] {
-            for (at, _) in source.match_indices(call) {
-                let rest = &source[at + call.len()..];
-                let open = rest.find('"').expect("a registration names its function");
-                let close = rest[open + 1..].find('"').expect("that name ends");
-                names.push(rest[open + 1..open + 1 + close].to_owned());
-            }
+    for line in definitions.lines() {
+        // `fn push(sheet: Sheet, row: Row) -> int;` — and `get rows(…)` for a property.
+        // `fn push(sheet: Sheet, row: Row) -> int;`, and a property is written
+        // `fn get rows(sheet: Sheet) -> int;` — the name is what a script types either way.
+        let Some(signature) = line.trim().strip_prefix("fn ") else {
+            continue;
+        };
+        let signature = signature
+            .strip_prefix("get ")
+            .or_else(|| signature.strip_prefix("set "))
+            .unwrap_or(signature);
+        if let Some((name, _)) = signature.split_once('(') {
+            names.push(name.trim().to_owned());
         }
     }
     names.sort();
@@ -100,9 +71,13 @@ fn registered() -> Vec<String> {
     names
 }
 
+/// The file `grind definitions` writes, kept in the repository so that the examples beside it
+/// have completion and hover without anybody running a command first.
+const SHIPPED: &str = include_str!("../../examples/grind.d.rhai");
+
 /// Every function the specification names, from the first column of its **API tables**.
 ///
-/// Two conventions, and the document says so in §8. The API is §4 and §5 and nothing else, so
+/// Two conventions, and the document says so in §9. The API is §3.5, §4 and §5 and nothing else, so
 /// the scan is bounded by those headings — otherwise §2.3's `eval` and §3.1's `true` would read
 /// as promised functions, which is the opposite of what those tables say about them. Inside
 /// them, a row's first cell is a code span holding the call as a script writes it —
@@ -187,7 +162,7 @@ fn every_function_in_the_specification_is_registered() {
 fn the_scanners_found_an_api() {
     assert!(
         registered().len() >= LEAST,
-        "only {} registrations found — the scanner has stopped matching the source",
+        "only {} functions registered — the engine has stopped being asked properly",
         registered().len()
     );
     assert!(
@@ -195,27 +170,46 @@ fn the_scanners_found_an_api() {
         "only {} calls found in the specification — its tables have changed shape",
         documented().len()
     );
-    for (_, which, source) in HOSTS {
-        assert!(
-            source.contains("register_fn("),
-            "{which} registers nothing, which cannot be right"
-        );
-    }
-    // And the list above is every module that registers anything — the guard against a new
-    // module's functions being invisible to both directions of this test.
-    for module in registrars() {
-        assert!(
-            HOSTS.iter().any(|(name, ..)| *name == module),
-            "engine() calls crate::{module}::register, and HOSTS does not cover it — every \
-             function a script can call has to be scanned by this test"
-        );
-    }
+}
+
+/// `examples/grind.d.rhai` is what `grind definitions` prints today.
+///
+/// It is checked in rather than generated on demand for one reason: an editor helps somebody
+/// who has just cloned this repository, before they have run anything. The cost is that it goes
+/// stale, so this is the test that says so — with the command to fix it in the message, which is
+/// the whole of the maintenance burden.
+#[test]
+fn the_shipped_definitions_are_current() {
     assert_eq!(
-        registrars().len(),
-        HOSTS.len(),
-        "the engine hands to {:?} and HOSTS lists {} halves",
-        registrars(),
-        HOSTS.len()
+        SHIPPED.trim_end(),
+        grind_build::definitions().trim_end(),
+        "examples/grind.d.rhai is out of date — run `grind definitions > examples/grind.d.rhai`"
+    );
+}
+
+/// Every function carries documentation, because an editor showing a bare signature is a
+/// vocabulary somebody has to guess at.
+///
+/// `hint` makes this structurally true (there is no way to register without a comment), and
+/// this is the test that notices the day somebody adds a plain `register_fn` beside it.
+#[test]
+fn every_function_says_what_it_does() {
+    let definitions = grind_build::definitions();
+    let mut undocumented = Vec::new();
+    let lines: Vec<&str> = definitions.lines().collect();
+    for (at, line) in lines.iter().enumerate() {
+        let Some(signature) = line.trim().strip_prefix("fn ") else {
+            continue;
+        };
+        let documented = at > 0 && lines[at - 1].trim_start().starts_with("///");
+        if !documented {
+            undocumented.push(signature.to_owned());
+        }
+    }
+    assert!(
+        undocumented.is_empty(),
+        "registered with no documentation, so an editor can only show the signature: \
+         {undocumented:?}. Register through `crate::hint::hint`, which takes the comment."
     );
 }
 

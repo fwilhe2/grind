@@ -54,6 +54,7 @@
 
 pub mod data;
 pub mod engine;
+pub mod hint;
 pub mod sheet;
 pub mod text;
 
@@ -122,6 +123,24 @@ impl Error {
             message: message.into(),
         }
     }
+}
+
+/// **What an editor needs to help somebody write a script**: every function this build
+/// registers, with its parameter names, its types and its documentation, as a Rhai definition
+/// file (`.d.rhai`).
+///
+/// This is Rhai's own mechanism for the purpose and the language server's own format, so
+/// nothing here is invented: `grind definitions > grind.d.rhai` beside a script is enough for
+/// completion and hover in an editor that speaks Rhai (`doc/generator-spec.md` §9).
+///
+/// The standard library is left out. A script's own vocabulary is what somebody is trying to
+/// learn, and burying forty of those functions in six hundred of Rhai's own is how a reference
+/// becomes unreadable — an editor already knows the standard ones.
+pub fn definitions() -> String {
+    engine::engine(Rc::new(NoData))
+        .definitions()
+        .include_standard_packages(false)
+        .single_file()
 }
 
 /// Run a script and return the document it built, with no data to read.
