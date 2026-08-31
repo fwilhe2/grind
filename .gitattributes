@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A projection is KDL (doc/dsl.md §3.1), so GitHub should colour it as KDL rather than as
+# plain text. This matters more here than it would elsewhere: doc/flat-first.md's argument is
+# that office documents belong in git, and a document nobody can read in a pull request is a
+# document that is only technically there.
+*.grind linguist-language=KDL
