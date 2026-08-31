@@ -69,6 +69,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
+| `doc/generator-spec.md` | **The generator's language — normative for `build/`.** The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -559,15 +560,15 @@ one model, and the same source produces the same bytes — a test builds the bud
 compares them. **D8 (`grind test`) is not built**, and it plus the rest of §6.5's table are the
 open list.
 
-**Both languages are undocumented *as languages*, and §7's D11–D14 are that work.** What exists
-is a design record and a vocabulary check, not a specification somebody could implement against
-or a guide somebody could learn from: four documents are owed — a spec and a guide for the
-projection, a spec and a guide for the generator — each with the mechanical check its genre
-allows, because a document nothing checks drifts. **D13, the generator's spec, is the one to do
-first**: the host API is the surface most likely to grow a function nobody wrote down, since
-adding one is three lines in `register()`, and its check (the API reference against what
-`engine()` registers, in `doc/small-group.md`'s shape) is the guard the projection already has
-in §3.7 and the generator has not.
+**The two languages owe four documents, and one of them is written** (§7, D11–D14). A design
+record is not a specification somebody can implement against, nor a guide somebody can learn
+from. **D13 is done**: `doc/generator-spec.md` is the generator's language — the dialect, its
+limits, the whole host API, what materialisation does, and what a script cannot say — held to
+the code by `build/tests/spec.rs` in both directions plus the limits. That check was the reason
+to write it first: adding to the host API is three lines in `register()`, so it was the one
+vocabulary in the project with no §3.7-style guard. **Still owed**: the projection's
+specification and guide (D11, D12) and the generator's guide (D14). Each needs the mechanical
+check its genre allows, because a document nothing checks drifts.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
 the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
