@@ -698,7 +698,9 @@ enum Top {
     /// entry, or the flat root's `office:mimetype`) rather than guessed from its name.
     Info { file: PathBuf },
 
-    /// Check a document against `doc/dsl.md` §4.3's rules, whatever kind it is
+    // The rules are `doc/dsl.md` §4.3's; the help text says what they are for rather than
+    // where they are written down, because a design document is not a user's reference.
+    /// Check a document for problems, whatever kind it is
     ///
     /// The suite-level twin of `grind sheet lint` and `grind text lint`: the kind is read out
     /// of the file and the right rules run. Exits non-zero when it found an error.
@@ -712,7 +714,8 @@ enum Top {
         off: Vec<String>,
     },
 
-    /// Build a document from a script (doc/dsl.md layer 1)
+    // `doc/dsl.md` layer 1.
+    /// Build a document from a script
     ///
     /// The script returns a document and `grind build` writes it; it is not a document itself,
     /// does not open one, and nothing ever writes one. The output's extension picks the form,
@@ -762,11 +765,11 @@ enum Top {
     /// The form comes from the output extension. Never between document *kinds*: a
     /// spreadsheet does not become a text document by being written differently.
     ///
-    /// The projection (.grind, doc/dsl.md) is a form like the other two rather than an export:
-    /// it is bijective with the *model*, so converting out to it and back returns the document
-    /// this build understands. What it does not understand is not in the file — but that is
-    /// true of every conversion here, because R6's splice keeps the original bytes only when
-    /// the form does not change. A text document has no projection yet and says so.
+    /// The projection (.grind) is a form like the other two rather than an export: it is
+    /// bijective with the *model*, so converting out to it and back returns the document this
+    /// build understands. What it does not understand is not in the file — but that is true of
+    /// every conversion here, because the original bytes are kept only when the form does not
+    /// change. A text document has no projection yet and says so.
     Convert { file: PathBuf, out: PathBuf },
 }
 
@@ -812,11 +815,12 @@ enum VAlign {
 /// here has to earn its place rather than mirror one that exists for cells.
 #[derive(Subcommand)]
 enum TextCommand {
+    // The flat default is `doc/flat-first.md`'s.
     /// Create an empty document
     ///
     /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
     /// write a zip, anything else — including a name with no extension at all — writes one XML
-    /// file that git diff can read (doc/flat-first.md).
+    /// file that git diff can read.
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists
@@ -832,12 +836,13 @@ enum TextCommand {
         /// Prefix each line with its address and kind
         #[arg(long)]
         marks: bool,
+        // `doc/view-modes.md` §3.6.
         /// Show where each bookmark anchors, inline
         ///
         /// A bookmark is the named-range analogue and it is otherwise invisible: it
-        /// contributes no characters, so nothing a reader sees says it is there
-        /// (`doc/view-modes.md` §3.6). Not with --width: a mark is a position in the
-        /// block, and wrapping is a separate question about lines.
+        /// contributes no characters, so nothing a reader sees says it is there. Not with
+        /// --width: a mark is a position in the block, and wrapping is a separate question
+        /// about lines.
         #[arg(long, conflicts_with = "width")]
         names: bool,
         /// Wrap at this many characters, the way a shell would at its own width
@@ -845,13 +850,13 @@ enum TextCommand {
         width: Option<u32>,
     },
 
+    // Answerable here at all only because line layout lives in the core (`doc/text-layout.md`,
+    // Path C).
     /// Move a caret by lines, or to the ends of its line, and print where it lands
     ///
     /// Down-arrow, Up-arrow, Home and End — from a script. Every one of them is defined in
     /// terms of a *line*, so every one needs a width; the CLI measures one unit per character,
-    /// which is why `--width 40` means forty characters. That layout lives in the core is what
-    /// makes this answerable here at all rather than only inside a GUI
-    /// (`doc/text-layout.md`).
+    /// which is why `--width 40` means forty characters.
     Caret {
         file: PathBuf,
         /// Where the caret is now, e.g. p3+12, #intro+5 or §2.1
@@ -898,7 +903,7 @@ enum TextCommand {
     /// `--markdown` reads the notation as it goes: `**bold**` becomes bold and its markers go,
     /// `*italic*`, `__underline__`, `~~struck~~` and `` `code` `` likewise, `# ` at the front
     /// of a block makes it a heading and ``` fences a code paragraph. One undo step for the
-    /// whole line, and the same reading every shell does (`grind_text::markdown`).
+    /// whole line, and the same reading every shell does.
     Type {
         file: PathBuf,
         /// Where it goes, e.g. p3+12 — an address with no offset means the front of its block
@@ -967,8 +972,7 @@ enum TextCommand {
         at: String,
     },
 
-    /// Insert a block before an address, or at the end
-    /// Print the document as its projection — the plain-text form (doc/dsl.md)
+    /// Print the document as its projection — the plain-text form
     ///
     /// The same text a `.grind` file holds, and the same text a shell's code view shows, from
     /// the same function. Reading one back needs no verb of its own — the form is sniffed from
@@ -980,12 +984,13 @@ enum TextCommand {
         tokens: bool,
         /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
         ///
-        /// A block answers to every name loc.rs gives it, so one line may be several rows:
-        /// p12, #bookmark and §2.1.3 all anchor the same paragraph.
+        /// A block answers to every name it can be addressed by, so one line may be several
+        /// rows: p12, #bookmark and §2.1.3 all anchor the same paragraph.
         #[arg(long)]
         anchors: bool,
     },
 
+    /// Insert a block before an address, or at the end
     Insert {
         file: PathBuf,
         /// Where it goes; omit to append to the end of the document
@@ -1096,7 +1101,8 @@ enum TextCommand {
         background: Option<String>,
     },
 
-    /// Check the document against `doc/dsl.md` §4.3's rules
+    // `doc/dsl.md` §4.3's rules.
+    /// Check the document for problems
     ///
     /// The word processor's half: a heading level skipped, a link to a bookmark nothing
     /// declares, a style name the document never declares, and anything a `.grind` of it would
@@ -1159,12 +1165,12 @@ enum TextCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    // The flat default is `doc/flat-first.md`'s.
     /// Create an empty document
     ///
     /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
-    /// write a zip, .grind writes the projection (doc/dsl.md), and anything else — including a
-    /// name with no extension at all — writes one XML file that git diff can read
-    /// (doc/flat-first.md).
+    /// write a zip, .grind writes the projection, and anything else — including a name with no
+    /// extension at all — writes one XML file that git diff can read.
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists
@@ -1194,9 +1200,10 @@ enum Command {
         raw: bool,
     },
 
+    // The overlays are `doc/view-modes.md`'s.
     /// Print a rectangle of values, tab-separated
     ///
-    /// The three overlay flags print `doc/view-modes.md`'s derived answers instead of the
+    /// The three overlay flags print the document's derived answers instead of the
     /// values: what each cell *is*, what it is *called*, and what computes it. None of them
     /// changes the document — reading a file this way leaves its bytes alone, which is the
     /// feature's whole promise. `--format json` carries every column at once.
@@ -1219,35 +1226,35 @@ enum Command {
         /// Print each cell's formula source rather than its value
         ///
         /// With --names as well, the formula is printed the way a formula bar reads it:
-        /// display form with every reference that a name stands for spelled as that name
-        /// (`doc/view-modes.md` §3.3).
+        /// display form with every reference that a name stands for spelled as that name.
         #[arg(long, conflicts_with_all = ["raw", "roles"])]
         formulas: bool,
     },
 
-    /// Print the document as its projection — the plain-text form (doc/dsl.md)
+    // `doc/dsl.md` §6.1: this is the CLI twin of a shell's code view, from the same function.
+    /// Print the document as its projection — the plain-text form
     ///
-    /// The same text a `.grind` file holds, and the same text a shell's code view shows, from
-    /// the same function: §6.1 makes this the CLI twin of that view, and it lands before any
-    /// shell has one. Reading a `.grind` back needs no verb of its own — `grind_core::kind`
-    /// sniffs the form from the bytes, so every command here already takes one.
+    /// The same text a `.grind` file holds, and the same text a shell's code view shows.
+    /// Reading a `.grind` back needs no verb of its own — the form is sniffed from the bytes,
+    /// so every command here already takes one.
     Project {
         file: PathBuf,
         /// Print the token map instead: one `kind<TAB>start<TAB>end` line per token
         ///
         /// What a shell colours from. Highlighting comes from the writer rather than from a
-        /// highlighter (§6.1), and this is that map, readable.
+        /// highlighter, and this is that map, readable.
         #[arg(long, conflicts_with = "anchors")]
         tokens: bool,
         /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
         ///
-        /// Which cell each piece of the text is — the correspondence a split view draws
-        /// (§6.2), and the thing every later IDE feature is built on.
+        /// Which cell each piece of the text is — the correspondence a split view draws, and
+        /// the thing every later IDE feature is built on.
         #[arg(long)]
         anchors: bool,
     },
 
-    /// Check the document against `doc/dsl.md` §4.3's rules
+    // `doc/dsl.md` §4.3's rules.
+    /// Check the document for problems
     ///
     /// The rules are about *documents*, which is why they are here and not in a third-party
     /// linter: a cached value that disagrees with its formula, a formula naming a sheet that is
@@ -1575,7 +1582,8 @@ enum Command {
         filter: Option<String>,
     },
 
-    /// Add a chart — bar, line or pie (`doc/chart-format.md`)
+    // `doc/chart-format.md` is the scope line these three shapes come from.
+    /// Add a chart — bar, line or pie
     ///
     /// `sheet chart-add book.ods --type bar --categories B3:B9 --series C3:C9` adds a bar
     /// chart of column C, labelled by column B. Repeat `--series` for more than one series
@@ -1708,7 +1716,7 @@ enum Command {
     /// `--series-color 0=navy` sets a whole line series' colour (line charts
     /// only — a bar or a pie colours per bar/slice instead: `--point-color 0.2=red` is the
     /// third bar or slice of series 0). Either repeatable flag with nothing after `=` — `
-    /// --series-color 0=` — goes back to the default cycle. `doc/chart-format.md`.
+    /// --series-color 0=` — goes back to the default cycle.
     ChartStyle {
         file: PathBuf,
         /// The chart's position in `chart-list`, 0-based
