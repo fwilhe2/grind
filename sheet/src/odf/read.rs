@@ -1356,6 +1356,18 @@ impl Context<Builder> for Cell {
 /// `style:style`, which carries both the link to a format and the cell's own look; and a
 /// `table-column`/`table-row` one, of which only the size is kept (§5.4). Everything else a
 /// style carries falls down the ignore path and is dropped rather than half-kept.
+///
+/// ponytail: `style:default-style style:family="table-cell"` is one of the things dropped,
+/// and it is the one a *shell* notices. Every document LibreOffice writes puts
+/// `fo:font-size="10pt"` there and then says `10pt` again on each cell it styled, so a
+/// reader that keeps only the second half hands out a document in two sizes: the styled
+/// cells carry a size, the rest carry none and get whatever the shell's own font is.
+/// `ui_sheet_gtk/src/grid.rs`'s `font` covers for it by drawing a cell's size as a multiple
+/// of that same 10pt rather than as an absolute, which is right for every document written
+/// so far and wrong for one whose default is not 10pt. The upgrade is to read the default
+/// here — but a style read and never written is a round-trip loss (loop C) and a `Document`
+/// field with no projection node (loop F, `doc/projection-sheet.md`), so it costs a writer
+/// and a grammar row as well as this branch.
 struct Styles;
 
 impl Context<Builder> for Styles {

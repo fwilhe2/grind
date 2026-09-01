@@ -420,6 +420,39 @@ mod tests {
     use super::*;
     use crate::geom::Hit;
 
+    fn sized(size: &str) -> grind_sheet::style::CellStyle {
+        grind_sheet::style::CellStyle {
+            font_size: Some(size.to_owned()),
+            ..Default::default()
+        }
+    }
+
+    /// The regression this exists for: a LibreOffice sheet says `10pt` twice — once on the
+    /// cells it styled, once in the `style:default-style` covering every cell it did not —
+    /// and this build reads only the first. Drawing that `10pt` as an absolute size while
+    /// the rest of the sheet kept the widget's own font therefore showed one document in two
+    /// sizes. A cell at the default size has to be indistinguishable from a cell with no
+    /// size at all, which is what "no attributes either way" says.
+    #[test]
+    fn a_cell_at_the_default_size_is_drawn_like_a_cell_with_no_size() {
+        assert_eq!(imp::font_scale(&sized("10pt")), Some(1.0));
+        assert!(imp::font(None, 1.0).is_none());
+        assert!(imp::font(Some(&sized("10pt")), 1.0).is_none());
+    }
+
+    /// Every other size is that one scaled, so the base stays the user's own UI font.
+    #[test]
+    fn a_cell_size_is_a_multiple_of_the_default_and_never_an_absolute() {
+        assert_eq!(imp::font_scale(&sized("20pt")), Some(2.0));
+        assert_eq!(imp::font_scale(&sized("5pt")), Some(0.5));
+        assert!(imp::font(Some(&sized("20pt")), 1.0).is_some());
+        // Nothing this model can resolve against the right base: a percentage inherits from
+        // a style that is not read, and no spreadsheet writes a font size in centimetres.
+        assert_eq!(imp::font_scale(&sized("120%")), None);
+        assert_eq!(imp::font_scale(&sized("0.35cm")), None);
+        assert_eq!(imp::font_scale(&sized("0pt")), None);
+    }
+
     /// The whole point of the anchor/active order: the cell the view scrolls to stays next
     /// to the header that was clicked, while the rectangle still covers the whole track.
     #[test]
@@ -576,6 +609,11 @@ mod imp {
     const FIT_SLACK: f64 = 2.0;
     /// Space above and below it, which is what makes the default row taller than a line.
     const ROW_PAD: f64 = 8.0;
+    /// The size a cell that names none is, in points — `style:default-style`'s
+    /// `fo:font-size` in every document LibreOffice writes, and what a spreadsheet has meant
+    /// by "no size given" since long before ODF. A cell's own size is drawn as a multiple of
+    /// it rather than as an absolute; [`font`] is where that happens and why.
+    const DEFAULT_FONT_PT: f64 = 10.0;
     /// How much sheet is measured for natural row heights. A row above the view still
     /// displaces the ones below it, so this pass cannot be limited to what is on screen —
     /// past this much document every row keeps the default height instead.
@@ -1527,7 +1565,7 @@ mod imp {
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
                         continue;
                     };
-                    layout.set_attributes(font(style).as_ref());
+                    layout.set_attributes(font(Some(style), 1.0).as_ref());
                     layout.set_width(match wrapping {
                         true => {
                             ((cols.size_of(col) - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE))
@@ -1580,16 +1618,24 @@ mod imp {
             layout
         }
 
-        /// What a layout draws with: the cell's own attributes, plus the zoom as a font
-        /// *scale* — a multiplier over whatever size applies, so a cell that set its own size
-        /// zooms with everything else.
-        fn attrs(&self, cell: Option<pango::AttrList>) -> Option<pango::AttrList> {
-            let zoom = self.zoom.get();
-            if zoom == 1.0 {
-                return cell;
+        /// What a *cell's* layout draws with — [`font`] at the current zoom.
+        fn cell_attrs(
+            &self,
+            style: Option<&grind_sheet::style::CellStyle>,
+        ) -> Option<pango::AttrList> {
+            font(style, self.zoom.get())
+        }
+
+        /// What text this shell draws itself uses: `extra`, and `scale` on top of the zoom —
+        /// both in one `scale` attribute, for the reason [`font`] gives. Nothing here is a
+        /// cell, so nothing here is sized by the document.
+        fn chrome(&self, extra: Option<pango::AttrList>, scale: f64) -> Option<pango::AttrList> {
+            let scale = scale * self.zoom.get();
+            if scale == 1.0 {
+                return extra;
             }
-            let attrs = cell.unwrap_or_default();
-            attrs.insert(pango::AttrFloat::new_scale(zoom));
+            let attrs = extra.unwrap_or_default();
+            attrs.insert(pango::AttrFloat::new_scale(scale));
             Some(attrs)
         }
 
@@ -2020,7 +2066,7 @@ mod imp {
                 .borrow()
                 .as_ref()
                 .and_then(|app| app.style_at(self.sheet.get(), pos).ok().flatten());
-            if let Some(cell) = self.attrs(style.as_ref().and_then(font)) {
+            if let Some(cell) = self.cell_attrs(style.as_ref()) {
                 for attribute in cell.attributes() {
                     attrs.insert(attribute);
                 }
@@ -2684,7 +2730,7 @@ mod imp {
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
                         continue;
                     };
-                    layout.set_attributes(viewport.style(row, col).and_then(font).as_ref());
+                    layout.set_attributes(font(viewport.style(row, col), 1.0).as_ref());
                     layout.set_text(text);
                     width = width.max(f64::from(layout.pixel_size().0));
                 }
@@ -3611,7 +3657,7 @@ mod imp {
                     // The style decides the font and the colour, and may override where the
                     // text sits — but not the *fallbacks*, which stay the value's own rules.
                     let style = viewport.style(row, col);
-                    layout.set_attributes(self.attrs(style.and_then(font)).as_ref());
+                    layout.set_attributes(self.cell_attrs(style).as_ref());
                     // In role mode the colour says what the cell *is*, and the document's
                     // own text colour is suppressed with its fill (§4.5). The font is not:
                     // bold is structure a reader put there, not a second colour channel.
@@ -3647,7 +3693,15 @@ mod imp {
                     // A number that does not fit is never truncated — a wrong magnitude
                     // read as a right one is worse than no reading at all.
                     if !fits && align == Align::Right {
-                        layout.set_text("##########");
+                        // As many hashes as the cell holds rather than a fixed ten, which is
+                        // the same sign either way and the only one that stays whole: ten of
+                        // them in a cell too narrow for ten are drawn clipped through the
+                        // middle of a glyph, and a half-drawn `#` reads as a broken font
+                        // rather than as a column that needs widening.
+                        layout.set_text("#");
+                        let hash = f64::from(layout.pixel_size().0).max(1.0);
+                        let count = ((cell.w - 2.0 * pad) / hash).floor().clamp(1.0, 200.0);
+                        layout.set_text(&"#".repeat(count as usize));
                         let (w, h) = layout.pixel_size();
                         draw_text(
                             f.snapshot,
@@ -3719,14 +3773,7 @@ mod imp {
             let (geom, palette) = (&f.geom, &f.palette);
             let zoom = self.zoom.get();
             let layout = self.layout();
-            layout.set_attributes(
-                self.attrs(Some({
-                    let list = pango::AttrList::new();
-                    list.insert(pango::AttrFloat::new_scale(0.7));
-                    list
-                }))
-                .as_ref(),
-            );
+            layout.set_attributes(self.chrome(None, 0.7).as_ref());
             let muted = crate::theme::with_alpha(palette.foreground, 0.4);
             for row in f.rows.clone() {
                 for col in f.cols.clone() {
@@ -3877,12 +3924,15 @@ mod imp {
             let layout = self.layout();
             // A selected track's label is bold and accented on top of its wash — where the
             // selection is, readable from the edges of the screen without looking for it.
-            let plain = self.attrs(None);
-            let bold = self.attrs(Some({
-                let list = pango::AttrList::new();
-                list.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
-                list
-            }));
+            let plain = self.chrome(None, 1.0);
+            let bold = self.chrome(
+                Some({
+                    let list = pango::AttrList::new();
+                    list.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
+                    list
+                }),
+                1.0,
+            );
             snapshot.append_color(&palette.header, &rect(0.0, 0.0, width, geom.header_h));
             snapshot.append_color(&palette.header, &rect(0.0, 0.0, geom.header_w, height));
 
@@ -4029,7 +4079,7 @@ mod imp {
                 return;
             }
             let layout = self.layout();
-            layout.set_attributes(self.attrs(None).as_ref());
+            layout.set_attributes(self.chrome(None, 1.0).as_ref());
             layout.set_width(-1);
             layout.set_text(CHEVRON);
             let (text_w, text_h) = layout.pixel_size();
@@ -4097,7 +4147,7 @@ mod imp {
             let mm = resize.size / self.zoom.get() / PX_PER_MM;
             let text = format!("{:.2} cm", mm / 10.0);
             let layout = self.layout();
-            layout.set_attributes(self.attrs(None).as_ref());
+            layout.set_attributes(self.chrome(None, 1.0).as_ref());
             layout.set_width(-1);
             layout.set_text(&text);
             let (w, h) = layout.pixel_size();
@@ -4185,18 +4235,38 @@ mod imp {
         }
     }
 
-    /// A cell style's font as Pango attributes, or `None` when it says nothing about one.
+    /// A cell's font as Pango attributes, or `None` when neither the cell nor the zoom has
+    /// anything to say about one.
     ///
     /// Weight, slant and size only: `fo:font-family` is deliberately not carried by the model
     /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
     /// nothing here to set a family from.
     ///
+    /// **The size is a multiple of [`DEFAULT_FONT_PT`], not an absolute**, and that is the
+    /// whole point of this function. A document says what it means twice over: once per cell
+    /// in `fo:font-size`, and once for every cell that names none in
+    /// `style:default-style` — which this build does not read (the `ponytail:` in
+    /// [`grind_sheet::odf`]'s `Styles`). Drawing a cell that says `10pt` at an absolute 10pt
+    /// while a cell that says nothing kept the widget's own font therefore made **two sizes
+    /// out of one**: a LibreOffice sheet whose default is 10pt showed its styled cells
+    /// smaller than its plain ones, for no reason a reader could see. Scaling instead makes
+    /// "says 10pt" and "says nothing" identical, and leaves the base as the widget's font —
+    /// which is the user's UI font size, an accessibility setting rather than ours to
+    /// override.
+    ///
+    /// `zoom` rides in the same attribute, because a second `scale` over the same range
+    /// replaces the first rather than compounding with it.
+    ///
     /// A size larger than the row's default grows the row rather than clipping — the tallest
-    /// styled cell in a row is what [`imp::Grid::measure_rows`] takes its height from.
-    fn font(style: &grind_sheet::style::CellStyle) -> Option<pango::AttrList> {
+    /// styled cell in a row is what [`imp::Grid::measure_rows`] takes its height from, which
+    /// is why a measurement passes a `zoom` of 1 and nothing measured is stored zoomed.
+    pub(super) fn font(
+        style: Option<&grind_sheet::style::CellStyle>,
+        zoom: f64,
+    ) -> Option<pango::AttrList> {
         let attrs = pango::AttrList::new();
         let mut any = false;
-        if let Some(weight) = style.font_weight.as_deref() {
+        if let Some(weight) = style.and_then(|s| s.font_weight.as_deref()) {
             let weight = match weight {
                 "bold" => Some(pango::Weight::Bold),
                 "normal" => Some(pango::Weight::Normal),
@@ -4209,7 +4279,7 @@ mod imp {
                 any = true;
             }
         }
-        if let Some(slant) = style.font_style.as_deref() {
+        if let Some(slant) = style.and_then(|s| s.font_style.as_deref()) {
             let slant = match slant {
                 "italic" => Some(pango::Style::Italic),
                 "oblique" => Some(pango::Style::Oblique),
@@ -4221,21 +4291,29 @@ mod imp {
                 any = true;
             }
         }
-        // A length in points, which is what a spreadsheet's font size always is. A
-        // percentage — ODF allows one — is relative to a style this model does not inherit
-        // from, so it is left alone rather than resolved against the wrong base.
-        if let Some(points) = style
+        let scale = zoom * style.and_then(font_scale).unwrap_or(1.0);
+        if scale != 1.0 {
+            attrs.insert(pango::AttrFloat::new_scale(scale));
+            any = true;
+        }
+        any.then_some(attrs)
+    }
+
+    /// A cell's `fo:font-size` as a multiple of [`DEFAULT_FONT_PT`], or `None` when it names
+    /// none.
+    ///
+    /// A length in points, which is what a spreadsheet's font size always is. A
+    /// percentage — ODF allows one — is relative to a style this model does not inherit
+    /// from, so it is left alone rather than resolved against the wrong base; so is a length
+    /// in any other unit, which no spreadsheet writes for a font.
+    pub(super) fn font_scale(style: &grind_sheet::style::CellStyle) -> Option<f64> {
+        style
             .font_size
             .as_deref()
             .and_then(|size| size.strip_suffix("pt"))
             .and_then(|points| points.parse::<f64>().ok())
-        {
-            attrs.insert(pango::AttrSize::new(
-                (points * f64::from(pango::SCALE)) as i32,
-            ));
-            any = true;
-        }
-        any.then_some(attrs)
+            .filter(|points| *points > 0.0)
+            .map(|points| points / DEFAULT_FONT_PT)
     }
 
     /// What a value's type says about where it sits in its cell.

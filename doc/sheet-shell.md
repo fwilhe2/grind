@@ -659,7 +659,12 @@ design accommodates them) · window-state persistence (needs a GSettings schema 
 post-packaging) · autosave · a manage-names dialog (the capability exists; `sheet name`
 reaches it) · merged-cell rendering (the model does not carry spans; cells render
 unmerged) · full grid accessibility · typing during a background recalc · locale argument
-separators · **moving over a filtered-out or manually hidden row**: the arrow keys still
+separators · **the document's default cell font size**, which the reader does not keep (the
+`ponytail:` on `Styles` in `sheet/src/odf/read.rs`, and the cost of lifting it): a cell's
+`fo:font-size` is drawn as a multiple of ODF's 10pt default rather than as an absolute, so
+a cell that says `10pt` and a cell that says nothing come out the same size and the base
+stays the user's own UI font — right for every document written so far, wrong for one whose
+default is not 10pt · **moving over a filtered-out or manually hidden row**: the arrow keys still
 step onto a row that has no height, so the selection appears to stick until it passes the
 run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
 handing it the hidden set — worth doing the first time it annoys somebody, not before).
