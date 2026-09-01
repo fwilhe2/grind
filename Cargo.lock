@@ -954,6 +954,7 @@ name = "grind-sheet-gtk"
 version = "0.0.0"
 dependencies = [
  "async-channel",
+ "grind-core",
  "grind-sheet",
  "gtk4",
  "libadwaita",

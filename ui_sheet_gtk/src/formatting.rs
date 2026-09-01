@@ -80,8 +80,8 @@ impl Strip {
 }
 
 pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
-    // No `toolbar` class of its own: the strip is one page of `chrome::tools`, and the
-    // padding comes from that container — twice would be a taller row than the others.
+    // No `toolbar` class of its own: the strip is what `chrome::format_bar` wraps, and the
+    // padding comes from that container — twice would be a taller row than the window wants.
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
 
     // Set while the strip is writing into its own widgets, so their signals know a refresh

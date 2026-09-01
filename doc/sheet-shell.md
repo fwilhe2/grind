@@ -488,7 +488,10 @@ tabs are the one ribbon behaviour deliberately not copied, being both the legall
 distinctive part of that design and the HIG's least favourite. Every button activates a
 `win.` action the window already owns, so the strip adds reachability, never capability.
 The primary menu slimmed to files · sheets · Keyboard Shortcuts · About, which is the HIG's
-idea of one. **Fill**: the Fill Down / Fill Right buttons then left that row again, replaced
+idea of one. *(That tool row is gone: "Four surfaces" below replaced it, and is what this
+window does now. The paragraph stays because the section that replaced it is an argument
+against this design, and an argument with the losing side deleted is not one.)*
+**Fill**: the Fill Down / Fill Right buttons then left that row again, replaced
 by the convention every other spreadsheet has — a handle on the selection's bottom-right
 corner (`geom::GridGeom::fill_handle`), dragged in any of the four directions, outlining
 where it is pointing until the pointer is released (`keymap::fill_target` /
@@ -497,17 +500,139 @@ drag, which is what makes dragging *up* or *left* mean anything. Ctrl+D / Ctrl+R
 `win.fill-down` / `win.fill-right` actions behind them are untouched, so nothing became
 mouse-only.
 
+## Four surfaces — normative for this window's chrome
+
+The mode-switched tool row above lasted exactly as long as it took to add three more features,
+which is the observation this section exists to answer: **more features kept becoming more
+buttons.** The switch was the right instinct and it delayed the problem rather than solving it.
+
+### What was actually wrong
+
+The three pages were three *different kinds of control* wearing one presentation:
+
+| Page | What it really was | Does it grow? |
+|---|---|---|
+| Format | A **property inspector** — every control a two-way binding to `CellStyle` / `numfmt::Format` on the selection | No: those are closed vocabularies |
+| View | **View state** — `doc/view-modes.md`'s readings, which write nothing at all | No: there are three readings and a zoom |
+| Calculate | A **list of verbs**, and the only page with no membership rule | Without bound |
+
+*Filter* and *Copy Value* are not calculations; they were on that page because it was the page
+things went. And since **every new feature is a verb**, every new feature landed there. The
+toolbar was not growing because nobody was watching it. It was growing because verbs had
+nowhere else to go, and one of the three tabs had an admission test that could not refuse
+anything.
+
+So the fix is not a fourth page, a smaller icon or a stricter reviewer. It is to give verbs a
+home that is *supposed* to grow, and to give every other surface an admission test that closes it.
+
+### The rule
+
+Four surfaces. Each has a test that says what may go in it, and only one of them grows.
+
+| Surface | A control belongs here when… | Grows with features? |
+|---|---|---|
+| **Header bar** | it is about the document as a whole, or about the window | **No** — five slots, and they are spoken for |
+| **Format bar** (`chrome::format_bar`) | it **reads *and* writes** a property of the selection | No — bounded by `CellStyle` + `Format` |
+| **Context menus** (cells, sheet tab, column/row header, chart) | it acts on the thing under the pointer | Slowly, bounded by what the thing *is* |
+| **Command palette** (`palette.rs`) + the menus | anything else | **Yes. This is the growth valve** |
+
+Stated as one sentence, which is the sentence to hold this window to:
+
+> **A new feature is a verb. A verb gets a row in a table. It does not get a button.**
+
+### Where everything went
+
+- **Header bar**: Open · Undo/Redo · | · Find a Command (Ctrl+K) · View · ☰. The *Chart*
+  button left it — inserting a chart is a verb about a selection, so it is in the cell menu and
+  the palette. Nothing is added to this bar again.
+- **Format bar**: exactly the old Format page, unwrapped from the stack. It is now the window's
+  only toolbar and its membership rule is the whole reason it can stay visible.
+- **View menu** (`chrome::view_menu`): the zoom group as a custom child, Fit Content, and the
+  three readings plus Friendly Formulas as check items over their stateful actions. A menu
+  rather than a row of toggles because none of it is about the selection; the check marks are
+  the actions' own state, so there is nothing to keep in step.
+- **Cell context menu** (`grid::cell_menu_model`): Cut · Copy · Copy Value · Paste — Clear
+  Contents · Fill Down · Fill Right — Name This Range… · Filter Rows · Insert Chart…. This
+  window had no context menu on its *content* at all, which was a plain HIG gap, and it is
+  where the Calculate page's selection verbs always belonged. A right-click outside the
+  selection moves the selection there first; a right-click during an edit stores it, exactly as
+  a left-click elsewhere does.
+- **Sheet tab context menu** (`chrome::tab_menu_model`): Rename… · Delete, on the tab, which is
+  the only spelling that says *which* sheet.
+- **Primary menu**: the four file verbs, the four things done to a document as a whole
+  (Recalculate, Check the Document, Find a Calculation…, Names…), and Find a Command ·
+  Keyboard Shortcuts · About. **Nothing about the selection**, which is the HIG's own rule for
+  a primary menu and the thing that finally sizes it.
+- **Command palette**: Ctrl+K, the search button, or the menu. Type three letters, Enter.
+
+Four `win.` actions were added so the context menu had something to point at — `copy`, `cut`,
+`paste`, `clear`, which the keyboard could already reach and no menu could. They deliberately
+carry no accelerator: `keymap.rs` owns Ctrl+C/X/V and Delete inside the grid, and a second
+binding for one key is how a shortcut ends up doing two things.
+
+### Why this cannot rot
+
+The palette is **a view over `main.rs`'s `actions()` table**, which is where a `win.` action,
+its accelerator, its menu entries and its shortcuts-window row already came from. So the growth
+rule is structural, not a habit: there is no way to add a verb to this window without it
+appearing in the palette, because there is no second place to add one. `shortcuts()` lost its
+private list of titles in the same change and reads that table too — a verb spelled one way in
+the palette and another in the shortcuts window is a verb a reader has to learn twice.
+
+`main.rs`'s `chrome_tests` are the ratchet, in the shape `cli/tests/parity.rs` established:
+
+- every verb is in the palette, or is the one named exception (the palette cannot offer to open
+  itself);
+- every `win.` action named by **any** of the four menu models exists — which is why each menu
+  is a function returning a `gio::Menu` rather than one built inline, and why `gio::Menu` being
+  GIO rather than GTK matters: the walk needs no display. A menu item naming an action nobody
+  declares is otherwise *silent*, drawn and greyed out as though the feature were merely
+  unavailable;
+- a verb lives in one menu, not two, with the one genuine exception listed rather than allowed
+  by a rule (`win.names` means "name this range" from the cells and "manage the names" from the
+  document menu);
+- no two verbs share a name, and a reading is never also a plain verb — `add_action` would
+  replace the stateful one with a plain one and the check marks would stop working.
+
+`palette::rank` and `keys` are pure and tested with no display; the ranking itself is
+`grind_core::search::score`, moved down from `ui_web/src/command.rs` so that the two shells with
+a palette cannot rank the same query two ways. That is the only thing this window and the
+browser one now share, and it is the right amount: the *vocabulary* stays per-shell, because
+`ui_web`'s list is its own answer to having no menu bar at all (`doc/web-shell.md`).
+
+### What this is not, and the ribbon question
+
+Two deliberate refusals, both recorded because they will look like omissions:
+
+- **The palette is not a go-to box.** `grind-web`'s also jumps to an address, a sheet or a
+  defined name, because a browser tab has nowhere else to put one. This window has the formula
+  bar's name box, which is where a spreadsheet's user already looks, and two boxes that both
+  take `B12` is one too many.
+- **The palette is not a launcher for what a pointer wants.** Bold stays on the format bar
+  because the format bar *shows whether the cell is bold*. The palette can only run it.
+
+On the ribbon: the tab strip is gone, so the one element of this window that resembled that
+design at all is no longer there — which settles the question by construction rather than by
+argument, and is a nice side effect of fixing the real problem. The elements that are
+distinctive to that design and were never copied, before or after: **contextual tabs that
+appear and disappear with the selection** (chrome that moves under the pointer, and the HIG's
+least favourite thing too), a large application button opening a file panel, galleries that
+mutate the document on hover, and oversized multi-line tooltips. What replaced the strip is a
+fixed property bar, plain popover menus, and a search box — the last of these having prior art
+running from `M-x` and `:` through every editor since. None of this is a legal opinion; it is
+the design rule, and the design rule is: diverge, rather than rely on anything having expired.
+
 ## The gaps, written down
 
 **The code view is read-only** (`doc/dsl.md` §6, D9), and is the one thing in this window that
-arrived after M10. Ctrl+Shift+U, the *Source* toggle beside *Names* and *Roles*, or the menu:
+arrived after M10. Ctrl+Shift+U, *Show the Source* in the View menu, or the palette:
 the document's projection on the other page of a `gtk::Stack`, with the active cell's own line
 marked and moving the cursor in it selecting the cell that line projects. A stack rather than a
 paned split — §6.2 is right that a split is what a person eventually wants, and it is also a
 second viewport to keep in step. Editing it is gated in §6.4.
 
 **Check Document** — `grind lint`'s findings, as a list (`doc/dsl.md` §4.3, D6). F8, the
-*Check* button on the Calculate row, or the menu: a dialog of rows, each an icon, a message, the
+primary menu, or the palette: a dialog of rows, each an icon, a message, the
 address it is about and the rule id that said it — the id because that is the word
 `grind sheet lint --off <rule>` takes, and a diagnostic nobody can name is one nobody can
 silence. Activating a row selects the cell and closes; the *Hints* toggle is `--hints`, off by
@@ -546,8 +671,8 @@ of an axis — its title, its tick labels, its gridlines — are now built
 repositioning, and no way to reach a chart's dialog without a pointer at all.
 
 **Filtering is built** (§9.4): the dropdown button in each heading cell of the range, a
-value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L on the tool strip to
-put a filter over the selection or clear it. Which rows that hides comes from the core and
+value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L — reached from the cell
+menu, since a filter is about a selection — to put a filter over the selection or clear it. Which rows that hides comes from the core and
 is never stored (`sheet/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
 draws those rows at zero height.
 
@@ -565,14 +690,16 @@ hidden run collapses its two neighbours' headers together, so `geom::Hit` gained
 there finds the right run from either side) — a thin accent bar, clickable to unhide the
 whole run in one step.
 
-**Inline name hints are built** (`doc/view-modes.md` V4, normative there): View → Names, or
+**Inline name hints are built** (`doc/view-modes.md` V4, normative there): View → *Show Where
+Names Live*, or
 Ctrl+Shift+N, draws each named expression inside the cell it is bound to, once per anchor, with a
 range outlined; and the formula bar gains a third stack page reading a formula through its names
 (§3.3). Both are *readings* — the file is byte-identical with the mode on, which is what lets
 them sit on a toolbar with no confirmation, no dirty flag and no undo entry. The arithmetic is in
 `geom.rs` (`hint_rect`, `GridGeom::hint_cell`) and tests with no display.
 
-**Role mode is built too** (V6): View → Roles, or Ctrl+Shift+R, colours every cell's text by what
+**Role mode is built too** (V6): View → *Show What Each Cell Is*, or Ctrl+Shift+R, colours every
+cell's text by what
 it is and suppresses the document's own colours while it is on — §4.5's decision, with a hairline
 under any cell whose styling is being hidden and a **Roles** button in the status bar, since the
 mode has to say it is on somewhere always visible. Its accessibility floor shipped in the same

@@ -248,41 +248,12 @@ fn entry(command: &Command, hits: Vec<usize>) -> Entry {
     }
 }
 
-/// How well `needle` matches `haystack`, and where — a subsequence match, case-insensitive,
-/// scoring a letter that starts a word above one in the middle of one and a run of adjacent
-/// letters above a scattering. `None` when a letter of the needle is not there at all.
+/// How well `needle` matches `haystack`, and where.
 ///
-/// Positions are in `char`s, because that is what the palette slices the title by.
-pub fn score(haystack: &str, needle: &str) -> Option<(i32, Vec<usize>)> {
-    let hay: Vec<char> = haystack.chars().flat_map(char::to_lowercase).collect();
-    // Word starts, computed once: the beginning, and any letter after a space or a hyphen.
-    let boundary = |at: usize| at == 0 || matches!(hay.get(at - 1), Some(' ' | '-' | ':' | '('));
-
-    let mut score = 0;
-    let mut hits = Vec::new();
-    let mut at = 0;
-    let mut previous: Option<usize> = None;
-    for want in needle.chars().flat_map(char::to_lowercase) {
-        if want == ' ' {
-            continue;
-        }
-        let found = hay[at..].iter().position(|c| *c == want)? + at;
-        score += match () {
-            // `checked_sub`, because the first character of the haystack is position zero and
-            // `found - 1` there is not a position at all.
-            _ if found.checked_sub(1) == previous && previous.is_some() => 6,
-            _ if boundary(found) => 5,
-            _ => 1,
-        };
-        hits.push(found);
-        previous = Some(found);
-        at = found + 1;
-    }
-    // A short title that matched is a better answer than a long one that also did: "Bold"
-    // should beat "Bold the selection's borders" for `bol`.
-    score = score * 100 - hay.len() as i32;
-    Some((score, hits))
-}
+/// **The core's**, since `doc/sheet-shell.md`'s rework: the GTK window grew a palette of its
+/// own, and two shells ranking the same query two ways is two palettes nobody learns. This
+/// crate keeps the name it always used.
+pub use grind_core::search::score;
 
 #[cfg(test)]
 mod tests {
@@ -317,13 +288,6 @@ mod tests {
     }
 
     #[test]
-    fn a_letter_at_the_start_of_a_word_beats_one_in_the_middle() {
-        let (start, _) = score("Align left", "al").unwrap();
-        let (middle, _) = score("Recalculate", "al").unwrap();
-        assert!(start > middle, "{start} vs {middle}");
-    }
-
-    #[test]
     fn the_exact_word_comes_first() {
         assert_eq!(filter(SHEET, "bold")[0].id, "style.bold");
         assert_eq!(filter(SHEET, "paste")[0].id, "edit.paste");
@@ -332,15 +296,13 @@ mod tests {
 
     #[test]
     fn a_letter_that_is_not_there_matches_nothing() {
-        assert_eq!(score("Bold", "bz"), None);
         assert!(filter(SHEET, "zzzz").is_empty());
     }
 
+    /// The ranking itself is `grind_core::search`'s and tested there; what is this crate's is
+    /// the slicing that follows — a hit past the end of the title would panic the palette.
     #[test]
-    fn the_matched_letters_come_back_so_they_can_be_shown() {
-        let (_, hits) = score("Align left", "alle").unwrap();
-        assert_eq!(hits, vec![0, 1, 6, 7]);
-        // A hit past the end of the title is dropped, or the palette would slice out of range.
+    fn a_hit_in_the_group_is_dropped_before_the_title_is_sliced() {
         let entry = filter(SHEET, "format")
             .into_iter()
             .find(|e| e.id == "style.bold");

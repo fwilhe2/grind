@@ -32,6 +32,7 @@ pub mod locale;
 pub mod observer;
 pub mod odf;
 pub mod projection;
+pub mod search;
 pub mod style;
 
 pub use kind::{DocumentKind, kind};

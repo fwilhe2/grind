@@ -16,6 +16,11 @@ path = "src/main.rs"
 
 [dependencies]
 grind-sheet = { path = "../sheet" }
+# Named directly for one thing only: `search::score`, which ranks the command palette. The
+# spreadsheet's own vocabulary all arrives through `grind-sheet`; this is the generic half,
+# and it is a direct dependency rather than a re-export because ranking a list of words is
+# not a spreadsheet's business to hand on (R8, from the other side).
+grind-core = { path = "../core" }
 # gtk4 is reached as `libadwaita::gtk`, so the two versions cannot drift apart.
 # The GNOME HIG widgets — banners, toasts, alert dialogs — are libadwaita's own.
 # v1_5 is the ubuntu-24.04 runtime, and every widget this shell uses exists there.

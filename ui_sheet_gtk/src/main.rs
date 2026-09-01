@@ -12,6 +12,12 @@
 //! `doc/sheet-shell.md` is the plan and the running record of what is built. Milestones 1, 3
 //! and 4 are here: a document opens, draws, navigates, and can be edited and saved.
 //!
+//! Its **"Four surfaces"** section is normative for this window's chrome, and [`actions`] is
+//! where that rule is enforced: one table of verbs, read by the wiring, the menus, the
+//! shortcuts window and the command palette alike. A feature therefore cannot be added without
+//! becoming findable, which is what stops the next one from becoming another toolbar button —
+//! and `chrome_tests` at the bottom of this file is the ratchet that keeps it true.
+//!
 //! **The core pushes; this never polls** (rule 3). `App`'s observer is a channel sender —
 //! it must be `Send`, and a GTK widget is not — and one local future drains it, coalescing
 //! a burst of changes into a single refresh.
@@ -26,6 +32,7 @@ mod geom;
 mod grid;
 mod keymap;
 mod lint;
+mod palette;
 mod state;
 mod theme;
 
@@ -205,28 +212,26 @@ impl Ui {
         history.append(&redo);
         header.pack_start(&history);
 
+        // The end of the bar, packed right to left: the primary menu outermost, then the two
+        // buttons that are about *looking* rather than about the document — which is the
+        // HIG's split between the two ends of a header bar.
         let menu = gtk::MenuButton::builder()
             .icon_name("open-menu-symbolic")
             .menu_model(&primary_menu())
             .tooltip_text("Main Menu")
             .build();
         header.pack_end(&menu);
+        header.pack_end(&chrome::view_menu(&grid));
 
-        // **Labelled, not icon-only.** There is no chart icon in the icon theme — the name
-        // this button used to carry (`view-object-select-symbolic`) is not in Adwaita at all,
-        // so it drew as the missing-image glyph. A word is better than a wrong picture, and
-        // this is the one button in the header that names a whole feature rather than
-        // repeating a menu item.
-        let chart_content = adw::ButtonContent::builder()
-            .label("Chart")
-            .icon_name("insert-object-symbolic")
+        // The palette's own button. A header bar has no room to teach Ctrl+K, and a verb
+        // nobody can find is a verb that does not exist — so the growth valve gets the one
+        // affordance that says it is there (`doc/sheet-shell.md`, "Four surfaces").
+        let find = gtk::Button::builder()
+            .icon_name("system-search-symbolic")
+            .action_name("win.palette")
+            .tooltip_text("Find a command (Ctrl+K)")
             .build();
-        let insert_chart = gtk::Button::builder()
-            .child(&chart_content)
-            .tooltip_text("Insert a chart from the selected cells")
-            .action_name("win.chart-insert")
-            .build();
-        header.pack_start(&insert_chart);
+        header.pack_end(&find);
 
         let banner = adw::Banner::new("");
         let add_sheet = gtk::Button::from_icon_name("list-add-symbolic");
@@ -238,9 +243,11 @@ impl Ui {
 
         let view = adw::ToolbarView::builder().content(&toasts).build();
         view.add_top_bar(&header);
-        // The strip is the Format page of the mode-switched tool row — Calculate and View
-        // sit behind the same switch instead of only in the primary menu.
-        view.add_top_bar(&chrome::tools(&grid, &strip.widget));
+        // The window's only toolbar, and the only one it will have: a control belongs there
+        // when it reads and writes a property of the selection (`doc/sheet-shell.md`, "Four
+        // surfaces"). Verbs go to the context menu and the palette instead, which is what
+        // stops this bar growing a button per feature.
+        view.add_top_bar(&chrome::format_bar(&strip.widget));
         let formula_bar = chrome::formula_bar(&grid, app, true);
         view.add_top_bar(&formula_bar.widget);
         view.add_top_bar(&banner);
@@ -319,16 +326,17 @@ impl Ui {
             move |_| ui.recalculate()
         ));
 
-        for (name, accels, handler) in actions() {
-            let action = gio::SimpleAction::new(name, None);
+        for verb in actions() {
+            let action = gio::SimpleAction::new(verb.name, None);
+            let run = verb.run;
             action.connect_activate(glib::clone!(
                 #[strong(rename_to = ui)]
                 self,
-                move |_, _| handler(&ui)
+                move |_, _| run(&ui)
             ));
             self.window.add_action(&action);
-            if !accels.is_empty() {
-                application.set_accels_for_action(&format!("win.{name}"), accels);
+            if !verb.accels.is_empty() {
+                application.set_accels_for_action(&format!("win.{}", verb.name), verb.accels);
             }
         }
 
@@ -354,10 +362,7 @@ impl Ui {
         // *looking* at the document rather than something done to it, so the toggle carries
         // its own on/off and turning it off leaves nothing behind. Neither writes a byte,
         // which is why they need no confirmation, no dirty flag and no undo entry.
-        for (name, accels, names, roles) in [
-            ("show-names", &["<Control><Shift>n"][..], true, false),
-            ("show-roles", &["<Control><Shift>r"][..], false, true),
-        ] {
+        for (name, names, roles) in [("show-names", true, false), ("show-roles", false, true)] {
             let on = match names {
                 true => self.grid.overlays().names,
                 false => self.grid.overlays().roles,
@@ -387,7 +392,7 @@ impl Ui {
                 }
             ));
             self.window.add_action(&action);
-            application.set_accels_for_action(&format!("win.{name}"), accels);
+            accelerate(application, name);
         }
 
         // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the
@@ -404,7 +409,7 @@ impl Ui {
             }
         ));
         self.window.add_action(&source);
-        application.set_accels_for_action("win.show-source", &["<Control><Shift>u"]);
+        accelerate(application, "show-source");
 
         // Moving the cursor in the source selects the cell that line projects — §6.2's map in
         // the direction that has to be built rather than assumed. `notify::cursor-position`
@@ -1327,9 +1332,13 @@ impl Ui {
         glib::Propagation::Stop
     }
 
-    /// M9's shortcuts dialog. Built from the same accelerator table the window wires up, so
-    /// it cannot list a binding the keyboard does not actually have — plus the grid's own
-    /// vocabulary (`keymap.rs`), which has no `GAction` to read a name from.
+    /// M9's shortcuts dialog. Built from the same table the window wires up, so it cannot list
+    /// a binding the keyboard does not actually have — plus the grid's own vocabulary
+    /// (`keymap.rs`), which has no `GAction` to read a name from.
+    ///
+    /// Since the chrome rework it reads the *titles* from that table too, rather than keeping
+    /// a second list of them. A verb spelled one way in the palette and another here is a verb
+    /// a reader has to learn twice, and the way that happens is exactly this: two lists.
     fn shortcuts(&self) {
         let window = gtk::ShortcutsWindow::builder()
             .transient_for(&self.window)
@@ -1337,48 +1346,18 @@ impl Ui {
             .build();
 
         let group = gtk::ShortcutsGroup::builder().title("General").build();
-        let named = [
-            ("new", "New"),
-            ("open", "Open"),
-            ("save", "Save"),
-            ("save-as", "Save As"),
-            ("undo", "Undo"),
-            ("redo", "Redo"),
-            ("recalc", "Recalculate Now"),
-            ("explain-formula", "Explain Formula"),
-            ("calculations", "Find Calculations"),
-            ("lint", "Check Document"),
-            ("filter", "Filter Rows"),
-            ("zoom-in", "Zoom In"),
-            ("zoom-out", "Zoom Out"),
-            ("zoom-reset", "Normal Size"),
-        ];
-        // The two view modes are stateful actions rather than verbs, so they are not in
-        // `actions()` and are listed here with the accelerators `wire` gives them.
-        for (title, accelerator) in [
-            ("Show Names", "<Control><Shift>n"),
-            ("Show Roles", "<Control><Shift>r"),
-            ("Show Source", "<Control><Shift>u"),
-        ] {
+        // Everything with a key and a name, in the table's own order. A verb reached only
+        // from a menu has no row here, which is what `accels.is_empty()` says.
+        for row in palette_rows() {
+            if row.accels.is_empty() || row.title.is_empty() {
+                continue;
+            }
             group.add_shortcut(
                 &gtk::ShortcutsShortcut::builder()
-                    .title(title)
-                    .accelerator(accelerator)
+                    .title(row.title)
+                    .accelerator(row.accels.join(" "))
                     .build(),
             );
-        }
-        for (action, title) in named {
-            for (name, accels, _) in actions() {
-                if name != action || accels.is_empty() {
-                    continue;
-                }
-                group.add_shortcut(
-                    &gtk::ShortcutsShortcut::builder()
-                        .title(title)
-                        .accelerator(accels.join(" "))
-                        .build(),
-                );
-            }
         }
         let navigation = gtk::ShortcutsGroup::builder()
             .title("Navigation & Editing")
@@ -1440,9 +1419,88 @@ impl Ui {
     }
 }
 
-/// The window's actions, their accelerators, and what they do. One table, so the menu, the
-/// header bar and the keyboard cannot drift apart.
 type Handler = fn(&Rc<Ui>);
+
+/// One verb this window has: a `win.` action, what it is called, and what runs it.
+///
+/// **The one table**, and since `doc/sheet-shell.md`'s chrome rework it has four readers
+/// rather than three: `wire` builds the actions and their accelerators, the menus point at
+/// them by name, the shortcuts window lists them, and the command palette searches them. A
+/// verb that is not here does not exist, and a verb that is here is in the palette — which is
+/// what makes "a new feature does not get a new button" structural rather than a habit.
+struct Verb {
+    /// The action's name, without the `win.` prefix.
+    name: &'static str,
+    accels: &'static [&'static str],
+    /// How the palette and the shortcuts window name it. `""` for the handful that exist only
+    /// so a widget can reach them and that nobody would ever go looking for by name.
+    title: &'static str,
+    group: &'static str,
+    run: Handler,
+}
+
+/// The **readings** — a way of looking at the document rather than something done to it
+/// (`doc/view-modes.md`, `doc/dsl.md` §6). Stateful actions, so `wire` builds them by hand:
+/// each carries its own on/off and the same item turns it off again.
+///
+/// Named here rather than inside `wire` so that the View menu, the palette and the shortcuts
+/// window read the same list the wiring does. None of them writes a byte, which is why they
+/// need no confirmation, no dirty flag and no undo entry.
+const READINGS: [(&str, &str, &str); 4] = [
+    (
+        "friendly-formulas",
+        "Read Formulas as Sentences",
+        "", // No accelerator: it is a preference, not a gesture.
+    ),
+    ("show-names", "Show Where Names Live", "<Control><Shift>n"),
+    ("show-roles", "Show What Each Cell Is", "<Control><Shift>r"),
+    ("show-source", "Show the Source", "<Control><Shift>u"),
+];
+
+/// Bind a reading's accelerator, as [`READINGS`] spells it.
+///
+/// The stateful actions are wired by hand, and reading their keys back out of the same table
+/// the palette and the shortcuts window read is what stops the three from disagreeing about
+/// what Ctrl+Shift+N does.
+fn accelerate(application: &adw::Application, name: &str) {
+    for (verb, _, accel) in READINGS {
+        if verb == name && !accel.is_empty() {
+            application.set_accels_for_action(&format!("win.{name}"), &[accel]);
+        }
+    }
+}
+
+/// Every verb, as the palette takes them — the plain ones and the readings, in one list.
+///
+/// `OnceLock` because [`palette::present`] holds the rows for the life of the dialog and the
+/// table is a constant in everything but spelling: `actions()` builds it from function
+/// pointers, which is not something a `const` can hold alongside the `&'static str`s.
+fn palette_rows() -> &'static [palette::Row] {
+    static ROWS: std::sync::OnceLock<Vec<palette::Row>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        actions()
+            .into_iter()
+            .filter(|verb| !verb.title.is_empty())
+            .map(|verb| palette::Row {
+                name: verb.name,
+                title: verb.title,
+                group: verb.group,
+                accels: verb.accels,
+            })
+            .chain(READINGS.iter().map(|(name, title, accel)| palette::Row {
+                name,
+                title,
+                group: "View",
+                // A slice of one, or none — the same shape `Verb::accels` has, built from the
+                // single accelerator a reading carries.
+                accels: match accel.is_empty() {
+                    true => &[],
+                    false => std::slice::from_ref(accel),
+                },
+            }))
+            .collect()
+    })
+}
 
 /// One name, as a row: its definition editable in place, and a button that removes it.
 ///
@@ -1681,76 +1739,184 @@ fn definition_text(expression: &str) -> String {
     }
 }
 
-fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
+/// Every verb, in the order the palette offers them with nothing typed — grouped by what they
+/// are about rather than alphabetically, because that empty list is one to *read*.
+fn actions() -> Vec<Verb> {
+    // A row per verb, which is one line of noise per verb less than a struct literal.
+    const fn verb(
+        name: &'static str,
+        accels: &'static [&'static str],
+        title: &'static str,
+        group: &'static str,
+        run: Handler,
+    ) -> Verb {
+        Verb {
+            name,
+            accels,
+            title,
+            group,
+            run,
+        }
+    }
     vec![
-        (
-            "new",
-            &["<Control>n"][..],
-            (|ui: &Rc<Ui>| ui.new_document()) as Handler,
+        // --- the document ---
+        verb("new", &["<Control>n"], "New Document", "Document", |ui| {
+            ui.new_document()
+        }),
+        verb("open", &["<Control>o"], "Open…", "Document", |ui| {
+            ui.open()
+        }),
+        verb("save", &["<Control>s"], "Save", "Document", |ui| ui.save()),
+        verb(
+            "save-as",
+            &["<Control><Shift>s"],
+            "Save As…",
+            "Document",
+            |ui| ui.save_as(),
         ),
-        ("open", &["<Control>o"][..], |ui| ui.open()),
-        ("save", &["<Control>s"][..], |ui| ui.save()),
-        ("save-as", &["<Control><Shift>s"][..], |ui| ui.save_as()),
-        ("undo", &["<Control>z"][..], |ui| {
+        verb("undo", &["<Control>z"], "Undo", "Document", |ui| {
             ui.app.undo();
         }),
-        ("redo", &["<Control><Shift>z", "<Control>y"][..], |ui| {
-            ui.app.redo();
-        }),
-        ("recalc", &["F9"][..], |ui| ui.recalculate()),
-        // Both spellings of the key, because a keyboard's `+` is `plus` with Shift and
-        // `equal` without, and a user pressing Ctrl and the key next to Backspace means one
-        // thing by it either way.
-        (
-            "zoom-in",
-            &["<Control>plus", "<Control>equal", "<Control>KP_Add"][..],
-            |ui| ui.grid.set_zoom(ui.grid.zoom() * grid::ZOOM_STEP),
+        verb(
+            "redo",
+            &["<Control><Shift>z", "<Control>y"],
+            "Redo",
+            "Document",
+            |ui| {
+                ui.app.redo();
+            },
         ),
-        (
-            "zoom-out",
-            &["<Control>minus", "<Control>KP_Subtract"][..],
-            |ui| ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP),
-        ),
-        ("zoom-reset", &["<Control>0", "<Control>KP_0"][..], |ui| {
-            ui.grid.set_zoom(1.0)
+        verb("recalc", &["F9"], "Recalculate", "Document", |ui| {
+            ui.recalculate()
         }),
-        ("autofit-all", &[][..], |ui| ui.grid.autofit_all()),
-        // No accelerators: the grid's own key map already owns Ctrl+D, Ctrl+R and
-        // Ctrl+Shift+C, and a second binding for the same key is how one shortcut ends up
-        // doing two things. These exist so the tool strip can reach them.
-        ("fill-down", &[][..], |ui| ui.grid.fill(keymap::Dir::Down)),
-        ("fill-right", &[][..], |ui| ui.grid.fill(keymap::Dir::Right)),
-        ("copy-value", &[][..], |ui| ui.grid.copy_value()),
-        // Ctrl+Shift+L is the filter key both other spreadsheets use, and nothing in the
-        // grid's own key map claims it.
-        ("filter", &["<Control><Shift>l"][..], |ui| {
-            ui.grid.toggle_filter()
-        }),
-        ("names", &[][..], |ui| ui.manage_names()),
-        ("chart-insert", &[][..], |ui| ui.chart_dialog(None)),
-        ("calculations", &["<Control><Shift>f"][..], |ui| {
-            ui.explore_calculations()
-        }),
-        ("explain-formula", &["<Control><Shift>e"][..], |ui| {
-            ui.formula_bar.explain.popup()
-        }),
-        ("sheet-add", &[][..], |ui| ui.add_sheet()),
-        ("sheet-rename", &[][..], |ui| ui.rename_sheet()),
-        ("sheet-delete", &[][..], |ui| ui.delete_sheet()),
         // F8 is the "next problem" key every IDE has; nothing in the grid's own key map
         // claims it. `doc/dsl.md` §4.3 — the rules are the core's, this is a list in front
         // of them.
-        ("lint", &["F8"][..], |ui| {
+        verb("lint", &["F8"], "Check the Document", "Document", |ui| {
             lint::present(&ui.window, &ui.app, &ui.grid)
         }),
-        ("shortcuts", &["<Control>question"][..], |ui| ui.shortcuts()),
-        ("about", &[][..], |ui| ui.about()),
+        verb(
+            "calculations",
+            &["<Control><Shift>f"],
+            "Find a Calculation…",
+            "Document",
+            |ui| ui.explore_calculations(),
+        ),
+        verb("names", &[], "Names…", "Document", |ui| ui.manage_names()),
+        // --- the selection ---
+        //
+        // The clipboard four have no accelerator here: `keymap.rs` already owns Ctrl+C/X/V
+        // and Delete inside the grid, and a second binding for the same key is how one
+        // shortcut ends up doing two things. They are `win.` actions so the context menu and
+        // the palette can reach what the keyboard already could.
+        verb("copy", &[], "Copy", "Selection", |ui| ui.grid.copy(false)),
+        verb("cut", &[], "Cut", "Selection", |ui| ui.grid.copy(true)),
+        verb("paste", &[], "Paste", "Selection", |ui| ui.grid.paste()),
+        verb("copy-value", &[], "Copy Value", "Selection", |ui| {
+            ui.grid.copy_value()
+        }),
+        verb("clear", &[], "Clear Contents", "Selection", |ui| {
+            ui.grid.clear()
+        }),
+        verb(
+            "select-all",
+            &[],
+            "Select the Whole Sheet",
+            "Selection",
+            |ui| ui.grid.select_all(),
+        ),
+        verb("fill-down", &[], "Fill Down", "Selection", |ui| {
+            ui.grid.fill(keymap::Dir::Down)
+        }),
+        verb("fill-right", &[], "Fill Right", "Selection", |ui| {
+            ui.grid.fill(keymap::Dir::Right)
+        }),
+        // Ctrl+Shift+L is the filter key both other spreadsheets use, and nothing in the
+        // grid's own key map claims it.
+        verb(
+            "filter",
+            &["<Control><Shift>l"],
+            "Filter Rows",
+            "Selection",
+            |ui| ui.grid.toggle_filter(),
+        ),
+        verb("chart-insert", &[], "Insert a Chart…", "Selection", |ui| {
+            ui.chart_dialog(None)
+        }),
+        verb(
+            "explain-formula",
+            &["<Control><Shift>e"],
+            "Explain This Formula",
+            "Selection",
+            |ui| ui.formula_bar.explain.popup(),
+        ),
+        // --- the sheets ---
+        verb("sheet-add", &[], "Add a Sheet", "Sheets", |ui| {
+            ui.add_sheet()
+        }),
+        verb("sheet-rename", &[], "Rename This Sheet…", "Sheets", |ui| {
+            ui.rename_sheet()
+        }),
+        verb("sheet-delete", &[], "Delete This Sheet", "Sheets", |ui| {
+            ui.delete_sheet()
+        }),
+        // --- the view ---
+        //
+        // Both spellings of the key, because a keyboard's `+` is `plus` with Shift and
+        // `equal` without, and a user pressing Ctrl and the key next to Backspace means one
+        // thing by it either way.
+        verb(
+            "zoom-in",
+            &["<Control>plus", "<Control>equal", "<Control>KP_Add"],
+            "Zoom In",
+            "View",
+            |ui| ui.grid.set_zoom(ui.grid.zoom() * grid::ZOOM_STEP),
+        ),
+        verb(
+            "zoom-out",
+            &["<Control>minus", "<Control>KP_Subtract"],
+            "Zoom Out",
+            "View",
+            |ui| ui.grid.set_zoom(ui.grid.zoom() / grid::ZOOM_STEP),
+        ),
+        verb(
+            "zoom-reset",
+            &["<Control>0", "<Control>KP_0"],
+            "Normal Size",
+            "View",
+            |ui| ui.grid.set_zoom(1.0),
+        ),
+        verb("autofit-all", &[], "Fit Content to Cells", "View", |ui| {
+            ui.grid.autofit_all()
+        }),
+        // --- the window ---
+        //
+        // The palette cannot list itself: a row that opens the box it is being read in is a
+        // row that does nothing, which is why this one has no title.
+        verb("palette", &["<Control>k"], "", "Window", |ui| {
+            palette::present(&ui.window, palette_rows())
+        }),
+        verb(
+            "shortcuts",
+            &["<Control>question"],
+            "Keyboard Shortcuts",
+            "Window",
+            |ui| ui.shortcuts(),
+        ),
+        verb("about", &[], "About Sheet", "Window", |ui| ui.about()),
     ]
 }
 
-/// The primary menu, slimmed to the HIG's idea of one: file and window-level items only.
-/// The document tools that used to pile up here live in the tool strip's Calculate and
-/// View pages (`chrome::tools`), where they are visible instead of buried.
+/// The primary menu: **the document and the window, and nothing about the selection.**
+///
+/// That is the HIG's rule for one, and applying it is what finally sizes this menu. Anything
+/// acting on cells is in the grid's context menu, where the cells are; anything about how the
+/// document is *shown* is in the View menu beside it; the two sheet verbs are on the sheet's
+/// own tab. What is left is the four file verbs, the three things a person does to a document
+/// as a whole, and the two window items — which is a menu somebody can read to the end.
+///
+/// *Find a Command* is here because a menu is where a reader goes when they do not know where
+/// something is, and the honest answer to that is now the palette.
 fn primary_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     let files = gio::Menu::new();
@@ -1760,16 +1926,15 @@ fn primary_menu() -> gio::Menu {
     files.append(Some("Save As…"), Some("win.save-as"));
     menu.append_section(None, &files);
 
-    let sheets = gio::Menu::new();
-    sheets.append(Some("Add Sheet"), Some("win.sheet-add"));
-    sheets.append(Some("Rename Sheet…"), Some("win.sheet-rename"));
-    sheets.append(Some("Delete Sheet"), Some("win.sheet-delete"));
-    sheets.append(Some("Insert Chart…"), Some("win.chart-insert"));
-    menu.append_section(None, &sheets);
+    let document = gio::Menu::new();
+    document.append(Some("Recalculate"), Some("win.recalc"));
+    document.append(Some("Check the Document"), Some("win.lint"));
+    document.append(Some("Find a Calculation…"), Some("win.calculations"));
+    document.append(Some("Names…"), Some("win.names"));
+    menu.append_section(None, &document);
 
     let rest = gio::Menu::new();
-    rest.append(Some("Check Document"), Some("win.lint"));
-    rest.append(Some("Show Source"), Some("win.show-source"));
+    rest.append(Some("Find a Command…"), Some("win.palette"));
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Sheet"), Some("win.about"));
     menu.append_section(None, &rest);
@@ -1886,6 +2051,165 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
         }
         window.close();
     });
+}
+
+#[cfg(test)]
+mod chrome_tests {
+    use super::*;
+
+    /// Every `win.` action a menu model points at, found by walking it.
+    ///
+    /// `gio::Menu` is GIO rather than GTK, so this needs no display — which is the whole
+    /// reason the menus are built by a function that returns one instead of inline.
+    fn targets(model: &gio::MenuModel) -> Vec<String> {
+        let mut found = Vec::new();
+        for item in 0..model.n_items() {
+            if let Some(action) = model
+                .item_attribute_value(item, gio::MENU_ATTRIBUTE_ACTION, None)
+                .and_then(|value| value.get::<String>())
+            {
+                found.push(action);
+            }
+            for link in [gio::MENU_LINK_SECTION, gio::MENU_LINK_SUBMENU] {
+                if let Some(child) = model.item_link(item, link) {
+                    found.extend(targets(&child));
+                }
+            }
+        }
+        found
+    }
+
+    /// Every action this window answers to: the verbs, plus the four readings `wire` builds
+    /// by hand.
+    fn every_action() -> Vec<&'static str> {
+        actions()
+            .into_iter()
+            .map(|verb| verb.name)
+            .chain(READINGS.iter().map(|(name, _, _)| *name))
+            .collect()
+    }
+
+    /// A menu item naming an action that does not exist is silent: GTK draws the row and
+    /// greys it out, so it looks like a feature that is merely unavailable. This is the check
+    /// that says so out loud instead — over **every** menu this window has, which is why each
+    /// of the four is a function returning a model rather than one built inline.
+    #[test]
+    fn every_menu_item_names_an_action_the_window_has() {
+        let known = every_action();
+        for (where_, model) in [
+            ("the primary menu", primary_menu()),
+            ("the View menu", chrome::view_menu_model()),
+            ("the sheet tab menu", chrome::tab_menu_model()),
+            ("the cell menu", grid::cell_menu_model()),
+        ] {
+            for action in targets(&model.upcast()) {
+                let name = action.strip_prefix("win.").unwrap_or(&action);
+                assert!(
+                    known.contains(&name),
+                    "{where_} points at win.{name}, which no verb declares"
+                );
+            }
+        }
+    }
+
+    /// The surfaces are supposed to divide the verbs, not repeat them: a verb in two menus is
+    /// two places to keep in step and two answers to "where is it".
+    ///
+    /// The exceptions are the two that are genuinely about different things depending on where
+    /// they are asked from, and they are listed rather than allowed by a rule.
+    #[test]
+    fn a_verb_lives_in_one_menu() {
+        let mut seen: Vec<(String, &str)> = Vec::new();
+        for (where_, model) in [
+            ("the primary menu", primary_menu()),
+            ("the View menu", chrome::view_menu_model()),
+            ("the sheet tab menu", chrome::tab_menu_model()),
+            ("the cell menu", grid::cell_menu_model()),
+        ] {
+            for action in targets(&model.upcast()) {
+                // `names` is the one verb that is both: naming *this range* from the cells,
+                // and managing every name from the document menu.
+                if action == "win.names" {
+                    continue;
+                }
+                if let Some((_, first)) = seen.iter().find(|(seen, _)| *seen == action) {
+                    panic!("{action} is in {first} and again in {where_}");
+                }
+                seen.push((action, where_));
+            }
+        }
+    }
+
+    /// **The growth rule, made mechanical** (`doc/sheet-shell.md`, "Four surfaces").
+    ///
+    /// Every verb this window has is in the command palette, because the palette is built
+    /// from the same table `wire` is. A feature therefore cannot be added without becoming
+    /// findable — which is what stops the next one from becoming a button instead.
+    ///
+    /// The one exception is named rather than assumed: the palette cannot list the command
+    /// that opens the palette.
+    #[test]
+    fn every_verb_is_in_the_palette_or_is_the_palette() {
+        let listed: Vec<&str> = palette_rows().iter().map(|row| row.name).collect();
+        for name in every_action() {
+            if name == "palette" {
+                assert!(
+                    !listed.contains(&name),
+                    "the palette must not offer to open itself"
+                );
+                continue;
+            }
+            assert!(
+                listed.contains(&name),
+                "win.{name} is a verb this window has and the palette does not offer — \
+                 give it a title in `actions()`, or say here why it has none"
+            );
+        }
+    }
+
+    /// One action, one row. Two verbs sharing a name is one shadowing the other at
+    /// `add_action`, and the loser simply never runs.
+    #[test]
+    fn no_two_verbs_share_a_name() {
+        let mut names = every_action();
+        let count = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), count, "a duplicate action name");
+    }
+
+    /// A reading is wired by hand, so it must not also be in `actions()` — `add_action` would
+    /// replace the stateful one with a plain verb and the check marks would stop working.
+    #[test]
+    fn a_reading_is_never_also_a_plain_verb() {
+        let verbs: Vec<&str> = actions().into_iter().map(|verb| verb.name).collect();
+        for (name, _, _) in READINGS {
+            assert!(
+                !verbs.contains(&name),
+                "{name} is both a reading and a verb"
+            );
+        }
+    }
+
+    /// Every verb a person can find is one they can read. A title with no group would sort
+    /// into a palette section that does not exist.
+    #[test]
+    fn every_findable_verb_says_what_it_is_and_what_it_is_about() {
+        for verb in actions() {
+            if verb.title.is_empty() {
+                continue;
+            }
+            assert!(!verb.group.is_empty(), "{} has no group", verb.name);
+            // Sentence case with the shell's own capitals, never a trailing full stop: these
+            // are labels, and a label that ends in a stop reads as a sentence cut short.
+            assert!(
+                !verb.title.ends_with('.'),
+                "{}'s title ends in a stop: {:?}",
+                verb.name,
+                verb.title
+            );
+        }
+    }
 }
 
 #[cfg(test)]

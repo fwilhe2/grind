@@ -62,7 +62,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
 | `doc/projection-sheet.md` | **The projection's grammar for the spreadsheet, executable rather than descriptive.** Every node with a one-line example the test really reads, and every field of `Document`/`Sheet` with the node that carries it or a named gap. `sheet/tests/projection_scope.rs` is `doc/dsl.md` §3.7 made mechanical |
 | `doc/projection-text.md` | **The projection's grammar for the word processor** — the twin, and the one where §3.7 is kept *literally*: a text document has an element scope line (`doc/text-core.md`), so every element `grind_text::implemented()` returns must have a node, a piece of inline notation, or a named gap. `text/tests/projection_scope.rs` is that check. Images are the one gap, and the section on them is why |
-| `doc/sheet-shell.md` | Phase 9's work plan for the **spreadsheet's** GTK shell — normative for that phase |
+| `doc/sheet-shell.md` | Phase 9's work plan for the **spreadsheet's** GTK shell — normative for that phase, and its "Four surfaces" section is normative for that window's chrome: which of the four surfaces a control may go in, and why only the command palette is allowed to grow |
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
@@ -411,6 +411,22 @@ double-click to autofit a column or clear a row, both surviving a LibreOffice ro
 M10 adds row auto-height (a row without a height of its own is measured from what is in it,
 so a wrapped cell and an oversized font are drawn whole) and zoom (Ctrl+wheel,
 Ctrl+`+`/`-`/`0`) — one factor in `Grid::geom`, with nothing measured ever stored zoomed.
+
+**The chrome was then reworked, and `doc/sheet-shell.md`'s "Four surfaces" is normative for
+it.** The problem it answers: every new feature was becoming another toolbar button. The cause
+was not inattention — it was that the mode-switched tool row's three pages were three
+*different kinds* of control (a property inspector, view state, and a list of verbs with no
+membership rule), so every verb landed on the third page. The rework gives each kind the
+surface its kind wants and gives verbs one that is *meant* to grow: a **header bar** fixed at
+five slots, one **format bar** whose admission test is "reads and writes a property of the
+selection" (so `CellStyle` + `numfmt::Format` bound it), **context menus** on the cells, the
+sheet tab, the headers and the charts, and a **Ctrl+K command palette** (`ui_sheet_gtk/src/palette.rs`)
+for everything else. The palette is a view over `main.rs`'s own `actions()` table, so a verb
+cannot be added without becoming findable — the growth rule is structural, not a habit — and
+`main.rs`'s `chrome_tests` walk every `gio::Menu` in the window to check it, with no display
+needed. The tab strip's removal also takes away the one piece of this window that resembled a
+ribbon at all. `grind_core::search::score` came out of `ui_web/src/command.rs` in the same
+change, so the two shells with a palette rank a query the same way.
 
 **M9** brought packaging under `ui_sheet_gtk/data/` (`.desktop`, AppStream metainfo, a scalable
 icon — nothing builds or installs them yet, since this is a pure Cargo workspace), a

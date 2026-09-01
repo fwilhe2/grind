@@ -2,11 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Everything around the grid: the formula bar, the sheet tabs and the status bar.
+//! Everything around the grid: the format bar, the View menu, the formula bar, the sheet tabs
+//! and the status bar.
 //!
 //! None of it owns anything either. Each piece reads what it needs from [`App`] when it is
 //! asked to refresh, and writes through the grid or through `App` — the same rule the grid
 //! follows, applied to the parts that are made of ordinary widgets.
+//!
+//! Three of the four surfaces `doc/sheet-shell.md`'s "Four surfaces" names live here — the
+//! format bar, the View menu and the sheet tab's context menu — and each carries the admission
+//! test that keeps it from growing. The fourth, the command palette, is [`crate::palette`].
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,7 +20,7 @@ use std::sync::Arc;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use gtk::glib;
+use gtk::{gio, glib};
 
 use grind_sheet::formula::friendly;
 use grind_sheet::{App, CellValue, Pos, a1};
@@ -624,114 +629,37 @@ fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
     button
 }
 
-/// The tool strip: a small mode switch — Format · Calculate · View — in front of a stack
-/// of tool rows, one visible at a time.
+/// The format bar — **the window's only toolbar**, and the one with a membership rule.
 ///
-/// The GNOME shape of "more tools than one row holds": plain linked toggle buttons over a
-/// `gtk::Stack` (`AdwToggleGroup` is libadwaita 1.7; this shell pins 1.5), and the mode
-/// never changes itself — chrome that moves under the pointer is the one ribbon behaviour
-/// deliberately not copied here. Every button activates a `win.` action the window already
-/// owns, so the strip adds reachability, never capability, and the parity ratchet is
-/// untouched.
-pub fn tools(grid: &Grid, format: &impl IsA<gtk::Widget>) -> gtk::Box {
-    let stack = gtk::Stack::new();
-    stack.add_named(format, Some("Format"));
-    stack.add_named(&calculate_tools(), Some("Calculate"));
-    stack.add_named(&view_tools(grid), Some("View"));
-
-    let modes = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    modes.add_css_class("linked");
-    let mut first: Option<gtk::ToggleButton> = None;
-    for name in ["Format", "Calculate", "View"] {
-        let button = gtk::ToggleButton::builder()
-            .label(name)
-            .active(first.is_none())
-            .build();
-        match &first {
-            Some(first) => button.set_group(Some(first)),
-            None => first = Some(button.clone()),
-        }
-        button.connect_toggled(glib::clone!(
-            #[weak]
-            stack,
-            move |button| {
-                if button.is_active() {
-                    stack.set_visible_child_name(name);
-                }
-            }
-        ));
-        modes.append(&button);
-    }
-
+/// `doc/sheet-shell.md`'s "Four surfaces": a control belongs here when it *reads and writes a
+/// property of the selection*, and nowhere else does. That admission test is what closes the
+/// bar: `CellStyle` and `numfmt::Format` are finite vocabularies, so the bar is finite too,
+/// and the next feature — which will be a verb — has a different home to go to.
+///
+/// It replaced a three-page mode switch (Format · Calculate · View). The switch was the right
+/// instinct and the wrong axis: *Format* was a property inspector, *View* was view state that
+/// writes nothing at all, and *Calculate* was a list of verbs with no membership rule — so
+/// every new verb landed there, and the page grew until it was the toolbar problem again with
+/// one more click in front of it. Dropping the tab strip also removes the only piece of this
+/// window that resembled a ribbon at all, which settles that question by construction rather
+/// than by argument.
+pub fn format_bar(strip: &impl IsA<gtk::Widget>) -> gtk::Box {
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     bar.add_css_class("toolbar");
-    bar.append(&modes);
-    bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    bar.append(&stack);
+    bar.append(strip);
     bar
 }
 
-/// The Calculate row: what was buried in the primary menu, as labelled buttons.
-fn calculate_tools() -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    for (icon, label, action, tooltip) in [
-        (
-            "view-refresh-symbolic",
-            "Recalculate",
-            "win.recalc",
-            "Recalculate Now (F9)",
-        ),
-        (
-            "dialog-information-symbolic",
-            "Explain",
-            "win.explain-formula",
-            "Explain Formula (Ctrl+Shift+E)",
-        ),
-        (
-            "edit-find-symbolic",
-            "Calculations",
-            "win.calculations",
-            "Find everything this document calculates (Ctrl+Shift+F)",
-        ),
-        (
-            "dialog-warning-symbolic",
-            "Check",
-            "win.lint",
-            "Check the document against `grind lint`'s rules — a stale value, a formula \
-             naming a sheet that is gone, anything the projection cannot carry (F8)",
-        ),
-        (
-            "user-bookmarks-symbolic",
-            "Names",
-            "win.names",
-            "Name a range, or manage the names",
-        ),
-        // The obvious `funnel-symbolic` is not in Adwaita — a missing icon draws as a blank
-        // box, so this uses the same chevron the grid draws in a filtered heading cell.
-        (
-            "pan-down-symbolic",
-            "Filter",
-            "win.filter",
-            "Filter the selected rows by a column's values, or clear the filter \
-             (Ctrl+Shift+L)",
-        ),
-        // No Fill Down / Fill Right buttons: the grid's fill handle is where a fill is
-        // reached from, and Ctrl+D / Ctrl+R still work. The actions stay on the window.
-        (
-            "edit-copy-symbolic",
-            "Copy Value",
-            "win.copy-value",
-            "Copy what the cells show, not the formulas behind them (Ctrl+Shift+C)",
-        ),
-    ] {
-        row.append(&tool_button(icon, label, action, tooltip));
-    }
-    row
-}
-
-/// The View row: the zoom, with its level readable and clickable in the middle, autofit,
-/// and the friendly-formulas toggle — whose checked state is the stateful action's own.
-fn view_tools(grid: &Grid) -> gtk::Box {
+/// The View button: the zoom, autofit, and `doc/view-modes.md`'s readings, in a menu.
+///
+/// A **menu**, not a row of toggles, because none of this is about the selection: it is what
+/// the window is doing with the document, which is what the HIG's view menu is for and where
+/// every GNOME application with a zoom keeps it. Each reading is a stateful `win.` action, so
+/// the check mark beside it is the action's own state rather than something kept in step here.
+///
+/// The zoom is a custom child of the menu — the level readable in the middle and clickable to
+/// go back to 100%, the pattern the file manager and the document viewer both use.
+pub fn view_menu(grid: &Grid) -> gtk::MenuButton {
     let out = gtk::Button::builder()
         .icon_name("zoom-out-symbolic")
         .action_name("win.zoom-out")
@@ -741,9 +669,10 @@ fn view_tools(grid: &Grid) -> gtk::Box {
         .label("100 %")
         .action_name("win.zoom-reset")
         .tooltip_text("Back to normal size")
+        .hexpand(true)
         .build();
     level.add_css_class("numeric");
-    let level_in = gtk::Button::builder()
+    let in_ = gtk::Button::builder()
         .icon_name("zoom-in-symbolic")
         .action_name("win.zoom-in")
         .tooltip_text("Zoom In")
@@ -755,90 +684,78 @@ fn view_tools(grid: &Grid) -> gtk::Box {
     ));
     let zoom = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     zoom.add_css_class("linked");
-    for button in [&out, &level, &level_in] {
+    zoom.set_margin_top(6);
+    zoom.set_margin_bottom(6);
+    zoom.set_margin_start(6);
+    zoom.set_margin_end(6);
+    for button in [&out, &level, &in_] {
         button.add_css_class("flat");
         zoom.append(button);
     }
 
-    let friendly = gtk::ToggleButton::builder()
-        .label("Friendly Formulas")
-        .action_name("win.friendly-formulas")
-        .tooltip_text("Read a formula as a sentence while it is not being edited")
-        .build();
-    friendly.add_css_class("flat");
-
-    // `doc/view-modes.md`'s overlays, linked because they are two readings of the same
-    // document and a reader turns one on to answer a question and off again. Neither
-    // changes the file, which is the whole reason they can live on a toolbar rather than
-    // behind a confirmation.
-    let modes = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    modes.add_css_class("linked");
-    for (label, action, tooltip) in [
-        (
-            "Names",
-            "win.show-names",
-            "Show where each named expression lives, inside the cell it is bound to",
-        ),
-        (
-            "Roles",
-            "win.show-roles",
-            "Colour every cell by what it is: an input, a computed value, a label, \
-             an unnamed constant",
-        ),
-        // `doc/dsl.md` §6 — the third reading, and the only one that shows the *whole*
-        // document rather than marking up the cells on screen.
-        (
-            "Source",
-            "win.show-source",
-            "Show the document as its projection — the same document, spelled as plain text",
-        ),
-    ] {
-        let toggle = gtk::ToggleButton::builder()
-            .label(label)
-            .action_name(action)
-            .tooltip_text(tooltip)
-            .build();
-        toggle.add_css_class("flat");
-        modes.append(&toggle);
-    }
-
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    row.append(&zoom);
-    row.append(&tool_button(
-        "zoom-fit-best-symbolic",
-        "Fit Content",
-        "win.autofit-all",
-        "Resize every column and row to fit what is in it",
-    ));
-    row.append(&friendly);
-    row.append(&modes);
-    row
+    let popover = gtk::PopoverMenu::from_model(Some(&view_menu_model()));
+    // `add_child` answers whether the model really had a slot by that name. A silent `false`
+    // is a zoom row that simply is not there — the menu still opens, so nothing says so —
+    // which is exactly the failure a debug assertion is for.
+    let placed = popover.add_child(&zoom, "zoom");
+    debug_assert!(placed, "the View menu has no custom slot called `zoom`");
+    gtk::MenuButton::builder()
+        .icon_name("view-reveal-symbolic")
+        .tooltip_text("How this document is shown — zoom, and what the cells are coloured by")
+        .popover(&popover)
+        .build()
 }
 
-/// An icon-and-label button that activates a window action — the tool rows' one shape.
-fn tool_button(icon: &str, label: &str, action: &str, tooltip: &str) -> gtk::Button {
-    let content = libadwaita::ButtonContent::builder()
-        .icon_name(icon)
-        .label(label)
-        .build();
-    let button = gtk::Button::builder()
-        .child(&content)
-        .action_name(action)
-        .tooltip_text(tooltip)
-        .build();
-    button.add_css_class("flat");
-    button
+/// What the View button holds, without the widgets — walkable by `main.rs`'s ratchet, which
+/// is why the model is separated from the button the way the other two menus are.
+pub fn view_menu_model() -> gio::Menu {
+    let model = gio::Menu::new();
+    // The zoom row, as a menu item with a widget in it — `PopoverMenu::add_child` supplies
+    // the widget for the `custom` attribute this item carries and nothing else.
+    let sizing = gio::Menu::new();
+    let slot = gio::MenuItem::new(None, None);
+    slot.set_attribute_value("custom", Some(&"zoom".to_variant()));
+    sizing.append_item(&slot);
+    sizing.append(Some("Fit Content to Cells"), Some("win.autofit-all"));
+    model.append_section(None, &sizing);
+
+    // The three readings, plus the formula bar's own. Every one of them writes nothing —
+    // `doc/view-modes.md` §9 — which is exactly why they can sit in a menu with no
+    // confirmation, no dirty flag and no undo entry behind them.
+    let readings = gio::Menu::new();
+    readings.append(Some("Show Where Names Live"), Some("win.show-names"));
+    readings.append(Some("Show What Each Cell Is"), Some("win.show-roles"));
+    readings.append(Some("Show the Source"), Some("win.show-source"));
+    model.append_section(None, &readings);
+
+    let formulas = gio::Menu::new();
+    formulas.append(
+        Some("Read Formulas as Sentences"),
+        Some("win.friendly-formulas"),
+    );
+    model.append_section(None, &formulas);
+    model
 }
 
 /// The sheet tab strip: one toggle button per sheet, and a `+`.
 ///
 /// Plain buttons rather than `adw::TabBar`, which is for documents in a window and brings
 /// close buttons and drag-to-detach with it — the wrong tool with the right name.
+///
+/// **Renaming and deleting live on the tab**, in a right-click menu, rather than in the
+/// primary menu where they used to be. That is the HIG's rule for anything that acts on a
+/// piece of content — the primary menu is for the window and the document as a whole — and it
+/// is also the only spelling that says *which* sheet: a menu item three surfaces away from the
+/// tab strip has to mean "the current one" and hope the reader agrees.
 pub struct Tabs {
     pub widget: gtk::Box,
     strip: gtk::Box,
     app: Arc<App>,
     grid: Grid,
+    /// The right-click menu, built once and re-pointed per opening — `grid.rs`'s hide and
+    /// chart menus for the same reason: a popover per tab is a popover per rebuild, and the
+    /// strip rebuilds on every change to the document.
+    menu: gtk::PopoverMenu,
     /// Set while the strip is being rebuilt, so that toggling a button programmatically
     /// does not read as the user picking a sheet.
     rebuilding: Rc<Cell<bool>>,
@@ -863,11 +780,21 @@ impl Tabs {
         widget.append(&strip);
         widget.append(add);
 
+        let menu = gtk::PopoverMenu::from_model(Some(&tab_menu_model()));
+        // Parented on the **bar**, not on the strip inside it. `refresh` empties the strip by
+        // walking `first_child`, and a popover attached with `set_parent` is a child like any
+        // other to that walk — so parenting it there unparents it on the first rebuild, and
+        // the next right-click pops up a popover with no native ancestor. (It crashes; this
+        // comment is the reason the parent looks one level too high.) The bar's own two
+        // children never change.
+        menu.set_parent(&widget);
+
         let tabs = Rc::new(Self {
             widget,
             strip,
             app: app.clone(),
             grid: grid.clone(),
+            menu,
             rebuilding: Rc::new(Cell::new(false)),
         });
         tabs.refresh();
@@ -904,10 +831,59 @@ impl Tabs {
                     }
                 }
             ));
+
+            // Right-click: this sheet's own two verbs. The tab is selected first, because
+            // both actions mean "the sheet being shown" and a menu that renamed a *different*
+            // sheet from the one clicked would be worse than no menu.
+            let secondary = gtk::GestureClick::new();
+            secondary.set_button(gtk::gdk::BUTTON_SECONDARY);
+            secondary.connect_pressed(glib::clone!(
+                #[strong(rename_to = tabs)]
+                self,
+                #[weak]
+                button,
+                move |_, _, x, y| {
+                    tabs.grid.set_sheet(index);
+                    // The menu is parented on the bar, so the point it is given has to be in
+                    // the bar's coordinates rather than the clicked button's.
+                    let at = button
+                        .compute_point(&tabs.widget, &gtk::graphene::Point::new(x as f32, y as f32))
+                        .unwrap_or_else(|| gtk::graphene::Point::new(x as f32, y as f32));
+                    tabs.menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
+                        at.x() as i32,
+                        at.y() as i32,
+                        1,
+                        1,
+                    )));
+                    tabs.menu.popup();
+                }
+            ));
+            button.add_controller(secondary);
+
             self.strip.append(&button);
         }
         self.rebuilding.set(false);
     }
+}
+
+impl Drop for Tabs {
+    /// A popover parented on a widget outlives that widget unless it is unparented — the same
+    /// disposal `grid.rs` does for its three.
+    fn drop(&mut self) {
+        self.menu.unparent();
+    }
+}
+
+/// A sheet's own two verbs. Both are `win.` actions the window already owns and both act on
+/// the *current* sheet, which is why opening the menu selects the tab first.
+///
+/// A free function for [`crate::grid::cell_menu_model`]'s reason: `main.rs`'s ratchet walks
+/// every menu model in this window, and one built inline is one it cannot reach.
+pub fn tab_menu_model() -> gio::Menu {
+    let model = gio::Menu::new();
+    model.append(Some("Rename…"), Some("win.sheet-rename"));
+    model.append(Some("Delete"), Some("win.sheet-delete"));
+    model
 }
 
 /// The status bar: where the selection is, and what it adds up to.
@@ -961,8 +937,8 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
 
     // `doc/view-modes.md` §9: role mode suppresses the document's own colours, which is the
     // right call and still a surprise. It needs an indication that is *always* visible —
-    // the toolbar toggles live on the View row, which is one tab of three — and this is it:
-    // a button that says the mode is on and, being a button, turns it off.
+    // the toggle itself is inside the View menu, which is shut — and this is it: a button
+    // that says the mode is on and, being a button, turns it off.
     let modes = gtk::Button::builder()
         .visible(false)
         .action_name("win.show-roles")

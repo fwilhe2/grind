@@ -35,7 +35,7 @@ use libadwaita::gtk;
 use libadwaita::prelude::*;
 
 use grind_sheet::{App, Pos, a1};
-use gtk::glib;
+use gtk::{gio, glib};
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 
 use crate::geom::{GridGeom, HANDLE, MAX_COLS, MAX_ROWS, Sizes};
@@ -164,6 +164,34 @@ impl Grid {
     /// Fill down or right — the toolbar's twin of Ctrl+D / Ctrl+R.
     pub fn fill(&self, dir: Dir) {
         self.imp().fill(dir);
+    }
+
+    /// The clipboard four, as `win.` actions rather than only as keys.
+    ///
+    /// They existed here already — [`crate::keymap::Action`] has reached them since M5 — but only
+    /// from the keyboard, which meant the context menu `doc/sheet-shell.md`'s rework adds had
+    /// nothing to point at. A `win.` action is the one spelling a menu item, an accelerator
+    /// and a palette row can all share.
+    pub fn copy(&self, cut: bool) {
+        self.imp().copy(cut);
+    }
+
+    pub fn paste(&self) {
+        self.imp().paste();
+    }
+
+    /// Clear what is selected — Delete's twin, one undo step (`App::clear_range`).
+    pub fn clear(&self) {
+        self.imp().clear();
+    }
+
+    /// Select the used extent — Ctrl+A's twin.
+    pub fn select_all(&self) {
+        let (rows, cols) = self.imp().used_extent();
+        self.set_selection(Selection {
+            anchor: Pos::new(0, 0),
+            active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
+        });
     }
 
     /// Filter the selection, or clear the filter the sheet already has (§9.4) — the
@@ -469,6 +497,41 @@ mod tests {
     }
 }
 
+/// The right-click menu over the cells (`doc/sheet-shell.md`, "Four surfaces").
+///
+/// **Where a verb about the selection goes.** Every item is a `win.` action, which resolves up
+/// the widget tree to the window — so the grid lists these verbs and owns none of them, and an
+/// item cannot appear here that the palette and the shortcuts window do not also know about.
+/// Three sections, in the order a person reaches for them: what to do with the cells' content,
+/// what to do to the cells, and what the *range* is rather than what is in it — those last
+/// three being the ones that used to sit on the tool strip's Calculate page, where they were
+/// always about a selection and never about calculating.
+///
+/// A free function returning the model rather than one built inline, so that `main.rs`'s
+/// ratchet can walk it: an item naming an action nobody declares is silent at runtime.
+pub fn cell_menu_model() -> gio::Menu {
+    let model = gio::Menu::new();
+    let clipboard = gio::Menu::new();
+    clipboard.append(Some("Cut"), Some("win.cut"));
+    clipboard.append(Some("Copy"), Some("win.copy"));
+    clipboard.append(Some("Copy Value"), Some("win.copy-value"));
+    clipboard.append(Some("Paste"), Some("win.paste"));
+    model.append_section(None, &clipboard);
+
+    let edits = gio::Menu::new();
+    edits.append(Some("Clear Contents"), Some("win.clear"));
+    edits.append(Some("Fill Down"), Some("win.fill-down"));
+    edits.append(Some("Fill Right"), Some("win.fill-right"));
+    model.append_section(None, &edits);
+
+    let range = gio::Menu::new();
+    range.append(Some("Name This Range…"), Some("win.names"));
+    range.append(Some("Filter Rows"), Some("win.filter"));
+    range.append(Some("Insert Chart…"), Some("win.chart-insert"));
+    model.append_section(None, &range);
+    model
+}
+
 mod imp {
     use super::*;
 
@@ -675,6 +738,11 @@ mod imp {
         /// The right-click menu over a chart — *Edit* and *Delete*, built once and
         /// repositioned per opening, exactly as `hide_menu` is.
         pub chart_menu: OnceCell<gtk::Popover>,
+        /// The right-click menu over the **cells** (`doc/sheet-shell.md`'s four surfaces):
+        /// what a person can do to the selection, where the selection is. Built from a
+        /// `gio::Menu` of `win.` actions rather than by hand, so the same verbs the palette
+        /// and the keyboard reach are the ones listed here.
+        pub cell_menu: OnceCell<gtk::PopoverMenu>,
         /// Which chart that menu is currently open over.
         pub chart_menu_target: Cell<Option<usize>>,
         /// What the menu is currently open over: columns or rows, and the half-open range
@@ -781,6 +849,7 @@ mod imp {
                 hide_button: OnceCell::new(),
                 chart_menu: OnceCell::new(),
                 chart_menu_target: Cell::new(None),
+                cell_menu: OnceCell::new(),
                 hide_target: Cell::new(None),
             }
         }
@@ -852,6 +921,9 @@ mod imp {
                 menu.unparent();
             }
             if let Some(menu) = self.chart_menu.get() {
+                menu.unparent();
+            }
+            if let Some(menu) = self.cell_menu.get() {
                 menu.unparent();
             }
         }
@@ -940,6 +1012,11 @@ mod imp {
                 .build();
             chart_menu.set_parent(&*widget);
             let _ = self.chart_menu.set(chart_menu);
+
+            let cell_menu = gtk::PopoverMenu::from_model(Some(&super::cell_menu_model()));
+            cell_menu.set_parent(&*widget);
+            cell_menu.set_has_arrow(false);
+            let _ = self.cell_menu.set(cell_menu);
 
             self.editor.set_buffer(&self.buffer);
             // The caret moving is its own event: the completion and the signature hint are
@@ -1046,9 +1123,9 @@ mod imp {
             ));
             widget.add_controller(drag);
 
-            // Right-click: a chart, or a column or row header to hide it (§5.4). Both are
-            // deliberately narrow — over a header "hide" is the only thing a right click
-            // could mean, and over a chart it means the chart rather than the cells beneath.
+            // Right-click, in the order the things under the pointer overlap: a chart floats
+            // over the cells, a header means "hide" and nothing else (§5.4), and a cell means
+            // the selection it is part of.
             let secondary = gtk::GestureClick::new();
             secondary.set_button(gtk::gdk::BUTTON_SECONDARY);
             secondary.connect_pressed(glib::clone!(
@@ -1064,6 +1141,10 @@ mod imp {
                     let selection = imp.selection.get();
                     if let Some((is_cols, from, to)) = hide_range_for_hit(selection, hit) {
                         imp.open_hide_menu(x, y, is_cols, from, to);
+                        return;
+                    }
+                    if let Hit::Cell { row, col } = hit {
+                        imp.open_cell_menu(Pos::new(row, col), x, y);
                     }
                 }
             ));
@@ -1597,7 +1678,7 @@ mod imp {
             );
         }
 
-        fn used_extent(&self) -> (u32, u32) {
+        pub fn used_extent(&self) -> (u32, u32) {
             self.app
                 .borrow()
                 .as_ref()
@@ -2064,7 +2145,7 @@ mod imp {
         /// that the rectangle survives. The upgrade is quoting, in a codec shared with
         /// `sheet paste` — both halves split on tabs today and neither may grow a private
         /// dialect (`doc/plan.md` rule 4).
-        fn copy(&self, cut: bool) {
+        pub fn copy(&self, cut: bool) {
             let app = self.app.borrow().clone();
             let Some(app) = app else { return };
             let Some((start, end)) = self.clamped_selection() else {
@@ -2230,7 +2311,7 @@ mod imp {
         /// Asynchronous because the clipboard is: the data may be owned by another process
         /// that has to be asked for it. Every cell goes through the same typing rule a
         /// keystroke does, in one `Action::Batch`, so a paste is one undo step.
-        fn paste(&self) {
+        pub fn paste(&self) {
             let (start, _) = self.selection.get().rect();
             self.obj().clipboard().read_text_async(
                 gtk::gio::Cancellable::NONE,
@@ -2304,7 +2385,7 @@ mod imp {
         }
 
         /// Empty the selection — Delete, and one undo step whatever its size.
-        fn clear(&self) {
+        pub fn clear(&self) {
             let app = self.app.borrow().clone();
             let (Some(app), Some((start, end))) = (app, self.clamped_selection()) else {
                 return;
@@ -2845,6 +2926,31 @@ mod imp {
                 (false, true) => "Hide Rows",
                 (false, false) => "Hide Row",
             });
+            menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            menu.popup();
+        }
+
+        /// The right-click menu over the cells, at the point it was clicked.
+        ///
+        /// **A cell outside the selection becomes the selection first.** That is what every
+        /// grid does and what the menu's own wording assumes: *Clear Contents* on a right
+        /// click three cells away from a selection nobody can see any more is the one way a
+        /// context menu destroys work.
+        fn open_cell_menu(&self, pos: Pos, x: f64, y: f64) {
+            let Some(menu) = self.cell_menu.get() else {
+                return;
+            };
+            // An edit in progress is stored first, exactly as a left click elsewhere does —
+            // the menu's verbs are about cells, and half-typed text is not in one yet.
+            if self.mode.get().is_editing() {
+                self.commit(None);
+            }
+            let (start, end) = self.selection.get().rect();
+            let inside = (start.row..=end.row).contains(&pos.row)
+                && (start.col..=end.col).contains(&pos.col);
+            if !inside {
+                self.set_selection(Selection::at(pos));
+            }
             menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
             menu.popup();
         }
