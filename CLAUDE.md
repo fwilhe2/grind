@@ -435,9 +435,13 @@ files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section a
 so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
 selection move, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
 manifest was the one "stretch" item and was skipped. `.github/workflows/packaging.yml` builds
-`.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for both `grind-cli` and
-`grind-sheet-gtk`, reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in
-each crate's `Cargo.toml`, as artifacts on every push — not yet attached to a release.
+`.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for **every binary the suite
+has** — `grind-cli`, `grind-sheet-gtk`, `grind-text-gtk` and `grind-tui` — reading the
+`[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in each crate's `Cargo.toml`, as
+artifacts on every push — not yet attached to a release. A shell that is not named there is
+invisible in exactly the way a feature with no line in `examples/sample-*.sh` is: adding one
+means adding its two manifest blocks, its `data/` (`.desktop`, metainfo, icon under its own app
+ID) and its two lines in that workflow. The **meta-package** is what S11 still owes.
 
 `ui_web/` is the wasm shell — rule 5's honest test, and it needed no core change: a document
 arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download
@@ -593,5 +597,7 @@ specification and guide (D11, D12) and the generator's guide (D14). Each needs t
 check its genre allows, because a document nothing checks drifts.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
-the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
-is where `grind-text-gtk` gets its `.desktop` file, its metainfo, its icon and its packages.
+the same trait, so one breaker serves both applications. Then S11 — packaging the suite. Its
+per-app half is done (`grind-text-gtk` has its `.desktop` file, metainfo, icon and packages
+beside the spreadsheet's); what remains is the meta-package that depends on the four, the
+container, and the README as a suite pitch.

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<component type="desktop-application">
+  <id>io.github.fwilhe2.Text</id>
+  <name>Text</name>
+  <summary>An ODF-native word processor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <developer id="io.github.fwilhe2">
+    <name>Florian Wilhelm</name>
+  </developer>
+  <description>
+    <p>
+      Text reads and writes OpenDocument Text (.odt, .fodt) files directly, against the OASIS
+      ODF specification rather than through a translation layer. It is not a port of
+      LibreOffice and shares no code with it.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.fwilhe2.Text.desktop</launchable>
+  <url type="homepage">https://github.com/fwilhe2/sheet</url>
+  <url type="vcs-browser">https://github.com/fwilhe2/sheet</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.0.0" date="2026-09-02" />
+  </releases>
+</component>

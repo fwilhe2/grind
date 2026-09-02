@@ -33,6 +33,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
+| Packaging | `.desktop`, AppStream metainfo and a scalable icon under `io.github.fwilhe2.Text` (`ui_text_gtk/data/`), and `.deb` + `.rpm` built by `packaging.yml` from the two `[package.metadata.*]` blocks — the twin of the spreadsheet's, since S11's binary split is what makes them two entries and not one | nothing to install |
 
 Both are renderers that own nothing: every paint reads `App::get_viewport` and
 `App::layout_block` and throws the result away. Neither has a text buffer, and neither has a
@@ -165,8 +166,7 @@ one shape in both windows.
 plumbing "on evidence, at S9, when the second shell shows the seam", and one *minimal* shell
 is not that evidence — this one copied the observer bridge, the `--render-to` harness and the
 window-close latch, which is three data points and the right time to look again is when either
-shell grows. No `.desktop` file, AppStream metainfo or icon, and no `[package.metadata.deb]`
-block: packaging is S11, which does all five packages at once. No shortcuts window. No a11y
+shell grows. No shortcuts window. No a11y
 beyond the floor (`Accessible::announce` on every caret move, as M9 requires). The document
 is re-laid-out in full whenever it or the width changes, so a very long document costs a pass
 per resize (`ponytail` in `view.rs`).

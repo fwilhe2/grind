@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Text
+Comment=An ODF-native word processor
+Exec=grind-text-gtk %f
+Icon=io.github.fwilhe2.Text
+Terminal=false
+Type=Application
+Categories=Office;WordProcessor;GTK;
+MimeType=application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.text-flat-xml;
+StartupNotify=true
