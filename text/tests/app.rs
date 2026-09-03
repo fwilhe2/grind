@@ -386,6 +386,11 @@ fn a_caret_edit_past_the_end_is_an_error_rather_than_a_panic() {
 /// exact because of it.
 const M: grind_text::Fixed = grind_text::Fixed;
 
+/// Every block set alike, in [`M`] — what a test that is not *about* faces asks through.
+fn plain(width: f32) -> grind_text::Uniform<'static> {
+    grind_text::Uniform::new(width, &grind_text::Fixed)
+}
+
 #[test]
 fn a_block_wraps_into_lines_at_a_width() {
     let app = app(&["the cat sat on the mat"]);
@@ -439,10 +444,10 @@ fn an_empty_block_is_still_one_line_of_the_metrics_own_height() {
 fn down_and_up_move_by_line_and_keep_the_goal_column() {
     let app = app(&["the cat sat on the mat"]);
     let start = caret(&app, "p1+3"); // "the|"
-    let goal = app.caret_x(start, 10.0, &M).expect("measures");
+    let goal = app.caret_x(start, &plain(10.0)).expect("measures");
     assert_eq!(goal, 3.0);
 
-    let down = app.caret_line(start, 1, goal, 10.0, &M).expect("moves");
+    let down = app.caret_line(start, 1, goal, &plain(10.0)).expect("moves");
     assert_eq!(
         down,
         grind_text::Caret {
@@ -451,23 +456,23 @@ fn down_and_up_move_by_line_and_keep_the_goal_column() {
         },
         "\"sat|\" on line 2"
     );
-    let back = app.caret_line(down, -1, goal, 10.0, &M).expect("moves");
+    let back = app.caret_line(down, -1, goal, &plain(10.0)).expect("moves");
     assert_eq!(back, start, "and back to where it came from");
 
     // Two lines at once — Page Down is the same operation with a bigger number.
-    let far = app.caret_line(start, 2, goal, 10.0, &M).expect("moves");
-    assert_eq!(app.caret_x(far, 10.0, &M).expect("measures"), 3.0);
+    let far = app.caret_line(start, 2, goal, &plain(10.0)).expect("moves");
+    assert_eq!(app.caret_x(far, &plain(10.0)).expect("measures"), 3.0);
 }
 
 #[test]
 fn down_carries_into_the_next_block_and_stops_at_the_document_edge() {
     let app = app(&["first", "second", "third"]);
     let start = caret(&app, "p1+2");
-    let goal = app.caret_x(start, 20.0, &M).expect("measures");
+    let goal = app.caret_x(start, &plain(20.0)).expect("measures");
 
     // Each block is one line at this width, so Down is a block move — the behaviour that makes
     // a document one flow rather than a list of boxes.
-    let next = app.caret_line(start, 1, goal, 20.0, &M).expect("moves");
+    let next = app.caret_line(start, 1, goal, &plain(20.0)).expect("moves");
     assert_eq!(
         next,
         grind_text::Caret {
@@ -475,19 +480,114 @@ fn down_carries_into_the_next_block_and_stops_at_the_document_edge() {
             offset: 2
         }
     );
-    let last = app.caret_line(next, 1, goal, 20.0, &M).expect("moves");
+    let last = app.caret_line(next, 1, goal, &plain(20.0)).expect("moves");
     assert_eq!(last.block, 2);
 
     // Off the bottom: it stops rather than erroring. A caret that cannot move is not a failure.
     assert_eq!(
-        app.caret_line(last, 1, goal, 20.0, &M).expect("stops"),
+        app.caret_line(last, 1, goal, &plain(20.0)).expect("stops"),
         last
     );
     let top = grind_text::Caret {
         block: 0,
         offset: 2,
     };
-    assert_eq!(app.caret_line(top, -1, goal, 20.0, &M).expect("stops"), top);
+    assert_eq!(
+        app.caret_line(top, -1, goal, &plain(20.0)).expect("stops"),
+        top
+    );
+}
+
+/// A motion that crosses a block boundary measures the block it *arrives* in.
+///
+/// The limitation `doc/text-shell.md` recorded after S10 and this closes: `caret_line` took one
+/// width and one provider, so Down-arrow out of a heading measured the paragraph below it with
+/// the heading's font — invisible in the middle of a line and wrong by a few characters at the
+/// ends, in both GUI shells at once, because both were asking the same question. A shell fixing
+/// it locally would have meant a shell doing its own line arithmetic, which is the thing Path C
+/// exists to prevent, so the provider is looked up per block instead ([`grind_text::Faces`]).
+///
+/// `Scaled` is the smallest thing that makes the difference assertable: two units per character
+/// for a heading and one for everything else, which is what a heading being set larger amounts
+/// to once the font is out of the way.
+#[test]
+fn a_motion_by_line_measures_the_block_it_arrives_in() {
+    struct Scaled(f32);
+    impl grind_text::Metrics for Scaled {
+        fn advances(&self, text: &str, _: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+            for (index, _) in text.chars().enumerate() {
+                out.push((index + 1) as f32 * self.0);
+            }
+        }
+        fn line_height(&self, _: &grind_core::style::TextStyle) -> f32 {
+            self.0
+        }
+    }
+
+    /// A heading twice as wide per character as a paragraph, at one measure — the two-face
+    /// document every GUI shell actually draws, with nothing but the scale left in it.
+    struct Faces {
+        heading: Scaled,
+        body: Scaled,
+    }
+    impl grind_text::Faces for Faces {
+        fn of(
+            &self,
+            _index: usize,
+            kind: &BlockKind,
+            _style: Option<&str>,
+        ) -> (f32, &dyn grind_text::Metrics) {
+            match kind {
+                BlockKind::Heading { .. } => (100.0, &self.heading),
+                _ => (100.0, &self.body),
+            }
+        }
+    }
+    let faces = Faces {
+        heading: Scaled(2.0),
+        body: Scaled(1.0),
+    };
+
+    let app = App::new();
+    app.insert(0, BlockKind::Heading { level: 1 }, "Heading")
+        .expect("inserts");
+    app.insert(1, BlockKind::Paragraph, "abcdefghij")
+        .expect("inserts");
+
+    // Three characters into the heading is six units across the window, and six units across
+    // the window is six characters into the body paragraph.
+    let start = caret(&app, "p1+3");
+    let goal = app.caret_x(start, &faces).expect("measures");
+    assert_eq!(goal, 6.0);
+    assert_eq!(
+        app.caret_line(start, 1, goal, &faces).expect("moves"),
+        Caret {
+            block: 1,
+            offset: 6
+        },
+        "the paragraph is measured in the paragraph's own face"
+    );
+
+    // And the bug, stated as the thing this is not: told the heading's face for the whole
+    // document, the same move lands three characters in — half the width and the wrong caret.
+    assert_eq!(
+        app.caret_line(
+            start,
+            1,
+            goal,
+            &grind_text::Uniform::new(100.0, &Scaled(2.0))
+        )
+        .expect("moves"),
+        Caret {
+            block: 1,
+            offset: 3
+        }
+    );
+
+    // Home and End are the same question about one block, and they are asked the same way, so
+    // the caret's own face is looked up rather than passed in.
+    let (home, end) = app.caret_line_bounds(start, &faces).expect("bounds");
+    assert_eq!((home.offset, end.offset), (0, 7));
 }
 
 #[test]
@@ -495,13 +595,13 @@ fn home_and_end_are_the_visual_line_not_the_paragraph() {
     let app = app(&["the cat sat on the mat"]);
     // A caret on the middle line: Home and End must give that line's ends, not the block's.
     let at = caret(&app, "p1+11");
-    let (home, end) = app.caret_line_bounds(at, 10.0, &M).expect("bounds");
+    let (home, end) = app.caret_line_bounds(at, &plain(10.0)).expect("bounds");
     assert_eq!(home.offset, 8);
     assert_eq!(end.offset, 15);
 
     // Unwrapped, the same caret's line is the whole block — which is the same code answering a
     // different question, not a special case.
-    let (home, end) = app.caret_line_bounds(at, 0.0, &M).expect("bounds");
+    let (home, end) = app.caret_line_bounds(at, &plain(0.0)).expect("bounds");
     assert_eq!((home.offset, end.offset), (0, 22));
 }
 

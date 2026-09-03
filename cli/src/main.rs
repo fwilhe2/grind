@@ -248,10 +248,14 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
         } => {
             let app = open_text(file)?;
             let caret = caret_at(&app, address)?;
-            let width = *width as f32;
+            // Every block set alike, at one unit per character: a terminal has one font, and
+            // so a document printed into one has one face. A GUI answers the same questions
+            // through a `Faces` that returns a different font per block, and the core does not
+            // know which of the two it is talking to.
+            let faces = grind_text::Uniform::new(*width as f32, &grind_text::Fixed);
             let moved = if *home || *end {
                 let (start, finish) = app
-                    .caret_line_bounds(caret, width, &grind_text::Fixed)
+                    .caret_line_bounds(caret, &faces)
                     .map_err(|e| e.to_string())?;
                 match home {
                     true => start,
@@ -260,17 +264,9 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             } else {
                 // The goal column is the caret's own x, because a single move from a script has
                 // no run of keystrokes to remember one from.
-                let goal = app
-                    .caret_x(caret, width, &grind_text::Fixed)
-                    .map_err(|e| e.to_string())?;
-                app.caret_line(
-                    caret,
-                    down.unwrap_or(0) as isize,
-                    goal,
-                    width,
-                    &grind_text::Fixed,
-                )
-                .map_err(|e| e.to_string())?
+                let goal = app.caret_x(caret, &faces).map_err(|e| e.to_string())?;
+                app.caret_line(caret, down.unwrap_or(0) as isize, goal, &faces)
+                    .map_err(|e| e.to_string())?
             };
             text_lines(vec![grind_text::loc::format_offset(
                 moved.block,

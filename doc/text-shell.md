@@ -82,13 +82,28 @@ a correct line in a terminal and a one-pixel gap on a screen. Found by the GTK s
 `an_empty_block_is_still_one_line_of_the_metrics_own_height` in `text/tests/app.rs`. This is
 the second shell paying for itself.
 
-**`App::caret_line` takes one width and one provider for a motion that may cross into a block
-set in a different face.** So Down-arrow out of a heading measures the paragraph below it with
+**`App::caret_line` took one width and one provider for a motion that may cross into a block
+set in a different face**, so Down-arrow out of a heading measured the paragraph below it with
 the heading's metrics: invisible mid-line, wrong by a few characters at the ends, and wrong in
-the same way in both shells because both are asking the same question. The fix is a *core*
-change — a provider looked up per block rather than passed once — and it is written here
-rather than worked around in a shell, because working around it would mean a shell doing its
-own line arithmetic, which is the thing Path C exists to prevent.
+the same way in both shells because both were asking the same question. Recorded here rather
+than worked around in a shell, because working around it would have meant a shell doing its own
+line arithmetic, which is the thing Path C exists to prevent — and **fixed since, in the core,
+which is the reason for writing it down here.** The three caret operations take a
+`grind_text::Faces` instead of a width and a provider: a lookup answering "which measure and
+which metrics is *this* block set in", asked as the motion reaches each block rather than once
+before it starts. `grind_text::Uniform` is the every-block-alike case, named rather than implied
+so that a caller reaching for it is *saying* the document is set in one face — what the CLI
+measures with at `--width`, and what a terminal wants, since it has one font at one size.
+
+Two things about the shape, both of which were forced rather than chosen. The trait is
+`grind-text`'s and not `grind_core::layout`'s beside `Metrics`, because a *block* is the word
+processor's vocabulary and **R8** keeps that out of the core; the core's half of the seam is
+unchanged and still asks only how wide a piece of text is. And a block is *described* to the
+lookup — its kind and its named style — rather than handed over, because `App` holds its read
+lock for the whole motion, so an implementation that called `get_viewport` to find out what it
+was being asked about would re-enter a lock it is already inside. Kind and style name are what
+every shell keys a face off anyway: `Title` and `Subtitle` are paragraphs whose only signal is
+the name.
 
 ## The gaps, written down
 

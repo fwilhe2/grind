@@ -211,14 +211,14 @@ impl Faces {
     /// A heading deeper than the six levels there are faces for is set as the last of them
     /// rather than refused: the reader is tolerant (R5), so a level-9 heading loads, and a
     /// shell that panicked on one would undo that.
-    fn of(&self, block: &BlockView) -> &Face {
-        match block.style.as_deref() {
+    fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
+        match style {
             Some("Title") => return &self.title,
             Some("Subtitle") => return &self.subtitle,
             Some(grind_text::markdown::PREFORMATTED) => return &self.code,
             _ => {}
         }
-        self.for_kind(&block.kind)
+        self.for_kind(kind)
     }
 
     fn for_kind(&self, kind: &BlockKind) -> &Face {
@@ -229,6 +229,28 @@ impl Faces {
             }
             _ => &self.body,
         }
+    }
+}
+
+/// The measure and the face of **every** block — `grind_text::Faces`, for the motions that may
+/// cross out of one block into another.
+///
+/// Down out of a heading lands in the paragraph below, which is set smaller; a list item's
+/// indent comes out of the column, so it is also narrower. Both of those are this shell's own
+/// arithmetic, and handing the core one width and one face for a whole motion is what used to
+/// make Down-arrow out of a heading land a few characters from where a click would have.
+struct Column<'a> {
+    faces: &'a Faces,
+    /// The flow's width, in the same CSS pixels [`Face`] answers in.
+    width: f64,
+}
+
+impl grind_text::Faces for Column<'_> {
+    fn of(&self, _index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
+        (
+            (self.width - indent_of(kind)) as f32,
+            self.faces.of(kind, style),
+        )
     }
 }
 
@@ -391,7 +413,7 @@ impl Ui {
 
         self.dom.flow.set_text_content(None);
         for block in viewport.iter() {
-            let face = self.faces.of(block);
+            let face = self.faces.of(&block.kind, block.style.as_deref());
             let indent = indent_of(&block.kind);
             let Ok(layout) = self
                 .app
@@ -1016,9 +1038,7 @@ impl Ui {
             false => self.anchor.set(None),
         }
         let caret = self.caret.get();
-        let kind = self.kind_at(caret.block);
-        let face = self.face_at(caret.block);
-        let width = (self.width() - indent_of(&kind)) as f32;
+        let faces = self.column();
         let moved = match motion {
             Motion::Char(delta) => Some(self.stepped(delta)),
             Motion::Line(steps) | Motion::Page(steps) => {
@@ -1034,16 +1054,16 @@ impl Ui {
                 // Remembered across a run of Down presses, which is what `goal_x` is for.
                 let goal = match self.goal_x.get() {
                     Some(x) => x,
-                    None => self.app.caret_x(caret, width, face).unwrap_or(0.0),
+                    None => self.app.caret_x(caret, &faces).unwrap_or(0.0),
                 };
                 self.goal_x.set(Some(goal));
                 self.app
-                    .caret_line(caret, steps as isize * lines, goal, width, face)
+                    .caret_line(caret, steps as isize * lines, goal, &faces)
                     .ok()
             }
             Motion::LineStart | Motion::LineEnd => self
                 .app
-                .caret_line_bounds(caret, width, face)
+                .caret_line_bounds(caret, &faces)
                 .ok()
                 .map(|(start, end)| match motion {
                     Motion::LineStart => start,
@@ -1107,17 +1127,12 @@ impl Ui {
             .unwrap_or(0)
     }
 
-    fn kind_at(&self, index: usize) -> BlockKind {
-        self.block_at(index)
-            .map(|block| block.kind)
-            .unwrap_or(BlockKind::Paragraph)
-    }
-
-    /// The face a block is set in — the *whole* block, so a `Title` is measured as one.
-    fn face_at(&self, index: usize) -> &Face {
-        match self.block_at(index) {
-            Some(block) => self.faces.of(&block),
-            None => &self.faces.body,
+    /// How each block is set — this pane's [`grind_text::Faces`], rebuilt per question because
+    /// the flow's width is read from the DOM and can change under a resize between two of them.
+    fn column(&self) -> Column<'_> {
+        Column {
+            faces: &self.faces,
+            width: self.width(),
         }
     }
 
@@ -1258,9 +1273,15 @@ impl Ui {
         ) else {
             return Ok(None);
         };
-        let kind = self.kind_at(index);
-        let face = self.face_at(index);
-        let width = (self.width() - indent_of(&kind)) as f32;
+        // Through the same lookup a motion uses, so a click and a Down-arrow cannot disagree
+        // about which face this block is set in.
+        let column = self.column();
+        let block = self.block_at(index);
+        let kind = block
+            .as_ref()
+            .map_or(BlockKind::Paragraph, |block| block.kind.clone());
+        let style = block.as_ref().and_then(|block| block.style.clone());
+        let (width, face) = grind_text::Faces::of(&column, index, &kind, style.as_deref());
         let Ok(layout) = self.app.layout_block(index, width, face) else {
             return Ok(None);
         };
