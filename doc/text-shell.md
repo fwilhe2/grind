@@ -29,7 +29,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
 | Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | the same three, all inside the Ctrl+K palette (`doc/web-shell.md`) |
 | Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | the same |
-| Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; `Title`/`Subtitle` paragraphs and every run's own formatting are drawn, not only measured | the same, plus colour and highlight |
+| Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; those four and `Title`/`Subtitle` paragraphs are drawn, not only measured — a run's colour, highlight, family and size are not | the same toolbar, plus colour and highlight, and every one of those drawn: the four booleans as classes, the values the document chose as inline CSS |
 | Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
@@ -62,18 +62,29 @@ windows — and there is a test in `ui_web` that says so.
 > knowing. The block-level half is unchanged and still the shell's — a heading is a *paragraph*
 > style, and the paragraph family is still gated.
 >
-> **`grind-text-gtk` now draws what the core measures, the other shell does not yet.** A line's
-> Pango attribute list is built from the block's own `RunView`s (`ui_text_gtk/src/metrics.rs`'s
-> `run_attributes`, one `pango::AttrInt`/`AttrColor` per bold/italic/underline/strikethrough run,
-> clipped to the line and converted from the model's character offsets to the byte offsets Pango
-> attributes are measured against) rather than one plain string per line — so a bold word in a
-> file that already laid out bold now paints bold, with no change to the arithmetic that placed
-> it there. `Title` and `Subtitle` get the same treatment one level up: `Faces::of` checks the
-> block's named style before its kind, because both are `BlockKind::Paragraph` with nothing else
-> to key a face off, and are given their own (larger, and italic for `Subtitle`) faces alongside
-> the six heading ones. `ui_web`'s pane has neither yet — a bold run there still paints plain,
-> and a `Title` paragraph draws as body text — which is the browser shell's own instance of this
-> same gap, unclosed.
+> **Both shells now draw what the core measures, by two different routes.** `grind-text-gtk`
+> builds a line's Pango attribute list from the block's own `RunView`s
+> (`ui_text_gtk/src/metrics.rs`'s `run_attributes`, one `pango::AttrInt` per
+> bold/italic/underline/strikethrough run, clipped to the line and converted from the model's
+> character offsets to the byte offsets Pango attributes are measured against) rather than one
+> plain string per line — so a bold word in a file that already laid out bold now paints bold,
+> with no change to the arithmetic that placed it there. `ui_web` arrives the other way round,
+> because a page has no attribute list to hang over a string: `runs::cut` breaks the line at
+> every boundary the *formatting*, the *selection* and the *caret* introduce, and each piece
+> between two of them becomes one `<span>` — the four booleans as classes, and the values the
+> document itself chose (colour, highlight, family, size) as inline CSS, since a class cannot
+> carry a value (`ui_web/src/text/runs.rs`, which is pure offset arithmetic and therefore tested
+> on the host with no browser).
+>
+> The two are **not** equal, and the difference is the GTK window's: `run_attributes` emits the
+> four booleans and the line is then painted in a single theme ink, so a run the document
+> coloured draws in the theme's foreground there and in its own colour in the browser. That is in
+> the gap list below rather than here.
+>
+> `Title` and `Subtitle` get the same treatment one level up, in both shells: `Faces::of` checks
+> the block's named style before its kind, because both are `BlockKind::Paragraph` with nothing
+> else to key a face off, and each is given its own (larger, and italic for `Subtitle`) face
+> alongside the six heading ones.
 
 **An empty paragraph was one unit tall.** `layout::wrap` takes a line's height from the
 fragments it was given, and a block with no runs has none, so the height fell back to `1.0` —
@@ -109,11 +120,8 @@ with `loc` where that one has `a1`, and the two are copies for `code.rs`'s reaso
 `ponytail` there covers both. Activating a row puts the caret where the finding is, through the
 same `view::caret_of` the outline dialog and the go-to box already use.
 
-**Both shells.** No copy, cut or paste — `App::erase` takes two carets, and a selection can now
-name them in `grind-text-gtk`, but nothing yet puts either end on a clipboard. No find/replace UI
-(`grind text find`/`replace` exist). No lists UI: a list item read from a file draws with its
-bullet and its indent, and nothing creates or renests one. No tables or footnotes, because the
-core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
+**Both shells.** No find/replace UI (`grind text find`/`replace` exist). No tables or footnotes,
+because the core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
 `text:file-name`) are also out, both for the same reason `doc/text-core.md` gives. No pages, no
 print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are measured per
 run rather than per line, so a line with several tabs drifts from where a word processor would
@@ -159,17 +167,31 @@ drawing each run as the document formatted it rather than as one plain string. `
 does it with a Pango attribute list per line (`run_attributes`); `grind-web` cuts each line into
 `<span>`s at every boundary the formatting, the selection and the caret introduce
 (`ui_web/src/text/runs.rs`). Both give `Title` and `Subtitle` their own faces, so a document has
-one shape in both windows.
+one shape in both windows. What the two do *not* agree on is how much of a `CharStyle` reaches
+the screen, and that is the next paragraph's first line.
 
-**`grind-text-gtk` only.** No `grind-ui` crate: `doc/suite.md` says to extract the shared GTK
-plumbing "on evidence, at S9, when the second shell shows the seam", and one *minimal* shell
-is not that evidence — this one copied the observer bridge, the `--render-to` harness and the
-window-close latch, which is three data points and the right time to look again is when either
-shell grows. No `.desktop` file, AppStream metainfo or icon, and no `[package.metadata.deb]`
-block: packaging is S11, which does all five packages at once. No shortcuts window. No a11y
-beyond the floor (`Accessible::announce` on every caret move, as M9 requires). The document
-is re-laid-out in full whenever it or the width changes, so a very long document costs a pass
-per resize (`ponytail` in `view.rs`).
+**`grind-text-gtk` only.** **A run's colour, highlight, family and size are not drawn.**
+`run_attributes` emits the four booleans and nothing else, and every line is then painted in one
+theme ink (`view.rs`'s `ink`), so a document that coloured a word draws it in the theme's
+foreground — where the browser pane hands the same four values to inline CSS. The core carries
+them, `grind text format --color/--background` writes them, loop C round-trips them, and this
+window alone does not show them; the toolbar has no colour button for the same reason. **No
+clipboard**: `App::erase` takes two carets and the selection can now name them, but nothing puts
+either end on a `gdk::Clipboard` — the browser pane has copy/cut/paste and `grind-tui` has a
+register, so this is the one shell with neither. **No lists UI**: a list item read from a file
+draws with its bullet and its indent, and nothing here creates or renests one (Ctrl+K → *List
+item*, and Tab, do in the browser). **No `Title`/`Subtitle` in the kind menu** either — the
+window draws both and offers Paragraph and Heading 1–3 (Ctrl+0…3) to *make* one, so a face it
+can render is one only the CLI and the other shells can apply. Then the plumbing: no `grind-ui`
+crate — `doc/suite.md` says to extract the shared GTK plumbing "on evidence, at S9, when the
+second shell shows the seam", and one *minimal* shell is not that evidence; this one copied the
+observer bridge, the `--render-to` harness and the window-close latch, which is three data
+points and the right time to look again is when either shell grows. No `.desktop` file,
+AppStream metainfo or icon, and no `[package.metadata.deb]` block: packaging is S11, which does
+all five packages at once. No shortcuts window. No a11y beyond the floor
+(`Accessible::announce` on every caret move, as M9 requires). The document is re-laid-out in
+full whenever it or the width changes, so a very long document costs a pass per resize
+(`ponytail` in `view.rs`).
 
 **`grind-web` only.** Its own gap list has moved to **`doc/web-shell.md`**, which is where that
 shell's answers live now — it grew a command palette, formatting, a clipboard and charts, and

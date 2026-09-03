@@ -27,8 +27,10 @@ shells are deliberately *minimal*; `doc/text-shell.md` lists what they do and do
 Loops A and C are both green. **Line layout lives in `grind-core`** (`doc/text-layout.md`,
 decided on Path C), so `j`/`k`/Home/End mean one thing in every shell and the CLI can answer
 them; a shell supplies only font metrics. What it does **not** have: a session (so no `undo`
-across invocations), tables, footnotes, fields, style definitions, RTL layout, pages, and — in
-any shell — a *selection*, so no copy, cut or paste of text.
+across invocations), tables, footnotes, fields, style definitions, RTL layout and pages. Every
+shell *does* now have a selection and a formatting toolbar over it; the clipboard is the uneven
+one — `grind-tui` has a register and `grind-web` the browser's own, and `grind-text-gtk` has
+neither.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -508,9 +510,23 @@ character by character on the way out, and `doc/odt-format.md` §5b gained three
 LibreOffice facts: the `style:font-name` rewrite, the font-family requoting, and the paragraph
 hoist.
 
-**The shell half is not built.** No GTK toolbar, no selection to apply one to, and neither GUI
-shell *draws* the formatting the core now measures — the gap list in `doc/text-shell.md` is the
-up-to-date statement of that, and selection is the piece everything else waits on.
+**The shell half followed, in all three shells.** Selection was the piece everything else waited
+on, and each has one: an anchor beside the caret, grown by Shift+arrow, Shift+click and dragging,
+erased first by typing or Enter (`Doc::selection` in `ui_text_gtk/src/view.rs`, `Ui::selection` in
+`ui_web/src/text/mod.rs`, Visual mode in `grind-tui`). Over it sits a toolbar of the four toggles
+— a second top bar of `gtk::ToggleButton`s, the browser's tool row plus colour and highlight,
+`*`/`/`/`_`/`~` in the terminal — every one of them reading `App::char_style` and writing
+`set_char_style`, so no shell has an idea of what bold means that the document does not share. And
+each now *draws* what the core measures rather than one plain string per line:
+`ui_text_gtk/src/metrics.rs`'s `run_attributes` builds a Pango attribute list per line out of the
+block's own runs, `ui_web/src/text/runs.rs` cuts a line into `<span>`s at every boundary the
+formatting, the selection and the caret introduce, and the terminal uses its own attributes. Both
+GUI shells give `Title` and `Subtitle` a face of their own. **What is still uneven** is how much
+of a `CharStyle` reaches the screen: the browser pane carries colour, highlight, family and size
+as inline CSS, and the GTK window emits the four booleans and paints each line in one theme ink,
+so a coloured run draws in the theme's foreground there. That, its missing clipboard and its
+missing lists UI are `doc/text-shell.md`'s gap list, which is the up-to-date statement of all of
+it.
 
 **View modes are built, V0 through V7** (`doc/view-modes.md`): `sheet/src/graph.rs` is the
 reference index — the forward and reverse dependency answers, resolved through `Engine::area` so
