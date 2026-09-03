@@ -35,6 +35,8 @@ features = [
   "BlobPropertyBag",
   "Clipboard",
   "ClipboardEvent",
+  # A dead key produces its character on `compositionend` and nowhere else.
+  "CompositionEvent",
   "CssStyleDeclaration",
   "DataTransfer",
   "Document",
