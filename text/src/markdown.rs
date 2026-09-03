@@ -26,41 +26,25 @@
 //! notation nobody types twice. `_x_` alone means nothing at all, deliberately —
 //! `snake_case` is not emphasis.
 
-// TODO: **`` `code` `` and ``` do not work as expected in any of the three text shells.**
-// Reported by hand; not reproduced. Read this before spending time on it, because the obvious
-// half is already checked and the suspects are not where the tests are.
+// The report that `` `code` `` and ``` "do not work in any of the three text shells" was
+// worked suspect by suspect, and **each of the three was real and is addressed** — none of them
+// here, which is what the note that used to sit in this place predicted. `grind-web` dropped a
+// dead key entirely, so on a German, French or Spanish layout the backtick never reached the
+// document (`ui_web/src/text/keymap.rs` now refuses both halves of a composition and takes the
+// text from `compositionend`). `grind-text-gtk` neither measured nor drew a family, so the file
+// changed and the window did not; both halves moved together, because drawing a family that was
+// not measured drifts the caret through the run (`ui_text_gtk/src/metrics.rs`). `grind-tui`
+// showed it with `Modifier::DIM` and that is now a *decision* with its reasons written beside
+// it, plus `pre` in the gutter for the block half, which no terminal can ignore.
 //
-// **What is proven, and why it proves less than it looks.** The notation and the edit are
-// tested (`text/tests/app.rs`), the CLI writes the right document
-// (`fo:font-family="monospace"` on the run, `Preformatted Text` on the block), and each shell
-// has a check that it reaches the core. But *every one of those checks is synthetic* — the
-// terminal's through a pty writing bytes, the browser's through constructed `KeyboardEvent`s,
-// the window's by calling `type_text` directly. **None of them typed on a keyboard**, which is
-// exactly the half that is reported broken. Start there, not in `markdown.rs`.
+// TODO: **none of that has been typed on a real keyboard on the reporter's layout**, which is
+// the half the original note said was missing and it is still missing. The new checks are
+// synthetic in exactly the way the old ones were — a constructed `CompositionEvent` is not a
+// dead key — so they prove the code path and not the keyboard. Ask the reporter before calling
+// this closed.
 //
-// Three concrete suspects, one per shell, each of which alone would look like "nothing
-// happened":
-//
-// 1. **`grind-web` drops a dead key entirely.** `` ` `` is a dead key on German, French,
-//    Spanish and many other layouts. `KeyboardEvent.key` is then `"Dead"`, and
-//    `ui_web/src/text/keymap.rs` types a key only when it is exactly one character — so four
-//    characters is no character, and the backtick never reaches the document at all. The
-//    asterisk notation is unaffected, which matches a report of *backticks* specifically.
-//    Check what `key` actually is on the reporter's layout before changing anything.
-// 2. **`grind-text-gtk` draws neither half.** `metrics.rs`'s `Faces::of` has no
-//    `Preformatted Text` arm (it has `Title` and `Subtitle`), and `run_attributes` sets
-//    weight/style/underline/strikethrough and *no family*. So the file changes and the window
-//    does not. Not a one-line fix: that shell's `Face::advances` measures every run in the
-//    block's own face regardless of its `TextStyle`, so drawing a family it does not measure
-//    would drift the caret through the run. Measurement and drawing move together.
-// 3. **`grind-tui` shows it with `Modifier::DIM`, which many terminals ignore.** SGR 2 is
-//    optional and plenty of emulators and themes render it identically to normal text — so
-//    "it did nothing" and "it worked and you cannot see it" are the same picture. A terminal
-//    has one font and cannot show a family; if DIM is not enough, the honest alternatives are
-//    a colour (which belongs to the document) or leaving it undrawn and saying so.
-//
-// And one that is nobody's shell: **LibreOffice may not resolve `monospace`.** Measured — a
-// round trip through `soffice --convert-to` keeps `fo:font-family="monospace"` verbatim but
+// TODO: and one that is nobody's shell: **LibreOffice may not resolve `monospace`.** Measured —
+// a round trip through `soffice --convert-to` keeps `fo:font-family="monospace"` verbatim but
 // declares no `style:font-face` for it, unlike every real family in the document. Whether it
 // *renders* monospace there is unchecked; if not, the value wants a real face ahead of the
 // generic, and `doc/odt-format.md`'s XSL-FO quoting rule applies to a list. Separately, a

@@ -21,17 +21,32 @@
 //!   in the model and reaches here as `\n`; handing it to Pango would make a second Pango
 //!   line whose x coordinates start over. The core breaks the line there anyway, so the
 //!   caret sitting on it belongs at the end of the text before it.
+//! * **A fragment is measured in its own formatting.** `grind_text::lay_out` projects each
+//!   run's `CharStyle` into the [`TextStyle`] it hands the provider per fragment, so the
+//!   family, the weight and the slant arrive here — and are applied to the measuring layout
+//!   as Pango attributes rather than ignored. [`run_attributes`] puts the same three on the
+//!   *drawing* layout, from the same runs. That pairing is the point: a family drawn but not
+//!   measured drifts the caret through the run, which is what a `` `code` `` run did before
+//!   either half existed.
 //!
-//! **The face is chosen per block, by the shell.** `grind_text` measures every run with the
-//! default character style, because a run's style is a *name* and style definitions are not
-//! read yet (`doc/text-core.md`) — so a heading laid out in the body font and drawn in a
-//! larger one would put every caret in the wrong place. The shell knows the block's kind, so
-//! it hands the core a provider already set to that block's font. The core neither knows nor
-//! needs to: it does arithmetic in whatever unit it is answered in.
+//! **The face is chosen per block, by the shell.** A run's *direct* formatting reaches the
+//! core, but a block's does not: a heading and a `Title` are a paragraph **style**, and style
+//! definitions are not read (`doc/text-core.md`) — so a heading laid out in the body font and
+//! drawn in a larger one would put every caret in the wrong place. The shell knows the block's
+//! kind and its style name, so it hands the core a provider already set to that block's font.
+//! The core neither knows nor needs to: it does arithmetic in whatever unit it is answered in.
+//!
+//! **What a fragment's style still does not change is its `fo:font-size`.** A line's height is
+//! [`Metrics::line_height`]'s answer per fragment and `layout::wrap` takes the tallest, so a
+//! size honoured in the width and not in the height would measure a big word wide on a line
+//! too short to hold it. Both halves and the drawing move together or none of them does; the
+//! notation this file exists for sets a family and no size, so this is where the work stops
+//! and is written down rather than half done.
 
 use libadwaita::gtk;
 
 use grind_core::style::TextStyle;
+use grind_text::style::CharStyle;
 use grind_text::{BlockKind, Metrics, RunView};
 use gtk::pango;
 
@@ -125,8 +140,19 @@ impl Face {
     }
 
     /// The cumulative advance after each character of one Pango line, appended to `out`.
-    fn measure(&self, text: &str, base: f64, out: &mut Vec<f32>) -> f64 {
+    ///
+    /// `attrs` is the fragment's own formatting, and is set on the measuring layout for this
+    /// call alone — it must be cleared for the next fragment, or a bold word would go on
+    /// measuring bold to the end of the paragraph.
+    fn measure(
+        &self,
+        text: &str,
+        base: f64,
+        attrs: Option<&pango::AttrList>,
+        out: &mut Vec<f32>,
+    ) -> f64 {
         self.layout.set_text(text);
+        self.layout.set_attributes(attrs);
         let Some(line) = self.layout.line(0) else {
             // No line at all means no text: nothing to append, and the base does not move.
             return base;
@@ -144,7 +170,8 @@ impl Face {
 }
 
 impl Metrics for Face {
-    fn advances(&self, text: &str, _style: &TextStyle, out: &mut Vec<f32>) {
+    fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
+        let attrs = fragment_attributes(style);
         let mut base = 0.0;
         for (index, segment) in text.split('\n').enumerate() {
             if index > 0 {
@@ -152,13 +179,53 @@ impl Metrics for Face {
                 // and no width, because the line ends there.
                 out.push(base as f32);
             }
-            base = self.measure(segment, base, out);
+            base = self.measure(segment, base, attrs.as_ref(), out);
         }
     }
 
+    /// The block face's own height, whatever the fragment is set in.
+    ///
+    /// A monospace run in a paragraph of prose is measured in a monospace face and drawn in
+    /// one, and sits on a line as tall as the paragraph's — the module documentation says why
+    /// a per-fragment height is the same change as a per-fragment size and waits for it.
     fn line_height(&self, _style: &TextStyle) -> f32 {
         self.height as f32
     }
+}
+
+/// One fragment's formatting as Pango attributes over the whole of it, or `None` where it has
+/// none — which is most fragments, and the reason this allocates nothing for them.
+///
+/// The mirror image of [`run_attributes`]: that one builds the attributes a line is *drawn*
+/// with from the block's runs, this one the attributes a fragment is *measured* with from the
+/// [`TextStyle`] the core projected out of the same run. Three properties, both sides.
+fn fragment_attributes(style: &TextStyle) -> Option<pango::AttrList> {
+    // Whether `fo:font-weight: 600` reads as bold is a question `CharStyle` already answers,
+    // and it is asked rather than restated: two readings of ODF's own vocabulary in one
+    // program is one too many, whichever of them is right.
+    let props = CharStyle {
+        font_weight: style.font_weight.clone(),
+        font_style: style.font_style.clone(),
+        ..CharStyle::default()
+    };
+    let family = style.font_family.as_deref();
+    if family.is_none() && !props.is_bold() && !props.is_italic() {
+        return None;
+    }
+    // A fresh attribute covers the whole text it is set on, which is exactly one fragment
+    // here — so none of these needs a start or an end index.
+    let attrs = pango::AttrList::new();
+    let add = |attr: pango::Attribute| attrs.insert(attr);
+    if let Some(family) = family {
+        add(pango::AttrString::new_family(family).into());
+    }
+    if props.is_bold() {
+        add(pango::AttrInt::new_weight(pango::Weight::Bold).into());
+    }
+    if props.is_italic() {
+        add(pango::AttrInt::new_style(pango::Style::Italic).into());
+    }
+    Some(attrs)
 }
 
 /// The faces a document is set in: one for body text, one per heading level.
@@ -170,6 +237,11 @@ pub struct Faces {
     headings: Vec<Face>,
     title: Face,
     subtitle: Face,
+    /// A fenced code block (`grind_text::markdown::PREFORMATTED`). A *face* and not a drawing
+    /// trick, because the same object is what measures the block: a monospace paragraph drawn
+    /// in one font and measured in another breaks its lines in the wrong places. `ui_web`'s
+    /// `Faces` carries the same field for the same reason.
+    code: Face,
 }
 
 impl Faces {
@@ -197,11 +269,23 @@ impl Faces {
             .collect();
         let title = scaled(TITLE_SCALE, true, false);
         let subtitle = scaled(SUBTITLE_SCALE, false, true);
+        // The *generic* family, spelled the way the document spells it
+        // (`grind_text::markdown::MONOSPACE`) — which monospace face a reader has is theirs to
+        // know, and Pango resolves the generic through fontconfig exactly as the document
+        // intends. At the body's own size, because a code block is a paragraph and not a
+        // heading.
+        let code = {
+            let mut font = base.clone();
+            font.set_size(size);
+            font.set_family(grind_text::markdown::MONOSPACE);
+            Face::new(context, font)
+        };
         Faces {
             body,
             headings,
             title,
             subtitle,
+            code,
         }
     }
 
@@ -212,14 +296,13 @@ impl Faces {
     /// first. A heading deeper than the six levels this shell has faces for is drawn as the
     /// last of them rather than refused: the reader is *tolerant* (R5), so a level-9 heading
     /// loads, and a shell that panicked on one would undo that.
-    // TODO: no `Preformatted Text` arm, so a fenced code block (`grind_text::markdown`) draws
-    // in the body face and typing ``` in this window looks like nothing happened. `ui_web` has
-    // the arm and the face; adding one here is the easy half. See the TODO at the top of
-    // `text/src/markdown.rs` for the hard half, which is `run_attributes` below.
     pub fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
         match style {
             Some("Title") => return &self.title,
             Some("Subtitle") => return &self.subtitle,
+            // A fence (```) is a paragraph *style* and nothing else — `grind_text::markdown`
+            // names it, LibreOffice writes it, and this is where a window makes it visible.
+            Some(grind_text::markdown::PREFORMATTED) => return &self.code,
             _ => {}
         }
         match kind {
@@ -238,12 +321,14 @@ impl Faces {
     }
 }
 
-/// The bold/italic/underline/strikethrough Pango attributes for one line of `text`, from the
-/// block's own runs — the toolbar's other half. `App::layout_block` already measures a bold
-/// run bold (`lay_out` projects each run's [`grind_text::CharStyle`] into the metrics), so this
-/// is the only piece the shell was still short: making it *look* like what it already measures
-/// as (`doc/text-shell.md`, "Neither shell has been updated to draw what the core now
-/// measures").
+/// The family/bold/italic/underline/strikethrough Pango attributes for one line of `text`,
+/// from the block's own runs — the toolbar's other half, and the drawing half of the pair
+/// [`fragment_attributes`] measures with. `App::layout_block` hands each run's
+/// [`grind_text::CharStyle`] to the provider as a [`TextStyle`] (`lay_out`), that function
+/// turns three of those properties into the attributes the run is *measured* with, and this
+/// one turns five of them into the attributes it is *drawn* with. Underline and strikethrough
+/// are in this list and not in that one because they change how text looks and not how wide
+/// it is, which is the same split `TextStyle` itself makes.
 ///
 /// `line_start`/`line_end` are character offsets into the whole block, matching
 /// [`grind_core::layout::Line::start`]/`end` and [`RunView::start`]/`end`; `text` is that same
@@ -277,10 +362,13 @@ pub fn run_attributes(
             attr.set_end_index(e);
             attrs.insert(attr);
         };
-        // TODO: no `AttrString::new_family` here, so a `` `code` `` run draws in the block's
-        // face. Not safe to add alone: `Face::advances` measures every run in the block's own
-        // face regardless of its `TextStyle`, so a family drawn but not measured drifts the
-        // caret through the run. `text/src/markdown.rs`'s TODO has the whole picture.
+        // The family, which is what `` `code` `` sets. Safe to draw because it is now also
+        // *measured*: `fragment_attributes` puts the same family on the measuring layout from
+        // the same run's `TextStyle`, so the caret goes where the ink does. Drawing one
+        // without the other is the drift this pair exists to prevent.
+        if let Some(family) = run.props.font_family.as_deref() {
+            mark(pango::AttrString::new_family(family).into());
+        }
         if run.props.is_bold() {
             mark(pango::AttrInt::new_weight(pango::Weight::Bold).into());
         }

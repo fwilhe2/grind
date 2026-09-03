@@ -87,9 +87,21 @@ Deferred by decision, not omission. Everything here is reachable from the CLI (R
 stored and not drawn, and a monospace family cannot be drawn as a different font — everything
 in a terminal already is one. A `` `code` `` run and a preformatted block are **dimmed**
 instead, so they are at least visible as their own kind of text; the document carries the
-family either way, and the browser draws both in an actual monospace face. **Open:** SGR 2 is
-optional and many terminals ignore it, so this may be showing nothing at all — part of the
-`TODO:` at the top of `text/src/markdown.rs`, which is where the whole backtick report lives. Sixteen colours, so a
+family either way, and the browser draws both in an actual monospace face.
+
+**SGR 2 is optional, and keeping it is now a decision rather than an omission.** Many terminals
+and themes draw dim identically to normal, so a `` `code` `` *run* may be showing nothing at
+all — but every alternative is worse. A colour or a background would be the **document's**: a
+run's own `fo:color` already becomes exactly that, so a shell-chosen one could not be told apart
+from a document-chosen one and would overwrite a run that had both. Bold, italic, underline and
+strikethrough are each already a property of a run. Reverse video is the selection and the
+caret. And a marker in the line (`` ` ``) is a character the core never measured, which puts
+every caret after it in the wrong column — decision 2 above, and the reason markdown here is for
+*typing* and never for showing. So a run keeps DIM and this says what that costs. **The block
+half does not depend on it**: a fenced block says `pre` in the gutter beside its address, which
+is plain text every terminal draws.
+
+Sixteen colours, so a
 document's `#ff4136` is drawn as the nearest of them — `nearest_color` in
 `ui_tui/src/text/app.rs`, by squared distance in RGB.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here

@@ -1394,6 +1394,10 @@ mod tests {
             typing_markdown_formats_the_span,
         ),
         (
+            "code is measured and drawn in a monospace face",
+            code_is_measured_and_drawn_in_a_monospace_face,
+        ),
+        (
             "the code view shows the projection, tagged and marked",
             the_code_view_shows_the_projection,
         ),
@@ -1826,6 +1830,79 @@ mod tests {
             .find(|run| run.props.is_bold())
             .expect("a bold run");
         assert_eq!(bold.text, "this");
+    }
+
+    /// Both halves of the backtick notation, in the *window* — which is the half that was
+    /// reported broken (`text/src/markdown.rs`). The file was already right, so nothing here
+    /// asserts about the document: what it asserts is that this shell **measures** a monospace
+    /// run in a monospace face and puts the same family on the attributes it **draws** with.
+    /// Either alone would be a bug — a family drawn but not measured drifts the caret through
+    /// the run, and one measured but not drawn is invisible.
+    fn code_is_measured_and_drawn_in_a_monospace_face() {
+        use crate::metrics::run_attributes;
+        use grind_core::style::TextStyle;
+        use grind_text::Metrics;
+        use gtk::pango;
+
+        let (doc, app) = shell(&[""]);
+        let imp = doc.imp();
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        for c in "run `ls -l` now".chars() {
+            imp.type_text(&c.to_string());
+        }
+        let view = app.get_viewport(0..1);
+        let block = view.get(0).expect("the block");
+
+        // Measured. Proportional and monospace disagree about this string by construction:
+        // `i` is the narrowest letter there is and `w` the widest, and a monospace face is
+        // exactly the one that makes them equal.
+        let (_, faces, _) = imp.measured(0).expect("the paragraph lays out");
+        let face = faces.of(&BlockKind::Paragraph, None);
+        let mono = TextStyle {
+            font_family: Some(grind_text::markdown::MONOSPACE.to_owned()),
+            ..TextStyle::default()
+        };
+        let widths = |style: &TextStyle| {
+            let mut out = Vec::new();
+            face.advances("iiiiwwww", style, &mut out);
+            *out.last().expect("one advance per character")
+        };
+        assert_ne!(
+            widths(&TextStyle::default()),
+            widths(&mono),
+            "a fragment is measured in its own family, not in the block's"
+        );
+
+        // Drawn. The family reaches the Pango attribute list the line is painted with.
+        let attrs = run_attributes(&block.runs, 0, block.text.chars().count(), &block.text);
+        assert!(
+            attrs
+                .attributes()
+                .iter()
+                .any(|attr| attr.type_() == pango::AttrType::Family),
+            "the `code` run carries a family attribute"
+        );
+
+        // And the block half: a fence is a paragraph style, and it has a face of its own.
+        let fenced = faces.of(
+            &BlockKind::Paragraph,
+            Some(grind_text::markdown::PREFORMATTED),
+        );
+        let mut plain_width = Vec::new();
+        let mut fenced_width = Vec::new();
+        face.advances("iiiiwwww", &TextStyle::default(), &mut plain_width);
+        fenced.advances("iiiiwwww", &TextStyle::default(), &mut fenced_width);
+        assert_ne!(
+            plain_width.last(),
+            fenced_width.last(),
+            "a fenced block is set in its own face rather than the body's"
+        );
     }
 
     #[test]
