@@ -433,6 +433,130 @@ fn a_script_reads_its_data_from_beside_itself() {
     );
 }
 
+/// **The worked example of `doc/generator-guide.md`**: four sheets that have to agree with each
+/// other, built out of an export nobody edits by hand.
+///
+/// `budget.rhai` is one table from a list, which is the smallest thing a generator is for. This
+/// is the shape that pays for one — nothing in the script is told how many jobs, entries or
+/// deliveries there are, so the assertions below are about ranges the script *measured*: a
+/// SUMIF whose two ranges cover exactly the rows another loop wrote.
+#[test]
+fn a_script_builds_a_month_out_of_four_sheets_that_agree() {
+    let dir = Sandbox::new("build-timesheet");
+    let out = dir.path("month.fods");
+    ok_top(&["build", &s(&example("timesheet.rhai")), "-o", &s(&out)]);
+
+    // Summary is first because it is the sheet anybody opens, and it was built last because it
+    // needed the other three to exist.
+    let info = ok_top(&["info", &s(&out)]);
+    let sheets: Vec<&str> = info
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split('\t').next())
+        .take(4)
+        .collect();
+    assert_eq!(sheets, ["Summary", "Time", "Materials", "Rates"], "{info}");
+
+    // The three ranges the summary reads end at the last row of a table the script counted:
+    // twenty-two timesheet lines and nine delivery notes, neither of them a number in the
+    // script.
+    assert_eq!(
+        ok(&["get", &s(&out), "D2", "--formula"]).trim(),
+        "=SUMIF([Time.$B$2:.$B$23];[.A2];[Time.$E$2:.$E$23])"
+    );
+    assert_eq!(
+        ok(&["get", &s(&out), "F5", "--formula"]).trim(),
+        "=SUMIF([Materials.$A$2:.$A$10];[.A5];[Materials.$D$2:.$D$10])"
+    );
+    // A rate is looked up *in the document* rather than substituted by the script, so the
+    // Rates sheet is still the thing that decides one.
+    assert_eq!(
+        ok(&["get", &s(&out), "Time.F2", "--formula"]).trim(),
+        "=VLOOKUP([.D2];[Rates.$A$2:.$B$5];2;FALSE())"
+    );
+    // The overhead is a name, so the cell says what it means rather than 1.18.
+    assert_eq!(
+        ok(&["get", &s(&out), "G2", "--formula"]).trim(),
+        "=([.E2]+[.F2])*overhead"
+    );
+    // `sum_above()` summed the four jobs without being told there were four.
+    assert_eq!(
+        ok(&["get", &s(&out), "E6", "--formula"]).trim(),
+        "=SUM([.E2:.E5])"
+    );
+    assert_eq!(ok(&["get", &s(&out), "D6", "--raw"]).trim(), "149");
+    assert_eq!(ok(&["get", &s(&out), "E6", "--raw"]).trim(), "8211.5");
+    // One job came in under the target margin, and the document says so about itself.
+    assert_eq!(ok(&["get", &s(&out), "B9", "--raw"]).trim(), "1");
+    // And it is a document like any other: nothing in it contradicts itself.
+    ok_top(&["lint", &s(&out)]);
+}
+
+/// **A `.grind` written by hand is a document** — `doc/projection-guide.md`'s subject.
+///
+/// `examples/quote.grind` was typed in a text editor, and none of its formulas carries an
+/// answer: a cached value is optional, which is what lets somebody write a model without doing
+/// its arithmetic. Everything below is a fact about that file rather than about the format in
+/// general — the format's own guarantee is loop F's.
+#[test]
+fn a_hand_written_projection_is_a_document() {
+    let dir = Sandbox::new("projection-quote");
+    let file = dir.path("quote.grind");
+    std::fs::copy(example("quote.grind"), &file).expect("copy the example");
+    let before = std::fs::read(&file).expect("read it back");
+
+    // It opens, and what it says it holds is what the file says.
+    let info = ok_top(&["info", &s(&file)]);
+    assert!(info.starts_with("spreadsheet"), "{info}");
+    assert!(info.contains("Quote\t23 rows"), "{info}");
+    // Nothing in it contradicts itself, before anybody has opened a spreadsheet application.
+    ok_top(&["lint", &s(&file)]);
+
+    // The arithmetic was never done by hand, so it is `recalc` that does it.
+    ok(&["recalc", &s(&file)]);
+    assert_eq!(ok(&["get", &s(&file), "G13", "--raw"]).trim(), "142");
+    assert_eq!(ok(&["get", &s(&file), "G17", "--raw"]).trim(), "9625.3214");
+    assert_eq!(
+        ok(&["get", &s(&file), "G19", "--raw"]).trim(),
+        "11550.38568"
+    );
+    // Labour reads the rate card on the other sheet through a name, so re-pricing the shop is
+    // one edit in one place.
+    // `of:` is ODF's namespace prefix on a formula, and `recalc` wrote the canonical spelling
+    // back over the bare `=…` the file was typed with — tolerance on the way in, strictness on
+    // the way out, applied to the project's own format.
+    assert_eq!(
+        ok(&["get", &s(&file), "F5", "--formula"]).trim(),
+        "of:=benchRate"
+    );
+    assert_eq!(ok(&["get", &s(&file), "G21"]).trim(), "88.0 h");
+
+    // **R6, from the outside**: one cell edited is one line changed, and the comments and the
+    // hand alignment either side of it are untouched.
+    let calculated = std::fs::read_to_string(&file).expect("read the calculated file");
+    ok(&["set", &s(&file), "Assumptions.B2", "65"]);
+    let after = std::fs::read_to_string(&file).expect("read the edited file");
+    let differing = calculated
+        .lines()
+        .zip(after.lines())
+        .filter(|(one, two)| one != two)
+        .count();
+    assert_eq!(differing, 1, "one edit, one line of diff");
+    assert_eq!(calculated.lines().count(), after.lines().count());
+    assert!(
+        after.contains("// Larkspur Joinery"),
+        "the comments survive"
+    );
+
+    // And an untouched save returns the bytes that were read — the strongest form of "the
+    // writer never regenerates what nobody touched".
+    let copy = dir.path("copy.grind");
+    std::fs::copy(example("quote.grind"), &copy).expect("a second copy");
+    let round = dir.path("round.grind");
+    ok_top(&["convert", &s(&copy), &s(&round)]);
+    assert_eq!(before, std::fs::read(&round).expect("the converted copy"));
+}
+
 /// The wall, from the outside: a script may not read its way out of the data directory. The
 /// message says which wall it hit, because "no such file" would send somebody looking for the
 /// file rather than reading the rule.

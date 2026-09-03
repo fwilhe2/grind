@@ -754,7 +754,18 @@ enum Top {
     ///
     /// Rhai's own standard library is left out: an editor already knows those, and forty
     /// functions buried in six hundred is not a reference anybody reads.
-    Definitions,
+    Definitions {
+        /// Print VS Code snippets instead of a Rhai definition file
+        ///
+        /// The same vocabulary, from the same source, in the form an editor reads without a
+        /// language server:
+        ///
+        ///   grind definitions --snippets > .vscode/grind.code-snippets
+        ///
+        /// See doc/editor-setup.md for which of the two an editor of yours can use.
+        #[arg(long)]
+        snippets: bool,
+    },
 
     /// Convert between the three physical forms — .ods, .fods and .grind
     ///
@@ -1880,11 +1891,15 @@ fn run(cli: &Cli) -> Result<Report, String> {
         // No document, no script — the vocabulary itself, for an editor rather than for a
         // person (doc/generator-spec.md §9). It is the engine's own answer: what this prints
         // is what `grind build` registered, so it cannot describe a function that is not there.
-        Top::Definitions => Ok(Report::Text(TextReport {
-            lines: grind_build::definitions()
-                .lines()
-                .map(str::to_owned)
-                .collect(),
+        Top::Definitions { snippets } => Ok(Report::Text(TextReport {
+            lines: if *snippets {
+                grind_build::snippets()
+            } else {
+                grind_build::definitions()
+            }
+            .lines()
+            .map(str::to_owned)
+            .collect(),
         })),
 
         Top::Convert { file, out } => match document_kind(file)? {

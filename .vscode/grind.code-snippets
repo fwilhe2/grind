@@ -1,0 +1,378 @@
+{
+  "align(style: Style, align: string) -> Style": {
+    "body": [
+      "align(${1:align})"
+    ],
+    "description": "`fo:text-align` — `left`, `center`, `right` or `justify`.",
+    "prefix": "align",
+    "scope": "rhai"
+  },
+  "at(sheet: Sheet, row: int, column: int) -> string": {
+    "body": [
+      "at(${1:row}, ${2:column})"
+    ],
+    "description": "The address of a cell, from indices counted from 0 — `s.at(0, 1)` is `\"B1\"`.\n\nThe one place a script converts between an index and an address; the `+ 1` a\nspreadsheet's rows carry is the core's, not the script's.",
+    "prefix": "at",
+    "scope": "rhai"
+  },
+  "background(style: Style, color: string) -> Style": {
+    "body": [
+      "background(${1:color})"
+    ],
+    "description": "`fo:background-color`, in the same colours `color` takes.",
+    "prefix": "background",
+    "scope": "rhai"
+  },
+  "blocks(document: Text) -> int": {
+    "body": [
+      "blocks()"
+    ],
+    "description": "How many blocks have been said.",
+    "prefix": "blocks",
+    "scope": "rhai"
+  },
+  "bold(row: Row) -> Row": {
+    "body": [
+      "bold()"
+    ],
+    "description": "The whole row bold.",
+    "prefix": "bold",
+    "scope": "rhai"
+  },
+  "bold(style: Style) -> Style": {
+    "body": [
+      "bold()"
+    ],
+    "description": "`fo:font-weight` — bold.",
+    "prefix": "bold",
+    "scope": "rhai"
+  },
+  "bookmark(document: Text, name: string) -> Text": {
+    "body": [
+      "bookmark(${1:name})"
+    ],
+    "description": "Anchor a bookmark at the start of the block last said.\n\n`#name` then addresses it — an address that survives editing above it, which\n`p12` does not.",
+    "prefix": "bookmark",
+    "scope": "rhai"
+  },
+  "border(style: Style, border: string) -> Style": {
+    "body": [
+      "border(${1:border})"
+    ],
+    "description": "All four edges — a width, a line and a colour: `\"0.5pt solid navy\"`.",
+    "prefix": "border",
+    "scope": "rhai"
+  },
+  "color(style: Style, color: string) -> Style": {
+    "body": [
+      "color(${1:color})"
+    ],
+    "description": "`fo:color` — a palette name (`navy`, `red`, `silver`, …), `#rrggbb`, or\n`transparent`.",
+    "prefix": "color",
+    "scope": "rhai"
+  },
+  "decimals(format: Format, decimals: int) -> Format": {
+    "body": [
+      "decimals(${1:decimals})"
+    ],
+    "description": "Fraction digits, 0 to 255. Exactly this many, never \"up to\".",
+    "prefix": "decimals",
+    "scope": "rhai"
+  },
+  "format(kind: string) -> Format": {
+    "body": [
+      "format(${1:kind})"
+    ],
+    "description": "A number format by name: `general`, `number`, `percent`, `currency`, `date`,\n`datetime`, `time`, `boolean` or `text`.\n\nRefine it with `.decimals(2)`, `.grouping()`, `.symbol(\"€\")`, `.locale(\"de-DE\")`.",
+    "prefix": "format",
+    "scope": "rhai"
+  },
+  "format(row: Row, format: Format) -> Row": {
+    "body": [
+      "format(${1:format})"
+    ],
+    "description": "A number format over the row's own cells.",
+    "prefix": "format",
+    "scope": "rhai"
+  },
+  "format(row: Row, kind: string) -> Row": {
+    "body": [
+      "format(${1:kind})"
+    ],
+    "description": "A number format by name over the row's own cells — `.format(\"percent\")`.",
+    "prefix": "format",
+    "scope": "rhai"
+  },
+  "format(sheet: Sheet, range: string, format: Format) -> Sheet": {
+    "body": [
+      "format(${1:range}, ${2:format})"
+    ],
+    "description": "A number format over a range — `s.format(\"B2:B8\", format(\"currency\"))`.",
+    "prefix": "format",
+    "scope": "rhai"
+  },
+  "format(sheet: Sheet, range: string, kind: string) -> Sheet": {
+    "body": [
+      "format(${1:range}, ${2:kind})"
+    ],
+    "description": "A number format by name over a range — `s.format(\"B17\", \"date\")`.",
+    "prefix": "format",
+    "scope": "rhai"
+  },
+  "formula(source: string) -> Cell": {
+    "body": [
+      "formula(${1:source})"
+    ],
+    "description": "A formula written the way a formula bar shows one — `formula(\"SUM(B2:B7)\")`.\n\nConverted to ODF syntax by the core's own converter, so a formula that does not\nparse is an error here. The other spelling is a plain string starting with `=`,\nwhich is stored exactly as written.",
+    "prefix": "formula",
+    "scope": "rhai"
+  },
+  "get blocks(_: Text) -> int": {
+    "body": [
+      "blocks"
+    ],
+    "description": "How many blocks have been said.",
+    "prefix": "blocks",
+    "scope": "rhai"
+  },
+  "get rows(_: Sheet) -> int": {
+    "body": [
+      "rows"
+    ],
+    "description": "How many rows have been written — where the next `push` will land.",
+    "prefix": "rows",
+    "scope": "rhai"
+  },
+  "grouping(format: Format) -> Format": {
+    "body": [
+      "grouping()"
+    ],
+    "description": "Thousands separators.",
+    "prefix": "grouping",
+    "scope": "rhai"
+  },
+  "heading(document: Text, level: int, text: string) -> Text": {
+    "body": [
+      "heading(${1:level}, ${2:text})"
+    ],
+    "description": "A heading, level 1 to 6.\n\nThe outline is implied by the levels and by nothing else — a heading does not\ncontain what follows it.",
+    "prefix": "heading",
+    "scope": "rhai"
+  },
+  "height(sheet: Sheet, rows: string, length: string) -> Sheet": {
+    "body": [
+      "height(${1:rows}, ${2:length})"
+    ],
+    "description": "Row heights — `s.height(\"1:1\", \"8mm\")`. The twin of `width`.",
+    "prefix": "height",
+    "scope": "rhai"
+  },
+  "italic(row: Row) -> Row": {
+    "body": [
+      "italic()"
+    ],
+    "description": "The whole row italic.",
+    "prefix": "italic",
+    "scope": "rhai"
+  },
+  "italic(style: Style) -> Style": {
+    "body": [
+      "italic()"
+    ],
+    "description": "`fo:font-style` — italic.",
+    "prefix": "italic",
+    "scope": "rhai"
+  },
+  "item(document: Text, depth: int, text: string) -> Text": {
+    "body": [
+      "item(${1:depth}, ${2:text})"
+    ],
+    "description": "A list item, nested 1 to 9 deep.",
+    "prefix": "item",
+    "scope": "rhai"
+  },
+  "item(document: Text, text: string) -> Text": {
+    "body": [
+      "item(${1:text})"
+    ],
+    "description": "A list item at depth 1.",
+    "prefix": "item",
+    "scope": "rhai"
+  },
+  "json(name: string) -> ?": {
+    "body": [
+      "json(${1:name})"
+    ],
+    "description": "The data in one JSON file, as values a script can use.\n\nAn object is a map, an array is an array, `null` is `()`, and object keys come\nback sorted. The file is read from the data directory — the script's own, or\nthe one `--data` names — and `..`, an absolute path and a symlink pointing out\nare all refused. Reading the same file twice is free.",
+    "prefix": "json",
+    "scope": "rhai"
+  },
+  "locale(format: Format, tag: string) -> Format": {
+    "body": [
+      "locale(${1:tag})"
+    ],
+    "description": "The locale whose separators the format uses — `\"de-DE\"`.",
+    "prefix": "locale",
+    "scope": "rhai"
+  },
+  "name(sheet: Sheet, name: string, target: string) -> Sheet": {
+    "body": [
+      "name(${1:name}, ${2:target})"
+    ],
+    "description": "A named range (`\"B2:B7\"`) or a named expression (`\"=MAX(budgeted)\"`).\n\nWritten out qualified with this sheet, so the name means the same range read\nfrom anywhere in the document.",
+    "prefix": "name",
+    "scope": "rhai"
+  },
+  "para(document: Text, text: string) -> Text": {
+    "body": [
+      "para(${1:text})"
+    ],
+    "description": "A paragraph.\n\nThe text is read in the notation the whole suite types in: `**bold**`,\n`_italic_`, `` `code` ``.",
+    "prefix": "para",
+    "scope": "rhai"
+  },
+  "push(document: Spreadsheet, sheet: Sheet) -> Spreadsheet": {
+    "body": [
+      "push(${1:sheet})"
+    ],
+    "description": "Append a sheet. Sheets appear in the document in the order pushed.",
+    "prefix": "push",
+    "scope": "rhai"
+  },
+  "push(sheet: Sheet, cells: array) -> int": {
+    "body": [
+      "push(${1:cells})"
+    ],
+    "description": "Append a row from a bare array — `s.push([\"Housing\", 1800])`.",
+    "prefix": "push",
+    "scope": "rhai"
+  },
+  "push(sheet: Sheet, row: Row) -> int": {
+    "body": [
+      "push(${1:row})"
+    ],
+    "description": "Append a row, and answer the index of the row it landed on (counted from 0).\n\n`s.at(s.push(…), 2)` is an address in the row just written.",
+    "prefix": "push",
+    "scope": "rhai"
+  },
+  "row(cells: array) -> Row": {
+    "body": [
+      "row(${1:cells})"
+    ],
+    "description": "A row of cells, ready to push.\n\nA number is a number, a string is text, a string starting with `=` is a formula\nin ODF syntax, `()` leaves the cell empty. `.bold()`, `.italic()`, `.style(…)`\nand `.format(…)` cover the whole row.",
+    "prefix": "row",
+    "scope": "rhai"
+  },
+  "rows(sheet: Sheet) -> int": {
+    "body": [
+      "rows()"
+    ],
+    "description": "How many rows have been written — where the next `push` will land.",
+    "prefix": "rows",
+    "scope": "rhai"
+  },
+  "set(sheet: Sheet, at: string, value: ?) -> Sheet": {
+    "body": [
+      "set(${1:at}, ${2:value})"
+    ],
+    "description": "One cell at one address — `s.set(\"B7\", 1800)`. A range is an error.\n\nA `set` below the rows pushed so far moves the next `push` under it, so mixing\nthe two cannot silently overwrite.",
+    "prefix": "set",
+    "scope": "rhai"
+  },
+  "sheet(name: string) -> Sheet": {
+    "body": [
+      "sheet(${1:name})"
+    ],
+    "description": "A sheet, not yet in any document.\n\nReturning one *is* a one-sheet spreadsheet, so a script that builds one sheet\nmay end with it rather than with a `spreadsheet()` around it.",
+    "prefix": "sheet",
+    "scope": "rhai"
+  },
+  "size(style: Style, size: string) -> Style": {
+    "body": [
+      "size(${1:size})"
+    ],
+    "description": "`fo:font-size` — an ODF length, `\"9pt\"`.",
+    "prefix": "size",
+    "scope": "rhai"
+  },
+  "spreadsheet() -> Spreadsheet": {
+    "body": [
+      "spreadsheet()"
+    ],
+    "description": "An empty document. Push a sheet into it, and return it at the end of the script.",
+    "prefix": "spreadsheet",
+    "scope": "rhai"
+  },
+  "style() -> Style": {
+    "body": [
+      "style()"
+    ],
+    "description": "Styling, with nothing set yet: `style().bold().background(\"silver\")`.\n\nIn a script styles *layer* — a later one adds to what is underneath.",
+    "prefix": "style",
+    "scope": "rhai"
+  },
+  "style(row: Row, style: Style) -> Row": {
+    "body": [
+      "style(${1:style})"
+    ],
+    "description": "Styling over the row's own cells — as many as the row holds, and no more.",
+    "prefix": "style",
+    "scope": "rhai"
+  },
+  "style(sheet: Sheet, range: string, style: Style) -> Sheet": {
+    "body": [
+      "style(${1:range}, ${2:style})"
+    ],
+    "description": "Styling over a range, laid over whatever is already there.\n\nA whole column (`\"A:A\"`) means the column the script actually filled.",
+    "prefix": "style",
+    "scope": "rhai"
+  },
+  "sum_above() -> Cell": {
+    "body": [
+      "sum_above()"
+    ],
+    "description": "The sum of the cells directly above this one.\n\nResolved where the cell lands, over the contiguous run of numbers or formulas\nabove it — an AutoSum's rule, so a header of text is not part of it.",
+    "prefix": "sum_above",
+    "scope": "rhai"
+  },
+  "symbol(format: Format, symbol: string) -> Format": {
+    "body": [
+      "symbol(${1:symbol})"
+    ],
+    "description": "The currency symbol — `\"€\"`, `\"EUR\"`.",
+    "prefix": "symbol",
+    "scope": "rhai"
+  },
+  "text() -> Text": {
+    "body": [
+      "text()"
+    ],
+    "description": "An empty text document. Say headings, paragraphs and list items into it, and\nreturn it at the end of the script.",
+    "prefix": "text",
+    "scope": "rhai"
+  },
+  "valign(style: Style, align: string) -> Style": {
+    "body": [
+      "valign(${1:align})"
+    ],
+    "description": "`style:vertical-align` — `top`, `middle` or `bottom`.",
+    "prefix": "valign",
+    "scope": "rhai"
+  },
+  "width(sheet: Sheet, columns: string, length: string) -> Sheet": {
+    "body": [
+      "width(${1:columns}, ${2:length})"
+    ],
+    "description": "Column widths — `s.width(\"A:A\", \"4cm\")`. An ODF length: cm, mm, pt, in.\n\n`\"A\"` and `\"A:A\"` mean the same run of one.",
+    "prefix": "width",
+    "scope": "rhai"
+  },
+  "wrap(style: Style) -> Style": {
+    "body": [
+      "wrap()"
+    ],
+    "description": "`fo:wrap-option` — wrap the text inside the cell.",
+    "prefix": "wrap",
+    "scope": "rhai"
+  }
+}

@@ -143,6 +143,101 @@ pub fn definitions() -> String {
         .single_file()
 }
 
+/// The same vocabulary as **VS Code snippets**, for the editor most people actually have open.
+///
+/// [`definitions`] is the right answer and needs a **language server** to read it; measured
+/// against the published Rhai extension, there is not one (`doc/editor-setup.md` says what was
+/// measured and how). A snippet file needs no server at all — VS Code reads `*.code-snippets`
+/// out of a workspace itself, given only the language id a syntax extension already registers —
+/// and carries a name, a call with its parameters as tab stops, and the documentation `hint`
+/// already required. That is completion and inline documentation for the whole host API, from
+/// the same source as the definition file, which is the property worth having: **both are the
+/// engine's own answer**, so neither can describe a function that is not there.
+///
+/// The parse is of [`definitions`]'s output rather than of this crate's source, for that
+/// reason. Its shape is Rhai's: doc comment lines, then one `fn` line per registration.
+///
+/// **A method is told from a free function by its first parameter's type.** Rhai spells a host
+/// type with a capital (`Sheet`, `Row`, `Format`) and a built-in without one (`string`, `int`,
+/// `array`), and every constructor here takes a built-in or nothing — so a leading capital is
+/// the receiver, and `s.push(…)` gets a snippet with the receiver dropped rather than one that
+/// asks for the sheet twice.
+pub fn snippets() -> String {
+    let mut out = serde_json::Map::new();
+    let mut doc: Vec<String> = Vec::new();
+    for line in definitions().lines() {
+        let line = line.trim();
+        if let Some(text) = line.strip_prefix("///") {
+            doc.push(text.trim().to_owned());
+            continue;
+        }
+        let Some(signature) = line.strip_prefix("fn ").and_then(|s| s.strip_suffix(';')) else {
+            // A blank line between registrations, or `module static;` — either way whatever
+            // documentation was accumulating belongs to nothing and is dropped.
+            if !line.is_empty() {
+                doc.clear();
+            }
+            continue;
+        };
+        if let Some(entry) = snippet(signature, &doc) {
+            out.insert(signature.to_owned(), entry);
+        }
+        doc.clear();
+    }
+    let mut text = serde_json::to_string_pretty(&serde_json::Value::Object(out))
+        .expect("a map of strings serialises");
+    text.push('\n');
+    text
+}
+
+/// One entry of [`snippets`], from one signature line and the doc comment above it.
+fn snippet(signature: &str, doc: &[String]) -> Option<serde_json::Value> {
+    // `get rows(_: Sheet) -> int` is a property: it is typed without a call, so its body is the
+    // bare name and its parameters are not offered.
+    let property = signature.starts_with("get ") || signature.starts_with("set ");
+    let signature = signature
+        .trim_start_matches("get ")
+        .trim_start_matches("set ");
+    let (name, rest) = signature.split_once('(')?;
+    let (params, _) = rest.split_once(')')?;
+
+    let mut params: Vec<&str> = params
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+    // The receiver, if there is one — see this function's caller for the rule.
+    if params
+        .first()
+        .and_then(|p| p.split(':').nth(1))
+        .and_then(|kind| kind.trim().chars().next())
+        .is_some_and(char::is_uppercase)
+    {
+        params.remove(0);
+    }
+
+    let body = if property {
+        name.to_owned()
+    } else {
+        let taken: Vec<String> = params
+            .iter()
+            .enumerate()
+            .map(|(at, param)| {
+                let named = param.split(':').next().unwrap_or(param).trim();
+                format!("${{{}:{}}}", at + 1, named)
+            })
+            .collect();
+        format!("{name}({})", taken.join(", "))
+    };
+
+    Some(serde_json::json!({
+        "scope": "rhai",
+        "prefix": name,
+        "body": [body],
+        "description": doc.join("\n"),
+    }))
+}
+
 /// Run a script and return the document it built, with no data to read.
 ///
 /// `script` is what to call the source in an error — a path, usually. Nothing here reads a

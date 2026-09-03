@@ -206,6 +206,53 @@ Strictness on the way out, tolerance on the way in: everything written is valid 
 everything LibreOffice writes reads — unknown elements and attributes included, kept intact
 rather than dropped.
 
+## A spreadsheet you can review, and one you can generate
+
+A `.fods` diffs. A **`.grind`** reads:
+
+```kdl
+grind spreadsheet
+
+sheet Sales {
+    at A1 {
+        row Region Q1   Q2
+        row North  4200 4800
+        row South  3100 3300
+    }
+    cell B4 "=SUM([.B2:.B3])"
+}
+```
+
+That is the **projection** — a third physical form beside the package and the flat file, the
+same document spelled as plain text. Every shell opens one, `grind convert` moves between all
+three, and it is bijective with the model: read it, edit it, write it back, and nothing has
+moved. Edit one cell and one line of the file changes, with your comments and your alignment
+still where you left them. A formula does not need its answer, so a model can be written by hand
+without doing any of its arithmetic — `grind sheet recalc` fills them in.
+
+Which makes two things possible that a binary spreadsheet cannot have. A change is
+**reviewable**: a rate rising from £62 to £65 is one line of diff, and recalculating shows
+exactly which seventeen cells moved. And a document is **checkable in CI**: `grind lint` finds a
+cached total that disagrees with its formula, a formula naming a deleted sheet, or anything a
+`.grind` would not carry — and exits non-zero on an error.
+
+When the repetition gets tiring, a **script** writes the document instead:
+
+```console
+$ grind build examples/timesheet.rhai -o month.fods
+```
+
+One line per *kind* of cell rather than one per cell, out of a JSON file somebody who has never
+read a line of code can edit. No filesystem beyond that one directory, no network, no clock, no
+randomness — and nothing that *opens* a document can evaluate anything, which is a requirement
+with a test behind it rather than an intention. A script produces a document and is never
+recovered from one.
+
+Two guides, each built on an example in this repository:
+[`doc/projection-guide.md`](doc/projection-guide.md) and
+[`doc/generator-guide.md`](doc/generator-guide.md), with
+[`doc/editor-setup.md`](doc/editor-setup.md) for the editor.
+
 ## What it will and will not do
 
 **In:** multiple sheets · cell values and types · OpenFormula **Small Group** (110 functions,
@@ -279,6 +326,10 @@ cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 | [`doc/cli-recipes-sheet.md`](doc/cli-recipes-sheet.md) | Worked scripts |
 | [`doc/small-group.md`](doc/small-group.md) | The 110 functions, from Part 4 §2.3.2 |
 | [`doc/ods-format.md`](doc/ods-format.md) | Clean-room notes on what LibreOffice actually does, cited `file:line` |
+| [`doc/projection-guide.md`](doc/projection-guide.md) | Writing a spreadsheet by hand, as plain text that reviews like code |
+| [`doc/generator-guide.md`](doc/generator-guide.md) | Generating one from a script, and from data nobody has to be a programmer to edit |
+| [`doc/editor-setup.md`](doc/editor-setup.md) | VS Code for both, and what each extension actually does |
+| [`doc/dsl.md`](doc/dsl.md) | The design behind the two — why one round-trips and the other never will |
 | [`doc/sheet-shell.md`](doc/sheet-shell.md) | The spreadsheet's GTK shell, milestone by milestone |
 | [`doc/text-shell.md`](doc/text-shell.md) | The word processor's windows — what they do, and what they deliberately do not |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | The clean-room rule, and how to work on this |

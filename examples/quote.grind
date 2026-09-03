@@ -1,0 +1,162 @@
+grind spreadsheet
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// Larkspur Joinery — quote LJ-1042, Bramble Court Hotel reception fit-out.
+//
+// A spreadsheet, hand-written, in the form that lives in git — doc/dsl.md layer 0. Nothing
+// generated this: it was typed in a text editor, and the guide that walks through it is
+// doc/projection-guide.md.
+//
+//   grind info          examples/quote.grind       # what is in it
+//   grind sheet view    examples/quote.grind A3:G19
+//   grind lint          examples/quote.grind       # before anyone opens it
+//   grind convert       examples/quote.grind quote.fods   # to a file LibreOffice opens
+//
+// **The formulas below have no answers in them, and that is the point.** A cached value is
+// optional, so a quote can be written by hand without doing any of its arithmetic:
+// `grind sheet recalc` fills the answers in, one line of diff per cell, leaving these comments
+// and this alignment exactly where they are. Until then the file is honest about not having
+// been calculated — and so is LibreOffice, which renders such a cell blank
+// (doc/projection-sheet.md, "A formula does not need its answer").
+//
+// The two prices below the line are `Assumptions`, on the second sheet. Changing the shop rate
+// is one line in one place, and `git diff` shows one line.
+// ─────────────────────────────────────────────────────────────────────────────────────────
+
+// Names are document-level in ODF, so they sit outside every sheet — and a formula that says
+// `SUMIF(kind;"Labour";amount)` is one anybody can read without counting columns.
+name kind      "[$Quote.$C$5:.$C$13]"
+name amount    "[$Quote.$G$5:.$G$13]"
+name benchRate "[$Assumptions.$B$2]"
+name overhead  "[$Assumptions.$B$3]"
+name vatRate   "[$Assumptions.$B$4]"
+
+sheet Quote {
+    // Column widths and row heights are the sheet's, and are stated in ODF lengths kept
+    // verbatim — `9cm` is what the document will say.
+    col 1 width="2.4cm"
+    col 2 width="9cm"
+    col 3 width="2.4cm"
+    col 7 width="3cm"
+    row 1 height="9mm"
+
+    // `at` says where a grid of plain values starts; each `row` under it is one line of the
+    // sheet, and `#null` is a hole rather than an empty string. Alignment is a person's
+    // choice and survives every edit, because the writer never regenerates what nobody
+    // touched.
+    at A1 {
+        row "Larkspur Joinery"   #null                                  #null       #null #null "Quote"    LJ-1042
+        row "Reception fit-out"  "Bramble Court Hotel"                  #null       #null #null "Raised"   #null
+        row #null                #null                                  #null       #null #null #null      #null
+        row Code                 Description                            Kind        Qty   Unit  Rate       Amount
+        row L-BENCH              "Reception desk, bench joinery"        Labour      38    hours #null      #null
+        row L-MACH               "Panel breakdown and edge banding"     Labour      16    hours #null      #null
+        row L-FIN                "Lacquer, two coats"                   Labour      12.5  hours #null      #null
+        row L-APP                "Sanding and preparation"              Labour      7.5   hours #null      #null
+        row L-FIT                "Delivery and fitting, two joiners"    Labour      14    hours #null      #null
+        row M-WAL                "Walnut veneered MDF, 18mm"            Materials   14    sheets 209.89    #null
+        row M-LIP                "Walnut lippings"                      Materials   60    metres 6.7       #null
+        row M-IRON               "Cable grommets, brackets, fixings"    Materials   1     lot   168.25     #null
+        row M-CONS               "Abrasives, lacquer, consumables"      Materials   1     lot   142        #null
+    }
+
+    // A `cell` is one cell that carries more than a value — here a formula and no answer at
+    // all. The reader takes a bare `=…` in the value position as the formula.
+    //
+    // Labour has no rate of its own: it reads the rate card on the other sheet, through the
+    // name declared at the top. Re-pricing the shop is one edit there, not five here.
+    cell F5  "=benchRate"
+    cell F6  "=benchRate*0.94"
+    cell F7  "=benchRate*0.87"
+    cell F8  "=benchRate*0.5"
+    cell F9  "=benchRate"
+
+    // Nine lines, nine identical shapes — written out, because there are nine of them and a
+    // person can see all nine at once. This is exactly the point where the *other* form starts
+    // to pay: at ninety lines, examples/timesheet.rhai writes this with one `for`.
+    cell G5  "=[.D5]*[.F5]"
+    cell G6  "=[.D6]*[.F6]"
+    cell G7  "=[.D7]*[.F7]"
+    cell G8  "=[.D8]*[.F8]"
+    cell G9  "=[.D9]*[.F9]"
+    cell G10 "=[.D10]*[.F10]"
+    cell G11 "=[.D11]*[.F11]"
+    cell G12 "=[.D12]*[.F12]"
+    cell G13 "=[.D13]*[.F13]"
+
+    // The summary block. `SUMIF` over the two names, so adding a line to the table above needs
+    // no change here as long as it stays inside the named ranges — and `grind lint` says so
+    // when it does not.
+    cell F14 Labour
+    cell G14 "=SUMIF(kind;\"Labour\";amount)"
+    cell F15 Materials
+    cell G15 "=SUMIF(kind;\"Materials\";amount)"
+    cell F16 "Workshop overhead"
+    cell G16 "=[.G14]*overhead"
+    cell F17 Subtotal
+    cell G17 "=SUM([.G14:.G16])"
+    cell F18 VAT
+    cell G18 "=[.G17]*vatRate"
+    cell F19 "Total, inc. VAT"
+    cell G19 "=[.G17]+[.G18]"
+
+    // What the quote says about itself, for whoever reads it next.
+    cell F21 "Hours quoted"
+    cell G21 "=SUMIF(kind;\"Labour\";[.D5:.D13])"
+    cell F22 "Materials share"
+    cell G22 "=[.G15]/[.G17]"
+    cell F23 "Valid until"
+    // A date *value* is a number with a date kind on it; a date somebody typed is a formula
+    // that makes one. `=DATE(y;m;d)` under a date format is the spelling, in both this form
+    // and the generator.
+    cell G23 "=DATE(2026;10;9)"
+
+    // A style is stated once over the range it covers, never per cell. Colours are palette
+    // names or `#rrggbb`; borders are `<width> <line> <colour>`.
+    style A1:G1  bold=#true size="14pt"
+    style A4:G4  bold=#true background=silver align=center border="0.5pt solid navy"
+    style A5:A13 italic=#true color=navy
+    style F14:F19 bold=#true
+    style F19:G19 bold=#true border="0.5pt solid navy"
+    style B2     italic=#true
+    style F21:F23 italic=#true
+
+    // A number format is a `numfmt::preset` in one word when it is one, and its parts spelled
+    // out when it is not. Both are here: the money is a preset, and "38 h" is not — it is a
+    // number followed by a literal, which is what ODF actually stores.
+    format F5:G13  currency decimals=2 symbol="£"
+    format G14:G19 currency decimals=2 symbol="£"
+    format G21     number { number decimals=1 min-decimals=1; text " h" }
+    format G22     percentage decimals=1
+    format G23     date
+}
+
+// The prices, on their own sheet, so that changing one is a one-line diff a reviewer can see
+// without opening a spreadsheet application.
+sheet Assumptions {
+    col 1 width="5cm"
+    col 3 width="8cm"
+
+    at A1 {
+        row Assumption      Value  Note
+        row "Bench rate"    62     "£ per hour, 2026 rate card"
+        row "Overhead"      0.18   "shop, insurance, consumables"
+        row "VAT"           0.2    "standard rate"
+        row "Lead time"     6      "weeks from deposit"
+        row "Deposit taken" #false "20% on acceptance"
+        // A quoted string is text even when it is all digits — `"2042"` is a reference, not a
+        // number, and the projection keeps the difference the way the document does.
+        row "Our ref"       "2042" "quote number, not a quantity"
+        // Interior spaces survive, `\n` is a line break inside one cell, and `\t` is a tab.
+        row "Terms"         "30 days net\nNamed materials only; substitutions quoted separately"
+    }
+
+    style A1:C1 bold=#true background=silver
+    style A2:A8 italic=#true
+    style C8    wrap=#true size="9pt" valign=top
+    row 8 height="12mm"
+
+    format B3:B4 percentage decimals=0
+    format B6    boolean
+    format B2    currency decimals=2 symbol="£"
+}
