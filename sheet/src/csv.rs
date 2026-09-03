@@ -20,7 +20,7 @@
 //! ODF (`doc/ods-format.md` §8) applied to a format with far less of a specification. RFC 4180
 //! describes a fraction of what real files contain, so [`parse`] never fails: an unterminated
 //! quote, a stray quote inside a bare field, ragged rows, CRLF, a lone CR, a byte-order mark
-//! and blank lines in the middle all have a defined reading below. [`write`] emits the
+//! and blank lines in the middle all have a defined reading below. [`write()`] emits the
 //! conservative form every reader accepts.
 //!
 //! **TSV is not a second format.** The delimiter is a field of [`Dialect`], so tab-separated
@@ -203,7 +203,7 @@ pub fn parse(text: &str, dialect: &Dialect) -> Vec<Vec<String>> {
 ///
 /// [`Export::formulas`] is the odd one out and says so here rather than in a second struct:
 /// the other fields decide how a field is *spelled*, and that one decides which text the
-/// document hands over in the first place ([`crate::App::export_csv`] reads it, [`write`] does
+/// document hands over in the first place ([`crate::App::export_csv`] reads it, [`write()`] does
 /// not).
 #[derive(Clone, Debug)]
 pub struct Export {
