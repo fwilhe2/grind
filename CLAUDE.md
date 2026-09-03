@@ -495,9 +495,15 @@ browser shell gained a second pane the same way `grind-tui` gained a second mode
 on `grind_core::kind`, with the canvas as a third `Metrics`. Three implementations of that
 trait now exist and the engine needed no change, which is Path C's evidence. Building them
 found one core bug (an empty paragraph laid out one *unit* tall, since fixed in
-`grind_text::lay_out`) and one core limitation, written down rather than worked around:
-`App::caret_line` takes one width and one provider for a motion that may cross into a block set
-in a different face.
+`grind_text::lay_out`) and one core limitation, written down rather than worked around and
+**since fixed in the core**: `App::caret_line` took one width and one provider for a motion that
+may cross into a block set in a different face, so Down-arrow out of a heading measured the
+paragraph below it with the heading's font. The three caret operations now take a
+`grind_text::Faces` — which measure and which `Metrics` *this* block is set in, asked as the
+motion arrives at each block — with `Uniform` for the every-block-alike case the CLI and the
+terminal want. The trait is `grind-text`'s rather than `grind_core::layout`'s because a block is
+the word processor's vocabulary (R8), and it is handed a kind and a style name rather than the
+block because `App` holds its read lock for the whole motion.
 
 **After S10, character formatting landed in the core** — the half of a rich-text editor that is
 not a shell. A `Run` carries a `CharStyle` (`text/src/style.rs`): bold, italic, underline,

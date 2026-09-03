@@ -26,8 +26,10 @@
 //! **Layout lives in `grind_core::layout`** and this crate drives it — `doc/text-layout.md`,
 //! decided on Path C. Line breaking, and every caret operation defined in terms of a line, are
 //! in the core so that three shells cannot disagree about where Down-arrow goes; the shell
-//! supplies font metrics through [`Metrics`] and nothing else. Pagination is still gated, and
-//! layout is left-to-right only by explicit decision.
+//! supplies font metrics through [`Metrics`] and nothing else — plus, through [`Faces`], which
+//! of them each block is set in, because a heading and the paragraph under it are not the same
+//! font and a motion by line crosses between them. Pagination is still gated, and layout is
+//! left-to-right only by explicit decision.
 //!
 //! **Character formatting is direct formatting** ([`style`]). A run carries the properties an
 //! `office:automatic-styles` entry set on it — bold, italic, a family, a size, a colour — and
@@ -290,6 +292,58 @@ pub struct Counts {
     pub characters: usize,
     pub blocks: usize,
     pub headings: usize,
+}
+
+/// Which measure and which [`Metrics`] each block is set in — **the lookup a motion that
+/// crosses a block boundary needs.**
+///
+/// Down-arrow out of a heading lands in the paragraph below it, and that paragraph is set in a
+/// different face: a smaller font, and (for a list item) a narrower measure, because the indent
+/// comes out of the column. A motion handed *one* width and *one* provider therefore measures
+/// the block it arrives in with the face of the block it left — invisible in the middle of a
+/// line and wrong by a few characters at either end. So the caret operations ask for each
+/// block's face **as they reach it** rather than being told once, which is what makes them
+/// right across a boundary rather than only within one block.
+///
+/// **The block is described rather than handed over**, and that is not a convenience: [`App`]
+/// holds its read lock for the whole motion, so an implementation that called back into
+/// [`App::get_viewport`] to find out what it was being asked about would be re-entering a lock
+/// it is already inside. Kind and named style are what every shell keys a face off anyway —
+/// `Title` and `Subtitle` are paragraphs whose only signal is the name, which is why the style
+/// is here beside the kind — so they are what is passed.
+///
+/// This lives in `grind-text` rather than beside [`Metrics`] in `grind_core::layout` because a
+/// *block* is the word processor's own vocabulary and R8 keeps that out of the core. The core's
+/// half of the seam is unchanged: it still asks only how wide a piece of text is.
+pub trait Faces {
+    /// The measure and the metrics for the block at `index`.
+    ///
+    /// `width` is in whatever unit the returned provider answers in, and zero or less means do
+    /// not wrap — the same contract [`App::layout_block`] has, because it is the same width.
+    fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics);
+}
+
+/// Every block set alike: one width, one provider.
+///
+/// What the CLI measures with (`grind_text::Fixed` at `--width`) and what a shell whose unit is
+/// a character cell wants, since a terminal has one font at one size. Named rather than
+/// implied by an overload, so that a caller reaching for it is *saying* the document is set in
+/// one face rather than forgetting that it might not be.
+pub struct Uniform<'a> {
+    width: f32,
+    metrics: &'a dyn Metrics,
+}
+
+impl<'a> Uniform<'a> {
+    pub fn new(width: f32, metrics: &'a dyn Metrics) -> Self {
+        Uniform { width, metrics }
+    }
+}
+
+impl Faces for Uniform<'_> {
+    fn of(&self, _index: usize, _kind: &BlockKind, _style: Option<&str>) -> (f32, &dyn Metrics) {
+        (self.width, self.metrics)
+    }
 }
 
 #[derive(Default)]
@@ -571,13 +625,21 @@ impl App {
     // are how a shell reaches it. Every one of them exists because the operation it names is
     // defined in terms of a *line* — and a line is an output of layout, not a thing in the
     // document, so leaving them to the shells would have been three implementations that
-    // disagree. The shell brings a width and a `Metrics`; nothing about a font is stored here.
+    // disagree. The shell brings the faces and nothing about a font is stored here.
+    //
+    // The three caret operations take a [`Faces`] rather than one width and one provider,
+    // because a motion by line may end in a block set differently from the one it started in.
+    // [`App::layout_block`] keeps the pair: its caller has already named the one block it
+    // wants, and answering "how wide is *this* block" is the question the CLI's `--width` asks.
 
     /// Break one block into lines at `width`, in whatever unit `metrics` answers in.
     ///
     /// The result is a plain value carrying the x of every caret position, so a shell paints
     /// from it and throws it away — the same contract [`App::get_viewport`] offers for content.
     /// A `width` of zero or less means do not wrap.
+    ///
+    /// One named block, so the caller has already chosen its face; anything that may *move*
+    /// between blocks takes a [`Faces`] instead and looks each one up as it arrives.
     pub fn layout_block(&self, index: usize, width: f32, metrics: &dyn Metrics) -> Result<Layout> {
         let state = self.state.read().unwrap();
         let block = state
@@ -593,8 +655,18 @@ impl App {
     ///
     /// Passed back into [`App::caret_line`] rather than stored, because it is a property of a
     /// *run of keystrokes* and not of the document.
-    pub fn caret_x(&self, at: Caret, width: f32, metrics: &dyn Metrics) -> Result<f32> {
-        Ok(self.layout_block(at.block, width, metrics)?.x_at(at.offset))
+    ///
+    /// Measured through the same [`Faces`] the move itself uses, so the goal column and the
+    /// line it is applied to are in one unit. That is what makes a goal column survive a change
+    /// of face: a heading and the paragraph under it are set in different fonts but on the same
+    /// screen, and x is the screen's.
+    pub fn caret_x(&self, at: Caret, faces: &dyn Faces) -> Result<f32> {
+        let state = self.state.read().unwrap();
+        let block = state
+            .doc
+            .block(at.block)
+            .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
+        Ok(set_out(block, at.block, faces).x_at(at.offset))
     }
 
     /// Move a caret `delta` lines — **the Down and Up arrows**, and Page Down with a bigger
@@ -604,24 +676,29 @@ impl App {
     /// of the next, which is the behaviour that makes a document one flow rather than a list of
     /// boxes. At the very top or bottom it stops rather than erroring, because a caret that
     /// cannot move is not a failure — it is the end of the document.
+    ///
+    /// **The block it arrives in is measured in its own face**, which is why this takes a
+    /// [`Faces`] rather than a width and a provider: Down out of a heading is the one motion
+    /// where the two blocks are set differently by construction, and measuring the paragraph
+    /// below with the heading's font put the caret several characters from where the click
+    /// would have.
     pub fn caret_line(
         &self,
         at: Caret,
         delta: isize,
         goal_x: f32,
-        width: f32,
-        metrics: &dyn Metrics,
+        faces: &dyn Faces,
     ) -> Result<Caret> {
         let state = self.state.read().unwrap();
         let blocks = state.doc.blocks.len();
         let mut block = at.block;
-        let mut layout = lay_out(
+        let mut layout = set_out(
             state
                 .doc
                 .block(block)
                 .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(block))))?,
-            width,
-            metrics,
+            block,
+            faces,
         );
         let mut offset = at.offset.min(layout.len());
         let step = if delta < 0 { -1 } else { 1 };
@@ -640,7 +717,7 @@ impl App {
                 _ => break,
             };
             block = next;
-            layout = lay_out(&state.doc.blocks[block], width, metrics);
+            layout = set_out(&state.doc.blocks[block], block, faces);
             let line = match step > 0 {
                 true => 0,
                 false => layout.lines().len().saturating_sub(1),
@@ -655,13 +732,13 @@ impl App {
     /// On a wrapped line these are the *visual* ends, not the paragraph's, which is the whole
     /// difference between a text editor and a `set_text` front end. Returned as a pair because
     /// they are one layout apart and a shell asking for one usually wants the other.
-    pub fn caret_line_bounds(
-        &self,
-        at: Caret,
-        width: f32,
-        metrics: &dyn Metrics,
-    ) -> Result<(Caret, Caret)> {
-        let layout = self.layout_block(at.block, width, metrics)?;
+    pub fn caret_line_bounds(&self, at: Caret, faces: &dyn Faces) -> Result<(Caret, Caret)> {
+        let state = self.state.read().unwrap();
+        let block = state
+            .doc
+            .block(at.block)
+            .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
+        let layout = set_out(block, at.block, faces);
         let line = layout.lines()[layout.line_at(at.offset)];
         Ok((
             Caret {
@@ -1414,6 +1491,17 @@ fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, O
         }) => (style.clone(), props.clone(), href.clone()),
         _ => (None, CharStyle::default(), None),
     }
+}
+
+/// Break one block into lines **in the face that block is set in** — [`lay_out`] with the
+/// width and the provider looked up rather than passed in.
+///
+/// One function so that every caret operation asks the same question the same way. The
+/// alternative — each of them doing its own lookup — is how a motion ends up measuring one
+/// block with another's font, which is exactly the bug [`Faces`] exists to close.
+fn set_out(block: &Block, index: usize, faces: &dyn Faces) -> Layout {
+    let (width, metrics) = faces.of(index, &block.kind, block.style.as_deref());
+    lay_out(block, width, metrics)
 }
 
 /// Break one block into lines.

@@ -665,31 +665,17 @@ mod imp {
             Some((layout, faces, kind))
         }
 
-        /// Same block, plus its named style — what picking its face needs beyond
-        /// [`Doc::measured`]'s own answer, and not worth changing that signature for.
-        fn style_of(&self, index: usize) -> Option<String> {
-            self.app()?
-                .get_viewport(index..index + 1)
-                .get(index)?
-                .style
-                .clone()
-        }
-
-        /// The width and metrics a *line* operation is asked in, for the caret's own block.
+        /// How each block is set — this window's [`grind_text::Faces`], which is what every
+        /// motion by line is asked through.
         ///
-        /// ponytail: [`App::caret_line`] takes one width and one provider for a motion that
-        /// may cross into a block set in a different face, so Down-arrow out of a heading
-        /// lands using the heading's metrics. Invisible for a caret in the middle of a line
-        /// and wrong by a few characters at the ends. The fix is a core change — a provider
-        /// looked up per block rather than passed once — and it is written down in
-        /// `doc/text-shell.md` rather than worked around here, because working around it
-        /// would mean this shell doing its own line arithmetic.
-        fn line_context(&self) -> Option<(f32, Rc<Faces>, BlockKind, Option<String>)> {
-            let block = self.caret.get().block;
-            let (_, faces, kind) = self.measured(block)?;
-            let style = self.style_of(block);
+        /// Rebuilt per question rather than kept, because both halves of it change under the
+        /// window: the faces on a theme change, the column on a resize.
+        fn column(&self) -> Column {
             let (_, column) = geom::column(f64::from(self.obj().width()));
-            Some(((column - indent_of(&kind)) as f32, faces, kind, style))
+            Column {
+                faces: self.faces(),
+                column,
+            }
         }
 
         // --- input ---
@@ -731,10 +717,7 @@ mod imp {
                 false => self.anchor.set(None),
                 true => {}
             }
-            let Some((width, faces, kind, style)) = self.line_context() else {
-                return;
-            };
-            let metrics = faces.of(&kind, style.as_deref());
+            let faces = self.column();
             match motion {
                 Motion::Char(delta) => {
                     self.goal_x.set(None);
@@ -745,7 +728,7 @@ mod imp {
                     // were reading is still on screen after the jump.
                     let lines = match motion {
                         Motion::Page(_) => {
-                            let fit = f64::from(self.obj().height()) / faces.body().height();
+                            let fit = f64::from(self.obj().height()) / self.faces().body().height();
                             (fit as isize - 1).max(1)
                         }
                         _ => 1,
@@ -754,16 +737,16 @@ mod imp {
                     // Remembered across a run of Down presses, which is what `goal_x` is for.
                     let goal = match self.goal_x.get() {
                         Some(x) => x,
-                        None => app.caret_x(caret, width, metrics).unwrap_or(0.0),
+                        None => app.caret_x(caret, &faces).unwrap_or(0.0),
                     };
                     self.goal_x.set(Some(goal));
-                    if let Ok(moved) = app.caret_line(caret, delta, goal, width, metrics) {
+                    if let Ok(moved) = app.caret_line(caret, delta, goal, &faces) {
                         self.move_caret(moved, false);
                     }
                 }
                 Motion::LineStart | Motion::LineEnd => {
                     self.goal_x.set(None);
-                    if let Ok((start, end)) = app.caret_line_bounds(caret, width, metrics) {
+                    if let Ok((start, end)) = app.caret_line_bounds(caret, &faces) {
                         self.move_caret(
                             match motion {
                                 Motion::LineStart => start,
@@ -1156,6 +1139,34 @@ mod imp {
     /// and the paint always agree.
     pub(super) fn caption_height(face: &Face, text: &str, width: f64) -> f64 {
         f64::from(face.draw_wrapped(text, width).pixel_size().1)
+    }
+
+    /// The measure and the face of **every** block — this shell's [`grind_text::Faces`].
+    ///
+    /// Both halves are this window's own arithmetic and neither is uniform: a heading is set
+    /// larger than the paragraph under it, and a list item's indent comes out of the column, so
+    /// it is measured narrower. That is why the core asks per block rather than being handed
+    /// one width and one provider for a whole motion — Down-arrow out of a heading used to
+    /// measure the paragraph below it with the heading's font, and landed a few characters from
+    /// where a click on the same spot would have.
+    pub(super) struct Column {
+        faces: Rc<Faces>,
+        /// The text column's width in pixels, before any indent comes out of it.
+        column: f64,
+    }
+
+    impl grind_text::Faces for Column {
+        fn of(
+            &self,
+            _index: usize,
+            kind: &BlockKind,
+            style: Option<&str>,
+        ) -> (f32, &dyn grind_text::Metrics) {
+            (
+                (self.column - indent_of(kind)) as f32,
+                self.faces.of(kind, style),
+            )
+        }
     }
 
     /// How far a block's text is indented — a list's nesting, and nothing else.

@@ -386,6 +386,16 @@ impl App {
         }
     }
 
+    /// How each block is set, for the motions that may cross out of one into another.
+    ///
+    /// [`grind_text::Uniform`], because a terminal has one font at one size: every block is the
+    /// same measure and the same cell. The GUI shells answer this per block — a heading there
+    /// really is a different face — and the core cannot tell the two apart, which is the whole
+    /// of what the seam buys.
+    fn faces(&self) -> grind_text::Uniform<'_> {
+        grind_text::Uniform::new(self.width, &Cells)
+    }
+
     /// Every motion, routed to the core.
     ///
     /// The horizontal ones are the only arithmetic in this file, and they are arithmetic over
@@ -405,24 +415,19 @@ impl App {
                 // Remembered across a run of j/k, which is what `goal_x` is for.
                 let goal = match self.goal_x {
                     Some(x) => x,
-                    None => self
-                        .core
-                        .caret_x(self.caret, self.width, &Cells)
-                        .unwrap_or(0.0),
+                    None => self.core.caret_x(self.caret, &self.faces()).unwrap_or(0.0),
                 };
                 self.goal_x = Some(goal);
                 if let Ok(moved) =
                     self.core
-                        .caret_line(self.caret, delta as isize, goal, self.width, &Cells)
+                        .caret_line(self.caret, delta as isize, goal, &self.faces())
                 {
                     self.caret = moved;
                 }
             }
             Motion::LineStart | Motion::LineEnd => {
                 self.goal_x = None;
-                if let Ok((start, end)) =
-                    self.core.caret_line_bounds(self.caret, self.width, &Cells)
-                {
+                if let Ok((start, end)) = self.core.caret_line_bounds(self.caret, &self.faces()) {
                     self.caret = match motion {
                         Motion::LineStart => start,
                         _ => end,
