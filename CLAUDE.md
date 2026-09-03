@@ -103,6 +103,8 @@ cargo run -p grind-cli -- sheet set book.ods A1 1
 cargo run -p grind-cli -- sheet set book.ods A2 '=[.A1]*2'   # ODF syntax, verbatim
 cargo run -p grind-cli -- sheet recalc book.ods
 cargo run -p grind-cli -- sheet view book.ods A1:A2
+cargo run -p grind-cli -- sheet import-csv book.ods data.csv --locale de-DE  # delimiter sniffed
+cargo run -p grind-cli -- sheet export-csv book.ods --delimiter tab
 cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
 cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
 cargo run -p grind-cli -- build examples/timesheet.rhai -o month.fods  # four sheets that agree
@@ -288,6 +290,17 @@ before it can be answered.
   format-code strings (Excel's spelling, not ODF's) — a format is an ordered sequence of
   pieces. `preset`/`is_preset`/`preset_params` are the whole "set/read a format" vocabulary
   and live here so no shell invents a second one.
+- **`sheet/src/csv.rs`** — CSV and TSV, the one non-ODF format (`doc/not-doing.md` §2). TSV is
+  not a second format: the delimiter is a field of `Dialect`, sniffed from the file's own
+  content when nobody names one. Tolerance on the way in (`parse` never fails — an unterminated
+  quote, a stray quote, CRLF, a BOM and ragged rows all have a defined reading), strictness on
+  the way out. **It does not own the typing rule**: `input` turns a field into the string a
+  person would have *typed*, and `App::enter_range`'s rule decides what that means — so
+  `007`, `NaN` and a leading `=` are forced to text by re-spelling them, not by a second
+  coercion path. `--dates` is the one thing that is not a paste, and it is a *precondition*:
+  the typing rule reads an ISO date only into a cell already formatted as one, so
+  `App::import_csv` applies those formats in pass one and asks the ordinary question in pass
+  two, both in a single undo entry (`commit_after`).
 - **`core/src/locale.rs`** — decimal point and grouping separator only (two characters).
   Everything else (month names, CLDR tables) is a deliberate, named gap.
 - **`core/src/kind.rs`** — which document type some bytes are, decided *before* parsing,

@@ -22,6 +22,7 @@ use std::sync::{Arc, RwLock};
 pub mod a1;
 pub mod action;
 pub mod chart;
+pub mod csv;
 pub mod filter;
 pub mod formula;
 pub mod graph;
@@ -490,6 +491,147 @@ impl App {
                 recalc,
             })
         })
+    }
+
+    /// Read a CSV or TSV file into the sheet, starting at `anchor`.
+    ///
+    /// A paste with a parser in front of it, and deliberately little more: [`csv::parse`] cuts
+    /// the text into fields, [`csv::input`] says what a person would have **typed** to mean
+    /// each one, and the typing rule every other entry point uses decides the rest. So an
+    /// imported field and a typed one reach the document through the same door, and this
+    /// method has no opinion of its own about what a field means.
+    ///
+    /// The whole import — formats, values and the recalculation behind them — is one undo
+    /// entry.
+    ///
+    /// [`csv::Import::dates`] is the one thing here that is not simply a paste, and it is a
+    /// *precondition* rather than a second rule. The typing rule reads an ISO date into a cell
+    /// whose format already says it holds one (`date_kind`), which is `doc/sheet-shell.md`
+    /// C3's deliberate refusal to guess. Formatting the column first is therefore the whole
+    /// mechanism — and it cannot be done from outside, because a format on an *empty* cell
+    /// does not survive a save (the `TODO:` in `odf/read.rs`), so a `format` command followed
+    /// by an `import` command would silently lose it between the two processes. Pass one below
+    /// applies those formats to the document, pass two asks the ordinary question, and both
+    /// land in one entry.
+    ///
+    /// Bounded by [`MAX_FORMATTED_CELLS`], because a paste is what this is. A file bigger than
+    /// that is an error naming the number rather than an undo stack with a million entries in
+    /// it — split it, or write a generator (`doc/dsl.md` layer 1), which is the shape that
+    /// exists for bulk.
+    pub fn import_csv(
+        &self,
+        sheet: usize,
+        anchor: Pos,
+        text: &str,
+        options: &csv::Import,
+        recalc: RecalcMode,
+    ) -> Result<EnterOutcome> {
+        let fields = csv::parse(text, &options.dialect);
+        let width = fields.iter().map(Vec::len).max().unwrap_or(0) as u32;
+        let last = Pos::new(
+            anchor.row + fields.len().saturating_sub(1) as u32,
+            anchor.col + width.saturating_sub(1),
+        );
+        // For the size check only, exactly as `enter_range` does it.
+        let _bounded = self.rectangle(anchor, last)?;
+        self.mutate(|state| {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let at =
+                |row: usize, col: usize| Pos::new(anchor.row + row as u32, anchor.col + col as u32);
+
+            // Pass one: the formats a date field needs, applied rather than queued — `typed`
+            // reads the document and not the batch. `--text` says guess nothing, and outranks
+            // this for that reason.
+            let mut inverses = Vec::new();
+            if options.dates && !options.text {
+                let null_date = state.doc.null_date;
+                let formats: Vec<Action> = fields
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(row, line)| {
+                        line.iter().enumerate().filter_map(move |(col, field)| {
+                            csv::dated(field, null_date).map(|format| Action::SetFormat {
+                                sheet,
+                                pos: at(row, col),
+                                format: Some(Box::new(format)),
+                            })
+                        })
+                    })
+                    .collect();
+                if !formats.is_empty() {
+                    inverses.push(
+                        state
+                            .doc
+                            .apply(Action::Batch(formats))
+                            .ok_or(Error::NoSuchSheet(sheet))?,
+                    );
+                }
+            }
+
+            // Pass two: the values, through the rule a keystroke uses.
+            let mut kind = Entered::Cleared;
+            let mut edits = Vec::new();
+            for (row, line) in fields.iter().enumerate() {
+                for (col, field) in line.iter().enumerate() {
+                    let pos = at(row, col);
+                    let (this, edit) = typed(&state.doc, sheet, pos, &csv::input(field, options));
+                    if (row, col) == (0, 0) {
+                        kind = this;
+                    }
+                    edits.push(edit);
+                }
+            }
+            let cells = edits.len();
+            let recalc = commit_after(state, sheet, inverses, edits, recalc)?;
+            Ok(EnterOutcome {
+                kind,
+                cells,
+                recalc,
+            })
+        })
+    }
+
+    /// Write a rectangle out as CSV or TSV.
+    ///
+    /// **What a cell shows**, not what it stores: a date leaves as a date and a percentage as
+    /// a percentage, because the number format is the only place a document says which of
+    /// those a number is. `45000` in a file nobody can read as a date is the alternative, and
+    /// it is what makes an export need a second explanation.
+    ///
+    /// [`csv::Export::formulas`] asks for the source instead, in display form (`=SUM(B2:B4)`)
+    /// — LibreOffice's "save cell formulas" and the same spelling a formula bar shows.
+    ///
+    /// One read lock for the whole rectangle, and it hands back text rather than cells, so
+    /// rule 1 holds: nothing here is a getter for the document.
+    pub fn export_csv(
+        &self,
+        sheet: usize,
+        start: Pos,
+        end: Pos,
+        options: &csv::Export,
+    ) -> Result<String> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        let mut rows = Vec::with_capacity((end.row.saturating_sub(start.row) + 1) as usize);
+        for row in start.row..=end.row {
+            let mut fields = Vec::with_capacity((end.col.saturating_sub(start.col) + 1) as usize);
+            for col in start.col..=end.col {
+                let pos = Pos::new(row, col);
+                let formula = options.formulas.then(|| s.formula(pos)).flatten();
+                fields.push(match formula {
+                    // A formula this build cannot parse goes out as it is stored — the same
+                    // honesty `App::input_text` shows for one.
+                    Some(formula) => {
+                        formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned())
+                    }
+                    None => render(s, pos, state.doc.null_date),
+                });
+            }
+            rows.push(fields);
+        }
+        Ok(csv::write(&rows, options))
     }
 
     /// Replicate `source` across a rectangle — a fill, the way a drag handle or Ctrl+D/
@@ -1913,7 +2055,25 @@ fn commit(
     edits: Vec<Action>,
     mode: RecalcMode,
 ) -> Result<Option<Recalc>> {
-    let mut inverses = Vec::new();
+    commit_after(state, sheet, Vec::new(), edits, mode)
+}
+
+/// [`commit`], with edits that have **already been applied** in front of it.
+///
+/// One caller, [`App::import_csv`], and one reason: the typing rule reads an ISO date only
+/// into a cell whose format already says it holds one, so an import that formats a date
+/// column has to apply that format *before* it asks what the fields mean — and still land the
+/// whole thing in one undo entry. `prior` is those inverses, in application order; the tail of
+/// this function reverses everything, so an undo takes the values back before the formats that
+/// gave them meaning.
+fn commit_after(
+    state: &mut State,
+    sheet: usize,
+    prior: Vec<Action>,
+    edits: Vec<Action>,
+    mode: RecalcMode,
+) -> Result<Option<Recalc>> {
+    let mut inverses = prior;
     if !edits.is_empty() {
         inverses.push(
             state

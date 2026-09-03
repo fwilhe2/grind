@@ -629,6 +629,68 @@ fn build_is_a_suite_level_verb() {
     assert!(help.contains("build"), "{help}");
 }
 
+/// CSV in and out, through the two commands rather than through the module's own tests.
+///
+/// What is checked here is what only the CLI can get wrong: the file is read as bytes and
+/// decoded, the delimiter is sniffed from the *content*, and what reaches standard output is
+/// what `--out` would have written.
+#[test]
+fn csv_arrives_and_leaves_through_the_command_line() {
+    let dir = Sandbox::new("csv");
+    let book = s(&dir.path("book.fods"));
+    let source = dir.path("supplier.csv");
+    // A German export: semicolons, a comma decimal, a quoted field holding a comma, a product
+    // code that must not become a number, and CRLF, which is what Windows tools write.
+    std::fs::write(
+        &source,
+        "Artikel;Nr;Menge;Preis\r\nSchraube;007;120;1.234,50\r\n\"Winkel, gross\";B-2;12;19,99\r\n",
+    )
+    .unwrap();
+
+    ok(&["new", &book]);
+    ok(&["import-csv", &book, &s(&source), "--locale", "de-DE"]);
+    // The delimiter was never named: it came out of the file.
+    assert_eq!(ok(&["get", &book, "D2", "--raw"]).trim(), "1234.5");
+    assert_eq!(ok(&["get", &book, "B2"]).trim(), "007");
+    assert_eq!(ok(&["get", &book, "A3"]).trim(), "Winkel, gross");
+
+    // Out again, and the quoting is back where it is needed and nowhere else.
+    let out = ok(&["export-csv", &book, "A1:D3"]);
+    assert_eq!(
+        out,
+        "Artikel,Nr,Menge,Preis\nSchraube,007,120,1234.5\n\"Winkel, gross\",B-2,12,19.99\n"
+    );
+    // TSV is the same command with a different separator, and nothing else.
+    assert!(ok(&["export-csv", &book, "A1:B1", "--delimiter", "tab"]).starts_with("Artikel\tNr"));
+
+    // `--out` and standard output agree byte for byte, CRLF and byte-order mark included —
+    // the report prints lines and a CRLF file has to survive that.
+    let written = dir.path("out.csv");
+    ok(&[
+        "export-csv",
+        &book,
+        "A1:B1",
+        "--crlf",
+        "--bom",
+        "--out",
+        &s(&written),
+    ]);
+    let piped = ok(&["export-csv", &book, "A1:B1", "--crlf", "--bom"]);
+    assert_eq!(std::fs::read(&written).unwrap(), piped.as_bytes());
+    assert_eq!(piped, "\u{feff}Artikel,Nr\r\n");
+
+    // A file in a legacy encoding is a sentence naming the fix, not mojibake in a document.
+    let latin = dir.path("latin.csv");
+    std::fs::write(&latin, b"a,b\n\xe4,2\n").unwrap();
+    let output = sheet(&["import-csv", &book, &s(&latin)]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not UTF-8"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// `examples/sample-sheet.sh` is the inventory of what this build can do, and an inventory that
 /// is not run is a wish list. Running it here means a feature that stops working, or a
 /// command that changes its flags, fails the build rather than the next reader.
