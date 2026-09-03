@@ -32,6 +32,10 @@ stops ratcheting.
 - `enter` — `grind sheet set` (the typing rule: `=` a formula, `'` text, empty clears, `--recalc`
   recalculates the document in the same undo step)
 - `enter_range` — `grind sheet paste <anchor> <tsv>`, or `-` to read the rows from stdin
+- `import_csv` — `grind sheet import-csv <csv> [--at <anchor>]`, or `-` for stdin: the same
+  paste with a parser in front of it. `--delimiter` (sniffed when absent, so a comma, semicolon
+  or tab file all just open), `--locale` for `1.234,50`, `--text`, `--formulas`, `--dates`,
+  `--trim`. One undo entry for the whole file, formats included
 - `fill` — `grind sheet fill <source> <range>`, replicating one cell across a rectangle with its
   relative references shifted and its absolute ones left alone — "extend a calculation into
   the next cell"
@@ -123,6 +127,10 @@ stops ratcheting.
   The view mode is a **reading** of a document and writes nothing to it, which is why the CLI is
   not a formality here — it is the accessible surface for a feature whose entire output in a GUI
   is colour (`doc/view-modes.md` §4.6).
+- `export_csv` — `grind sheet export-csv [range] [--out <path>]`, writing what each cell
+  *shows* — so a date leaves as a date — or the formulas behind them with `--formulas`.
+  `--delimiter`, `--quote-all`, `--crlf` and `--bom` are the four knobs a receiving program
+  ever needs; with no range, everything the sheet uses
 - `formula` — `grind sheet get --formula`
 - `named_formula` — `grind sheet view --formulas --names`, the same formula read through the
   document's names: `=tax_rate*subtotal` where the file stores `=[.B2]*[.B7]`

@@ -72,9 +72,17 @@ and a German document's `1.234,50` stays `1.234,50`. **Cell styling** — weight
 borders, alignment. Column widths and row heights, hidden rows and columns. **Charts** — bar,
 line and pie — that survive a round trip through LibreOffice like everything else.
 
+**CSV and TSV, in and out**, which is the one non-ODF format here. The delimiter is read out of
+the file rather than out of its name, so a comma file, a German semicolon file and a tab file
+all just open; `--locale de-DE` reads `1.234,50` as a number. What a field means is the same
+rule as typing it into a cell, with the guards a real file needs — `007` stays a product code
+instead of becoming 7, `NaN` stays somebody's name, and a leading `=` stays text unless you ask
+for a formula. Dates are ISO only and behind a flag, because `15/03/2026` and `03/15/2026` are
+the same characters meaning two different days.
+
 Not there yet: sort (it needs a locale-collation decision first), find/replace, freeze panes,
-CSV import/export as a built-in verb, printing. Reading `.xlsx` is planned; *writing* it never
-is. Fonts are a named gap — nothing here picks a typeface for you yet.
+printing. Reading `.xlsx` is planned; *writing* it never is. Fonts are a named gap — nothing
+here picks a typeface for you yet.
 
 ## What the word processor can do
 
@@ -112,6 +120,8 @@ grind sheet style book.ods A1 --bold --background '#dddddd'
 grind sheet name book.ods total A1:A2           # a named range, so formulas say what they mean
 grind sheet calculations book.ods               # every computed cell, and what it calls
 grind sheet view book.ods A1:A3                 # tab-separated, pipes into anything
+grind sheet import-csv book.ods data.csv        # delimiter sniffed; "-" reads a pipe
+grind sheet export-csv book.ods --out out.csv   # what each cell shows, quoted where needed
 ```
 
 Cells are addressed the way ODF references them, minus the brackets — `A1`, `$B$7`, `Data.B2`,

@@ -393,8 +393,24 @@ impl Format {
                     out.push_str(&pad(seconds.div_euclid(60).rem_euclid(60), *long));
                 }
                 Part::Seconds { long, decimals } => {
-                    let exact = (n - n.floor()) * 86_400.0;
-                    let s = exact - (exact / 60.0).floor() * 60.0;
+                    // The same total `Hours` and `Minutes` divide. `date::seconds_of_day`
+                    // rounds once precisely so that all three describe one clock, and
+                    // recomputing the remainder here broke that: a datetime whose float sits a
+                    // hair under the minute — `2026-04-01T09:15:00` parsed and stored is
+                    // 46113.385416666664 — has an exact remainder of 59.99999979 seconds, so
+                    // the hour and minute rounded up to 09:15 while the second printed 60.
+                    //
+                    // Only the whole-second case is answered from the shared total. A format
+                    // asking for fractional seconds keeps the unrounded remainder, because
+                    // that is the digit it exists to show; no preset builds one, so this
+                    // branch is reachable only from a format a document brought with it.
+                    let s = match decimals {
+                        0 => seconds.rem_euclid(60) as f64,
+                        _ => {
+                            let exact = (n - n.floor()) * 86_400.0;
+                            exact - (exact / 60.0).floor() * 60.0
+                        }
+                    };
                     let width = usize::from(*long)
                         + 1
                         + usize::from(*decimals > 0)
