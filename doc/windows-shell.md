@@ -1,0 +1,518 @@
+<!--
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# The Windows shell
+
+The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — and the decisions
+behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
+`doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
+
+**Nothing in here is built yet.** This document is W0's deliverable and the exit criterion for
+it: the shell is planned, its decisions are argued, its gaps are named in advance, and the two
+claims the whole thing rests on are measured rather than assumed.
+
+## In one line
+
+**A Win32 window over `grind-core`, hosting both document types, whose `.exe` depends on
+nothing Windows does not already ship.** No .NET, no WinUI, no Windows App SDK, no Visual C++
+redistributable — it runs on a clean Windows install and it runs under Wine.
+
+## The precedent
+
+`fwilhe2/editor`'s `doc/decision-win32-shell.md` (accepted 2026-09-04) replaced a WinUI 3 shell
+in C# reaching the core through UniFFI with `ui_win32/`: a plain Win32 window drawn with GDI
+through Microsoft's own [`windows`](https://crates.io/crates/windows) crate. Its argument
+transfers here wholesale and is not re-litigated in this document. The short form:
+
+- Building the C# shell needed four separate installations and a 174-line PowerShell installer;
+  *running* it needed two runtimes that are not part of Windows.
+- The `uniffi` ↔ `uniffi-bindgen-cs` pin was that repository's most fragile version coupling.
+- Nothing about the shell could be examined from a Linux development machine — not built, not
+  type-checked, not linted.
+- Following a platform's *conventions* and using a platform's *controls* are not the same
+  thing. What "native" buys a user is the shell font at the right size, their own wheel-scroll
+  and caret-blink settings, Ctrl+Y for redo, a Save/Don't Save/Cancel dialog with Save as the
+  default, a dark title bar when the theme is dark, per-monitor DPI that reflows on the drag
+  between monitors. A Win32 window has every one of those. What is genuinely lost is the *look*
+  of Fluent, which is narrower than "nativeness".
+
+What does **not** transfer is the size of the job. That shell is 1733 lines drawing one
+monospaced text buffer, and the entire surface it needed from a text stack was two numbers.
+This one has a grid with per-column widths, cell styles, number-formatted display strings, and
+a word processor whose line breaking lives in `grind-core` and asks the shell for **cumulative
+advances of arbitrary styled text**. The measurement question is therefore genuinely open here
+where it was settled there, and it is decision 3 below.
+
+## What the core already gives
+
+The reason this is a shell and not a project: **it needs no new core API.** Everything below
+exists today and is exercised by at least two other shells.
+
+| Need | Reached by |
+|---|---|
+| Which document type some bytes are | `grind_core::kind` — sniffed from content, never the file name |
+| A rectangle of cells, with texts, styles and overlays | `grind_sheet::App::get_viewport` / `get_viewport_with` |
+| Column widths and row heights, as ODF lengths | `App::col_widths` / `row_heights`, parsed with `grind_sheet::style::length_mm` |
+| Typing a value or a formula, one undo step | `App::enter`, `enter_range`, `clear_range`, `preview` |
+| Line breaking, and every caret motion defined in terms of a line | `grind_core::layout` through `grind_text::App::layout_block` / `caret_x` / `caret_line` / `caret_line_bounds`, given a `Metrics` and a `Faces` |
+| Direct character formatting over a span | `App::char_style` / `set_char_style` |
+| `**bold**` as it is typed | `App::type_markdown` — in the core so four shells cannot read `**` four ways |
+| The document as its projection, and the four line-shaped questions a code view asks | `App::project`, `Projection::line_count` / `line_span` / `line_pieces` / `address_on_line` |
+| What the document says about itself | `App::lint` → `grind_core::lint::Report` |
+| What each cell *is*, and where a name anchors | `view::Overlays`, `CellRole::marker`, `NameAnchor` |
+| The colour list a shell offers | `grind_core::style::PALETTE` |
+| Repaint on change | `grind_core::Observer` — the core pushes, shells never poll |
+
+The one thing it wants and the core does not have yet is **L3**: `ui_sheet_gtk`'s row
+auto-height measurement moving onto `layout::Metrics`, so one breaker serves both applications.
+Until that lands, this shell honours the row heights a document *stores* and does not measure
+its own — a named gap below, not a surprise.
+
+`grind_core::search::score` is deliberately **unused** here. See decision 4.
+
+## The decisions
+
+### 1. One binary, both document types
+
+`grind-win32.exe` opens a spreadsheet or a text document, chosen by `grind_core::kind` reading
+the file's *bytes*. `--sheet` / `--text` answer only the empty case, and asking for one when the
+file is the other is an error rather than a silent override — `ui_tui/src/main.rs` already has
+this exact shape and it is copied, argument parsing included.
+
+This follows `grind-tui` and `grind-web` rather than the two GTK binaries, and the reason the
+GTK shells split does not exist here. `grind-sheet-gtk` and `grind-text-gtk` are separate
+processes with separate app IDs **because a `.desktop` file's `MimeType=` is per application**.
+Windows associates files through per-ProgID registry keys, and one executable registers as many
+ProgIDs as it likes — each with its own icon, description and verbs, all pointing at
+`grind-win32.exe "%1"`. The platform's own mechanism is the reason, in both directions.
+
+The file name is a build artifact; the **display name is "Grind"** — window title, Start-menu
+entry, About box, and the AppUserModelID that decides taskbar grouping.
+
+### 2. Win32 + GDI, through the `windows` crate
+
+No manifest, no COM apartment beyond what the file dialog needs, and `+crt-static` in a new
+`.cargo/config.toml` so the MSVC C runtime is linked in rather than looked for. The claim in
+the one-liner above is then *checkable*, and CI checks it by reading the import table back
+rather than trusting it.
+
+This is already measured, before a line of the shell exists — see *Evidence* at the end.
+`grind.exe`, built for `x86_64-pc-windows-msvc` from this workspace on this Linux machine,
+imports exactly four DLLs, all of them part of Windows.
+
+Rejected, each for the reason `doc/decision-win32-shell.md` gives at length: WinUI 3 in C#
+(two runtime installs), `windows-reactor` (0.x, four months old, still needs the App SDK
+runtime, and its hooks put state in the shell — which every shell here is forbidden), XAML
+Islands (deprecated, fussy unpackaged), and **an `EDIT` or rich-edit control for the document**,
+which is rejected on architecture rather than on effort: it owns its own text buffer, exactly as
+`GtkTextView`, WinUI's `TextBox` and `contenteditable` do, and the moment one exists there are
+two sources of truth.
+
+That last rejection has a boundary worth stating, because the shell walks right up to it: the
+**formula bar and the in-cell editor are a child `EDIT` control**, and that is fine. It holds
+the in-progress *input*, not the document; committing goes through `App::enter`. `ui_sheet_gtk`
+draws the same line with a `gtk::Entry`. A control that holds a keystroke is a widget; a control
+that holds the document is a second model.
+
+### 3. How text gets measured — the one genuinely open question
+
+`doc/text-layout.md` closed on Path C: line breaking lives in `grind-core`, and a shell supplies
+only the font. The trait is one method that matters —
+
+```rust
+fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>);
+```
+
+— exactly one cumulative advance per `char`, in whatever unit the shell answers in. Never
+negative, never decreasing.
+
+**The other three shells were each handed the answer by their toolkit**, which is why none of
+them had to make this decision. The terminal counts cells (`unicode-width`, twenty lines). The
+browser asks the browser. GTK asks Pango — `line.index_to_x(byte, trailing)` in
+`ui_text_gtk/src/metrics.rs`, which is **cluster-aware**: `e` + U+0301 is one cluster, so both
+characters get the same x and the combining mark contributes no width. Correct by construction,
+because Pango is a shaping engine.
+
+**Win32 has no Pango.** GDI does glyph mapping, not shaping, and that is the whole of the
+question.
+
+#### The decision is not "which measuring API"
+
+`GetTextExtentExPointW`'s `lpnDx` output *is* the array this trait asks for — the width of the
+string up to and including each unit. Two things follow from it and only one is cheap:
+
+- **It is per UTF-16 code unit, and the trait is per `char`.** Mechanical: walk the string's
+  `char`s, track how many units each takes, read the entry for that character's *last* unit. A
+  character outside the basic multilingual plane comes out as one advance, correctly — which is
+  more than `ui_tui`'s cell counting manages and more than `ui_win32/` in the sibling repository,
+  where it is a documented gap.
+- **It does not shape.** A combining mark gets an advance of its own instead of folding onto its
+  base, so the core believes the text is one mark wider than it looks.
+
+The second one has a consequence that decides the whole shape of this: **if drawing uses the
+same advance array**, via `ExtTextOutW` with explicit advances, the caret and the glyph still
+agree — the mark is drawn floating in a box of its own, which *looks* wrong but is not
+*inconsistent*, and every caret operation stays right. If drawing instead lets GDI place glyphs
+freely, the two disagree and the caret is wrong.
+
+Which rules out every half-measure. Measure with DirectWrite and draw with plain `ExtTextOutW`
+and DirectWrite calls the mark zero-width while GDI draws it in a box — the same disagreement
+from the other side. **The measuring engine and the drawing engine have to be the same one**, so
+the real choice is only ever between two whole stacks:
+
+| | Measurement | Drawing | Cost |
+|---|---|---|---|
+| **GDI, both halves** | `GetTextExtentExPointW` | `ExtTextOutW` + the measured advance array | one file — **chosen for W0–W8** |
+| DirectWrite, both halves | `GetClusterMetrics` / `HitTestTextPosition` | `IDWriteBitmapRenderTarget::DrawGlyphRun` behind an `IDWriteTextRenderer` **implemented in Rust as a COM interface** | a factory, a text format per `TextStyle`, that renderer, and a second drawing path — the named upgrade |
+| Uniscribe `ScriptStringAnalyse` | full shaping, no COM | its own idiom | declined — deprecated in favour of DirectWrite, at close to DirectWrite's complexity |
+
+The COM callback interface in row two is the real price, and it is the reason not to start there
+when the trait is a swap point that costs one file and no core change. That is the property
+Path C was chosen for; this shell is its fourth `Metrics` implementation and its second proof.
+
+#### What GDI actually costs, and what is *not* pre-approved
+
+Ranked by how likely anybody is to meet it:
+
+1. Precomposed Latin, Cyrillic and Greek — **nothing**. Nearly every real document.
+2. **Decomposed (NFD) text** — the realistic hazard, since macOS hands out NFD and a document
+   can carry it.
+3. Ligature fonts — `ExtTextOutW` with explicit advances suppresses ligatures anyway. Consistent,
+   just plainer than a shaped engine would draw it.
+4. Emoji ZWJ sequences — a family emoji becomes several boxes.
+5. **Devanagari, Thai, Khmer** — genuinely broken.
+
+Row 5 is **not covered by an existing decision, and an earlier draft of this document wrongly
+said it was.** `doc/text-layout.md` excludes **RTL**, which covers Arabic and Hebrew. Devanagari,
+Thai and Khmer are left-to-right and complex-shaping, so they fall outside that exclusion and
+inside this shell's gap. Naming them here is the whole of their coverage; if that is not
+acceptable, the answer is row two of the table above, not a footnote.
+
+**The trigger for the upgrade, written down now so it is not a judgement call later:** the first
+time a corpus document, a loop C comparison or a bug report shows a caret landing in the wrong
+place because characters were measured as separate boxes and belong in one cluster, `metrics.rs`
+moves to DirectWrite — measurement *and* drawing together. Nothing above it changes.
+
+Drawing is therefore `ExtTextOutW` **with the advance array the same measurement produced**, and
+that is load-bearing rather than tidy. The grid pane does the same for the same reason, and there
+it also forces the fixed character cell the sheet's overflow arithmetic assumes.
+
+A `Metrics` implementation needs a device context and a font. It holds a memory DC
+(`CreateCompatibleDC(None)` — no window required, which is what makes decision 5 possible), the
+window's current DPI, and a `RefCell<HashMap<TextStyle, HFONT>>` — interior mutability because
+the trait's methods take `&self`, and a cache because creating a font per call would be visible
+on every keystroke. Every entry is deleted and the map cleared on `WM_DPICHANGED`.
+
+`grind_text::Faces` — which metrics *this* block is set in — sits on top: it answers with the
+same provider and a per-kind font, so Down-arrow out of a heading measures the paragraph below
+it in the paragraph's font. That bug was found and fixed in the core while `grind-text-gtk` was
+being built; this shell inherits the fix and must not re-introduce it by reaching for `Uniform`.
+
+### 4. The menu bar is the surface that grows — there is no command palette
+
+`doc/sheet-shell.md`'s "Four surfaces" gives verbs to a Ctrl+K palette, and the reason is stated
+there: a GNOME window has no menu bar, so verbs had nowhere to go but a tool row that grew
+without a membership rule. **Windows has a menu bar, and it is the platform's own growable
+surface.** The system draws it, so it scales with DPI, follows the theme, and gains Alt-key
+navigation and mnemonics with no code here. So the four surfaces map across as:
+
+| `doc/sheet-shell.md` | here |
+|---|---|
+| Header bar, fixed at five slots | the title bar, and nothing of ours in it |
+| Format bar — "reads and writes a property of the selection" | a drawn format strip under the menu, same admission test |
+| Context menus | context menus, on the cells, the headers and the text |
+| Ctrl+K palette — the one allowed to grow | **the menu bar** |
+
+The admission test transfers unchanged: a **verb** goes in a menu, a **property of the
+selection** goes on the format strip, and `CellStyle` + `numfmt::Format` + `CharStyle` bound the
+latter. What must not happen is a *toolbar* in the Common Controls v6 sense — that class needs
+the application manifest this binary deliberately does not have. The format strip is therefore
+**drawn**, in GDI, as part of the window, exactly as the grid is.
+
+`ui_sheet_gtk/src/main.rs`'s `chrome_tests` walk every `gio::Menu` in the window to check that
+each item routes somewhere real. The equivalent here is cheaper and better: the menus are
+**tables of data** in a portable `menu.rs`, so the test that every command id has a handler and
+every handler has an item runs on Linux with no window at all.
+
+### 5. `--render-to`, with no window and no display
+
+The GTK shells draw one frame to a PNG and exit so that a refactor can be proved by a
+byte-identical image. The Win32 version of that is *stronger*, and it falls out of the shape the
+code wants anyway: painting is a free function taking an `HDC` and a `RECT`, and the window path
+and the render path both call it.
+
+`CreateCompatibleDC(None)` + `CreateDIBSection` gives a drawing surface with **no `HWND`, no
+compositor and no display**, which means `--render-to` works on a headless `windows-latest`
+runner *and* under Wine on a Linux CI runner. The output is a BMP: a 54-byte header in front of
+the DIB bits the section already holds, no encoder, no new dependency, and byte-comparable.
+
+Not a user feature, same as the other two shells.
+
+### 6. The clipboard is the system's, and this shell is ahead of two others
+
+`CF_UNICODETEXT` with tab-separated text — the shape every other spreadsheet reads — plus
+`clear_range` for cut and `enter_range` under the paste. This is the one place where the
+Windows shell is *ahead* rather than behind: `grind-tui` has only its own vi register (a
+terminal cannot reach a system clipboard without a protocol the host may not speak) and
+`grind-text-gtk` has no clipboard at all. Interop with LibreOffice Calc and Excel is W4's exit
+criterion, both directions.
+
+### 7. Every modal dialog follows one shape, and it is not obvious
+
+`MessageBoxW`, `IFileDialog` and any future find bar **run their own message loop**. While one
+is up this window still receives `WM_PAINT`, the window procedure is re-entered, and it produces
+a *second* `&mut App` while the first is alive. That is aliasing UB even though it appears to
+work, and reading the code does not reveal it — it was found in the sibling repository by
+driving the shell under Wine.
+
+The rule, therefore, and it is normative: **a handler that opens a modal borrows the `App`
+briefly on each side of the dialog and never across it.** `on_close` in
+`editor/ui_win32/src/app.rs` is the worked example — one borrow to compose the question, no
+borrow while the dialog runs, one borrow to act on the answer.
+
+The file dialogs are `IFileDialog` (COM, Vista+) rather than `GetOpenFileNameW`, because
+`IFileDialog` is the modern dialog and needs no manifest to be one, and because the `windows`
+crate makes COM ergonomic. Its filters follow `doc/flat-first.md`: **the flat form is the
+default** — `.fods` / `.fodt` first, then the package, then `.grind` — because in doubt this
+project writes the form that diffs.
+
+## The crate
+
+```
+ui_win32/
+  Cargo.toml              grind-win32; the `windows` dependency target-gated on cfg(windows)
+  src/
+    main.rs               argv, kind sniff, a message box for errors before a window exists
+    win.rs           [W]  the class, the wndproc, the message loop, GWLP_USERDATA
+    gdi.rs           [W]  RAII wrappers for fonts and brushes; the DIB target behind --render-to
+    metrics.rs       [W]  Metrics + Faces over a memory DC, with the font cache
+    theme.rs         [~]  the palette (portable) and the registry read + dark title bar [W]
+    menu.rs               the menus as data, and the command-id table
+    sheet/
+      geom.rs             pixels <-> cells, prefix sums over the document's own widths
+      keymap.rs           virtual-key codes -> UiAction
+      state.rs            Ready / Enter / Edit, the editing state machine
+      draw.rs        [W]  a viewport painted onto an HDC
+    text/
+      keymap.rs           virtual-key codes -> caret operations
+      draw.rs        [W]  laid-out blocks painted onto an HDC, run by run
+    code.rs          [~]  the projection pane (D9)
+    problems.rs      [~]  the lint pane (D6)
+```
+
+`[W]` needs Windows; everything else compiles and runs its tests on any host. **That split is
+the design, not an accident of it**: it is what lets the Windows shell be developed on the Linux
+machine this repository lives on, and `editor`'s `ui_win32/` got 35% of its lines onto the
+portable side. The target here is higher, because `geom.rs` and `state.rs` are the two files
+with real arithmetic in them and neither needs a window.
+
+`Cargo.toml` gates the dependency the way the sibling repository does:
+
+```toml
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
+```
+
+Only the namespaces used get features. The first `cargo tree` after W0 records what that costs
+in lock entries and in a cold build; `windows-sys` is already in `Cargo.lock` transitively, so
+part of the machinery is paid for.
+
+## Milestones
+
+Ordered on the same insight `doc/sheet-shell.md` used: **the read-only grid is the highest-risk
+item and needs no new core API**, so it goes first and de-risks the custom drawing before
+anything depends on it. Every milestone lands green — `cargo test`, clippy clean, `reuse lint`,
+`cargo fmt --check`, and the Windows type-check from Linux.
+
+| # | Milestone | Contents | Exit criterion |
+|---|---|---|---|
+| **W0** | **Plan and wiring** | this document; the `ui_win32/` skeleton (a `main.rs` that prints usage off Windows and nothing else); workspace member; `.cargo/config.toml` with `+crt-static` for both msvc targets; `.github/workflows/win32.yml`; `-p grind-win32` added to `ci.yml`'s build/test/clippy/docs lists; REUSE headers; the rows in `CLAUDE.md`, `README.md` and `doc/suite.md` | CI green on both runners with an empty shell, and `cargo check -p grind-win32 --target x86_64-pc-windows-msvc` clean on Linux. The lock-file and build-time cost of `windows` measured and written into this document |
+| **W1** | **The window, and the read-only grid** | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | any R7 document and any file in `sheet/tests/data/samples/**` opens and scrolls; columns are as wide as the document says; `geom.rs`'s cell-rect ⇄ hit round trip is tested on Linux |
+| **W2** | **Selection, navigation, and an assertable frame** | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; the status bar's aggregates; the name box; and decision 5's DIB render target | keyboard-only navigation of a corpus file; `--render-to shot.bmp` byte-identical across two runs, and produced under Wine as well as on Windows |
+| **W3** | **Sheet editing** | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the stale banner; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete | every value and formula in `examples/sample-sheet.sh` is typeable by hand, and a document saved here matches one the CLI wrote for the same operations |
+| **W4** | **The clipboard** | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | copy here → paste into LibreOffice Calc and into Excel, and back, both directions |
+| **W5** | **The text pane** | `metrics.rs` per decision 3 and `Faces` over it; `text/draw.rs` drawing `App::layout_block` run by run; a real `CreateCaret` caret; `WM_CHAR` plus the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret); `App::type_markdown`; selection by Shift+arrow, Shift+click and drag; the format strip over `char_style` / `set_char_style`; block kinds, outline and go-to for `p12` / `#intro` / `§2.1.3` | every feature `examples/sample-text.sh` builds is visible and editable, and a test asserts that this pane and `grind text view --width` break the same text at the same places when both are given `Fixed` |
+| **W6** | **The three shared panes** | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | all three reachable from whichever pane they apply to, and opening every overlay on every R7 document then saving leaves the bytes identical |
+| **W7** | **Chrome and the accessibility floor** | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | the portable menu-table test passes: every command id has a handler and every handler an item. `accesskit_windows` is **named and deferred**, and the system caret is the floor |
+| **W8** | **Packaging** | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | the artifact opens both document types on a clean Windows install with no other install of any kind |
+
+**W5 is the milestone to be nervous about**, not W1. The grid is arithmetic this project has
+done three times; the text pane is the first time `layout::Metrics` meets a proportional font
+with a real shaping engine behind it, and decision 3 is a bet that GDI's non-shaping answer is
+good enough for long enough.
+
+## What it will not do
+
+R10 allows per-shell feature gaps and requires them to be named. These are the named ones.
+
+**Not drawn, kept intact.** A **chart** in a file is read, kept and written back untouched, and
+nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
+than a stub. An **image** in a text document, likewise.
+
+**Waiting on the core.** Wrapped cells and **row auto-height** need L3 (`ui_sheet_gtk`'s
+measurement moving onto `layout::Metrics`); until it lands, a document's *stored* row heights
+are honoured and no row is measured from its contents. **Pagination**, **printing** and **RTL**
+are gated in `doc/not-doing.md` and `doc/text-layout.md` and are not this shell's to open.
+
+**Deferred by decision, reachable from the CLI (R9).** No **zoom** before W8. No **point mode,
+autocomplete or signature hints** while typing a formula — `doc/sheet-shell.md`'s M6, the single
+largest piece of the GTK window, and nothing about it is Windows-shaped. No **filter UI**: a
+filter in a file folds its rows away and nothing here creates one. No **find/replace over
+cells**. No **conditional formatting UI**, which exists in no shell. No **command palette**, by
+decision 4.
+
+**The toolkit's own limits.** No **Mica**: `DWMWA_SYSTEMBACKDROP_TYPE` is reachable and shipped,
+but a backdrop only shows through pixels the application does not paint, and a GDI window that
+fills its client area with an opaque brush paints all of them. *This is reasoned rather than
+measured*, and it is flagged as such in the sibling repository too. The dark title bar
+(`DWMWA_USE_IMMERSIVE_DARK_MODE`) is the part that survives and is implemented. No **Fluent
+controls** and no v6 **toolbar**, both downstream of having no manifest. No **shaping** at all
+while `metrics.rs` is GDI's: decomposed text, ligatures, emoji sequences and the LTR complex
+scripts (Devanagari, Thai, Khmer) are each drawn as separate boxes. Decision 3 ranks these by
+likelihood and names the trigger; the LTR complex scripts in particular are a gap of this
+shell's own making, **not** something `doc/text-layout.md`'s RTL exclusion already covered.
+
+**Accessibility.** A painted GDI window exposes no UI Automation tree. The floor is the
+**system caret** — a real `CreateCaret` caret rather than a painted rectangle, so Windows
+reports its position to assistive technology and to IMEs for free. `accesskit_windows` is the
+fix if this ever matters, and naming it is not the same as planning it.
+
+## Verification
+
+**On this Linux machine, and in CI on an Ubuntu runner:**
+
+```sh
+rustup target add x86_64-pc-windows-msvc          # already installed here
+cargo check   -p grind-win32 --target x86_64-pc-windows-msvc
+cargo clippy  -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+cargo test    -p grind-win32                      # the portable half: geom, keymap, state, menus
+```
+
+`cargo check` never links, so it needs no MSVC and no Windows. This catches a `windows`-rs API
+change in about a minute rather than on the Windows runner, and it is the capability a C# shell
+could not have in any form.
+
+**Driving it on Linux — an inspection aid, never a build path:**
+
+```sh
+sudo dnf install clang lld wine xorg-x11-server-Xvfb ImageMagick
+cargo install cargo-xwin
+cargo xwin build -p grind-win32 --release --target x86_64-pc-windows-msvc
+
+Xvfb :99 -screen 0 1400x900x24 &
+export DISPLAY=:99 WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
+wine target/x86_64-pc-windows-msvc/release/grind-win32.exe book.fods &
+import -window root /tmp/shot.png
+```
+
+`cargo-xwin` links a real msvc binary with `lld-link` against Microsoft's own CRT and SDK. **The
+artifact that ships comes off `windows-latest` and nowhere else**, the same rule
+`.github/workflows/gtk.yml` states for the GTK shells: "its own workflow on its own runner,
+never cross-compiled". A green Wine run is not evidence that Windows is happy, and putting one
+in CI would quietly turn a debugging convenience into a release path.
+
+It earns its place because of what it catches. In the sibling repository, driving the window
+under Wine through XTEST found decision 7's aliasing bug, which reading the code did not.
+
+**What Wine cannot speak for**, and what therefore needs a real Windows machine before any claim
+about it is made here:
+
+- `DwmSetWindowAttribute` is largely inert, so the dark title bar is unverified.
+- The theme registry key does not exist in a fresh prefix, so the shell takes its light-mode
+  fallback and **dark mode is untested end to end**.
+- Consolas is absent, so every screenshot exercises the `FIXED_PITCH | FF_MODERN` substitution
+  path rather than the intended font.
+- `IFileDialog`'s COM path, the IME path, and clipboard interop with real Excel.
+- Per-monitor DPI, `WM_DPICHANGED`, and how any of it looks under Windows 11's compositor.
+
+**In CI (`win32.yml`), three jobs:**
+
+1. `check-from-linux` (ubuntu) — `cargo check --target`, `cargo clippy --target`, and
+   `cargo test -p grind-win32` for the portable half.
+2. `build` (windows-latest) — test, clippy, release build, then **read the import table back**
+   and fail on `vcruntime140*.dll`, `msvcp140.dll`, `ucrtbase.dll`, `api-ms-win-crt-*`,
+   `mscoree.dll`, `hostfxr.dll`, `microsoft.windowsappruntime*` or `microsoft.ui.xaml*`. The
+   binary is never *run* there: it is a GUI-subsystem application whose argument errors go into
+   a message box, and a message box on a headless runner waits forever.
+3. `render` (windows-latest) — `--render-to` on a fixture, compared against a committed BMP.
+   This is the job that makes a drawing refactor provable.
+
+## Risks
+
+- **The `windows` crate's build cost.** It is enormous generated code gated by feature. Only the
+  namespaces used get enabled, and W0's exit criterion includes measuring what it actually costs
+  in lock entries and cold-build seconds. If it is bad, `windows-sys` (raw FFI, no COM) is the
+  fallback and the price is `IFileDialog` — decision 7 would revert to `GetOpenFileNameW` and
+  the old-style dialog.
+- **`unsafe`, for the first time in this workspace.** There are exactly three `unsafe` blocks in
+  the repository today and all three are `std::env::set_var` in one test in
+  `core/src/locale.rs`. A window procedure storing a `Box` pointer in `GWLP_USERDATA` is the
+  standard Win32 arrangement and it is still unsafe. Mitigations: it is confined to the `[W]`
+  files, decision 7 is a written rule rather than a habit, and every GDI object gets an RAII
+  wrapper in `gdi.rs` because a leaked `HFONT` per keystroke is the classic version of this bug.
+- **Two panes double the surface.** Mitigation is `ui_tui`'s shape exactly: a `Shell` trait with
+  three methods for the *message loop*, and no attempt at an abstraction over documents. The
+  core's own `core/src/observer.rs` records why there is no `Editor` trait yet; this shell is
+  the third caller and may be what finally answers it — but it does not get to guess.
+- **Scope creep toward Fluent.** The answer is in `doc/decision-win32-shell.md`'s "When to
+  revisit": if `windows-reactor` reaches 1.0 *and* the Windows App SDK becomes part of Windows,
+  reconsider on the spot. Not before.
+- **Nobody may ever run it on a clean Windows install**, in which case the central claim is
+  untested and the import-table check is doing all the work. This is the honest failure mode and
+  it is the same one the sibling repository has.
+
+## Evidence
+
+Measured on 2026-09-04, on the development machine, before any of the above was written:
+
+| Claim | How it was checked |
+|---|---|
+| `grind-core`, `grind-sheet` and `grind-text` type-check for `x86_64-pc-windows-msvc` on Linux | `cargo check -p grind-core -p grind-sheet -p grind-text --target x86_64-pc-windows-msvc` — clean, 14.58s |
+| The whole CLI **links** for Windows on Linux, statically | `RUSTFLAGS="-C target-feature=+crt-static" cargo xwin build -p grind-cli --target x86_64-pc-windows-msvc` — exit 0; the link pulled `libcmt.lib` and `libvcruntime.lib`, the static CRT |
+| A statically linked `grind.exe` imports only DLLs Windows ships | `objdump -p`: `KERNEL32.dll`, `ntdll.dll`, `bcryptprimitives.dll`, `api-ms-win-core-synch-l1-2-0.dll` — no `vcruntime140.dll`, no `ucrtbase.dll`, no `api-ms-win-crt-*` |
+| The toolchain this plan assumes is already present here | `rustup target list --installed` lists `x86_64-pc-windows-msvc`; `cargo-xwin`, `wine`, `lld-link` and `clang` all on `PATH`; the xwin CRT+SDK cache is populated |
+| The workspace has almost no `unsafe` to lose | `grep -rn unsafe --include='*.rs'`: three blocks, all `std::env::set_var` in `core/src/locale.rs`'s tests |
+| `windows-sys` is already in `Cargo.lock` transitively | `grep windows Cargo.lock` |
+
+Everything about how the window behaves — decision 3's measurement, decision 7's modal shape,
+the theme, the DPI path — is unverified by construction, because none of it exists yet.
+
+### The one thing that did not work, and it is not the shell's
+
+`wine grind.exe --version` **crashed**, and it is worth W0's attention rather than a footnote:
+
+```
+thread 'main' has overflowed its stack
+=> 0 __chkstk+0x37 ... in grind
+   ...
+   8 std::sys::backtrace::__rust_begin_short_backtrace<std::process::ExitCode (*)()>
+```
+
+Wine 11.0 (Staging), the **debug** build, before `main` had done anything. The stack probe
+`__chkstk` failing that early points at the platform's own default rather than at a runaway
+recursion: **a Windows main thread reserves 1 MB of stack, where Linux gives 8 MB**, and the
+reserve is baked into the PE header at link time. An unoptimised build's frames are several
+times an optimised one's, so this is the classic shape of a Rust program that is fine on Linux
+and fine in `--release` on Windows and dies in a debug build on Windows.
+
+**This is a hypothesis, not a measurement.** The obvious test — relink with
+`-C link-arg=/STACK:8388608` and run it again — has not been run, and until it has, neither the
+cause nor the fix is established. Three candidate answers, in the order they should be tried:
+
+1. The linker reserve, set once for both msvc targets in the same `.cargo/config.toml` that
+   carries `+crt-static`. Costs nothing at runtime — a reserve is address space, not memory.
+2. Run the work on a spawned thread with an explicit stack size, which is what several Rust
+   compilers do for exactly this reason and which does not depend on link flags reaching every
+   binary.
+3. It is genuinely a deep recursion somewhere — `formula::eval` recurses over the dependency
+   graph rather than sorting one, and the ODF reader's context stack is recursive too — in which
+   case Windows found a real bug that Linux's larger default has been hiding, and it belongs in
+   the core rather than here.
+
+Whichever it is, it lands in **W0**, because every later milestone runs this binary. And note
+what it already tells us regardless of the answer: **the CLI is affected too**. `grind.exe` is a
+`grind-cli` build with no shell code in it at all, so this is a fact about running this workspace
+on Windows, not about `ui_win32/`.
