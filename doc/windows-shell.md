@@ -10,9 +10,11 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Nothing in here is built yet.** This document is W0's deliverable and the exit criterion for
-it: the shell is planned, its decisions are argued, its gaps are named in advance, and the two
-claims the whole thing rests on are measured rather than assumed.
+**Built through W1; W2–W8 are a plan.** This document was W0's deliverable — the shell planned,
+its decisions argued, its gaps named in advance, and the two claims the whole thing rests on
+measured rather than assumed. W1 added the window and the read-only grid, so the parts of it
+that were predictions about drawing are now records of it: what is written down about the
+geometry, the theme, the double buffer and the scrollbars has been run.
 
 ## In one line
 
@@ -281,27 +283,39 @@ project writes the form that diffs.
 
 ## The crate
 
+A `*` marks what W0 and W1 have built; everything else is the plan.
+
 ```
 ui_win32/
-  Cargo.toml              grind-win32; the `windows` dependency target-gated on cfg(windows)
+  Cargo.toml            * grind-win32; the `windows` dependency target-gated on cfg(windows)
   src/
-    main.rs               argv, kind sniff, a message box for errors before a window exists
-    win.rs           [W]  the class, the wndproc, the message loop, GWLP_USERDATA
-    gdi.rs           [W]  RAII wrappers for fonts and brushes; the DIB target behind --render-to
+    main.rs           *   argv, kind sniff, a message box for errors before a window exists
+    args.rs           *   the command line as a pure function (W0)
+    win.rs           [W]* the class, the wndproc, the message loop, GWLP_USERDATA
+    gdi.rs           [W]* RAII wrappers for fonts and brushes; the back buffer — and, from W2,
+                          the DIB target behind --render-to
     metrics.rs       [W]  Metrics + Faces over a memory DC, with the font cache
-    theme.rs         [~]  the palette (portable) and the registry read + dark title bar [W]
+    theme.rs         [~]* the palette (portable) and the registry read + dark title bar [W]
     menu.rs               the menus as data, and the command-id table
     sheet/
-      geom.rs             pixels <-> cells, prefix sums over the document's own widths
+      geom.rs           * pixels <-> cells, prefix sums over the document's own widths
       keymap.rs           virtual-key codes -> UiAction
       state.rs            Ready / Enter / Edit, the editing state machine
-      draw.rs        [W]  a viewport painted onto an HDC
+      draw.rs        [~]* a viewport painted onto an HDC — and, portable beside it, what a cell
+                          *looks like*: alignment, weight and colour resolved from `CellStyle`
     text/
       keymap.rs           virtual-key codes -> caret operations
       draw.rs        [W]  laid-out blocks painted onto an HDC, run by run
     code.rs          [~]  the projection pane (D9)
     problems.rs      [~]  the lint pane (D6)
 ```
+
+`sheet/draw.rs` came out `[~]` rather than `[W]`, and that was worth the split: "a number is
+right-aligned unless the document says otherwise" is a rule about *documents*, not about GDI, so
+`Appearance::of` resolves a `CellStyle` into an alignment, a weight and two colours in portable
+code with tests, and only putting pixels down is behind `cfg(windows)`. The `[W]` half is then
+short enough to read in one go, which is the property that matters for a file nobody can run
+here.
 
 `[W]` needs Windows; everything else compiles and runs its tests on any host. **That split is
 the design, not an accident of it**: it is what lets the Windows shell be developed on the Linux
@@ -330,7 +344,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
 | **W0** | **Plan and wiring** — *done* | this document; `ui_win32/` with `args.rs` (the command line as a pure function, 16 tests) and a `main.rs` that resolves what it *would* open; workspace member; `.cargo/config.toml` with `+crt-static` **and the 8 MB stack reserve**; `.github/workflows/win32.yml`; `-p grind-win32` in `ci.yml`'s build/test/clippy/docs lists; REUSE headers | **Met.** Type-check, clippy and 16 tests green on Linux for the msvc target; the shell links under `cargo-xwin` and imports only OS DLLs; the `windows` cost measured (10 lock entries, 5.0s cold check). The stack overflow that predates this shell is diagnosed and fixed, and the whole core is now known to work on Windows |
-| **W1** | **The window, and the read-only grid** | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | any R7 document and any file in `sheet/tests/data/samples/**` opens and scrolls; columns are as wide as the document says; `geom.rs`'s cell-rect ⇄ hit round trip is tested on Linux |
+| **W1** | **The window, and the read-only grid** — *done* | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | **Met.** All fifteen R7 and sample documents open under Wine, and a package (`.ods`) as well as a flat file; the wheel and both scrollbars move the view; columns are as wide as the document says and hidden tracks are gone; 42 tests on Linux, including the cell-rect ⇄ hit round trip. Two bugs found by *running* it and fixed — see below |
 | **W2** | **Selection, navigation, and an assertable frame** | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; the status bar's aggregates; the name box; and decision 5's DIB render target | keyboard-only navigation of a corpus file; `--render-to shot.bmp` byte-identical across two runs, and produced under Wine as well as on Windows |
 | **W3** | **Sheet editing** | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the stale banner; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete | every value and formula in `examples/sample-sheet.sh` is typeable by hand, and a document saved here matches one the CLI wrote for the same operations |
 | **W4** | **The clipboard** | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | copy here → paste into LibreOffice Calc and into Excel, and back, both directions |
@@ -357,7 +371,12 @@ measurement moving onto `layout::Metrics`); until it lands, a document's *stored
 are honoured and no row is measured from its contents. **Pagination**, **printing** and **RTL**
 are gated in `doc/not-doing.md` and `doc/text-layout.md` and are not this shell's to open.
 
-**Deferred by decision, reachable from the CLI (R9).** No **zoom** before W8. No **point mode,
+**Deferred by decision, reachable from the CLI (R9).** A hidden row or column is drawn as
+**gone**, with none of `ui_sheet_gtk`'s marker straddling the boundary — so this shell shows what
+the document says and offers no way to *unhide* from the grid. `grind sheet hide --unhide` does
+it, which
+is the R9 answer, and a marker is a W2 question because it is a hit-test target rather than a
+drawing one. No **zoom** before W8. No **point mode,
 autocomplete or signature hints** while typing a formula — `doc/sheet-shell.md`'s M6, the single
 largest piece of the GTK window, and nothing about it is Windows-shaped. No **filter UI**: a
 filter in a file folds its rows away and nothing here creates one. No **find/replace over
@@ -496,8 +515,42 @@ Added in W0, once the crate existed:
 | The `windows` crate is cheap when its namespaces are gated | 10 crates added to `Cargo.lock` (293 → 304 including `grind-win32`); `cargo check` 5.04s cold, 3.68s incremental |
 | `cargo build --target` does **not** work on the Linux runner and `cargo check` does | exit 101 at the link step; `win32.yml` says so in a comment so nobody re-adds it |
 
-Everything about how the window behaves — decision 3's measurement, decision 7's modal shape,
-the theme, the DPI path — is unverified by construction, because none of it exists yet.
+Added in W1, once there was a window:
+
+| Claim | How it was checked |
+|---|---|
+| Every R7 document and every sample opens, and so does a **package** | fifteen `.fods` under Wine, one at a time, each reporting a real top-level window rather than a message box; then `grind convert` to `.ods` and the same again — the zip reader path |
+| A document's own column widths decide the geometry | `examples/sample-sheet.sh`'s budget, whose column A is set wide, drawn wide; and `Sizes::from_lengths` asserted against `2.5cm` and `10mm` at two DPIs |
+| A hidden row or column is *gone* | `hidden-rows-cols.fods`: the header band reads A B D and the row band 1 2 4 |
+| The view scrolls, by all three means | XTEST under Xvfb: six wheel notches moved the top row from 1 to 19 (three lines a notch, the default), the horizontal arrow moved column A to D, and the vertical arrow stepped a row at a time |
+| Nothing flickers, and the window paints its own background | every frame goes onto a `CreateCompatibleDC` back buffer and is blitted once; `WM_ERASEBKGND` answers 1 so the class brush is never painted, and there is no class brush to paint |
+| The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 42 passed |
+| The shell still imports only OS DLLs, with a window in it | `objdump -p`: `user32`, `gdi32`, `dwmapi`, `KERNEL32`, `advapi32`, `oleaut32`, `ntdll`, `bcryptprimitives`, one api-set — every one of them part of Windows |
+
+What is still unverified by construction: decision 3's measurement and decision 7's modal shape,
+because neither exists yet, and — per *What Wine cannot speak for* above — the dark title bar,
+dark mode end to end, and the DPI path, because Wine cannot answer for any of them.
+
+### What running it found, which reading it did not
+
+Both of these were invisible in review, compiled clean, and were obvious within a second of
+looking at a screenshot. They are the argument for the Wine path in miniature.
+
+1. **Every string was drawn with a box glyph after it.** `gdi::wide` NUL-terminates, which is
+   what the `…W` entry points taking a `PCWSTR` want — but `DrawTextW` in the `windows` crate
+   takes a *slice* and uses its length as the character count, so the terminator was a
+   character to draw. GDI has no reason to treat it specially and drew `.notdef`.
+2. **A cell whose text contains a line break drew the same box**, for the neighbouring reason:
+   `DT_SINGLELINE` does not *ignore* a control character, it draws one. `sheet/draw.rs`'s
+   `one_line` now maps every control character to a space, which is a portable function with a
+   test rather than a flag on the call.
+
+A third, found by reading the *document* rather than the screen but only after the screen made
+it worth checking: **ODF hides a track with `table:visibility="collapse"`, not with a width of
+zero**, so a hidden column still carries an ordinary `style:column-width` and reading only the
+widths drew it. `Sizes::from_lengths` now takes the hidden list too and applies it last.
+`App::hidden_cols`, `manually_hidden_rows` and `hidden_rows` are three separate questions and
+this shell asks all three — the same arrangement `ui_sheet_gtk/src/grid.rs` arrived at.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

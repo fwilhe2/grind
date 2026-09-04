@@ -136,9 +136,11 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`). It has **no window yet** — W0 built
-the wiring and the command line, nothing more. What is unusual about it is that the whole thing
-is examinable from Linux, because `cargo check` does not link:
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W1**: a window, and
+the spreadsheet as a read-only grid — the document's own column widths and row heights, hidden
+tracks gone, headers, a status bar, both scrollbars and the wheel, per-monitor DPI v2, and a
+theme read from the registry. No editing and no text pane yet (W3 and W5). What is unusual about
+it is that the whole thing is examinable from Linux, because `cargo check` does not link:
 
 ```sh
 rustup target add x86_64-pc-windows-msvc
@@ -151,7 +153,16 @@ cargo test   -p grind-win32                                     # the portable h
 link and there is no MSVC. To link one anyway, for inspection only, `cargo xwin build` does it and
 Wine runs it; the shipped artifact comes off `windows-latest` in `win32.yml` and nowhere else.
 **Run Wine headless** (`env -u DISPLAY`, or an Xvfb display) — a crash otherwise opens WineDbg's
-dialog on whatever desktop is in front of you.
+dialog on whatever desktop is in front of you. Now that there *is* a window, the Xvfb form is the
+useful one, and it earns its place: both of W1's bugs were one glance at a screenshot and neither
+was visible in review.
+
+```sh
+cargo xwin build -p grind-win32 --release --target x86_64-pc-windows-msvc
+Xvfb :99 -screen 0 1400x900x24 & export DISPLAY=:99 WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
+wine target/x86_64-pc-windows-msvc/release/grind-win32.exe book.fods &
+import -window root /tmp/shot.png     # ImageMagick; python-xlib + XTEST drives the mouse
+```
 
 ```sh
 cargo build && GRIND=target/debug/grind examples/sample-sheet.sh /tmp/demo
@@ -279,7 +290,7 @@ rather than a guest:
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
-| `grind-win32` | `ui_win32/` | The Windows shell — **planned in full, built through W0 only, and there is no window yet** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, both document types in one binary, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, and later the geometry, key tables and menus — compiles and **tests on Linux**, which no other native shell here can do |
+| `grind-win32` | `ui_win32/` | The Windows shell — **planned in full, built through W1: a window and the read-only grid** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, both document types in one binary eventually, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, what a cell *looks like*, the palette, and later the key tables and menus — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
 which asserts the manifest names no document-type crate, that no source dispatches on
