@@ -104,8 +104,20 @@ jobs:
           $exe = "target/release/grind-win32.exe"
           $bytes = [IO.File]::ReadAllBytes($exe)
           $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-          # COFF header is 20 bytes; SizeOfStackReserve sits at +0x60 of the PE32+ optional header.
-          $reserve = [BitConverter]::ToUInt64($bytes, $peOffset + 4 + 20 + 0x60)
+          # The signature is 4 bytes and the COFF header 20, so the optional header starts
+          # there. Its magic says which of the two layouts it is, and this check only knows
+          # PE32+ (0x20B) — asserted rather than assumed, because reading a PE32 header at
+          # PE32+ offsets returns a plausible-looking number from the wrong field.
+          $optional = $peOffset + 4 + 20
+          $magic = [BitConverter]::ToUInt16($bytes, $optional)
+          if ($magic -ne 0x20B) {
+            Write-Error ("not a PE32+ image: optional header magic is 0x{0:X}" -f $magic)
+            exit 1
+          }
+          # SizeOfStackReserve sits at +0x48 of a PE32+ optional header. An earlier version of
+          # this step read +0x60, which is SizeOfHeapCommit — it reported 0x1000 for a binary
+          # whose reserve was correctly 0x800000, so this gate failed on a good build.
+          $reserve = [BitConverter]::ToUInt64($bytes, $optional + 0x48)
           Write-Host ("SizeOfStackReserve = 0x{0:X}" -f $reserve)
           if ($reserve -lt 8388608) {
             Write-Error "stack reserve is $reserve, expected at least 8 MB - see .cargo/config.toml"
