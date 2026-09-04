@@ -329,7 +329,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
-| **W0** | **Plan and wiring** | this document; the `ui_win32/` skeleton (a `main.rs` that prints usage off Windows and nothing else); workspace member; `.cargo/config.toml` with `+crt-static` for both msvc targets; `.github/workflows/win32.yml`; `-p grind-win32` added to `ci.yml`'s build/test/clippy/docs lists; REUSE headers; the rows in `CLAUDE.md`, `README.md` and `doc/suite.md` | CI green on both runners with an empty shell, and `cargo check -p grind-win32 --target x86_64-pc-windows-msvc` clean on Linux. The lock-file and build-time cost of `windows` measured and written into this document |
+| **W0** | **Plan and wiring** — *done* | this document; `ui_win32/` with `args.rs` (the command line as a pure function, 16 tests) and a `main.rs` that resolves what it *would* open; workspace member; `.cargo/config.toml` with `+crt-static` **and the 8 MB stack reserve**; `.github/workflows/win32.yml`; `-p grind-win32` in `ci.yml`'s build/test/clippy/docs lists; REUSE headers | **Met.** Type-check, clippy and 16 tests green on Linux for the msvc target; the shell links under `cargo-xwin` and imports only OS DLLs; the `windows` cost measured (10 lock entries, 5.0s cold check). The stack overflow that predates this shell is diagnosed and fixed, and the whole core is now known to work on Windows |
 | **W1** | **The window, and the read-only grid** | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | any R7 document and any file in `sheet/tests/data/samples/**` opens and scrolls; columns are as wide as the document says; `geom.rs`'s cell-rect ⇄ hit round trip is tested on Linux |
 | **W2** | **Selection, navigation, and an assertable frame** | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; the status bar's aggregates; the name box; and decision 5's DIB render target | keyboard-only navigation of a corpus file; `--render-to shot.bmp` byte-identical across two runs, and produced under Wine as well as on Windows |
 | **W3** | **Sheet editing** | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the stale banner; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete | every value and formula in `examples/sample-sheet.sh` is typeable by hand, and a document saved here matches one the CLI wrote for the same operations |
@@ -442,7 +442,14 @@ about it is made here:
 
 ## Risks
 
-- **The `windows` crate's build cost.** It is enormous generated code gated by feature. Only the
+- ~~**The `windows` crate's build cost.**~~ **Measured in W0 and it is not a risk.** With eight
+  namespace features rather than the default, it adds **10 crates** to `Cargo.lock` (293 → 304,
+  the eleventh entry being `grind-win32` itself) and a **5.0s cold `cargo check`** for the whole
+  shell, 3.7s incremental. The `windows-sys` machinery was already in the lock file
+  transitively. The fallback below is therefore not needed and is recorded only so the reasoning
+  survives.
+- **The `windows` crate's build cost, as it was feared.** It is enormous generated code gated by
+  feature. Only the
   namespaces used get enabled, and W0's exit criterion includes measuring what it actually costs
   in lock entries and cold-build seconds. If it is bad, `windows-sys` (raw FFI, no COM) is the
   fallback and the price is `IFileDialog` — decision 7 would revert to `GetOpenFileNameW` and
@@ -477,12 +484,24 @@ Measured on 2026-09-04, on the development machine, before any of the above was 
 | The workspace has almost no `unsafe` to lose | `grep -rn unsafe --include='*.rs'`: three blocks, all `std::env::set_var` in `core/src/locale.rs`'s tests |
 | `windows-sys` is already in `Cargo.lock` transitively | `grep windows Cargo.lock` |
 
+Added in W0, once the crate existed:
+
+| Claim | How it was checked |
+|---|---|
+| A debug Windows build overflowed its stack, and the reserve was the cause | `objdump -p`: `SizeOfStackReserve 0000000000100000` before, `0000000000800000` after `/STACK:8388608`; the crash is gone |
+| The formula engine, reader, writer and linter all work on Windows | `wine grind.exe sheet set/recalc/view/lint` over a `.fods` built from nothing — `=SUM([.A1:.A2])` returned 9 |
+| `grind-win32` type-checks **and lints** for Windows on Linux | `cargo clippy -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings`, clean |
+| Its portable half runs its tests on Linux | `cargo test -p grind-win32`: 16 passed — argument handling, the type-flag reconciliation, and that the *bytes* decide the document type rather than the extension |
+| The shell links for Windows and imports only OS DLLs | `cargo xwin build`, then `objdump -p`: `user32`, `KERNEL32`, `ntdll`, `bcryptprimitives`, one api-set |
+| The `windows` crate is cheap when its namespaces are gated | 10 crates added to `Cargo.lock` (293 → 304 including `grind-win32`); `cargo check` 5.04s cold, 3.68s incremental |
+| `cargo build --target` does **not** work on the Linux runner and `cargo check` does | exit 101 at the link step; `win32.yml` says so in a comment so nobody re-adds it |
+
 Everything about how the window behaves — decision 3's measurement, decision 7's modal shape,
 the theme, the DPI path — is unverified by construction, because none of it exists yet.
 
-### The one thing that did not work, and it is not the shell's
+### The one thing that did not work — found, diagnosed and fixed in W0
 
-`wine grind.exe --version` **crashed**, and it is worth W0's attention rather than a footnote:
+`wine grind.exe --version` **crashed**, before any of this existed:
 
 ```
 thread 'main' has overflowed its stack
@@ -498,21 +517,37 @@ reserve is baked into the PE header at link time. An unoptimised build's frames 
 times an optimised one's, so this is the classic shape of a Rust program that is fine on Linux
 and fine in `--release` on Windows and dies in a debug build on Windows.
 
-**This is a hypothesis, not a measurement.** The obvious test — relink with
-`-C link-arg=/STACK:8388608` and run it again — has not been run, and until it has, neither the
-cause nor the fix is established. Three candidate answers, in the order they should be tried:
+**Confirmed from the PE header rather than argued.** `objdump -p` on that binary reported
+`SizeOfStackReserve 0000000000100000` — 1 MB exactly, the MSVC default, baked in at link time.
+The candidate that it was genuinely deep recursion somewhere (`formula::eval` recurses over the
+dependency graph rather than sorting one, and the reader's context stack is recursive too) is
+ruled out by the backtrace: the overflow is **four frames into our own code**, so this is frame
+*size* in an unoptimised build, not depth.
 
-1. The linker reserve, set once for both msvc targets in the same `.cargo/config.toml` that
-   carries `+crt-static`. Costs nothing at runtime — a reserve is address space, not memory.
-2. Run the work on a spawned thread with an explicit stack size, which is what several Rust
-   compilers do for exactly this reason and which does not depend on link flags reaching every
-   binary.
-3. It is genuinely a deep recursion somewhere — `formula::eval` recurses over the dependency
-   graph rather than sorting one, and the ODF reader's context stack is recursive too — in which
-   case Windows found a real bug that Linux's larger default has been hiding, and it belongs in
-   the core rather than here.
+Fixed by reserving 8 MB — what Linux gives — in `.cargo/config.toml`, beside `+crt-static`.
+Verified in three steps, each of which is worth more than the one before it: the header now
+reads `0000000000800000`; the binary runs; and the whole core works through it —
 
-Whichever it is, it lands in **W0**, because every later milestone runs this binary. And note
-what it already tells us regardless of the answer: **the CLI is affected too**. `grind.exe` is a
-`grind-cli` build with no shell code in it at all, so this is a fact about running this workspace
-on Windows, not about `ui_win32/`.
+```
+$ wine grind.exe sheet set book.fods A3 '=SUM([.A1:.A2])'
+$ wine grind.exe sheet view book.fods A1:A3
+3
+6
+9
+$ wine grind.exe lint book.fods
+book.fods: no problems found
+```
+
+The formula engine, the reader, the writer and the linter all work on Windows. That is a
+much better W0 foundation than "it compiles", and none of it needed a line of shell code.
+
+A reserve is address space rather than committed memory, so this costs a 64-bit process nothing
+it will notice. It is set in the config rather than worked around per binary because the
+alternative — running the real work on a spawned thread with an explicit stack size — is a
+change every entry point has to remember, and forgetting it fails only on Windows and only in
+debug. `win32.yml` asserts the header on every build so the flag cannot silently stop reaching
+the linker.
+
+**Note what this was a fact about.** `grind.exe` is a `grind-cli` build with no shell code in it
+at all: this is about running *this workspace* on Windows, and it would have been found the
+first time anybody tried, with or without `ui_win32/`.

@@ -1,0 +1,120 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: win32
+on: [push, pull_request]
+
+jobs:
+  # The new thing this shell makes possible, and the reason it gets a job of its own on the
+  # cheapest runner there is: `cargo check` does not link, so it never needs MSVC and the
+  # Windows-only source can be type-checked without Windows. It catches a `windows`-rs API
+  # change in about a minute rather than waiting on the Windows runner, and it is the same
+  # check a contributor runs on a Linux laptop:
+  #
+  #     rustup target add x86_64-pc-windows-msvc
+  #     cargo check -p grind-win32 --target x86_64-pc-windows-msvc
+  #
+  # `ui_sheet_gtk` cannot be examined this way at all — it needs GTK to compile.
+  #
+  # `cargo build --target` would *fail* here, and that is not a bug: it tries to link and
+  # there is no linker. Only `check` belongs on this runner.
+  check-from-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Type-check the Windows source without Windows
+        run: cargo check -p grind-win32 --target x86_64-pc-windows-msvc
+      - name: Lint it, for Windows, without Windows
+        run: cargo clippy -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+      # The portable half — the argument handling, the pixel arithmetic, the key tables, the
+      # menus as data — tested where every other crate in this workspace is tested. The
+      # `ci` workflow runs this too; here it is the half that pairs with the type-check above.
+      - name: Test the windowless modules
+        run: cargo test -p grind-win32
+
+  # Windows only, because a Win32 window needs Windows. Nothing is cross-compiled: the
+  # artifact that ships comes off this runner and nowhere else, which is the rule
+  # `gtk.yml` states for the GTK shells — "its own workflow on its own runner, never
+  # cross-compiled".
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Runs the whole portable half plus whatever assertions genuinely need Windows —
+      # the virtual-key codes copied out of `winuser.h` being the real ones, once
+      # `keymap.rs` exists (W2).
+      - name: Test
+        run: cargo test -p grind-win32
+
+      - name: Clippy
+        run: cargo clippy -p grind-win32 --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --release -p grind-win32
+
+      # The point of this shell, made checkable.
+      #
+      # `doc/windows-shell.md` claims the executable needs nothing Windows does not ship. A
+      # dependency on the Visual C++ redistributable is the silent way to lose that: it links
+      # fine on a developer machine and on this runner, and fails on a clean install with a
+      # missing-DLL dialog. So the import table is read back and checked rather than trusted.
+      #
+      # The binary is never *run* here. It is a GUI-subsystem application whose argument
+      # errors go into a message box, and a message box on a headless runner waits forever.
+      - name: Check the executable depends on nothing but Windows
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          $dlls = [regex]::Matches($ascii, '[A-Za-z0-9_\-]+\.[Dd][Ll][Ll]') |
+            ForEach-Object { $_.Value.ToLower() } | Sort-Object -Unique
+          Write-Host "DLL names in ${exe}:"
+          $dlls | ForEach-Object { Write-Host "  $_" }
+
+          # Everything here is an install, not part of Windows: the VC++ redistributable,
+          # the dynamically linked Universal CRT, the .NET runtime, and the Windows App SDK
+          # a WinUI shell would have needed.
+          $forbidden = @(
+            'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll',
+            'ucrtbase.dll', 'mscoree.dll', 'hostfxr.dll', 'hostpolicy.dll'
+          )
+          $bad = $dlls | Where-Object { $forbidden -contains $_ -or $_ -like 'api-ms-win-crt-*' `
+            -or $_ -like 'microsoft.windowsappruntime*' -or $_ -like 'microsoft.ui.xaml*' }
+          if ($bad) {
+            Write-Error "the executable depends on components Windows does not ship: $($bad -join ', ')"
+            exit 1
+          }
+          Write-Host "OK - no runtime dependency outside Windows itself."
+
+      # Measured on Linux and asserted here, because it is a fact about the PE header rather
+      # than about the machine: a debug build with the MSVC default of 1 MB overflows its
+      # stack before `main` does anything. `.cargo/config.toml` sets 8 MB and says why; this
+      # fails if that flag ever stops reaching the linker.
+      - name: Check the stack reserve survived
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          # COFF header is 20 bytes; SizeOfStackReserve sits at +0x60 of the PE32+ optional header.
+          $reserve = [BitConverter]::ToUInt64($bytes, $peOffset + 4 + 20 + 0x60)
+          Write-Host ("SizeOfStackReserve = 0x{0:X}" -f $reserve)
+          if ($reserve -lt 8388608) {
+            Write-Error "stack reserve is $reserve, expected at least 8 MB - see .cargo/config.toml"
+            exit 1
+          }
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-x64
+          path: target/release/grind-win32.exe
+          if-no-files-found: error

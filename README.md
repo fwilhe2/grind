@@ -165,10 +165,17 @@ There is no ribbon: a header bar, one format bar over the selection, context men
 minimal — it opens, draws, moves by line, types, formats a selection, saves and undoes, with an
 outline and a go-to box for `p12` / `#intro` / `§2.1.3`.
 
-**macOS and Windows clients are planned and do not exist.** Nothing is written, nothing is
-scheduled. Everything here is built and tested on Linux; the command line and the terminal UI are
-portable Rust with no platform-specific dependencies and will probably build elsewhere today, but
-nothing verifies that yet, so treat it as untested rather than supported.
+**The Windows client is planned and has been started; the macOS one has not.** `doc/windows-shell.md`
+is the plan — a Win32 window drawn with GDI, hosting both document types, whose `.exe` is meant to
+need nothing Windows does not already ship. What exists today is the wiring and the command-line
+handling, and **no window**, so there is nothing to run yet. Nothing about macOS is written or
+scheduled.
+
+Everything here is built and tested on Linux. That said, the command line is now known to work on
+Windows rather than assumed to: it cross-compiles, links with a static C runtime, imports only
+operating-system DLLs, and creates, edits, recalculates and lints a spreadsheet correctly when run
+under Wine. That is evidence, not proof — nobody has run it on real Windows — and it is more than
+this paragraph could previously claim.
 
 ### The browser
 
