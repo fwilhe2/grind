@@ -414,17 +414,25 @@ cargo test    -p grind-win32                      # the portable half: geom, key
 change in about a minute rather than on the Windows runner, and it is the capability a C# shell
 could not have in any form.
 
-**Driving it on Linux — an inspection aid, never a build path:**
+**Driving it on Linux — an inspection aid, never a build path.** `scripts/run.sh` has a `win32`
+arm, so the whole of it is one command on the sample document every other shell uses:
 
 ```sh
 sudo dnf install clang lld wine xorg-x11-server-Xvfb ImageMagick
 cargo install cargo-xwin
-cargo xwin build -p grind-win32 --release --target x86_64-pc-windows-msvc
 
+scripts/run.sh win32                # builds the sample, links with cargo-xwin, runs under Wine
+scripts/run.sh win32 book.fods      # or a document of your own
+```
+
+It builds **debug**, which works only because `.cargo/config.toml` reserves 8 MB of stack; with
+the MSVC default of 1 MB it overflowed before `main` did anything (W0, below). Under a nested
+display it is screenshottable and drivable, which is what caught W1's two drawing bugs:
+
+```sh
 Xvfb :99 -screen 0 1400x900x24 &
-export DISPLAY=:99 WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
-wine target/x86_64-pc-windows-msvc/release/grind-win32.exe book.fods &
-import -window root /tmp/shot.png
+DISPLAY=:99 scripts/run.sh win32 &
+DISPLAY=:99 import -window root /tmp/shot.png     # python-xlib + XTEST drives the mouse
 ```
 
 `cargo-xwin` links a real msvc binary with `lld-link` against Microsoft's own CRT and SDK. **The
@@ -434,7 +442,11 @@ never cross-compiled". A green Wine run is not evidence that Windows is happy, a
 in CI would quietly turn a debugging convenience into a release path.
 
 It earns its place because of what it catches. In the sibling repository, driving the window
-under Wine through XTEST found decision 7's aliasing bug, which reading the code did not.
+under Wine through XTEST found decision 7's aliasing bug, which reading the code did not; here it
+found all three of W1's, none of which survived a single screenshot.
+
+On Windows there is nothing to arrange and the script has no arm for it: `cargo run -p
+grind-win32 -- book.fods` is the whole of it.
 
 **What Wine cannot speak for**, and what therefore needs a real Windows machine before any claim
 about it is made here:

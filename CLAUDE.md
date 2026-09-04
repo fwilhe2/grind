@@ -152,17 +152,18 @@ cargo test   -p grind-win32                                     # the portable h
 `cargo build --target x86_64-pc-windows-msvc` **fails** here and that is not a bug — it tries to
 link and there is no MSVC. To link one anyway, for inspection only, `cargo xwin build` does it and
 Wine runs it; the shipped artifact comes off `windows-latest` in `win32.yml` and nowhere else.
-**Run Wine headless** (`env -u DISPLAY`, or an Xvfb display) — a crash otherwise opens WineDbg's
-dialog on whatever desktop is in front of you. Now that there *is* a window, the Xvfb form is the
-useful one, and it earns its place: both of W1's bugs were one glance at a screenshot and neither
-was visible in review.
+`scripts/run.sh win32` is both halves in one command — link with `cargo-xwin`, run under Wine, on
+the same sample document every other shell gets. It earns its place: all three of W1's bugs were
+one glance at a screenshot and none was visible in review.
 
 ```sh
-cargo xwin build -p grind-win32 --release --target x86_64-pc-windows-msvc
-Xvfb :99 -screen 0 1400x900x24 & export DISPLAY=:99 WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
-wine target/x86_64-pc-windows-msvc/release/grind-win32.exe book.fods &
-import -window root /tmp/shot.png     # ImageMagick; python-xlib + XTEST drives the mouse
+scripts/run.sh win32                                   # the sample document, in a Wine window
+Xvfb :99 -screen 0 1400x900x24 & DISPLAY=:99 scripts/run.sh win32 &
+DISPLAY=:99 import -window root /tmp/shot.png          # ImageMagick; python-xlib drives the mouse
 ```
+
+**Run Wine headless when a crash is possible** (`env -u DISPLAY`, or that Xvfb display) — WineDbg
+otherwise opens its dialog on whatever desktop is in front of you.
 
 ```sh
 cargo build && GRIND=target/debug/grind examples/sample-sheet.sh /tmp/demo
