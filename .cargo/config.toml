@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Windows build settings, and both of these are load-bearing rather than preferences.
+# `doc/windows-shell.md` is the argument for the first and the measurement behind the second.
+#
+# Only the msvc targets are named, so nothing here touches the Linux, wasm or GTK builds.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    # Link the MSVC C runtime statically.
+    #
+    # This is what makes the executables depend on nothing but the DLLs Windows itself
+    # ships. `ucrtbase.dll` is part of the operating system, but the *default* dynamic link
+    # also pulls in `vcruntime140.dll`, which is not — it comes from the Visual C++
+    # redistributable, and a machine without it gets a missing-DLL dialog rather than a
+    # program. The whole point of `doc/windows-shell.md` is an `.exe` that runs on a clean
+    # install, so `win32.yml` reads the import table back and fails if anything outside
+    # Windows appears in it.
+    "-C", "target-feature=+crt-static",
+
+    # Reserve 8 MB of stack for the main thread, which is what Linux gives and eight times
+    # what Windows does.
+    #
+    # Measured rather than guessed. A debug `grind.exe` built here overflowed its stack
+    # under Wine before `main` had done anything: `__chkstk` failed four frames into our own
+    # code, so this is frame *size* in an unoptimised build and not a runaway recursion.
+    # `objdump -p` on that binary reported `SizeOfStackReserve 0000000000100000` — 1 MB
+    # exactly, the MSVC default, baked into the PE header at link time.
+    #
+    # A reserve is address space, not committed memory: pages are only backed as they are
+    # touched, so this costs a 64-bit process nothing it will notice. It is set here rather
+    # than worked around per binary because the alternative — running the real work on a
+    # spawned thread with an explicit stack size — is a change every entry point has to
+    # remember, and forgetting it fails only on Windows and only in debug.
+    "-C", "link-arg=/STACK:8388608",
+]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-arg=/STACK:8388608",
+]

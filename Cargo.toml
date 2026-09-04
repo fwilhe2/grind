@@ -13,6 +13,7 @@ members = [
     "ui_text_gtk",
     "ui_tui",
     "ui_web",
+    "ui_win32",
 ]
 resolver = "3"
 

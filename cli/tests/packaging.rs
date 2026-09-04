@@ -62,7 +62,7 @@ const PACKAGED: [Packaged; 4] = [
 
 /// The members that ship no binary, each with the reason. A crate here is *not* a package that
 /// was forgotten.
-const UNPACKAGED: [(&str, &str); 5] = [
+const UNPACKAGED: [(&str, &str); 6] = [
     ("core", "a library"),
     ("sheet", "a library"),
     ("text", "a library"),
@@ -70,6 +70,16 @@ const UNPACKAGED: [(&str, &str); 5] = [
     (
         "ui_web",
         "a wasm bundle served as files, not installed from a repository",
+    ),
+    // Not an oversight and not deferred work: a `.deb` or an `.rpm` of a `.exe` would install
+    // something no Linux machine can run. `win32.yml` builds it on `windows-latest` and
+    // uploads it as an artifact, which is that platform's equivalent of the two jobs here.
+    // What Windows *packaging* means — a portable executable, an installer, file associations
+    // through ProgIDs — is W8's question in `doc/windows-shell.md`, and the day it is answered
+    // the answer belongs in a guard of its own rather than in this one.
+    (
+        "ui_win32",
+        "a Windows executable; `win32.yml` builds and uploads it, and a .deb would be unrunnable",
     ),
 ];
 
