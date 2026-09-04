@@ -21,8 +21,9 @@
 //! without using Windows' *controls*. `doc/windows-shell.md` is normative for all of it and is
 //! where the argument, the milestones and the named gaps live.
 //!
-//! This file owns the process. The window is `win.rs`'s, and does not exist yet: **W0 is the
-//! wiring**, and everything below the argument handling is the next milestone.
+//! This file owns the process and nothing else. The window is `win.rs`'s, the grid's arithmetic
+//! is `sheet/geom.rs`'s and its drawing `sheet/draw.rs`'s — **W1 is the window and the read-only
+//! grid**; the text pane is W5 and is refused here rather than opened as an empty spreadsheet.
 
 // A GUI application, not a console one. Without this, launching from Explorer flashes up a
 // console window behind the shell and leaves it there for the life of the process. The cost is
@@ -30,11 +31,22 @@
 // the same bargain every Windows GUI application makes.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-// Off Windows nothing calls into these, so every function reads as dead code — but their tests
-// are the reason this crate builds here at all, and silencing the lint is what keeps
-// `cargo clippy` clean on the development machine.
-#[cfg_attr(not(windows), allow(dead_code))]
+// Off Windows nothing calls into these, so every function reads as dead code and every import
+// the Windows half needs reads as unused — but their tests are the reason this crate builds
+// here at all, and silencing the two lints is what keeps `cargo clippy` clean on the
+// development machine. Both are scoped to `not(windows)`, so a genuinely dead function is still
+// reported where it matters.
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod args;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod sheet;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod theme;
+
+#[cfg(windows)]
+mod gdi;
+#[cfg(windows)]
+mod win;
 
 use std::path::Path;
 
@@ -112,26 +124,26 @@ fn main() -> std::process::ExitCode {
                 message_box("grind-win32", &message, true);
                 ExitCode::FAILURE
             }
-            Ok((kind, path)) => {
-                // W1 opens the window here. Until it does, saying so beats a silent success:
-                // a shell that starts and shows nothing is indistinguishable from one that
-                // crashed, and this binary has no stderr to explain itself on.
-                let what = path
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| format!("a new {}", args::describe(kind)));
+            // A text document is a document this shell can *identify* and cannot yet open —
+            // the pane is W5. Saying so is the honest answer; opening an empty spreadsheet
+            // instead would look like the file had failed to load.
+            Ok((DocumentKind::Text, _)) => {
                 message_box(
                     "grind-win32",
-                    &format!(
-                        "{}\n\nWould open: {what}\nAs: {}\n\nThe window itself is W1 — see \
-                         doc/windows-shell.md.",
-                        version(),
-                        args::describe(kind),
-                    ),
-                    false,
+                    "This is a word processor document, and this build has no text pane yet \
+                     (W5 — see doc/windows-shell.md).\n\nIt opens today in grind-tui, in \
+                     grind-text-gtk, and in the browser shell.",
+                    true,
                 );
-                ExitCode::SUCCESS
+                ExitCode::FAILURE
             }
+            Ok((_, path)) => match win::run(path) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(message) => {
+                    message_box("grind-win32", &message, true);
+                    ExitCode::FAILURE
+                }
+            },
         },
     }
 }

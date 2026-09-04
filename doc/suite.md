@@ -835,8 +835,10 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 **A fifth shell has since been started, and it is planned in `doc/windows-shell.md` rather than
 here.** `grind-win32` is a Win32 window drawn with GDI, hosting both document types in one
 binary — Windows associates files by ProgID, so the reason the two GTK shells are two binaries
-does not apply to it. Its milestones are W0–W8 and only W0 is built: the wiring, the command
-line, and an `.exe` that already imports nothing but operating-system DLLs. It matters to this
+does not apply to it. Its milestones are W0–W8 and it is built through **W1**: the wiring and the
+command line, then a window over `App::get_viewport` — the read-only grid, at the document's own
+column widths, with headers, a status bar, both scrollbars and the wheel — in an `.exe` that
+imports nothing but operating-system DLLs. It matters to this
 document for two reasons. **R10's matrix gains a column**, so `doc/shell-matrix.md` — still
 owed, and now owed at 2×5 rather than 2×4 — has more to say than when S11 named it. And it is
 the **fourth implementation of `doc/text-layout.md`'s `Metrics`**, arriving at the one platform
