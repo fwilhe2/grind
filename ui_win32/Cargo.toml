@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-win32"
+version = "0.0.0"
+description = "An ODF-native office suite — the Windows shell"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "grind-win32"
+path = "src/main.rs"
+
+[dependencies]
+# One binary, both document types, chosen by `grind_core::kind` from the file's bytes (R10) —
+# `grind-tui`'s arrangement rather than the two GTK binaries'. The GTK shells are split because
+# a `.desktop` file's `MimeType=` is per application; Windows associates by ProgID and one
+# executable registers as many as it likes, so the reason to split does not exist here
+# (`doc/windows-shell.md`, decision 1).
+grind-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+
+# Target-gated on purpose, and this is the design rather than a tidy-up.
+#
+# Everything that can be a pure function is one and lives outside `cfg(windows)`: the pixel
+# arithmetic, the key tables, the editing state machine, the menus as data. Gating the
+# dependency this way lets all of it compile and run its tests on the Linux machine this
+# repository is developed on, which is a capability no native shell here has had before —
+# `ui_sheet_gtk` needs GTK to compile at all. Everything that needs a window lives behind
+# `#[cfg(windows)]`.
+#
+# Only the namespaces actually used get features; the `windows` crate is enormous generated
+# code and enabling it wholesale is how a build minute becomes ten.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    # `IFileDialog` is COM, and COM is a namespace of its own — W3's two file dialogs are the
+    # only reason either of these is here.
+    "Win32_System_Com",
+    # `clipboard.rs`, W4: Open/Get/Set/EmptyClipboard, the moveable `HGLOBAL` handed across the
+    # boundary, and the `CF_UNICODETEXT` constant that names the one format this shell speaks.
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

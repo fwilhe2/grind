@@ -832,6 +832,20 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | **Done, minimally.** `grind-web` is `sheet/` + `text/` + a shell that dispatches on `grind_core::kind`, mirroring `grind-tui`'s shape; it opens, edits and saves a `.fodt` with no path anywhere; `ui_web/smoke.js` drives both panes in jsdom and checks the handover both ways; the gap list is in `doc/text-shell.md` | medium |
 | **S11** | **Package the suite.** Meta-package, the container, README rewritten as a suite pitch. **The two desktop entries, four mime types, AppStream components and icons are done** — `packaging.yml` builds all four binaries' packages; what is left is the meta-package that depends on them, which has no Cargo equivalent | `packaging.yml` produces all five packages; `reuse lint` green; `doc/shell-matrix.md` full and green (R10); double-clicking a `.fodt` opens the text app on a clean machine | medium |
 
+**A fifth shell has since been started, and it is planned in `doc/windows-shell.md` rather than
+here.** `grind-win32` is a Win32 window drawn with GDI, hosting both document types in one
+binary — Windows associates files by ProgID, so the reason the two GTK shells are two binaries
+does not apply to it. Its milestones are W0–W8 and it is built through **W1**: the wiring and the
+command line, then a window over `App::get_viewport` — the read-only grid, at the document's own
+column widths, with headers, a status bar, both scrollbars and the wheel — in an `.exe` that
+imports nothing but operating-system DLLs. It matters to this
+document for two reasons. **R10's matrix gains a column**, so `doc/shell-matrix.md` — still
+owed, and now owed at 2×5 rather than 2×4 — has more to say than when S11 named it. And it is
+the **fourth implementation of `doc/text-layout.md`'s `Metrics`**, arriving at the one platform
+whose toolkit does not hand the answer over: Win32 has no Pango, GDI does not shape, and that
+shell's decision 3 is the first time injecting metrics has cost a real argument rather than
+twenty lines. L3 is the milestone it waits on, exactly as this table's own L3 row describes.
+
 Then **phase 11 — xlsx import**, `doc/xlsx-import.md` unchanged but for its number and the
 `grind sheet import` spelling. It is renumbered rather than reprioritised: it is a separate
 crate behind a feature flag and does not interact with any of the above, but the CLI rename it

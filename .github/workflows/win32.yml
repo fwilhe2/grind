@@ -1,0 +1,232 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: win32
+on: [push, pull_request]
+
+jobs:
+  # The new thing this shell makes possible, and the reason it gets a job of its own on the
+  # cheapest runner there is: `cargo check` does not link, so it never needs MSVC and the
+  # Windows-only source can be type-checked without Windows. It catches a `windows`-rs API
+  # change in about a minute rather than waiting on the Windows runner, and it is the same
+  # check a contributor runs on a Linux laptop:
+  #
+  #     rustup target add x86_64-pc-windows-msvc
+  #     cargo check -p grind-win32 --target x86_64-pc-windows-msvc
+  #
+  # `ui_sheet_gtk` cannot be examined this way at all — it needs GTK to compile.
+  #
+  # `cargo build --target` would *fail* here, and that is not a bug: it tries to link and
+  # there is no linker. Only `check` belongs on this runner.
+  check-from-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Type-check the Windows source without Windows
+        run: cargo check -p grind-win32 --target x86_64-pc-windows-msvc
+      - name: Lint it, for Windows, without Windows
+        run: cargo clippy -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+      # The portable half — the argument handling, the pixel arithmetic, the key tables, the
+      # menus as data — tested where every other crate in this workspace is tested. The
+      # `ci` workflow runs this too; here it is the half that pairs with the type-check above.
+      - name: Test the windowless modules
+        run: cargo test -p grind-win32
+
+  # Windows only, because a Win32 window needs Windows. Nothing is cross-compiled: the
+  # artifact that ships comes off this runner and nowhere else, which is the rule
+  # `gtk.yml` states for the GTK shells — "its own workflow on its own runner, never
+  # cross-compiled".
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Runs the whole portable half plus whatever assertions genuinely need Windows —
+      # the virtual-key codes copied out of `winuser.h` being the real ones, once
+      # `keymap.rs` exists (W2).
+      - name: Test
+        run: cargo test -p grind-win32
+
+      - name: Clippy
+        run: cargo clippy -p grind-win32 --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --release -p grind-win32
+
+      # The point of this shell, made checkable.
+      #
+      # `doc/windows-shell.md` claims the executable needs nothing Windows does not ship. A
+      # dependency on the Visual C++ redistributable is the silent way to lose that: it links
+      # fine on a developer machine and on this runner, and fails on a clean install with a
+      # missing-DLL dialog. So the import table is read back and checked rather than trusted.
+      #
+      # The binary is never *run* here. It is a GUI-subsystem application whose argument
+      # errors go into a message box, and a message box on a headless runner waits forever.
+      - name: Check the executable depends on nothing but Windows
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          $dlls = [regex]::Matches($ascii, '[A-Za-z0-9_\-]+\.[Dd][Ll][Ll]') |
+            ForEach-Object { $_.Value.ToLower() } | Sort-Object -Unique
+          Write-Host "DLL names in ${exe}:"
+          $dlls | ForEach-Object { Write-Host "  $_" }
+
+          # Everything here is an install, not part of Windows: the VC++ redistributable,
+          # the dynamically linked Universal CRT, the .NET runtime, and the Windows App SDK
+          # a WinUI shell would have needed.
+          $forbidden = @(
+            'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll',
+            'ucrtbase.dll', 'mscoree.dll', 'hostfxr.dll', 'hostpolicy.dll'
+          )
+          $bad = $dlls | Where-Object { $forbidden -contains $_ -or $_ -like 'api-ms-win-crt-*' `
+            -or $_ -like 'microsoft.windowsappruntime*' -or $_ -like 'microsoft.ui.xaml*' }
+          if ($bad) {
+            Write-Error "the executable depends on components Windows does not ship: $($bad -join ', ')"
+            exit 1
+          }
+          Write-Host "OK - no runtime dependency outside Windows itself."
+
+      # Measured on Linux and asserted here, because it is a fact about the PE header rather
+      # than about the machine: a debug build with the MSVC default of 1 MB overflows its
+      # stack before `main` does anything. `.cargo/config.toml` sets 8 MB and says why; this
+      # fails if that flag ever stops reaching the linker.
+      - name: Check the stack reserve survived
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          # The signature is 4 bytes and the COFF header 20, so the optional header starts
+          # there. Its magic says which of the two layouts it is, and this check only knows
+          # PE32+ (0x20B) — asserted rather than assumed, because reading a PE32 header at
+          # PE32+ offsets returns a plausible-looking number from the wrong field.
+          $optional = $peOffset + 4 + 20
+          $magic = [BitConverter]::ToUInt16($bytes, $optional)
+          if ($magic -ne 0x20B) {
+            Write-Error ("not a PE32+ image: optional header magic is 0x{0:X}" -f $magic)
+            exit 1
+          }
+          # SizeOfStackReserve sits at +0x48 of a PE32+ optional header. An earlier version of
+          # this step read +0x60, which is SizeOfHeapCommit — it reported 0x1000 for a binary
+          # whose reserve was correctly 0x800000, so this gate failed on a good build.
+          $reserve = [BitConverter]::ToUInt64($bytes, $optional + 0x48)
+          Write-Host ("SizeOfStackReserve = 0x{0:X}" -f $reserve)
+          if ($reserve -lt 8388608) {
+            Write-Error "stack reserve is $reserve, expected at least 8 MB - see .cargo/config.toml"
+            exit 1
+          }
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-x64
+          path: target/release/grind-win32.exe
+          if-no-files-found: error
+
+  # The job that makes a drawing refactor provable (W2, `doc/windows-shell.md` decision 5).
+  #
+  # `--render-to` draws one frame onto a DIB section and writes a `.bmp`. There is **no window
+  # and no display** involved — `CreateCompatibleDC(None)` + `CreateDIBSection` need neither —
+  # which is what lets this run on a headless runner at all, and is why the `build` job's rule
+  # about never *running* the binary does not reach it: there is no message box on this path.
+  #
+  # Two renders, compared byte for byte. That is the whole assertion, and it is the W2 exit
+  # criterion verbatim. What it catches is a drawing change: nothing in the output is allowed to
+  # vary between runs, so the theme is forced to light and the frame size is a constant rather
+  # than the window's.
+  #
+  # What it deliberately does **not** yet do is compare against a committed fixture. A `.bmp`
+  # from here and one from the Wine path on a developer's machine cannot match — Consolas and
+  # Segoe UI are absent under Wine, so every glyph comes from a substitution — so the fixture has
+  # to be produced on this runner before it can be committed, and the artifact below is how.
+  render:
+    runs-on: windows-latest
+    # A failing render puts its message in a *message box*, because this is a GUI-subsystem
+    # binary with no stderr — and a message box on a headless runner is a wait with no end. The
+    # limit turns that into a failed job rather than a hung one.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build
+        run: cargo build --release -p grind-win32
+
+      - name: Draw the same frame twice
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $doc = "sheet/tests/data/samples/Sales Dashboard.fods"
+          # `Start-Process -Wait`, not `&`: a GUI-subsystem process detaches from the console
+          # immediately, so the plain call would return before a single pixel had been drawn and
+          # the comparison below would read whatever was on disk from the step before.
+          foreach ($out in @("one.bmp", "two.bmp")) {
+            $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
+              -Wait -PassThru -NoNewWindow
+            if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
+          }
+
+      - name: The two frames are byte-identical
+        shell: pwsh
+        run: |
+          $a = [IO.File]::ReadAllBytes("one.bmp")
+          $b = [IO.File]::ReadAllBytes("two.bmp")
+          Write-Host "$($a.Length) bytes"
+          # A 1280x800 24-bit bottom-up BMP: 54 bytes of header and no padding, since 1280*3 is
+          # already a multiple of four. Asserted rather than assumed, so that a frame that came
+          # out empty or the wrong size fails here rather than passing a comparison with another
+          # empty frame.
+          if ($a.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($a.Length)"; exit 1
+          }
+          if ([Text.Encoding]::ASCII.GetString($a[0..1]) -ne "BM") {
+            Write-Error "not a BMP"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -ne 0) {
+            Write-Error "two renders of the same document differ"; exit 1
+          }
+          Write-Host "OK - the frame is reproducible."
+
+      # The same assertion for the **text pane** (W5a). It is a separate step rather than a loop
+      # because it is a separate claim: the grid's frame proves the drawing is reproducible, and
+      # this one proves that *measuring a document* is — every line here was broken by
+      # `grind_core::layout` asking GDI how wide the text is, on a runner with the real Segoe UI
+      # rather than Wine's substitution, and a font cache that answered differently on the second
+      # pass would show up here and nowhere else.
+      - name: Draw a text document twice, and compare
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $doc = "text/tests/data/edited-default-paragraph-style.fodt"
+          foreach ($out in @("text-one.bmp", "text-two.bmp")) {
+            $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
+              -Wait -PassThru -NoNewWindow
+            if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
+          }
+          $a = [IO.File]::ReadAllBytes("text-one.bmp")
+          $b = [IO.File]::ReadAllBytes("text-two.bmp")
+          if ($a.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($a.Length)"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -ne 0) {
+            Write-Error "two renders of the same document differ"; exit 1
+          }
+          Write-Host "OK - the text pane is reproducible too."
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-frame
+          path: |
+            one.bmp
+            text-one.bmp
+          if-no-files-found: error
