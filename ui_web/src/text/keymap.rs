@@ -12,6 +12,17 @@
 //! layout, and the answer comes from `grind_text::App::caret_line` (`doc/text-layout.md`).
 //! `ui_tui/src/text/keymap.rs` and `ui_text_gtk/src/keymap.rs` name the same questions in
 //! their own spellings; three keyboards, one editing model.
+//!
+//! **A composed character does not come from a key, and this file knows it.** A dead key —
+//! `` ` ``, `´`, `^`, `~` on German, French, Spanish and many other layouts — reports
+//! `KeyboardEvent.key == "Dead"`, and every keystroke *inside* the composition it opens
+//! reports `isComposing`. Neither carries the character that is finally produced: the browser
+//! is composing, and what it composed arrives on `compositionend`. So both are refused here
+//! and the text is taken from that event instead ([`Chord::composing`], and `wire` in
+//! `super`). The alternative mechanisms need an editable host — `beforeinput` fires on one,
+//! and this shell deliberately has no `contenteditable` (`super`'s own module documentation
+//! says why) — and a bigger match arm cannot work at all, because `"Dead"` is not a character
+//! and the composition may still be several keystrokes from deciding which one it is.
 
 /// A keystroke, in the browser's own vocabulary.
 ///
@@ -24,6 +35,10 @@ pub struct Chord<'a> {
     /// is running on.
     pub primary: bool,
     pub shift: bool,
+    /// `KeyboardEvent.isComposing`: this keystroke is part of a composition the browser is
+    /// running, and its `key` is therefore about the *composition* rather than about the
+    /// document. Nothing is claimed while it is set — see the module documentation.
+    pub composing: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,8 +65,9 @@ pub enum Action<'a> {
     /// copying it would be a `String` per keystroke.
     ///
     /// A composed character — `é` from a dead key — arrives here whole, which is why this is
-    /// a string and not a `char`. What does *not* arrive is an IME composition; see the gap
-    /// list in `doc/text-shell.md`.
+    /// a string and not a `char`. It reaches this action from `compositionend` rather than
+    /// from a key, though: see the module documentation. What still does *not* arrive is a
+    /// candidate window; see the gap list in `doc/web-shell.md`.
     Type(&'a str),
     Split,
     EraseBack,
@@ -68,6 +84,15 @@ pub enum Action<'a> {
 }
 
 pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
+    // A composition owns the keyboard until it ends. Both halves of it are refused: the dead
+    // key that opens one (`"Dead"` — there is no character yet, and the next keystroke decides
+    // which one there will be) and every keystroke inside one (`isComposing` — whose `key` is
+    // either the base character or the composed one depending on the browser, so typing it
+    // would drop `` ` `` on one and double `è` on another). `compositionend` carries the
+    // result exactly once, and that is where the text comes from.
+    if chord.composing || chord.key == "Dead" {
+        return None;
+    }
     let go = |motion| {
         Some(Action::Move {
             motion,
@@ -114,15 +139,8 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
         // are writing in.
         "Tab" => Some(Action::Tab { back: chord.shift }),
         // Exactly one character is a typed character; anything longer is a named key this
-        // shell does not claim — "F5", "Escape", "Shift".
-        //
-        // TODO: **and "Dead"**, which is what a dead key reports — `` ` ``, `´`, `^` and `~` on
-        // German, French, Spanish and other layouts. Four characters is no character here, so
-        // the key is dropped and nothing is ever composed from it: on those keyboards
-        // `` `code` `` cannot be typed into this pane at all. The prime suspect in
-        // `text/src/markdown.rs`'s TODO. The fix is a composition, not a bigger match arm —
-        // `compositionend` carries what the dead key finally produced, and this shell has no
-        // input method at all (`doc/web-shell.md` names that gap).
+        // shell does not claim — "F5", "Escape", "Shift", and "Dead", which the guard at the
+        // top of this function has already turned away for its own reasons.
         key if key.chars().count() == 1 => Some(Action::Type(key)),
         _ => None,
     }
@@ -137,6 +155,7 @@ mod tests {
             key,
             primary: false,
             shift: false,
+            composing: false,
         })
     }
 
@@ -145,6 +164,7 @@ mod tests {
             key,
             primary: true,
             shift: false,
+            composing: false,
         })
     }
 
@@ -153,6 +173,16 @@ mod tests {
             key,
             primary: false,
             shift: true,
+            composing: false,
+        })
+    }
+
+    fn composing(key: &str) -> Option<Action<'_>> {
+        action_for(&Chord {
+            key,
+            primary: false,
+            shift: false,
+            composing: true,
         })
     }
 
@@ -204,11 +234,38 @@ mod tests {
     fn a_single_character_is_typed_and_a_named_key_is_not() {
         assert_eq!(plain("a"), Some(Action::Type("a")));
         assert_eq!(plain(" "), Some(Action::Type(" ")));
-        assert_eq!(plain("é"), Some(Action::Type("é")), "a dead key composes");
+        assert_eq!(
+            plain("é"),
+            Some(Action::Type("é")),
+            "a browser that hands the composed character straight to a key is believed"
+        );
         assert_eq!(plain("\u{4e16}"), Some(Action::Type("\u{4e16}")));
         assert_eq!(plain("F5"), None);
         assert_eq!(plain("Shift"), None);
         assert_eq!(plain("Escape"), None);
+    }
+
+    /// The dead key, which is the whole of `` `code` `` on a German, French or Spanish
+    /// layout: neither half of a composition is a keystroke this pane may act on, and the
+    /// text comes from `compositionend` instead.
+    #[test]
+    fn a_composition_is_refused_at_both_ends_so_it_is_typed_once() {
+        assert_eq!(plain("Dead"), None, "no character has been decided yet");
+        // Whatever the browser puts in `key` while it composes — the base character on one,
+        // the composed one on another — it is not this pane's to type.
+        for key in ["e", "é", "Dead", " "] {
+            assert_eq!(composing(key), None, "{key}");
+        }
+        // Including the chords, so a composition cannot trip Ctrl+S on its way past.
+        assert_eq!(
+            action_for(&Chord {
+                key: "s",
+                primary: true,
+                shift: false,
+                composing: true,
+            }),
+            None
+        );
     }
 
     /// A modifier chord belongs to the chrome, never to the document — otherwise Ctrl+S
@@ -223,7 +280,8 @@ mod tests {
             action_for(&Chord {
                 key: "z",
                 primary: true,
-                shift: true
+                shift: true,
+                composing: false,
             }),
             Some(Action::Run("doc.redo"))
         );

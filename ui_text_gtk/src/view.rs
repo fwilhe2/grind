@@ -665,31 +665,17 @@ mod imp {
             Some((layout, faces, kind))
         }
 
-        /// Same block, plus its named style — what picking its face needs beyond
-        /// [`Doc::measured`]'s own answer, and not worth changing that signature for.
-        fn style_of(&self, index: usize) -> Option<String> {
-            self.app()?
-                .get_viewport(index..index + 1)
-                .get(index)?
-                .style
-                .clone()
-        }
-
-        /// The width and metrics a *line* operation is asked in, for the caret's own block.
+        /// How each block is set — this window's [`grind_text::Faces`], which is what every
+        /// motion by line is asked through.
         ///
-        /// ponytail: [`App::caret_line`] takes one width and one provider for a motion that
-        /// may cross into a block set in a different face, so Down-arrow out of a heading
-        /// lands using the heading's metrics. Invisible for a caret in the middle of a line
-        /// and wrong by a few characters at the ends. The fix is a core change — a provider
-        /// looked up per block rather than passed once — and it is written down in
-        /// `doc/text-shell.md` rather than worked around here, because working around it
-        /// would mean this shell doing its own line arithmetic.
-        fn line_context(&self) -> Option<(f32, Rc<Faces>, BlockKind, Option<String>)> {
-            let block = self.caret.get().block;
-            let (_, faces, kind) = self.measured(block)?;
-            let style = self.style_of(block);
+        /// Rebuilt per question rather than kept, because both halves of it change under the
+        /// window: the faces on a theme change, the column on a resize.
+        fn column(&self) -> Column {
             let (_, column) = geom::column(f64::from(self.obj().width()));
-            Some(((column - indent_of(&kind)) as f32, faces, kind, style))
+            Column {
+                faces: self.faces(),
+                column,
+            }
         }
 
         // --- input ---
@@ -731,10 +717,7 @@ mod imp {
                 false => self.anchor.set(None),
                 true => {}
             }
-            let Some((width, faces, kind, style)) = self.line_context() else {
-                return;
-            };
-            let metrics = faces.of(&kind, style.as_deref());
+            let faces = self.column();
             match motion {
                 Motion::Char(delta) => {
                     self.goal_x.set(None);
@@ -745,7 +728,7 @@ mod imp {
                     // were reading is still on screen after the jump.
                     let lines = match motion {
                         Motion::Page(_) => {
-                            let fit = f64::from(self.obj().height()) / faces.body().height();
+                            let fit = f64::from(self.obj().height()) / self.faces().body().height();
                             (fit as isize - 1).max(1)
                         }
                         _ => 1,
@@ -754,16 +737,16 @@ mod imp {
                     // Remembered across a run of Down presses, which is what `goal_x` is for.
                     let goal = match self.goal_x.get() {
                         Some(x) => x,
-                        None => app.caret_x(caret, width, metrics).unwrap_or(0.0),
+                        None => app.caret_x(caret, &faces).unwrap_or(0.0),
                     };
                     self.goal_x.set(Some(goal));
-                    if let Ok(moved) = app.caret_line(caret, delta, goal, width, metrics) {
+                    if let Ok(moved) = app.caret_line(caret, delta, goal, &faces) {
                         self.move_caret(moved, false);
                     }
                 }
                 Motion::LineStart | Motion::LineEnd => {
                     self.goal_x.set(None);
-                    if let Ok((start, end)) = app.caret_line_bounds(caret, width, metrics) {
+                    if let Ok((start, end)) = app.caret_line_bounds(caret, &faces) {
                         self.move_caret(
                             match motion {
                                 Motion::LineStart => start,
@@ -1158,6 +1141,34 @@ mod imp {
         f64::from(face.draw_wrapped(text, width).pixel_size().1)
     }
 
+    /// The measure and the face of **every** block — this shell's [`grind_text::Faces`].
+    ///
+    /// Both halves are this window's own arithmetic and neither is uniform: a heading is set
+    /// larger than the paragraph under it, and a list item's indent comes out of the column, so
+    /// it is measured narrower. That is why the core asks per block rather than being handed
+    /// one width and one provider for a whole motion — Down-arrow out of a heading used to
+    /// measure the paragraph below it with the heading's font, and landed a few characters from
+    /// where a click on the same spot would have.
+    pub(super) struct Column {
+        faces: Rc<Faces>,
+        /// The text column's width in pixels, before any indent comes out of it.
+        column: f64,
+    }
+
+    impl grind_text::Faces for Column {
+        fn of(
+            &self,
+            _index: usize,
+            kind: &BlockKind,
+            style: Option<&str>,
+        ) -> (f32, &dyn grind_text::Metrics) {
+            (
+                (self.column - indent_of(kind)) as f32,
+                self.faces.of(kind, style),
+            )
+        }
+    }
+
     /// How far a block's text is indented — a list's nesting, and nothing else.
     fn indent_of(kind: &BlockKind) -> f64 {
         match kind {
@@ -1381,6 +1392,10 @@ mod tests {
         (
             "markdown as it is typed reaches the document",
             typing_markdown_formats_the_span,
+        ),
+        (
+            "code is measured and drawn in a monospace face",
+            code_is_measured_and_drawn_in_a_monospace_face,
         ),
         (
             "the code view shows the projection, tagged and marked",
@@ -1815,6 +1830,79 @@ mod tests {
             .find(|run| run.props.is_bold())
             .expect("a bold run");
         assert_eq!(bold.text, "this");
+    }
+
+    /// Both halves of the backtick notation, in the *window* — which is the half that was
+    /// reported broken (`text/src/markdown.rs`). The file was already right, so nothing here
+    /// asserts about the document: what it asserts is that this shell **measures** a monospace
+    /// run in a monospace face and puts the same family on the attributes it **draws** with.
+    /// Either alone would be a bug — a family drawn but not measured drifts the caret through
+    /// the run, and one measured but not drawn is invisible.
+    fn code_is_measured_and_drawn_in_a_monospace_face() {
+        use crate::metrics::run_attributes;
+        use grind_core::style::TextStyle;
+        use grind_text::Metrics;
+        use gtk::pango;
+
+        let (doc, app) = shell(&[""]);
+        let imp = doc.imp();
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        for c in "run `ls -l` now".chars() {
+            imp.type_text(&c.to_string());
+        }
+        let view = app.get_viewport(0..1);
+        let block = view.get(0).expect("the block");
+
+        // Measured. Proportional and monospace disagree about this string by construction:
+        // `i` is the narrowest letter there is and `w` the widest, and a monospace face is
+        // exactly the one that makes them equal.
+        let (_, faces, _) = imp.measured(0).expect("the paragraph lays out");
+        let face = faces.of(&BlockKind::Paragraph, None);
+        let mono = TextStyle {
+            font_family: Some(grind_text::markdown::MONOSPACE.to_owned()),
+            ..TextStyle::default()
+        };
+        let widths = |style: &TextStyle| {
+            let mut out = Vec::new();
+            face.advances("iiiiwwww", style, &mut out);
+            *out.last().expect("one advance per character")
+        };
+        assert_ne!(
+            widths(&TextStyle::default()),
+            widths(&mono),
+            "a fragment is measured in its own family, not in the block's"
+        );
+
+        // Drawn. The family reaches the Pango attribute list the line is painted with.
+        let attrs = run_attributes(&block.runs, 0, block.text.chars().count(), &block.text);
+        assert!(
+            attrs
+                .attributes()
+                .iter()
+                .any(|attr| attr.type_() == pango::AttrType::Family),
+            "the `code` run carries a family attribute"
+        );
+
+        // And the block half: a fence is a paragraph style, and it has a face of its own.
+        let fenced = faces.of(
+            &BlockKind::Paragraph,
+            Some(grind_text::markdown::PREFORMATTED),
+        );
+        let mut plain_width = Vec::new();
+        let mut fenced_width = Vec::new();
+        face.advances("iiiiwwww", &TextStyle::default(), &mut plain_width);
+        fenced.advances("iiiiwwww", &TextStyle::default(), &mut fenced_width);
+        assert_ne!(
+            plain_width.last(),
+            fenced_width.last(),
+            "a fenced block is set in its own face rather than the body's"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Sheet
 Comment=An ODF-native spreadsheet
-Exec=sheet-gtk %f
+Exec=grind-sheet-gtk %f
 Icon=io.github.fwilhe2.Sheet
 Terminal=false
 Type=Application

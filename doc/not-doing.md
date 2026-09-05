@@ -97,7 +97,7 @@ CLI parity gaps.
 | Not yet | Owner | Gate |
 |---|---|---|
 | **Reordering sheets** | When a shell has somewhere to drag one to | A new sheet is appended and that is the whole vocabulary; `Action::InsertSheet` already carries an index, so a move is two actions in a batch when something can ask for one. |
-| **CSV import/export** | Phase 9 shells | Format-neutral, and `doc/cli-recipes-sheet.md` already drives the import half from the shell. |
+| **A CSV column typed by hand** | When a shell has a dialog to put it in | The format itself is **built** — `grind sheet import-csv` / `export-csv`, `sheet/src/csv.rs` — with one field rule for the whole file plus `--text` and `--dates`. LibreOffice's import dialog has a type per *column*; the CLI shape for that is a flag naming columns and types, and until something can ask for one, a `grind sheet format` after the import says the same thing. |
 | **Sort** | Phase 9 shells | Needs a collation decision first — `eval.rs:503` is code-point order after case folding, not locale collation. Filtering is built (§9.4, `sheet/src/filter.rs`): a set of values compares for equality, which is the half of "sort and filter" that needs no collation. |
 | **Find/replace** | Phase 9 shells | Trivial over the column store; there is nothing to type into yet. |
 | **Freeze panes** | Phase 9 shells | Purely a view concern, and there is no view. |
@@ -134,6 +134,9 @@ the code, and this table is an index rather than a second source of truth.
 | Capability | Stops at | Where |
 |---|---|---|
 | **Locales** | The decimal separator and the grouping separator. Switzerland's apostrophe and India's lakh grouping are wrong. | `locale.rs:16` |
+| **CSV encodings** | UTF-8, with a byte-order mark stripped as the encoding signature it is. Anything else is refused by name with `iconv` in the message, because a guessed encoding is silent when it is wrong and every wrong guess is a document full of mojibake. `encoding_rs` is the upgrade, and no file has asked for it yet. | `cli/src/main.rs`'s `read_text_file_or_stdin` |
+| **A CSV date** | ISO 8601 under `--dates`, and nothing else. `15/03/2026` and `03/15/2026` are the same characters meaning two different days and the file does not say which, so they stay text — the guess is how a date column gets corrupted, not how it gets imported. | `csv::dated` |
+| **A CSV import's size** | One paste: `MAX_FORMATTED_CELLS`, refused by name above it. Every cell is an undo entry's worth of inverse, which is what bounds it; a bigger file is a generator's job (`doc/dsl.md` layer 1) or two commands. | `App::import_csv` |
 | **Month and weekday names** | English, whatever the document's locale says. | `numfmt/` module docs |
 | **Text→number conversion** | ISO 8601 only. Part 4 §6.3.6 makes it `HOST-LOCALE`-dependent, so LibreOffice reads `"0,005"` in a German document and this does not. | `date.rs` |
 | **A date a formula computes** | Displays as its serial until the cell is formatted — the subtype belongs in `formula::value` (§4.3.3), not in `numfmt`. | `datetime.rs:15` |

@@ -1,0 +1,53 @@
+{
+    "month": "August 2026",
+    "currency": "£",
+    "overhead": 0.18,
+    "target": 0.25,
+    "roles": [
+        { "role": "Bench joinery", "rate": 62 },
+        { "role": "Machining", "rate": 58 },
+        { "role": "Finishing", "rate": 54 },
+        { "role": "Apprentice", "rate": 31 }
+    ],
+    "jobs": [
+        { "code": "LJ-1041", "client": "Ash & Iron Bakery", "quoted": 8400 },
+        { "code": "LJ-1042", "client": "Bramble Court Hotel", "quoted": 14250 },
+        { "code": "LJ-1043", "client": "Wren Street Library", "quoted": 6100 },
+        { "code": "LJ-1044", "client": "Copperfield Dental", "quoted": 2600 }
+    ],
+    "time": [
+        { "day": 3, "job": "LJ-1041", "who": "Priya Raman", "role": "Bench joinery", "hours": 7.5, "task": "Counter carcasses" },
+        { "day": 4, "job": "LJ-1041", "who": "Priya Raman", "role": "Bench joinery", "hours": 8, "task": "Counter carcasses" },
+        { "day": 4, "job": "LJ-1041", "who": "Ivan Duffy", "role": "Apprentice", "hours": 6, "task": "Sanding and prep" },
+        { "day": 6, "job": "LJ-1041", "who": "Tomas Berg", "role": "Machining", "hours": 5.5, "task": "Drawer fronts" },
+        { "day": 7, "job": "LJ-1041", "who": "Nell Okafor", "role": "Finishing", "hours": 9, "task": "Oil and wax" },
+        { "day": 10, "job": "LJ-1042", "who": "Tomas Berg", "role": "Machining", "hours": 8, "task": "Panel breakdown" },
+        { "day": 11, "job": "LJ-1042", "who": "Tomas Berg", "role": "Machining", "hours": 8, "task": "Panel breakdown" },
+        { "day": 11, "job": "LJ-1042", "who": "Priya Raman", "role": "Bench joinery", "hours": 7, "task": "Reception desk" },
+        { "day": 12, "job": "LJ-1042", "who": "Priya Raman", "role": "Bench joinery", "hours": 8, "task": "Reception desk" },
+        { "day": 13, "job": "LJ-1042", "who": "Priya Raman", "role": "Bench joinery", "hours": 8, "task": "Reception desk" },
+        { "day": 13, "job": "LJ-1042", "who": "Ivan Duffy", "role": "Apprentice", "hours": 7.5, "task": "Sanding and prep" },
+        { "day": 14, "job": "LJ-1042", "who": "Nell Okafor", "role": "Finishing", "hours": 6, "task": "Lacquer, two coats" },
+        { "day": 17, "job": "LJ-1042", "who": "Nell Okafor", "role": "Finishing", "hours": 6.5, "task": "Lacquer, two coats" },
+        { "day": 18, "job": "LJ-1043", "who": "Marta Silva", "role": "Bench joinery", "hours": 8, "task": "Shelving bays" },
+        { "day": 19, "job": "LJ-1043", "who": "Marta Silva", "role": "Bench joinery", "hours": 8, "task": "Shelving bays" },
+        { "day": 20, "job": "LJ-1043", "who": "Ivan Duffy", "role": "Apprentice", "hours": 8, "task": "Shelving bays" },
+        { "day": 20, "job": "LJ-1043", "who": "Tomas Berg", "role": "Machining", "hours": 4, "task": "Edge banding" },
+        { "day": 21, "job": "LJ-1043", "who": "Nell Okafor", "role": "Finishing", "hours": 5, "task": "Water-based lacquer" },
+        { "day": 24, "job": "LJ-1044", "who": "Marta Silva", "role": "Bench joinery", "hours": 6, "task": "Reception hatch" },
+        { "day": 25, "job": "LJ-1044", "who": "Marta Silva", "role": "Bench joinery", "hours": 7.5, "task": "Reception hatch" },
+        { "day": 26, "job": "LJ-1044", "who": "Tomas Berg", "role": "Machining", "hours": 3.5, "task": "Solid surface cutouts" },
+        { "day": 27, "job": "LJ-1044", "who": "Nell Okafor", "role": "Finishing", "hours": 4, "task": "Seal and polish" }
+    ],
+    "materials": [
+        { "job": "LJ-1041", "supplier": "Fenwick Timber", "item": "European oak, 40mm, 6 boards", "cost": 1184.4 },
+        { "job": "LJ-1041", "supplier": "Harrow Ironmongery", "item": "Soft-close runners, 8 pairs", "cost": 214.8 },
+        { "job": "LJ-1042", "supplier": "Fenwick Timber", "item": "Walnut veneered MDF, 18mm, 14 sheets", "cost": 2938.5 },
+        { "job": "LJ-1042", "supplier": "Fenwick Timber", "item": "Walnut lippings, 60m", "cost": 402 },
+        { "job": "LJ-1042", "supplier": "Harrow Ironmongery", "item": "Cable grommets and brackets", "cost": 168.25 },
+        { "job": "LJ-1043", "supplier": "Fenwick Timber", "item": "Birch ply, 18mm, 11 sheets", "cost": 946 },
+        { "job": "LJ-1043", "supplier": "Coldwell Finishes", "item": "Water-based lacquer, 10l", "cost": 187.5 },
+        { "job": "LJ-1044", "supplier": "Fenwick Timber", "item": "Beech, 32mm, 2 boards", "cost": 318.75 },
+        { "job": "LJ-1044", "supplier": "Coldwell Finishes", "item": "Solid surface offcut, 1.2m", "cost": 264 }
+    ]
+}

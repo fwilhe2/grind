@@ -386,6 +386,16 @@ impl App {
         }
     }
 
+    /// How each block is set, for the motions that may cross out of one into another.
+    ///
+    /// [`grind_text::Uniform`], because a terminal has one font at one size: every block is the
+    /// same measure and the same cell. The GUI shells answer this per block — a heading there
+    /// really is a different face — and the core cannot tell the two apart, which is the whole
+    /// of what the seam buys.
+    fn faces(&self) -> grind_text::Uniform<'_> {
+        grind_text::Uniform::new(self.width, &Cells)
+    }
+
     /// Every motion, routed to the core.
     ///
     /// The horizontal ones are the only arithmetic in this file, and they are arithmetic over
@@ -405,24 +415,19 @@ impl App {
                 // Remembered across a run of j/k, which is what `goal_x` is for.
                 let goal = match self.goal_x {
                     Some(x) => x,
-                    None => self
-                        .core
-                        .caret_x(self.caret, self.width, &Cells)
-                        .unwrap_or(0.0),
+                    None => self.core.caret_x(self.caret, &self.faces()).unwrap_or(0.0),
                 };
                 self.goal_x = Some(goal);
                 if let Ok(moved) =
                     self.core
-                        .caret_line(self.caret, delta as isize, goal, self.width, &Cells)
+                        .caret_line(self.caret, delta as isize, goal, &self.faces())
                 {
                     self.caret = moved;
                 }
             }
             Motion::LineStart | Motion::LineEnd => {
                 self.goal_x = None;
-                if let Ok((start, end)) =
-                    self.core.caret_line_bounds(self.caret, self.width, &Cells)
-                {
+                if let Ok((start, end)) = self.core.caret_line_bounds(self.caret, &self.faces()) {
                     self.caret = match motion {
                         Motion::LineStart => start,
                         _ => end,
@@ -1200,7 +1205,7 @@ impl App {
                 0 => format!(
                     "{:<4}{:<3} ",
                     grind_text::loc::format(block),
-                    describe_kind(&view.kind)
+                    describe_block(&view.kind, view.style.as_deref())
                 ),
                 _ => " ".repeat(GUTTER as usize),
             };
@@ -1288,13 +1293,24 @@ fn terminal_style(props: &CharStyle) -> Style {
         style = style.add_modifier(Modifier::CROSSED_OUT);
     }
     // **A terminal has one font**, so a monospace run cannot be drawn as a different one —
-    // everything here already is monospace. It is dimmed instead, so `code` is at least
-    // visible as its own kind of text rather than silently indistinguishable. The *document*
-    // carries the family either way, and the browser draws it as one.
+    // everything here already is monospace. It is dimmed instead, and SGR 2 is optional, so on
+    // a terminal or a theme that ignores it a `` `code` `` run is *invisible*. That was left
+    // open once; it is decided now, and the decision is to keep DIM and say what it costs,
+    // because every alternative is worse:
     //
-    // TODO: SGR 2 is optional and plenty of emulators and themes draw it identically to normal
-    // text, so "it did nothing" and "it worked and you cannot see it" look the same here —
-    // part of the report in `text/src/markdown.rs`'s TODO.
+    // * a colour or a background would be the *document's* — three lines below, a run's own
+    //   `fo:color` becomes exactly that, so a shell-chosen one would be indistinguishable from
+    //   a document-chosen one and would overwrite it where a run had both;
+    // * bold, italic, underline and strikethrough are each already a property of the run;
+    // * reverse video is the selection and the caret;
+    // * a marker in the line (`` ` ``) is a character the core never measured, which puts every
+    //   caret after it in the wrong column — `doc/tui-shell.md`'s decision 2, and the reason
+    //   markdown is for typing and never for showing.
+    //
+    // The *block* half does not depend on SGR 2 at all: a fenced block says `pre` in the
+    // gutter (`describe_block`), which is plain text every terminal draws. There is no such
+    // place for a run inside a line, and `doc/tui-shell.md` says so rather than implying that
+    // dimming always shows.
     if props.font_family.is_some() {
         style = style.add_modifier(Modifier::DIM);
     }
@@ -1347,7 +1363,23 @@ pub fn nearest_color(hex: &str) -> Option<Color> {
         .map(|(color, _)| *color)
 }
 
-fn describe_kind(kind: &BlockKind) -> String {
+/// What the gutter calls a block: its kind, or the one named paragraph style this shell has a
+/// spelling for.
+///
+/// **The gutter is where a code *block* is visible in a terminal**, and deliberately so. A
+/// fence (```) sets a paragraph style and changes no character of the text, so the only two
+/// places to show it are inside the line — where a marker would be a character the core never
+/// measured, putting every caret after it in the wrong column (`doc/tui-shell.md`, decision 2)
+/// — and outside it, where this shell already writes each block's address and kind. Three
+/// letters in the gutter are plain characters that every terminal draws, which is more than
+/// can be said for the `Modifier::DIM` the block also carries (`terminal_style`).
+///
+/// `Title` and `Subtitle` get no spelling of their own: they are drawn bold, which is a
+/// distinction the reader can already see in the text, and the gutter has three columns.
+fn describe_block(kind: &BlockKind, style: Option<&str>) -> String {
+    if style == Some(markdown::PREFORMATTED) {
+        return "pre".to_owned();
+    }
     match kind {
         BlockKind::Paragraph => "p".to_owned(),
         BlockKind::Heading { level } => format!("h{level}"),

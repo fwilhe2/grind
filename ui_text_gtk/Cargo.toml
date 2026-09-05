@@ -26,3 +26,40 @@ grind-text = { path = "../text" }
 libadwaita = { version = "0.7", features = ["v1_5"] }
 gtk4 = { version = "0.9", features = ["v4_14"] }
 async-channel = "2"
+
+# Read by `cargo deb` (packaging.yml), and the twin of `ui_sheet_gtk`'s block — the same
+# assets under `io.github.fwilhe2.Text`, which is what `doc/suite.md`'s "One binary per
+# document type" means in a package: two desktop entries, two AppStream components, two
+# icons, four mime types between them. `depends = "$auto"` reads the shared-library needs
+# off the built binary rather than naming them twice.
+[package.metadata.deb]
+name = "grind-text-gtk"
+maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+section = "gnome"
+depends = "$auto"
+assets = [
+    ["target/release/grind-text-gtk", "usr/bin/grind-text-gtk", "755"],
+    ["data/io.github.fwilhe2.Text.desktop", "usr/share/applications/", "644"],
+    ["data/io.github.fwilhe2.Text.metainfo.xml", "usr/share/metainfo/", "644"],
+    [
+        "data/icons/hicolor/scalable/apps/io.github.fwilhe2.Text.svg",
+        "usr/share/icons/hicolor/scalable/apps/",
+        "644",
+    ],
+]
+
+# Read by `cargo generate-rpm` (packaging.yml). It has no `$auto` equivalent, so the
+# shared-library names are spelled out — the same two libraries `depends` above discovers.
+[package.metadata.generate-rpm]
+name = "grind-text-gtk"
+assets = [
+    { source = "target/release/grind-text-gtk", dest = "/usr/bin/grind-text-gtk", mode = "755" },
+    { source = "data/io.github.fwilhe2.Text.desktop", dest = "/usr/share/applications/io.github.fwilhe2.Text.desktop", mode = "644" },
+    { source = "data/io.github.fwilhe2.Text.metainfo.xml", dest = "/usr/share/metainfo/io.github.fwilhe2.Text.metainfo.xml", mode = "644" },
+    { source = "data/icons/hicolor/scalable/apps/io.github.fwilhe2.Text.svg", dest = "/usr/share/icons/hicolor/scalable/apps/io.github.fwilhe2.Text.svg", mode = "644" },
+]
+[package.metadata.generate-rpm.requires]
+gtk4 = "*"
+libadwaita = "*"

@@ -71,7 +71,10 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
-| `doc/generator-spec.md` | **The generator's language — normative for `build/`.** §8 is the editor half: `grind definitions` writes a Rhai `.d.rhai` file from the engine itself, so completion and hover cover the whole vocabulary, and `build/src/hint.rs` is why every function has documentation to show — registering one *takes* the comment, so an undocumented function cannot be added by forgetting. The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
+| `doc/generator-spec.md` | **The generator's language — normative for `build/`.** §8 is the editor half: `grind definitions` writes a Rhai `.d.rhai` file from the engine itself and `--snippets` writes the same vocabulary as VS Code snippets, so completion and hover cover it with or without a language server, and `build/src/hint.rs` is why every function has documentation to show — registering one *takes* the comment, so an undocumented function cannot be added by forgetting. The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
+| `doc/projection-guide.md` | **The projection's guide (D12)** — writing a `.grind` by hand, in the order the problems arrive, built on `examples/quote.grind`. Task-shaped where `doc/projection-sheet.md` is a vocabulary; §1 is the answer to *why would anybody want this*, and §10 the honest list of what converting *to* a projection drops |
+| `doc/generator-guide.md` | **The generator's guide (D14)** — from `examples/first.rhai` to `examples/timesheet.rhai`, four sheets that have to agree with each other. `cli/tests/editor.rs` builds every script it names |
+| `doc/editor-setup.md` | **VS Code for `.grind` and `.rhai`** — what each extension actually does, measured as installed rather than as described, and why the vocabulary ships as *snippets* as well as a `.d.rhai`: the published Rhai extension runs no language server. `.vscode/` is the shipped configuration and `cli/tests/editor.rs` holds both snippet files to the vocabularies they describe |
 | `doc/not-doing.md` | The feature line as a product document |
 
 Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
@@ -100,8 +103,12 @@ cargo run -p grind-cli -- sheet set book.ods A1 1
 cargo run -p grind-cli -- sheet set book.ods A2 '=[.A1]*2'   # ODF syntax, verbatim
 cargo run -p grind-cli -- sheet recalc book.ods
 cargo run -p grind-cli -- sheet view book.ods A1:A2
+cargo run -p grind-cli -- sheet import-csv book.ods data.csv --locale de-DE  # delimiter sniffed
+cargo run -p grind-cli -- sheet export-csv book.ods --delimiter tab
 cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
 cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
+cargo run -p grind-cli -- build examples/timesheet.rhai -o month.fods  # four sheets that agree
+cargo run -p grind-cli -- lint examples/quote.grind       # a hand-written projection
 ```
 
 The two GTK shells need `libgtk-4-dev` + `libadwaita-1-dev`, and are **not** in
@@ -283,6 +290,17 @@ before it can be answered.
   format-code strings (Excel's spelling, not ODF's) — a format is an ordered sequence of
   pieces. `preset`/`is_preset`/`preset_params` are the whole "set/read a format" vocabulary
   and live here so no shell invents a second one.
+- **`sheet/src/csv.rs`** — CSV and TSV, the one non-ODF format (`doc/not-doing.md` §2). TSV is
+  not a second format: the delimiter is a field of `Dialect`, sniffed from the file's own
+  content when nobody names one. Tolerance on the way in (`parse` never fails — an unterminated
+  quote, a stray quote, CRLF, a BOM and ragged rows all have a defined reading), strictness on
+  the way out. **It does not own the typing rule**: `input` turns a field into the string a
+  person would have *typed*, and `App::enter_range`'s rule decides what that means — so
+  `007`, `NaN` and a leading `=` are forced to text by re-spelling them, not by a second
+  coercion path. `--dates` is the one thing that is not a paste, and it is a *precondition*:
+  the typing rule reads an ISO date only into a cell already formatted as one, so
+  `App::import_csv` applies those formats in pass one and asks the ordinary question in pass
+  two, both in a single undo entry (`commit_after`).
 - **`core/src/locale.rs`** — decimal point and grouping separator only (two characters).
   Everything else (month names, CLDR tables) is a deliberate, named gap.
 - **`core/src/kind.rs`** — which document type some bytes are, decided *before* parsing,
@@ -437,9 +455,13 @@ files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section a
 so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
 selection move, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
 manifest was the one "stretch" item and was skipped. `.github/workflows/packaging.yml` builds
-`.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for both `grind-cli` and
-`grind-sheet-gtk`, reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in
-each crate's `Cargo.toml`, as artifacts on every push — not yet attached to a release.
+`.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for **every binary the suite
+has** — `grind-cli`, `grind-sheet-gtk`, `grind-text-gtk` and `grind-tui` — reading the
+`[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in each crate's `Cargo.toml`, as
+artifacts on every push — not yet attached to a release. A shell that is not named there is
+invisible in exactly the way a feature with no line in `examples/sample-*.sh` is: adding one
+means adding its two manifest blocks, its `data/` (`.desktop`, metainfo, icon under its own app
+ID) and its two lines in that workflow. The **meta-package** is what S11 still owes.
 
 `ui_web/` is the wasm shell — rule 5's honest test, and it needed no core change: a document
 arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download
@@ -493,9 +515,15 @@ browser shell gained a second pane the same way `grind-tui` gained a second mode
 on `grind_core::kind`, with the canvas as a third `Metrics`. Three implementations of that
 trait now exist and the engine needed no change, which is Path C's evidence. Building them
 found one core bug (an empty paragraph laid out one *unit* tall, since fixed in
-`grind_text::lay_out`) and one core limitation, written down rather than worked around:
-`App::caret_line` takes one width and one provider for a motion that may cross into a block set
-in a different face.
+`grind_text::lay_out`) and one core limitation, written down rather than worked around and
+**since fixed in the core**: `App::caret_line` took one width and one provider for a motion that
+may cross into a block set in a different face, so Down-arrow out of a heading measured the
+paragraph below it with the heading's font. The three caret operations now take a
+`grind_text::Faces` — which measure and which `Metrics` *this* block is set in, asked as the
+motion arrives at each block — with `Uniform` for the every-block-alike case the CLI and the
+terminal want. The trait is `grind-text`'s rather than `grind_core::layout`'s because a block is
+the word processor's vocabulary (R8), and it is handed a kind and a style name rather than the
+block because `App` holds its read lock for the whole motion.
 
 **After S10, character formatting landed in the core** — the half of a rich-text editor that is
 not a shell. A `Run` carries a `CharStyle` (`text/src/style.rs`): bold, italic, underline,
@@ -578,7 +606,7 @@ one; a formula this build cannot parse is left alone and `grind lint` finds it.
 
 **D7 is `grind build` — layer 1 has begun.** `grind build model.rhai -o model.fods` runs a Rhai
 script that **returns** a document and writes it, for either document type;
-`examples/budget.rhai` and `examples/report.rhai` are the two worked examples, and the first is
+`examples/budget.rhai` and `examples/report.rhai` are the two smallest worked examples, `examples/timesheet.rhai` (with `timesheet.json`) is the one `doc/generator-guide.md` builds up to, and the first is
 D7's exit criterion — `examples/sample-sheet.sh`'s budget, said once with the categories as data
 and a loop for the rows. The arrow points one way: a script produces a document and is never
 recovered from one, so this is `build` rather than a form `convert` reaches. Three things hold
@@ -598,16 +626,36 @@ definitions`** prints the vocabulary as a Rhai definition file for an editor (§
 `examples/grind.d.rhai` is a generated copy kept in the tree, with a test that fails when it
 goes stale.
 
-**The two languages owe four documents, and one of them is written** (§7, D11–D14). A design
+**The two languages owed four documents, and three of them are written** (§7, D11–D14). A design
 record is not a specification somebody can implement against, nor a guide somebody can learn
-from. **D13 is done**: `doc/generator-spec.md` is the generator's language — the dialect, its
-limits, the whole host API, what materialisation does, and what a script cannot say — held to
-the code by `build/tests/spec.rs` in both directions plus the limits. That check was the reason
-to write it first: adding to the host API is three lines in `register()`, so it was the one
-vocabulary in the project with no §3.7-style guard. **Still owed**: the projection's
-specification and guide (D11, D12) and the generator's guide (D14). Each needs the mechanical
-check its genre allows, because a document nothing checks drifts.
+from. **D13** is `doc/generator-spec.md`, the generator's language — the dialect, its limits, the
+whole host API, what materialisation does, and what a script cannot say — held to the code by
+`build/tests/spec.rs` in both directions plus the limits. That check was the reason to write it
+first: adding to the host API is three lines in `register()`, so it was the one vocabulary in the
+project with no §3.7-style guard.
+
+**D12 and D14 are the two guides**, and each carries the check its genre allows.
+`doc/projection-guide.md` is writing a `.grind` by hand, built on `examples/quote.grind` — a
+joinery quote whose formulas carry no answers until `grind sheet recalc` fills them in, asserted
+cell by cell in `cli/tests/cli.rs` along with the two properties the guide is *for*: one edit is
+one line of diff, and an untouched save returns the bytes that were read.
+`doc/generator-guide.md` runs from `examples/first.rhai` to `examples/timesheet.rhai` — four
+sheets that have to agree with each other, built out of `examples/timesheet.json`, whose
+cross-sheet ranges are measured from tables another loop wrote rather than counted.
+`cli/tests/editor.rs` builds every script either guide names and fails when one moves.
+
+Writing them found three things worth keeping (`doc/dsl.md` §7 records all three): the existing
+examples were too small to make the case, the two vocabularies disagree about one word
+(`percentage` in the projection, `percent` in the generator), and **`doc/generator-spec.md` §8's
+editor answer was wrong** — the published `rhaiscript.vscode-rhai` ships no language server, so
+the `.d.rhai` file nothing reads is now joined by `grind definitions --snippets`, the same engine
+metadata as a VS Code snippet file. `doc/editor-setup.md` is what was measured and how to set it
+up; `.vscode/` holds both snippet files and `cli/tests/editor.rs` holds them to their
+vocabularies. **Still owed**: the projection's *specification* (D11), for which the two guides
+are the evidence of what it would have to settle.
 
 **What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
-the same trait, so one breaker serves both applications. Then S11 — packaging the suite, which
-is where `grind-text-gtk` gets its `.desktop` file, its metainfo, its icon and its packages.
+the same trait, so one breaker serves both applications. Then S11 — packaging the suite. Its
+per-app half is done (`grind-text-gtk` has its `.desktop` file, metainfo, icon and packages
+beside the spreadsheet's); what remains is the meta-package that depends on the four, the
+container, and the README as a suite pitch.

@@ -1,0 +1,215 @@
+{
+    "grind spreadsheet": {
+        "scope": "kdl",
+        "prefix": "grind",
+        "body": ["grind spreadsheet"],
+        "description": "The kind header. A projection declares what it is in its first node, as ODF declares a media type — spreadsheet, text or presentation. Sniffed before the body is parsed, never from the file name."
+    },
+    "grind text": {
+        "scope": "kdl",
+        "prefix": "grind",
+        "body": ["grind text"],
+        "description": "The kind header for a word-processor document."
+    },
+
+    "node: sheet": {
+        "scope": "kdl",
+        "prefix": "sheet",
+        "body": ["sheet ${1:Name} {", "\t$0", "}"],
+        "description": "One sheet, named by its argument. Sheets appear in the document in the order written."
+    },
+    "node: at": {
+        "scope": "kdl",
+        "prefix": "at",
+        "body": ["at ${1:A1} {", "\trow $0", "}"],
+        "description": "Where a grid of plain values starts. Each row node under it is one line of the sheet; #null is a hole rather than an empty string."
+    },
+    "node: row (a line of a grid)": {
+        "scope": "kdl",
+        "prefix": "row",
+        "body": ["row ${1:value} ${2:value}"],
+        "description": "Inside an `at`: one line of cell values. A bare word and a quoted string are both text — \"2091\" is text, 2091 is a number — and #true, #false and #null are the other spellings."
+    },
+    "node: row (a row's height)": {
+        "scope": "kdl",
+        "prefix": "row",
+        "body": ["row ${1:1} height=\"${2:0.45cm}\""],
+        "description": "At the sheet level: the height of one row, numbered from 1, and whether it is hidden. An ODF length, kept verbatim."
+    },
+    "node: col": {
+        "scope": "kdl",
+        "prefix": "col",
+        "body": ["col ${1:1} width=\"${2:2.258cm}\""],
+        "description": "The width of one column, numbered from 1, and whether it is hidden. An ODF length, kept verbatim."
+    },
+    "node: cell": {
+        "scope": "kdl",
+        "prefix": "cell",
+        "body": ["cell ${1:B5} \"=${2:SUM([.B2:.B4])}\""],
+        "description": "One cell that carries more than a value. A bare =… in the value position is the formula, in ODF syntax, verbatim — and the cached value is optional, so a model can be hand-written without doing its arithmetic. `grind sheet recalc` fills the answers in."
+    },
+    "node: cell with a cached value": {
+        "scope": "kdl",
+        "prefix": "cell",
+        "body": ["cell ${1:B5} ${2:15400} formula=\"of:=${3:SUM([.B2:.B4])}\""],
+        "description": "One cell with its formula and the answer it came to — what the writer emits after a recalculation. `date=#true` and `time=#true` are how a number carries a date or a time kind."
+    },
+    "node: name": {
+        "scope": "kdl",
+        "prefix": "name",
+        "body": ["name ${1:tax_rate} \"${2:[$Sales.$B$1]}\""],
+        "description": "A named range or named expression. Document-level in ODF, so it goes outside every sheet, and it is what makes a formula say what it means."
+    },
+    "node: style": {
+        "scope": "kdl",
+        "prefix": "style",
+        "body": ["style ${1:B1:C1} bold=#true"],
+        "description": "How a range looks, stated once over the range rather than per cell: bold, italic, size, color, background, align, valign, wrap, border. Colours are palette names or #rrggbb; a border is \"<width> <line> <colour>\"."
+    },
+    "node: format (a preset)": {
+        "scope": "kdl",
+        "prefix": "format",
+        "body": ["format ${1:B2:C5} ${2|number,percentage,currency,date,time,datetime,boolean,text|}"],
+        "description": "A number format over a range, in the compact form when numfmt::preset builds it — with decimals=, grouping=, symbol= and locale= as its attributes. Display only: a format never touches the value."
+    },
+    "node: format (spelled out in parts)": {
+        "scope": "kdl",
+        "prefix": "format",
+        "body": ["format ${1:A1} ${2:number} {", "\t$0", "}"],
+        "description": "A format outside the preset vocabulary, spelled as the ordered sequence of parts ODF actually stores — number, text, currency, year, month, day, hours, minutes, seconds, am-pm, boolean, content — rather than as an Excel format string."
+    },
+    "node: filter": {
+        "scope": "kdl",
+        "prefix": "filter",
+        "body": ["filter \"${1:__Anonymous_Sheet_DB__0}\" ${2:A1:C4} header=#true buttons=#true {", "\tkeep ${3:0} ${4:North}", "}"],
+        "description": "A database range and the values each of its fields keeps (§9.4). A view of a document rather than its content."
+    },
+    "node: keep": {
+        "scope": "kdl",
+        "prefix": "keep",
+        "body": ["keep ${1:0} ${2:North}"],
+        "description": "Inside a filter: the values one field keeps, the field numbered from 0."
+    },
+    "node: map": {
+        "scope": "kdl",
+        "prefix": "map",
+        "body": ["map \"${1:>=}\" \"${2:0}\" ${3:number} {", "\t$0", "}"],
+        "description": "A style:map branch of a number format — a comparison, its operand, and the format that applies when it holds."
+    },
+    "node: null-date": {
+        "scope": "kdl",
+        "prefix": "null-date",
+        "body": ["null-date \"${1:1904-01-01}\""],
+        "description": "The document's epoch, as YYYY-MM-DD. Omitted at its default, so writing one means the document really uses the other epoch."
+    },
+    "node: null-year": {
+        "scope": "kdl",
+        "prefix": "null-year",
+        "body": ["null-year ${1:1919}"],
+        "description": "The two-digit-year cutoff. Omitted at its default."
+    },
+
+    "format part: number": {
+        "scope": "kdl",
+        "prefix": "number",
+        "body": ["number decimals=${1:2} min-decimals=${2:1} min-int=${3:1}"],
+        "description": "number:number — the digits themselves. `decimals` is how many fraction digits are shown at most and `min-decimals` how many at least, so \"88 h\" and \"88.0 h\" differ by one attribute."
+    },
+    "format part: text": {
+        "scope": "kdl",
+        "prefix": "text",
+        "body": ["text \"${1: h}\""],
+        "description": "number:text — a literal in the middle of a format: a unit, a separator, a space."
+    },
+    "format part: currency": {
+        "scope": "kdl",
+        "prefix": "currency",
+        "body": ["currency \"${1:EUR}\""],
+        "description": "number:currency-symbol, the symbol as its argument."
+    },
+    "format part: year": {
+        "scope": "kdl",
+        "prefix": "year",
+        "body": ["year long=#true"],
+        "description": "number:year — long being four digits."
+    },
+    "format part: month": {
+        "scope": "kdl",
+        "prefix": "month",
+        "body": ["month long=#true textual=#true"],
+        "description": "number:month — textual is a name rather than a number."
+    },
+    "format part: day": {
+        "scope": "kdl",
+        "prefix": "day",
+        "body": ["day long=#true"],
+        "description": "number:day."
+    },
+    "format part: day-of-week": {
+        "scope": "kdl",
+        "prefix": "day-of-week",
+        "body": ["day-of-week long=#true"],
+        "description": "number:day-of-week."
+    },
+    "format part: hours": {
+        "scope": "kdl",
+        "prefix": "hours",
+        "body": ["hours long=#true"],
+        "description": "number:hours. An am-pm part beside it is what makes them a 12-hour clock."
+    },
+    "format part: minutes": {
+        "scope": "kdl",
+        "prefix": "minutes",
+        "body": ["minutes long=#true"],
+        "description": "number:minutes."
+    },
+    "format part: seconds": {
+        "scope": "kdl",
+        "prefix": "seconds",
+        "body": ["seconds long=#true decimals=${1:2}"],
+        "description": "number:seconds, with sub-second decimals."
+    },
+    "format part: am-pm": {
+        "scope": "kdl",
+        "prefix": "am-pm",
+        "body": ["am-pm"],
+        "description": "number:am-pm, whose presence is what makes the hours a 12-hour clock."
+    },
+    "format part: boolean": {
+        "scope": "kdl",
+        "prefix": "boolean",
+        "body": ["boolean"],
+        "description": "number:boolean — where TRUE or FALSE goes."
+    },
+    "format part: content": {
+        "scope": "kdl",
+        "prefix": "content",
+        "body": ["content"],
+        "description": "number:text-content — where the string goes in a text style."
+    },
+
+    "node: p": {
+        "scope": "kdl",
+        "prefix": "p",
+        "body": ["p \"$1\""],
+        "description": "A text document's paragraph, with its runs as one string. **bold**, _italic_, `code` mean here what they mean while typing in any shell of this suite; [words]{color=#ff4136} is the attribute form for everything the markers cannot say."
+    },
+    "node: h": {
+        "scope": "kdl",
+        "prefix": "h",
+        "body": ["h ${1:1} \"$2\""],
+        "description": "A heading, its text:outline-level as the first argument. The body is flat: a heading does not contain what follows it, and the outline is implied by the levels alone."
+    },
+    "node: li": {
+        "scope": "kdl",
+        "prefix": "li",
+        "body": ["li ${1:1} \"$2\""],
+        "description": "A list item, its nesting depth as the first argument. Flat, like every other block."
+    },
+    "node: list": {
+        "scope": "kdl",
+        "prefix": "list",
+        "body": ["list {", "\tli \"$1\"", "}"],
+        "description": "Read only — the authoring spelling for a run of list items, which supplies their depth by nesting. The writer never emits one, because the model is flat."
+    }
+}

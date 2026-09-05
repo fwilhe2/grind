@@ -12,10 +12,12 @@ This is the *reference*: what a script may say, what each thing means, and what 
 `doc/dsl.md` outranks it on any question of intent; on a question of behaviour, the check in §9
 outranks both, because it asks the engine.
 
-A guide is a different document and is not written yet (`doc/dsl.md` §7, D14). This one is for
+A guide is a different document, and it is **`doc/generator-guide.md`** (`doc/dsl.md` §7, D14) —
+from a first script to a four-sheet model, in the order the problems arrive. This one is for
 somebody arguing with an edge case, not for somebody learning. Everything here is true of the
-build in this repository; `examples/budget.rhai` and `examples/report.rhai` are the worked
-examples, and `build/tests/smoke.rs` executes most of what follows.
+build in this repository; `examples/first.rhai`, `examples/budget.rhai`, `examples/prices.rhai`,
+`examples/timesheet.rhai` and `examples/report.rhai` are the worked examples, and
+`build/tests/smoke.rs` executes most of what follows.
 
 ---
 
@@ -468,11 +470,28 @@ That is a **Rhai definition file** — the language server's own format — hold
 fn push(sheet: Sheet, row: Row) -> int;
 ```
 
-Put it beside the scripts, open the directory in an editor with Rhai support (the
-`rhaiscript.vscode-rhai` extension bundles the language server), and completion and hover work
-for the whole vocabulary. `examples/grind.d.rhai` is a generated copy kept in this repository,
-so the examples have it without anybody running the command first; `build/tests/spec.rs` fails
-when it goes stale and the message is the command that fixes it.
+Put it beside the scripts and any editor that reads a `.d.rhai` has completion and hover for the
+whole vocabulary. `examples/grind.d.rhai` is a generated copy kept in this repository, so the
+examples have it without anybody running the command first; `build/tests/spec.rs` fails when it
+goes stale and the message is the command that fixes it.
+
+**An earlier version of this section said the `rhaiscript.vscode-rhai` extension bundles the
+language server. It does not**, and `doc/editor-setup.md` §4 is what was measured instead — the
+extension ships a grammar and expects a `rhai-lsp` binary on `PATH` that is not published, and
+its own activation reads the wrong configuration section, so the client never starts. So there
+is a second output for the editor that most people have open, from the same source:
+
+```sh
+grind definitions --snippets > .vscode/grind.code-snippets
+```
+
+VS Code reads a `*.code-snippets` file itself, with no language server involved — only the
+language id a syntax extension already registers — and a snippet carries a name, a body with the
+parameters as tab stops, and a description shown in the completion item. It is the same
+engine metadata, parsed out of `definitions()`'s own output rather than out of this crate's
+source, so the two cannot describe different vocabularies. `.vscode/grind.code-snippets` is the
+shipped copy and `cli/tests/editor.rs` fails when it goes stale, exactly as `build/tests/spec.rs`
+does for the definition file.
 
 **Where the text comes from, and why it cannot rot.** Every registration goes through
 `build/src/hint.rs`, which takes the parameter spelling and the doc comment *as arguments* —
@@ -481,11 +500,15 @@ forgetting. A test asserts that too, over what the engine really holds rather th
 source. The cost is named: `build/Cargo.toml` takes Rhai's `metadata` and `internals` features
 to carry those strings into the engine and read them back out.
 
-**What this is not.** It is a vocabulary, not a type checker: the language server offers names
-and shows what they do, and a script that hands a `Style` where a `Format` goes is still an
-error at build time rather than a red underline. Rhai's standard library is deliberately left
-out of the file — an editor already knows those, and forty functions buried in six hundred is
-not a reference anybody reads.
+**What this is not.** It is a vocabulary, not a type checker: an editor offers names and shows
+what they do, and a script that hands a `Style` where a `Format` goes is still an error at build
+time rather than a red underline. Rhai's standard library is deliberately left out of both files
+— an editor already knows those, and forty functions buried in six hundred is not a reference
+anybody reads.
+
+A guide is a different document from a reference, and the editor setup is a third: **`doc/generator-guide.md`** is from
+a first script to `examples/timesheet.rhai`, and **`doc/editor-setup.md`** is the two commands
+above with what each extension actually does.
 
 ---
 

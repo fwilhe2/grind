@@ -248,10 +248,14 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
         } => {
             let app = open_text(file)?;
             let caret = caret_at(&app, address)?;
-            let width = *width as f32;
+            // Every block set alike, at one unit per character: a terminal has one font, and
+            // so a document printed into one has one face. A GUI answers the same questions
+            // through a `Faces` that returns a different font per block, and the core does not
+            // know which of the two it is talking to.
+            let faces = grind_text::Uniform::new(*width as f32, &grind_text::Fixed);
             let moved = if *home || *end {
                 let (start, finish) = app
-                    .caret_line_bounds(caret, width, &grind_text::Fixed)
+                    .caret_line_bounds(caret, &faces)
                     .map_err(|e| e.to_string())?;
                 match home {
                     true => start,
@@ -260,17 +264,9 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             } else {
                 // The goal column is the caret's own x, because a single move from a script has
                 // no run of keystrokes to remember one from.
-                let goal = app
-                    .caret_x(caret, width, &grind_text::Fixed)
-                    .map_err(|e| e.to_string())?;
-                app.caret_line(
-                    caret,
-                    down.unwrap_or(0) as isize,
-                    goal,
-                    width,
-                    &grind_text::Fixed,
-                )
-                .map_err(|e| e.to_string())?
+                let goal = app.caret_x(caret, &faces).map_err(|e| e.to_string())?;
+                app.caret_line(caret, down.unwrap_or(0) as isize, goal, &faces)
+                    .map_err(|e| e.to_string())?
             };
             text_lines(vec![grind_text::loc::format_offset(
                 moved.block,
@@ -758,7 +754,18 @@ enum Top {
     ///
     /// Rhai's own standard library is left out: an editor already knows those, and forty
     /// functions buried in six hundred is not a reference anybody reads.
-    Definitions,
+    Definitions {
+        /// Print VS Code snippets instead of a Rhai definition file
+        ///
+        /// The same vocabulary, from the same source, in the form an editor reads without a
+        /// language server:
+        ///
+        ///   grind definitions --snippets > .vscode/grind.code-snippets
+        ///
+        /// See doc/editor-setup.md for which of the two an editor of yours can use.
+        #[arg(long)]
+        snippets: bool,
+    },
 
     /// Convert between the three physical forms — .ods, .fods and .grind
     ///
@@ -1308,6 +1315,89 @@ enum Command {
         /// Recalculate the document in the same undo step, unless that would spoil a cell
         #[arg(long)]
         recalc: bool,
+    },
+
+    /// Read a CSV or TSV file into the sheet
+    ///
+    /// The delimiter is sniffed from the file unless you name one, so a comma file, a
+    /// semicolon file and a tab file all just open. Quoted fields, doubled quotes, embedded
+    /// newlines, CRLF and a byte-order mark are all read; ragged rows land where they fall.
+    ///
+    /// Each field arrives through the same typing rule as `set`, with four exceptions that
+    /// keep a file's own data: `007` stays text rather than becoming 7, `NaN` and `inf` stay
+    /// text, a leading `=` stays text unless you pass --formulas, and numbers are read in
+    /// --locale's convention when you give one.
+    ///
+    /// --dates reads ISO dates and times (2026-03-15, 10:30) as dates and times, and formats
+    /// the cells they land in. Only ISO: 15/03/2026 and 03/15/2026 are the same characters
+    /// meaning two different days, and guessing which is how a date column gets corrupted.
+    ImportCsv {
+        file: PathBuf,
+        /// The CSV file to read; "-" reads it from standard input
+        source: String,
+        /// Where the first field goes, e.g. B2 or Data.A1
+        #[arg(long, default_value = "A1")]
+        at: String,
+        /// Field separator: comma, semicolon, tab, pipe, or a single character. Sniffed from
+        /// the file when not given
+        #[arg(long, value_parser = delimiter)]
+        delimiter: Option<char>,
+        /// The character that quotes a field
+        #[arg(long, default_value_t = '"')]
+        quote: char,
+        /// Read numbers the way this locale writes them: 1.234,50 is a number in de-DE
+        #[arg(long, value_parser = locale)]
+        locale: Option<grind_sheet::locale::Locale>,
+        /// Store every field as text, guessing nothing
+        #[arg(long)]
+        text: bool,
+        /// Let a field starting with = become a formula rather than text
+        #[arg(long)]
+        formulas: bool,
+        /// Read ISO dates and times as dates and times, formatting the cells they land in
+        #[arg(long)]
+        dates: bool,
+        /// Drop leading and trailing whitespace from every field
+        #[arg(long)]
+        trim: bool,
+        /// Recalculate the document in the same undo step, unless that would spoil a cell
+        #[arg(long)]
+        recalc: bool,
+    },
+
+    /// Write a range out as CSV or TSV
+    ///
+    /// What each cell *shows*, so a date leaves as a date and a percentage as a percentage;
+    /// --formulas writes the formula instead, in the spelling a formula bar shows. With no
+    /// range, everything the sheet uses. Writes to standard output unless --out names a file.
+    ///
+    /// A field is quoted only when leaving it bare would change what a reader sees — it holds
+    /// the delimiter, a quote, a line break, or padding whitespace.
+    ExportCsv {
+        file: PathBuf,
+        /// Cell range, e.g. A1:D20; everything the sheet uses when left out
+        address: Option<String>,
+        /// Write to this file instead of standard output
+        #[arg(long, short)]
+        out: Option<PathBuf>,
+        /// Field separator: comma, semicolon, tab, pipe, or a single character
+        #[arg(long, value_parser = delimiter, default_value = "comma")]
+        delimiter: char,
+        /// The character that quotes a field
+        #[arg(long, default_value_t = '"')]
+        quote: char,
+        /// Quote every field, not only the ones that need it
+        #[arg(long)]
+        quote_all: bool,
+        /// End every record with CRLF, as RFC 4180 asks
+        #[arg(long)]
+        crlf: bool,
+        /// Start the file with a UTF-8 byte-order mark, which is what Excel looks for
+        #[arg(long)]
+        bom: bool,
+        /// Write formulas where a cell has one, instead of what they computed
+        #[arg(long)]
+        formulas: bool,
     },
 
     /// Replicate one cell across a rectangle — extend a calculation the way a drag handle
@@ -1884,11 +1974,15 @@ fn run(cli: &Cli) -> Result<Report, String> {
         // No document, no script — the vocabulary itself, for an editor rather than for a
         // person (doc/generator-spec.md §9). It is the engine's own answer: what this prints
         // is what `grind build` registered, so it cannot describe a function that is not there.
-        Top::Definitions => Ok(Report::Text(TextReport {
-            lines: grind_build::definitions()
-                .lines()
-                .map(str::to_owned)
-                .collect(),
+        Top::Definitions { snippets } => Ok(Report::Text(TextReport {
+            lines: if *snippets {
+                grind_build::snippets()
+            } else {
+                grind_build::definitions()
+            }
+            .lines()
+            .map(str::to_owned)
+            .collect(),
         })),
 
         Top::Convert { file, out } => match document_kind(file)? {
@@ -2138,6 +2232,105 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 .collect();
             let outcome = app.enter_range(sheet, pos, &rows, mode(*recalc)).say()?;
             finish(&app, cli, file, outcome.cells > 0)
+        }
+
+        Command::ImportCsv {
+            file,
+            source,
+            at,
+            delimiter,
+            quote,
+            locale,
+            text,
+            formulas,
+            dates,
+            trim,
+            recalc,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, pos, _) = single(&app, at)?;
+            let csv = read_text_file_or_stdin(source)?;
+            // Sniffing reads the file rather than its name, for the reason `grind_core::kind`
+            // does: a `.csv` written by a German Excel is semicolon-separated and a `.txt`
+            // written by anything is whatever it is.
+            let dialect = grind_sheet::csv::Dialect {
+                delimiter: delimiter
+                    .unwrap_or_else(|| grind_sheet::csv::Dialect::sniff(&csv).delimiter),
+                quote: *quote,
+            };
+            let options = grind_sheet::csv::Import {
+                dialect,
+                locale: locale.clone(),
+                text: *text,
+                formulas: *formulas,
+                dates: *dates,
+                trim: *trim,
+            };
+            let outcome = app
+                .import_csv(sheet, pos, &csv, &options, mode(*recalc))
+                .say()?;
+            finish(&app, cli, file, outcome.cells > 0)
+        }
+
+        Command::ExportCsv {
+            file,
+            address,
+            out,
+            delimiter,
+            quote,
+            quote_all,
+            crlf,
+            bom,
+            formulas,
+        } => {
+            let app = load(file, cli)?;
+            // A sheet with nothing in it has no rectangle at all, and its export is an empty
+            // file rather than one blank line — `used_extent` reports 0×0 and the arithmetic
+            // below would otherwise clamp that to the single cell A1.
+            let (sheet, start, end, empty) = match address {
+                Some(address) => {
+                    let (sheet, start, end) =
+                        a1::resolve(&app, &a1::parse(address).say()?).say()?;
+                    (sheet, start, end, false)
+                }
+                None => {
+                    let (rows, cols) = app.used_extent(0).say()?;
+                    let last = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+                    (0, Pos::new(0, 0), last, rows == 0 || cols == 0)
+                }
+            };
+            let options = grind_sheet::csv::Export {
+                dialect: grind_sheet::csv::Dialect {
+                    delimiter: *delimiter,
+                    quote: *quote,
+                },
+                quote_all: *quote_all,
+                crlf: *crlf,
+                bom: *bom,
+                formulas: *formulas,
+            };
+            let csv = match empty {
+                true => String::new(),
+                false => app.export_csv(sheet, start, end, &options).say()?,
+            };
+            match out {
+                Some(path) => {
+                    std::fs::write(path, &csv).map_err(|e| format!("{}: {e}", path.display()))?;
+                    text_lines(vec![show_path(path)])
+                }
+                // Split rather than `lines()`, which would eat the `\r` of a CRLF file: the
+                // printer puts one `\n` back after each piece, so what reaches stdout is what
+                // `--out` would have written, byte for byte — an empty export included, which
+                // is no output rather than one blank line.
+                None if csv.is_empty() => text_lines(Vec::new()),
+                None => text_lines(
+                    csv.strip_suffix('\n')
+                        .unwrap_or(&csv)
+                        .split('\n')
+                        .map(str::to_owned)
+                        .collect(),
+                ),
+            }
         }
 
         Command::Fill {
@@ -3239,6 +3432,60 @@ fn mode(recalc: bool) -> RecalcMode {
         true => RecalcMode::Document,
         false => RecalcMode::No,
     }
+}
+
+/// A delimiter as a person names one.
+///
+/// The four that have names have them, because a shell is a poor place to type a tab and a
+/// literal `;` needs quoting in most of them. Anything else is the character itself — one
+/// character, so a typo becomes a message rather than a silently unmatched separator.
+fn delimiter(value: &str) -> Result<char, String> {
+    let named = match value {
+        "comma" => Some(','),
+        "semicolon" => Some(';'),
+        "tab" | "\\t" => Some('\t'),
+        "pipe" => Some('|'),
+        "space" => Some(' '),
+        _ => None,
+    };
+    let mut chars = value.chars();
+    let delimiter = match (named, chars.next(), chars.next()) {
+        (Some(named), ..) => named,
+        (None, Some(one), None) => one,
+        _ => {
+            return Err(format!(
+                "{value}: expected one character, or one of comma, semicolon, tab, pipe, space"
+            ));
+        }
+    };
+    match delimiter {
+        // A quote is how a field escapes the delimiter; the two cannot be the same character
+        // and still describe a readable file.
+        '"' | '\'' | '\n' | '\r' => Err(format!("{value}: not usable as a field separator")),
+        _ => Ok(delimiter),
+    }
+}
+
+/// A text file, or standard input for `-`.
+///
+/// Read as **bytes** and decoded here, so a file in a legacy encoding — which is what an older
+/// Excel writes when it is not asked for UTF-8 — gets a sentence naming the fix rather than
+/// mojibake in a document. Guessing the encoding is the alternative, and a wrong guess is
+/// silent: `doc/not-doing.md`'s rule about semantics applies to text as much as to numbers.
+fn read_text_file_or_stdin(source: &str) -> Result<String, String> {
+    let bytes = match source {
+        "-" => {
+            let mut bytes = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut bytes)
+                .map_err(|e| format!("cannot read stdin: {e}"))?;
+            bytes
+        }
+        path => std::fs::read(path).map_err(|e| format!("{path}: {e}"))?,
+    };
+    String::from_utf8(bytes).map_err(|_| {
+        format!("{source}: not UTF-8 — convert it first, e.g. iconv -f windows-1252 -t utf-8")
+    })
 }
 
 fn read_stdin_if_dash(value: &str) -> Result<String, String> {

@@ -23,6 +23,15 @@ path = "examples/*.json"
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
+# A hand-written projection, as an example (doc/projection-guide.md). KDL *does* have comments,
+# so this one could carry a header — and should not: the first thing the guide says about the
+# format is that a projection declares its kind in its first node, and a licence block above
+# that line teaches the wrong shape to somebody reading the file to learn from it.
+[[annotations]]
+path = "examples/*.grind"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
 # Editor configuration. JSON has no comments, so these cannot carry a header; declared here
 # for the same reason `Cargo.lock` is. What they do: recommend the KDL and Rhai extensions —
 # the two languages this project invented (doc/dsl.md) — and tell the editor that a `.grind`

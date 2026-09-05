@@ -25,7 +25,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Draw | custom widget, `snapshot()`, Pango | one `<div>` per **laid-out line**, no `contenteditable` |
 | Caret motion | arrows, Home/End, Page, Ctrl+Home/End — all answered by the core | the same set |
 | Editing | type, Enter, Backspace, Delete | the same four |
-| Markdown as you type | `**bold**`, `*italic*`, `__underline__`, `~~struck~~`, `` `code` ``, `# `, ``` — `App::type_markdown` | the same, same call. **The two backtick notations are reported not working in any shell** — `TODO:` at the top of `text/src/markdown.rs` |
+| Markdown as you type | `**bold**`, `*italic*`, `__underline__`, `~~struck~~`, `` `code` ``, `# `, ``` — `App::type_markdown` | the same, same call. The two backtick notations were reported broken in every shell and each shell turned out to have its own reason — a dropped dead key here, an undrawn family in the window, an optional SGR in the terminal. All three are addressed; what is still owed is somebody typing on the reporter's own keyboard (`TODO:` at the top of `text/src/markdown.rs`) |
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
 | Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | the same three, all inside the Ctrl+K palette (`doc/web-shell.md`) |
 | Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | the same |
@@ -33,6 +33,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
+| Packaging | `.desktop`, AppStream metainfo and a scalable icon under `io.github.fwilhe2.Text` (`ui_text_gtk/data/`), and `.deb` + `.rpm` built by `packaging.yml` from the two `[package.metadata.*]` blocks — the twin of the spreadsheet's, since S11's binary split is what makes them two entries and not one | nothing to install |
 
 Both are renderers that own nothing: every paint reads `App::get_viewport` and
 `App::layout_block` and throws the result away. Neither has a text buffer, and neither has a
@@ -93,13 +94,28 @@ a correct line in a terminal and a one-pixel gap on a screen. Found by the GTK s
 `an_empty_block_is_still_one_line_of_the_metrics_own_height` in `text/tests/app.rs`. This is
 the second shell paying for itself.
 
-**`App::caret_line` takes one width and one provider for a motion that may cross into a block
-set in a different face.** So Down-arrow out of a heading measures the paragraph below it with
+**`App::caret_line` took one width and one provider for a motion that may cross into a block
+set in a different face**, so Down-arrow out of a heading measured the paragraph below it with
 the heading's metrics: invisible mid-line, wrong by a few characters at the ends, and wrong in
-the same way in both shells because both are asking the same question. The fix is a *core*
-change — a provider looked up per block rather than passed once — and it is written here
-rather than worked around in a shell, because working around it would mean a shell doing its
-own line arithmetic, which is the thing Path C exists to prevent.
+the same way in both shells because both were asking the same question. Recorded here rather
+than worked around in a shell, because working around it would have meant a shell doing its own
+line arithmetic, which is the thing Path C exists to prevent — and **fixed since, in the core,
+which is the reason for writing it down here.** The three caret operations take a
+`grind_text::Faces` instead of a width and a provider: a lookup answering "which measure and
+which metrics is *this* block set in", asked as the motion reaches each block rather than once
+before it starts. `grind_text::Uniform` is the every-block-alike case, named rather than implied
+so that a caller reaching for it is *saying* the document is set in one face — what the CLI
+measures with at `--width`, and what a terminal wants, since it has one font at one size.
+
+Two things about the shape, both of which were forced rather than chosen. The trait is
+`grind-text`'s and not `grind_core::layout`'s beside `Metrics`, because a *block* is the word
+processor's vocabulary and **R8** keeps that out of the core; the core's half of the seam is
+unchanged and still asks only how wide a piece of text is. And a block is *described* to the
+lookup — its kind and its named style — rather than handed over, because `App` holds its read
+lock for the whole motion, so an implementation that called `get_viewport` to find out what it
+was being asked about would re-enter a lock it is already inside. Kind and style name are what
+every shell keys a face off anyway: `Title` and `Subtitle` are paragraphs whose only signal is
+the name.
 
 ## The gaps, written down
 
@@ -170,25 +186,27 @@ does it with a Pango attribute list per line (`run_attributes`); `grind-web` cut
 one shape in both windows. What the two do *not* agree on is how much of a `CharStyle` reaches
 the screen, and that is the next paragraph's first line.
 
-**`grind-text-gtk` only.** **A run's colour, highlight, family and size are not drawn.**
-`run_attributes` emits the four booleans and nothing else, and every line is then painted in one
-theme ink (`view.rs`'s `ink`), so a document that coloured a word draws it in the theme's
-foreground — where the browser pane hands the same four values to inline CSS. The core carries
+**`grind-text-gtk` only.** **A run's colour, highlight and size are not drawn.**
+`run_attributes` emits the family and the four booleans and nothing else, and every line is then
+painted in one theme ink (`view.rs`'s `ink`), so a document that coloured a word draws it in the
+theme's foreground — where the browser pane hands the same values to inline CSS. The core carries
 them, `grind text format --color/--background` writes them, loop C round-trips them, and this
-window alone does not show them; the toolbar has no colour button for the same reason. **No
-clipboard**: `App::erase` takes two carets and the selection can now name them, but nothing puts
-either end on a `gdk::Clipboard` — the browser pane has copy/cut/paste and `grind-tui` has a
-register, so this is the one shell with neither. **No lists UI**: a list item read from a file
-draws with its bullet and its indent, and nothing here creates or renests one (Ctrl+K → *List
-item*, and Tab, do in the browser). **No `Title`/`Subtitle` in the kind menu** either — the
-window draws both and offers Paragraph and Heading 1–3 (Ctrl+0…3) to *make* one, so a face it
-can render is one only the CLI and the other shells can apply. Then the plumbing: no `grind-ui`
-crate — `doc/suite.md` says to extract the shared GTK plumbing "on evidence, at S9, when the
-second shell shows the seam", and one *minimal* shell is not that evidence; this one copied the
-observer bridge, the `--render-to` harness and the window-close latch, which is three data
-points and the right time to look again is when either shell grows. No `.desktop` file,
-AppStream metainfo or icon, and no `[package.metadata.deb]` block: packaging is S11, which does
-all five packages at once. No shortcuts window. No a11y beyond the floor
+window alone does not show them; the toolbar has no colour button for the same reason. The size
+is the one of the three with a reason rather than an omission: a line's height is one
+`line_height` per fragment and `layout::wrap` takes the tallest, so honouring a size in the width
+and not in the height would measure a big word wide on a line too short to hold it — measurement
+and drawing move together here or not at all (`metrics.rs`). **No clipboard**: `App::erase` takes
+two carets and the selection can now name them, but nothing puts either end on a
+`gdk::Clipboard` — the browser pane has copy/cut/paste and `grind-tui` has a register, so this is
+the one shell with neither. **No lists UI**: a list item read from a file draws with its bullet
+and its indent, and nothing here creates or renests one (Ctrl+K → *List item*, and Tab, do in the
+browser). **No `Title`/`Subtitle` in the kind menu** either — the window draws both and offers
+Paragraph and Heading 1–3 (Ctrl+0…3) to *make* one, so a face it can render is one only the CLI
+and the other shells can apply. Then the plumbing: no `grind-ui` crate — `doc/suite.md` says to
+extract the shared GTK plumbing "on evidence, at S9, when the second shell shows the seam", and
+one *minimal* shell is not that evidence; this one copied the observer bridge, the `--render-to`
+harness and the window-close latch, which is three data points and the right time to look again
+is when either shell grows. No shortcuts window. No a11y beyond the floor
 (`Accessible::announce` on every caret move, as M9 requires). The document is re-laid-out in
 full whenever it or the width changes, so a very long document costs a pass per resize
 (`ponytail` in `view.rs`).

@@ -86,12 +86,17 @@ No conditional formatting UI. No find/replace. No freeze panes, no zoom. A chart
 it cannot be created, edited, moved or recoloured from this shell, which the GTK window can do
 and `grind sheet chart-*` can do everywhere.
 
-**The document.** No input method: a character arrives as a `KeyboardEvent.key`, so CJK
-candidate windows do not work — and **dead keys do not either**, which is worse than it was
-written: a dead key reports `key == "Dead"`, four characters where the keymap wants one, so it
-is dropped and nothing is composed from it. On a German or French layout `` ` `` is a dead key,
-which means `` `code` `` cannot be typed into this pane at all. See the `TODO:` at the top of
-`text/src/markdown.rs`. No tables, footnotes or fields, because the core has
+**The document.** **Dead keys compose, and that was a bug worth the fix.** A dead key — `` ` ``,
+`´`, `^`, `~`, which is most of a German, French or Spanish layout's punctuation — reports
+`KeyboardEvent.key == "Dead"`, four characters where a keymap taking exactly one wants one, so
+it used to be dropped and nothing was ever composed from it: `` `code` `` could not be typed
+into this pane at all on those keyboards. Both halves of a composition are now refused by the
+keymap (the `"Dead"` that opens one, and every keystroke reporting `isComposing`) and the text
+is taken from `compositionend` instead, which is the one event that carries what was actually
+produced. **What is still missing is the rest of an input method**: the same event ought to
+deliver an IME's committed text, but a candidate window has no editable host to position itself
+against — this shell has no `contenteditable` by decision — so CJK input is *unverified* rather
+than working, and is written here as a gap until somebody types into it. No tables, footnotes or fields, because the core has
 none. No pages, no print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. An
 image sitting *mid-sentence* (`text:anchor-type="char"`) still draws as the placeholder
 character, and an image is fit to the column rather than to its own `svg:width` — both are

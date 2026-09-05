@@ -20,15 +20,12 @@ Three facts the rest of the page leans on:
 
 ## Build a sheet from a CSV
 
+One command, and the delimiter comes out of the file rather than out of its name:
+
 ```sh
 grind sheet new report.ods
-r=1
-while IFS=, read -r name n; do
-  grind sheet set report.ods "A$r" "$name" >/dev/null
-  grind sheet set report.ods "B$r" "$n"    >/dev/null
-  r=$((r + 1))
-done < data.csv
-grind sheet set report.ods "B$r" "=SUM([.B1:.B$((r - 1))])" >/dev/null
+grind sheet import-csv report.ods data.csv >/dev/null
+grind sheet set report.ods B4 '=SUM([.B1:.B3])' --recalc >/dev/null
 grind sheet view report.ods
 ```
 
@@ -39,8 +36,66 @@ c	3
 	6
 ```
 
-`set` takes the value as a number, `TRUE`/`FALSE`, or text, in that order — pass `--text` to
-force a field like `007` or `-` to stay a string.
+A field becomes what you would have **typed** into the cell — a number, `TRUE`/`FALSE`, or
+text, in that order — with four guards that keep what a real file carries: `007` stays a
+product code rather than becoming 7, `NaN` and `inf` stay text (they are names and
+abbreviations far more often than they are numbers), a leading `=` stays text unless you pass
+`--formulas`, and `--locale de-DE` reads `1.234,50` as a number instead of as punctuation.
+`--text` turns the whole file into strings; `--trim` drops the padding in `a, b, c`.
+
+A semicolon file with German numbers, which is what most European exports are:
+
+```sh
+grind sheet import-csv book.ods supplier.csv --locale de-DE --at Data.A1
+```
+
+Dates are **ISO only**, and behind a flag:
+
+```sh
+grind sheet import-csv book.ods invoices.csv --dates
+```
+
+`2026-03-15` and `10:30` become a date and a time, formatted so they stay ones; `15/03/2026`
+does not, because it and `03/15/2026` are the same characters meaning two different days and
+nothing in the file says which. The whole import is one undo step, formats included.
+
+The file may come down a pipe, which is how anything that prints a table gets in:
+
+```sh
+psql -Atc 'select name, amount from ledger' --csv | grind sheet import-csv book.ods - --at A2
+```
+
+## And back out again
+
+```sh
+grind sheet export-csv book.ods                     # everything the sheet uses
+grind sheet export-csv book.ods A1:D20 --out q3.csv
+grind sheet export-csv book.ods --delimiter tab | column -t
+```
+
+What each cell **shows**, so a date leaves as a date and a percentage as a percentage — the
+number format is the only place a document says which of those a number is. `--formulas`
+writes the formulas instead, in the spelling a formula bar shows:
+
+```console
+$ grind sheet export-csv book.ods B8:D8 --formulas
+=SUM(B2:B7),=SUM(C2:C7),=B8-C8
+```
+
+A field is quoted only where leaving it bare would change what a reader sees. For a program
+that wants every field quoted, or CRLF, or the byte-order mark Excel looks for before it
+believes a file is UTF-8:
+
+```sh
+grind sheet export-csv book.ods --quote-all --crlf --bom --out for-excel.csv
+```
+
+Reading is UTF-8 only, and a file that is not says so rather than arriving as mojibake:
+
+```console
+$ grind sheet import-csv book.ods legacy.csv
+grind: legacy.csv: not UTF-8 — convert it first, e.g. iconv -f windows-1252 -t utf-8
+```
 
 ## Values in from another program
 

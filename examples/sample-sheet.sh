@@ -16,7 +16,7 @@
 # see. When you add one, add it below — that is the whole maintenance rule.
 #
 # What it deliberately cannot show, because nothing can do it yet: moving a sheet; cell
-# fonts; CSV.
+# fonts; sort; find/replace.
 
 set -euo pipefail
 
@@ -297,6 +297,35 @@ run clear "$book" B9 --formula-only
 
 say "convert: the same document as flat XML"
 "$GRIND" convert "$book" "$out/sample.fods" >/dev/null   # suite level, like info
+
+# --- CSV and TSV: the one non-ODF format, in and out ---------------------------------------
+# The delimiter is read out of the file rather than out of its name, so the German export
+# below — semicolons, and `1.234,50` for a number — opens with no more than a `--locale`. What
+# a field *means* is the same typing rule `set` uses, with the four guards that keep a file's
+# own data: `007` stays a product code, `NaN` stays a name, a leading `=` stays text unless
+# asked for, and an ISO date becomes a date only under `--dates`.
+
+say "import-csv: a supplier's export, semicolons and German numbers"
+cat > "$out/supplier.csv" <<'CSV'
+Artikel;Bestellnr;Menge;Preis
+Schraube;007;120;1.234,50
+Mutter;A-15;80;0,75
+"Winkel, gross";B-2;12;19,99
+CSV
+run import-csv "$out/sample.fods" "$out/supplier.csv" --at 'Archive.A10' --locale de-DE
+sheet view "$out/sample.fods" Archive.A10:D13
+
+say "import-csv: dates, ISO only, from standard input"
+printf 'Datum;Betrag\n2026-03-15;100\n2026-04-01;250\n' \
+  | run import-csv "$out/sample.fods" - --at 'Archive.F10' --dates --delimiter semicolon
+sheet view "$out/sample.fods" Archive.F10:G12
+
+say "export-csv: what each cell shows, quoted only where it must be"
+sheet export-csv "$out/sample.fods" Archive.A10:D13
+
+say "export-csv: a tab file, and the formulas rather than their answers"
+sheet export-csv "$out/sample.fods" A1:D3 --delimiter tab
+sheet export-csv "$out/sample.fods" B8:E8 --formulas
 
 # --- R6: a flat document edits in place ---------------------------------------------------
 # Editing a `.fods` rewrites the one element that changed and leaves every other byte alone,
