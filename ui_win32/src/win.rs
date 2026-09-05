@@ -1728,6 +1728,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::SheetDelete => sheet_delete(hwnd),
         Command::SheetNext => sheet_step(hwnd, 1),
         Command::SheetPrevious => sheet_step(hwnd, -1),
+        Command::About => dialog::about(hwnd),
     }
 }
 
