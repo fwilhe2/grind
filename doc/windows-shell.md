@@ -10,13 +10,21 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Built through W4; W5–W8 are a plan.** This document was W0's deliverable — the shell planned,
-its decisions argued, its gaps named in advance, and the two claims the whole thing rests on
-measured rather than assumed. W1 added the window and the read-only grid, W2 the selection, W3
-the editing and W4 the clipboard, so the parts of it that were predictions are now records: what
-is written down about the geometry, the theme, the double buffer, the scrollbars, **decision 5's
-windowless render target**, **decision 4's menu bar**, **decision 7's modals** and **decision 6's
-`CF_UNICODETEXT`** has been run.
+**Built through W5a; the rest of W5 and W6–W8 are a plan.** This document was W0's deliverable —
+the shell planned, its decisions argued, its gaps named in advance, and the two claims the whole
+thing rests on measured rather than assumed. W1 added the window and the read-only grid, W2 the
+selection, W3 the editing and W4 the clipboard, so the parts of it that were predictions are now
+records: what is written down about the geometry, the theme, the double buffer, the scrollbars,
+**decision 5's windowless render target**, **decision 4's menu bar**, **decision 7's modals** and
+**decision 6's `CF_UNICODETEXT`** has been run.
+
+**W5a is the text pane, and it settles decision 3** — the one genuinely open question this
+document had. `metrics.rs` is GDI on both halves, as the table below chose: `GetTextExtentExPointW`
+to measure and `ExtTextOutW` with the advances that same call produced to draw. The pane reads,
+lays out, scrolls, selects and **edits** a document, and it is a pane of the same window rather
+than a second one — File ▸ Open on a `.fodt` replaces the grid with it. What is left of W5 is
+listed with the milestone: the IME path, `App::type_markdown`, the format strip, and the outline
+and go-to answers.
 
 ## In one line
 
@@ -169,7 +177,7 @@ the real choice is only ever between two whole stacks:
 
 | | Measurement | Drawing | Cost |
 |---|---|---|---|
-| **GDI, both halves** | `GetTextExtentExPointW` | `ExtTextOutW` + the measured advance array | one file — **chosen for W0–W8** |
+| **GDI, both halves** | `GetTextExtentExPointW` | `ExtTextOutW` + the measured advance array | one file — **chosen, and built in W5a** |
 | DirectWrite, both halves | `GetClusterMetrics` / `HitTestTextPosition` | `IDWriteBitmapRenderTarget::DrawGlyphRun` behind an `IDWriteTextRenderer` **implemented in Rust as a COM interface** | a factory, a text format per `TextStyle`, that renderer, and a second drawing path — the named upgrade |
 | Uniscribe `ScriptStringAnalyse` | full shaping, no COM | its own idiom | declined — deprecated in favour of DirectWrite, at close to DirectWrite's complexity |
 
@@ -373,7 +381,9 @@ ui_win32/
                           windowless render path
     gdi.rs           [W]* RAII wrappers for fonts and brushes; the back buffer; and the DIB
                           target behind --render-to, with its BMP writer (W2)
-    metrics.rs       [W]  Metrics + Faces over a memory DC, with the font cache
+    metrics.rs       [~]* Metrics + Faces over a memory DC, with the font cache — and, portable
+                          beside it, which face a block is set in and the per-code-unit ->
+                          per-char fold decision 3 turns on (W5a)
     theme.rs         [~]* the palette (portable, incl. the selection wash's `Rgb::blend`) and
                           the registry read + dark title bar [W]
     menu.rs           *   the menus as data, the accelerators, and the command-id table
@@ -391,8 +401,14 @@ ui_win32/
                           *looks like*: alignment, weight and colour resolved from `CellStyle`,
                           and what the selection wash does to it
     text/
-      keymap.rs           virtual-key codes -> caret operations
-      draw.rs        [W]  laid-out blocks painted onto an HDC, run by run
+      geom.rs           * where each block sits down the page, the window's bands, and the whole
+                          document measured into a `Flow` — portable, and checked on Linux
+                          against what `grind text view --width` breaks (W5a)
+      keymap.rs         * virtual-key codes -> caret operations, and where a word ends
+      status.rs         * what the status bar says: the caret's address and the document's size
+      draw.rs        [~]* laid-out blocks painted onto an HDC, run by run — and, portable beside
+                          it, how a line is cut into runs, which part of it is selected, and the
+                          two characters that are measured and never drawn
     code.rs          [~]  the projection pane (D9)
     problems.rs      [~]  the lint pane (D6)
 ```
@@ -435,15 +451,26 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W2** | **Selection, navigation, and an assertable frame** — *done* | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; `sheet/status.rs`'s aggregates; the name box; and decision 5's DIB render target | **Met.** The sample document is navigable by keyboard alone — arrows, Ctrl+arrows, Ctrl+Home/End, PageUp/Down, Ctrl+A, and F5 into the name box — with the view following the cursor; `--render-to` is byte-identical across two runs under Wine, and `win32.yml`'s new `render` job asserts the same on Windows. 79 tests on Linux. One bug found by *running* it — see below |
 | **W3** | **Sheet editing** — *done* | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the notice bar; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete; and the menu bar decision 4 makes this platform's growable surface | **Met.** Typing, F2, a double-click and a click on the formula bar all open the editor; a formula is typed in display syntax and stored in ODF's; one that will not parse keeps the edit open with the caret on the problem and says so in the notice bar; Delete, Ctrl+Z, Ctrl+Y and F9 do what they say; the Sheet menu adds, renames — carrying every reference with it, D10 — and deletes; Ctrl+S writes a document that `grind lint` reads back clean. 104 tests on Linux. Two bugs found by *running* it, one of them a crash — see below |
 | **W4** | **The clipboard** — *done* | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | **Met inside the shell**: copy, cut and paste round-trip through the real Win32 clipboard API under Wine, with recalculation following. Interop with a real LibreOffice Calc or Excel window is unverified here — a bare Xvfb has no clipboard manager to bridge to X11, so this joins *What Wine cannot speak for* |
-| **W5** | **The text pane** | `metrics.rs` per decision 3 and `Faces` over it; `text/draw.rs` drawing `App::layout_block` run by run; a real `CreateCaret` caret; `WM_CHAR` plus the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret); `App::type_markdown`; selection by Shift+arrow, Shift+click and drag; the format strip over `char_style` / `set_char_style`; block kinds, outline and go-to for `p12` / `#intro` / `§2.1.3` | every feature `examples/sample-text.sh` builds is visible and editable, and a test asserts that this pane and `grind text view --width` break the same text at the same places when both are given `Fixed` |
+| **W5a** | **The text pane** — *done* | `metrics.rs` per decision 3 and `Faces` over it; `text/geom.rs` stacking the whole document into a `Flow`; `text/draw.rs` drawing `App::layout_block` run by run; a drawn caret on the user's own `GetCaretBlinkTime`; selection by Shift+arrow, Shift+click, dragging and double-click; typing, Backspace/Delete, Enter, Tab, undo/redo and the plain-text clipboard; and `Pane`, which makes the window *either* document type rather than only a spreadsheet | **Met.** `examples/sample-text.sh`'s document opens under Wine with its headings, bold, italic, underline, colour, lists and tabs visible, is navigable by keyboard alone, and is editable; `--render-to` is byte-identical across two runs; File ▸ Open on a `.fodt` turns the grid into a document in the same window. 150 tests on Linux, including **the exit criterion itself** — `text/geom.rs`'s `the_pane_breaks_lines_where_the_cli_does` measures a document through the pane's own stacking with `Fixed` and asserts every block's height against `App::layout_block`, which is what `grind text view --width` prints. Three bugs found by *running* it — see below |
+| **W5b** | **The rest of the text pane** | the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret) and the surrogate pair `WM_CHAR` cannot carry; a real `CreateCaret` caret if the drawn one proves not to be enough; `App::type_markdown`, so `**bold**` is read as it is typed; the format strip over `char_style` / `set_char_style`; block kinds, outline and go-to for `p12` / `#intro` / `§2.1.3`; and a menu that knows which pane it is over | every feature `examples/sample-text.sh` builds is not only visible but *reachable*: a heading can be made one, a run can be made bold, and `§2.1.3` can be gone to |
 | **W6** | **The three shared panes** | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | all three reachable from whichever pane they apply to, and opening every overlay on every R7 document then saving leaves the bytes identical |
 | **W7** | **Chrome and the accessibility floor** | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | the portable menu-table test passes: every command id has a handler and every handler an item. `accesskit_windows` is **named and deferred**, and the system caret is the floor |
 | **W8** | **Packaging** | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | the artifact opens both document types on a clean Windows install with no other install of any kind |
 
-**W5 is the milestone to be nervous about**, not W1. The grid is arithmetic this project has
+**W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
-with a real shaping engine behind it, and decision 3 is a bet that GDI's non-shaping answer is
-good enough for long enough.
+with no shaping engine behind it, and decision 3 is a bet that GDI's non-shaping answer is good
+enough for long enough.
+
+W5a says what that bet cost, now that it has been run. **The measuring half was the easy half**:
+`GetTextExtentExPointW`'s `lpnDx` really is the array the trait asks for, and the fold from code
+units to characters is the nine lines this document predicted. What was *not* anticipated is that
+GDI draws a glyph for characters the model expects nobody to see: a `text:tab` and a
+`text:line-break` are each one character with an advance of their own, and Segoe UI has a
+missing-glyph box for both. So the drawing is cut around them (`text/draw.rs`'s `drawable`) and
+each side is placed at the x the **core** measured rather than at wherever the pen ended up —
+which is decision 3's own rule applied one level down, and the reason a tab is a *width* here and
+never a tab stop.
 
 ## What it will not do
 
@@ -502,7 +529,25 @@ shell's own making, **not** something `doc/text-layout.md`'s RTL exclusion alrea
 **Accessibility.** A painted GDI window exposes no UI Automation tree. The floor is the
 **system caret** — a real `CreateCaret` caret rather than a painted rectangle, so Windows
 reports its position to assistive technology and to IMEs for free. `accesskit_windows` is the
-fix if this ever matters, and naming it is not the same as planning it.
+fix if this ever matters, and naming it is not the same as planning it. **W5a does not have that
+floor yet**: its caret is drawn, blinking on the user's own `GetCaretBlinkTime` so that at least
+the *rate* is theirs, and moving to `CreateCaret` is W5b's — the reason it is not free is that a
+system caret has to be hidden around the back buffer's blit, which is a pairing to get right
+rather than a call to add.
+
+**W5a's own gaps, and they are the rest of W5.** No **IME**, so a Japanese or Chinese keyboard
+cannot compose in this pane, and no character outside the basic multilingual plane can be typed
+(`WM_CHAR` carries one surrogate at a time and the pane holds no pending half — the two are the
+same piece of work, which is why neither is done alone). No **`App::type_markdown`**, so `**bold**`
+stays four characters and two asterisks where the other three shells read it as it is typed. No
+**format strip**, so `char_style`/`set_char_style` are reachable from `grind text format` and from
+nowhere in this window — which is R9's answer in the meantime and not a good one. No way to change
+a **block's kind**, no **outline** and no **go-to**, so `p12` / `#intro` / `§2.1.3` are addresses
+this pane understands and cannot be sent to. The clipboard carries **plain text only** — one
+`\r\n` per block, no `CF_RTF` and no `HTML Format` — so formatting does not survive a copy into
+WordPad. And the **menus do not know which pane they are over**: Recalculate and the four sheet
+verbs are in the bar while a document is open and do nothing when chosen, because `MF_GRAYED`
+means tracking menu state and W7 is where the menus are finished.
 
 ## Verification
 
@@ -813,6 +858,34 @@ A third thing, found by reading rather than by running, and worth the same line 
 and everything on it" that is a dialog that deletes things when somebody presses Enter twice. It
 is `MB_YESNO | MB_DEFBUTTON2` now — two buttons, No default — while `confirm_close` keeps its
 first-button default, because there the safe answer *is* the first one.
+
+### W5a found three, and all three were invisible in review
+
+**1. Every tab and every line break drew a box.** A `text:tab` and a `text:line-break` are each
+one *character* in the model with an advance of their own, and the pane handed them to
+`ExtTextOutW` along with the text around them — so `name\tvalue` came out as `name□value□`. GDI
+has no opinion about what a character means; it draws the glyph the font has, and Segoe UI has a
+missing-glyph box for both. The fix is `text/draw.rs`'s `drawable`, which cuts a run around them
+and places each side at the x the **core** measured — decision 3's own rule one level down. The
+measuring half is `metrics.rs`, where a tab is [`TAB_SPACES`] spaces wide and **not a tab stop**,
+because a stop is a paragraph property this build does not read.
+
+**2. The first line of a two-line selection was never washed.** Shift+Down across a line break
+highlighted the second line and left the first one bare. The cause is a real subtlety of
+`grind_core::layout` rather than a slip: at a break the offset belongs to *two* lines — the end
+of one and the start of the next — and `Layout::x_at` resolves it to the **later** one, because
+that is where a caret walking off the end of a wrapped line should appear. Asking it for the far
+end of the earlier line therefore answered a few pixels from the next line's left margin, and the
+wash became a rectangle of negative width, which `gdi::fill` correctly declines to draw. The end
+of a line is `Line::width` — the same question asked of the line rather than of the layout — and
+`text/draw.rs`'s `line_x` is now the one place that knows the difference. It has a test that
+builds a real wrapped `Layout` with `Fixed`, so it is portable evidence about a Windows bug.
+
+**3. `--render-to` on a text document was a stale file.** Not a bug in the shell: the render was
+run from the wrong working directory, and Wine's failure to find the `.exe` left the *previous*
+frame on disk to be compared. Worth recording because it is the failure mode this whole
+render-and-compare loop has — a byte-identical frame proves nothing if it is the same frame — and
+because it cost two rounds of looking for a drawing bug that had already been fixed.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

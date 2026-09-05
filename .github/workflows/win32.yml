@@ -196,9 +196,37 @@ jobs:
           }
           Write-Host "OK - the frame is reproducible."
 
+      # The same assertion for the **text pane** (W5a). It is a separate step rather than a loop
+      # because it is a separate claim: the grid's frame proves the drawing is reproducible, and
+      # this one proves that *measuring a document* is — every line here was broken by
+      # `grind_core::layout` asking GDI how wide the text is, on a runner with the real Segoe UI
+      # rather than Wine's substitution, and a font cache that answered differently on the second
+      # pass would show up here and nowhere else.
+      - name: Draw a text document twice, and compare
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $doc = "text/tests/data/edited-default-paragraph-style.fodt"
+          foreach ($out in @("text-one.bmp", "text-two.bmp")) {
+            $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
+              -Wait -PassThru -NoNewWindow
+            if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
+          }
+          $a = [IO.File]::ReadAllBytes("text-one.bmp")
+          $b = [IO.File]::ReadAllBytes("text-two.bmp")
+          if ($a.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($a.Length)"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -ne 0) {
+            Write-Error "two renders of the same document differ"; exit 1
+          }
+          Write-Host "OK - the text pane is reproducible too."
+
       - name: Upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: grind-win32-frame
-          path: one.bmp
+          path: |
+            one.bmp
+            text-one.bmp
           if-no-files-found: error

@@ -22,8 +22,9 @@
 //! where the argument, the milestones and the named gaps live.
 //!
 //! This file owns the process and nothing else. The window is `win.rs`'s, the grid's arithmetic
-//! is `sheet/geom.rs`'s and its drawing `sheet/draw.rs`'s — **W1 is the window and the read-only
-//! grid**; the text pane is W5 and is refused here rather than opened as an empty spreadsheet.
+//! is `sheet/geom.rs`'s and its drawing `sheet/draw.rs`'s; the text pane's are `text/`'s and
+//! `metrics.rs`'s. **Both document types open here**, and which one a file is comes from
+//! `grind_core::kind` reading its bytes.
 
 // A GUI application, not a console one. Without this, launching from Explorer flashes up a
 // console window behind the shell and leaves it there for the life of the process. The cost is
@@ -41,9 +42,13 @@ mod args;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod menu;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod metrics;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod notice;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod sheet;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod text;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod theme;
 
@@ -143,31 +148,18 @@ fn main() -> std::process::ExitCode {
                 message_box("grind-win32", &message, true);
                 ExitCode::FAILURE
             }
-            // A text document is a document this shell can *identify* and cannot yet open —
-            // the pane is W5. Saying so is the honest answer; opening an empty spreadsheet
-            // instead would look like the file had failed to load.
-            Ok((DocumentKind::Text, ..)) => {
-                message_box(
-                    "grind-win32",
-                    "This is a word processor document, and this build has no text pane yet \
-                     (W5 — see doc/windows-shell.md).\n\nIt opens today in grind-tui, in \
-                     grind-text-gtk, and in the browser shell.",
-                    true,
-                );
-                ExitCode::FAILURE
-            }
             // `--render-to` draws one frame with no window at all and exits, so it comes
             // before the window is opened rather than after (`doc/windows-shell.md`,
             // decision 5). Its errors still go to a message box: this is a GUI-subsystem
             // binary and there is no stderr, even when it is doing something headless.
-            Ok((_, path, Some(target))) => match win::render(path, &target) {
+            Ok((kind, path, Some(target))) => match win::render(kind, path, &target) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
                     message_box("grind-win32", &message, true);
                     ExitCode::FAILURE
                 }
             },
-            Ok((_, path, None)) => match win::run(path) {
+            Ok((kind, path, None)) => match win::run(kind, path) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
                     message_box("grind-win32", &message, true);

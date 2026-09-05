@@ -64,19 +64,21 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN,
     SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT,
     SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE,
-    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu,
+    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetTimer,
     SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
     TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE,
     WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD,
-    WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW,
+    WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_MENU, VK_SHIFT,
 };
+// The caret's blink rate is the *user's* setting and lives with the rest of the caret API.
+use windows::Win32::UI::WindowsAndMessaging::GetCaretBlinkTime;
 // `SetScrollInfo` lives in the Controls namespace in Windows' own metadata, which is where the
 // scrollbar API has always been. It is *not* a Common Controls v6 class and needs no manifest —
 // `doc/windows-shell.md`'s rejection of a v6 toolbar does not reach it.
@@ -87,6 +89,7 @@ use crate::clipboard;
 use crate::dialog::{self, Answer, Com};
 use crate::gdi::{self, BackBuffer, Brush, Dib, Font};
 use crate::menu::{self, Command, Item};
+use crate::metrics::{Faces, Fonts};
 use crate::notice;
 use crate::sheet::clip;
 use crate::sheet::draw::{self, Frame};
@@ -94,8 +97,12 @@ use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
+use crate::text;
+use crate::text::geom::{Flow, Page};
 use crate::theme::{self, Mode, Theme};
+use grind_core::DocumentKind;
 use grind_sheet::{App, Pos, RecalcMode};
+use grind_text::{Caret, Layout};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
 const APP_NAME: &str = "Grind";
@@ -115,6 +122,18 @@ const FONT_PX: f64 = 13.0;
 /// notification and a menu item's click apart in the one message Win32 uses for both.
 const ID_NAME_BOX: usize = 1;
 const ID_EDITOR: usize = 2;
+
+/// The size prose is set at, in pixels at 100%.
+///
+/// Larger than the grid's [`FONT_PX`] on purpose: a spreadsheet is read by scanning a table and a
+/// document is read by reading it, and every word processor there has ever been sets body text
+/// bigger than a cell. Headings scale off this (`metrics.rs`).
+const TEXT_PX: i32 = 15;
+
+/// The caret's blink, as a timer id. One per window, and the interval is `GetCaretBlinkTime` —
+/// the user's own setting rather than a constant, which is the difference between drawing a caret
+/// and inventing one.
+const ID_CARET_TIMER: usize = 1;
 
 /// "A key went to one of our child controls", sent by the message loop.
 ///
@@ -141,7 +160,130 @@ const RENDER_W: i32 = 1280;
 const RENDER_H: i32 = 800;
 
 /// Everything the window owns. One per window, boxed, reached through `GWLP_USERDATA`.
-struct State {
+///
+/// **One binary, both document types** (decision 1), and this is where that stops being a claim
+/// about `main.rs` and becomes one about the window: which pane a window *is* comes from
+/// [`grind_core::kind`] reading the file's bytes, and every message below either belongs to one
+/// pane — [`with_sheet`], [`with_text`] — or is answered for both here.
+///
+/// The two arms deliberately keep their own path, theme and dirty flag rather than sharing a
+/// header struct. That is not duplication for its own sake: it is what let the spreadsheet's
+/// forty handlers keep the shape they already had, borrowing exactly the state they always
+/// borrowed, when the second pane arrived. A pane is boxed because the two are very different
+/// sizes and the enum would otherwise be as big as the larger.
+enum Pane {
+    Sheet(Box<Sheet>),
+    Text(Box<Text>),
+}
+
+impl Pane {
+    fn sheet_mut(&mut self) -> Option<&mut Sheet> {
+        match self {
+            Pane::Sheet(sheet) => Some(sheet),
+            Pane::Text(_) => None,
+        }
+    }
+
+    fn text_mut(&mut self) -> Option<&mut Text> {
+        match self {
+            Pane::Text(text) => Some(text),
+            Pane::Sheet(_) => None,
+        }
+    }
+
+    fn theme(&self) -> Theme {
+        match self {
+            Pane::Sheet(sheet) => sheet.theme,
+            Pane::Text(text) => text.theme,
+        }
+    }
+
+    /// Re-read the theme and throw away everything that was made in the old palette.
+    fn retheme(&mut self, theme: Theme) {
+        match self {
+            Pane::Sheet(sheet) => {
+                sheet.theme = theme;
+                sheet.field_brush = None;
+            }
+            Pane::Text(text) => text.theme = theme,
+        }
+    }
+
+    fn path(&self) -> Option<PathBuf> {
+        match self {
+            Pane::Sheet(sheet) => sheet.path.clone(),
+            Pane::Text(text) => text.path.clone(),
+        }
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        match self {
+            Pane::Sheet(sheet) => sheet.dirty = dirty,
+            Pane::Text(text) => text.dirty = dirty,
+        }
+    }
+
+    fn dirty(&self) -> bool {
+        match self {
+            Pane::Sheet(sheet) => sheet.dirty,
+            Pane::Text(text) => text.dirty,
+        }
+    }
+
+    /// What the document is called, for a title bar and for the close question.
+    fn document_name(&self) -> String {
+        let path = self.path();
+        match &path {
+            Some(path) => path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string()),
+            None => "Untitled".to_owned(),
+        }
+    }
+
+    fn title(&self) -> String {
+        // A leading `*` for unsaved changes: Windows' own convention, and one that survives being
+        // truncated in a taskbar button where a trailing marker would not.
+        let mark = match self.dirty() {
+            true => "*",
+            false => "",
+        };
+        format!("{mark}{} — {APP_NAME}", self.document_name())
+    }
+
+    /// Write the document to `path`, whichever kind it is. The form is `Form::from_path`'s answer
+    /// to the extension the user chose, inside the application's own `save_file`.
+    fn save_file(&mut self, path: &Path) -> Result<(), String> {
+        // Each application's own `save_file`, and each its own error type — reduced to a
+        // sentence here, because what a caller does with a failed save is show it.
+        let result = match self {
+            Pane::Sheet(sheet) => sheet.app.save_file(path).map_err(|e| e.to_string()),
+            Pane::Text(text) => text.app.save_file(path).map_err(|e| e.to_string()),
+        };
+        match result {
+            Ok(()) => {
+                match self {
+                    Pane::Sheet(sheet) => sheet.path = Some(path.to_owned()),
+                    Pane::Text(text) => text.path = Some(path.to_owned()),
+                }
+                self.set_dirty(false);
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// The document's very first caret position. `Caret` has no `Default`, and spelling this out once
+/// is better than spelling `{ block: 0, offset: 0 }` in five places.
+const START: Caret = Caret {
+    block: 0,
+    offset: 0,
+};
+
+/// Everything the *spreadsheet* pane owns.
+struct Sheet {
     app: grind_sheet::App,
     path: Option<PathBuf>,
     sheet: usize,
@@ -215,7 +357,7 @@ enum Drag {
     Rows,
 }
 
-impl State {
+impl Sheet {
     /// Rebuild the geometry for the current client size and DPI.
     ///
     /// Everything measured is rebuilt from the *document's* lengths rather than scaled from the
@@ -380,26 +522,326 @@ impl State {
             false => cell,
         }
     }
+}
 
-    /// What the document is called, for a title bar and for the close question.
-    fn document_name(&self) -> String {
-        match &self.path {
-            Some(path) => path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string()),
-            None => "Untitled".to_owned(),
+/// Everything the *word processor's* pane owns — **W5**.
+///
+/// Deliberately smaller than [`Sheet`], and the difference is where the work went: a spreadsheet
+/// pane holds a grid geometry it can compute from four numbers, and a text pane holds a
+/// [`text::geom::Flow`] that had to be *measured*. Which is why the font cache is here and not in
+/// `gdi.rs`: it is state, it is expensive, and it belongs to the pane that measures with it.
+struct Text {
+    app: grind_text::App,
+    path: Option<PathBuf>,
+    theme: Theme,
+    dirty: bool,
+    /// The window's bands and how far down the document the body starts.
+    page: Page,
+    /// Where every block sits, measured. Rebuilt whenever the document, the width or the DPI
+    /// changes and **not** per paint — a paint re-lays-out only the blocks it can see.
+    flow: Flow,
+    /// The caret and the other end of the selection. Presentation state: the core is never told
+    /// about it, exactly as the grid's `Selection` is never told to `grind_sheet::App`.
+    caret: Caret,
+    anchor: Caret,
+    /// The column Down and Up aim for, in pixels, kept across a run of vertical keystrokes and
+    /// dropped the moment the caret moves horizontally. A property of a *run of keystrokes*
+    /// rather than of the document, which is why `App::caret_line` takes it rather than storing
+    /// it.
+    goal_x: Option<f32>,
+    /// The fonts everything is measured and drawn with (`metrics.rs`). `None` only before the
+    /// first `WM_CREATE`, and rebuilt whole on `WM_DPICHANGED` — a font is a size in *pixels*,
+    /// so every one of them is wrong on a monitor with different scaling.
+    fonts: Option<Fonts>,
+    /// The DPI `fonts` was built for, which is the only reason to build another.
+    fonts_dpi: u32,
+    /// Whether a drag is extending the selection.
+    dragging: bool,
+    /// The blink's phase. The *interval* is `GetCaretBlinkTime` — the user's own setting, which
+    /// a shell that drew its own caret would otherwise quietly override.
+    caret_on: bool,
+    banner: Option<String>,
+}
+
+impl Text {
+    /// Rebuild the bands, the fonts if the monitor changed, and the flow.
+    ///
+    /// Everything measured is rebuilt from the document rather than scaled from the last answer,
+    /// which is the same rule [`Sheet::relayout`] follows and for the same reason: repeatedly
+    /// scaling a scaled number is how a window dragged between two monitors and back stops being
+    /// pixel-identical to one that never moved.
+    fn relayout(&mut self, width: f64, height: f64, dpi: u32) {
+        self.page = Page {
+            width,
+            height,
+            banner_h: match self.banner {
+                Some(_) => scale(text::geom::BANNER_H, dpi),
+                None => 0.0,
+            },
+            status_h: scale(text::geom::STATUS_H, dpi),
+            dpi,
+            scroll: self.page.scroll,
+        };
+        if self.fonts.is_none() || self.fonts_dpi != dpi {
+            // The old cache goes first: it owns every `HFONT` in it, and a shell that kept both
+            // would leak one per monitor change — `doc/windows-shell.md` names exactly that as
+            // this shell's classic `unsafe` risk.
+            self.fonts = Fonts::new(scale(f64::from(TEXT_PX), dpi));
+            self.fonts_dpi = dpi;
+        }
+        self.reflow();
+        self.page.scroll = self
+            .page
+            .scroll
+            .clamp(0.0, self.flow.limit(self.page.body().h));
+    }
+
+    /// Measure every block and stack them.
+    ///
+    /// ponytail: this lays out the **whole document**, so a five-hundred-page one is measured on
+    /// every resize. It is what makes the scrollbar honest — a flow that only knew about the
+    /// blocks on screen could not say how tall the document is — and it is fast enough for
+    /// everything in `text/tests/data/`. The upgrade when it stops being is the usual one: an
+    /// estimated height for blocks nobody has looked at, replaced by the real one as they scroll
+    /// past. The trigger is a document where a resize is visibly slow, and not before.
+    fn reflow(&mut self) {
+        let Some(faces) = self.faces() else {
+            return;
+        };
+        self.flow = text::geom::flow_of(&self.app, &faces, self.page.dpi);
+    }
+
+    /// Whether anything is selected at all.
+    fn has_selection(&self) -> bool {
+        self.anchor != self.caret
+    }
+
+    /// The selection's two ends in document order — what every verb over a range is given.
+    fn range(&self) -> (Caret, Caret) {
+        text::keymap::ordered(self.anchor, self.caret)
+    }
+
+    /// How many characters a block holds. Asked of the viewport rather than remembered, because
+    /// a block's length changes under every edit.
+    fn block_len(&self, index: usize) -> usize {
+        self.app
+            .get_viewport(index..index + 1)
+            .get(index)
+            .map(|view| view.text.chars().count())
+            .unwrap_or(0)
+    }
+
+    fn last_caret(&self) -> Caret {
+        let block = self.app.block_count().saturating_sub(1);
+        Caret {
+            block,
+            offset: self.block_len(block),
         }
     }
 
-    fn title(&self) -> String {
-        // A leading `*` for unsaved changes: Windows' own convention, and one that survives
-        // being truncated in a taskbar button where a trailing marker would not.
-        let mark = match self.dirty {
-            true => "*",
-            false => "",
+    /// The faces this document is set in, at the current measure. Built per call rather than
+    /// kept, because it borrows the font cache and a `&Faces` living in the state would borrow it
+    /// for the life of the window; the fonts themselves are cached, so this costs a handful of
+    /// map lookups.
+    fn faces(&self) -> Option<Faces<'_>> {
+        let fonts = self.fonts.as_ref()?;
+        let (_, width) = self.page.text_column();
+        Some(Faces::new(
+            fonts,
+            width,
+            scale(text::geom::INDENT, self.page.dpi),
+        ))
+    }
+
+    /// One block's lines, measured in that block's own face.
+    ///
+    /// A value, computed and thrown away — the same contract `App::get_viewport` offers for
+    /// content. Nothing here keeps a layout, because a kept one goes stale on the next keystroke
+    /// and there is no cheap way to know it has.
+    fn layout_of(&self, index: usize) -> Option<Layout> {
+        let faces = self.faces()?;
+        let viewport = self.app.get_viewport(index..index + 1);
+        let view = viewport.get(index)?;
+        let (width, metrics) =
+            grind_text::Faces::of(&faces, index, &view.kind, view.style.as_deref());
+        self.app.layout_block(index, width, metrics).ok()
+    }
+
+    /// Scroll the least it takes to put the caret's own line on screen, and no more.
+    fn reveal(&mut self) {
+        let Some(slot) = self.flow.slot(self.caret.block).copied() else {
+            return;
         };
-        format!("{mark}{} — {APP_NAME}", self.document_name())
+        let target = match self.layout_of(self.caret.block) {
+            Some(layout) => {
+                let line = layout.lines()[layout.line_at(self.caret.offset)];
+                (slot.top + f64::from(line.top), f64::from(line.height))
+            }
+            None => (slot.top, slot.height),
+        };
+        let page = self.page.body().h;
+        self.page.scroll = self.flow.follow(self.page.scroll, page, target);
+    }
+
+    /// The caret's x within its line, in pixels — what Down and Up aim for.
+    fn caret_x(&self) -> Option<f32> {
+        let faces = self.faces()?;
+        self.app.caret_x(self.caret, &faces).ok()
+    }
+
+    /// One block's plain text, for the questions that are about characters rather than about
+    /// lines — word motion, and how long a block is.
+    fn block_text(&self, index: usize) -> String {
+        self.app
+            .get_viewport(index..index + 1)
+            .get(index)
+            .map(|view| view.text.clone())
+            .unwrap_or_default()
+    }
+
+    /// Where a motion lands, without moving anything.
+    ///
+    /// Every vertical answer is [`grind_text::App`]'s — `caret_line` and `caret_line_bounds`,
+    /// measured through this pane's own [`Faces`] — because `doc/text-layout.md` put line layout
+    /// in the core precisely so that four shells could not answer Down-arrow four ways. What is
+    /// left here is the horizontal half, which is about characters and not about lines.
+    fn moved(&self, motion: text::keymap::Motion, goal: f32) -> Caret {
+        use text::keymap::Motion;
+        let at = self.caret;
+        match motion {
+            Motion::Char(step) if step < 0 => match at.offset {
+                0 if at.block > 0 => Caret {
+                    block: at.block - 1,
+                    offset: self.block_len(at.block - 1),
+                },
+                0 => at,
+                offset => Caret {
+                    block: at.block,
+                    offset: offset - 1,
+                },
+            },
+            Motion::Char(_) => match at.offset < self.block_len(at.block) {
+                true => Caret {
+                    block: at.block,
+                    offset: at.offset + 1,
+                },
+                // Off the end of a block is the start of the next one: a document is one flow,
+                // not a list of boxes, which is the same rule `App::caret_line` follows.
+                false if at.block + 1 < self.app.block_count() => Caret {
+                    block: at.block + 1,
+                    offset: 0,
+                },
+                false => at,
+            },
+            Motion::Word(step) => {
+                let forward = step > 0;
+                let text = self.block_text(at.block);
+                match text::keymap::word_boundary(&text, at.offset, forward) {
+                    Some(offset) => Caret {
+                        block: at.block,
+                        offset,
+                    },
+                    // At the block's own end in that direction, carry one character into the
+                    // neighbour — which is where the next word begins.
+                    None => self.moved(Motion::Char(step), goal),
+                }
+            }
+            Motion::Line(delta) => match self.faces() {
+                Some(faces) => self.app.caret_line(at, delta, goal, &faces).unwrap_or(at),
+                None => at,
+            },
+            Motion::LineStart | Motion::LineEnd => match self.faces() {
+                Some(faces) => match self.app.caret_line_bounds(at, &faces) {
+                    Ok((start, end)) => match motion {
+                        Motion::LineStart => start,
+                        _ => end,
+                    },
+                    Err(_) => at,
+                },
+                None => at,
+            },
+            Motion::DocStart => START,
+            Motion::DocEnd => self.last_caret(),
+        }
+    }
+
+    /// Move the caret, extending the selection or collapsing it.
+    ///
+    /// The **goal column** is remembered across a run of vertical keystrokes and dropped the
+    /// moment the caret moves horizontally, which is what makes walking Down through a short line
+    /// and out the other side come back to the column it started in.
+    fn navigate(&mut self, motion: text::keymap::Motion, extend: bool) {
+        let vertical = matches!(motion, text::keymap::Motion::Line(_));
+        let goal = match vertical {
+            true => self.goal_x.or_else(|| self.caret_x()),
+            false => None,
+        };
+        self.caret = self.moved(motion, goal.unwrap_or(0.0));
+        if !extend {
+            self.anchor = self.caret;
+        }
+        self.goal_x = goal;
+        self.reveal();
+    }
+
+    /// Put the caret somewhere and forget the goal column and the selection — what a click does,
+    /// and what every edit does with the caret it leaves behind.
+    fn place(&mut self, at: Caret, extend: bool) {
+        self.caret = at;
+        if !extend {
+            self.anchor = at;
+        }
+        self.goal_x = None;
+        self.reveal();
+    }
+
+    /// Which caret position a point in the window is nearest.
+    ///
+    /// **Nearest, never nothing** — [`Flow::at_y`]'s rule, carried through to the offset:
+    /// a click in the margin of a line lands at that line's near end, because a document has no
+    /// "outside" and a caret that refuses to move is a bug nobody can see the cause of.
+    fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
+        let body = self.page.body();
+        let document_y = y - body.y + self.page.scroll;
+        let block = self.flow.at_y(document_y)?;
+        let slot = self.flow.slot(block).copied()?;
+        let layout = self.layout_of(block)?;
+        let (column_x, _) = self.page.text_column();
+        let local_y = (document_y - slot.top).max(0.0);
+        let line = layout
+            .lines()
+            .iter()
+            .position(|line| local_y < f64::from(line.top + line.height))
+            .unwrap_or(layout.lines().len().saturating_sub(1));
+        let local_x = (x - column_x - slot.indent) as f32;
+        Some(Caret {
+            block,
+            offset: layout.offset_at(line, local_x),
+        })
+    }
+
+    /// How many lines a Page Up or Page Down moves.
+    ///
+    /// Measured in *body* lines rather than in pixels, and one short of a screenful, which is
+    /// what keeps a line of context across the jump — the same rule the grid's page has.
+    fn page_lines(&self) -> isize {
+        let height = self
+            .fonts
+            .as_ref()
+            .map(|fonts| fonts.body_px() * 1.3)
+            .unwrap_or(20.0)
+            .max(1.0);
+        ((self.page.body().h / height) as isize - 1).max(1)
+    }
+
+    /// Put something in the notice bar, or take it away. The sentence and the *height* change
+    /// together, which is the same rule [`Sheet::say`] follows.
+    fn say(&mut self, notice: Option<String>) {
+        self.page.banner_h = match notice {
+            Some(_) => scale(text::geom::BANNER_H, self.page.dpi),
+            None => 0.0,
+        };
+        self.banner = notice;
     }
 }
 
@@ -445,13 +887,61 @@ impl grind_core::Observer for Changed {
 /// Shared by [`run`] and [`render`] on purpose: the render path is a *second caller* of every
 /// answer the window uses, not a second set of answers, which is what makes a byte-identical
 /// frame evidence about the real thing (`doc/windows-shell.md`, decision 5).
-fn opened(path: Option<PathBuf>, theme: Theme) -> Result<State, String> {
+///
+/// **Which pane comes out is decided by the caller**, from `grind_core::kind` reading the file's
+/// bytes — never from its name, because a spreadsheet does not become a document by being called
+/// one. This function only obeys.
+fn opened(kind: DocumentKind, path: Option<PathBuf>, theme: Theme) -> Result<Pane, String> {
+    match kind {
+        DocumentKind::Spreadsheet => Ok(Pane::Sheet(Box::new(opened_sheet(path, theme)?))),
+        DocumentKind::Text => Ok(Pane::Text(Box::new(opened_text(path, theme)?))),
+        // Recognised and refused, which is what `DocumentKind::Presentation` is *for*: this
+        // suite has no presentation application, and saying so is better than parsing one as an
+        // empty document of some other kind.
+        DocumentKind::Presentation => {
+            Err("This is a presentation, and the suite has no application for one.".to_owned())
+        }
+    }
+}
+
+/// The word processor's pane, on a document or on nothing.
+fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
+    let app = grind_text::App::new();
+    if let Some(path) = &path {
+        app.open_file(path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+    }
+    Ok(Text {
+        app,
+        path,
+        theme,
+        dirty: false,
+        page: Page {
+            status_h: text::geom::STATUS_H,
+            dpi: 96,
+            ..Page::default()
+        },
+        flow: Flow::default(),
+        caret: START,
+        anchor: START,
+        goal_x: None,
+        fonts: None,
+        fonts_dpi: 0,
+        dragging: false,
+        // On, so that a document opened and immediately rendered shows its caret — and so that
+        // two `--render-to` frames of one document are identical, which is what that flag is for.
+        caret_on: true,
+        banner: None,
+    })
+}
+
+fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
     let app = grind_sheet::App::new();
     if let Some(path) = &path {
         app.open_file(path)
             .map_err(|error| format!("{}: {error}", path.display()))?;
     }
-    Ok(State {
+    Ok(Sheet {
         app,
         path,
         sheet: 0,
@@ -492,19 +982,32 @@ fn opened(path: Option<PathBuf>, theme: Theme) -> Result<State, String> {
 /// pinned rather than read — the size is a constant, and the **theme is forced to light**,
 /// because a screenshot compared against another one must not depend on what the machine
 /// running it has under `Themes\Personalize`.
-pub fn render(path: Option<PathBuf>, target: &std::path::Path) -> Result<(), String> {
-    let mut state = opened(path, Theme::of(Mode::Light))?;
-    state.relayout(f64::from(RENDER_W), f64::from(RENDER_H), 96);
+pub fn render(
+    kind: DocumentKind,
+    path: Option<PathBuf>,
+    target: &std::path::Path,
+) -> Result<(), String> {
+    let mut pane = opened(kind, path, Theme::of(Mode::Light))?;
+    let (w, h) = (f64::from(RENDER_W), f64::from(RENDER_H));
     let dib = Dib::new(RENDER_W, RENDER_H).ok_or("could not make the drawing surface")?;
-    draw_frame(dib.dc(), &state);
+    match &mut pane {
+        Pane::Sheet(sheet) => {
+            sheet.relayout(w, h, 96);
+            draw_frame(dib.dc(), sheet);
+        }
+        Pane::Text(text) => {
+            text.relayout(w, h, 96);
+            draw_text_frame(dib.dc(), text);
+        }
+    }
     std::fs::write(target, dib.bmp()).map_err(|error| format!("{}: {error}", target.display()))
 }
 
 /// Open a window on a document and pump messages until it closes.
 ///
-/// `path` is `None` for a new, empty spreadsheet. The text pane is W5; a text document reaching
-/// here is the caller's error to have made.
-pub fn run(path: Option<PathBuf>) -> Result<(), String> {
+/// `path` is `None` for a new, empty document of `kind` — **both kinds**, since W5: one binary,
+/// one window class, and the pane decided by the bytes.
+pub fn run(kind: DocumentKind, path: Option<PathBuf>) -> Result<(), String> {
     // Before *any* window exists, which is the whole requirement: per-monitor v2 cannot be set
     // once a window has been created, and asking for it late fails silently and leaves the
     // process system-DPI-aware — a window that is bitmap-stretched and blurry on a 150% monitor.
@@ -520,7 +1023,7 @@ pub fn run(path: Option<PathBuf>) -> Result<(), String> {
     // that never opens a file dialog pays for one `CoInitializeEx`.
     let _com = Com::new();
 
-    let state = Box::new(opened(path, theme::current())?);
+    let state = Box::new(opened(kind, path, theme::current())?);
 
     let class = gdi::wide(CLASS_NAME);
     let title = gdi::wide(&state.title());
@@ -605,15 +1108,29 @@ pub fn run(path: Option<PathBuf>) -> Result<(), String> {
 /// The single point where the raw pointer becomes a reference. The `&mut` lives only for the
 /// call, which is what makes decision 7's rule checkable by reading one function rather than
 /// every handler: **nothing that runs a nested message loop may be called from inside `f`.**
-unsafe fn with_state<T>(hwnd: HWND, f: impl FnOnce(&mut State) -> T) -> Option<T> {
+unsafe fn with_pane<T>(hwnd: HWND, f: impl FnOnce(&mut Pane) -> T) -> Option<T> {
     // SAFETY: the caller is a window procedure for `hwnd`, and the slot holds either null or
     // the pointer stored in `WM_NCCREATE`, which is valid until `WM_NCDESTROY` clears it.
-    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut State;
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Pane;
     if raw.is_null() {
         return None;
     }
     // SAFETY: exclusive for the duration of this call. See the module comment's point 3.
     Some(f(unsafe { &mut *raw }))
+}
+
+/// The same, for a handler that only means anything to the spreadsheet — `None` when the window
+/// is showing a text document, which is what makes "this verb belongs to the other pane" a
+/// missing answer rather than a wrong one.
+unsafe fn with_sheet<T>(hwnd: HWND, f: impl FnOnce(&mut Sheet) -> T) -> Option<T> {
+    // SAFETY: the caller's, unchanged — see [`with_pane`].
+    unsafe { with_pane(hwnd, |pane| pane.sheet_mut().map(f)) }.flatten()
+}
+
+/// And for the word processor's.
+unsafe fn with_text<T>(hwnd: HWND, f: impl FnOnce(&mut Text) -> T) -> Option<T> {
+    // SAFETY: the caller's, unchanged — see [`with_pane`].
+    unsafe { with_pane(hwnd, |pane| pane.text_mut().map(f)) }.flatten()
 }
 
 extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -630,18 +1147,24 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         WM_CREATE => {
             // SAFETY: the state was stored by `WM_NCCREATE`, which always precedes this.
             unsafe {
-                with_state(hwnd, |state| {
-                    state.theme = theme::current();
-                    theme::apply_title_bar(hwnd, state.theme);
+                with_pane(hwnd, |pane| {
+                    let theme = theme::current();
+                    pane.retheme(theme);
+                    theme::apply_title_bar(hwnd, theme);
                     // Registered here rather than in `opened`, because it needs a window to
                     // post to — and because a document read *before* there is one must not
                     // arrive as a change the user made. That is the whole of why this shell
                     // needs no "loading" flag: nobody is listening yet.
-                    state.app.set_observer(Arc::new(Changed(hwnd.0 as isize)));
+                    let observer = Arc::new(Changed(hwnd.0 as isize));
+                    match pane {
+                        Pane::Sheet(sheet) => sheet.app.set_observer(observer),
+                        Pane::Text(text) => text.app.set_observer(observer),
+                    }
                 });
             }
             build_menu(hwnd);
             make_children(hwnd);
+            start_blinking(hwnd);
             refresh(hwnd);
             LRESULT(0)
         }
@@ -732,9 +1255,9 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         WM_DOC_CHANGED => {
             // SAFETY: one borrow, released before the title is set.
             let title = unsafe {
-                with_state(hwnd, |state| {
-                    state.dirty = true;
-                    state.title()
+                with_pane(hwnd, |pane| {
+                    pane.set_dirty(true);
+                    pane.title()
                 })
             };
             if let Some(title) = title {
@@ -756,7 +1279,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             // what this message requires of the value it is given back.
             let brush = unsafe {
                 let dc = HDC(wparam.0 as *mut std::ffi::c_void);
-                with_state(hwnd, |state| {
+                with_sheet(hwnd, |state| {
                     SetBkMode(dc, OPAQUE);
                     SetTextColor(dc, COLORREF(state.theme.text.colorref()));
                     SetBkColor(dc, COLORREF(state.theme.field.colorref()));
@@ -783,6 +1306,11 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             wheel(hwnd, wparam);
             LRESULT(0)
         }
+        // The caret's blink, and nothing else uses a timer.
+        WM_TIMER if wparam.0 == ID_CARET_TIMER => {
+            blink(hwnd);
+            LRESULT(0)
+        }
         // The user changed the theme while the window was open. `WM_SETTINGCHANGE` is sent for
         // a great many settings, so the answer is to re-read rather than to trust the message:
         // reading a registry value is cheap and getting the condition wrong is a window stuck
@@ -791,12 +1319,12 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             // SAFETY: one borrow, released before the repaint is asked for; nothing inside runs
             // a nested message loop.
             unsafe {
-                with_state(hwnd, |state| {
-                    state.theme = theme::current();
-                    theme::apply_title_bar(hwnd, state.theme);
-                    // The cached brush is the old palette's; the next `WM_CTLCOLOREDIT` makes
-                    // one in the new one.
-                    state.field_brush = None;
+                with_pane(hwnd, |pane| {
+                    let theme = theme::current();
+                    // The cached brush is the old palette's; `retheme` drops it, and the next
+                    // `WM_CTLCOLOREDIT` makes one in the new one.
+                    pane.retheme(theme);
+                    theme::apply_title_bar(hwnd, theme);
                 });
                 let _ = InvalidateRect(Some(hwnd), None, false);
                 DefWindowProcW(hwnd, message, wparam, lparam)
@@ -835,7 +1363,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             // SAFETY: the pointer was made by `Box::into_raw` in `run` and has not been freed;
             // reconstituting it exactly once is what frees it.
             unsafe {
-                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut State;
+                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Pane;
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 if !raw.is_null() {
                     drop(Box::from_raw(raw));
@@ -855,12 +1383,16 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
 /// the child control sitting on it, and every one of those changes what the frame looks like and
 /// what the title says. Every path that touches the document ends here.
 fn refresh(hwnd: HWND) {
+    if is_text(hwnd) {
+        text_refresh(hwnd);
+        return;
+    }
     let rect = gdi::client_rect(hwnd);
     // SAFETY: `hwnd` is this window's; `GetDpiForWindow` needs nothing else.
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
     // SAFETY: no nested loop inside.
     let after = unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             state.relayout(
                 f64::from(rect.right - rect.left),
                 f64::from(rect.bottom - rect.top),
@@ -872,17 +1404,22 @@ fn refresh(hwnd: HWND) {
             sync_scrollbars(hwnd, state);
             // At most one child is ever up: the name box and the editor are opened by the same
             // keys, and each closes the other on its way in.
-            let child = if state.name_box_open {
+            if state.name_box_open {
                 Some((state.name_box, state.geom.name_box_rect()))
             } else if state.mode.is_editing() {
                 Some((state.editor, state.editor_rect()))
             } else {
                 None
-            };
-            (child, state.title())
+            }
         })
     };
-    let Some((child, title)) = after else { return };
+    // The title is the *window's* rather than the pane's, so it is asked for separately — one
+    // more borrow, taken and released like every other.
+    // SAFETY: nothing inside dispatches.
+    let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
+    let (Some(child), Some(title)) = (after, title) else {
+        return;
+    };
     // SAFETY: the borrow above is released. `MoveWindow` on a visible child repaints it and
     // `SetWindowTextW` repaints the caption — both dispatch messages, and therefore belong out
     // here. The title is compared first because this runs on every `WM_SIZE`, and rewriting the
@@ -963,6 +1500,15 @@ fn build_menu(hwnd: HWND) {
 /// the document is a second model — these hold an address on its way to `status::locate` and a
 /// cell's text on its way to `App::enter`, and nothing else.
 fn make_children(hwnd: HWND) {
+    // The text pane has no child controls at all — it draws its own caret and holds its own
+    // keystrokes — and a window showing one therefore creates none. A window that *becomes* a
+    // spreadsheet (File ▸ Open on a `.fods`) comes back through here, which is why this is
+    // idempotent rather than once-only.
+    // SAFETY: one borrow, nothing inside dispatches.
+    match unsafe { with_sheet(hwnd, |state| state.editor.is_invalid()) } {
+        Some(true) => {}
+        _ => return,
+    }
     let class = gdi::wide("EDIT");
     // SAFETY: the class name outlives both calls; the controls are destroyed with their parent,
     // and the font they are given is owned by the state, which outlives both.
@@ -996,7 +1542,7 @@ fn make_children(hwnd: HWND) {
             edit
         };
         let (name_box, editor) = (make(ID_NAME_BOX), make(ID_EDITOR));
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             state.name_box = name_box;
             state.editor = editor;
             // Kept alive here: `WM_SETFONT` does not copy the handle, so deleting the font
@@ -1010,7 +1556,7 @@ fn make_children(hwnd: HWND) {
 ///
 /// The range is in **tracks, not pixels** — see `GridGeom`'s comment: a `SCROLLINFO` is `i32`
 /// and this sheet is twenty million pixels tall, but only a million rows.
-fn sync_scrollbars(hwnd: HWND, state: &State) {
+fn sync_scrollbars(hwnd: HWND, state: &Sheet) {
     let set = |bar, max: u32, pos: u32, page: i64| {
         let info = SCROLLINFO {
             cbSize: u32::try_from(std::mem::size_of::<SCROLLINFO>()).expect("small"),
@@ -1045,11 +1591,15 @@ fn sync_scrollbars(hwnd: HWND, state: &State) {
 
 /// One scrollbar message, on whichever axis.
 fn scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
+    if is_text(hwnd) {
+        text_scroll(hwnd, wparam, vertical);
+        return;
+    }
     let code = (wparam.0 & 0xffff) as i32;
     let thumb = ((wparam.0 >> 16) & 0xffff) as u32;
     // SAFETY: no nested loop inside.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let g = &mut state.geom;
             let (at, page) = match vertical {
                 true => (g.first_row, g.page_rows()),
@@ -1103,11 +1653,15 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
             Default::default(),
         );
     }
+    if is_text(hwnd) {
+        text_wheel(hwnd, notches, lines);
+        return;
+    }
     // Zero means "do not scroll", which is a real setting. `WHEEL_PAGESCROLL` (0xFFFFFFFF)
     // means a screenful, and is answered with the page rather than with 4 294 967 295 rows.
     // SAFETY: no nested loop inside.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let page = state.geom.page_rows();
             let lines = match lines {
                 0 => return,
@@ -1129,9 +1683,13 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
 /// because it arrives on every pixel of travel.
 fn mouse_move(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
+    if is_text(hwnd) {
+        text_mouse_move(hwnd, x, y);
+        return;
+    }
     // SAFETY: no nested loop inside.
     let moved = unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             if state.drag.is_none() {
                 return false;
             }
@@ -1183,8 +1741,11 @@ fn mods() -> keymap::Mods {
 /// One keystroke from the window itself. `false` hands it back to `DefWindowProc`, which is
 /// what leaves Alt+F4 and the system menu working.
 fn key_down(hwnd: HWND, vk: u32) -> bool {
+    if is_text(hwnd) {
+        return text_key(hwnd, vk);
+    }
     // SAFETY: no nested loop inside.
-    let mode = unsafe { with_state(hwnd, |state| state.mode) }.unwrap_or_default();
+    let mode = unsafe { with_sheet(hwnd, |state| state.mode) }.unwrap_or_default();
     on_key(hwnd, mode, vk)
 }
 
@@ -1196,7 +1757,7 @@ fn key_down(hwnd: HWND, vk: u32) -> bool {
 fn child_key(hwnd: HWND, vk: u32, child: HWND) -> bool {
     // SAFETY: one borrow, for two flags and a mode; nothing inside dispatches.
     let focused = unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             if state.name_box_open && child == state.name_box {
                 Some(Focused::NameBox)
             } else if state.mode.is_editing() && child == state.editor {
@@ -1238,7 +1799,7 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
         Outcome::Navigate(action) => {
             // SAFETY: no nested loop inside.
             unsafe {
-                with_state(hwnd, |state| {
+                with_sheet(hwnd, |state| {
                     state.act(action);
                     sync_scrollbars(hwnd, state);
                 });
@@ -1265,7 +1826,7 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
         Outcome::ToggleMode => {
             // SAFETY: no nested loop inside, and nothing on screen changes — F2 changes what
             // the *next* arrow key means and nothing else.
-            unsafe { with_state(hwnd, |state| state.mode = state.mode.toggled()) };
+            unsafe { with_sheet(hwnd, |state| state.mode = state.mode.toggled()) };
             true
         }
     }
@@ -1282,8 +1843,11 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
     let Some(c) = char::from_u32(code) else {
         return false;
     };
+    if is_text(hwnd) {
+        return text_char(hwnd, c);
+    }
     // SAFETY: no nested loop inside.
-    let seed = unsafe { with_state(hwnd, |state| state::typed(state.mode, c, mods())) };
+    let seed = unsafe { with_sheet(hwnd, |state| state::typed(state.mode, c, mods())) };
     match seed.flatten() {
         Some(seed) => {
             begin_edit(hwnd, seed, false);
@@ -1295,6 +1859,10 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
 
 /// A press of the left button: what it selects, and what dragging will extend.
 fn button_down(hwnd: HWND, lparam: LPARAM) {
+    if is_text(hwnd) {
+        text_button_down(hwnd, lparam);
+        return;
+    }
     // An edit in progress is committed by clicking somewhere else, which is what every
     // spreadsheet does — and it has to happen **before** the selection moves, or the cell being
     // typed into would turn out to be the one that was just clicked.
@@ -1306,7 +1874,7 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     // is read here and acted on below the borrow.
     // SAFETY: no nested loop inside.
     let strip = unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let hit = state.geom.hit(x, y);
             if hit == Hit::Chrome {
                 return if state.geom.name_box_rect().contains(x, y) {
@@ -1374,10 +1942,14 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
 /// answer. The plain `WM_LBUTTONDOWN` has already selected the cell and started a drag; the drag
 /// is cancelled here, because this gesture is not one.
 fn double_click(hwnd: HWND, lparam: LPARAM) {
+    if is_text(hwnd) {
+        text_double_click(hwnd, lparam);
+        return;
+    }
     let (x, y) = point(lparam);
     // SAFETY: no nested loop inside.
     let on_cell = unsafe {
-        with_state(hwnd, |state| match state.geom.hit(x, y) {
+        with_sheet(hwnd, |state| match state.geom.hit(x, y) {
             Hit::Cell { row, col } => {
                 state.selection = Selection::at(Pos::new(row, col));
                 state.drag = None;
@@ -1392,9 +1964,17 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
 }
 
 fn button_up(hwnd: HWND) {
+    if is_text(hwnd) {
+        // SAFETY: one borrow, and nothing inside it dispatches.
+        unsafe {
+            with_text(hwnd, |text| text.dragging = false);
+            let _ = ReleaseCapture();
+        }
+        return;
+    }
     // SAFETY: no nested loop inside.
     unsafe {
-        with_state(hwnd, |state| state.drag = None);
+        with_sheet(hwnd, |state| state.drag = None);
         let _ = ReleaseCapture();
     }
 }
@@ -1411,7 +1991,7 @@ fn open_name_box(hwnd: HWND) {
     commit_edit(hwnd, None);
     // SAFETY: one borrow, for the three answers, released before anything is shown.
     let Some((edit, rect, text)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             state.name_box_open = true;
             state.drag = None;
             (
@@ -1449,7 +2029,7 @@ fn open_name_box(hwnd: HWND) {
 fn close_name_box(hwnd: HWND, commit: bool) {
     // SAFETY: no nested loop inside.
     let Some((edit, was_open)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             (
                 state.name_box,
                 std::mem::replace(&mut state.name_box_open, false),
@@ -1473,7 +2053,7 @@ fn close_name_box(hwnd: HWND, commit: bool) {
     }
     // SAFETY: a fresh borrow, taken after the window calls rather than across them.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             // Nonsense goes nowhere and says so by doing nothing: the box closes and the
             // selection stays where it was, which is less alarming than an error dialog for a
             // typo. `grind sheet view` is the R9 answer for a name this build cannot resolve.
@@ -1498,7 +2078,7 @@ fn close_name_box(hwnd: HWND, commit: bool) {
 fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
     // SAFETY: one borrow, for the control, its rectangle and its text.
     let Some((edit, rect, text)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             state.mode = seed.mode();
             state.editor_on_bar = on_bar;
             state.drag = None;
@@ -1538,7 +2118,7 @@ fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
 fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
     // SAFETY: one borrow, for the control and whether there is anything to commit.
     let Some((edit, open)) =
-        (unsafe { with_state(hwnd, |state| (state.editor, state.mode.is_editing())) })
+        (unsafe { with_sheet(hwnd, |state| (state.editor, state.mode.is_editing())) })
     else {
         return;
     };
@@ -1555,7 +2135,7 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
             let caret = state::caret_at(&text, error.at);
             // SAFETY: one borrow, for the notice and nothing else.
             unsafe {
-                with_state(hwnd, |state| {
+                with_sheet(hwnd, |state| {
                     state.say(Some(notice::bad_formula(&error.message)));
                 });
             }
@@ -1574,7 +2154,7 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
     // Closed **first**, so that the `EN_KILLFOCUS` hiding it fires finds nothing left to do.
     // SAFETY: no nested loop inside.
     let Some((sheet, pos)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             state.editor_on_bar = false;
             state.mode = state::Mode::Ready;
             // Whatever the banner was saying, it was about this edit.
@@ -1593,7 +2173,7 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
     // notifies its observer from inside this borrow, which is safe precisely because the
     // observer *posts* rather than sends — see [`Changed`].
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             match state.app.enter(sheet, pos, &store, RecalcMode::Document) {
                 // A recalculation that was skipped is a state the document is now in, and a
                 // state is what the banner is for.
@@ -1616,7 +2196,7 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
 fn cancel_edit(hwnd: HWND) {
     // SAFETY: no nested loop inside; the flag is cleared here for [`commit_edit`]'s reason.
     let Some((edit, was_open)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let was_open = std::mem::replace(&mut state.mode, state::Mode::Ready).is_editing();
             state.editor_on_bar = false;
             state.say(None);
@@ -1640,7 +2220,7 @@ fn cancel_edit(hwnd: HWND) {
 /// is repainted. **Only the strip**: a keystroke must not redraw the grid under it.
 fn editor_changed(hwnd: HWND) {
     // SAFETY: one borrow, released before the invalidation.
-    let Some(strip) = (unsafe { with_state(hwnd, |state| state.geom.strip_rect()) }) else {
+    let Some(strip) = (unsafe { with_sheet(hwnd, |state| state.geom.strip_rect()) }) else {
         return;
     };
     let (left, top, right, bottom) = strip.edges();
@@ -1697,6 +2277,10 @@ fn window_text(hwnd: HWND) -> String {
 /// — a command with no handler fails the build, where a command in no menu fails a test — and it
 /// is why neither of them needs a registry of ids.
 fn do_command(hwnd: HWND, command: Command) {
+    if is_text(hwnd) {
+        text_command(hwnd, command);
+        return;
+    }
     commit_edit(hwnd, None);
     match command {
         Command::New => new_document(hwnd),
@@ -1737,7 +2321,7 @@ fn do_command(hwnd: HWND, command: Command) {
 fn history(hwnd: HWND, undo: bool) {
     // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let did = match undo {
                 true => state.app.undo(),
                 false => state.app.redo(),
@@ -1763,7 +2347,7 @@ fn copy(hwnd: HWND, cut: bool) {
     // SAFETY: one borrow; `clipboard::set_text` and `clear_range` each run with nothing else
     // borrowed.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let (start, end) = state.selection.rect();
             let text = clip::rect_text(&state.app, state.sheet, start, end, App::input_text);
             clipboard::set_text(hwnd, &text);
@@ -1786,7 +2370,7 @@ fn paste(hwnd: HWND) {
     let rows = clip::parse_rows(&text);
     // SAFETY: one borrow. `enter_range` notifies, and the observer posts rather than sends.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let (start, _) = state.selection.rect();
             match state
                 .app
@@ -1824,7 +2408,7 @@ fn paste(hwnd: HWND) {
 fn clear_cells(hwnd: HWND) {
     // SAFETY: one borrow; `clear_range` is one `Action::Batch`, so this is one Ctrl+Z.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let (start, end) = state.selection.rect();
             if let Err(error) = state.app.clear_range(state.sheet, start, end) {
                 state.say(Some(error.to_string()));
@@ -1839,7 +2423,7 @@ fn clear_cells(hwnd: HWND) {
 fn recalculate(hwnd: HWND) {
     // SAFETY: one borrow.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let said = match state.app.recalc() {
                 Ok(recalc) => notice::recalculated(recalc.changed, recalc.spoiled),
                 Err(error) => error.to_string(),
@@ -1859,7 +2443,7 @@ fn recalculate(hwnd: HWND) {
 fn sheet_step(hwnd: HWND, by: i64) {
     // SAFETY: one borrow.
     unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             let last = state.app.sheet_count().saturating_sub(1) as i64;
             let at = (state.sheet as i64 + by).clamp(0, last.max(0));
             state.sheet = at as usize;
@@ -1871,7 +2455,7 @@ fn sheet_step(hwnd: HWND, by: i64) {
 fn sheet_add(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt — which runs a nested message loop.
     let Some(suggested) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             format!("Sheet{}", state.app.sheet_count() + 1)
         })
     }) else {
@@ -1883,7 +2467,7 @@ fn sheet_add(hwnd: HWND) {
     };
     // SAFETY: a fresh borrow, taken after the dialog rather than across it.
     let refused = unsafe {
-        with_state(hwnd, |state| match state.app.add_sheet(&name) {
+        with_sheet(hwnd, |state| match state.app.add_sheet(&name) {
             Ok(at) => {
                 state.sheet = at;
                 state.selection = Selection::default();
@@ -1903,7 +2487,7 @@ fn sheet_add(hwnd: HWND) {
 fn sheet_rename(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt.
     let Some((sheet, current)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             (
                 state.sheet,
                 state.app.sheet_name(state.sheet).unwrap_or_default(),
@@ -1917,7 +2501,7 @@ fn sheet_rename(hwnd: HWND) {
     };
     // SAFETY: a fresh borrow, taken after the dialog rather than across it.
     let refused = unsafe {
-        with_state(hwnd, |state| match state.app.rename_sheet(sheet, &name) {
+        with_sheet(hwnd, |state| match state.app.rename_sheet(sheet, &name) {
             // The answer is **how many references were rewritten**, not an index — D10's whole
             // point, and worth saying: a rename that quietly carried three hundred formulas
             // with it is a thing to be told about, and to be able to take back in one step.
@@ -1940,7 +2524,7 @@ fn sheet_rename(hwnd: HWND) {
 fn sheet_delete(hwnd: HWND) {
     // SAFETY: one borrow, released before the question.
     let Some((sheet, name)) = (unsafe {
-        with_state(hwnd, |state| {
+        with_sheet(hwnd, |state| {
             (
                 state.sheet,
                 state.app.sheet_name(state.sheet).unwrap_or_default(),
@@ -1957,7 +2541,7 @@ fn sheet_delete(hwnd: HWND) {
     }
     // SAFETY: a fresh borrow, taken after the question rather than across it.
     let refused = unsafe {
-        with_state(hwnd, |state| match state.app.remove_sheet(sheet) {
+        with_sheet(hwnd, |state| match state.app.remove_sheet(sheet) {
             Ok(()) => {
                 state.sheet = sheet.min(state.app.sheet_count().saturating_sub(1));
                 state.selection = Selection::default();
@@ -1977,7 +2561,7 @@ fn sheet_delete(hwnd: HWND) {
 /// Save to the path the document came from, or ask for one. `true` means it is on disk.
 fn save(hwnd: HWND) -> bool {
     // SAFETY: one borrow, released before any dialog.
-    let path = unsafe { with_state(hwnd, |state| state.path.clone()) }.flatten();
+    let path = unsafe { with_pane(hwnd, |pane| pane.path()) }.flatten();
     match path {
         Some(path) => write(hwnd, &path),
         None => save_as(hwnd),
@@ -1986,7 +2570,7 @@ fn save(hwnd: HWND) -> bool {
 
 fn save_as(hwnd: HWND) -> bool {
     // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
-    let suggested = unsafe { with_state(hwnd, |state| state.path.clone()) }.flatten();
+    let suggested = unsafe { with_pane(hwnd, |pane| pane.path()) }.flatten();
     let Some(path) = dialog::save_path(hwnd, suggested.as_deref()) else {
         return false;
     };
@@ -2003,19 +2587,9 @@ fn save_as(hwnd: HWND) -> bool {
 fn write(hwnd: HWND, path: &Path) -> bool {
     // SAFETY: one borrow. `save_file` only reads the document: it notifies nothing, opens
     // nothing, and cannot dispatch a message.
-    let failed = unsafe {
-        with_state(hwnd, |state| match state.app.save_file(path) {
-            Ok(()) => {
-                state.path = Some(path.to_owned());
-                // No "Saved" banner: the title's `*` clearing is the confirmation, and routine
-                // success asking to be noticed is noise.
-                state.dirty = false;
-                None
-            }
-            Err(error) => Some(error.to_string()),
-        })
-    }
-    .flatten();
+    // No "Saved" banner: the title's `*` clearing is the confirmation, and routine success
+    // asking to be noticed is noise.
+    let failed = unsafe { with_pane(hwnd, |pane| pane.save_file(path).err()) }.flatten();
     match failed {
         Some(message) => {
             dialog::error(
@@ -2031,35 +2605,53 @@ fn write(hwnd: HWND, path: &Path) -> bool {
     }
 }
 
-/// Replace what the window is showing.
+/// Replace what the window is showing — **including with a document of the other kind**.
 ///
 /// The observer is registered again because it is bound to an `App` rather than to the window: a
 /// new document is a new `App`, and one nobody is listening to is one whose edits never mark the
 /// title. Registering it *after* the file has been read is also why this shell needs no "a load
 /// is not an edit" flag — during the read there is nobody to tell.
-fn adopt(hwnd: HWND, app: grind_sheet::App, path: Option<PathBuf>) {
-    // SAFETY: one borrow. `set_observer` stores an `Arc` and dispatches nothing.
+fn adopt(hwnd: HWND, pane: Pane) {
+    // SAFETY: one borrow. `set_observer` stores an `Arc` and dispatches nothing, and dropping the
+    // pane that was there releases its fonts and its document with no message in between.
     unsafe {
-        with_state(hwnd, |state| {
-            app.set_observer(Arc::new(Changed(hwnd.0 as isize)));
-            state.app = app;
-            state.path = path;
-            state.sheet = 0;
-            state.selection = Selection::default();
-            state.geom.first_row = 0;
-            state.geom.first_col = 0;
-            state.dirty = false;
-            state.say(None);
+        with_pane(hwnd, |slot| {
+            let observer = Arc::new(Changed(hwnd.0 as isize));
+            match &pane {
+                Pane::Sheet(sheet) => sheet.app.set_observer(observer),
+                Pane::Text(text) => text.app.set_observer(observer),
+            }
+            *slot = pane;
         });
     }
+    // A window that has just become a spreadsheet needs the two `EDIT`s a spreadsheet edits
+    // through; one that has just become a document needs nothing and gets nothing.
+    make_children(hwnd);
     refresh(hwnd);
 }
 
+/// A new, empty document **of the kind the window is already showing**.
+///
+/// Not a choice, and that is deliberate for now: a New Spreadsheet / New Document pair is a menu
+/// question, and W7 is where the menus are finished. `grind-win32 --text` and File ▸ Open reach
+/// the other kind today, which is the R9 answer in the meantime.
 fn new_document(hwnd: HWND) {
     if !offer_to_save(hwnd) {
         return;
     }
-    adopt(hwnd, grind_sheet::App::new(), None);
+    // SAFETY: one borrow, released before anything else happens.
+    let kind = unsafe {
+        with_pane(hwnd, |pane| match pane {
+            Pane::Sheet(_) => DocumentKind::Spreadsheet,
+            Pane::Text(_) => DocumentKind::Text,
+        })
+    };
+    let Some(kind) = kind else { return };
+    // SAFETY: one borrow, for the theme the new pane starts in.
+    let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
+    if let Ok(pane) = opened(kind, None, theme) {
+        adopt(hwnd, pane);
+    }
 }
 
 fn open_document(hwnd: HWND) {
@@ -2070,39 +2662,34 @@ fn open_document(hwnd: HWND) {
         return;
     };
     // The kind is read from the bytes rather than from the name, before anything is parsed —
-    // `grind_core::kind`, and `main.rs` asks it the same question about the command line.
-    match crate::sniff(&path) {
-        // The text pane is W5. Saying so is the honest answer; opening an empty spreadsheet
-        // instead would look like the file had failed to load.
-        Ok(grind_core::DocumentKind::Text) => dialog::error(
-            hwnd,
-            "This is a word processor document, and this build has no text pane yet \
-             (W5 — see doc/windows-shell.md).\n\nIt opens today in grind-tui, in \
-             grind-text-gtk, and in the browser shell.",
-        ),
-        Ok(_) => {
-            // Read into a *new* `App` rather than over the live one, so that a file that turns
-            // out to be unreadable leaves the window showing what it was showing.
-            let app = grind_sheet::App::new();
-            match app.open_file(&path) {
-                Ok(()) => adopt(hwnd, app, Some(path)),
-                Err(error) => dialog::error(
-                    hwnd,
-                    &format!("Could not open {}:\n\n{error}", path.display()),
-                ),
-            }
+    // `grind_core::kind`, and `main.rs` asks it the same question about the command line. **This
+    // is where one binary holding both document types stops being a claim**: a `.fodt` chosen
+    // here replaces the grid with a text pane in the same window.
+    let kind = match crate::sniff(&path) {
+        Ok(kind) => kind,
+        Err(message) => {
+            dialog::error(hwnd, &message);
+            return;
         }
-        Err(message) => dialog::error(hwnd, &message),
+    };
+    // SAFETY: one borrow, released before the document is read.
+    let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
+    // Read into a *new* pane rather than over the live one, so that a file that turns out to be
+    // unreadable leaves the window showing what it was showing.
+    match opened(kind, Some(path.clone()), theme) {
+        Ok(pane) => adopt(hwnd, pane),
+        Err(error) => dialog::error(
+            hwnd,
+            &format!("Could not open {}:\n\n{error}", path.display()),
+        ),
     }
 }
 
-/// The three-button question, asked whenever a document is about to be replaced or closed.
-/// `false` means the user cancelled and the caller must not go on.
 fn offer_to_save(hwnd: HWND) -> bool {
     // SAFETY: one borrow, released before the dialog — decision 7's rule, and the reason this is
     // a function rather than three lines in each of its three callers.
     let Some((dirty, name)) =
-        (unsafe { with_state(hwnd, |state| (state.dirty, state.document_name())) })
+        (unsafe { with_pane(hwnd, |pane| (pane.dirty(), pane.document_name())) })
     else {
         return true;
     };
@@ -2133,7 +2720,7 @@ fn close(hwnd: HWND) {
 ///
 /// Takes an `HDC` and the state and nothing about the window, which is what makes
 /// [`render`] a second *caller* rather than a second drawing path.
-fn draw_frame(dc: HDC, state: &State) {
+fn draw_frame(dc: HDC, state: &Sheet) {
     let rows = state.geom.visible_rows();
     let cols = state.geom.visible_cols();
     let viewport = state
@@ -2180,12 +2767,725 @@ fn paint(hwnd: HWND) {
         let dc: HDC = BeginPaint(hwnd, &mut ps);
         let rect = gdi::client_rect(hwnd);
         if let Some(buffer) = BackBuffer::new(dc, rect.right - rect.left, rect.bottom - rect.top) {
-            with_state(hwnd, |state| {
-                buffer.clear(state.theme.background);
-                draw_frame(buffer.dc(), state);
+            with_pane(hwnd, |pane| {
+                buffer.clear(pane.theme().background);
+                match pane {
+                    Pane::Sheet(sheet) => draw_frame(buffer.dc(), sheet),
+                    Pane::Text(text) => draw_text_frame(buffer.dc(), text),
+                }
             });
             buffer.present(dc);
         }
         let _ = EndPaint(hwnd, &ps);
     }
+}
+
+// --- the text pane (W5) ---
+//
+// Everything below belongs to the word processor's pane. The shape is deliberately the same as
+// the grid's above — a refresh that rebuilds everything derived, a frame that takes an `HDC` and
+// no `HWND`, handlers that borrow the state for the length of one message — so that the two panes
+// are two documents in one window rather than two programs in one binary.
+
+/// Whether this window is showing a document rather than a spreadsheet.
+///
+/// Asked at the top of each shared handler rather than by giving every message two arms, because
+/// most of them *are* one pane's: the grid's forty handlers kept the shape they had.
+fn is_text(hwnd: HWND) -> bool {
+    // SAFETY: one borrow, for one bit; nothing inside dispatches.
+    unsafe { with_pane(hwnd, |pane| matches!(pane, Pane::Text(_))) }.unwrap_or(false)
+}
+
+/// Start the caret blinking at the user's own rate.
+///
+/// `GetCaretBlinkTime` is the setting the keyboard control panel writes, and honouring it is the
+/// difference between drawing a caret and inventing one. `INFINITE` means the user turned
+/// blinking off — an accessibility setting, and one this shell obeys by never starting a timer.
+fn start_blinking(hwnd: HWND) {
+    if !is_text(hwnd) {
+        return;
+    }
+    // SAFETY: no arguments; the timer is destroyed with the window.
+    unsafe {
+        let interval = GetCaretBlinkTime();
+        if interval == 0 || interval == u32::MAX {
+            return;
+        }
+        SetTimer(Some(hwnd), ID_CARET_TIMER, interval, None);
+    }
+}
+
+/// One blink. Only the caret's own line is worth repainting, but the window is small and the
+/// frame is double-buffered, so the whole of it is invalidated — measured as imperceptible under
+/// Wine, and the alternative is a rectangle that has to be kept in step with the layout.
+fn blink(hwnd: HWND) {
+    // SAFETY: one borrow, for one bit; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| text.caret_on = !text.caret_on);
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// The text pane's [`refresh`]: rebuild the bands, re-measure the document, follow the caret.
+fn text_refresh(hwnd: HWND) {
+    let rect = gdi::client_rect(hwnd);
+    // SAFETY: `hwnd` is this window's.
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+    // SAFETY: one borrow; `relayout` measures text and dispatches nothing.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.relayout(
+                f64::from(rect.right - rect.left),
+                f64::from(rect.bottom - rect.top),
+                dpi,
+            );
+            text.reveal();
+            text_scrollbars(hwnd, text);
+        });
+    }
+    // SAFETY: the borrow above is released before the caption is rewritten, which dispatches.
+    let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
+    unsafe {
+        if let Some(title) = title
+            && window_text(hwnd) != title
+        {
+            let wide = gdi::wide(&title);
+            let _ = SetWindowTextW(hwnd, PCWSTR(wide.as_ptr()));
+        }
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// The scrollbars for a document, which are **pixels** where the grid's are tracks.
+///
+/// That difference is the reason this is not `sync_scrollbars` with a flag: a sheet is twenty
+/// million pixels tall and only a million rows, so it has to scroll in tracks; a document is as
+/// tall as it measures, and a line is not a unit anything else in this pane counts in. The
+/// horizontal bar is disabled outright — the measure is fixed, so there is nothing to scroll to.
+fn text_scrollbars(hwnd: HWND, text: &Text) {
+    let page = text.page.body().h.max(1.0);
+    let info = SCROLLINFO {
+        cbSize: u32::try_from(std::mem::size_of::<SCROLLINFO>()).expect("small"),
+        fMask: SCROLLINFO_MASK(SIF_RANGE.0 | SIF_PAGE.0 | SIF_POS.0),
+        nMin: 0,
+        nMax: text.flow.height().round() as i32,
+        nPage: page.round() as u32,
+        nPos: text.page.scroll.round() as i32,
+        nTrackPos: 0,
+    };
+    // SAFETY: `info` is a live, fully initialised local read for the length of the call.
+    unsafe {
+        SetScrollInfo(hwnd, SB_VERT, &info, true);
+        let flat = SCROLLINFO {
+            nMax: 0,
+            nPage: 1,
+            nPos: 0,
+            ..info
+        };
+        SetScrollInfo(hwnd, SB_HORZ, &flat, true);
+    }
+}
+
+/// Move the view by a number of pixels, clamped to the document.
+fn text_scroll_by(hwnd: HWND, delta: f64) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| {
+            let page = text.page.body().h;
+            let limit = text.flow.limit(page);
+            let to = (text.page.scroll + delta).clamp(0.0, limit);
+            if to == text.page.scroll {
+                return;
+            }
+            text.page.scroll = to;
+            text_scrollbars(hwnd, text);
+        });
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// One scrollbar message on the document.
+fn text_scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
+    if !vertical {
+        return;
+    }
+    let code = (wparam.0 & 0xffff) as i32;
+    let thumb = ((wparam.0 >> 16) & 0xffff) as i32;
+    // SAFETY: one borrow, for two numbers; nothing inside dispatches.
+    let Some((at, page, line)) = (unsafe {
+        with_text(hwnd, |text| {
+            (
+                text.page.scroll,
+                text.page.body().h,
+                text.fonts.as_ref().map(Fonts::body_px).unwrap_or(15.0) * 1.3,
+            )
+        })
+    }) else {
+        return;
+    };
+    let delta = match scroll_code(code) {
+        SB_LINEUP => -line,
+        SB_LINEDOWN => line,
+        SB_PAGEUP => -page,
+        SB_PAGEDOWN => page,
+        SB_TOP => -at,
+        SB_BOTTOM => f64::MAX / 4.0,
+        // Dragging reports an absolute position rather than a delta, and both codes are handled
+        // so the view follows the thumb live instead of jumping on release.
+        SB_THUMBPOSITION | SB_THUMBTRACK => f64::from(thumb) - at,
+        _ => return,
+    };
+    text_scroll_by(hwnd, delta);
+}
+
+/// The wheel over a document: the user's own `SPI_GETWHEELSCROLLLINES`, in lines of prose.
+fn text_wheel(hwnd: HWND, notches: f64, lines: u32) {
+    // SAFETY: one borrow, for one number; nothing inside dispatches.
+    let Some((line, page)) = (unsafe {
+        with_text(hwnd, |text| {
+            (
+                text.fonts.as_ref().map(Fonts::body_px).unwrap_or(15.0) * 1.3,
+                text.page.body().h,
+            )
+        })
+    }) else {
+        return;
+    };
+    // Zero means "do not scroll", which is a real setting; `WHEEL_PAGESCROLL` means a screenful.
+    let step = match lines {
+        0 => return,
+        u32::MAX => page,
+        n => f64::from(n) * line,
+    };
+    text_scroll_by(hwnd, -notches * step);
+}
+
+/// One keystroke in the text pane. `false` hands it back to `DefWindowProc`.
+fn text_key(hwnd: HWND, vk: u32) -> bool {
+    let key = keymap::key_for(vk);
+    let mods = mods();
+    // Verbs first, so that Ctrl+S is Save rather than whatever `S` would otherwise be — the same
+    // order `sheet/state.rs` uses, and the same table.
+    if let Some(command) = menu::accelerator(key, mods) {
+        do_command(hwnd, command);
+        return true;
+    }
+    // SAFETY: one borrow, for the page size; nothing inside dispatches.
+    let page = unsafe { with_text(hwnd, |text| text.page_lines()) }.unwrap_or(20);
+    let Some(action) = text::keymap::action_for(key, mods, page) else {
+        return false;
+    };
+    match action {
+        text::keymap::Action::Move { motion, extend } => {
+            // SAFETY: one borrow; every answer inside is the core's, and none of them dispatches.
+            unsafe {
+                with_text(hwnd, |text| {
+                    text.navigate(motion, extend);
+                    // A moving caret is a visible caret: blinking it off under the user's finger
+                    // is the one thing a caret must never do.
+                    text.caret_on = true;
+                    text_scrollbars(hwnd, text);
+                });
+                let _ = InvalidateRect(Some(hwnd), None, false);
+            }
+        }
+        text::keymap::Action::SelectAll => {
+            // SAFETY: one borrow; nothing inside dispatches.
+            unsafe {
+                with_text(hwnd, |text| {
+                    text.anchor = START;
+                    text.caret = text.last_caret();
+                    text.goal_x = None;
+                    text.reveal();
+                });
+                let _ = InvalidateRect(Some(hwnd), None, false);
+            }
+        }
+        text::keymap::Action::Erase { forward } => text_erase(hwnd, forward),
+        text::keymap::Action::Split => text_split(hwnd),
+        text::keymap::Action::Tab => text_insert(hwnd, "\t"),
+    }
+    true
+}
+
+/// A character, after the keyboard layout and after the IME.
+///
+/// Control characters arrive here too — Escape is `\u{1b}` and Enter is `\r`, because
+/// `TranslateMessage` produces a `WM_CHAR` for both — and none of them is text. Return and
+/// Backspace are handled as *keys* above, which is where they belong.
+///
+/// ponytail: a character outside the basic multilingual plane arrives as two `WM_CHAR`s carrying
+/// one surrogate each and `char::from_u32` refuses both, so an emoji cannot be typed here. The fix
+/// is to hold a pending high surrogate in the pane; it belongs with the `WM_IME_*` path, which is
+/// W5's remaining half, and doing it now would be a second copy of that state.
+fn text_char(hwnd: HWND, c: char) -> bool {
+    let m = mods();
+    if m.ctrl || m.alt || c.is_control() {
+        return false;
+    }
+    text_insert(hwnd, &c.to_string());
+    true
+}
+
+/// Type text at the caret, replacing the selection if there is one.
+///
+/// One `Action::Batch` per keystroke would be one Ctrl+Z per keystroke; that the erase and the
+/// insert are two is a named gap, not an oversight — `App` has no "replace" and adding one is a
+/// core change rather than a shell one.
+fn text_insert(hwnd: HWND, what: &str) {
+    // SAFETY: one borrow. `insert_text` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            text_drop_selection(text);
+            let at = text.caret;
+            match text.app.insert_text(at, what) {
+                Ok(()) => {
+                    text.place(
+                        Caret {
+                            block: at.block,
+                            offset: at.offset + what.chars().count(),
+                        },
+                        false,
+                    );
+                    text.caret_on = true;
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Backspace and Delete.
+fn text_erase(hwnd: HWND, forward: bool) {
+    // SAFETY: one borrow. `erase` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            if text_drop_selection(text) {
+                text.caret_on = true;
+                return;
+            }
+            let at = text.caret;
+            // At a block's edge the character to remove is the *break* between two blocks, which
+            // is `erase` across the boundary rather than a join: one verb, one undo step, and no
+            // second rule about what happens to the kinds.
+            let (from, to) = match forward {
+                true if at.offset < text.block_len(at.block) => (
+                    at,
+                    Caret {
+                        block: at.block,
+                        offset: at.offset + 1,
+                    },
+                ),
+                true if at.block + 1 < text.app.block_count() => (
+                    at,
+                    Caret {
+                        block: at.block + 1,
+                        offset: 0,
+                    },
+                ),
+                false if at.offset > 0 => (
+                    Caret {
+                        block: at.block,
+                        offset: at.offset - 1,
+                    },
+                    at,
+                ),
+                false if at.block > 0 => (
+                    Caret {
+                        block: at.block - 1,
+                        offset: text.block_len(at.block - 1),
+                    },
+                    at,
+                ),
+                // The very start or the very end of the document: nothing to erase, and nothing
+                // to say about it either.
+                _ => return,
+            };
+            match text.app.erase(from, to) {
+                Ok(_) => {
+                    text.place(from, false);
+                    text.caret_on = true;
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// The Return key: one block becomes two, and the caret goes to the front of the second.
+fn text_split(hwnd: HWND) {
+    // SAFETY: one borrow. `split_block` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            text_drop_selection(text);
+            let at = text.caret;
+            match text.app.split_block(at) {
+                Ok(()) => {
+                    text.place(
+                        Caret {
+                            block: at.block + 1,
+                            offset: 0,
+                        },
+                        false,
+                    );
+                    text.caret_on = true;
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Erase whatever is selected, leaving the caret where it was. `true` when there was something.
+///
+/// A free function rather than a method because it is the *editing* half of the selection and
+/// every edit begins with it: typing over a selection replaces it, which is what every editor
+/// does and the one thing a shell must not forget.
+fn text_drop_selection(text: &mut Text) -> bool {
+    if !text.has_selection() {
+        return false;
+    }
+    let (from, to) = text.range();
+    match text.app.erase(from, to) {
+        Ok(_) => {
+            text.place(from, false);
+            text.say(None);
+            true
+        }
+        Err(error) => {
+            text.say(Some(error.to_string()));
+            false
+        }
+    }
+}
+
+/// A press of the left button: the caret goes where the pointer is, and dragging extends.
+fn text_button_down(hwnd: HWND, lparam: LPARAM) {
+    let (x, y) = point(lparam);
+    let extend = mods().shift;
+    // SAFETY: one borrow; the hit test is arithmetic over a layout and dispatches nothing.
+    unsafe {
+        with_text(hwnd, |text| {
+            if let Some(at) = text.caret_at(x, y) {
+                text.place(at, extend);
+                text.dragging = true;
+                text.caret_on = true;
+            }
+        });
+        // Capture, so that a drag that leaves the window still reports where it went — the same
+        // arrangement the grid has, and the reason `button_up` releases it on both panes.
+        SetCapture(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// A drag in progress. Nothing happens when no button is down: a plain move over a document has
+/// to cost nothing, because it arrives on every pixel of travel.
+fn text_mouse_move(hwnd: HWND, x: f64, y: f64) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    let moved = unsafe {
+        with_text(hwnd, |text| {
+            if !text.dragging {
+                return false;
+            }
+            match text.caret_at(x, y) {
+                Some(at) if at != text.caret => {
+                    text.place(at, true);
+                    true
+                }
+                _ => false,
+            }
+        })
+    };
+    if moved == Some(true) {
+        // SAFETY: the borrow above has been released.
+        unsafe {
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
+    }
+}
+
+/// A double click selects the word under it — the one gesture a text pane owes that a grid does
+/// not, and it is [`text::keymap::word_boundary`] twice rather than a rule of its own.
+fn text_double_click(hwnd: HWND, lparam: LPARAM) {
+    let (x, y) = point(lparam);
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| {
+            let Some(at) = text.caret_at(x, y) else {
+                return;
+            };
+            let line = text.block_text(at.block);
+            let start = text::keymap::word_boundary(&line, at.offset, false).unwrap_or(0);
+            let end = text::keymap::word_boundary(&line, start, true)
+                .unwrap_or_else(|| line.chars().count());
+            text.anchor = Caret {
+                block: at.block,
+                offset: start,
+            };
+            text.caret = Caret {
+                block: at.block,
+                // A word motion forward stops at the *next* word's start, so trailing spaces
+                // would come with it; the selection stops where the word does.
+                offset: trim_trailing_spaces(&line, start, end),
+            };
+            text.goal_x = None;
+            text.caret_on = true;
+        });
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// Where the word starting at `start` really ends, given that word motion stops at the beginning
+/// of the next one.
+fn trim_trailing_spaces(text: &str, start: usize, end: usize) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = end.min(chars.len());
+    while at > start && chars[at - 1].is_whitespace() {
+        at -= 1;
+    }
+    at
+}
+
+/// A verb, in the text pane. Exhaustive on [`Command`] for the same reason the grid's is: a verb
+/// added to `menu.rs` and nowhere else fails the build rather than doing nothing.
+///
+/// The verbs that are the *spreadsheet's* are no-ops here and say nothing about it — Recalculate
+/// and the four sheet verbs cannot be greyed out until W7 makes the menus state-aware, and a
+/// message box saying "this document has no sheets" would be worse than nothing happening.
+fn text_command(hwnd: HWND, command: Command) {
+    match command {
+        Command::New => new_document(hwnd),
+        Command::Open => open_document(hwnd),
+        Command::Save => {
+            save(hwnd);
+        }
+        Command::SaveAs => {
+            save_as(hwnd);
+        }
+        Command::Exit => {
+            // SAFETY: nothing is borrowed, and posting only queues the message.
+            unsafe {
+                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+        Command::Undo => text_history(hwnd, true),
+        Command::Redo => text_history(hwnd, false),
+        Command::Cut => text_copy(hwnd, true),
+        Command::Copy => text_copy(hwnd, false),
+        Command::Paste => text_paste(hwnd),
+        // Delete's verb. A selection is erased; with no selection there is nothing to clear,
+        // because a document has no cells to empty.
+        Command::ClearCells => text_erase(hwnd, true),
+        Command::About => dialog::about(hwnd),
+        // The spreadsheet's, and this pane has no answer to any of them.
+        Command::GoTo
+        | Command::Recalculate
+        | Command::SheetAdd
+        | Command::SheetRename
+        | Command::SheetDelete
+        | Command::SheetNext
+        | Command::SheetPrevious => {}
+    }
+}
+
+fn text_history(hwnd: HWND, undo: bool) {
+    // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            let did = match undo {
+                true => text.app.undo(),
+                false => text.app.redo(),
+            };
+            if did {
+                // Whatever the banner said was about the document as it was — and the caret may
+                // now be past the end of a block that shrank.
+                text.say(None);
+                let block = text
+                    .caret
+                    .block
+                    .min(text.app.block_count().saturating_sub(1));
+                let offset = text.caret.offset.min(text.block_len(block));
+                text.place(Caret { block, offset }, false);
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Copy the selection to the clipboard as `CF_UNICODETEXT`, and with `cut`, erase it afterwards.
+///
+/// What travels is the document's **plain text**, one `\r\n` per block: the shape every other
+/// program on this platform reads. The formatting does not travel, which is the honest position
+/// for a build with no `CF_RTF` or `HTML Format` writer — and a named gap rather than a silent
+/// one, because pasting into WordPad and losing the bold is the sort of thing a user attributes
+/// to the document.
+fn text_copy(hwnd: HWND, cut: bool) {
+    // SAFETY: one borrow, released before the clipboard is opened — `clipboard.rs` is the only
+    // file that opens it and it does so with nothing else borrowed.
+    let copied = unsafe {
+        with_text(hwnd, |text| {
+            if !text.has_selection() {
+                return None;
+            }
+            let (from, to) = text.range();
+            let mut out = String::new();
+            for block in from.block..=to.block.min(text.app.block_count().saturating_sub(1)) {
+                let line: Vec<char> = text.block_text(block).chars().collect();
+                let start = match block == from.block {
+                    true => from.offset.min(line.len()),
+                    false => 0,
+                };
+                let end = match block == to.block {
+                    true => to.offset.min(line.len()),
+                    false => line.len(),
+                };
+                if block > from.block {
+                    out.push_str("\r\n");
+                }
+                out.extend(&line[start.min(end)..end]);
+            }
+            Some(out)
+        })
+    }
+    .flatten();
+    let Some(text) = copied else { return };
+    clipboard::set_text(hwnd, &text);
+    if cut {
+        // SAFETY: a fresh borrow, taken after the clipboard call rather than across it.
+        unsafe {
+            with_text(hwnd, |pane| {
+                text_drop_selection(pane);
+            });
+        }
+        refresh(hwnd);
+    }
+}
+
+/// Paste text at the caret. A newline in what arrives becomes a block break, which is what makes
+/// pasting a paragraph of prose produce paragraphs rather than one line with `\n` in it.
+fn text_paste(hwnd: HWND) {
+    let Some(what) = clipboard::get_text(hwnd) else {
+        return;
+    };
+    // `\r\n` and a bare `\n` both mean the same thing, and a document that came from any other
+    // program may carry either.
+    let lines: Vec<&str> = what
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r'))
+        .collect();
+    // SAFETY: one borrow. Every call inside notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            text_drop_selection(text);
+            for (index, line) in lines.iter().enumerate() {
+                if index > 0 {
+                    let at = text.caret;
+                    if text.app.split_block(at).is_err() {
+                        break;
+                    }
+                    text.caret = Caret {
+                        block: at.block + 1,
+                        offset: 0,
+                    };
+                }
+                if line.is_empty() {
+                    continue;
+                }
+                let at = text.caret;
+                if text.app.insert_text(at, line).is_err() {
+                    break;
+                }
+                text.caret = Caret {
+                    block: at.block,
+                    offset: at.offset + line.chars().count(),
+                };
+            }
+            text.place(text.caret, false);
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Everything one frame of the text pane needs, drawn onto a device context.
+///
+/// Takes an `HDC` and the state and nothing about the window, which is what makes [`render`] a
+/// second *caller* rather than a second drawing path — the same property the grid's `draw_frame`
+/// has, and the reason `--render-to` works for a document too.
+fn draw_text_frame(dc: HDC, state: &Text) {
+    let body = state.page.body();
+    let visible = state
+        .flow
+        .visible(state.page.scroll, state.page.scroll + body.h);
+    // Exactly the blocks on screen reach `get_viewport`, which is architecture rule 1: no getter
+    // hands out the whole document.
+    let range = match (visible.first(), visible.last()) {
+        (Some(first), Some(last)) => first.index..last.index + 1,
+        _ => 0..0,
+    };
+    let viewport = state.app.get_viewport(range);
+    let Some(faces) = state.faces() else { return };
+    let mut blocks = Vec::with_capacity(visible.len());
+    for slot in visible {
+        let Some(view) = viewport.get(slot.index) else {
+            continue;
+        };
+        let (width, metrics) =
+            grind_text::Faces::of(&faces, slot.index, &view.kind, view.style.as_deref());
+        let Ok(layout) = state.app.layout_block(slot.index, width, metrics) else {
+            continue;
+        };
+        blocks.push(text::draw::Painted {
+            slot: *slot,
+            view,
+            layout,
+        });
+    }
+    let status = text::status::status_line(
+        &grind_text::loc::format_offset(state.caret.block, state.caret.offset),
+        selected_chars(state),
+        state.app.counts(),
+    );
+    text::draw::paint(
+        dc,
+        &text::draw::Frame {
+            page: &state.page,
+            theme: state.theme,
+            faces: &faces,
+            blocks: &blocks,
+            selection: state.range(),
+            caret: state.caret,
+            caret_on: state.caret_on,
+            status: &status,
+            banner: state.banner.as_deref(),
+            font_px: scale(FONT_PX, state.page.dpi).round() as i32,
+            face: FACE,
+        },
+    );
+}
+
+/// How many characters the selection covers — what the status bar says.
+///
+/// Counted rather than subtracted, because a selection that spans blocks covers the breaks
+/// between them as well, and each of those is one character a `Caret` can sit either side of.
+fn selected_chars(state: &Text) -> usize {
+    let (from, to) = state.range();
+    if from == to {
+        return 0;
+    }
+    if from.block == to.block {
+        return to.offset.saturating_sub(from.offset);
+    }
+    let mut total = state.block_len(from.block).saturating_sub(from.offset) + to.offset;
+    for block in from.block + 1..to.block {
+        total += state.block_len(block) + 1;
+    }
+    total + 1
 }
