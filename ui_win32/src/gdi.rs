@@ -19,8 +19,9 @@
 
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontIndirectW, CreateSolidBrush,
-    DeleteDC, DeleteObject, FW_BOLD, FW_NORMAL, FillRect, HBITMAP, HBRUSH, HDC, HFONT, HGDIOBJ,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
+    CreateDIBSection, CreateFontIndirectW, CreateSolidBrush, DIB_RGB_COLORS, DeleteDC,
+    DeleteObject, FW_BOLD, FW_NORMAL, FillRect, GdiFlush, HBITMAP, HBRUSH, HDC, HFONT, HGDIOBJ,
     LOGFONTW, SRCCOPY, SelectObject,
 };
 
@@ -259,4 +260,137 @@ pub fn client_rect(hwnd: HWND) -> RECT {
 /// A Rust string as the NUL-terminated UTF-16 every `…W` entry point wants.
 pub fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// A drawing surface with **no window, no compositor and no display** — the whole of
+/// `--render-to` (`doc/windows-shell.md`, decision 5).
+///
+/// `CreateCompatibleDC(None)` gives a memory DC that is not derived from any window, and
+/// `CreateDIBSection` gives it pixels this process can read back afterwards. That combination is
+/// why one frame can be drawn and written out on a headless `windows-latest` runner, and under
+/// Wine on a Linux one: nothing here asks the window manager for anything.
+///
+/// **24 bits per pixel, bottom-up**, and both halves are for the same reason — the bits a
+/// section hands back are then already in a `.bmp` file's own layout, so [`Dib::bmp`] is a
+/// 54-byte header in front of them rather than an encoder. A 32-bit section would have a fourth
+/// byte per pixel that GDI leaves undefined, which is exactly the thing a byte-for-byte
+/// comparison must not depend on.
+pub struct Dib {
+    dc: HDC,
+    bitmap: HBITMAP,
+    previous: HGDIOBJ,
+    bits: *mut u8,
+    width: i32,
+    height: i32,
+}
+
+impl Dib {
+    /// A BMP row is padded to a four-byte boundary, which is a property of the *format* rather
+    /// than of this code — `CreateDIBSection` lays its rows out the same way.
+    fn stride(width: i32) -> usize {
+        (width as usize * 3).div_ceil(4) * 4
+    }
+
+    pub fn new(width: i32, height: i32) -> Option<Self> {
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: u32::try_from(std::mem::size_of::<BITMAPINFOHEADER>()).expect("forty"),
+                biWidth: width,
+                // Positive: a bottom-up DIB, which is what a `.bmp` file holds. GDI still draws
+                // with y increasing downwards — the orientation is the memory layout's, not the
+                // coordinate system's, so nothing above this has to know.
+                biHeight: height,
+                biPlanes: 1,
+                biBitCount: 24,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        // SAFETY: `info` is a fully initialised local read for the length of the call, and
+        // `bits` is written by it with a pointer owned by the bitmap — released in `Drop`.
+        unsafe {
+            let dc = CreateCompatibleDC(None);
+            if dc.is_invalid() {
+                return None;
+            }
+            let bitmap = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0)
+                .ok()
+                .filter(|bitmap| !bitmap.is_invalid());
+            let Some(bitmap) = bitmap else {
+                let _ = DeleteDC(dc);
+                return None;
+            };
+            let previous = SelectObject(dc, HGDIOBJ(bitmap.0));
+            Some(Self {
+                dc,
+                bitmap,
+                previous,
+                bits: bits.cast(),
+                width,
+                height,
+            })
+        }
+    }
+
+    pub fn dc(&self) -> HDC {
+        self.dc
+    }
+
+    /// The surface as the bytes of a `.bmp` file.
+    ///
+    /// No encoder and no dependency: a 14-byte file header, the 40-byte info header the section
+    /// was made with, and the bits themselves, which are already in the right order and the
+    /// right padding. That is also what makes the output *comparable* — two runs that drew the
+    /// same thing produce the same bytes, with nothing in the file that could differ.
+    pub fn bmp(&self) -> Vec<u8> {
+        // GDI batches drawing calls; without this the bits may not have been written yet, and
+        // the frame would be missing whatever was still in the queue.
+        // SAFETY: no arguments.
+        unsafe {
+            let _ = GdiFlush();
+        }
+        let stride = Self::stride(self.width);
+        let pixels = stride * self.height as usize;
+        let header = 14 + std::mem::size_of::<BITMAPINFOHEADER>();
+        let mut out = Vec::with_capacity(header + pixels);
+        out.extend_from_slice(b"BM");
+        out.extend_from_slice(
+            &u32::try_from(header + pixels)
+                .unwrap_or(u32::MAX)
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&u32::try_from(header).expect("small").to_le_bytes());
+        out.extend_from_slice(&u32::try_from(header - 14).expect("forty").to_le_bytes());
+        out.extend_from_slice(&self.width.to_le_bytes());
+        out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&24u16.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
+        out.extend_from_slice(&u32::try_from(pixels).unwrap_or(0).to_le_bytes());
+        out.extend_from_slice(&[0u8; 16]); // resolution, palette counts: all zero, all optional
+        // SAFETY: the section owns `pixels` bytes at `self.bits` until this object is dropped,
+        // and nothing else is writing them — this process is the only drawer and `GdiFlush`
+        // above has finished the batch.
+        out.extend_from_slice(unsafe { std::slice::from_raw_parts(self.bits, pixels) });
+        out
+    }
+}
+
+impl Drop for Dib {
+    fn drop(&mut self) {
+        // SAFETY: the bitmap is deselected before it is deleted and the DC deleted last — the
+        // same order, and for the same reason, as `BackBuffer`.
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            let _ = DeleteObject(HGDIOBJ(self.bitmap.0));
+            let _ = DeleteDC(self.dc);
+        }
+    }
 }

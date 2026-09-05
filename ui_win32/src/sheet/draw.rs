@@ -22,6 +22,33 @@ use grind_sheet::style::CellStyle;
 use crate::theme::{Rgb, Theme};
 
 use super::geom::GridGeom;
+use super::keymap::Selection;
+
+/// How far a selected cell's ground moves towards [`Theme::selection`].
+///
+/// A wash rather than a fill, and the number is what makes that true: at 0.22 a document's own
+/// red is still red and still visibly selected. GDI has no alpha, so this is applied by
+/// [`Rgb::blend`] before anything is painted — see [`ground`].
+pub const WASH: f64 = 0.22;
+
+/// What colour a cell's ground is actually painted, once the selection is taken into account.
+///
+/// `None` means "paint nothing here" — the window's own background is already down, and filling
+/// it again per cell is work for no pixels.
+///
+/// The **active cell is never washed**, even inside a large selection. That is what makes it
+/// read as the cell the cursor is in rather than as one more selected cell, and it is the same
+/// choice `ui_sheet_gtk` makes ("the active cell left out of the wash").
+pub fn ground(background: Option<Rgb>, theme: Theme, selected: bool, active: bool) -> Option<Rgb> {
+    match selected && !active {
+        false => background,
+        true => Some(
+            background
+                .unwrap_or(theme.background)
+                .blend(theme.selection, WASH),
+        ),
+    }
+}
 
 /// Which end of the cell the text sits at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,7 +157,7 @@ mod windows_impl {
         SetBkMode, SetTextColor, TRANSPARENT,
     };
 
-    use super::{Align, Appearance, GridGeom, Theme};
+    use super::{Align, Appearance, GridGeom, Selection, Theme};
     use crate::gdi::{self, Font, Selected};
     use crate::theme::Rgb;
 
@@ -144,6 +171,16 @@ mod windows_impl {
         pub viewport: &'a grind_sheet::Viewport,
         /// The name of the sheet being drawn and what the status bar says about it.
         pub status: &'a str,
+        /// What the name box shows — an address, or the name of the range if it has one.
+        ///
+        /// Drawn here rather than read out of the child `EDIT` control, and that is deliberate
+        /// on two counts: the box is a read-out until somebody types in it (the control is
+        /// created hidden and shown over this rectangle on demand), and `--render-to` has no
+        /// window at all, so anything only a control could draw would be missing from every
+        /// rendered frame.
+        pub name: &'a str,
+        /// The selection, which is presentation state and never leaves the shell.
+        pub selection: Selection,
         /// The point size the shell font is drawn at, already scaled for this monitor's DPI.
         pub font_px: i32,
         pub face: &'a str,
@@ -192,7 +229,10 @@ mod windows_impl {
                     let value = frame.viewport.get(row, col).unwrap_or(&empty);
                     let look = Appearance::of(value, frame.viewport.style(row, col));
                     let (left, top, right, bottom) = rect.edges();
-                    if let Some(fill) = look.background {
+                    let selected = frame.selection.contains(row, col);
+                    let active =
+                        frame.selection.active.row == row && frame.selection.active.col == col;
+                    if let Some(fill) = super::ground(look.background, theme, selected, active) {
                         gdi::fill(dc, left, top, right, bottom, fill);
                     }
                     // The grid's own hairlines: the right and bottom edges of every cell, so
@@ -222,6 +262,11 @@ mod windows_impl {
             }
         }
 
+        // The outline round the selected rectangle, drawn after the cells so it sits on top of
+        // their hairlines, and before the headers so those still cover it where it runs under
+        // the band.
+        outline(dc, frame);
+
         // The headers, over the cells — a cell scrolled under the header band must not show
         // through it, and drawing them second is cheaper than clipping the loop above.
         {
@@ -229,25 +274,29 @@ mod windows_impl {
             gdi::fill(
                 dc,
                 0,
-                0,
+                g.strip_h.round() as i32,
                 g.width.round() as i32,
-                g.header_h.round() as i32,
+                (g.strip_h + g.header_h).round() as i32,
                 theme.header,
             );
             gdi::fill(
                 dc,
                 0,
-                0,
+                g.strip_h.round() as i32,
                 g.header_w.round() as i32,
                 (body.y + body.h).round() as i32,
                 theme.header,
             );
+            let (start, end) = frame.selection.rect();
             for col in g.visible_cols() {
                 let rect = g.col_header_rect(col);
                 if rect.w <= 0.0 {
                     continue;
                 }
                 let (left, top, right, bottom) = rect.edges();
+                if (start.col..=end.col).contains(&col) {
+                    gdi::fill(dc, left, top, right, bottom, theme.header_active);
+                }
                 gdi::fill(dc, right - 1, top, right, bottom, theme.header_line);
                 draw_text(
                     dc,
@@ -267,6 +316,9 @@ mod windows_impl {
                     continue;
                 }
                 let (left, top, right, bottom) = rect.edges();
+                if (start.row..=end.row).contains(&row) {
+                    gdi::fill(dc, left, top, right, bottom, theme.header_active);
+                }
                 gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
                 draw_text(
                     dc,
@@ -286,18 +338,43 @@ mod windows_impl {
             gdi::fill(
                 dc,
                 0,
-                (g.header_h - 1.0).round() as i32,
+                (g.strip_h + g.header_h - 1.0).round() as i32,
                 g.width.round() as i32,
-                g.header_h.round() as i32,
+                (g.strip_h + g.header_h).round() as i32,
                 theme.header_line,
             );
             gdi::fill(
                 dc,
                 (g.header_w - 1.0).round() as i32,
-                0,
+                g.strip_h.round() as i32,
                 g.header_w.round() as i32,
                 (body.y + body.h).round() as i32,
                 theme.header_line,
+            );
+        }
+
+        // The strip along the top, and the name box in it.
+        {
+            let _font = Selected::font(dc, &regular);
+            let strip = g.strip_rect();
+            let (left, top, right, bottom) = strip.edges();
+            gdi::fill(dc, left, top, right, bottom, theme.header);
+            gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
+
+            let field = g.name_box_rect();
+            let (left, top, right, bottom) = field.edges();
+            gdi::fill(dc, left, top, right, bottom, theme.field_line);
+            gdi::fill(dc, left + 1, top + 1, right - 1, bottom - 1, theme.field);
+            draw_text(
+                dc,
+                frame.name,
+                left,
+                top,
+                right,
+                bottom,
+                Align::Left,
+                theme.text,
+                crate::sheet::geom::scale(PAD, g.dpi),
             );
         }
 
@@ -319,6 +396,48 @@ mod windows_impl {
                 theme.status_text,
                 crate::sheet::geom::scale(8.0, g.dpi),
             );
+        }
+    }
+
+    /// The outline round the selected rectangle.
+    ///
+    /// Four bars rather than a frame, each clipped to the body, because a selection is
+    /// routinely bigger than the window — clicking a column header selects a million rows, and
+    /// its bottom edge is twenty million pixels down. Each edge is drawn only where the body
+    /// actually reaches it, so the two sides of a tall selection are drawn and its bottom is
+    /// not, which is what the eye wants anyway.
+    fn outline(dc: HDC, frame: &Frame) {
+        let g = frame.geom;
+        let (start, end) = frame.selection.rect();
+        let first = g.cell_rect(start.row, start.col);
+        let last = g.cell_rect(end.row, end.col);
+        let body = g.body();
+        // Clamped in `f64` before the cast: `cell_rect` for the last row of the sheet is tens
+        // of millions of pixels down, and while that fits an `i32` it is worth never letting
+        // the arithmetic depend on that.
+        let clamp = |v: f64, low: f64, high: f64| v.clamp(low, high).round() as i32;
+        let left = clamp(first.x, body.x, body.x + body.w);
+        let top = clamp(first.y, body.y, body.y + body.h);
+        let right = clamp(last.x + last.w, body.x, body.x + body.w);
+        let bottom = clamp(last.y + last.h, body.y, body.y + body.h);
+        if right <= left || bottom <= top {
+            return;
+        }
+        let weight = crate::sheet::geom::scale(2.0, g.dpi).round().max(1.0) as i32;
+        let edge = frame.theme.selection_edge;
+        // A bar is drawn only if the edge it marks is really where the body stops, so a
+        // selection running off the bottom of the window has no bottom bar.
+        if first.x >= body.x {
+            gdi::fill(dc, left, top, left + weight, bottom, edge);
+        }
+        if last.x + last.w <= body.x + body.w {
+            gdi::fill(dc, right - weight, top, right, bottom, edge);
+        }
+        if first.y >= body.y {
+            gdi::fill(dc, left, top, right, top + weight, edge);
+        }
+        if last.y + last.h <= body.y + body.h {
+            gdi::fill(dc, left, bottom - weight, right, bottom, edge);
         }
     }
 
@@ -381,6 +500,8 @@ pub const HEADER_H: f64 = 22.0;
 pub const HEADER_W: f64 = 46.0;
 /// The status bar's height at 100%.
 pub const STATUS_H: f64 = 24.0;
+/// The strip along the top that holds the name box — and, from W3, the formula bar.
+pub const STRIP_H: f64 = 28.0;
 /// The default track sizes at 100%, for the columns and rows a document does not size.
 pub const COL_W: f64 = 80.0;
 pub const ROW_H: f64 = 20.0;
@@ -480,6 +601,24 @@ mod tests {
 
     /// A cell with no colour of its own follows the *theme*, so the same document is readable
     /// in both. Resolving it to a literal here is the bug this asserts against.
+    /// The selection is a *wash*, not a fill: a selected cell the document coloured keeps its
+    /// colour, and the active cell keeps its ground entirely so that it reads as the cursor.
+    #[test]
+    fn the_wash_covers_the_selection_and_spares_the_active_cell() {
+        let theme = crate::theme::Theme::of(crate::theme::Mode::Light);
+        let red = Rgb(0xff, 0x41, 0x36);
+        // Not selected: nothing to paint over the window's own ground.
+        assert_eq!(ground(None, theme, false, false), None);
+        assert_eq!(ground(Some(red), theme, false, false), Some(red));
+        // Selected: washed, and still recognisably the document's red.
+        let washed = ground(Some(red), theme, true, false).expect("a wash is a colour");
+        assert_ne!(washed, red);
+        assert!(washed.0 > washed.2, "still more red than blue: {washed:?}");
+        // The active cell is spared, selected or not — that is what makes it the cursor.
+        assert_eq!(ground(Some(red), theme, true, true), Some(red));
+        assert_eq!(ground(None, theme, true, true), None);
+    }
+
     #[test]
     fn an_uncoloured_cell_defers_to_the_theme() {
         let look = Appearance::of(&CellValue::Text("x".into()), None);

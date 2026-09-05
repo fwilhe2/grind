@@ -78,10 +78,19 @@ impl Rect {
 /// What sits under a point.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hit {
-    Cell { row: u32, col: u32 },
+    Cell {
+        row: u32,
+        col: u32,
+    },
     RowHeader(u32),
     ColHeader(u32),
+    /// The button where the two header bands meet, which selects the whole sheet.
     Corner,
+    /// Window furniture that is not the grid — the name-box strip above it and the status bar
+    /// below. A separate answer from [`Hit::Corner`] rather than a convenient synonym for it,
+    /// because the corner *does* something when it is clicked and the status bar must not do
+    /// that thing.
+    Chrome,
 }
 
 /// How big each track on one axis is — column widths, or row heights.
@@ -221,11 +230,54 @@ impl Sizes {
         (from..self.count).find(|i| !self.is_hidden(*i))
     }
 
+    /// The nearest track to `index` that is not hidden, looking `forward` first and then the
+    /// other way.
+    ///
+    /// What Down-arrow needs. A hidden track occupies no pixels, so a cursor that lands on one
+    /// is a cursor nobody can see — the selection is real, the status bar reports it, and the
+    /// screen shows nothing at all. Every spreadsheet steps over hidden tracks for exactly this
+    /// reason, and this shell draws a hidden track as *gone* (`doc/windows-shell.md`'s named
+    /// gap), which makes it more important here rather than less.
+    ///
+    /// Falls back to `index` itself when every track in both directions is hidden, because
+    /// refusing to move is better than moving nowhere in particular.
+    pub fn nearest_visible(&self, index: u32, forward: bool) -> u32 {
+        if !self.is_hidden(index) {
+            return index;
+        }
+        let (first, second) = match forward {
+            true => (self.next_visible(index), self.prev_visible(index)),
+            false => (self.prev_visible(index), self.next_visible(index)),
+        };
+        first.or(second).unwrap_or(index)
+    }
+
     /// The last track at or before `from` that has any width, or `None` before the start.
     pub fn prev_visible(&self, from: u32) -> Option<u32> {
         (0..=from.min(self.count.saturating_sub(1)))
             .rev()
             .find(|i| !self.is_hidden(*i))
+    }
+
+    /// The first track that puts `index` at the far end of a `span`-pixel view — the least
+    /// scrolling that brings a track into sight from below or from the right.
+    ///
+    /// Walked backwards from `index` rather than forwards from the current position, so that
+    /// jumping to the far corner of a sheet costs a screenful of arithmetic rather than a
+    /// million steps. `index` itself is always the answer's upper bound, which is what makes it
+    /// safe to use as one end of a clamp.
+    pub fn start_showing(&self, index: u32, span: f64) -> u32 {
+        let mut used = self.size_of(index);
+        let mut at = index;
+        while at > 0 {
+            let size = self.size_of(at - 1);
+            if used + size > span {
+                break;
+            }
+            used += size;
+            at -= 1;
+        }
+        at
     }
 
     /// The first track that can sit at the top (or left) of a `span`-pixel view without
@@ -258,6 +310,10 @@ impl Sizes {
 /// arithmetic and the convention agree here.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridGeom {
+    /// The strip along the top of the window that holds the name box — and, from W3, the
+    /// formula bar beside it. Everything below is offset by it, which is why it is part of the
+    /// geometry rather than a constant the painter knows.
+    pub strip_h: f64,
     pub header_w: f64,
     pub header_h: f64,
     /// The height of the status bar at the foot of the window; the grid stops above it.
@@ -278,13 +334,36 @@ pub struct GridGeom {
 }
 
 impl GridGeom {
-    /// The rectangle the cells occupy — the client area less the headers and the status bar.
+    /// The rectangle the cells occupy — the client area less the strip, the headers and the
+    /// status bar.
     pub fn body(&self) -> Rect {
         Rect {
             x: self.header_w,
-            y: self.header_h,
+            y: self.strip_h + self.header_h,
             w: (self.width - self.header_w).max(0.0),
-            h: (self.height - self.header_h - self.status_h).max(0.0),
+            h: (self.height - self.strip_h - self.header_h - self.status_h).max(0.0),
+        }
+    }
+
+    /// The strip across the top of the window.
+    pub fn strip_rect(&self) -> Rect {
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: self.width,
+            h: self.strip_h.min(self.height),
+        }
+    }
+
+    /// The name box inside it: the width of the row header band plus a column, so that it is
+    /// wide enough for `Sheet1.AA1234` without being wide enough to look like a formula bar.
+    pub fn name_box_rect(&self) -> Rect {
+        let inset = (self.strip_h * 0.12).round().max(1.0);
+        Rect {
+            x: inset,
+            y: inset,
+            w: (self.header_w * 3.0).min((self.width - inset * 2.0).max(0.0)),
+            h: (self.strip_h - inset * 2.0).max(0.0),
         }
     }
 
@@ -311,7 +390,7 @@ impl GridGeom {
     pub fn cell_rect(&self, row: u32, col: u32) -> Rect {
         Rect {
             x: self.header_w + self.cols.offset_of(col) - self.scroll_x(),
-            y: self.header_h + self.rows.offset_of(row) - self.scroll_y(),
+            y: self.strip_h + self.header_h + self.rows.offset_of(row) - self.scroll_y(),
             w: self.cols.size_of(col),
             h: self.rows.size_of(row),
         }
@@ -322,7 +401,7 @@ impl GridGeom {
         let cell = self.cell_rect(0, col);
         Rect {
             x: cell.x,
-            y: 0.0,
+            y: self.strip_h,
             w: cell.w,
             h: self.header_h,
         }
@@ -356,23 +435,26 @@ impl GridGeom {
     }
 
     /// What sits under a client-space point.
+    ///
+    /// The two bands that are *not* the grid — the strip at the top and the status bar at the
+    /// foot — answer [`Hit::Chrome`], and that is load-bearing rather than tidy: a click on the
+    /// corner button selects the whole sheet, so folding the status bar in with it would make
+    /// clicking the status bar select a million rows.
     pub fn hit(&self, x: f64, y: f64) -> Hit {
         let body = self.body();
+        if y < self.strip_h || y >= body.y + body.h {
+            return Hit::Chrome;
+        }
         let col = || self.cols.at(x - body.x + self.scroll_x());
         let row = || self.rows.at(y - body.y + self.scroll_y());
-        if body.contains(x, y) {
-            return Hit::Cell {
+        match (x >= body.x, y >= body.y) {
+            (true, true) => Hit::Cell {
                 row: row(),
                 col: col(),
-            };
-        }
-        // Outside the cells, so one of the three bands. The status bar counts as the corner:
-        // it is not the grid, and reporting a row for a point in it would be a lie a resize
-        // drag (W2) would then act on.
-        match (x >= body.x, y >= body.y && y < body.y + body.h) {
-            (true, false) if y < body.y => Hit::ColHeader(col()),
+            },
+            (true, false) => Hit::ColHeader(col()),
             (false, true) => Hit::RowHeader(row()),
-            _ => Hit::Corner,
+            (false, false) => Hit::Corner,
         }
     }
 
@@ -435,6 +517,7 @@ mod tests {
 
     fn geom() -> GridGeom {
         GridGeom {
+            strip_h: 0.0,
             header_w: 40.0,
             header_h: 20.0,
             status_h: 22.0,
@@ -509,8 +592,36 @@ mod tests {
         assert_eq!(g.hit(45.0, 4.0), Hit::ColHeader(0));
         assert_eq!(g.hit(4.0, 25.0), Hit::RowHeader(0));
         assert_eq!(g.hit(4.0, 45.0), Hit::RowHeader(1));
-        // The status bar is not the grid: a point in it is neither a row header nor a cell.
-        assert_eq!(g.hit(4.0, 590.0), Hit::Corner);
+        // The status bar is not the grid, and it is not the corner either — clicking the
+        // corner selects the whole sheet, and clicking the status bar must not.
+        assert_eq!(g.hit(4.0, 590.0), Hit::Chrome);
+    }
+
+    /// The strip pushes everything down by its own height, and is itself neither a header nor
+    /// the corner — the name box lives in it and a click there belongs to the name box.
+    #[test]
+    fn the_strip_takes_its_height_off_the_top_and_owns_its_own_clicks() {
+        let mut g = geom();
+        g.strip_h = 30.0;
+        assert_eq!(g.hit(4.0, 4.0), Hit::Chrome);
+        assert_eq!(g.hit(200.0, 15.0), Hit::Chrome);
+        // Everything below it has moved down by exactly the strip's height.
+        assert_eq!(g.hit(45.0, 4.0 + 30.0), Hit::ColHeader(0));
+        assert_eq!(g.hit(4.0, 25.0 + 30.0), Hit::RowHeader(0));
+        assert_eq!(g.body().y, 50.0);
+        assert_eq!(g.cell_rect(0, 0).y, 50.0);
+        assert_eq!(g.col_header_rect(0).y, 30.0);
+        // And it costs the body exactly that much height, so a page is shorter.
+        assert_eq!(g.body().h, 600.0 - 30.0 - 20.0 - 22.0);
+    }
+
+    #[test]
+    fn the_name_box_sits_inside_the_strip() {
+        let mut g = geom();
+        g.strip_h = 28.0;
+        let box_ = g.name_box_rect();
+        assert!(box_.y > 0.0 && box_.y + box_.h <= g.strip_h);
+        assert!(box_.x > 0.0 && box_.w > 0.0);
     }
 
     /// A column the document sized is that wide in pixels, and the ones after it move over.
@@ -554,6 +665,21 @@ mod tests {
         assert_eq!(cols.offset_of(2), 80.0);
     }
 
+    /// A cursor on a hidden track is a cursor nobody can see. It steps over, in the direction
+    /// it was travelling, and turns round rather than giving up at the ends.
+    #[test]
+    fn the_nearest_visible_track_is_the_one_in_the_direction_of_travel() {
+        let s = Sizes::new(20.0, 10, vec![(2, 0.0), (3, 0.0), (9, 0.0)]);
+        assert_eq!(s.nearest_visible(1, true), 1, "not hidden: stay put");
+        assert_eq!(s.nearest_visible(2, true), 4, "over both hidden tracks");
+        assert_eq!(s.nearest_visible(3, false), 1, "and backwards");
+        // At the end there is nothing ahead, so it comes back rather than sitting on nothing.
+        assert_eq!(s.nearest_visible(9, true), 8);
+        // Every track hidden: stay where you are, because there is nowhere better.
+        let none = Sizes::new(20.0, 3, vec![(0, 0.0), (1, 0.0), (2, 0.0)]);
+        assert_eq!(none.nearest_visible(1, true), 1);
+    }
+
     #[test]
     fn scrolling_stops_at_both_ends() {
         let mut g = geom();
@@ -577,6 +703,36 @@ mod tests {
         assert_eq!(g.first_col, 3);
         g.scroll_cols(-1);
         assert_eq!(g.first_col, 0);
+    }
+
+    /// Scrolling a track into view brings it to the *far* edge and no further, so that
+    /// arrowing down one row moves the view by one row rather than centring on it.
+    #[test]
+    fn the_least_scroll_that_shows_a_track_puts_it_at_the_far_edge() {
+        let s = Sizes::new(20.0, 100, vec![]);
+        // A 100px view holds five 20px rows, so row 9 at the bottom means row 5 at the top.
+        assert_eq!(s.start_showing(9, 100.0), 5);
+        // A track already at the top needs no scrolling, and one taller than the view is
+        // shown from its own start rather than not at all.
+        assert_eq!(s.start_showing(0, 100.0), 0);
+        assert_eq!(s.start_showing(3, 5.0), 3);
+    }
+
+    /// The whole of `reveal`, as arithmetic: the clamp only moves the view when the active
+    /// cell is outside it, and moves it the least it can either way.
+    #[test]
+    fn revealing_a_cell_moves_the_view_only_when_it_has_to() {
+        let g = geom();
+        let show = |first: u32, row: u32| {
+            let need = g.rows.start_showing(row, g.body().h);
+            first.clamp(need, row.max(need))
+        };
+        assert_eq!(show(0, 3), 0, "already in view");
+        assert_eq!(show(10, 3), 3, "above the view: scroll up to it");
+        // 558px of body: row 1 is 60 tall and the rest 20, so from row 0 the last full row is
+        // 25. Anything past it scrolls down by exactly what it takes.
+        assert!(show(0, 40) > 0, "below the view: scroll down to it");
+        assert!(show(0, 40) <= 40);
     }
 
     #[test]
