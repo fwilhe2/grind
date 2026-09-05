@@ -64,6 +64,7 @@ pub enum Command {
     SheetDelete,
     SheetNext,
     SheetPrevious,
+    About,
 }
 
 impl Command {
@@ -90,6 +91,7 @@ impl Command {
         Command::SheetDelete,
         Command::SheetNext,
         Command::SheetPrevious,
+        Command::About,
     ];
 
     /// The `WM_COMMAND` id this verb arrives as.
@@ -138,7 +140,7 @@ pub struct Menu {
 
 /// The menu bar.
 ///
-/// Four menus and nothing that is not a verb. What is deliberately absent: a View menu (this
+/// Five menus and nothing that is not a verb. What is deliberately absent: a View menu (this
 /// shell's overlays are W6), a Format menu (the format strip's, W5), and anything resembling a
 /// ribbon — `doc/sheet-shell.md`'s tab strip was removed for being one, and the argument carries.
 pub const MENUS: &[Menu] = &[
@@ -236,6 +238,13 @@ pub const MENUS: &[Menu] = &[
         items: &[Item::Verb {
             command: Command::Recalculate,
             label: "&Recalculate\tF9",
+        }],
+    },
+    Menu {
+        title: "&Help",
+        items: &[Item::Verb {
+            command: Command::About,
+            label: "&About Grind",
         }],
     },
 ];

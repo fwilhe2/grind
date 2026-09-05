@@ -38,8 +38,8 @@ use windows::Win32::UI::Shell::{
     FileOpenDialog, FileSaveDialog, IFileOpenDialog, IFileSaveDialog, SIGDN_FILESYSPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    IDCANCEL, IDNO, IDOK, IDYES, MB_DEFBUTTON2, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO,
-    MB_YESNOCANCEL, MESSAGEBOX_STYLE, MessageBoxW,
+    IDCANCEL, IDNO, IDOK, IDYES, MB_DEFBUTTON2, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING,
+    MB_OK, MB_YESNO, MB_YESNOCANCEL, MESSAGEBOX_STYLE, MessageBoxW,
 };
 use windows::core::PCWSTR;
 
@@ -98,6 +98,19 @@ fn say(owner: HWND, title: &str, text: &str, style: MESSAGEBOX_STYLE) -> i32 {
 
 pub fn error(owner: HWND, text: &str) {
     say(owner, "Grind", text, MB_OK | MB_ICONERROR);
+}
+
+/// The Help menu's one item: what build this is, over `MessageBoxW` rather than a window of its
+/// own — the same choice `error`/`confirm` made, and `About Grind` asks nothing back.
+///
+/// `grind_core::build_info::describe` is the one place this fact is formatted, so this window's
+/// About box reads the same commit/tree/date every other shell's does.
+pub fn about(owner: HWND) {
+    let text = format!(
+        "An ODF-native spreadsheet.\n\n{}\n\nhttps://github.com/fwilhe2/grind",
+        grind_core::build_info::describe("grind-win32", env!("CARGO_PKG_VERSION"))
+    );
+    say(owner, "About Grind", &text, MB_OK | MB_ICONINFORMATION);
 }
 
 /// The three-button close question.
