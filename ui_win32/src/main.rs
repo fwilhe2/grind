@@ -39,10 +39,16 @@
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod args;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod menu;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod notice;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod sheet;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod theme;
 
+#[cfg(windows)]
+mod dialog;
 #[cfg(windows)]
 mod gdi;
 #[cfg(windows)]

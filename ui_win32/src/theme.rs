@@ -107,10 +107,16 @@ pub struct Theme {
     pub selection_edge: Rgb,
     /// A header button belonging to a selected row or column.
     pub header_active: Rgb,
-    /// The name box: an inset field on the strip, so it reads as something to type in rather
-    /// than as a label. Separate from `background` because the strip is not the grid.
+    /// The name box and the formula bar: inset fields on the strip, so they read as something to
+    /// type in rather than as labels. Separate from `background` because the strip is not the
+    /// grid.
     pub field: Rgb,
     pub field_line: Rgb,
+    /// The notice bar under the strip — a document that needs recalculating, a recalculation
+    /// that was skipped, a save that failed. Not an accent and not an error red: a banner that
+    /// shouts is one people learn to ignore.
+    pub banner: Rgb,
+    pub banner_text: Rgb,
 }
 
 /// The light palette — Windows 11's own surface greys rather than pure white, so that the grid
@@ -130,6 +136,8 @@ const LIGHT: Theme = Theme {
     header_active: Rgb(0xd8, 0xe6, 0xf4),
     field: Rgb(0xff, 0xff, 0xff),
     field_line: Rgb(0xb4, 0xb4, 0xb4),
+    banner: Rgb(0xff, 0xf4, 0xce),
+    banner_text: Rgb(0x4d, 0x3a, 0x00),
 };
 
 /// The dark palette. Not an inversion of the light one: the grid lines are *lighter* than the
@@ -150,6 +158,8 @@ const DARK: Theme = Theme {
     header_active: Rgb(0x1f, 0x3a, 0x52),
     field: Rgb(0x1a, 0x1a, 0x1a),
     field_line: Rgb(0x55, 0x55, 0x55),
+    banner: Rgb(0x3d, 0x34, 0x12),
+    banner_text: Rgb(0xf5, 0xdd, 0x8e),
 };
 
 impl Theme {
@@ -313,6 +323,11 @@ mod tests {
             assert!(gap > 16.0, "{:?}: grid line gap is {gap}", theme.mode);
             let text = (luma(theme.text) - luma(theme.background)).abs();
             assert!(text > 128.0, "{:?}: text gap is {text}", theme.mode);
+            // A notice nobody can read is a notice nobody acts on, and the banner is the one
+            // place this shell paints a ground of its own that is neither the grid's nor the
+            // chrome's.
+            let banner = (luma(theme.banner_text) - luma(theme.banner)).abs();
+            assert!(banner > 96.0, "{:?}: banner gap is {banner}", theme.mode);
         }
     }
 }

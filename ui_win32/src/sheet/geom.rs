@@ -310,10 +310,14 @@ impl Sizes {
 /// arithmetic and the convention agree here.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridGeom {
-    /// The strip along the top of the window that holds the name box — and, from W3, the
-    /// formula bar beside it. Everything below is offset by it, which is why it is part of the
-    /// geometry rather than a constant the painter knows.
+    /// The strip along the top of the window that holds the name box and, beside it, the
+    /// formula bar. Everything below is offset by it, which is why it is part of the geometry
+    /// rather than a constant the painter knows.
     pub strip_h: f64,
+    /// The notice bar under the strip, and **zero when there is no notice** — which is the whole
+    /// of how a banner appears and disappears. Carried as a height rather than as a flag so that
+    /// every rectangle below it is one arithmetic expression whether or not it is showing.
+    pub banner_h: f64,
     pub header_w: f64,
     pub header_h: f64,
     /// The height of the status bar at the foot of the window; the grid stops above it.
@@ -334,14 +338,21 @@ pub struct GridGeom {
 }
 
 impl GridGeom {
-    /// The rectangle the cells occupy — the client area less the strip, the headers and the
-    /// status bar.
+    /// Where the column header band starts — under the strip and under the banner, if there is
+    /// one. Named because five rectangles below depend on it and a banner that moved four of
+    /// them would be a very confusing bug.
+    pub fn header_top(&self) -> f64 {
+        self.strip_h + self.banner_h
+    }
+
+    /// The rectangle the cells occupy — the client area less the strip, the banner, the headers
+    /// and the status bar.
     pub fn body(&self) -> Rect {
         Rect {
             x: self.header_w,
-            y: self.strip_h + self.header_h,
+            y: self.header_top() + self.header_h,
             w: (self.width - self.header_w).max(0.0),
-            h: (self.height - self.strip_h - self.header_h - self.status_h).max(0.0),
+            h: (self.height - self.header_top() - self.header_h - self.status_h).max(0.0),
         }
     }
 
@@ -355,15 +366,68 @@ impl GridGeom {
         }
     }
 
-    /// The name box inside it: the width of the row header band plus a column, so that it is
-    /// wide enough for `Sheet1.AA1234` without being wide enough to look like a formula bar.
+    /// The notice bar, which is empty when [`GridGeom::banner_h`] is zero.
+    pub fn banner_rect(&self) -> Rect {
+        Rect {
+            x: 0.0,
+            y: self.strip_h,
+            w: self.width,
+            h: self.banner_h,
+        }
+    }
+
+    /// The name box inside the strip: the width of the row header band plus a column, so that it
+    /// is wide enough for `Sheet1.AA1234` without being wide enough to look like a formula bar.
     pub fn name_box_rect(&self) -> Rect {
-        let inset = (self.strip_h * 0.12).round().max(1.0);
+        let inset = self.inset();
         Rect {
             x: inset,
             y: inset,
             w: (self.header_w * 3.0).min((self.width - inset * 2.0).max(0.0)),
             h: (self.strip_h - inset * 2.0).max(0.0),
+        }
+    }
+
+    /// The formula bar: the rest of the strip, after the name box.
+    ///
+    /// Two read-outs on one strip and nothing else, which is `doc/windows-shell.md` decision 4's
+    /// rule for it — *where* the selection is and *what is in it*. It is not a place verbs may
+    /// go, which is what keeps it a strip rather than a second toolbar.
+    pub fn formula_rect(&self) -> Rect {
+        let inset = self.inset();
+        let name = self.name_box_rect();
+        let x = name.x + name.w + inset * 2.0;
+        Rect {
+            x,
+            y: name.y,
+            w: (self.width - x - inset).max(0.0),
+            h: name.h,
+        }
+    }
+
+    /// The gap between the strip's edge and the fields in it.
+    fn inset(&self) -> f64 {
+        (self.strip_h * 0.12).round().max(1.0)
+    }
+
+    /// Where the in-cell editor goes: the active cell, clipped to the body.
+    ///
+    /// Clipped rather than clamped, because a child control drawn over the header band or the
+    /// status bar would sit on top of chrome the painter owns. A cell scrolled entirely out of
+    /// sight gives an empty rectangle, and the caller's answer to that is to put the editor on
+    /// the formula bar instead.
+    pub fn editor_rect(&self, row: u32, col: u32) -> Rect {
+        let body = self.body();
+        let cell = self.cell_rect(row, col);
+        let left = cell.x.max(body.x);
+        let top = cell.y.max(body.y);
+        let right = (cell.x + cell.w).min(body.x + body.w);
+        let bottom = (cell.y + cell.h).min(body.y + body.h);
+        Rect {
+            x: left,
+            y: top,
+            w: (right - left).max(0.0),
+            h: (bottom - top).max(0.0),
         }
     }
 
@@ -390,7 +454,7 @@ impl GridGeom {
     pub fn cell_rect(&self, row: u32, col: u32) -> Rect {
         Rect {
             x: self.header_w + self.cols.offset_of(col) - self.scroll_x(),
-            y: self.strip_h + self.header_h + self.rows.offset_of(row) - self.scroll_y(),
+            y: self.header_top() + self.header_h + self.rows.offset_of(row) - self.scroll_y(),
             w: self.cols.size_of(col),
             h: self.rows.size_of(row),
         }
@@ -401,7 +465,7 @@ impl GridGeom {
         let cell = self.cell_rect(0, col);
         Rect {
             x: cell.x,
-            y: self.strip_h,
+            y: self.header_top(),
             w: cell.w,
             h: self.header_h,
         }
@@ -442,7 +506,7 @@ impl GridGeom {
     /// clicking the status bar select a million rows.
     pub fn hit(&self, x: f64, y: f64) -> Hit {
         let body = self.body();
-        if y < self.strip_h || y >= body.y + body.h {
+        if y < self.header_top() || y >= body.y + body.h {
             return Hit::Chrome;
         }
         let col = || self.cols.at(x - body.x + self.scroll_x());
@@ -518,6 +582,7 @@ mod tests {
     fn geom() -> GridGeom {
         GridGeom {
             strip_h: 0.0,
+            banner_h: 0.0,
             header_w: 40.0,
             header_h: 20.0,
             status_h: 22.0,
@@ -622,6 +687,67 @@ mod tests {
         let box_ = g.name_box_rect();
         assert!(box_.y > 0.0 && box_.y + box_.h <= g.strip_h);
         assert!(box_.x > 0.0 && box_.w > 0.0);
+    }
+
+    /// Two read-outs on one strip, side by side and not overlapping — the whole of decision 4's
+    /// rule for it, as arithmetic.
+    #[test]
+    fn the_formula_bar_takes_the_rest_of_the_strip() {
+        let mut g = geom();
+        g.strip_h = 28.0;
+        let name = g.name_box_rect();
+        let formula = g.formula_rect();
+        assert!(formula.x > name.x + name.w, "they overlap");
+        assert!(formula.x + formula.w <= g.width);
+        assert_eq!(formula.y, name.y, "one strip, one baseline");
+        assert_eq!(formula.h, name.h);
+        // A window narrower than the name box leaves no formula bar rather than a negative one.
+        g.width = 10.0;
+        assert_eq!(g.formula_rect().w, 0.0);
+    }
+
+    /// The banner takes its height out of the body and pushes the headers down with it, and a
+    /// document with no notice pays nothing at all.
+    #[test]
+    fn a_banner_pushes_the_grid_down_and_costs_nothing_when_it_is_absent() {
+        let mut g = geom();
+        g.strip_h = 28.0;
+        let without = g.body();
+        assert_eq!(g.banner_rect().h, 0.0);
+        g.banner_h = 24.0;
+        assert_eq!(g.body().y, without.y + 24.0);
+        assert_eq!(g.body().h, without.h - 24.0);
+        assert_eq!(g.banner_rect().y, 28.0);
+        assert_eq!(g.col_header_rect(0).y, 28.0 + 24.0);
+        // And a click in it is chrome, not a cell — the same answer the strip gets.
+        assert_eq!(g.hit(200.0, 40.0), Hit::Chrome);
+        assert_eq!(g.hit(45.0, 28.0 + 24.0 + 4.0), Hit::ColHeader(0));
+    }
+
+    /// The editor sits on the cell, and never on the chrome around it: a control drawn over the
+    /// header band would cover something the painter owns and cannot repaint under it.
+    #[test]
+    fn the_in_cell_editor_is_clipped_to_the_body() {
+        let mut g = geom();
+        g.strip_h = 28.0;
+        let cell = g.editor_rect(2, 1);
+        assert_eq!(
+            cell,
+            g.cell_rect(2, 1),
+            "a cell in full view is its own rect"
+        );
+
+        // Scrolled so that the first visible row is half under the header band: the editor
+        // stops at the band rather than starting above it.
+        g.first_row = 4;
+        let above = g.editor_rect(3, 1);
+        assert_eq!(above.h, 0.0, "a cell scrolled out of sight has no editor");
+        // The first visible row is whole, and the last one may be cut off by the body's foot.
+        let last = g.visible_rows().last().expect("a row is visible");
+        let clipped = g.editor_rect(last, 1);
+        let body = g.body();
+        assert!(clipped.y >= body.y);
+        assert!(clipped.y + clipped.h <= body.y + body.h + 1e-9);
     }
 
     /// A column the document sized is that wide in pixels, and the ones after it move over.

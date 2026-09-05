@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, and a plan rather than a record: W0 is done and W1–W8 are not.** Its seven decisions, of which one is genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape, and the answer is a whole stack (measuring *and* drawing) rather than an API. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W3 are done and W4–W8 are not.** Its seven decisions, of which one is genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape, and the answer is a whole stack (measuring *and* drawing) rather than an API. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -136,16 +136,23 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W2**: a window, the
-spreadsheet as a read-only grid — the document's own column widths and row heights, hidden tracks
-gone, headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry
-— and now a **selection**: arrows, Ctrl+arrows, Home/End, PageUp/Down and Ctrl+A, click and drag,
-whole rows and columns from the header bands, a status bar whose Sum/Count/Average come from
-`App::preview` over generated formulas rather than from a second summing loop, and a **name box**
-(F5 or Ctrl+G) that is drawn chrome until it is typed in, at which point a child `EDIT` appears
-over it. The cursor **steps over hidden tracks**, which running it is what found. No editing and
-no text pane yet (W3 and W5). What is unusual about it is that the whole thing is examinable from
-Linux, because `cargo check` does not link:
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W3**: a window, the
+spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
+headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
+**selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
+columns from the header bands, a status bar whose Sum/Count/Average come from `App::preview` over
+generated formulas rather than from a second summing loop, and a name box on F5), and now
+**editing**: one child `EDIT` serving as both the in-cell editor and the formula bar, the
+Ready/Enter/Edit modes in a portable `sheet/state.rs`, formulas typed in display syntax and
+stored in ODF's — one that will not parse keeps the edit open with the caret on the problem —
+Delete, undo/redo, F9, open/save/save-as through `IFileDialog`, the three-button close question,
+sheet add/rename/delete, and **the menu bar that decision 4 makes this platform's growable
+surface**, built from `menu.rs`'s table so that a verb in no menu fails a test and a verb with no
+handler fails the build. Beside the strip is a **notice bar** for a state the document is in —
+a recalculation this build refused to perform, a formula that would not parse, a rename that
+carried four references with it — whose every sentence is a pure function in `notice.rs`. No
+clipboard and no text pane yet (W4 and W5). What is unusual about it is that the whole thing is
+examinable from Linux, because `cargo check` does not link:
 
 ```sh
 rustup target add x86_64-pc-windows-msvc
@@ -158,8 +165,11 @@ cargo test   -p grind-win32                                     # the portable h
 link and there is no MSVC. To link one anyway, for inspection only, `cargo xwin build` does it and
 Wine runs it; the shipped artifact comes off `windows-latest` in `win32.yml` and nowhere else.
 `scripts/run.sh win32` is both halves in one command — link with `cargo-xwin`, run under Wine, on
-the same sample document every other shell gets. It earns its place: all three of W1's bugs and
-W2's one were one glance at a screenshot and none was visible in review.
+the same sample document every other shell gets. It earns its place: all three of W1's bugs, W2's
+one and both of W3's were one glance at a screenshot and none was visible in review. **W3's first
+was a hard crash** that `cargo check`, clippy and 104 unit tests all passed clean — an empty
+`Vec<u16>` has no allocation, so `as_mut_ptr` hands `DrawTextW` a dangling pointer, and drawing
+an empty string was an access violation reading address 2.
 
 `--render-to` (W2, `doc/windows-shell.md` decision 5) draws **one frame with no window, no
 compositor and no display** — `CreateCompatibleDC(None)` + `CreateDIBSection` — and writes a
@@ -307,7 +317,7 @@ rather than a guest:
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
-| `grind-win32` | `ui_win32/` | The Windows shell — **planned in full, built through W2: a window, the read-only grid, and the selection over it** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, both document types in one binary eventually, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the name box and the status bar's aggregates over a real `App` (`sheet/status.rs`), what a cell *looks like*, the palette, and later the menus — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB |
+| `grind-win32` | `ui_win32/` | The Windows shell — **planned in full, built through W3: a window, the grid, the selection over it, and editing** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, both document types in one binary eventually, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the display-syntax conversion (`sheet/state.rs`), the name box, the formula bar and the status bar's aggregates over a real `App` (`sheet/status.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
 which asserts the manifest names no document-type crate, that no source dispatches on

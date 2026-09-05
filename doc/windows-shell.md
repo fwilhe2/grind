@@ -10,12 +10,12 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Built through W2; W3–W8 are a plan.** This document was W0's deliverable — the shell planned,
+**Built through W3; W4–W8 are a plan.** This document was W0's deliverable — the shell planned,
 its decisions argued, its gaps named in advance, and the two claims the whole thing rests on
-measured rather than assumed. W1 added the window and the read-only grid and W2 the selection,
-so the parts of it that were predictions about drawing are now records of it: what is written
-down about the geometry, the theme, the double buffer, the scrollbars and **decision 5's
-windowless render target** has been run.
+measured rather than assumed. W1 added the window and the read-only grid, W2 the selection and
+W3 the editing, so the parts of it that were predictions are now records: what is written down
+about the geometry, the theme, the double buffer, the scrollbars, **decision 5's windowless
+render target**, **decision 4's menu bar** and **decision 7's modals** has been run.
 
 ## In one line
 
@@ -230,9 +230,14 @@ navigation and mnemonics with no code here. So the four surfaces map across as:
 | Ctrl+K palette — the one allowed to grow | **the menu bar** |
 
 One surface has been added since, in W2, and it is not a fourth kind: a **strip along the top of
-the window holding the name box**, which is where the formula bar joins it in W3. It is not a
-place verbs may go — it holds exactly the two read-outs that name *where the selection is* and
-*what is in the cell*, which is why it is a strip rather than a bar. The go-to answer of the
+the window holding the name box**, which W3 gave its second half — the formula bar. It is not a
+place verbs may go: it holds exactly the two read-outs that name *where the selection is* and
+*what is in the cell*, which is why it is a strip rather than a bar. W3 added one more surface
+that is also not a fourth kind — a **notice bar** under the strip, for a *state the document is
+in* and never for an event that has happened, which is `ui_sheet_gtk`'s line between its banner
+and its toasts. Its height is zero when there is no notice, so every rectangle below it is one
+arithmetic expression whether or not it is showing, and `notice.rs` holds every sentence it can
+say as a portable function with a test. The go-to answer of the
 other shells (Ctrl+K's palette in `grind-web`, a popover in `grind-text-gtk`) is this box and
 F5, so this shell needs no go-to dialog either.
 
@@ -246,6 +251,15 @@ the application manifest this binary deliberately does not have. The format stri
 each item routes somewhere real. The equivalent here is cheaper and better: the menus are
 **tables of data** in a portable `menu.rs`, so the test that every command id has a handler and
 every handler has an item runs on Linux with no window at all.
+
+**Built in W3**, and the two halves of that check turned out to be different in kind, which is
+better than it sounds. That every command is in exactly one menu is a *test*, in `menu.rs`, on
+Linux. That every command has a *handler* is the **compiler's**: `win.rs`'s dispatcher matches
+on `Command` exhaustively, so a verb added to the table and nowhere else fails the build. A
+command's `WM_COMMAND` id is its position in `Command::ALL` plus `FIRST_ID`, written down once,
+so the classic Win32 bug of two items sharing an id cannot be spelled here; the child controls
+take ids below `FIRST_ID`, which is what keeps a control's notification and a menu click apart
+in the one message Win32 uses for both.
 
 ### 5. `--render-to`, with no window and no display — *built in W2*
 
@@ -296,15 +310,44 @@ briefly on each side of the dialog and never across it.** `on_close` in
 `editor/ui_win32/src/app.rs` is the worked example — one borrow to compose the question, no
 borrow while the dialog runs, one borrow to act on the answer.
 
+**W3 gave the rule teeth**, and made it a rule about a *file* rather than about a habit: every
+modal this shell opens lives in `dialog.rs`, with the warning in its module comment, so a
+caller can see what it is calling. `offer_to_save` is the worked example here — one borrow for
+the flag and the name, no borrow for `confirm_close`, one borrow to act. The same shape covers
+`sheet_add`, `sheet_rename` and `sheet_delete`, each of which reads what the prompt needs,
+prompts, and then takes a *fresh* borrow to apply the answer.
+
+The rule has a second half W3 discovered rather than inherited, and it is about the **observer**
+rather than about dialogs. `App::mutate` notifies with its write lock dropped but still inside
+the call that made the change — so an observer that *sends* a message would re-enter the window
+procedure while the handler that called `enter` is holding `&mut State`. `Changed` therefore
+**posts**, and the dirty flag is set when the message is handled rather than when it is raised.
+That is also why this shell needs no "a load is not an edit" flag, where `ui_sheet_gtk` does:
+the observer is registered on the `App` after the file has been read, so during a load there is
+nobody to tell.
+
+There is one more thing `dialog.rs` holds and the plan did not anticipate: a **text prompt**,
+for naming a sheet. `MessageBoxW` cannot ask for a string and this binary has no resources, so
+`DialogBoxIndirect` would mean building a `DLGTEMPLATE` by hand — more code than a window and
+less readable. It is a popup of this shell's own with `IsDialogMessageW` supplying what a dialog
+manager would have: Tab between the controls, Enter for the default button, Escape for Cancel.
+
 The file dialogs are `IFileDialog` (COM, Vista+) rather than `GetOpenFileNameW`, because
 `IFileDialog` is the modern dialog and needs no manifest to be one, and because the `windows`
 crate makes COM ergonomic. Its filters follow `doc/flat-first.md`: **the flat form is the
 default** — `.fods` / `.fodt` first, then the package, then `.grind` — because in doubt this
 project writes the form that diffs.
 
+W3 built both, and running them added one qualification the plan had wrong: that ordering is
+**Save's**. The *Open* dialog leads with "All spreadsheets", because a filter there is a way of
+finding a file rather than a statement about form, and a user whose documents are `.ods` should
+not have to change a drop-down to discover they exist. Nothing in either dialog decides what a
+form *is*: `grind_sheet::write_file` reads the extension through `Form::from_path`, which is the
+one place in the workspace where an extension decides anything.
+
 ## The crate
 
-A `*` marks what W0 and W1 have built; everything else is the plan.
+A `*` marks what W0 through W3 have built; everything else is the plan.
 
 ```
 ui_win32/
@@ -312,20 +355,25 @@ ui_win32/
   src/
     main.rs           *   argv, kind sniff, a message box for errors before a window exists
     args.rs           *   the command line as a pure function (W0)
-    win.rs           [W]* the class, the wndproc, the message loop, GWLP_USERDATA, the child
-                          EDIT that becomes the name box, and the windowless render path
+    win.rs           [W]* the class, the wndproc, the message loop, GWLP_USERDATA, the two
+                          child EDITs (name box and editor), the menu bar, the verbs, and the
+                          windowless render path
     gdi.rs           [W]* RAII wrappers for fonts and brushes; the back buffer; and the DIB
                           target behind --render-to, with its BMP writer (W2)
     metrics.rs       [W]  Metrics + Faces over a memory DC, with the font cache
     theme.rs         [~]* the palette (portable, incl. the selection wash's `Rgb::blend`) and
                           the registry read + dark title bar [W]
-    menu.rs               the menus as data, and the command-id table
+    menu.rs           *   the menus as data, the accelerators, and the command-id table
+    notice.rs         *   every sentence the notice bar says, as a pure function
+    dialog.rs        [W]* every modal: the file dialogs, the questions, and the text prompt
     sheet/
       geom.rs           * pixels <-> cells, prefix sums over the document's own widths, the
                           strip, and which visible track a cursor may stop on
       keymap.rs         * virtual-key codes -> a motion; the selection; the Ctrl+arrow rule
-      status.rs         * the name box and the status bar's aggregates, over a real `App`
-      state.rs            Ready / Enter / Edit, the editing state machine
+      status.rs         * the name box, the formula bar, and the status bar's aggregates, all
+                          over a real `App`
+      state.rs          * Ready / Enter / Edit, the editing state machine, and the two
+                          conversions an edit needs (display syntax, UTF-8 bytes -> UTF-16)
       draw.rs        [~]* a viewport painted onto an HDC — and, portable beside it, what a cell
                           *looks like*: alignment, weight and colour resolved from `CellStyle`,
                           and what the selection wash does to it
@@ -372,7 +420,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W0** | **Plan and wiring** — *done* | this document; `ui_win32/` with `args.rs` (the command line as a pure function, 16 tests) and a `main.rs` that resolves what it *would* open; workspace member; `.cargo/config.toml` with `+crt-static` **and the 8 MB stack reserve**; `.github/workflows/win32.yml`; `-p grind-win32` in `ci.yml`'s build/test/clippy/docs lists; REUSE headers | **Met.** Type-check, clippy and 16 tests green on Linux for the msvc target; the shell links under `cargo-xwin` and imports only OS DLLs; the `windows` cost measured (10 lock entries, 5.0s cold check). The stack overflow that predates this shell is diagnosed and fixed, and the whole core is now known to work on Windows |
 | **W1** | **The window, and the read-only grid** — *done* | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | **Met.** All fifteen R7 and sample documents open under Wine, and a package (`.ods`) as well as a flat file; the wheel and both scrollbars move the view; columns are as wide as the document says and hidden tracks are gone; 42 tests on Linux, including the cell-rect ⇄ hit round trip. Two bugs found by *running* it and fixed — see below |
 | **W2** | **Selection, navigation, and an assertable frame** — *done* | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; `sheet/status.rs`'s aggregates; the name box; and decision 5's DIB render target | **Met.** The sample document is navigable by keyboard alone — arrows, Ctrl+arrows, Ctrl+Home/End, PageUp/Down, Ctrl+A, and F5 into the name box — with the view following the cursor; `--render-to` is byte-identical across two runs under Wine, and `win32.yml`'s new `render` job asserts the same on Windows. 79 tests on Linux. One bug found by *running* it — see below |
-| **W3** | **Sheet editing** | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the stale banner; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete | every value and formula in `examples/sample-sheet.sh` is typeable by hand, and a document saved here matches one the CLI wrote for the same operations |
+| **W3** | **Sheet editing** — *done* | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the notice bar; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete; and the menu bar decision 4 makes this platform's growable surface | **Met.** Typing, F2, a double-click and a click on the formula bar all open the editor; a formula is typed in display syntax and stored in ODF's; one that will not parse keeps the edit open with the caret on the problem and says so in the notice bar; Delete, Ctrl+Z, Ctrl+Y and F9 do what they say; the Sheet menu adds, renames — carrying every reference with it, D10 — and deletes; Ctrl+S writes a document that `grind lint` reads back clean. 104 tests on Linux. Two bugs found by *running* it, one of them a crash — see below |
 | **W4** | **The clipboard** | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | copy here → paste into LibreOffice Calc and into Excel, and back, both directions |
 | **W5** | **The text pane** | `metrics.rs` per decision 3 and `Faces` over it; `text/draw.rs` drawing `App::layout_block` run by run; a real `CreateCaret` caret; `WM_CHAR` plus the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret); `App::type_markdown`; selection by Shift+arrow, Shift+click and drag; the format strip over `char_style` / `set_char_style`; block kinds, outline and go-to for `p12` / `#intro` / `§2.1.3` | every feature `examples/sample-text.sh` builds is visible and editable, and a test asserts that this pane and `grind text view --width` break the same text at the same places when both are given `Fixed` |
 | **W6** | **The three shared panes** | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | all three reachable from whichever pane they apply to, and opening every overlay on every R7 document then saving leaves the bytes identical |
@@ -411,6 +459,22 @@ filter in a file folds its rows away and nothing here creates one. No **find/rep
 cells**. No **conditional formatting UI**, which exists in no shell. No **command palette**, by
 decision 4.
 
+W3 adds three of its own, each smaller than it sounds. There is no **recent-files list**, where
+`ui_sheet_gtk` has `gtk::RecentManager`: Windows' equivalent is `SHAddToRecentDocs` plus a
+registered ProgID, so it belongs with W8's file associations rather than in front of them. There
+is no **greying of unavailable verbs** — Undo is enabled with nothing to undo, and pressing it
+does nothing rather than something wrong — because `MF_GRAYED` means tracking menu state on
+every change, and W7 is where the menus are finished. And the **sheet is chosen from a menu
+rather than from a tab strip**: Ctrl+PageUp/PageDown and Sheet ▸ Next/Previous reach every sheet,
+the status bar says which one and how many, and `doc/sheet-shell.md` removed its own tab strip
+for looking like a ribbon.
+
+**System-drawn, and therefore not themed by us.** The message boxes and the sheet-name prompt
+are drawn by Windows in the *system* colours, so in dark mode they are the light dialogs Windows
+itself still draws for a `MessageBoxW`. The window and its two child `EDIT`s do follow the theme
+— the latter through `WM_CTLCOLOREDIT`, which is the only lever a control that paints itself
+offers. Making a message box dark means not using a message box, which is a worse trade.
+
 **The toolkit's own limits.** No **Mica**: `DWMWA_SYSTEMBACKDROP_TYPE` is reachable and shipped,
 but a backdrop only shows through pixels the application does not paint, and a GDI window that
 fills its client area with an opaque brush paints all of them. *This is reasoned rather than
@@ -435,7 +499,8 @@ fix if this ever matters, and naming it is not the same as planning it.
 rustup target add x86_64-pc-windows-msvc          # already installed here
 cargo check   -p grind-win32 --target x86_64-pc-windows-msvc
 cargo clippy  -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings
-cargo test    -p grind-win32                      # the portable half: geom, keymap, state, menus
+cargo test    -p grind-win32                      # the portable half: geom, keymap, state,
+                                                  # status, menus and notices — 104 of them
 ```
 
 `cargo check` never links, so it needs no MSVC and no Windows. This catches a `windows`-rs API
@@ -479,7 +544,9 @@ in CI would quietly turn a debugging convenience into a release path.
 
 It earns its place because of what it catches. In the sibling repository, driving the window
 under Wine through XTEST found decision 7's aliasing bug, which reading the code did not; here it
-found all three of W1's, none of which survived a single screenshot.
+found all three of W1's, W2's one, and **both of W3's — of which one was a hard crash that
+`cargo check`, clippy and 104 unit tests all passed clean.** None of them survived a single
+screenshot.
 
 On Windows there is nothing to arrange and the script has no arm for it: `cargo run -p
 grind-win32 -- book.fods` is the whole of it.
@@ -489,10 +556,16 @@ about it is made here:
 
 - `DwmSetWindowAttribute` is largely inert, so the dark title bar is unverified.
 - The theme registry key does not exist in a fresh prefix, so the shell takes its light-mode
-  fallback and **dark mode is untested end to end**.
+  fallback. Writing it by hand (`wine reg add …\\Themes\\Personalize /v AppsUseLightTheme /t
+  REG_DWORD /d 0`) does exercise the dark palette here, and W3 used it to check the one thing
+  this shell does *not* paint itself: the child `EDIT`s answer `WM_CTLCOLOREDIT` and come back
+  dark with light text, where a control left alone is a white field in a dark window.
 - Consolas is absent, so every screenshot exercises the `FIXED_PITCH | FF_MODERN` substitution
   path rather than the intended font.
-- `IFileDialog`'s COM path, the IME path, and clipboard interop with real Excel.
+- The IME path, and clipboard interop with real Excel. `IFileDialog`'s COM path *does* run
+  under Wine — W3 opened a document through it — but it is Wine's own dialog, and how it looks
+  and behaves on Windows 11 is unverified.
+- The `*` dirty marker in the title, which Wine under a bare Xvfb draws no caption for.
 - Per-monitor DPI, `WM_DPICHANGED`, and how any of it looks under Windows 11's compositor.
 
 **In CI (`win32.yml`), three jobs:**
@@ -594,12 +667,38 @@ Added in W2, once there was a selection:
 | The same frame twice is the same bytes | `cmp` on two consecutive renders: identical. `win32.yml`'s `render` job asserts the same on `windows-latest` |
 | The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 79 passed |
 
-What is still unverified by construction: decision 3's measurement and decision 7's modal shape,
-because neither exists yet, and — per *What Wine cannot speak for* above — the dark title bar,
-dark mode end to end, and the DPI path, because Wine cannot answer for any of them. W2 adds one
-more to that list: the `render` job's output has never been produced on a **real Windows**
-machine, so the committed-fixture half of decision 5 is deferred until a `.bmp` from that runner
-can be committed from it. Two renders agreeing is what is asserted today.
+Added in W3, once cells could be typed into:
+
+| Claim | How it was checked |
+|---|---|
+| A value typed lands in the document, formatted, with the cursor moved on | Under Xvfb, driven by XTEST: `12` and Enter into E14 draws `12` right-aligned in that cell — a number, not the control's own left-aligned text — and leaves the cursor on E15 |
+| A formula is typed in **display syntax** and stored in ODF's | `=SUM(B3:B4)` typed into E16 shows `720`, and `grind sheet view` on the saved file agrees. The conversion is `state::to_store`, which is `formula::display::from_display` and nothing else |
+| A formula that will not parse does **not** commit | `=SUM(` and Enter leaves the editor open with the caret on the problem and the notice bar reading *"Not a formula: expected a value. Esc leaves the cell as it was."*; Escape then leaves the cell exactly as it was |
+| Escape throws an edit away and Enter does not | `999` then Escape leaves the cell empty and closes the editor; the same text then Enter stores it |
+| F2 and a double-click open the cell rather than replace it | A double-click on B3 opens the editor holding `500` — `App::input_text`, so a formula would come back in display syntax and a date in the ISO spelling that types back in |
+| Clicking the formula bar edits the cell it is showing | The control appears **on the bar**, holding `500`, while the cell underneath keeps showing its formatted `500.00 €` |
+| The bar mirrors an in-cell edit as it is typed | `EN_CHANGE` repaints the strip and only the strip; the drawn bar reads what the control holds |
+| Delete empties a cell, and Ctrl+Z brings it back | Delete on B9 (a `MAX` formula) empties it; Ctrl+Z restores it, and Ctrl+Y removes it again |
+| F9 says what it did | *"Every formula already holds what it computes."* on an up-to-date document, and a count when there is one. `notice.rs` holds the sentences and their plurals, tested on Linux |
+| The menu bar is Windows' own | Alt+S opens **Sheet** with its mnemonics underlined and `Ctrl+PgDn` / `Ctrl+PgUp` drawn beside the items that have them; Alt+F, x reaches Exit |
+| Adding, renaming and deleting a sheet all work, through the prompt and the question | Sheet ▸ Add gives `Sheet3 (3 of 3)`; Sheet ▸ Rename on `Budget` → `Ledger` reports *"4 references rewritten to follow the rename"*; Sheet ▸ Delete asks *"Delete Archive and everything on it?"* with **No** as the default |
+| A rename carries the document with it (D10) | The saved file's named expression reads `[$Ledger.$B$2:.$B$7]`, and `grind lint` finds nothing but the two pre-existing chart warnings |
+| Ctrl+S writes a document the rest of the suite reads | The file's bytes change, `grind --format json info` reports the renamed sheets, and `grind sheet lint` is clean |
+| The close question is the three-button one, and Cancel cancels | File ▸ Exit on a modified document asks *"Save changes to edit.fods before closing?"* with Yes / No / Cancel and Yes as the default; Cancel leaves the window open, Yes saves and then closes |
+| Opening a document through `IFileDialog` works | Ctrl+O opens the shell dialog with "All spreadsheets" as the leading filter; a path typed into it loads that document and resets the view to A1 |
+| The child controls follow the theme | With `AppsUseLightTheme` set to 0 in the prefix, both `EDIT`s come back dark with light text — `WM_CTLCOLOREDIT`, the only lever a control that paints itself offers |
+| `--render-to` is still byte-identical, with the formula bar in it | Two consecutive renders `cmp` equal, under Wine with `DISPLAY` unset |
+| The shell still imports only OS DLLs, now with COM in it | `objdump -p`: `user32`, `gdi32`, `dwmapi`, `ole32`, `combase`, `oleaut32`, `KERNEL32`, `advapi32`, `ntdll`, `bcryptprimitives`, one api-set. `IFileDialog` costs `ole32` and `combase`, both part of Windows; `shell32` does not appear at all, because the dialog is reached through `CoCreateInstance` rather than by linking a shell entry point |
+| The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 104 passed |
+
+What is still unverified by construction: decision 3's measurement, because it does not exist
+yet, and — per *What Wine cannot speak for* above — the dark title bar, the DPI path and the
+IME, because Wine cannot answer for any of them. W2 added one more to that list: the `render`
+job's output has never been produced on a **real Windows** machine, so the committed-fixture
+half of decision 5 is deferred until a `.bmp` from that runner can be committed from it. Two
+renders agreeing is what is asserted today. W3 takes decision 7's modal shape *off* it — the
+modals exist and were driven — and leaves the `*` dirty marker on it, because Wine under a bare
+Xvfb draws no caption to read it from.
 
 ### What running it found, which reading it did not
 
@@ -639,6 +738,48 @@ selection's corner may perfectly well sit on a hidden track and moving it would 
 what a later operation covers. `Sizes::nearest_visible` is the same question `scroll_rows`
 already asked in W1 — a hidden track occupies no pixels, so stepping onto one changes a number
 and not the screen.
+
+### W3 found two, and the first one was a crash nothing else could have caught
+
+**1. Drawing an empty string was an access violation.** Committing an edit moved the cursor onto
+an empty cell, the formula bar had nothing to say, and the process died — inside a system DLL,
+reading address `2`, with nothing of ours on the faulting frame. Wine's log said
+`err:seh:user_callback_handler ignoring exception c0000005` and no more.
+
+The cause is one line of W1's `draw_text` and it is a Rust fact rather than a Win32 one: an
+empty `Vec<u16>` performs **no allocation**, so `as_mut_ptr` hands back a dangling
+well-aligned address — for `u16`, the literal value `2` — and `DrawTextW` dereferences the
+buffer before it looks at the count. The count was zero and the pointer was garbage, which is
+exactly the combination a slice-taking API makes easy to write and impossible to see. `wide`
+having a NUL in it is what hid this through W1 and W2: `gdi::wide` is used for the `PCWSTR`
+entry points and always has at least the terminator in it, while `draw_text` deliberately does
+*not* NUL-terminate — see W1's first bug, which is the same distinction from the other side.
+Every string W1 and W2 drew had something in it. The fix is a `return`, and the reason is
+written where the `return` is.
+
+Nothing short of running it would have found this. It is not a logic error, so no test in
+`geom.rs` or `state.rs` could have caught it; it compiles, it is clippy-clean, and it is one
+`if` away from an API used correctly everywhere else in the file.
+
+**2. `App::rename_sheet` returns a count, not an index.** The shell stored the answer in
+`State::sheet`, so renaming a sheet whose name occurred in four formulas selected *sheet 4* of a
+two-sheet document, and the next paint panicked — which in a window procedure is an abort, not a
+backtrace. The core's doc comment says exactly what it returns; the shell had assumed the shape
+of `add_sheet` beside it.
+
+The fix is two things rather than one, and the second is the interesting half. The call site now
+uses the count for what it is — the notice bar says *"4 references rewritten to follow the
+rename. Ctrl+Z takes it back."*, which is D10's whole point said out loud. And `State::relayout`
+now **clamps the sheet index**, because it is the one function every path that changes the
+document ends in: deleting a sheet, undoing an insertion and opening a smaller document all
+leave that index pointing past the end, and a painter handed one has nothing useful to do with
+it. A shell should not be able to ask for a sheet that is not there, and now it cannot.
+
+A third thing, found by reading rather than by running, and worth the same line of the ledger:
+`dialog::confirm` was `MB_YESNOCANCEL`, which makes **Yes** the default. For "delete this sheet
+and everything on it" that is a dialog that deletes things when somebody presses Enter twice. It
+is `MB_YESNO | MB_DEFBUTTON2` now — two buttons, No default — while `confirm_close` keeps its
+first-button default, because there the safe answer *is* the first one.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 
