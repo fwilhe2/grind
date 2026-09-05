@@ -223,9 +223,9 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
         Key::Char(c) if mods.ctrl && !mods.shift => match c {
             'A' => Some(Action::SelectAll),
             'G' => Some(Action::GoTo),
-            // The clipboard letters are W4's and are deliberately not claimed here: claiming
-            // one now would swallow the keystroke and do nothing, which reads as a broken
-            // Ctrl+C rather than an absent one.
+            // X, C and V are `menu::accelerator`'s (W4's clipboard) and are deliberately not
+            // claimed here: `sheet/state.rs::ready` consults that table first, so this arm
+            // only ever sees a Ctrl+letter with no verb of its own.
             _ => None,
         },
         _ => None,

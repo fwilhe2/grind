@@ -43,6 +43,11 @@ windows = { version = "0.62", features = [
     # `IFileDialog` is COM, and COM is a namespace of its own — W3's two file dialogs are the
     # only reason either of these is here.
     "Win32_System_Com",
+    # `clipboard.rs`, W4: Open/Get/Set/EmptyClipboard, the moveable `HGLOBAL` handed across the
+    # boundary, and the `CF_UNICODETEXT` constant that names the one format this shell speaks.
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_UI_Controls",
