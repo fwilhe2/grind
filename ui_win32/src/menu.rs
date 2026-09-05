@@ -44,6 +44,15 @@ pub enum Command {
     Exit,
     Undo,
     Redo,
+    /// Copy the selection to the clipboard as `CF_UNICODETEXT`, then clear it —
+    /// `App::clear_range` under a `crate::clipboard::set_text`.
+    Cut,
+    /// Copy the selection to the clipboard, formulas and all, as tab-separated
+    /// `App::input_text` — `doc/windows-shell.md` decision 6.
+    Copy,
+    /// Fill from the clipboard at the selection's corner — `App::enter_range` under a
+    /// `crate::clipboard::get_text`.
+    Paste,
     /// Empty the selected cells, keeping their formatting — `App::clear_range`.
     ClearCells,
     /// Put the caret in the name box. A menu item as well as F5, because a verb nobody can
@@ -70,6 +79,9 @@ impl Command {
         Command::Exit,
         Command::Undo,
         Command::Redo,
+        Command::Cut,
+        Command::Copy,
+        Command::Paste,
         Command::ClearCells,
         Command::GoTo,
         Command::Recalculate,
@@ -170,6 +182,19 @@ pub const MENUS: &[Menu] = &[
             },
             Item::Separator,
             Item::Verb {
+                command: Command::Cut,
+                label: "Cu&t\tCtrl+X",
+            },
+            Item::Verb {
+                command: Command::Copy,
+                label: "&Copy\tCtrl+C",
+            },
+            Item::Verb {
+                command: Command::Paste,
+                label: "&Paste\tCtrl+V",
+            },
+            Item::Separator,
+            Item::Verb {
                 command: Command::ClearCells,
                 label: "&Delete\tDel",
             },
@@ -234,6 +259,9 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('S'), true, true) => Some(Command::SaveAs),
         (Key::Char('Z'), true, false) => Some(Command::Undo),
         (Key::Char('Y'), true, false) => Some(Command::Redo),
+        (Key::Char('X'), true, false) => Some(Command::Cut),
+        (Key::Char('C'), true, false) => Some(Command::Copy),
+        (Key::Char('V'), true, false) => Some(Command::Paste),
         (Key::PageDown, true, _) => Some(Command::SheetNext),
         (Key::PageUp, true, _) => Some(Command::SheetPrevious),
         (Key::F9, false, false) => Some(Command::Recalculate),
@@ -341,6 +369,9 @@ mod tests {
             (Key::Char('S'), ctrl_shift, Command::SaveAs),
             (Key::Char('Z'), ctrl, Command::Undo),
             (Key::Char('Y'), ctrl, Command::Redo),
+            (Key::Char('X'), ctrl, Command::Cut),
+            (Key::Char('C'), ctrl, Command::Copy),
+            (Key::Char('V'), ctrl, Command::Paste),
             (Key::PageDown, ctrl, Command::SheetNext),
             (Key::PageUp, ctrl, Command::SheetPrevious),
             (Key::F9, Mods::default(), Command::Recalculate),

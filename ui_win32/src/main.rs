@@ -48,6 +48,8 @@ mod sheet;
 mod theme;
 
 #[cfg(windows)]
+mod clipboard;
+#[cfg(windows)]
 mod dialog;
 #[cfg(windows)]
 mod gdi;

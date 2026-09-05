@@ -10,12 +10,13 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Built through W3; W4–W8 are a plan.** This document was W0's deliverable — the shell planned,
+**Built through W4; W5–W8 are a plan.** This document was W0's deliverable — the shell planned,
 its decisions argued, its gaps named in advance, and the two claims the whole thing rests on
-measured rather than assumed. W1 added the window and the read-only grid, W2 the selection and
-W3 the editing, so the parts of it that were predictions are now records: what is written down
-about the geometry, the theme, the double buffer, the scrollbars, **decision 5's windowless
-render target**, **decision 4's menu bar** and **decision 7's modals** has been run.
+measured rather than assumed. W1 added the window and the read-only grid, W2 the selection, W3
+the editing and W4 the clipboard, so the parts of it that were predictions are now records: what
+is written down about the geometry, the theme, the double buffer, the scrollbars, **decision 5's
+windowless render target**, **decision 4's menu bar**, **decision 7's modals** and **decision 6's
+`CF_UNICODETEXT`** has been run.
 
 ## In one line
 
@@ -288,14 +289,26 @@ all, so writing one is a 54-byte header in front of them. A 32-bit section would
 fourth byte per pixel that GDI leaves undefined — precisely the thing a byte-for-byte comparison
 must not depend on.
 
-### 6. The clipboard is the system's, and this shell is ahead of two others
+### 6. The clipboard is the system's, and this shell is ahead of two others — *built in W4*
 
-`CF_UNICODETEXT` with tab-separated text — the shape every other spreadsheet reads — plus
-`clear_range` for cut and `enter_range` under the paste. This is the one place where the
-Windows shell is *ahead* rather than behind: `grind-tui` has only its own vi register (a
-terminal cannot reach a system clipboard without a protocol the host may not speak) and
-`grind-text-gtk` has no clipboard at all. Interop with LibreOffice Calc and Excel is W4's exit
-criterion, both directions.
+`CF_UNICODETEXT` with tab- and CRLF-separated text — the shape every other spreadsheet reads —
+plus `clear_range` for cut and `enter_range` under the paste. `clipboard.rs` is the only file
+that opens the clipboard, on `gdi.rs`'s pattern: one `OpenClipboard`/`CloseClipboard` pair per
+call, closed on every path including the early returns, so a half-finished copy cannot leave it
+open for the rest of the process. `sheet/clip.rs` is the portable half either side of it — the
+codec between a rectangle of `App::input_text` and a `String` — tested on Linux the way
+`sheet/keymap.rs` is. This is the one place where the Windows shell is *ahead* rather than
+behind: `grind-tui` has only its own vi register (a terminal cannot reach a system clipboard
+without a protocol the host may not speak) and `grind-text-gtk` has no clipboard at all.
+
+What was verified under Wine: the round trip inside this shell itself — copy, cut and paste
+over the sample document, through the real `CF_UNICODETEXT` API rather than a shortcut, with
+recalculation following a pasted value across the sheet. What was **not**: pasting into a
+LibreOffice Calc or Excel window on the same machine. A bare Xvfb has no running clipboard
+manager to bridge Win32's clipboard to the X11 `CLIPBOARD` selection — `xclip -o` reports no
+owner after a Ctrl+C that Wine's own `GetClipboardData` reads back correctly a moment later —
+so cross-application interop joins the IME and real Excel on *What Wine cannot speak for*'s
+list below, unchanged from what this section already named before W4 was built.
 
 ### 7. Every modal dialog follows one shape, and it is not obvious
 
@@ -421,7 +434,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W1** | **The window, and the read-only grid** — *done* | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | **Met.** All fifteen R7 and sample documents open under Wine, and a package (`.ods`) as well as a flat file; the wheel and both scrollbars move the view; columns are as wide as the document says and hidden tracks are gone; 42 tests on Linux, including the cell-rect ⇄ hit round trip. Two bugs found by *running* it and fixed — see below |
 | **W2** | **Selection, navigation, and an assertable frame** — *done* | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; `sheet/status.rs`'s aggregates; the name box; and decision 5's DIB render target | **Met.** The sample document is navigable by keyboard alone — arrows, Ctrl+arrows, Ctrl+Home/End, PageUp/Down, Ctrl+A, and F5 into the name box — with the view following the cursor; `--render-to` is byte-identical across two runs under Wine, and `win32.yml`'s new `render` job asserts the same on Windows. 79 tests on Linux. One bug found by *running* it — see below |
 | **W3** | **Sheet editing** — *done* | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the notice bar; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete; and the menu bar decision 4 makes this platform's growable surface | **Met.** Typing, F2, a double-click and a click on the formula bar all open the editor; a formula is typed in display syntax and stored in ODF's; one that will not parse keeps the edit open with the caret on the problem and says so in the notice bar; Delete, Ctrl+Z, Ctrl+Y and F9 do what they say; the Sheet menu adds, renames — carrying every reference with it, D10 — and deletes; Ctrl+S writes a document that `grind lint` reads back clean. 104 tests on Linux. Two bugs found by *running* it, one of them a crash — see below |
-| **W4** | **The clipboard** | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | copy here → paste into LibreOffice Calc and into Excel, and back, both directions |
+| **W4** | **The clipboard** — *done* | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | **Met inside the shell**: copy, cut and paste round-trip through the real Win32 clipboard API under Wine, with recalculation following. Interop with a real LibreOffice Calc or Excel window is unverified here — a bare Xvfb has no clipboard manager to bridge to X11, so this joins *What Wine cannot speak for* |
 | **W5** | **The text pane** | `metrics.rs` per decision 3 and `Faces` over it; `text/draw.rs` drawing `App::layout_block` run by run; a real `CreateCaret` caret; `WM_CHAR` plus the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret); `App::type_markdown`; selection by Shift+arrow, Shift+click and drag; the format strip over `char_style` / `set_char_style`; block kinds, outline and go-to for `p12` / `#intro` / `§2.1.3` | every feature `examples/sample-text.sh` builds is visible and editable, and a test asserts that this pane and `grind text view --width` break the same text at the same places when both are given `Fixed` |
 | **W6** | **The three shared panes** | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | all three reachable from whichever pane they apply to, and opening every overlay on every R7 document then saving leaves the bytes identical |
 | **W7** | **Chrome and the accessibility floor** | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | the portable menu-table test passes: every command id has a handler and every handler an item. `accesskit_windows` is **named and deferred**, and the system caret is the floor |
@@ -690,6 +703,26 @@ Added in W3, once cells could be typed into:
 | `--render-to` is still byte-identical, with the formula bar in it | Two consecutive renders `cmp` equal, under Wine with `DISPLAY` unset |
 | The shell still imports only OS DLLs, now with COM in it | `objdump -p`: `user32`, `gdi32`, `dwmapi`, `ole32`, `combase`, `oleaut32`, `KERNEL32`, `advapi32`, `ntdll`, `bcryptprimitives`, one api-set. `IFileDialog` costs `ole32` and `combase`, both part of Windows; `shell32` does not appear at all, because the dialog is reached through `CoCreateInstance` rather than by linking a shell entry point |
 | The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 104 passed |
+
+Added in W4, once the clipboard existed:
+
+| Claim | How it was checked |
+|---|---|
+| Copy puts the selection on the clipboard as `App::input_text`, tab- and CRLF-separated | Under Xvfb, driven by XTEST: Ctrl+C on A4 (`Transport`) then Ctrl+V on the empty A19 shows `Transport` there, with `App::input_text` — not the display value — as the round trip |
+| Cut clears the source in the same step, as one undo entry | Ctrl+X on B3 (`500.00 €`) empties it immediately; pasting it into B19 restores `500` and every formula reading B3 (`Total`, `Spend ratio`) recalculates against the new layout |
+| The Edit menu carries Cut/Copy/Paste, and Ctrl+X/C/V reach them ahead of the grid's own use of those letters | `menu::accelerator` consulted before `sheet/keymap.rs`'s navigation table, same as every other verb; `every_accelerator_names_a_command_that_is_in_a_menu` extended to the three |
+| The portable codec round-trips through `App::enter_range`, including a formula and a cell holding a literal tab | `sheet/clip.rs`'s own tests, on Linux — no window, no clipboard, no `cfg(windows)` |
+| `clipboard.rs` is Windows-only, holds every `OpenClipboard`/`CloseClipboard` pair, and adds only the three namespaces it needs | `#![cfg(windows)]`; `cargo tree` after W4 shows the three new feature-gated modules and no new crate |
+| The shell still imports only OS DLLs, with the clipboard API in it | `objdump -p`: adds nothing beyond `user32` and `KERNEL32`, which already carried `OpenClipboard`/`SetClipboardData`/`GetClipboardData` and `GlobalAlloc`/`GlobalLock` |
+| The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 107 passed |
+
+**What running it found**: not a bug, but a boundary. `xclip -selection clipboard -o` reports "no
+owner for the CLIPBOARD selection" immediately after a Ctrl+C that Wine's own `GetClipboardData`
+reads back correctly a moment later — a bare Xvfb runs no clipboard-manager desktop session to
+bridge Win32's clipboard to X11's, so the two halves of decision 6's claim split exactly where
+*What Wine cannot speak for* already said interop with real Excel would: the API calls are
+verified, cross-application interop on this machine is not, and W4's exit criterion is met only
+in the half Wine can answer for.
 
 What is still unverified by construction: decision 3's measurement, because it does not exist
 yet, and — per *What Wine cannot speak for* above — the dark title bar, the DPI path and the

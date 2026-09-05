@@ -83,17 +83,19 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::Controls::{EM_SETSEL, SetScrollInfo};
 use windows::core::PCWSTR;
 
+use crate::clipboard;
 use crate::dialog::{self, Answer, Com};
 use crate::gdi::{self, BackBuffer, Brush, Dib, Font};
 use crate::menu::{self, Command, Item};
 use crate::notice;
+use crate::sheet::clip;
 use crate::sheet::draw::{self, Frame};
 use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
 use crate::theme::{self, Mode, Theme};
-use grind_sheet::{Pos, RecalcMode};
+use grind_sheet::{App, Pos, RecalcMode};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
 const APP_NAME: &str = "Grind";
@@ -1715,6 +1717,9 @@ fn do_command(hwnd: HWND, command: Command) {
         }
         Command::Undo => history(hwnd, true),
         Command::Redo => history(hwnd, false),
+        Command::Cut => copy(hwnd, true),
+        Command::Copy => copy(hwnd, false),
+        Command::Paste => paste(hwnd),
         Command::ClearCells => clear_cells(hwnd),
         Command::GoTo => open_name_box(hwnd),
         Command::Recalculate => recalculate(hwnd),
@@ -1739,6 +1744,75 @@ fn history(hwnd: HWND, undo: bool) {
             if did {
                 // Whatever the banner said was about the document as it was.
                 state.say(None);
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Put the selection on the clipboard as `CF_UNICODETEXT`, tab- and CRLF-separated
+/// (`sheet::clip::rect_text`), and with `cut`, clear it afterwards — one `App::clear_range`, so
+/// it is one undo step like Delete's.
+///
+/// What travels is each cell's `App::input_text` — the raw number, or a formula in display
+/// form — rather than what the cell *displays*, for the reason `doc/windows-shell.md` decision
+/// 6 gives: pasted back here it reproduces the cells exactly, and pasted into LibreOffice Calc
+/// or Excel `1234.5` is a number where `1,234.50 €` is a guess about that program's locale.
+fn copy(hwnd: HWND, cut: bool) {
+    // SAFETY: one borrow; `clipboard::set_text` and `clear_range` each run with nothing else
+    // borrowed.
+    unsafe {
+        with_state(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let text = clip::rect_text(&state.app, state.sheet, start, end, App::input_text);
+            clipboard::set_text(hwnd, &text);
+            if cut && let Err(error) = state.app.clear_range(state.sheet, start, end) {
+                state.say(Some(error.to_string()));
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Read the clipboard and fill from the selection's top-left corner — `App::enter_range` under
+/// `sheet::clip::parse_rows`, one undo step for the whole rectangle. Nothing happens when the
+/// clipboard holds no text, which is what makes pasting an image or a file list silently do
+/// nothing rather than write garbage into a cell.
+fn paste(hwnd: HWND) {
+    let Some(text) = clipboard::get_text(hwnd) else {
+        return;
+    };
+    let rows = clip::parse_rows(&text);
+    // SAFETY: one borrow. `enter_range` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_state(hwnd, |state| {
+            let (start, _) = state.selection.rect();
+            match state
+                .app
+                .enter_range(state.sheet, start, &rows, RecalcMode::Document)
+            {
+                Ok(outcome) => {
+                    if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
+                        state.say(Some(notice::recalc_skipped(recalc.spoiled)));
+                    }
+                    let last = Pos::new(
+                        start.row + rows.len().saturating_sub(1) as u32,
+                        start.col
+                            + rows
+                                .iter()
+                                .map(Vec::len)
+                                .max()
+                                .unwrap_or(1)
+                                .saturating_sub(1) as u32,
+                    );
+                    state.selection = Selection {
+                        anchor: start,
+                        active: last,
+                    };
+                    state.reveal();
+                    sync_scrollbars(hwnd, state);
+                }
+                Err(error) => state.say(Some(error.to_string())),
             }
         });
     }
