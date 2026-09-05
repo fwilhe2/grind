@@ -147,7 +147,7 @@ pub fn one_line(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 #[cfg(windows)]
-pub use windows_impl::{Frame, paint};
+pub use windows_impl::{Frame, draw_text, paint};
 
 #[cfg(windows)]
 mod windows_impl {
@@ -486,8 +486,11 @@ mod windows_impl {
     /// empty neighbour is a real spreadsheet behaviour and a named gap here rather than a
     /// half-done one — it needs to know whether the neighbour is empty *and* to draw outside its
     /// own cell's rectangle, which is W3's problem, not W1's.
+    /// Public to the crate because the text pane's chrome — its status bar and its notice bar —
+    /// is the same one line of text in a rectangle, and two spellings of "clipped, with an
+    /// ellipsis, in the theme's ink" is one too many.
     #[allow(clippy::too_many_arguments)]
-    fn draw_text(
+    pub fn draw_text(
         dc: HDC,
         text: &str,
         left: i32,

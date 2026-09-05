@@ -14,7 +14,9 @@
 # **inspection aid and never a build path**: the artifact that ships comes off
 # `windows-latest` in `win32.yml` and nowhere else (doc/windows-shell.md, Verification).
 # It earns its place anyway, because every bug W1 had was one glance at this and none
-# of them was visible in review.
+# of them was visible in review — and W5a's three were the same. Since W5a it opens
+# either document type, so `scripts/run.sh win32 /tmp/grind-demo/sample.fodt` is the
+# text pane; with no document it gets the sample spreadsheet, like the other shells.
 #
 # With no document it builds one with `examples/sample-sheet.sh` — or `examples/sample-text.sh`
 # for the word processor — which uses every feature this build supports, so whatever was

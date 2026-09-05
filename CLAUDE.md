@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W4 are done and W5–W8 are not.** Its seven decisions, of which one is genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape, and the answer is a whole stack (measuring *and* drawing) rather than an API. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W5a are done and W5b–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -136,7 +136,7 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W4**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W5a**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -154,8 +154,22 @@ carried four references with it — whose every sentence is a pure function in `
 the **clipboard**: `CF_UNICODETEXT`, tab- and CRLF-separated, over `App::input_text` —
 `clipboard.rs` is the only file that opens it and `sheet/clip.rs` the portable codec either side,
 so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the same
-way Delete already did. No text pane yet (W5). What is unusual about it is that the whole thing is
-examinable from Linux, because `cargo check` does not link:
+way Delete already did.
+
+**W5a is the text pane, and it settles this shell's one open decision.** `metrics.rs` is the
+fourth `layout::Metrics` implementation and the first one no toolkit handed over: GDI measures
+with `GetTextExtentExPointW` and draws with `ExtTextOutW` **using the advances that same call
+produced**, because a shell that measured with one engine and drew with another would put the
+caret where the ink is not. A window is now *either* pane (`win.rs`'s `Pane`), chosen by
+`grind_core::kind` from the file's bytes, so File ▸ Open on a `.fodt` turns the grid into a
+document in the same window. The pane lays the whole document out into a `Flow` (`text/geom.rs`,
+portable and checked on Linux against what `grind text view --width` breaks), draws it run by run
+with its headings, bold, italic, underline, colour, highlight, lists and tabs, has a caret that
+blinks at the user's own rate, a selection by Shift+arrow, Shift+click, drag and double-click,
+and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text clipboard. **W5b is
+the rest**: the IME, `type_markdown`, the format strip, block kinds, outline and go-to, and a menu
+that knows which pane it is over. What is unusual about the whole thing is that it is examinable
+from Linux, because `cargo check` does not link:
 
 ```sh
 rustup target add x86_64-pc-windows-msvc
@@ -172,7 +186,10 @@ the same sample document every other shell gets. It earns its place: all three o
 one and both of W3's were one glance at a screenshot and none was visible in review. **W3's first
 was a hard crash** that `cargo check`, clippy and 104 unit tests all passed clean — an empty
 `Vec<u16>` has no allocation, so `as_mut_ptr` hands `DrawTextW` a dangling pointer, and drawing
-an empty string was an access violation reading address 2.
+an empty string was an access violation reading address 2. **W5a's three were the same shape**: a
+tab and a line break are characters in the model and GDI drew the font's missing-glyph box for
+both, and the first line of a two-line selection was never washed — at a break `Layout::x_at`
+resolves an offset to the *later* line, so the wash came out with negative width.
 
 `--render-to` (W2, `doc/windows-shell.md` decision 5) draws **one frame with no window, no
 compositor and no display** — `CreateCompatibleDC(None)` + `CreateDIBSection` — and writes a

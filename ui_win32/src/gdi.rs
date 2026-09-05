@@ -55,14 +55,30 @@ impl Drop for Brush {
 /// A font that deletes itself.
 ///
 /// Built from a face name, a height in pixels and a weight rather than from a `TextStyle`,
-/// because the mapping from one to the other is `metrics.rs`' job (W5) and this file is meant to
-/// stay the only place a handle is created rather than becoming the place decisions are made.
+/// because the mapping from one to the other is `metrics.rs`' job and this file is meant to stay
+/// the only place a handle is created rather than becoming the place decisions are made.
 pub struct Font(HFONT);
 
 impl Font {
     /// `height` is a *cell* height in pixels — the negative `lfHeight` convention, which asks
     /// GDI for a font whose character height is that rather than whose line box is.
     pub fn new(face: &str, height: i32, bold: bool) -> Self {
+        Self::styled(face, height, bold, false, false, false)
+    }
+
+    /// The same, with the three other `LOGFONTW` switches a run of text can ask for.
+    ///
+    /// Italic, underline and strikethrough are properties of the *font* in GDI rather than of a
+    /// separate drawing call, which is why the text pane gets all three for nothing where the GTK
+    /// window needed Pango attributes for the last two (W5, `metrics.rs`).
+    pub fn styled(
+        face: &str,
+        height: i32,
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        strike: bool,
+    ) -> Self {
         let mut log = LOGFONTW {
             lfHeight: -height,
             lfWeight: if bold {
@@ -70,6 +86,9 @@ impl Font {
             } else {
                 FW_NORMAL.0 as i32
             },
+            lfItalic: u8::from(italic),
+            lfUnderline: u8::from(underline),
+            lfStrikeOut: u8::from(strike),
             ..Default::default()
         };
         for (slot, unit) in log.lfFaceName.iter_mut().zip(face.encode_utf16()) {
