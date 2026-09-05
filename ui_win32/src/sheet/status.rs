@@ -96,6 +96,18 @@ pub fn name_box_text(app: &App, sheet: usize, selection: Selection) -> String {
     name_of(app, sheet, selection).unwrap_or_else(|| a1::format(None, selection.active))
 }
 
+/// What the formula bar shows: the active cell as it would be typed in.
+///
+/// [`grind_sheet::App::input_text`] and nothing else, which is the whole point of it being one
+/// line here rather than a rule of this shell's own: a formula comes back in **display syntax**
+/// (`=SUM(B2:B4)`, not ODF's `=SUM([.B2:.B4])`), a date comes back in the ISO spelling that can
+/// be typed straight back in, and text that would otherwise be read as a number comes back with
+/// its leading `\'`. What the bar shows is therefore exactly what [`super::state::to_store`]
+/// takes, and the two cannot drift.
+pub fn formula_bar_text(app: &App, sheet: usize, selection: Selection) -> String {
+    app.input_text(sheet, selection.active).unwrap_or_default()
+}
+
 /// The defined name covering *exactly* this selection, if there is one.
 ///
 /// Exactly, not overlapping: a name is a handle on one range, and offering it for a selection
@@ -234,6 +246,36 @@ mod tests {
         assert!(text.contains("Sum 60"), "{text}");
         assert!(text.contains("Count 4"), "{text}");
         assert!(text.contains("Average 20"), "{text}");
+    }
+
+    /// The bar shows what would be typed back in, not what the cell displays — which for a
+    /// formula is the display syntax rather than the ODF one the document stores.
+    #[test]
+    fn the_formula_bar_shows_the_cell_as_it_would_be_typed() {
+        let app = book();
+        app.enter(
+            0,
+            Pos::new(4, 1),
+            "=SUM([.B2:.B4])",
+            grind_sheet::RecalcMode::Document,
+        )
+        .unwrap();
+        assert_eq!(
+            formula_bar_text(&app, 0, Selection::at(Pos::new(4, 1))),
+            "=SUM(B2:B4)"
+        );
+        assert_eq!(
+            formula_bar_text(&app, 0, Selection::at(Pos::new(1, 1))),
+            "10"
+        );
+        assert_eq!(
+            formula_bar_text(&app, 0, Selection::at(Pos::new(0, 1))),
+            "Widgets"
+        );
+        // An empty cell says nothing at all, rather than "0" or a placeholder.
+        assert_eq!(formula_bar_text(&app, 0, Selection::at(Pos::new(9, 9))), "");
+        // It follows the *active* cell of a range, not its corner.
+        assert_eq!(formula_bar_text(&app, 0, from((0, 1), (1, 1))), "10");
     }
 
     #[test]

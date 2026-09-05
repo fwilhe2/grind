@@ -179,6 +179,16 @@ mod windows_impl {
         /// window at all, so anything only a control could draw would be missing from every
         /// rendered frame.
         pub name: &'a str,
+        /// What the formula bar shows: the active cell's input text — a formula in display
+        /// syntax, or the value as it would be typed back in.
+        ///
+        /// Drawn rather than held in a control, for the same two reasons the name box is: it is
+        /// a read-out until somebody types in it, and `--render-to` has no window at all.
+        pub formula: &'a str,
+        /// The notice bar, or `None` when there is nothing to say. Its *height* is the
+        /// geometry's, so a frame whose banner text is `Some` and whose `banner_h` is zero draws
+        /// nothing — the two are set together by the window.
+        pub banner: Option<&'a str>,
         /// The selection, which is presentation state and never leaves the shell.
         pub selection: Selection,
         /// The point size the shell font is drawn at, already scaled for this monitor's DPI.
@@ -274,15 +284,15 @@ mod windows_impl {
             gdi::fill(
                 dc,
                 0,
-                g.strip_h.round() as i32,
+                g.header_top().round() as i32,
                 g.width.round() as i32,
-                (g.strip_h + g.header_h).round() as i32,
+                (g.header_top() + g.header_h).round() as i32,
                 theme.header,
             );
             gdi::fill(
                 dc,
                 0,
-                g.strip_h.round() as i32,
+                g.header_top().round() as i32,
                 g.header_w.round() as i32,
                 (body.y + body.h).round() as i32,
                 theme.header,
@@ -338,22 +348,23 @@ mod windows_impl {
             gdi::fill(
                 dc,
                 0,
-                (g.strip_h + g.header_h - 1.0).round() as i32,
+                (g.header_top() + g.header_h - 1.0).round() as i32,
                 g.width.round() as i32,
-                (g.strip_h + g.header_h).round() as i32,
+                (g.header_top() + g.header_h).round() as i32,
                 theme.header_line,
             );
             gdi::fill(
                 dc,
                 (g.header_w - 1.0).round() as i32,
-                g.strip_h.round() as i32,
+                g.header_top().round() as i32,
                 g.header_w.round() as i32,
                 (body.y + body.h).round() as i32,
                 theme.header_line,
             );
         }
 
-        // The strip along the top, and the name box in it.
+        // The strip along the top, with the two read-outs in it: where the selection is, and
+        // what is in the cell.
         {
             let _font = Selected::font(dc, &regular);
             let strip = g.strip_rect();
@@ -361,20 +372,48 @@ mod windows_impl {
             gdi::fill(dc, left, top, right, bottom, theme.header);
             gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
 
-            let field = g.name_box_rect();
-            let (left, top, right, bottom) = field.edges();
-            gdi::fill(dc, left, top, right, bottom, theme.field_line);
-            gdi::fill(dc, left + 1, top + 1, right - 1, bottom - 1, theme.field);
+            let pad = crate::sheet::geom::scale(PAD, g.dpi);
+            for (rect, text) in [
+                (g.name_box_rect(), frame.name),
+                (g.formula_rect(), frame.formula),
+            ] {
+                if rect.w <= 0.0 {
+                    continue;
+                }
+                let (left, top, right, bottom) = rect.edges();
+                gdi::fill(dc, left, top, right, bottom, theme.field_line);
+                gdi::fill(dc, left + 1, top + 1, right - 1, bottom - 1, theme.field);
+                draw_text(
+                    dc,
+                    text,
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    Align::Left,
+                    theme.text,
+                    pad,
+                );
+            }
+        }
+
+        // The notice bar, if there is one. Under the strip and over the grid, which is where
+        // the eye goes next after the thing that caused it.
+        if let Some(notice) = frame.banner.filter(|_| g.banner_h > 0.0) {
+            let _font = Selected::font(dc, &regular);
+            let (left, top, right, bottom) = g.banner_rect().edges();
+            gdi::fill(dc, left, top, right, bottom, theme.banner);
+            gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
             draw_text(
                 dc,
-                frame.name,
+                notice,
                 left,
                 top,
                 right,
                 bottom,
                 Align::Left,
-                theme.text,
-                crate::sheet::geom::scale(PAD, g.dpi),
+                theme.banner_text,
+                crate::sheet::geom::scale(8.0, g.dpi),
             );
         }
 
@@ -475,6 +514,16 @@ mod windows_impl {
         // with a box glyph after it under Wine. The `…W` entry points that take a `PCWSTR` want
         // the terminator; the ones that take a length do not.
         let mut wide: Vec<u16> = super::one_line(text).encode_utf16().collect();
+        // Nothing to draw is a *return*, not a zero-length `DrawTextW`, and this one cost an
+        // afternoon: an empty `Vec<u16>` has no allocation, so `as_mut_ptr` hands back the
+        // dangling well-aligned address `2`, and Wine's `DrawTextW` dereferences the buffer
+        // before it looks at the count. The crash was an access violation reading address 2,
+        // inside a system DLL, with nothing of ours on the faulting frame. W1 and W2 never hit
+        // it because every string they drew had something in it; W3's formula bar is empty
+        // whenever the active cell is.
+        if wide.is_empty() {
+            return;
+        }
         let format = DT_SINGLELINE
             | DT_VCENTER
             | DT_NOPREFIX
@@ -500,8 +549,11 @@ pub const HEADER_H: f64 = 22.0;
 pub const HEADER_W: f64 = 46.0;
 /// The status bar's height at 100%.
 pub const STATUS_H: f64 = 24.0;
-/// The strip along the top that holds the name box — and, from W3, the formula bar.
+/// The strip along the top that holds the name box and the formula bar.
 pub const STRIP_H: f64 = 28.0;
+/// The notice bar's height at 100%, when there is a notice. One line of the shell font with
+/// room to breathe — a banner that needs two lines is a banner saying too much.
+pub const BANNER_H: f64 = 26.0;
 /// The default track sizes at 100%, for the columns and rows a document does not size.
 pub const COL_W: f64 = 80.0;
 pub const ROW_H: f64 = 20.0;

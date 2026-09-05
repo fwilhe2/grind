@@ -17,4 +17,5 @@
 pub mod draw;
 pub mod geom;
 pub mod keymap;
+pub mod state;
 pub mod status;

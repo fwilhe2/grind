@@ -43,9 +43,12 @@ use super::geom::Sizes;
 
 /// A key, as this shell cares about it.
 ///
-/// W2's set is navigation plus the two verbs that are navigation in disguise (select
-/// everything, go to an address). Editing adds `F2`, `Delete` and the printable characters in
-/// W3, where `state.rs` gets a mode to interpret them in.
+/// W2's set was navigation plus the two verbs that are navigation in disguise (select
+/// everything, go to an address). W3 adds the four keys that only mean anything once there is
+/// something to edit — `F2`, `Delete`, `Backspace` and `F9` — and `sheet/state.rs` is the mode
+/// that interprets them. The printable characters are **not** here: a `WM_KEYDOWN` carries a
+/// key rather than a character, and typed text comes from `WM_CHAR`, which has been through the
+/// keyboard layout and the IME.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Left,
@@ -59,8 +62,15 @@ pub enum Key {
     Tab,
     Return,
     Escape,
+    Delete,
+    Backspace,
+    /// Amend the cell rather than replace it — Excel's, and everybody's.
+    F2,
     /// Go to an address — the name box's key, and Excel's.
     F5,
+    /// Recalculate. Excel's key, and the one this shell needs most, since a document whose
+    /// cached values this build cannot reproduce is left stale on purpose.
+    F9,
     /// A letter or digit, as the keyboard reports it: **already upper case**, because a
     /// `WM_KEYDOWN` carries the key rather than the character. W3's typed text comes from
     /// `WM_CHAR` instead, which is the message that has been through the layout and the IME.
@@ -120,6 +130,7 @@ pub enum Action {
 
 // The virtual-key codes, from `winuser.h`. See the module comment for why they are written
 // here rather than imported, and `tests` for what pins them.
+const VK_BACK: u32 = 0x08;
 const VK_TAB: u32 = 0x09;
 const VK_RETURN: u32 = 0x0d;
 const VK_ESCAPE: u32 = 0x1b;
@@ -131,7 +142,10 @@ const VK_LEFT: u32 = 0x25;
 const VK_UP: u32 = 0x26;
 const VK_RIGHT: u32 = 0x27;
 const VK_DOWN: u32 = 0x28;
+const VK_DELETE: u32 = 0x2e;
+const VK_F2: u32 = 0x71;
 const VK_F5: u32 = 0x74;
+const VK_F9: u32 = 0x78;
 
 /// A virtual-key code as this shell's [`Key`].
 ///
@@ -151,7 +165,11 @@ pub fn key_for(vk: u32) -> Key {
         VK_TAB => Key::Tab,
         VK_RETURN => Key::Return,
         VK_ESCAPE => Key::Escape,
+        VK_BACK => Key::Backspace,
+        VK_DELETE => Key::Delete,
+        VK_F2 => Key::F2,
         VK_F5 => Key::F5,
+        VK_F9 => Key::F9,
         0x30..=0x39 | 0x41..=0x5a => Key::Char(char::from(vk as u8)),
         _ => Key::Other,
     }
@@ -463,6 +481,7 @@ mod tests {
     fn the_virtual_key_codes_are_the_ones_windows_uses() {
         use windows::Win32::UI::Input::KeyboardAndMouse as vk;
         for (ours, theirs, name) in [
+            (VK_BACK, vk::VK_BACK, "VK_BACK"),
             (VK_TAB, vk::VK_TAB, "VK_TAB"),
             (VK_RETURN, vk::VK_RETURN, "VK_RETURN"),
             (VK_ESCAPE, vk::VK_ESCAPE, "VK_ESCAPE"),
@@ -474,7 +493,10 @@ mod tests {
             (VK_UP, vk::VK_UP, "VK_UP"),
             (VK_RIGHT, vk::VK_RIGHT, "VK_RIGHT"),
             (VK_DOWN, vk::VK_DOWN, "VK_DOWN"),
+            (VK_DELETE, vk::VK_DELETE, "VK_DELETE"),
+            (VK_F2, vk::VK_F2, "VK_F2"),
             (VK_F5, vk::VK_F5, "VK_F5"),
+            (VK_F9, vk::VK_F9, "VK_F9"),
         ] {
             assert_eq!(ours, u32::from(theirs.0), "{name}");
         }
@@ -489,6 +511,9 @@ mod tests {
         assert_eq!(key_for(0x25), Key::Left);
         assert_eq!(key_for(0x28), Key::Down);
         assert_eq!(key_for(0x74), Key::F5);
+        assert_eq!(key_for(0x71), Key::F2);
+        assert_eq!(key_for(0x2e), Key::Delete);
+        assert_eq!(key_for(0x08), Key::Backspace);
         // A key with no meaning here has to stay `Other`, so the window hands it back to
         // `DefWindowProc` rather than swallowing it.
         assert_eq!(key_for(0x12), Key::Other, "Alt");
@@ -547,6 +572,11 @@ mod tests {
     fn unclaimed_keys_are_left_alone() {
         assert_eq!(action_for(Key::Other, Mods::default()), None);
         assert_eq!(action_for(Key::Escape, Mods::default()), None);
+        // The editing keys belong to `state.rs` and the verbs to `menu.rs`; this table is
+        // navigation and must not answer for either.
+        for key in [Key::F2, Key::F9, Key::Delete, Key::Backspace] {
+            assert_eq!(action_for(key, Mods::default()), None, "{key:?}");
+        }
         // The clipboard is W4's; claiming the letters now would be a Ctrl+C that does nothing.
         for c in ['C', 'X', 'V'] {
             assert_eq!(action_for(Key::Char(c), ctrl()), None, "{c}");
