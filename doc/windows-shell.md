@@ -10,11 +10,12 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Built through W1; W2–W8 are a plan.** This document was W0's deliverable — the shell planned,
+**Built through W2; W3–W8 are a plan.** This document was W0's deliverable — the shell planned,
 its decisions argued, its gaps named in advance, and the two claims the whole thing rests on
-measured rather than assumed. W1 added the window and the read-only grid, so the parts of it
-that were predictions about drawing are now records of it: what is written down about the
-geometry, the theme, the double buffer and the scrollbars has been run.
+measured rather than assumed. W1 added the window and the read-only grid and W2 the selection,
+so the parts of it that were predictions about drawing are now records of it: what is written
+down about the geometry, the theme, the double buffer, the scrollbars and **decision 5's
+windowless render target** has been run.
 
 ## In one line
 
@@ -228,6 +229,13 @@ navigation and mnemonics with no code here. So the four surfaces map across as:
 | Context menus | context menus, on the cells, the headers and the text |
 | Ctrl+K palette — the one allowed to grow | **the menu bar** |
 
+One surface has been added since, in W2, and it is not a fourth kind: a **strip along the top of
+the window holding the name box**, which is where the formula bar joins it in W3. It is not a
+place verbs may go — it holds exactly the two read-outs that name *where the selection is* and
+*what is in the cell*, which is why it is a strip rather than a bar. The go-to answer of the
+other shells (Ctrl+K's palette in `grind-web`, a popover in `grind-text-gtk`) is this box and
+F5, so this shell needs no go-to dialog either.
+
 The admission test transfers unchanged: a **verb** goes in a menu, a **property of the
 selection** goes on the format strip, and `CellStyle` + `numfmt::Format` + `CharStyle` bound the
 latter. What must not happen is a *toolbar* in the Common Controls v6 sense — that class needs
@@ -239,7 +247,7 @@ each item routes somewhere real. The equivalent here is cheaper and better: the 
 **tables of data** in a portable `menu.rs`, so the test that every command id has a handler and
 every handler has an item runs on Linux with no window at all.
 
-### 5. `--render-to`, with no window and no display
+### 5. `--render-to`, with no window and no display — *built in W2*
 
 The GTK shells draw one frame to a PNG and exit so that a refactor can be proved by a
 byte-identical image. The Win32 version of that is *stronger*, and it falls out of the shape the
@@ -252,6 +260,19 @@ runner *and* under Wine on a Linux CI runner. The output is a BMP: a 54-byte hea
 the DIB bits the section already holds, no encoder, no new dependency, and byte-comparable.
 
 Not a user feature, same as the other two shells.
+
+**Built, and it works exactly as described.** `Dib` in `gdi.rs` is `CreateCompatibleDC(None)` +
+`CreateDIBSection`, and `win::render` is a second *caller* of `draw_frame` rather than a second
+drawing path — the same `opened()` state, the same `paint`, no `HWND` anywhere. Two things are
+pinned rather than read, because the output's only purpose is to be compared with another one:
+the frame is 1280×800 at 96 dpi, and **the theme is forced to light**, so a screenshot does not
+depend on what the machine running it has under `Themes\Personalize`.
+
+The section is **24-bit and bottom-up**, which is what makes the "no encoder" claim true rather
+than nearly true: a bottom-up 24-bit DIB's bits *are* a `.bmp` file's pixel data, padding and
+all, so writing one is a 54-byte header in front of them. A 32-bit section would have carried a
+fourth byte per pixel that GDI leaves undefined — precisely the thing a byte-for-byte comparison
+must not depend on.
 
 ### 6. The clipboard is the system's, and this shell is ahead of two others
 
@@ -291,18 +312,23 @@ ui_win32/
   src/
     main.rs           *   argv, kind sniff, a message box for errors before a window exists
     args.rs           *   the command line as a pure function (W0)
-    win.rs           [W]* the class, the wndproc, the message loop, GWLP_USERDATA
-    gdi.rs           [W]* RAII wrappers for fonts and brushes; the back buffer — and, from W2,
-                          the DIB target behind --render-to
+    win.rs           [W]* the class, the wndproc, the message loop, GWLP_USERDATA, the child
+                          EDIT that becomes the name box, and the windowless render path
+    gdi.rs           [W]* RAII wrappers for fonts and brushes; the back buffer; and the DIB
+                          target behind --render-to, with its BMP writer (W2)
     metrics.rs       [W]  Metrics + Faces over a memory DC, with the font cache
-    theme.rs         [~]* the palette (portable) and the registry read + dark title bar [W]
+    theme.rs         [~]* the palette (portable, incl. the selection wash's `Rgb::blend`) and
+                          the registry read + dark title bar [W]
     menu.rs               the menus as data, and the command-id table
     sheet/
-      geom.rs           * pixels <-> cells, prefix sums over the document's own widths
-      keymap.rs           virtual-key codes -> UiAction
+      geom.rs           * pixels <-> cells, prefix sums over the document's own widths, the
+                          strip, and which visible track a cursor may stop on
+      keymap.rs         * virtual-key codes -> a motion; the selection; the Ctrl+arrow rule
+      status.rs         * the name box and the status bar's aggregates, over a real `App`
       state.rs            Ready / Enter / Edit, the editing state machine
       draw.rs        [~]* a viewport painted onto an HDC — and, portable beside it, what a cell
-                          *looks like*: alignment, weight and colour resolved from `CellStyle`
+                          *looks like*: alignment, weight and colour resolved from `CellStyle`,
+                          and what the selection wash does to it
     text/
       keymap.rs           virtual-key codes -> caret operations
       draw.rs        [W]  laid-out blocks painted onto an HDC, run by run
@@ -345,7 +371,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 |---|---|---|---|
 | **W0** | **Plan and wiring** — *done* | this document; `ui_win32/` with `args.rs` (the command line as a pure function, 16 tests) and a `main.rs` that resolves what it *would* open; workspace member; `.cargo/config.toml` with `+crt-static` **and the 8 MB stack reserve**; `.github/workflows/win32.yml`; `-p grind-win32` in `ci.yml`'s build/test/clippy/docs lists; REUSE headers | **Met.** Type-check, clippy and 16 tests green on Linux for the msvc target; the shell links under `cargo-xwin` and imports only OS DLLs; the `windows` cost measured (10 lock entries, 5.0s cold check). The stack overflow that predates this shell is diagnosed and fixed, and the whole core is now known to work on Windows |
 | **W1** | **The window, and the read-only grid** — *done* | class + wndproc + `GWLP_USERDATA`; per-monitor DPI v2 before any window exists; theme and the dark title bar; double-buffered paint answering `WM_ERASEBKGND`; the status bar; `sheet/geom.rs` with prefix sums over the document's own column widths through `length_mm`; `sheet/draw.rs` over `get_viewport`; headers; `WM_VSCROLL`/`WM_HSCROLL` and a wheel that honours `SPI_GETWHEELSCROLLLINES` | **Met.** All fifteen R7 and sample documents open under Wine, and a package (`.ods`) as well as a flat file; the wheel and both scrollbars move the view; columns are as wide as the document says and hidden tracks are gone; 42 tests on Linux, including the cell-rect ⇄ hit round trip. Two bugs found by *running* it and fixed — see below |
-| **W2** | **Selection, navigation, and an assertable frame** | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; the status bar's aggregates; the name box; and decision 5's DIB render target | keyboard-only navigation of a corpus file; `--render-to shot.bmp` byte-identical across two runs, and produced under Wine as well as on Windows |
+| **W2** | **Selection, navigation, and an assertable frame** — *done* | `sheet/keymap.rs` (portable, with the VK constants pinned against `winuser.h` by a `cfg(windows)` test); arrows, Ctrl+arrows, Home/End, PageUp/Down; click and drag; header selection; `sheet/status.rs`'s aggregates; the name box; and decision 5's DIB render target | **Met.** The sample document is navigable by keyboard alone — arrows, Ctrl+arrows, Ctrl+Home/End, PageUp/Down, Ctrl+A, and F5 into the name box — with the view following the cursor; `--render-to` is byte-identical across two runs under Wine, and `win32.yml`'s new `render` job asserts the same on Windows. 79 tests on Linux. One bug found by *running* it — see below |
 | **W3** | **Sheet editing** | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the stale banner; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete | every value and formula in `examples/sample-sheet.sh` is typeable by hand, and a document saved here matches one the CLI wrote for the same operations |
 | **W4** | **The clipboard** | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | copy here → paste into LibreOffice Calc and into Excel, and back, both directions |
 | **W5** | **The text pane** | `metrics.rs` per decision 3 and `Faces` over it; `text/draw.rs` drawing `App::layout_block` run by run; a real `CreateCaret` caret; `WM_CHAR` plus the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret); `App::type_markdown`; selection by Shift+arrow, Shift+click and drag; the format strip over `char_style` / `set_char_style`; block kinds, outline and go-to for `p12` / `#intro` / `§2.1.3` | every feature `examples/sample-text.sh` builds is visible and editable, and a test asserts that this pane and `grind text view --width` break the same text at the same places when both are given `Fixed` |
@@ -374,9 +400,11 @@ are gated in `doc/not-doing.md` and `doc/text-layout.md` and are not this shell'
 **Deferred by decision, reachable from the CLI (R9).** A hidden row or column is drawn as
 **gone**, with none of `ui_sheet_gtk`'s marker straddling the boundary — so this shell shows what
 the document says and offers no way to *unhide* from the grid. `grind sheet hide --unhide` does
-it, which
-is the R9 answer, and a marker is a W2 question because it is a hit-test target rather than a
-drawing one. No **zoom** before W8. No **point mode,
+it, which is the R9 answer. W2 did not add the marker: the cursor now steps *over* a hidden
+track (`keymap::onto_visible`, above), which was the urgent half, and a hit-test target that is
+one pixel wide is a chrome question rather than a navigation one. No **autoscroll on a drag**
+past the edge of the window — a drag stops at the last visible cell, and Shift+arrow, which does
+scroll, is the way to select further. No **zoom** before W8. No **point mode,
 autocomplete or signature hints** while typing a formula — `doc/sheet-shell.md`'s M6, the single
 largest piece of the GTK window, and nothing about it is Windows-shaped. No **filter UI**: a
 filter in a file folds its rows away and nothing here creates one. No **find/replace over
@@ -435,6 +463,14 @@ DISPLAY=:99 scripts/run.sh win32 &
 DISPLAY=:99 import -window root /tmp/shot.png     # python-xlib + XTEST drives the mouse
 ```
 
+From W2 there is a second, quieter way in, and it needs no display at all — which makes it the
+faster loop for anything about *drawing* rather than about input:
+
+```sh
+env -u DISPLAY wine target/x86_64-pc-windows-msvc/debug/grind-win32.exe book.fods \
+    --render-to /tmp/frame.bmp
+```
+
 `cargo-xwin` links a real msvc binary with `lld-link` against Microsoft's own CRT and SDK. **The
 artifact that ships comes off `windows-latest` and nowhere else**, the same rule
 `.github/workflows/gtk.yml` states for the GTK shells: "its own workflow on its own runner,
@@ -468,8 +504,14 @@ about it is made here:
    `mscoree.dll`, `hostfxr.dll`, `microsoft.windowsappruntime*` or `microsoft.ui.xaml*`. The
    binary is never *run* there: it is a GUI-subsystem application whose argument errors go into
    a message box, and a message box on a headless runner waits forever.
-3. `render` (windows-latest) — `--render-to` on a fixture, compared against a committed BMP.
-   This is the job that makes a drawing refactor provable.
+3. `render` (windows-latest) — **built in W2.** `--render-to` on a fixture, twice, compared byte
+   for byte, with the size and the `BM` magic asserted so that two *empty* frames cannot agree
+   their way past it. This is the job that makes a drawing refactor provable. It is the one
+   place the binary *is* run on a runner, which is safe because this path opens no window and no
+   message box on success — and the job carries a timeout, because on failure it would. The
+   frame is uploaded as an artifact, which is how the committed fixture the plan asked for gets
+   produced: a `.bmp` from Wine cannot stand in for one from Windows, since every glyph there
+   comes from a substituted font.
 
 ## Risks
 
@@ -539,9 +581,25 @@ Added in W1, once there was a window:
 | The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 42 passed |
 | The shell still imports only OS DLLs, with a window in it | `objdump -p`: `user32`, `gdi32`, `dwmapi`, `KERNEL32`, `advapi32`, `oleaut32`, `ntdll`, `bcryptprimitives`, one api-set — every one of them part of Windows |
 
+Added in W2, once there was a selection:
+
+| Claim | How it was checked |
+|---|---|
+| The sample document is navigable by keyboard alone | Under Xvfb, driven by XTEST: arrows and Shift+arrows build a rectangle (`C4:E9`, with the status bar reporting `Sum 4670.24834350305 · Count 14 · Average 333.589167393075`); Ctrl+End reaches `J20` and Ctrl+Home `A1`; Ctrl+Down runs to `A19`; Ctrl+A selects `A1:J20`; two PageUps from row 200 land on row 148 with the view moved to match |
+| Click, drag and the header bands select what they look like | A press at B10 dragged to E13 gives `B10:E13`; a click on the C header gives `C1:C1048576` and one on the row-4 header `A4:XFD4`; the corner gives `A1:J20`. Every one of them highlights its own header buttons |
+| The chrome is not the grid | A click in the status bar and a click on an empty part of the strip both leave the selection exactly where it was — `Hit::Chrome`, which exists so that the corner button's select-all cannot be triggered by the status bar |
+| The name box goes where it is told, and cancels | F5 shows the control with the current address selected; typing `g20` and pressing Enter moves to G20 and the box goes back to being drawn; typing `zz` and pressing Escape leaves the selection where it was and says nothing |
+| The view follows the cursor | `A200` typed into the name box scrolls the sheet so row 200 is the last one drawn — `Sizes::start_showing`, which walks back a screenful rather than stepping a hundred and seventy-four times |
+| `--render-to` draws a frame with no window and no display | Under Wine with `DISPLAY` **unset**: a 3 072 054-byte `.bmp` — 54 bytes of header and 1280 × 800 × 3 of pixels — with the grid, the headers, the name box and the status bar all in it |
+| The same frame twice is the same bytes | `cmp` on two consecutive renders: identical. `win32.yml`'s `render` job asserts the same on `windows-latest` |
+| The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 79 passed |
+
 What is still unverified by construction: decision 3's measurement and decision 7's modal shape,
 because neither exists yet, and — per *What Wine cannot speak for* above — the dark title bar,
-dark mode end to end, and the DPI path, because Wine cannot answer for any of them.
+dark mode end to end, and the DPI path, because Wine cannot answer for any of them. W2 adds one
+more to that list: the `render` job's output has never been produced on a **real Windows**
+machine, so the committed-fixture half of decision 5 is deferred until a `.bmp` from that runner
+can be committed from it. Two renders agreeing is what is asserted today.
 
 ### What running it found, which reading it did not
 
@@ -563,6 +621,24 @@ zero**, so a hidden column still carries an ordinary `style:column-width` and re
 widths drew it. `Sizes::from_lengths` now takes the hidden list too and applies it last.
 `App::hidden_cols`, `manually_hidden_rows` and `hidden_rows` are three separate questions and
 this shell asks all three — the same arrangement `ui_sheet_gtk/src/grid.rs` arrived at.
+
+### W2 found one more, and it was invisible on paper for the same reason
+
+**Arrow keys walked into hidden rows and columns.** Two presses of Down in
+`examples/sample-sheet.sh`'s budget — which hides rows 2 and 5–7 and column D — put the cursor on
+row 5, and the screen showed no cursor at all while the status bar cheerfully reported one. Every
+unit test passed: the *selection* was correct, and `moved` is a function of cell coordinates that
+has no business knowing about widths.
+
+The cause is this shell's own W1 decision made sharp. `doc/sheet-shell.md`'s window draws a hidden
+track as a marker straddling the boundary; this one draws it as **gone**, which is written down
+above as a named gap — and a cursor parked on nothing is that gap's edge. `keymap::onto_visible`
+is the fix and it is where the rule belongs: after a motion, the *active cell* moves off any
+hidden track in the direction it was travelling, and the **anchor is left alone**, because a
+selection's corner may perfectly well sit on a hidden track and moving it would silently change
+what a later operation covers. `Sizes::nearest_visible` is the same question `scroll_rows`
+already asked in W1 — a hidden track occupies no pixels, so stepping onto one changes a number
+and not the screen.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

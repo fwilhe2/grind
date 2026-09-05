@@ -130,3 +130,75 @@ jobs:
           name: grind-win32-x64
           path: target/release/grind-win32.exe
           if-no-files-found: error
+
+  # The job that makes a drawing refactor provable (W2, `doc/windows-shell.md` decision 5).
+  #
+  # `--render-to` draws one frame onto a DIB section and writes a `.bmp`. There is **no window
+  # and no display** involved — `CreateCompatibleDC(None)` + `CreateDIBSection` need neither —
+  # which is what lets this run on a headless runner at all, and is why the `build` job's rule
+  # about never *running* the binary does not reach it: there is no message box on this path.
+  #
+  # Two renders, compared byte for byte. That is the whole assertion, and it is the W2 exit
+  # criterion verbatim. What it catches is a drawing change: nothing in the output is allowed to
+  # vary between runs, so the theme is forced to light and the frame size is a constant rather
+  # than the window's.
+  #
+  # What it deliberately does **not** yet do is compare against a committed fixture. A `.bmp`
+  # from here and one from the Wine path on a developer's machine cannot match — Consolas and
+  # Segoe UI are absent under Wine, so every glyph comes from a substitution — so the fixture has
+  # to be produced on this runner before it can be committed, and the artifact below is how.
+  render:
+    runs-on: windows-latest
+    # A failing render puts its message in a *message box*, because this is a GUI-subsystem
+    # binary with no stderr — and a message box on a headless runner is a wait with no end. The
+    # limit turns that into a failed job rather than a hung one.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build
+        run: cargo build --release -p grind-win32
+
+      - name: Draw the same frame twice
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $doc = "sheet/tests/data/samples/Sales Dashboard.fods"
+          # `Start-Process -Wait`, not `&`: a GUI-subsystem process detaches from the console
+          # immediately, so the plain call would return before a single pixel had been drawn and
+          # the comparison below would read whatever was on disk from the step before.
+          foreach ($out in @("one.bmp", "two.bmp")) {
+            $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
+              -Wait -PassThru -NoNewWindow
+            if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
+          }
+
+      - name: The two frames are byte-identical
+        shell: pwsh
+        run: |
+          $a = [IO.File]::ReadAllBytes("one.bmp")
+          $b = [IO.File]::ReadAllBytes("two.bmp")
+          Write-Host "$($a.Length) bytes"
+          # A 1280x800 24-bit bottom-up BMP: 54 bytes of header and no padding, since 1280*3 is
+          # already a multiple of four. Asserted rather than assumed, so that a frame that came
+          # out empty or the wrong size fails here rather than passing a comparison with another
+          # empty frame.
+          if ($a.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($a.Length)"; exit 1
+          }
+          if ([Text.Encoding]::ASCII.GetString($a[0..1]) -ne "BM") {
+            Write-Error "not a BMP"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -ne 0) {
+            Write-Error "two renders of the same document differ"; exit 1
+          }
+          Write-Host "OK - the frame is reproducible."
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-frame
+          path: one.bmp
+          if-no-files-found: error

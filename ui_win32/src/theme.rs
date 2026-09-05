@@ -41,6 +41,23 @@ impl Rgb {
         u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16)
     }
 
+    /// This colour `t` of the way towards another, per channel.
+    ///
+    /// The selection wash is what needs it, and needs it *here* rather than at the drawing
+    /// call: GDI has no alpha in `FillRect`, so "a translucent blue over whatever the cell
+    /// already is" has to be computed as an opaque colour before anything is filled. Doing the
+    /// arithmetic in portable code is what makes the wash over a document's own red the same
+    /// question as the wash over the theme's ground, and testable without a device context.
+    pub fn blend(self, other: Rgb, t: f64) -> Rgb {
+        let t = t.clamp(0.0, 1.0);
+        let mix = |a: u8, b: u8| (f64::from(a) + (f64::from(b) - f64::from(a)) * t).round() as u8;
+        Rgb(
+            mix(self.0, other.0),
+            mix(self.1, other.1),
+            mix(self.2, other.2),
+        )
+    }
+
     /// A colour parsed from `#rrggbb`, which is the only form ODF stores (§5.1).
     pub fn parse(hex: &str) -> Option<Self> {
         let digits = hex.strip_prefix('#')?;
@@ -81,6 +98,19 @@ pub struct Theme {
     /// The status bar at the foot of the window.
     pub status: Rgb,
     pub status_text: Rgb,
+    /// The colour a selected cell's ground is washed *towards* — never painted neat, always
+    /// [`Rgb::blend`]ed over whatever the cell already is, so a document's own fill survives
+    /// being selected. See `sheet::draw::WASH` for how far.
+    pub selection: Rgb,
+    /// The outline around the selected rectangle, and the accent everything else in this shell
+    /// borrows. Painted neat.
+    pub selection_edge: Rgb,
+    /// A header button belonging to a selected row or column.
+    pub header_active: Rgb,
+    /// The name box: an inset field on the strip, so it reads as something to type in rather
+    /// than as a label. Separate from `background` because the strip is not the grid.
+    pub field: Rgb,
+    pub field_line: Rgb,
 }
 
 /// The light palette — Windows 11's own surface greys rather than pure white, so that the grid
@@ -95,6 +125,11 @@ const LIGHT: Theme = Theme {
     header_line: Rgb(0xc4, 0xc4, 0xc4),
     status: Rgb(0xf3, 0xf3, 0xf3),
     status_text: Rgb(0x44, 0x44, 0x44),
+    selection: Rgb(0x00, 0x67, 0xc0),
+    selection_edge: Rgb(0x00, 0x5a, 0x9e),
+    header_active: Rgb(0xd8, 0xe6, 0xf4),
+    field: Rgb(0xff, 0xff, 0xff),
+    field_line: Rgb(0xb4, 0xb4, 0xb4),
 };
 
 /// The dark palette. Not an inversion of the light one: the grid lines are *lighter* than the
@@ -110,6 +145,11 @@ const DARK: Theme = Theme {
     header_line: Rgb(0x45, 0x45, 0x45),
     status: Rgb(0x2b, 0x2b, 0x2b),
     status_text: Rgb(0xc0, 0xc0, 0xc0),
+    selection: Rgb(0x4c, 0xa0, 0xff),
+    selection_edge: Rgb(0x60, 0xac, 0xff),
+    header_active: Rgb(0x1f, 0x3a, 0x52),
+    field: Rgb(0x1a, 0x1a, 0x1a),
+    field_line: Rgb(0x55, 0x55, 0x55),
 };
 
 impl Theme {
@@ -208,6 +248,34 @@ mod tests {
     fn a_document_colour_is_read_the_way_a_document_spells_it() {
         let hex = "#0074d9"; // PALETTE's blue
         assert_eq!(Rgb::parse(hex), Some(Rgb(0x00, 0x74, 0xd9)));
+    }
+
+    #[test]
+    fn a_blend_is_a_straight_line_between_two_colours() {
+        let black = Rgb(0, 0, 0);
+        let white = Rgb(0xff, 0xff, 0xff);
+        assert_eq!(black.blend(white, 0.0), black);
+        assert_eq!(black.blend(white, 1.0), white);
+        assert_eq!(black.blend(white, 0.5), Rgb(128, 128, 128));
+        // Out-of-range mixes are clamped rather than wrapping a `u8` round.
+        assert_eq!(black.blend(white, 2.0), white);
+        assert_eq!(black.blend(white, -1.0), black);
+    }
+
+    /// The selection wash has to be visible over a cell the *document* coloured, not only over
+    /// the theme's ground — that is the case a solid highlight would erase.
+    #[test]
+    fn the_wash_moves_a_documents_own_colour_without_erasing_it() {
+        for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
+            let red = Rgb(0xff, 0x41, 0x36); // PALETTE's red, as a document would store it
+            let washed = red.blend(theme.selection, crate::sheet::draw::WASH);
+            assert_ne!(washed, red, "{:?}: the wash is invisible", theme.mode);
+            assert_ne!(
+                washed, theme.selection,
+                "{:?}: the wash erased the document's colour",
+                theme.mode
+            );
+        }
     }
 
     #[test]

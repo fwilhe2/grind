@@ -79,8 +79,19 @@ fn sniff(path: &Path) -> Result<DocumentKind, String> {
 ///
 /// Split out from [`main`] because it is the whole of the decision and none of the platform:
 /// it is exercised by the tests at the bottom of this file on any host, where `run` cannot be.
-fn resolve(command: Command) -> Result<(DocumentKind, Option<std::path::PathBuf>), String> {
-    let Command::Open { kind, path, .. } = command else {
+type Opening = (
+    DocumentKind,
+    Option<std::path::PathBuf>,
+    Option<std::path::PathBuf>,
+);
+
+fn resolve(command: Command) -> Result<Opening, String> {
+    let Command::Open {
+        kind,
+        path,
+        render_to,
+    } = command
+    else {
         unreachable!("help, version and errors are handled before this")
     };
     match &path {
@@ -89,11 +100,11 @@ fn resolve(command: Command) -> Result<(DocumentKind, Option<std::path::PathBuf>
         Some(file) => {
             let found = sniff(file)?;
             let kind = args::reconcile(kind, found, &file.display().to_string())?;
-            Ok((kind, path))
+            Ok((kind, path, render_to))
         }
         // Nothing to read, so the flag is the only opinion there is. A spreadsheet by default,
         // matching `grind-tui`.
-        None => Ok((kind.unwrap_or(DocumentKind::Spreadsheet), None)),
+        None => Ok((kind.unwrap_or(DocumentKind::Spreadsheet), None, render_to)),
     }
 }
 
@@ -127,7 +138,7 @@ fn main() -> std::process::ExitCode {
             // A text document is a document this shell can *identify* and cannot yet open —
             // the pane is W5. Saying so is the honest answer; opening an empty spreadsheet
             // instead would look like the file had failed to load.
-            Ok((DocumentKind::Text, _)) => {
+            Ok((DocumentKind::Text, ..)) => {
                 message_box(
                     "grind-win32",
                     "This is a word processor document, and this build has no text pane yet \
@@ -137,7 +148,18 @@ fn main() -> std::process::ExitCode {
                 );
                 ExitCode::FAILURE
             }
-            Ok((_, path)) => match win::run(path) {
+            // `--render-to` draws one frame with no window at all and exits, so it comes
+            // before the window is opened rather than after (`doc/windows-shell.md`,
+            // decision 5). Its errors still go to a message box: this is a GUI-subsystem
+            // binary and there is no stderr, even when it is doing something headless.
+            Ok((_, path, Some(target))) => match win::render(path, &target) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(message) => {
+                    message_box("grind-win32", &message, true);
+                    ExitCode::FAILURE
+                }
+            },
+            Ok((_, path, None)) => match win::run(path) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
                     message_box("grind-win32", &message, true);
@@ -206,7 +228,7 @@ fn main() -> std::process::ExitCode {
                 eprintln!("grind-win32: {message}");
                 ExitCode::FAILURE
             }
-            Ok((kind, path)) => {
+            Ok((kind, path, _)) => {
                 let what = path
                     .as_ref()
                     .map(|p| p.display().to_string())
@@ -237,7 +259,7 @@ mod tests {
     fn an_empty_invocation_opens_a_spreadsheet() {
         assert_eq!(
             resolve(open(None, None)).unwrap(),
-            (DocumentKind::Spreadsheet, None)
+            (DocumentKind::Spreadsheet, None, None)
         );
     }
 
@@ -245,7 +267,7 @@ mod tests {
     fn the_flag_decides_when_there_is_no_file() {
         assert_eq!(
             resolve(open(None, Some(DocumentKind::Text))).unwrap(),
-            (DocumentKind::Text, None)
+            (DocumentKind::Text, None, None)
         );
     }
 
@@ -262,7 +284,7 @@ mod tests {
                 .expect("a default document writes");
         std::fs::write(&lying, bytes).unwrap();
 
-        let (kind, _) = resolve(open(Some(lying.to_str().unwrap()), None)).unwrap();
+        let (kind, ..) = resolve(open(Some(lying.to_str().unwrap()), None)).unwrap();
         assert_eq!(
             kind,
             DocumentKind::Text,
