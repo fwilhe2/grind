@@ -65,13 +65,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP,
     SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE,
     SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetWindowLongPtrW, SetWindowPos,
     SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage, WHEEL_DELTA, WM_APP,
     WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL,
-    WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD,
+    WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -84,8 +84,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::Input::Ime::{
     CFS_POINT, COMPOSITIONFORM, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
 };
-// The caret's blink rate is the *user's* setting and lives with the rest of the caret API.
-use windows::Win32::UI::WindowsAndMessaging::GetCaretBlinkTime;
+// The caret API — a system caret's whole vocabulary — and the text pane's is Win32's real
+// object rather than a drawn rectangle since `place_system_caret`.
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateCaret, DestroyCaret, HideCaret, SetCaretPos, ShowCaret,
+};
 // `SetScrollInfo` lives in the Controls namespace in Windows' own metadata, which is where the
 // scrollbar API has always been. It is *not* a Common Controls v6 class and needs no manifest —
 // `doc/windows-shell.md`'s rejection of a v6 toolbar does not reach it.
@@ -137,11 +140,6 @@ const ID_EDITOR: usize = 2;
 /// document is read by reading it, and every word processor there has ever been sets body text
 /// bigger than a cell. Headings scale off this (`metrics.rs`).
 const TEXT_PX: i32 = 15;
-
-/// The caret's blink, as a timer id. One per window, and the interval is `GetCaretBlinkTime` —
-/// the user's own setting rather than a constant, which is the difference between drawing a caret
-/// and inventing one.
-const ID_CARET_TIMER: usize = 1;
 
 /// "A key went to one of our child controls", sent by the message loop.
 ///
@@ -580,8 +578,11 @@ struct Text {
     fonts_dpi: u32,
     /// Whether a drag is extending the selection.
     dragging: bool,
-    /// The blink's phase. The *interval* is `GetCaretBlinkTime` — the user's own setting, which
-    /// a shell that drew its own caret would otherwise quietly override.
+    /// Whether a caret should be drawn at all, in the one place that still draws one: `render`'s
+    /// windowless frame, which has no `HWND` and so no system caret. In a real window the system
+    /// caret (`place_system_caret`) is the caret and this field is left `true` and ignored —
+    /// still set after every edit and motion, on the off chance a caller draws a frame from this
+    /// state with no window, which is exactly what `render` does.
     caret_on: bool,
     banner: Option<String>,
     /// What [`grind_text::App::type_markdown`] said the next character must be set in — the
@@ -720,12 +721,13 @@ impl Text {
         self.app.caret_x(self.caret, &faces).ok()
     }
 
-    /// Where the caret is drawn, in client pixels — the same geometry `text/draw.rs` uses to
-    /// paint it, answered without a `Frame` because this caller has no reason to build one.
-    /// `position_ime_composition` is the one thing that asks: `ImmSetCompositionWindow` wants a
-    /// point, not a line, so a composing IME's candidate list appears where the caret is rather
-    /// than wherever Windows last happened to leave it.
-    fn caret_point(&self) -> Option<(i32, i32)> {
+    /// Where the caret is drawn, in client pixels, and how big it is — the same geometry
+    /// `text/draw.rs` uses to paint it, answered without a `Frame` because neither caller here
+    /// has a reason to build one. `position_ime_composition` wants the point: a composing IME's
+    /// candidate list should appear where the caret is rather than wherever Windows last happened
+    /// to leave it. `place_system_caret` wants all four, because `CreateCaret` takes a size and
+    /// the caret is a different height on a heading than on a paragraph.
+    fn caret_geometry(&self) -> Option<(i32, i32, i32, i32)> {
         let slot = self.flow.slot(self.caret.block).copied()?;
         let layout = self.layout_of(self.caret.block)?;
         let line = layout
@@ -736,7 +738,14 @@ impl Text {
         let body = self.page.body();
         let x = column_x + slot.indent + f64::from(layout.x_at(self.caret.offset));
         let y = body.y + slot.top + f64::from(line.top) - self.page.scroll;
-        Some((x.round() as i32, y.round() as i32))
+        let width = scale(text::draw::CARET_W, self.page.dpi).max(1.0);
+        let height = f64::from(line.height).max(1.0);
+        Some((
+            x.round() as i32,
+            y.round() as i32,
+            width.round() as i32,
+            height.round() as i32,
+        ))
     }
 
     /// One block's plain text, for the questions that are about characters rather than about
@@ -1050,7 +1059,7 @@ pub fn render(
         }
         Pane::Text(text) => {
             text.relayout(w, h, 96);
-            draw_text_frame(dib.dc(), text);
+            draw_text_frame(dib.dc(), text, false);
         }
     }
     std::fs::write(target, dib.bmp()).map_err(|error| format!("{}: {error}", target.display()))
@@ -1217,7 +1226,6 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             }
             build_menu(hwnd);
             make_children(hwnd);
-            start_blinking(hwnd);
             refresh(hwnd);
             LRESULT(0)
         }
@@ -1369,9 +1377,24 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             wheel(hwnd, wparam);
             LRESULT(0)
         }
-        // The caret's blink, and nothing else uses a timer.
-        WM_TIMER if wparam.0 == ID_CARET_TIMER => {
-            blink(hwnd);
+        // The system caret exists only while this window has keyboard focus — `CreateCaret` is
+        // per-thread, so a window that never had focus never had one, and a dialog stealing
+        // focus (or another application entirely) must not leave one behind for the next thing
+        // Windows shows to trip over.
+        WM_SETFOCUS => {
+            if is_text(hwnd) {
+                place_system_caret(hwnd);
+            }
+            LRESULT(0)
+        }
+        WM_KILLFOCUS => {
+            if is_text(hwnd) {
+                // SAFETY: paired with `place_system_caret`'s `CreateCaret`; destroying with none
+                // showing is documented as harmless, which covers the grid's own case for free.
+                unsafe {
+                    let _ = DestroyCaret();
+                }
+            }
             LRESULT(0)
         }
         // The user changed the theme while the window was open. `WM_SETTINGCHANGE` is sent for
@@ -1973,7 +1996,8 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
 /// this process composes anything.
 fn position_ime_composition(hwnd: HWND) {
     // SAFETY: one borrow, released before the IME calls below; nothing here dispatches.
-    let Some((x, y)) = unsafe { with_text(hwnd, |text| text.caret_point()) }.flatten() else {
+    let Some((x, y, ..)) = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten()
+    else {
         return;
     };
     // SAFETY: `ImmGetContext`/`ImmReleaseContext` are paired within this call, on this thread,
@@ -2910,6 +2934,17 @@ fn draw_frame(dc: HDC, state: &Sheet) {
 
 /// One frame, through the back buffer.
 fn paint(hwnd: HWND) {
+    // The text pane's caret is Windows' own object now (`place_system_caret`), and the blit
+    // below is unaware of it — `BitBlt` paints over whatever was on screen, caret included,
+    // which is what turns it into a stray rectangle if it is not hidden first and shown again
+    // after. The grid never creates one, so this is a no-op there.
+    let has_caret = is_text(hwnd);
+    if has_caret {
+        // SAFETY: no arguments to outlive the call.
+        unsafe {
+            let _ = HideCaret(Some(hwnd));
+        }
+    }
     let mut ps = PAINTSTRUCT::default();
     // SAFETY: `BeginPaint`/`EndPaint` are paired on every path below, including the early
     // return when the back buffer cannot be made.
@@ -2921,12 +2956,20 @@ fn paint(hwnd: HWND) {
                 buffer.clear(pane.theme().background);
                 match pane {
                     Pane::Sheet(sheet) => draw_frame(buffer.dc(), sheet),
-                    Pane::Text(text) => draw_text_frame(buffer.dc(), text),
+                    Pane::Text(text) => draw_text_frame(buffer.dc(), text, true),
                 }
             });
             buffer.present(dc);
         }
         let _ = EndPaint(hwnd, &ps);
+    }
+    if has_caret {
+        // Repositioned here rather than trusted to whatever handler invalidated the window: a
+        // caret this pane moves in a dozen places is a caret placed in one, the same argument
+        // `App::caret_line` already won for *where* it goes — this is only *that* it is shown
+        // there again after every single repaint, including ones with nothing to do with the
+        // caret at all (a resize, a theme change), which costs nothing next to a whole frame.
+        place_system_caret(hwnd);
     }
 }
 
@@ -2946,33 +2989,28 @@ fn is_text(hwnd: HWND) -> bool {
     unsafe { with_pane(hwnd, |pane| matches!(pane, Pane::Text(_))) }.unwrap_or(false)
 }
 
-/// Start the caret blinking at the user's own rate.
+/// Show the system caret at [`Text::caret_geometry`], creating it first.
 ///
-/// `GetCaretBlinkTime` is the setting the keyboard control panel writes, and honouring it is the
-/// difference between drawing a caret and inventing one. `INFINITE` means the user turned
-/// blinking off — an accessibility setting, and one this shell obeys by never starting a timer.
-fn start_blinking(hwnd: HWND) {
-    if !is_text(hwnd) {
+/// `CreateCaret` again rather than only `SetCaretPos`, because the caret is a different height on
+/// a heading than on a paragraph and recreating is how either is set — simpler than tracking
+/// whether the size actually changed, and Windows already blinks it at the user's own
+/// `GetCaretBlinkTime` for free, which is what makes a system caret worth having at all: this
+/// shell no longer keeps that setting or a timer of its own. The ordinary cost of recreating on
+/// every keystroke is that Windows resets the blink phase each time, which reads as normal
+/// because every editor's own caret does the same thing.
+fn place_system_caret(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
+    let Some((x, y, width, height)) = geometry else {
         return;
-    }
-    // SAFETY: no arguments; the timer is destroyed with the window.
+    };
+    // SAFETY: `CreateCaret`, `SetCaretPos` and `ShowCaret` are user32's caret API — one per
+    // thread, paired with `DestroyCaret` in `WM_KILLFOCUS` — and none of them runs a nested
+    // message loop.
     unsafe {
-        let interval = GetCaretBlinkTime();
-        if interval == 0 || interval == u32::MAX {
-            return;
-        }
-        SetTimer(Some(hwnd), ID_CARET_TIMER, interval, None);
-    }
-}
-
-/// One blink. Only the caret's own line is worth repainting, but the window is small and the
-/// frame is double-buffered, so the whole of it is invalidated — measured as imperceptible under
-/// Wine, and the alternative is a rectangle that has to be kept in step with the layout.
-fn blink(hwnd: HWND) {
-    // SAFETY: one borrow, for one bit; nothing inside dispatches.
-    unsafe {
-        with_text(hwnd, |text| text.caret_on = !text.caret_on);
-        let _ = InvalidateRect(Some(hwnd), None, false);
+        let _ = CreateCaret(hwnd, None, width, height);
+        let _ = SetCaretPos(x, y);
+        let _ = ShowCaret(Some(hwnd));
     }
 }
 
@@ -3004,6 +3042,11 @@ fn text_refresh(hwnd: HWND) {
         }
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
+    // The one place this is called from every motion and every edit — `place_system_caret`
+    // recreates the caret at the caret's current size and position, which is cheap next to a
+    // whole-window invalidate and correct even though a keystroke that does not move the caret
+    // calls it too: `CreateCaret` with no change is documented as harmless.
+    place_system_caret(hwnd);
 }
 
 /// The scrollbars for a document, which are **pixels** where the grid's are tracks.
@@ -3779,7 +3822,10 @@ fn text_paste(hwnd: HWND) {
 /// Takes an `HDC` and the state and nothing about the window, which is what makes [`render`] a
 /// second *caller* rather than a second drawing path — the same property the grid's `draw_frame`
 /// has, and the reason `--render-to` works for a document too.
-fn draw_text_frame(dc: HDC, state: &Text) {
+/// `system_caret` is `false` only for [`render`]'s windowless frame, which has no `HWND` and so
+/// no system caret to draw one for it — every other caller has a real window and Windows draws
+/// its own caret over whatever this paints, so drawing one here too would be two.
+fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
     let body = state.page.body();
     let visible = state
         .flow
@@ -3822,7 +3868,7 @@ fn draw_text_frame(dc: HDC, state: &Text) {
             blocks: &blocks,
             selection: state.range(),
             caret: state.caret,
-            caret_on: state.caret_on,
+            caret_on: state.caret_on && !system_caret,
             status: &status,
             banner: state.banner.as_deref(),
             font_px: scale(FONT_PX, state.page.dpi).round() as i32,
