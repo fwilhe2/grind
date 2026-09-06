@@ -251,10 +251,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetActiveWindow,
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow,
     DispatchMessageW, ES_AUTOHSCROLL, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IsDialogMessageW, LoadCursorW, MSG,
-    PostQuitMessage, RegisterClassW, SW_SHOW, SendMessageW, SetWindowLongPtrW, ShowWindow,
-    TranslateMessage, WM_COMMAND, WM_CTLCOLORSTATIC, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT,
-    WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IsDialogMessageW, LB_ADDSTRING,
+    LB_GETCURSEL, LB_SETCURSEL, LBN_DBLCLK, LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage,
+    RegisterClassW, SW_SHOW, SendMessageW, SetWindowLongPtrW, ShowWindow, TranslateMessage,
+    WM_COMMAND, WM_CTLCOLORSTATIC, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_BORDER,
+    WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::gdi::Font;
@@ -542,5 +543,285 @@ fn window_text(hwnd: HWND) -> String {
         let mut buffer = vec![0u16; length as usize + 1];
         let written = GetWindowTextW(hwnd, &mut buffer);
         String::from_utf16_lossy(&buffer[..written.max(0) as usize])
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The chooser — the text pane's outline dialog
+// ---------------------------------------------------------------------------
+
+const CHOOSER_CLASS: &str = "GrindChooserClass";
+static CHOOSER_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+const ID_CHOOSER_LIST: usize = 10;
+
+/// What the popup owns while it is up. The same shape as [`Prompt`] with a list in place of an
+/// edit box, and the same reason it is a separate type: `GWLP_USERDATA` holds one pointer, so a
+/// dialog with a list and one with a line of text cannot share a state struct without one of
+/// them carrying a field that means nothing to it.
+struct Chooser {
+    list: HWND,
+    /// The chosen row, or `None` until OK or a double-click accepts one.
+    answer: Option<usize>,
+    finished: bool,
+    _font: Option<Font>,
+}
+
+/// Ask the user to pick one of a list of lines. `None` means cancelled, or nothing to pick from.
+///
+/// This is `grind text`'s outline dialog (`App::outline`, `doc/windows-shell.md`'s W5b), built
+/// generically over strings rather than over `Heading` so this module stays ignorant of the
+/// document types (R8's rule for the core applies just as well to a shell file with no reason to
+/// know one). A double-click accepts the same as OK, because a list a user has to click twice —
+/// once to select, once on a separate button — is slower than the box it replaces.
+pub fn choose(owner: HWND, title: &str, items: &[String]) -> Option<usize> {
+    if items.is_empty() {
+        return None;
+    }
+    let class = gdi::wide(CHOOSER_CLASS);
+    // SAFETY: the class name outlives every call below, and the boxed state is handed to the
+    // popup and taken back in `WM_NCDESTROY`.
+    unsafe {
+        let instance = GetModuleHandleW(None).ok()?;
+        if !CHOOSER_REGISTERED.swap(true, Ordering::SeqCst) {
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(chooser_proc),
+                hInstance: instance.into(),
+                lpszClassName: PCWSTR(class.as_ptr()),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                hbrBackground: HBRUSH(COLOR_BTNFACE.0 as isize as *mut std::ffi::c_void),
+                ..Default::default()
+            };
+            if RegisterClassW(&wc) == 0 {
+                CHOOSER_REGISTERED.store(false, Ordering::SeqCst);
+                return None;
+            }
+        }
+
+        let dpi = GetDpiForWindow(owner).max(96);
+        let px = |value: f64| crate::sheet::geom::scale(value, dpi).round() as i32;
+        let (w, h) = (px(420.0), px(360.0));
+        let mut owner_rect = Default::default();
+        let _ = GetWindowRect(owner, &mut owner_rect);
+        let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
+        let y = owner_rect.top + ((owner_rect.bottom - owner_rect.top) - h) / 3;
+
+        let state = Box::new(Chooser {
+            list: HWND::default(),
+            answer: None,
+            finished: false,
+            _font: None,
+        });
+        let title = gdi::wide(title);
+        let Ok(popup) = CreateWindowExW(
+            Default::default(),
+            PCWSTR(class.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            WS_POPUP | WS_CAPTION | WS_SYSMENU,
+            x,
+            y,
+            w,
+            h,
+            Some(owner),
+            None::<HMENU>,
+            Some(instance.into()),
+            Some(Box::into_raw(state).cast()),
+        ) else {
+            return None;
+        };
+
+        let font = Font::new("Segoe UI", px(13.0), false);
+        let set_font = |control: HWND| {
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                Some(WPARAM(font.handle().0 as usize)),
+                Some(LPARAM(1)),
+            );
+        };
+        let child = |class: &str, text: &str, style, id: usize, cx, cy, cw, ch| -> HWND {
+            let class = gdi::wide(class);
+            let text = gdi::wide(text);
+            CreateWindowExW(
+                Default::default(),
+                PCWSTR(class.as_ptr()),
+                PCWSTR(text.as_ptr()),
+                style,
+                cx,
+                cy,
+                cw,
+                ch,
+                Some(popup),
+                Some(HMENU(id as *mut std::ffi::c_void)),
+                Some(instance.into()),
+                None,
+            )
+            .unwrap_or_default()
+        };
+
+        let pad = px(12.0);
+        let button = (px(84.0), px(26.0));
+        let inner = w - pad * 2;
+        let row = h - button.1 - px(40.0);
+        let list = child(
+            "LISTBOX",
+            "",
+            WS_CHILD
+                | WS_VISIBLE
+                | WS_BORDER
+                | WS_TABSTOP
+                | WS_VSCROLL
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(LBS_NOTIFY as u32),
+            ID_CHOOSER_LIST,
+            pad,
+            pad,
+            inner,
+            row - pad * 2,
+        );
+        for item in items {
+            let item = gdi::wide(item);
+            SendMessageW(
+                list,
+                LB_ADDSTRING,
+                Some(WPARAM(0)),
+                Some(LPARAM(item.as_ptr() as isize)),
+            );
+        }
+        SendMessageW(list, LB_SETCURSEL, Some(WPARAM(0)), Some(LPARAM(0)));
+        let ok = child(
+            "BUTTON",
+            "OK",
+            WS_CHILD
+                | WS_VISIBLE
+                | WS_TABSTOP
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
+            IDOK.0 as usize,
+            w - pad - button.0 * 2 - px(8.0),
+            row,
+            button.0,
+            button.1,
+        );
+        let cancel = child(
+            "BUTTON",
+            "Cancel",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            IDCANCEL.0 as usize,
+            w - pad - button.0,
+            row,
+            button.0,
+            button.1,
+        );
+        for control in [list, ok, cancel] {
+            set_font(control);
+        }
+        with_chooser(popup, |chooser| {
+            chooser.list = list;
+            chooser._font = Some(font);
+        });
+
+        // Modal, the same pairing `prompt` uses: the owner is disabled for exactly as long as
+        // the popup is up, and re-enabled before it is destroyed.
+        let _ = EnableWindow(owner, false);
+        let _ = ShowWindow(popup, SW_SHOW);
+        let _ = SetFocus(Some(list));
+
+        let mut message = MSG::default();
+        loop {
+            let finished = with_chooser(popup, |chooser| chooser.finished).unwrap_or(true);
+            if finished {
+                break;
+            }
+            let got = GetMessageW(&mut message, None, 0, 0).0;
+            if got <= 0 {
+                PostQuitMessage(0);
+                break;
+            }
+            if IsDialogMessageW(popup, &message).as_bool() {
+                continue;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+
+        let answer = with_chooser(popup, |chooser| chooser.answer.take()).flatten();
+        let _ = EnableWindow(owner, true);
+        let _ = SetActiveWindow(owner);
+        let _ = DestroyWindow(popup);
+        answer
+    }
+}
+
+/// Run `f` with the popup's state — [`with_prompt`]'s twin, over [`Chooser`].
+unsafe fn with_chooser<T>(hwnd: HWND, f: impl FnOnce(&mut Chooser) -> T) -> Option<T> {
+    // SAFETY: the slot holds either null or the pointer stored in `WM_NCCREATE`.
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Chooser;
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: exclusive for the duration of this call.
+    Some(f(unsafe { &mut *raw }))
+}
+
+extern "system" fn chooser_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match message {
+        WM_NCCREATE => {
+            // SAFETY: `lparam` is this message's `CREATESTRUCTW`.
+            unsafe {
+                let create = &*(lparam.0 as *const CREATESTRUCTW);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        WM_CTLCOLORSTATIC => {
+            // SAFETY: `wparam` is the control's `HDC` for this message.
+            unsafe {
+                SetBkMode(HDC(wparam.0 as *mut std::ffi::c_void), TRANSPARENT);
+                SetTextColor(
+                    HDC(wparam.0 as *mut std::ffi::c_void),
+                    COLORREF(GetSysColor(COLOR_BTNTEXT)),
+                );
+                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
+            }
+        }
+        WM_COMMAND => {
+            let id = (wparam.0 & 0xffff) as i32;
+            let notification = ((wparam.0 >> 16) & 0xffff) as u32;
+            let commit =
+                id == IDOK.0 || (id as usize == ID_CHOOSER_LIST && notification == LBN_DBLCLK);
+            if commit || id == IDCANCEL.0 {
+                // SAFETY: one borrow, and reading the selection does not dispatch.
+                unsafe {
+                    with_chooser(hwnd, |chooser| {
+                        if commit {
+                            let selection =
+                                SendMessageW(chooser.list, LB_GETCURSEL, Some(WPARAM(0)), None).0;
+                            if selection >= 0 {
+                                chooser.answer = Some(selection as usize);
+                            }
+                        }
+                        chooser.finished = true;
+                    });
+                }
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            // SAFETY: the pointer came from `Box::into_raw`; reconstituting it once frees it.
+            unsafe {
+                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Chooser;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                if !raw.is_null() {
+                    drop(Box::from_raw(raw));
+                }
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        // SAFETY: the default handler with the arguments it was given.
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
 }
