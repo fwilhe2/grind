@@ -73,13 +73,18 @@ pub enum Command {
     /// Greyed on the grid, the same way the three toggles above are.
     Paragraph,
     /// The caret's block becomes a heading at this level — `ui_text_gtk`'s own Ctrl+1/2/3, kept
-    /// to the same three levels here so the suite has one idea of how far a menu should offer
-    /// going rather than the schema's uncapped `positiveInteger` (`doc/text-core.md`).
+    /// to the same three quick levels here so a key reaches the common case the way it does in
+    /// that window. [`Command::BlockKindDialog`] is where the rest of the schema's uncapped
+    /// `positiveInteger` (`doc/text-core.md`) and every list depth live instead of a key each.
     Heading1,
     Heading2,
     Heading3,
     /// The text pane's outline dialog — every heading, jump to any of them. Greyed on the grid.
     Outline,
+    /// Every block kind this build authors, heading levels past 3 and list items included, as one
+    /// dialog rather than a key per depth — the gap `doc/text-shell.md` names for every shell's
+    /// own window ("no lists UI") and the first one to close it.
+    BlockKindDialog,
     About,
 }
 
@@ -115,6 +120,7 @@ impl Command {
         Command::Heading2,
         Command::Heading3,
         Command::Outline,
+        Command::BlockKindDialog,
         Command::About,
     ];
 
@@ -305,6 +311,11 @@ pub const MENUS: &[Menu] = &[
                 command: Command::Heading3,
                 label: "Heading &3\tCtrl+3",
             },
+            Item::Separator,
+            Item::Verb {
+                command: Command::BlockKindDialog,
+                label: "Block &Kind…\tCtrl+Shift+K",
+            },
         ],
     },
     Menu {
@@ -349,6 +360,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('2'), true, false) => Some(Command::Heading2),
         (Key::Char('3'), true, false) => Some(Command::Heading3),
         (Key::Char('O'), true, true) => Some(Command::Outline),
+        (Key::Char('K'), true, true) => Some(Command::BlockKindDialog),
         _ => None,
     }
 }
@@ -378,7 +390,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Heading1
         | Command::Heading2
         | Command::Heading3
-        | Command::Outline => matches!(kind, Text),
+        | Command::Outline
+        | Command::BlockKindDialog => matches!(kind, Text),
         Command::New
         | Command::Open
         | Command::Save
@@ -509,6 +522,7 @@ mod tests {
             (Key::Char('2'), ctrl, Command::Heading2),
             (Key::Char('3'), ctrl, Command::Heading3),
             (Key::Char('O'), ctrl_shift, Command::Outline),
+            (Key::Char('K'), ctrl_shift, Command::BlockKindDialog),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");
@@ -578,6 +592,7 @@ mod tests {
             Command::Heading2,
             Command::Heading3,
             Command::Outline,
+            Command::BlockKindDialog,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");
