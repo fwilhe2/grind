@@ -2,12 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The autocomplete popover, and the pure part of deciding what to complete.
+//! The autocomplete popover, over the core's own answer to what may be completed.
 //!
-//! What it offers comes from [`funcs::catalog`] — the spec's own signature and summary for
-//! every function this build implements — and from the document's defined names. Neither
-//! list is written here: a shell that kept its own would offer a function the evaluator does
-//! not have, which is a promise nothing keeps.
+//! What it offers comes from `grind_sheet::formula::assist`, and through it from the spec's own
+//! signature and summary for every function this build implements, plus the document's defined
+//! names. Neither list is written here: a shell that kept its own would offer a function the
+//! evaluator does not have, which is a promise nothing keeps.
 //!
 //! The popover does **not** autohide, and that is deliberate: an autohiding popover takes
 //! the input grab with it, and the whole point is that typing carries on into the editor
@@ -19,102 +19,27 @@ use std::ops::Range;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use grind_sheet::formula::{friendly, funcs};
-
 use crate::geom::Rect;
 
-/// One offer in the list.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Candidate {
-    /// What gets inserted, `(` included for a function.
-    pub insert: String,
-    pub name: String,
-    pub detail: String,
-}
-
-/// The identifier being typed at `caret`, if it is one an offer could replace.
-///
-/// A run of name characters that starts where a *function* could start — after `=`, `(`,
-/// `;` or an operator — and is not already a call. Pure, and the reason the popover has no
-/// opinion of its own about what a word is.
-pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
-    if !text.starts_with('=') {
-        return None;
-    }
-    let caret = caret.min(text.len());
-    let start = text[..caret]
-        .char_indices()
-        .rev()
-        .take_while(|(_, c)| c.is_alphanumeric() || *c == '_' || *c == '.')
-        .last()
-        .map(|(i, _)| i)?;
-    if start == 0 {
-        return None;
-    }
-    // Already a call: `SUM(` is finished business, and so is `A1` — a cell address is not a
-    // function name, and offering to turn one into a call would be wrong twice over.
-    if text[caret..].starts_with('(') {
-        return None;
-    }
-    let before = text[..start].trim_end().chars().next_back()?;
-    "=(;+-*/^&<>:,".contains(before).then_some(start..caret)
-}
-
-/// Everything worth offering for `prefix`: functions first, then the document's own names.
-pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
-    let upper = prefix.to_uppercase();
-    let functions = funcs::catalog()
-        .iter()
-        .filter(|info| info.name.starts_with(&upper))
-        .map(|info| Candidate {
-            insert: format!("{}(", info.name),
-            name: info.name.to_owned(),
-            detail: info.brief.to_owned(),
-        });
-    let named = names
-        .iter()
-        .filter(|name| name.to_uppercase().starts_with(&upper))
-        .map(|name| Candidate {
-            insert: name.clone(),
-            name: name.clone(),
-            detail: "defined name".to_owned(),
-        });
-    functions.chain(named).collect()
-}
+/// What to offer and what to replace — the core's, since the Windows shell wanted the same
+/// two answers. Re-exported under the names this file already used, so the popover below and
+/// the widget reach them unchanged.
+pub use grind_sheet::formula::assist::{Candidate, candidates, prefix_at};
 
 /// The signature hint for the call the caret is in, as Pango markup with the current
 /// argument in bold.
 ///
 /// Two spellings of the same signature, `friendly` picking between them: the spec's own
-/// `Syntax:` line, types and all, or [`friendly::signature`]'s plain-English one. The
-/// friendly spelling is the same vocabulary [`friendly::explain`] labels a finished formula
-/// with, so what a user reads while typing and what they read afterwards agree.
+/// `Syntax:` line, types and all, or `friendly::signature`'s plain-English one — both from
+/// `assist::signature_parts`, so this window and the Windows one split a signature the same
+/// way. The friendly spelling is the same vocabulary `friendly::explain` labels a finished
+/// formula with, so what a user reads while typing and what they read afterwards agree.
 ///
 /// A repeating parameter is the last one however many arguments follow it, which is why the
 /// emphasised index is clamped rather than dropped.
 pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<String> {
-    let (head, parts) = match friendly {
-        true => {
-            let (head, labels) = friendly::signature(name)?;
-            (head, labels)
-        }
-        false => {
-            let info = funcs::catalog()
-                .iter()
-                .find(|info| info.name.eq_ignore_ascii_case(name))?;
-            let (head, rest) = info.signature.split_once('(')?;
-            let rest = rest.strip_suffix(')').unwrap_or(rest);
-            (
-                head.to_owned(),
-                rest.split(';').map(str::to_owned).collect(),
-            )
-        }
-    };
+    let (head, parts) = grind_sheet::formula::assist::signature_parts(name, friendly)?;
     let last = parts.len().saturating_sub(1);
-    let separator = match friendly {
-        true => "; ",
-        false => ";",
-    };
     let parts: Vec<String> = parts
         .iter()
         .enumerate()
@@ -123,7 +48,7 @@ pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<S
             false => glib_escape(part),
         })
         .collect();
-    Some(format!("{}({})", glib_escape(&head), parts.join(separator)))
+    Some(format!("{}({})", glib_escape(&head), parts.join("; ")))
 }
 
 fn glib_escape(text: &str) -> String {
@@ -264,33 +189,9 @@ impl Completion {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_prefix_is_a_word_where_a_function_could_start() {
-        assert_eq!(prefix_at("=SU", 3), Some(1..3));
-        assert_eq!(prefix_at("=SUM(AV", 7), Some(5..7));
-        assert_eq!(prefix_at("=1+VLO", 6), Some(3..6));
-        // Not a place a function can start, or not a word at all.
-        assert_eq!(prefix_at("=SUM(B2", 7), Some(5..7)); // a word, and B2 is offerable
-        assert_eq!(prefix_at("SUM", 3), None); // not a formula
-        assert_eq!(prefix_at("=SUM(", 5), None); // nothing typed yet
-        assert_eq!(prefix_at("=SUM(1;2)", 9), None);
-    }
-
-    #[test]
-    fn candidates_come_from_the_catalog_and_the_document() {
-        let names = vec!["expenses".to_owned(), "excess".to_owned()];
-        let offers = candidates("su", &names);
-        assert!(offers.iter().any(|c| c.name == "SUM" && c.insert == "SUM("));
-        assert!(offers.iter().all(|c| c.name.starts_with("SU")));
-
-        // Names come after functions, and are inserted without a parenthesis.
-        let offers = candidates("ex", &names);
-        assert_eq!(
-            offers.last().map(|c| c.insert.clone()),
-            Some("excess".to_owned())
-        );
-        assert!(offers.iter().any(|c| c.name == "EXP"));
-    }
+    // What may be completed and what to offer for it are the core's now
+    // (`grind_sheet::formula::assist`), and so are their tests. What is left here is this
+    // window's own rendering of a signature into Pango markup.
 
     #[test]
     fn the_signature_hint_bolds_the_argument_the_caret_is_in() {

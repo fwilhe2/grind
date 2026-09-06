@@ -77,18 +77,25 @@ pub fn clamp(start: Pos, end: Pos, rows: u32, cols: u32) -> Option<(Pos, Pos)> {
     (end.row >= start.row && end.col >= start.col).then_some((start, end))
 }
 
-/// What the status bar says as a whole: which sheet, how big it is, and the selection.
-pub fn status_line(app: &App, sheet: usize, selection: Selection) -> String {
+/// The status bar's two halves: which document is open on the left, what is selected in it on
+/// the right.
+///
+/// One function rather than two because they are one line and the split is a *layout* decision —
+/// the window draws the left half from the left edge and the right half from the right, so the
+/// arithmetic is what survives a narrow window and the sheet's name is what gets elided. It was
+/// one long left-aligned string before W9, where the numbers a person actually watches ended up
+/// wherever the sheet's name happened to leave them.
+pub fn status_halves(app: &App, sheet: usize, selection: Selection) -> (String, String) {
     let name = app
         .sheet_name(sheet)
         .unwrap_or_else(|_| String::from("Sheet1"));
     let (rows, cols) = app.used_extent(sheet).unwrap_or((0, 0));
-    format!(
-        "{name}  ({} of {})   {rows} \u{00d7} {cols} used   {}",
+    let left = format!(
+        "{name}   \u{00b7}   sheet {} of {}   \u{00b7}   {rows} \u{00d7} {cols} used",
         sheet + 1,
         app.sheet_count(),
-        selection_text(app, sheet, selection)
-    )
+    );
+    (left, selection_text(app, sheet, selection))
 }
 
 /// What the name box shows for a selection: what it is called, or where it is.
@@ -307,13 +314,24 @@ mod tests {
         assert_eq!(clamp(Pos::new(0, 0), Pos::new(9, 9), 0, 0), None);
     }
 
+    /// The left half is about the document and the right half about the selection — and
+    /// nothing appears in both, since a bar that said the same thing at each end would be
+    /// wasting the half of it a narrow window drops.
     #[test]
-    fn the_status_line_names_the_sheet_and_its_extent() {
+    fn the_status_bar_puts_the_document_left_and_the_selection_right() {
         let app = book();
-        let line = status_line(&app, 0, Selection::at(Pos::new(1, 1)));
-        assert!(line.contains("(1 of 1)"), "{line}");
-        assert!(line.contains("4 \u{d7} 2 used"), "{line}");
-        assert!(line.ends_with("B2"), "{line}");
+        let (left, right) = status_halves(&app, 0, Selection::at(Pos::new(1, 1)));
+        assert!(left.contains("sheet 1 of 1"), "{left}");
+        assert!(left.contains("4 \u{d7} 2 used"), "{left}");
+        assert_eq!(right, "B2");
+        assert!(!left.contains("B2"), "{left}");
+
+        // And the right half is the one that grows: a range carries its own arithmetic.
+        let (_, right) = status_halves(&app, 0, from((1, 1), (3, 1)));
+        assert!(
+            right.starts_with("B2:B4") && right.contains("Sum 60"),
+            "{right}"
+        );
     }
 
     #[test]

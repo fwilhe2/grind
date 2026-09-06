@@ -89,6 +89,15 @@ pub struct Theme {
     pub background: Rgb,
     /// The hairlines between cells.
     pub grid_line: Rgb,
+    /// The hairlines **past the last row and column the document uses** — the same lines, drawn
+    /// quieter, so the sheet somebody wrote reads as the subject and the empty rest of an
+    /// infinite grid as the paper it is on.
+    ///
+    /// Not a border round the used range and not a different ground: both of those would be this
+    /// shell inventing a page boundary the document does not have. One tone of grey is the whole
+    /// of it, and `App::used_extent` — the same answer the status bar already reports — is where
+    /// the line falls.
+    pub grid_line_soft: Rgb,
     /// Text in a cell that has no colour of its own.
     pub text: Rgb,
     /// The row and column header buttons, their lettering, and the line under them.
@@ -104,6 +113,15 @@ pub struct Theme {
     pub selection: Rgb,
     /// The outline around the selected rectangle, and the accent everything else in this shell
     /// borrows. Painted neat.
+    ///
+    /// **The suite's own blue** (`grind_core::style::PALETTE`'s `blue`, deepened for the light
+    /// palette), not the user's Windows accent colour, and that is a decision W9 made rather than
+    /// an omission. The accent colour *is* readable — it is a `DWORD` under `HKCU\…\DWM` — but it
+    /// is chosen for a title bar and a taskbar, and half the values in that picker are colours a
+    /// one-pixel selection edge disappears into or a grid cannot be read through. One accent this
+    /// shell owns is one it can guarantee reads against both grounds, and it ties the window to
+    /// the same mark the icon and the two GTK apps already use. Following the system accent is
+    /// therefore a named gap, not a missing feature.
     pub selection_edge: Rgb,
     /// A header button belonging to a selected row or column.
     pub header_active: Rgb,
@@ -117,49 +135,77 @@ pub struct Theme {
     /// shouts is one people learn to ignore.
     pub banner: Rgb,
     pub banner_text: Rgb,
+    /// The stripe down the notice bar's leading edge. The one saturated thing about that band,
+    /// which is what lets the ground behind it stay quiet enough to read a sentence on.
+    pub banner_edge: Rgb,
+    /// The assist band under the strip while a formula is being typed — the completion offers and
+    /// the signature hint (`sheet/assist.rs`). Its own ground, tinted towards the accent rather
+    /// than towards the notice bar's amber, because it is *help while typing* and not a state the
+    /// document is in — the two can be up at once and must not read as the same thing.
+    pub hint: Rgb,
+    pub hint_text: Rgb,
 }
 
-/// The light palette — Windows 11's own surface greys rather than pure white, so that the grid
-/// lines have something to be lighter than.
+/// The light palette.
+///
+/// Refreshed in W9, and the direction of every change is the same one: **quieter chrome, one
+/// louder accent**. The hairlines lost a step of contrast (a grid is read *through*, and lines
+/// dark enough to count are lines that fight the numbers), the header band and the status bar
+/// moved a shade closer to the paper, and what was spent there was put back into the accent —
+/// which is now the suite's own blue and is the only saturated colour on screen that the document
+/// did not choose itself.
 const LIGHT: Theme = Theme {
     mode: Mode::Light,
     background: Rgb(0xff, 0xff, 0xff),
-    grid_line: Rgb(0xd6, 0xd6, 0xd6),
+    grid_line: Rgb(0xdf, 0xdf, 0xdf),
+    grid_line_soft: Rgb(0xef, 0xef, 0xef),
     text: Rgb(0x1a, 0x1a, 0x1a),
-    header: Rgb(0xf3, 0xf3, 0xf3),
-    header_text: Rgb(0x44, 0x44, 0x44),
-    header_line: Rgb(0xc4, 0xc4, 0xc4),
-    status: Rgb(0xf3, 0xf3, 0xf3),
-    status_text: Rgb(0x44, 0x44, 0x44),
-    selection: Rgb(0x00, 0x67, 0xc0),
-    selection_edge: Rgb(0x00, 0x5a, 0x9e),
-    header_active: Rgb(0xd8, 0xe6, 0xf4),
+    header: Rgb(0xf7, 0xf7, 0xf7),
+    header_text: Rgb(0x5a, 0x5a, 0x5a),
+    header_line: Rgb(0xd2, 0xd2, 0xd2),
+    status: Rgb(0xf7, 0xf7, 0xf7),
+    status_text: Rgb(0x5a, 0x5a, 0x5a),
+    selection: Rgb(0x00, 0x74, 0xd9),
+    selection_edge: Rgb(0x00, 0x5c, 0xae),
+    header_active: Rgb(0xdc, 0xe9, 0xf8),
     field: Rgb(0xff, 0xff, 0xff),
-    field_line: Rgb(0xb4, 0xb4, 0xb4),
-    banner: Rgb(0xff, 0xf4, 0xce),
+    field_line: Rgb(0xc8, 0xc8, 0xc8),
+    banner: Rgb(0xff, 0xf6, 0xdb),
     banner_text: Rgb(0x4d, 0x3a, 0x00),
+    banner_edge: Rgb(0xe0, 0xa8, 0x00),
+    hint: Rgb(0xf1, 0xf7, 0xfd),
+    hint_text: Rgb(0x1a, 0x1a, 0x1a),
 };
 
 /// The dark palette. Not an inversion of the light one: the grid lines are *lighter* than the
 /// ground here and darker than it there, because a line has to be visible against what it sits
 /// on and inverting a light theme's greys puts them the wrong side of it.
+///
+/// The same holds for the two W9 additions and is why neither is computed from its light twin:
+/// `grid_line_soft` is *darker* than `grid_line` here and lighter than it there — in both cases
+/// nearer the ground, which is what "quieter" means — and the accent is the palette's own blue
+/// rather than the light theme's, since the deepened one disappears into a dark ground.
 const DARK: Theme = Theme {
     mode: Mode::Dark,
     background: Rgb(0x1e, 0x1e, 0x1e),
     grid_line: Rgb(0x3a, 0x3a, 0x3a),
+    grid_line_soft: Rgb(0x2b, 0x2b, 0x2b),
     text: Rgb(0xe8, 0xe8, 0xe8),
-    header: Rgb(0x2b, 0x2b, 0x2b),
-    header_text: Rgb(0xc0, 0xc0, 0xc0),
-    header_line: Rgb(0x45, 0x45, 0x45),
-    status: Rgb(0x2b, 0x2b, 0x2b),
-    status_text: Rgb(0xc0, 0xc0, 0xc0),
+    header: Rgb(0x27, 0x27, 0x27),
+    header_text: Rgb(0xb6, 0xb6, 0xb6),
+    header_line: Rgb(0x40, 0x40, 0x40),
+    status: Rgb(0x27, 0x27, 0x27),
+    status_text: Rgb(0xb6, 0xb6, 0xb6),
     selection: Rgb(0x4c, 0xa0, 0xff),
     selection_edge: Rgb(0x60, 0xac, 0xff),
-    header_active: Rgb(0x1f, 0x3a, 0x52),
-    field: Rgb(0x1a, 0x1a, 0x1a),
-    field_line: Rgb(0x55, 0x55, 0x55),
+    header_active: Rgb(0x22, 0x3d, 0x58),
+    field: Rgb(0x17, 0x17, 0x17),
+    field_line: Rgb(0x4a, 0x4a, 0x4a),
     banner: Rgb(0x3d, 0x34, 0x12),
     banner_text: Rgb(0xf5, 0xdd, 0x8e),
+    banner_edge: Rgb(0xc6, 0x9a, 0x2e),
+    hint: Rgb(0x16, 0x23, 0x2f),
+    hint_text: Rgb(0xe8, 0xe8, 0xe8),
 };
 
 /// What colour `doc/view-modes.md`'s role overlay draws each [`grind_sheet::view::CellRole`] in
@@ -369,13 +415,73 @@ mod tests {
         assert_eq!(Theme::from_registry_value(None).mode, Mode::Light);
     }
 
+    /// The unused part of the grid is drawn *quieter*, not differently: its hairline is nearer
+    /// the ground than the used one in both palettes — which, since the dark theme's lines are
+    /// lighter than its ground and the light theme's darker than its own, means the two soft
+    /// tones sit on opposite sides. Asserted as a distance rather than as "lighter", which is
+    /// what makes this one rule rather than two.
+    #[test]
+    fn the_grid_fades_where_the_document_stops() {
+        for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
+            let ground = luma(theme.background);
+            let used = (luma(theme.grid_line) - ground).abs();
+            let unused = (luma(theme.grid_line_soft) - ground).abs();
+            assert!(
+                unused < used,
+                "{:?}: the empty grid is not quieter ({unused} vs {used})",
+                theme.mode
+            );
+            assert!(
+                unused > 4.0,
+                "{:?}: the empty grid is invisible ({unused})",
+                theme.mode
+            );
+        }
+    }
+
+    /// The accent is the suite's own blue rather than one borrowed from the system, and the
+    /// wash and the edge are two tones *of the same hue* rather than two colours — the whole
+    /// point of one shell having one accent.
+    #[test]
+    fn the_accent_is_the_suites_own_blue() {
+        let blue = grind_core::style::palette("blue")
+            .and_then(Rgb::parse)
+            .unwrap();
+        assert_eq!(Theme::of(Mode::Light).selection, blue);
+        for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
+            let Rgb(r, _, b) = theme.selection_edge;
+            assert!(b > r, "{:?}: the edge is not a blue", theme.mode);
+            let Rgb(r, _, b) = theme.selection;
+            assert!(b > r, "{:?}: the wash is not a blue", theme.mode);
+        }
+    }
+
+    /// The assist band is help while typing and the notice bar is a state the document is in.
+    /// Both can be up at once, so they must not read as one band: different grounds, and each
+    /// legible in its own.
+    #[test]
+    fn the_hint_band_is_readable_and_is_not_the_notice_bar() {
+        for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
+            assert_ne!(theme.hint, theme.banner, "{:?}", theme.mode);
+            let gap = (luma(theme.hint_text) - luma(theme.hint)).abs();
+            assert!(gap > 96.0, "{:?}: hint gap is {gap}", theme.mode);
+            // And it is quiet: a band drawn under the strip on every keystroke must not be
+            // further from the chrome around it than the notice bar, which is the loud one.
+            let hint = (luma(theme.hint) - luma(theme.header)).abs();
+            let banner = (luma(theme.banner) - luma(theme.header)).abs();
+            assert!(hint < banner, "{:?}: {hint} vs {banner}", theme.mode);
+        }
+    }
+
+    /// The relative luminance of a colour, which is what "contrast" means below.
+    fn luma(Rgb(r, g, b): Rgb) -> f64 {
+        0.2126 * f64::from(r) + 0.7152 * f64::from(g) + 0.0722 * f64::from(b)
+    }
+
     /// A line has to be visible against the ground it sits on, in both palettes — which is why
     /// the dark theme is not the light one inverted.
     #[test]
     fn grid_lines_contrast_with_their_ground_in_both_palettes() {
-        let luma = |Rgb(r, g, b): Rgb| {
-            0.2126 * f64::from(r) + 0.7152 * f64::from(g) + 0.0722 * f64::from(b)
-        };
         for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
             let gap = (luma(theme.grid_line) - luma(theme.background)).abs();
             assert!(gap > 16.0, "{:?}: grid line gap is {gap}", theme.mode);

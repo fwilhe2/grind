@@ -606,7 +606,12 @@ pub fn choose(owner: HWND, title: &str, items: &[String], initial: usize) -> Opt
 
         let dpi = GetDpiForWindow(owner).max(96);
         let px = |value: f64| crate::sheet::geom::scale(value, dpi).round() as i32;
-        let (w, h) = (px(420.0), px(360.0));
+        // Wider than it was, because of what goes in it: a `LISTBOX` clips rather than scrolls
+        // sideways, and W9's function list is four columns — name, plain-English alias, category
+        // and the spec's own summary — where the outline and the lint pane were one short line
+        // each. The source view wanted it too; a projection line is as long as the cell it
+        // projects.
+        let (w, h) = (px(620.0), px(420.0));
         let mut owner_rect = Default::default();
         let _ = GetWindowRect(owner, &mut owner_rect);
         let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;

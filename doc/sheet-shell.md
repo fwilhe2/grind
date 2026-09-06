@@ -356,6 +356,14 @@ affordance (the `'` rule) — never silent mangling.
 - **Signature hint**: inside a call, a hint label shows the catalog signature with the
   current argument bold — argument index = `;` count at the caret's paren depth, a
   ~30-line pure function beside the state machine's tests.
+- **Both of those pure functions now live in the core** — `grind_sheet::formula::assist`,
+  holding `prefix_at`, `call_at`, `candidates` and `signature_parts`. They were written
+  here and moved the day the Windows shell wanted the same four answers (`doc/windows-shell.md`
+  W9): a second hand-written backwards scan over parentheses and string literals is how two
+  windows come to disagree about which argument the caret is in. `state::call_at` and
+  `formula_ux::{prefix_at, candidates}` are re-exports of it, so nothing in this window
+  changed name; what is left in `formula_ux.rs` is the Pango markup and the popover, which
+  are this toolkit's and no one else's.
 - **Live preview**: debounced 150 ms (`timeout_add_local_once`, previous source
   cancelled), `App::preview` on a worker, generation-counted so stale results drop; the
   would-be result — errors included, which is half the value — in a chip at the formula

@@ -318,6 +318,14 @@ pub struct GridGeom {
     /// of how a banner appears and disappears. Carried as a height rather than as a flag so that
     /// every rectangle below it is one arithmetic expression whether or not it is showing.
     pub banner_h: f64,
+    /// The assist band under the notice bar, and zero when there is nothing to assist with —
+    /// the same appear-and-disappear arrangement as `banner_h`, for the same reason.
+    ///
+    /// A second band rather than a second use of the first, because the two answer different
+    /// questions and are routinely up together: a formula that would not parse leaves a notice on
+    /// screen *while the edit is still open*, which is exactly when the signature hint is most
+    /// worth having. Sharing one row would mean the more useful of the two hiding the other.
+    pub hint_h: f64,
     pub header_w: f64,
     pub header_h: f64,
     /// The height of the status bar at the foot of the window; the grid stops above it.
@@ -338,11 +346,11 @@ pub struct GridGeom {
 }
 
 impl GridGeom {
-    /// Where the column header band starts — under the strip and under the banner, if there is
-    /// one. Named because five rectangles below depend on it and a banner that moved four of
-    /// them would be a very confusing bug.
+    /// Where the column header band starts — under the strip, and under whichever of the two
+    /// bands are showing. Named because five rectangles below depend on it and a banner that
+    /// moved four of them would be a very confusing bug.
     pub fn header_top(&self) -> f64 {
-        self.strip_h + self.banner_h
+        self.strip_h + self.banner_h + self.hint_h
     }
 
     /// The rectangle the cells occupy — the client area less the strip, the banner, the headers
@@ -373,6 +381,17 @@ impl GridGeom {
             y: self.strip_h,
             w: self.width,
             h: self.banner_h,
+        }
+    }
+
+    /// The assist band, under the notice bar and over the headers, and empty when
+    /// [`GridGeom::hint_h`] is zero.
+    pub fn hint_rect(&self) -> Rect {
+        Rect {
+            x: 0.0,
+            y: self.strip_h + self.banner_h,
+            w: self.width,
+            h: self.hint_h,
         }
     }
 
@@ -583,6 +602,7 @@ mod tests {
         GridGeom {
             strip_h: 0.0,
             banner_h: 0.0,
+            hint_h: 0.0,
             header_w: 40.0,
             header_h: 20.0,
             status_h: 22.0,
@@ -678,6 +698,25 @@ mod tests {
         assert_eq!(g.col_header_rect(0).y, 30.0);
         // And it costs the body exactly that much height, so a page is shorter.
         assert_eq!(g.body().h, 600.0 - 30.0 - 20.0 - 22.0);
+    }
+
+    /// The two bands stack rather than share, and each one costs the grid exactly its own
+    /// height — a notice and a signature hint are routinely up together.
+    #[test]
+    fn the_notice_bar_and_the_assist_band_stack_under_the_strip() {
+        let mut g = geom();
+        g.strip_h = 30.0;
+        let plain = g.body();
+        g.banner_h = 26.0;
+        g.hint_h = 24.0;
+        assert_eq!(g.banner_rect().y, 30.0);
+        assert_eq!(g.hint_rect().y, 30.0 + 26.0, "the hint is under the notice");
+        assert_eq!(g.header_top(), 30.0 + 26.0 + 24.0);
+        assert_eq!(g.body().h, plain.h - 26.0 - 24.0);
+        // Neither band is the grid: a click on one must not reach the corner button.
+        assert_eq!(g.hit(4.0, 35.0), Hit::Chrome);
+        assert_eq!(g.hit(4.0, 60.0), Hit::Chrome);
+        assert_eq!(g.hit(4.0, g.header_top() + 2.0), Hit::Corner);
     }
 
     #[test]
