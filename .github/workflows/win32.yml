@@ -124,6 +124,35 @@ jobs:
             exit 1
           }
 
+      # W8: the icon and version resource `build.rs` links in from `ui_win32/data/grind.rc`.
+      # `embed_resource` degrades to a silent no-op when it finds no resource compiler
+      # (`build.rs`'s own doc comment), which is the right answer on every other machine this
+      # crate is checked on and the wrong one here — `windows-latest` ships the MSVC toolchain
+      # `embed_resource` needs, so a resource that failed to embed on *this* runner is a real
+      # regression rather than an expected gap. `GetVersionInfo` is what Explorer's own
+      # Properties dialog reads, so this is the same fact a user would see.
+      - name: Check the version resource and icon embedded
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $exe))
+          Write-Host "ProductName:      $($info.ProductName)"
+          Write-Host "FileDescription:  $($info.FileDescription)"
+          if ($info.ProductName -ne "Grind") {
+            Write-Error "no version resource embedded (ProductName was '$($info.ProductName)')"
+            exit 1
+          }
+          # A PE's icon lives in its `.rsrc` section as an `RT_GROUP_ICON`/`RT_ICON` pair rather
+          # than anywhere `FileVersionInfo` reads, so this asks Shell32 for the icon Explorer
+          # itself would show — null only when the executable carries none.
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $exe))
+          if ($null -eq $icon) {
+            Write-Error "no icon embedded in $exe"
+            exit 1
+          }
+          Write-Host "Icon: $($icon.Width)x$($icon.Height)"
+
       - name: Upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

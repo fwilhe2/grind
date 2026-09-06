@@ -10,7 +10,7 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Built through W7; W8 is a plan.** This document was W0's deliverable —
+**Built through W8 — every milestone in this plan.** This document was W0's deliverable —
 the shell planned, its decisions argued, its gaps named in advance, and the two claims the whole
 thing rests on measured rather than assumed. W1 added the window and the read-only grid, W2 the
 selection, W3 the editing and W4 the clipboard, so the parts of it that were predictions are now
@@ -373,6 +373,13 @@ A `*` marks what W0 through W3 have built; everything else is the plan.
 ```
 ui_win32/
   Cargo.toml            * grind-win32; the `windows` dependency target-gated on cfg(windows)
+  build.rs              * W8's icon and version resource, attempted only when the target is
+                          Windows and a no-op everywhere this crate is checked from Linux
+  data/
+    grind.rc            * the version block and the `1 ICON "grind.ico"` line `build.rs` compiles
+    grind.ico           * generated from grind.svg (`magick -define icon:auto-resize=...`), not
+                          built by this crate — turning an SVG into an ICO needs librsvg
+    grind.svg           * the source: the two GTK apps' own icon language, one mark
   src/
     main.rs           *   argv, kind sniff, a message box for errors before a window exists
     args.rs           *   the command line as a pure function (W0)
@@ -457,7 +464,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W5b** | **The rest of the text pane** | ~~the surrogate pair `WM_CHAR` cannot carry~~ (done, `surrogate.rs`) and ~~`WM_IME_STARTCOMPOSITION` positioning the candidate window at the caret~~ (done; no inline composition string, and untested under a real IME); ~~a real `CreateCaret` caret~~ (done, verified under Wine — `place_system_caret`, hidden and shown around the back buffer's blit, destroyed on `WM_KILLFOCUS`); ~~`App::type_markdown`, so `**bold**` is read as it is typed~~ (done); ~~a drawn format strip over `char_style` / `set_char_style`~~ (done — three buttons under the banner, pressed in when the selection, or with none the style the next character would carry, already agrees; Ctrl+B/I/U and the Format menu reached the same toggle first and still do); ~~block kinds~~ (done — the common three as Ctrl+0/1/2/3 matching `ui_text_gtk`'s own keys, and every kind including levels past 3 and list items as Ctrl+Shift+K's dialog, the suite's first UI for making a list item) and ~~an outline dialog~~ (done, Ctrl+Shift+O over a `LISTBOX`); ~~go-to for `p12` / `#intro` / `§2.1.3`~~ (done, as a modal prompt over F5/Ctrl+G); and ~~a menu that knows which pane it is over~~ (done for pane kind — `menu::applies_to` greys every verb the current document type has no answer for; state *within* a kind, Undo with nothing to undo and the like, is still open) | every feature `examples/sample-text.sh` builds is not only visible but *reachable*: a heading can be made one, a run can be made bold, and `§2.1.3` can be gone to |
 | **W6** | **The three shared panes** — *done* | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | **Met.** Ctrl+Shift+U (Show Source) and F8 (Check Document) open `dialog::choose`'s listbox — this shell's existing dialog-for-a-list idiom, already `text_outline`'s and `text_block_kind_dialog`'s, rather than a fourth embedded text-view widget — pre-selected on the line the pane's own selection or caret projects to and, for the lint list, jumping either pane (and, for the grid, either **sheet**) to the row picked; a new **View** menu's Cell Roles and Names toggles read `App::get_viewport_with`'s overlay, drawn as a leading-edge marker plus a muted outline round a name's range on the grid and as a muted `‹name›` beside each bookmark on the text pane. Nothing here writes: `code.rs`/`problems.rs` are portable and tested, and the two overlays are asked for fresh on every paint exactly as `Viewport::role`/`Viewport::names` already are — a stored classification goes stale and a derived one cannot |
 | **W7** | **Chrome and the accessibility floor** — *done* | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | **Met.** `WM_CONTEXTMENU` answers a right click, Shift+F10 **and** the keyboard's Menu key in one handler — Windows sends all three the same message, with `(-1, -1)` telling the keyboard's two apart from the mouse's real point — and builds its popup from `menu::label_for`, so a context-menu row and a menu-bar row can never say two different things about one `Command`; `TrackPopupMenuEx`'s `TPM_RETURNCMD` hands the picked id straight to the same `do_command` a menu click reaches. The grid's cells and headers share one menu (Cut/Copy/Paste/Delete — this build has no header-only verb to add to it) and the text pane its own plus the three format toggles. The "key list" is `menu::shortcuts()`: every accelerator `MENUS`' own labels already carry, read once rather than kept as a second table, shown in `dialog::choose`'s read-only listbox from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` were already built (W1/W3) and needed nothing further. `accesskit_windows` remains **named and deferred**, and the system caret is the floor |
-| **W8** | **Packaging** | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | the artifact opens both document types on a clean Windows install with no other install of any kind |
+| **W8** | **Packaging** — *done* | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | **Met.** The release artifact and the import-table gate were both built in W0 (`win32.yml`'s `build` job); what W8 added is `ui_win32/build.rs`, which compiles `ui_win32/data/grind.rc` with `embed_resource` and links in the icon (`grind.ico`, generated from `grind.svg` — the two existing app icons' navy-square-and-white-outline language, with a grid corner and a document's lines in one mark, a placeholder until S11's suite mark exists) and a version block (`ProductName` "Grind", `FileDescription`, a copyright year) — attempted only when `CARGO_CFG_TARGET_OS` is `windows`, and a no-op everywhere this crate is checked from Linux since `embed_resource` finds no cross resource compiler there. `win32.yml` gained a step reading `FileVersionInfo` and extracting the icon back off the linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine where it must not — fails the build rather than shipping unnoticed. The file-associations answer is below, and is deliberately **written down rather than built**: nothing registers a ProgID yet, because doing that is an installer's job and this milestone has none |
 
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
@@ -473,6 +480,40 @@ missing-glyph box for both. So the drawing is cut around them (`text/draw.rs`'s 
 each side is placed at the x the **core** measured rather than at wherever the pen ended up —
 which is decision 3's own rule applied one level down, and the reason a tab is a *width* here and
 never a tab stop.
+
+## File associations — the answer, not yet the machinery
+
+W8 asks for this **written down**, and decision 1 already gives half of it: Windows associates
+files by ProgID rather than by MIME type, and one executable registers as many ProgIDs as it
+likes, each with its own icon, description and verb — which is why `grind-win32.exe` is one
+binary for both document types where the two GTK shells are two processes. What decision 1 does
+not say is *which* ProgIDs, and that is the rest of the answer:
+
+| ProgID | Extension | Verb | Icon |
+|---|---|---|---|
+| `Grind.Spreadsheet` | `.fods` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
+| `Grind.SpreadsheetPackage` | `.ods` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
+| `Grind.Document` | `.fodt` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
+| `Grind.DocumentPackage` | `.odt` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
+| `Grind.Projection` | `.grind` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
+
+Six extensions and one icon: `doc/flat-first.md`'s rule (the flat form is the default) does not
+reach *which* forms a shell opens — this shell opens all three forms of both document types, the
+same as `Form::from_path` already does when reading — so the flat and the package form of each
+get their own ProgID rather than sharing one, which is what lets a future icon distinguish them
+if S11's suite mark ever wants to. `Form::Projection` is one ProgID for both applications, because
+`.grind`'s own first line is what says which document it is (`doc/dsl.md`, the same sniff
+`read_bytes` already does), not the extension.
+
+**Registering them is an installer's job, and this milestone has none.** The registry keys are
+`HKEY_CLASSES_ROOT\.fods` → `Grind.Spreadsheet`, `HKEY_CLASSES_ROOT\Grind.Spreadsheet\shell\open\command`
+→ `"C:\...\grind-win32.exe" "%1"`, one block per row above — five minutes of `reg add` or an MSI's
+`<Extension>` table, whichever W8's eventual installer turns out to be. `SHChangeNotify` after
+writing them is what makes Explorer pick the icon up without a sign-out, and per-user
+(`HKEY_CURRENT_USER\Software\Classes`) rather than machine-wide is the polite default for
+anything that is not also an elevated installer. None of that is code this crate carries: the
+`.exe` opens whatever it is handed regardless of how it got handed it, which is the same
+`args.rs` behaviour a double-click and a command line both already exercise.
 
 ## What it will not do
 

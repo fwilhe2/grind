@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W7 are done, and W8 is not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`: every milestone, W0 through W8, is done.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -136,7 +136,8 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W7**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W8, its last
+milestone**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -244,7 +245,23 @@ kept as a second table that could drift from them, shown in `dialog::choose`'s r
 from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` were already built
 (W1/W3) and About already carried `grind_core::build_info`, so W7's remaining work was exactly
 the context menus and the key list. `accesskit_windows` remains named and deferred, and the
-system caret is the floor. What is unusual about the whole thing is
+system caret is the floor.
+
+**W8 is done: packaging, the last milestone this plan named.** The release artifact and the
+import-table gate were both W0's; what W8 added is `ui_win32/build.rs`, compiling
+`ui_win32/data/grind.rc` with `embed_resource` into the icon (`grind.ico`, generated from
+`grind.svg` — the two GTK apps' own navy-square-and-white-outline language, one mark with a grid
+corner and a document's lines in it, a placeholder until S11's suite mark exists) and a version
+block Explorer's Properties dialog reads. Attempted only when `CARGO_CFG_TARGET_OS` is `windows`,
+and a no-op everywhere this crate is checked from Linux — `embed_resource` finds no cross
+resource compiler there and says so without failing the build, which is exactly the property
+that keeps `cargo check -p grind-win32 --target x86_64-pc-windows-msvc` examinable with no
+Windows at all. `win32.yml` gained a step reading `FileVersionInfo` and the icon back off the
+linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine
+where that would be a real bug rather than an expected gap — fails the build. The file
+associations question is answered in `doc/windows-shell.md` (six ProgIDs, one per form of each
+document type, all pointing at `grind-win32.exe "%1"`) rather than built: registering them is an
+installer's job, and this milestone still has none. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh

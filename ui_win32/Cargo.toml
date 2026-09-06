@@ -14,6 +14,14 @@ repository.workspace = true
 name = "grind-win32"
 path = "src/main.rs"
 
+# `build.rs` — W8's icon and version resource (`doc/windows-shell.md`). Not target-gated: a
+# build script always compiles for the *host*, so this has to be an ordinary dependency, and
+# `build.rs` itself is what asks `CARGO_CFG_TARGET_OS` whether there is anything to do. The
+# crate is pure Rust with no Windows dependency of its own, so pulling it in for every host this
+# workspace's tests run on costs a few seconds and nothing else.
+[build-dependencies]
+embed-resource = "3"
+
 [dependencies]
 # One binary, both document types, chosen by `grind_core::kind` from the file's bytes (R10) —
 # `grind-tui`'s arrangement rather than the two GTK binaries'. The GTK shells are split because
