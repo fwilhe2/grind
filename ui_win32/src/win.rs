@@ -2317,8 +2317,14 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::SheetDelete => sheet_delete(hwnd),
         Command::SheetNext => sheet_step(hwnd, 1),
         Command::SheetPrevious => sheet_step(hwnd, -1),
-        // The text pane's, and this one has no selection to format.
-        Command::Bold | Command::Italic | Command::Underline => {}
+        // The text pane's, and this one has no selection or block to format.
+        Command::Bold
+        | Command::Italic
+        | Command::Underline
+        | Command::Paragraph
+        | Command::Heading1
+        | Command::Heading2
+        | Command::Heading3 => {}
         Command::About => dialog::about(hwnd),
     }
 }
@@ -3331,6 +3337,10 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Bold => text_emphasise(hwnd, markdown::Emphasis::Bold),
         Command::Italic => text_emphasise(hwnd, markdown::Emphasis::Italic),
         Command::Underline => text_emphasise(hwnd, markdown::Emphasis::Underline),
+        Command::Paragraph => text_set_kind(hwnd, grind_text::BlockKind::Paragraph),
+        Command::Heading1 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 1 }),
+        Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }),
+        Command::Heading3 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 3 }),
         Command::GoTo => text_go_to(hwnd),
         Command::About => dialog::about(hwnd),
         // The spreadsheet's, and this pane has no answer to any of them.
@@ -3416,6 +3426,24 @@ fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
             }
             match text.app.set_char_style(from, to, &style) {
                 Ok(_) => text.say(None),
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Turn the caret's own block into this kind — `App::set_kind`, `ui_text_gtk`'s own Ctrl+0/1/2/3
+/// mirrored here so a heading is one key everywhere rather than a shell-specific idea of it.
+///
+/// Unlike [`text_emphasise`], which needs a selection, a block's kind is asked of wherever the
+/// caret sits — the same reason `App::set_kind` takes an index and not a range.
+fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind) {
+    // SAFETY: one borrow. `set_kind` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            match text.app.set_kind(text.caret.block, kind) {
+                Ok(()) => text.say(None),
                 Err(error) => text.say(Some(error.to_string())),
             }
         });
