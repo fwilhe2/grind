@@ -191,6 +191,11 @@ mod windows_impl {
         /// The chrome's font — the status bar's and the notice bar's, not the document's.
         pub font_px: i32,
         pub face: &'a str,
+        /// Which of the strip's three buttons — Bold, Italic, Underline — apply to the selection,
+        /// or to the style the next character typed would carry when there is none. Presentation
+        /// state, computed by the caller for the same reason the selection is: the core is never
+        /// told which of its own answers a shell drew a button in response to.
+        pub format: [bool; 3],
     }
 
     /// Draw one frame of the document onto `dc`.
@@ -332,6 +337,42 @@ mod windows_impl {
             theme.status_text,
             scale(8.0, page.dpi),
         );
+
+        draw_strip(dc, page, theme, &frame.format);
+    }
+
+    /// The format strip: three buttons, pressed in when [`Frame::format`] says the property
+    /// applies. `doc/windows-shell.md`'s admission test for this surface — "a property of the
+    /// selection" — is exactly `App::char_style`, so this is the drawn half of what
+    /// `super::super::super::text_emphasise` already reads and writes; the button only decides
+    /// whether to wash its own ground before drawing the same label every one of its callers
+    /// agrees on.
+    fn draw_strip(dc: HDC, page: &Page, theme: Theme, format: &[bool; 3]) {
+        const LABELS: [&str; 3] = ["B", "I", "U"];
+        let strip = page.strip();
+        let (left, top, right, bottom) = strip.edges();
+        gdi::fill(dc, left, top, right, bottom, theme.header);
+        for (index, button) in page.strip_buttons().iter().enumerate() {
+            let (bl, bt, br, bb) = button.edges();
+            if format[index] {
+                gdi::fill(dc, bl, bt, br, bb, theme.header_active);
+            }
+            draw_text(
+                dc,
+                LABELS[index],
+                bl,
+                bt,
+                br,
+                bb,
+                Align::Center,
+                theme.header_text,
+                0.0,
+            );
+            if index > 0 {
+                gdi::fill(dc, bl, top, bl + 1, bottom, theme.header_line);
+            }
+        }
+        gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
     }
 
     /// The part of `block` a selection from `from` to `to` covers, as two offsets into that block.

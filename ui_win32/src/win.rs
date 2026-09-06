@@ -610,6 +610,7 @@ impl Text {
                 Some(_) => scale(text::geom::BANNER_H, dpi),
                 None => 0.0,
             },
+            strip_h: scale(text::geom::STRIP_H, dpi),
             status_h: scale(text::geom::STATUS_H, dpi),
             dpi,
             scroll: self.page.scroll,
@@ -3391,9 +3392,24 @@ fn text_drop_selection(text: &mut Text) -> bool {
     }
 }
 
-/// A press of the left button: the caret goes where the pointer is, and dragging extends.
+/// A press of the left button: the format strip's three buttons first, since they sit over the
+/// document rather than beside it — a click there is a click on chrome and must not also move
+/// the caret underneath it, the same rule `button_down`'s own `Strip` match applies to the grid's
+/// name box and formula bar. Anywhere else, the caret goes where the pointer is, and dragging
+/// extends.
 fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
+    // SAFETY: one borrow; the hit test is arithmetic over the page geometry and dispatches
+    // nothing.
+    let button = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
+    if let Some(which) = button {
+        text_emphasise(hwnd, STRIP_BUTTONS[which]);
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = SetFocus(Some(hwnd));
+        }
+        return;
+    }
     let extend = mods().shift;
     // SAFETY: one borrow; the hit test is arithmetic over a layout and dispatches nothing.
     unsafe {
@@ -3595,11 +3611,84 @@ fn text_outline(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` still owes
-/// W5b, done here as a menu verb first exactly as the grid's format properties started as menu
-/// items before M9's strip. `App::char_style` reports only what the whole span agrees on, which
-/// is the same question a toggle button would ask; `ui_tui::emphasise_selection` is the twin this
-/// mirrors so the notation reads one way everywhere.
+/// Which emphasis each of the strip's three buttons is, left to right — [`text::geom::Page::strip_buttons`]'s
+/// order and this array's are the one place that ordering is written down.
+const STRIP_BUTTONS: [markdown::Emphasis; 3] = [
+    markdown::Emphasis::Bold,
+    markdown::Emphasis::Italic,
+    markdown::Emphasis::Underline,
+];
+
+/// The property this emphasis lives in, read off a style rather than written to one — the half of
+/// [`text_emphasise`]'s old inline closure that answering "is this on" and "what should it become"
+/// both need, and now shared between the two rather than duplicated for the strip.
+fn emphasis_field(style: &grind_text::CharStyle, emphasis: markdown::Emphasis) -> Option<String> {
+    match emphasis {
+        markdown::Emphasis::Bold => style.font_weight.clone(),
+        markdown::Emphasis::Italic => style.font_style.clone(),
+        markdown::Emphasis::Underline => style.underline.clone(),
+        markdown::Emphasis::Strike => style.line_through.clone(),
+        markdown::Emphasis::Code => style.font_family.clone(),
+    }
+}
+
+/// The value that means "off", for the three that have one — `Code` sets a family, which has no
+/// off value of its own, only "no family" (`None`).
+fn emphasis_off(emphasis: markdown::Emphasis) -> Option<&'static str> {
+    match emphasis {
+        markdown::Emphasis::Bold | markdown::Emphasis::Italic => Some("normal"),
+        markdown::Emphasis::Underline | markdown::Emphasis::Strike => Some("none"),
+        markdown::Emphasis::Code => None,
+    }
+}
+
+/// Whether `style` already has this emphasis — the question a toggle button answers before it
+/// decides which way to toggle, and the same one its own drawing asks to decide whether to press
+/// itself in.
+fn emphasis_active(style: &grind_text::CharStyle, emphasis: markdown::Emphasis) -> bool {
+    let field = emphasis_field(style, emphasis);
+    match emphasis_off(emphasis) {
+        Some(off) => field.as_deref().is_some_and(|v| v != off),
+        None => field.is_some(),
+    }
+}
+
+/// The style a toggle button reads before it draws itself: the selection's agreed style if there
+/// is one, or — with nothing selected — the style the *next* character typed would carry, which is
+/// [`Text::resume`] when a markdown span left one pending and otherwise the character just behind
+/// the caret. A document has no style "at" an empty caret; it has one on either side of it, and
+/// the one already typed is the one a toolbar showing current state means.
+fn text_style_here(text: &Text) -> grind_text::CharStyle {
+    if text.has_selection() {
+        let (from, to) = text.range();
+        return text.app.char_style(from, to).unwrap_or_default();
+    }
+    if let Some(resume) = &text.resume {
+        return resume.clone();
+    }
+    let caret = text.caret;
+    if caret.offset == 0 {
+        return grind_text::CharStyle::default();
+    }
+    let before = Caret {
+        block: caret.block,
+        offset: caret.offset - 1,
+    };
+    text.app.char_style(before, caret).unwrap_or_default()
+}
+
+/// Which of the strip's three buttons should be drawn pressed in, for [`text::draw::paint`].
+fn format_state(text: &Text) -> [bool; 3] {
+    let style = text_style_here(text);
+    STRIP_BUTTONS.map(|emphasis| emphasis_active(&style, emphasis))
+}
+
+/// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` named as
+/// still owed for W5b, and now drawn (`text::draw::paint`'s strip) as well as reachable from
+/// Ctrl+B/I/U and the Format menu, all three converging on this one function. `App::char_style`
+/// reports only what the whole span agrees on, which is the same question a toggle button would
+/// ask; `ui_tui::emphasise_selection` is the twin this mirrors so the notation reads one way
+/// everywhere.
 fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     unsafe {
@@ -3611,22 +3700,9 @@ fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
             let (from, to) = text.range();
             let mut style = text.app.char_style(from, to).unwrap_or_default();
             let wanted = emphasis.style();
-            let field = |style: &grind_text::CharStyle| match emphasis {
-                markdown::Emphasis::Bold => style.font_weight.clone(),
-                markdown::Emphasis::Italic => style.font_style.clone(),
-                markdown::Emphasis::Underline => style.underline.clone(),
-                markdown::Emphasis::Strike => style.line_through.clone(),
-                markdown::Emphasis::Code => style.font_family.clone(),
-            };
-            let off = match emphasis {
-                markdown::Emphasis::Bold | markdown::Emphasis::Italic => Some("normal"),
-                markdown::Emphasis::Underline | markdown::Emphasis::Strike => Some("none"),
-                markdown::Emphasis::Code => None,
-            };
-            let already = match off {
-                Some(off) => field(&style).as_deref().is_some_and(|v| v != off),
-                None => field(&style).is_some(),
-            };
+            let field = |style: &grind_text::CharStyle| emphasis_field(style, emphasis);
+            let off = emphasis_off(emphasis);
+            let already = emphasis_active(&style, emphasis);
             let value = match already {
                 true => off.map(str::to_owned),
                 false => field(&wanted),
@@ -3873,6 +3949,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             banner: state.banner.as_deref(),
             font_px: scale(FONT_PX, state.page.dpi).round() as i32,
             face: FACE,
+            format: format_state(state),
         },
     );
 }

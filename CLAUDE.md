@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W5a are done, W5b is under way, and W6–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W5b are done, and W6–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -136,7 +136,7 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W5a**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W5b**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -166,14 +166,18 @@ document in the same window. The pane lays the whole document out into a `Flow` 
 portable and checked on Linux against what `grind text view --width` breaks), draws it run by run
 with its headings, bold, italic, underline, colour, highlight, lists and tabs, has a caret that
 blinks at the user's own rate, a selection by Shift+arrow, Shift+click, drag and double-click,
-and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text clipboard. **W5b has
-begun**: every character typed now goes through `App::type_markdown` rather than a plain
+and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text clipboard. **W5b is
+done**: every character typed now goes through `App::type_markdown` rather than a plain
 `insert_text`, carrying its `resume` style across keystrokes the same way `ui_tui` does, so
-`**bold**` is read as it is typed here too. Ctrl+B/I/U and a new Format menu reach
-`char_style`/`set_char_style` over the selection — `menu.rs`'s toggle logic is `ui_tui`'s
-`emphasise_selection` mirrored, on across the whole selection or off when it already agrees — which
-is the format strip's verb before it is the format strip's button, and a no-op on the grid exactly
-as the sheet's own verbs are a no-op on this pane. Go-to reaches `p12`/`#intro`/`§2.1.3` too, as
+`**bold**` is read as it is typed here too. Ctrl+B/I/U, a Format menu, and now a **drawn format
+strip** — three buttons under the banner (`text::geom::Page::strip`/`strip_buttons`,
+`text::draw::draw_strip`) — all reach `char_style`/`set_char_style` over the selection through the
+one `text_emphasise` function, whose toggle logic is `ui_tui`'s `emphasise_selection` mirrored, on
+across the whole selection or off when it already agrees. The strip's own buttons press themselves
+in when the selection already agrees, or — with nothing selected — when the style the next
+character typed would carry does (`resume` if a markdown span left one pending, otherwise the
+character just behind the caret), and it is a no-op on the grid exactly as the sheet's own verbs
+are a no-op on this pane. Go-to reaches `p12`/`#intro`/`§2.1.3` too, as
 F5 or Ctrl+G — the grid's own two keys for the verb — opening a modal prompt over `loc::parse` and
 `App::resolve_caret` rather than a strip box, since this pane owns no child control of its own to
 put one in. The same menu's Paragraph and Heading 1/2/3 items, and Ctrl+0/1/2/3 to match
@@ -205,7 +209,7 @@ and a keystroke to the right block and offset, has the right height on a heading
 paragraph, blinks on its own with no timer in this process at all, and survives a modal dialog
 stealing and returning focus. **What is still owed**: an inline composition string in the pane's
 own ink rather than the IME's default floating box, real verification under an actual IME (Wine
-ships none), the format strip itself as a drawn toolbar, and greying by state *within* one kind
+ships none), and greying by state *within* one kind
 (Undo with nothing to undo, Paste with an empty clipboard) rather than
 only by which kind is open. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:

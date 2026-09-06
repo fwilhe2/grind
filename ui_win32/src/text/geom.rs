@@ -50,6 +50,14 @@ pub const STATUS_H: f64 = 22.0;
 /// The notice bar, when there is a notice. Zero when there is not — see `win.rs`'s `banner_h`.
 pub const BANNER_H: f64 = 26.0;
 
+/// The format strip — decision 4's admission test applied to this pane: it reads and writes
+/// `CharStyle`, so it goes under the menu rather than in it. Never zero, unlike the banner: this
+/// bar has no "nothing to show" state, since the three toggles always mean something.
+pub const STRIP_H: f64 = 28.0;
+
+/// One toggle button's width on the strip.
+pub const BUTTON_W: f64 = 34.0;
+
 /// The text column inside a pane `width` pixels wide: where it starts and how wide it is.
 ///
 /// Centred rather than left-aligned once the window is wider than [`MEASURE`], which keeps the
@@ -71,6 +79,7 @@ pub struct Page {
     pub width: f64,
     pub height: f64,
     pub banner_h: f64,
+    pub strip_h: f64,
     pub status_h: f64,
     pub dpi: u32,
     /// How far down the document the top of the body is, in pixels.
@@ -87,13 +96,24 @@ impl Page {
         }
     }
 
-    /// The part of the window the document is drawn in.
-    pub fn body(&self) -> Rect {
+    /// The format strip, under the banner and above the body — decision 4's growable menu bar
+    /// holds a verb, this holds a property of the selection, and the two never trade places.
+    pub fn strip(&self) -> Rect {
         Rect {
             x: 0.0,
             y: self.banner_h,
             w: self.width,
-            h: (self.height - self.banner_h - self.status_h).max(0.0),
+            h: self.strip_h,
+        }
+    }
+
+    /// The part of the window the document is drawn in.
+    pub fn body(&self) -> Rect {
+        Rect {
+            x: 0.0,
+            y: self.banner_h + self.strip_h,
+            w: self.width,
+            h: (self.height - self.banner_h - self.strip_h - self.status_h).max(0.0),
         }
     }
 
@@ -104,6 +124,25 @@ impl Page {
             w: self.width,
             h: self.status_h,
         }
+    }
+
+    /// The strip's three toggle buttons, left to right: Bold, Italic, Underline.
+    pub fn strip_buttons(&self) -> [Rect; 3] {
+        let w = scale(BUTTON_W, self.dpi);
+        let strip = self.strip();
+        std::array::from_fn(|i| Rect {
+            x: w * i as f64,
+            y: strip.y,
+            w,
+            h: strip.h,
+        })
+    }
+
+    /// Which button, if any, a click at `x, y` landed on.
+    pub fn strip_hit(&self, x: f64, y: f64) -> Option<usize> {
+        self.strip_buttons()
+            .iter()
+            .position(|rect| rect.contains(x, y))
     }
 
     /// The text column, in window coordinates.
@@ -378,28 +417,80 @@ mod tests {
         assert_eq!(wide, 2.0 * MEASURE, "the measure is a physical size");
     }
 
-    /// The three bands are contiguous and add up to the window, banner or no banner.
+    /// The four bands are contiguous and add up to the window, banner or no banner.
     #[test]
     fn the_page_bands_tile_the_window() {
         let page = Page {
             width: 800.0,
             height: 600.0,
             banner_h: 0.0,
+            strip_h: STRIP_H,
             status_h: STATUS_H,
             dpi: 96,
             scroll: 0.0,
         };
-        assert_eq!(page.body().y, 0.0);
-        assert_eq!(page.body().h + page.status().h, 600.0);
+        assert_eq!(page.body().y, STRIP_H);
+        assert_eq!(page.strip().h + page.body().h + page.status().h, 600.0);
         let with_notice = Page {
             banner_h: BANNER_H,
             ..page
         };
-        assert_eq!(with_notice.body().y, BANNER_H);
+        assert_eq!(with_notice.body().y, BANNER_H + STRIP_H);
         assert_eq!(
-            with_notice.banner().h + with_notice.body().h + with_notice.status().h,
+            with_notice.banner().h
+                + with_notice.strip().h
+                + with_notice.body().h
+                + with_notice.status().h,
             600.0
         );
+    }
+
+    /// The three buttons sit side by side on the strip, none overlapping, and a click between two
+    /// of them belongs to neither.
+    #[test]
+    fn the_strip_buttons_tile_left_to_right_and_dont_overlap() {
+        let page = Page {
+            width: 800.0,
+            height: 600.0,
+            banner_h: 0.0,
+            strip_h: STRIP_H,
+            status_h: STATUS_H,
+            dpi: 96,
+            scroll: 0.0,
+        };
+        let buttons = page.strip_buttons();
+        assert_eq!(buttons[0].x, 0.0);
+        for pair in buttons.windows(2) {
+            assert_eq!(pair[0].x + pair[0].w, pair[1].x, "no gap and no overlap");
+        }
+        assert_eq!(
+            page.strip_hit(buttons[0].x + 1.0, buttons[0].y + 1.0),
+            Some(0)
+        );
+        assert_eq!(
+            page.strip_hit(buttons[2].x + 1.0, buttons[2].y + 1.0),
+            Some(2)
+        );
+        assert_eq!(
+            page.strip_hit(0.0, page.body().y + 5.0),
+            None,
+            "below the strip"
+        );
+    }
+
+    /// The buttons scale with the monitor, the same rule every other measurement here follows.
+    #[test]
+    fn the_strip_buttons_scale_with_the_monitor() {
+        let page = Page {
+            width: 800.0,
+            height: 600.0,
+            banner_h: 0.0,
+            strip_h: STRIP_H,
+            status_h: STATUS_H,
+            dpi: 192,
+            scroll: 0.0,
+        };
+        assert_eq!(page.strip_buttons()[0].w, 2.0 * BUTTON_W);
     }
 
     /// A document, three blocks, one of them long enough to wrap at the width below.
