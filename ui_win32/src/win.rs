@@ -102,7 +102,7 @@ use crate::text::geom::{Flow, Page};
 use crate::theme::{self, Mode, Theme};
 use grind_core::DocumentKind;
 use grind_sheet::{App, Pos, RecalcMode};
-use grind_text::{Caret, Layout};
+use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
 const APP_NAME: &str = "Grind";
@@ -561,6 +561,10 @@ struct Text {
     /// a shell that drew its own caret would otherwise quietly override.
     caret_on: bool,
     banner: Option<String>,
+    /// What [`grind_text::App::type_markdown`] said the next character must be set in — the
+    /// style a completed `**bold**` span leaves behind, carried across keystrokes so the shell
+    /// does not need its own idea of the notation. `ui_tui`'s `resume` is the same field.
+    resume: Option<grind_text::CharStyle>,
 }
 
 impl Text {
@@ -932,6 +936,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         // two `--render-to` frames of one document are identical, which is what that flag is for.
         caret_on: true,
         banner: None,
+        resume: None,
     })
 }
 
@@ -2312,6 +2317,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::SheetDelete => sheet_delete(hwnd),
         Command::SheetNext => sheet_step(hwnd, 1),
         Command::SheetPrevious => sheet_step(hwnd, -1),
+        // The text pane's, and this one has no selection to format.
+        Command::Bold | Command::Italic | Command::Underline => {}
         Command::About => dialog::about(hwnd),
     }
 }
@@ -2970,6 +2977,13 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
         do_command(hwnd, command);
         return true;
     }
+    // F5 and Ctrl+G are the grid's own way into `Command::GoTo` (`sheet/keymap.rs`'s `Action::GoTo`)
+    // rather than the accelerator table's, so this pane matches them the same way instead of
+    // teaching `menu::accelerator` a second spelling for one command.
+    if (key == keymap::Key::F5 && !mods.ctrl) || (key == keymap::Key::Char('G') && mods.ctrl) {
+        text_go_to(hwnd);
+        return true;
+    }
     // SAFETY: one borrow, for the page size; nothing inside dispatches.
     let page = unsafe { with_text(hwnd, |text| text.page_lines()) }.unwrap_or(20);
     let Some(action) = text::keymap::action_for(key, mods, page) else {
@@ -3023,8 +3037,37 @@ fn text_char(hwnd: HWND, c: char) -> bool {
     if m.ctrl || m.alt || c.is_control() {
         return false;
     }
-    text_insert(hwnd, &c.to_string());
+    text_type(hwnd, c);
     true
+}
+
+/// Type one character through `App::type_markdown`, so `**bold**` is read as it is typed —
+/// `grind_text::markdown`'s notation, the same one `ui_tui` reads, rather than a fifth idea of
+/// what `**` means.
+///
+/// A selection is dropped first exactly as [`text_insert`] drops one, because `type_markdown`
+/// has no "replace" either — it only ever inserts at a caret.
+fn text_type(hwnd: HWND, c: char) {
+    // SAFETY: one borrow. `type_markdown` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            text_drop_selection(text);
+            let at = text.caret;
+            match text
+                .app
+                .type_markdown(at, &c.to_string(), text.resume.as_ref())
+            {
+                Ok(typed) => {
+                    text.resume = typed.resume;
+                    text.place(typed.caret, false);
+                    text.caret_on = true;
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
 }
 
 /// Type text at the caret, replacing the selection if there is one.
@@ -3132,6 +3175,7 @@ fn text_split(hwnd: HWND) {
                         },
                         false,
                     );
+                    text.resume = None;
                     text.caret_on = true;
                     text.say(None);
                 }
@@ -3284,16 +3328,99 @@ fn text_command(hwnd: HWND, command: Command) {
         // Delete's verb. A selection is erased; with no selection there is nothing to clear,
         // because a document has no cells to empty.
         Command::ClearCells => text_erase(hwnd, true),
+        Command::Bold => text_emphasise(hwnd, markdown::Emphasis::Bold),
+        Command::Italic => text_emphasise(hwnd, markdown::Emphasis::Italic),
+        Command::Underline => text_emphasise(hwnd, markdown::Emphasis::Underline),
+        Command::GoTo => text_go_to(hwnd),
         Command::About => dialog::about(hwnd),
         // The spreadsheet's, and this pane has no answer to any of them.
-        Command::GoTo
-        | Command::Recalculate
+        Command::Recalculate
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
         | Command::SheetNext
         | Command::SheetPrevious => {}
     }
+}
+
+/// Go to an address — `p12`, `#intro` or `§2.1.3` — the one item of W5b's "block kinds, outline
+/// and go-to" bullet this pane has so far. A modal prompt rather than a strip box, unlike the
+/// grid's name box, because this pane owns no child control of its own to put one in; `loc::parse`
+/// and `App::resolve_caret` are the same two calls `ui_tui`'s `cmd_jump` makes.
+fn text_go_to(hwnd: HWND) {
+    let Some(address) = dialog::prompt(hwnd, "Go To", "Address — p12, #bookmark or §2.1.3:", "")
+    else {
+        return;
+    };
+    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
+    let outcome = unsafe {
+        with_text(hwnd, |text| {
+            grind_text::loc::parse(&address)
+                .map_err(|e| e.to_string())
+                .and_then(|loc| text.app.resolve_caret(&loc).map_err(|e| e.to_string()))
+                .map(|caret| {
+                    text.place(caret, false);
+                    text.caret_on = true;
+                })
+        })
+    };
+    match outcome {
+        Some(Err(message)) => dialog::error(hwnd, &message),
+        Some(Ok(())) => refresh(hwnd),
+        None => {}
+    }
+}
+
+/// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` still owes
+/// W5b, done here as a menu verb first exactly as the grid's format properties started as menu
+/// items before M9's strip. `App::char_style` reports only what the whole span agrees on, which
+/// is the same question a toggle button would ask; `ui_tui::emphasise_selection` is the twin this
+/// mirrors so the notation reads one way everywhere.
+fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
+    // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            if !text.has_selection() {
+                text.say(Some("nothing selected".to_owned()));
+                return;
+            }
+            let (from, to) = text.range();
+            let mut style = text.app.char_style(from, to).unwrap_or_default();
+            let wanted = emphasis.style();
+            let field = |style: &grind_text::CharStyle| match emphasis {
+                markdown::Emphasis::Bold => style.font_weight.clone(),
+                markdown::Emphasis::Italic => style.font_style.clone(),
+                markdown::Emphasis::Underline => style.underline.clone(),
+                markdown::Emphasis::Strike => style.line_through.clone(),
+                markdown::Emphasis::Code => style.font_family.clone(),
+            };
+            let off = match emphasis {
+                markdown::Emphasis::Bold | markdown::Emphasis::Italic => Some("normal"),
+                markdown::Emphasis::Underline | markdown::Emphasis::Strike => Some("none"),
+                markdown::Emphasis::Code => None,
+            };
+            let already = match off {
+                Some(off) => field(&style).as_deref().is_some_and(|v| v != off),
+                None => field(&style).is_some(),
+            };
+            let value = match already {
+                true => off.map(str::to_owned),
+                false => field(&wanted),
+            };
+            match emphasis {
+                markdown::Emphasis::Bold => style.font_weight = value,
+                markdown::Emphasis::Italic => style.font_style = value,
+                markdown::Emphasis::Underline => style.underline = value,
+                markdown::Emphasis::Strike => style.line_through = value,
+                markdown::Emphasis::Code => style.font_family = value,
+            }
+            match text.app.set_char_style(from, to, &style) {
+                Ok(_) => text.say(None),
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
 }
 
 fn text_history(hwnd: HWND, undo: bool) {

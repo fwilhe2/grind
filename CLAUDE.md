@@ -166,10 +166,20 @@ document in the same window. The pane lays the whole document out into a `Flow` 
 portable and checked on Linux against what `grind text view --width` breaks), draws it run by run
 with its headings, bold, italic, underline, colour, highlight, lists and tabs, has a caret that
 blinks at the user's own rate, a selection by Shift+arrow, Shift+click, drag and double-click,
-and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text clipboard. **W5b is
-the rest**: the IME, `type_markdown`, the format strip, block kinds, outline and go-to, and a menu
-that knows which pane it is over. What is unusual about the whole thing is that it is examinable
-from Linux, because `cargo check` does not link:
+and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text clipboard. **W5b has
+begun**: every character typed now goes through `App::type_markdown` rather than a plain
+`insert_text`, carrying its `resume` style across keystrokes the same way `ui_tui` does, so
+`**bold**` is read as it is typed here too. Ctrl+B/I/U and a new Format menu reach
+`char_style`/`set_char_style` over the selection — `menu.rs`'s toggle logic is `ui_tui`'s
+`emphasise_selection` mirrored, on across the whole selection or off when it already agrees — which
+is the format strip's verb before it is the format strip's button, and a no-op on the grid exactly
+as the sheet's own verbs are a no-op on this pane. Go-to reaches `p12`/`#intro`/`§2.1.3` too, as
+F5 or Ctrl+G — the grid's own two keys for the verb — opening a modal prompt over `loc::parse` and
+`App::resolve_caret` rather than a strip box, since this pane owns no child control of its own to
+put one in. **What is still owed**: the IME, the format strip itself as a drawn toolbar, block
+kinds, an outline dialog, and a menu that greys out rather
+than silently ignores the other document type's verbs. What is unusual about the whole thing is
+that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh
 rustup target add x86_64-pc-windows-msvc
