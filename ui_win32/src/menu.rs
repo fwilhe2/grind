@@ -71,6 +71,15 @@ pub enum Command {
     Bold,
     Italic,
     Underline,
+    /// The caret's block becomes a plain paragraph — `App::set_kind`, `BlockKind::Paragraph`.
+    /// A no-op on the grid, the same way the three toggles above are.
+    Paragraph,
+    /// The caret's block becomes a heading at this level — `ui_text_gtk`'s own Ctrl+1/2/3, kept
+    /// to the same three levels here so the suite has one idea of how far a menu should offer
+    /// going rather than the schema's uncapped `positiveInteger` (`doc/text-core.md`).
+    Heading1,
+    Heading2,
+    Heading3,
     About,
 }
 
@@ -101,6 +110,10 @@ impl Command {
         Command::Bold,
         Command::Italic,
         Command::Underline,
+        Command::Paragraph,
+        Command::Heading1,
+        Command::Heading2,
+        Command::Heading3,
         Command::About,
     ];
 
@@ -265,6 +278,23 @@ pub const MENUS: &[Menu] = &[
                 command: Command::Underline,
                 label: "&Underline\tCtrl+U",
             },
+            Item::Separator,
+            Item::Verb {
+                command: Command::Paragraph,
+                label: "&Paragraph\tCtrl+0",
+            },
+            Item::Verb {
+                command: Command::Heading1,
+                label: "Heading &1\tCtrl+1",
+            },
+            Item::Verb {
+                command: Command::Heading2,
+                label: "Heading &2\tCtrl+2",
+            },
+            Item::Verb {
+                command: Command::Heading3,
+                label: "Heading &3\tCtrl+3",
+            },
         ],
     },
     Menu {
@@ -304,6 +334,10 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('B'), true, false) => Some(Command::Bold),
         (Key::Char('I'), true, false) => Some(Command::Italic),
         (Key::Char('U'), true, false) => Some(Command::Underline),
+        (Key::Char('0'), true, false) => Some(Command::Paragraph),
+        (Key::Char('1'), true, false) => Some(Command::Heading1),
+        (Key::Char('2'), true, false) => Some(Command::Heading2),
+        (Key::Char('3'), true, false) => Some(Command::Heading3),
         _ => None,
     }
 }
@@ -417,6 +451,10 @@ mod tests {
             (Key::Char('B'), ctrl, Command::Bold),
             (Key::Char('I'), ctrl, Command::Italic),
             (Key::Char('U'), ctrl, Command::Underline),
+            (Key::Char('0'), ctrl, Command::Paragraph),
+            (Key::Char('1'), ctrl, Command::Heading1),
+            (Key::Char('2'), ctrl, Command::Heading2),
+            (Key::Char('3'), ctrl, Command::Heading3),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");
