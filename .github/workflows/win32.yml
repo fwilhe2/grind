@@ -169,9 +169,15 @@ jobs:
           # `Start-Process -Wait`, not `&`: a GUI-subsystem process detaches from the console
           # immediately, so the plain call would return before a single pixel had been drawn and
           # the comparison below would read whatever was on disk from the step before.
+          #
+          # `-WorkingDirectory` is not optional: `Start-Process` does not inherit pwsh's own
+          # current directory the way `&` does, so a relative `$doc` resolved against whatever
+          # directory .NET picked instead — and the file-not-found error went to a `MessageBoxW`
+          # this GUI-subsystem binary has no console to avoid, which nobody was there to
+          # dismiss. That is what actually made this step hang for 18 minutes rather than fail.
           foreach ($out in @("one.bmp", "two.bmp")) {
             $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
-              -Wait -PassThru -NoNewWindow
+              -WorkingDirectory (Get-Location) -Wait -PassThru -NoNewWindow
             if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
           }
 
@@ -209,7 +215,7 @@ jobs:
           $doc = "text/tests/data/edited-default-paragraph-style.fodt"
           foreach ($out in @("text-one.bmp", "text-two.bmp")) {
             $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
-              -Wait -PassThru -NoNewWindow
+              -WorkingDirectory (Get-Location) -Wait -PassThru -NoNewWindow
             if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
           }
           $a = [IO.File]::ReadAllBytes("text-one.bmp")
