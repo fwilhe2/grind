@@ -569,12 +569,18 @@ struct Chooser {
 
 /// Ask the user to pick one of a list of lines. `None` means cancelled, or nothing to pick from.
 ///
-/// This is `grind text`'s outline dialog (`App::outline`, `doc/windows-shell.md`'s W5b), built
-/// generically over strings rather than over `Heading` so this module stays ignorant of the
-/// document types (R8's rule for the core applies just as well to a shell file with no reason to
-/// know one). A double-click accepts the same as OK, because a list a user has to click twice —
-/// once to select, once on a separate button — is slower than the box it replaces.
-pub fn choose(owner: HWND, title: &str, items: &[String]) -> Option<usize> {
+/// This is `grind text`'s outline dialog (`App::outline`, `doc/windows-shell.md`'s W5b) and W6's
+/// "Show Source" and "Check Document", built generically over strings rather than over `Heading`
+/// or a `Diagnostic` so this module stays ignorant of the document types (R8's rule for the core
+/// applies just as well to a shell file with no reason to know one). A double-click accepts the
+/// same as OK, because a list a user has to click twice — once to select, once on a separate
+/// button — is slower than the box it replaces.
+///
+/// `initial` is the row already selected when the list opens — "the line the selection is on
+/// marked" (D9's own wording), clamped rather than refused so a caller need not check its own
+/// bound first. A plain `LB_SETCURSEL` is enough to make it visible too: Windows scrolls a
+/// listbox to the row a program selects, the same as it does for one a person clicks.
+pub fn choose(owner: HWND, title: &str, items: &[String], initial: usize) -> Option<usize> {
     if items.is_empty() {
         return None;
     }
@@ -687,7 +693,8 @@ pub fn choose(owner: HWND, title: &str, items: &[String]) -> Option<usize> {
                 Some(LPARAM(item.as_ptr() as isize)),
             );
         }
-        SendMessageW(list, LB_SETCURSEL, Some(WPARAM(0)), Some(LPARAM(0)));
+        let initial = initial.min(items.len() - 1);
+        SendMessageW(list, LB_SETCURSEL, Some(WPARAM(initial)), Some(LPARAM(0)));
         let ok = child(
             "BUTTON",
             "OK",

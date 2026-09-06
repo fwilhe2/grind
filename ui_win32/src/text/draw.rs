@@ -196,6 +196,12 @@ mod windows_impl {
         /// state, computed by the caller for the same reason the selection is: the core is never
         /// told which of its own answers a shell drew a button in response to.
         pub format: [bool; 3],
+        /// `doc/view-modes.md`'s name overlay, this pane's answer to it — `:names`' equivalent
+        /// for a document with no cells. A bookmark contributes no characters of its own
+        /// (`doc/text-core.md` §3.6), so nothing a reader sees says it is there; `BlockView::marks`
+        /// is where the reader lives, the same list `grind text view --names` prints, and this is
+        /// that list drawn beside the text it anchors rather than spliced into it.
+        pub names: bool,
     }
 
     /// Draw one frame of the document onto `dc`.
@@ -222,6 +228,11 @@ mod windows_impl {
         let body = page.body();
         let (column_x, _) = page.text_column();
         let (from, to) = frame.selection;
+        // The chrome's own font, small and never the document's — used here for the name
+        // overlay's marks and again below for the banner and the status bar. One `Font`, so a
+        // resize does not build it twice.
+        let chrome = Font::new(frame.face, frame.font_px, false);
+        let muted = theme.text.blend(theme.background, 0.45);
         for painted in frame.blocks {
             let x = column_x + painted.slot.indent;
             let top = body.y + painted.slot.top - page.scroll;
@@ -299,13 +310,40 @@ mod windows_impl {
                         theme.text,
                     );
                 }
+
+                // `doc/view-modes.md`'s name overlay: every bookmark anchored to a character on
+                // this line, drawn beside it rather than spliced into the text the way
+                // `grind text view --names` prints it — splicing here would move every offset
+                // after it, which is exactly the caret-and-ink disagreement decision 3 exists to
+                // rule out. Muted, the same "quieter, not louder" rule the grid's own name
+                // overlay follows.
+                if frame.names {
+                    for (offset, name) in &painted.view.marks {
+                        if painted.layout.line_at(*offset) != number {
+                            continue;
+                        }
+                        let mark_x = x + f64::from(painted.layout.x_at(*offset));
+                        let label = format!("\u{2039}{name}\u{203a}");
+                        let _font = Selected::font(dc, &chrome);
+                        draw_text(
+                            dc,
+                            &label,
+                            mark_x.round() as i32,
+                            line_top.round() as i32,
+                            (mark_x + scale(120.0, page.dpi)).round() as i32,
+                            (line_top + f64::from(line.height)).round() as i32,
+                            Align::Left,
+                            muted,
+                            scale(2.0, page.dpi),
+                        );
+                    }
+                }
             }
         }
 
         // The bands, over the text: a line scrolled under the status bar must not show through
         // it, and drawing them second is cheaper than clipping the loop above. The chrome is set
         // in the shell font at the shell's size — it is the *window* talking, not the document.
-        let chrome = Font::new(frame.face, frame.font_px, false);
         let _chrome = Selected::font(dc, &chrome);
         if let Some(notice) = frame.banner.filter(|_| page.banner_h > 0.0) {
             let rect = page.banner();
