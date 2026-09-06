@@ -27,7 +27,8 @@
 //! ponytail: the accelerators are matched by [`accelerator`] rather than by a real `HACCEL` and
 //! `TranslateAccelerator`. The table is the same either way; what a real accelerator table would
 //! add is Windows drawing the key next to the menu item automatically instead of this file
-//! spelling it. W7 is where that lands, along with the context menus.
+//! spelling it — a cosmetic difference `win.rs`'s own `context_menu` and [`shortcuts`] (W7) do
+//! not depend on, since both read the same `\t`-separated spelling this file already carries.
 
 use crate::sheet::keymap::{Key, Mods};
 
@@ -99,6 +100,9 @@ pub enum Command {
     /// `BlockView::marks`' bookmarks on the text pane (`:names`' equivalent there, since a
     /// bookmark contributes no characters of its own). Both document types.
     ToggleNames,
+    /// W7's "key list" — every accelerator this shell answers, read straight off [`MENUS`]'
+    /// own labels rather than a second table that could drift from them.
+    Shortcuts,
     About,
 }
 
@@ -139,6 +143,7 @@ impl Command {
         Command::CheckDocument,
         Command::ToggleRoles,
         Command::ToggleNames,
+        Command::Shortcuts,
         Command::About,
     ];
 
@@ -360,12 +365,53 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         title: "&Help",
-        items: &[Item::Verb {
-            command: Command::About,
-            label: "&About Grind",
-        }],
+        items: &[
+            Item::Verb {
+                command: Command::Shortcuts,
+                label: "&Keyboard Shortcuts",
+            },
+            Item::Verb {
+                command: Command::About,
+                label: "&About Grind",
+            },
+        ],
     },
 ];
+
+/// The label a command shows in whichever menu names it — the one copy of that string, so a
+/// context menu (W7) can put a verb next to its own spelling rather than a second one written
+/// down beside it. Carries its `\t`-separated accelerator too, since a context menu benefits
+/// from the reminder exactly as the menu bar's own does.
+pub fn label_for(command: Command) -> Option<&'static str> {
+    MENUS
+        .iter()
+        .flat_map(|menu| menu.items)
+        .find_map(|item| match item {
+            Item::Verb { command: c, label } if *c == command => Some(*label),
+            _ => None,
+        })
+}
+
+/// Every command that carries a `\t`-separated accelerator, as one line each — W7's "key list",
+/// the answer to `gtk::ShortcutsWindow` this shell can build with no resources and no dialog
+/// template: a plain read of the labels every menu item already has, so a shortcut shown here and
+/// a shortcut shown on the bar can never say two different things about the same command.
+///
+/// Read out of [`MENUS`] in the bar's own order rather than [`Command::ALL`]'s, which is the
+/// order a person tabbing through the menus meets them in — the more useful one for a reference
+/// list — and the mnemonic's `&` is stripped, since a keyboard shortcuts window is not itself
+/// navigated by one.
+pub fn shortcuts() -> Vec<String> {
+    MENUS
+        .iter()
+        .flat_map(|menu| menu.items)
+        .filter_map(|item| match item {
+            Item::Verb { label, .. } => label.split_once('\t'),
+            Item::Separator => None,
+        })
+        .map(|(name, key)| format!("{} — {key}", name.replace('&', "")))
+        .collect()
+}
 
 /// Which verb a keystroke asks for, if any.
 ///
@@ -455,6 +501,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleNames
+        | Command::Shortcuts
         | Command::About => !matches!(kind, Presentation),
     }
 }
@@ -694,5 +741,51 @@ mod tests {
             assert!(applies_to(command, Spreadsheet), "{command:?}");
             assert!(applies_to(command, Text), "{command:?}");
         }
+    }
+
+    /// Every command in a menu has a label a context menu (W7) can borrow, and it is the same
+    /// string the bar itself shows — there is no second copy for `label_for` to disagree with.
+    #[test]
+    fn every_menu_command_has_a_label_and_it_is_the_bars_own() {
+        for menu in MENUS {
+            for item in menu.items {
+                let Item::Verb { command, label } = item else {
+                    continue;
+                };
+                assert_eq!(label_for(*command), Some(*label), "{command:?}");
+            }
+        }
+    }
+
+    /// A command in no menu — there are none, `every_command_is_reachable_from_exactly_one_menu_item`
+    /// already says so — would have no label; this is the same answer from the other function.
+    #[test]
+    fn every_command_has_a_label() {
+        for command in Command::ALL {
+            assert!(label_for(*command).is_some(), "{command:?}");
+        }
+    }
+
+    /// The shortcuts list is one line per command that carries an accelerator, name and key both
+    /// present and the mnemonic's `&` gone — a keyboard shortcuts window is not itself navigated
+    /// by one.
+    #[test]
+    fn the_shortcuts_list_names_every_accelerator_and_drops_the_mnemonic() {
+        let rows = shortcuts();
+        assert!(!rows.is_empty());
+        for row in &rows {
+            assert!(!row.contains('&'), "{row}");
+            assert!(row.contains(" — "), "{row}");
+        }
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("Save") && row.contains("Ctrl+S"))
+        );
+        // A command with no accelerator — `SheetAdd` has none — contributes no row at all,
+        // rather than one with an empty key.
+        assert!(
+            !rows.iter().any(|row| row.starts_with("Add")),
+            "a menu item with no accelerator is not a shortcut"
+        );
     }
 }
