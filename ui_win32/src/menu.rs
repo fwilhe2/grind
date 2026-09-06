@@ -64,15 +64,13 @@ pub enum Command {
     SheetDelete,
     SheetNext,
     SheetPrevious,
-    /// Toggle bold/italic/underline across the selection — the text pane's, and a no-op on the
-    /// grid exactly as `GoTo`/`Recalculate`/the sheet verbs are a no-op on the text pane. A menu
-    /// that greys out what the other document type owns is W7's; until then a verb that does
-    /// nothing here says nothing about it, which is the existing rule for the reverse case.
+    /// Toggle bold/italic/underline across the selection — the text pane's, and greyed on the
+    /// grid by [`applies_to`] rather than merely a no-op if it somehow arrives there anyway.
     Bold,
     Italic,
     Underline,
     /// The caret's block becomes a plain paragraph — `App::set_kind`, `BlockKind::Paragraph`.
-    /// A no-op on the grid, the same way the three toggles above are.
+    /// Greyed on the grid, the same way the three toggles above are.
     Paragraph,
     /// The caret's block becomes a heading at this level — `ui_text_gtk`'s own Ctrl+1/2/3, kept
     /// to the same three levels here so the suite has one idea of how far a menu should offer
@@ -80,7 +78,7 @@ pub enum Command {
     Heading1,
     Heading2,
     Heading3,
-    /// The text pane's outline dialog — every heading, jump to any of them. A no-op on the grid.
+    /// The text pane's outline dialog — every heading, jump to any of them. Greyed on the grid.
     Outline,
     About,
 }
@@ -166,9 +164,14 @@ pub struct Menu {
 
 /// The menu bar.
 ///
-/// Five menus and nothing that is not a verb. What is deliberately absent: a View menu (this
-/// shell's overlays are W6), a Format menu (the format strip's, W5), and anything resembling a
-/// ribbon — `doc/sheet-shell.md`'s tab strip was removed for being one, and the argument carries.
+/// Six menus and nothing that is not a verb. Format holds the text pane's toggles and block
+/// kinds ahead of a drawn strip of its own (still W5b's), which is why it exists at all despite
+/// the rule below sounding like an objection to it: those items *read and write* a property of
+/// the selection, exactly what a strip is for, but a menu they can start from beats a verb this
+/// window cannot reach yet, and `menu::applies_to` greys every one of them out on the grid so the
+/// bar says what it means. What is deliberately absent: a View menu (this shell's overlays are
+/// W6), and anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was removed for being
+/// one, and the argument carries.
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "&File",
@@ -350,6 +353,48 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
     }
 }
 
+/// Whether this verb means anything for a document of this kind — W7's "the menus are finished"
+/// still owes greying an item Windows draws unclickable; this is the half that can be answered
+/// with no window at all, and `win.rs`'s `build_menu` is the caller that turns it into
+/// `EnableMenuItem`. A command silent about both kinds would be a command with nowhere to act,
+/// which is a different bug from the one this answers — that one is `Command::ALL` matching
+/// `MENUS`, checked below.
+///
+/// `Presentation` answers `false` to everything: this shell opens neither kind of pane for one
+/// (`opened` refuses the document before a `Pane` exists), so there is nothing it could mean.
+pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
+    use grind_core::DocumentKind::{Presentation, Spreadsheet, Text};
+    match command {
+        Command::Recalculate
+        | Command::SheetAdd
+        | Command::SheetRename
+        | Command::SheetDelete
+        | Command::SheetNext
+        | Command::SheetPrevious => matches!(kind, Spreadsheet),
+        Command::Bold
+        | Command::Italic
+        | Command::Underline
+        | Command::Paragraph
+        | Command::Heading1
+        | Command::Heading2
+        | Command::Heading3
+        | Command::Outline => matches!(kind, Text),
+        Command::New
+        | Command::Open
+        | Command::Save
+        | Command::SaveAs
+        | Command::Exit
+        | Command::Undo
+        | Command::Redo
+        | Command::Cut
+        | Command::Copy
+        | Command::Paste
+        | Command::ClearCells
+        | Command::GoTo
+        | Command::About => !matches!(kind, Presentation),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,6 +535,69 @@ mod tests {
     fn an_unmodified_key_is_not_a_verb() {
         for key in [Key::Char('S'), Key::Char('N'), Key::Left, Key::PageDown] {
             assert_eq!(accelerator(key, Mods::default()), None, "{key:?}");
+        }
+    }
+
+    /// A verb that means nothing anywhere would be dead weight in the menu; every one must apply
+    /// to at least the sheet or the text pane, since those are the only two kinds this shell ever
+    /// shows a `Pane` for.
+    #[test]
+    fn every_command_applies_to_at_least_one_document_kind() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for command in Command::ALL {
+            assert!(
+                applies_to(*command, Spreadsheet) || applies_to(*command, Text),
+                "{command:?} applies to neither document type"
+            );
+        }
+    }
+
+    /// Nothing applies to a presentation: this shell never holds a `Pane` for one, so a menu
+    /// item that thought otherwise would be untestable by construction.
+    #[test]
+    fn nothing_applies_to_a_presentation() {
+        for command in Command::ALL {
+            assert!(!applies_to(
+                *command,
+                grind_core::DocumentKind::Presentation
+            ));
+        }
+    }
+
+    /// The four Format menu toggles and the outline dialog are the text pane's and only the text
+    /// pane's — the sheet has no `char_style` and no headings to grey them into meaning.
+    #[test]
+    fn formatting_and_the_outline_are_the_text_panes_alone() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for command in [
+            Command::Bold,
+            Command::Italic,
+            Command::Underline,
+            Command::Paragraph,
+            Command::Heading1,
+            Command::Heading2,
+            Command::Heading3,
+            Command::Outline,
+        ] {
+            assert!(applies_to(command, Text), "{command:?}");
+            assert!(!applies_to(command, Spreadsheet), "{command:?}");
+        }
+    }
+
+    /// Recalculate and the four sheet verbs are the grid's alone — the text pane has no sheets.
+    #[test]
+    fn sheet_verbs_are_the_grids_alone() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for command in [
+            Command::Recalculate,
+            Command::SheetAdd,
+            Command::SheetRename,
+            Command::SheetDelete,
+            Command::SheetNext,
+            Command::SheetPrevious,
+        ] {
+            assert!(applies_to(command, Spreadsheet), "{command:?}");
+            assert!(!applies_to(command, Text), "{command:?}");
         }
     }
 }

@@ -59,18 +59,19 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CreateMenu, CreatePopupMenu,
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE, EN_KILLFOCUS,
-    ES_AUTOHSCROLL, GWLP_USERDATA, GetMessageW, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
-    GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
-    MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN,
-    SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT,
-    SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE,
-    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
-    TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE,
-    WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW,
-    WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    ES_AUTOHSCROLL, EnableMenuItem, GWLP_USERDATA, GetMessageW, GetParent, GetWindowLongPtrW,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW, MF_BYCOMMAND, MF_GRAYED,
+    MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, MoveWindow, PostMessageW, PostQuitMessage,
+    RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP,
+    SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE,
+    SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage, WHEEL_DELTA, WM_APP,
+    WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETTINGCHANGE,
+    WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW,
+    WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -1465,7 +1466,24 @@ fn move_to(child: HWND, rect: Rect, repaint: bool) {
 /// from its position and never written down twice, so the classic Win32 bug of two items sharing
 /// a `WM_COMMAND` id cannot happen; and the check that every command is reachable from a menu
 /// runs on Linux with no window at all.
+///
+/// Every item the current pane has no answer for — `menu::applies_to`'s question — is greyed
+/// with `EnableMenuItem` rather than left clickable and silently ignored, which is what W5b's
+/// "a menu that knows which pane it is over" turned out to mean once the two panes' verbs
+/// stopped being the same handful: greying is a property of the *bar*, so it is set once here
+/// rather than tracked as items are clicked, and rebuilt whenever the pane itself changes
+/// (`adopt`) rather than the selection inside it — `Command::id` still calls `do_command` for a
+/// greyed item if one somehow arrives (a stale accelerator, say), and `do_command`'s own
+/// per-pane no-ops are what makes that safe rather than merely unreachable.
 fn build_menu(hwnd: HWND) {
+    // SAFETY: one borrow, for the kind alone; nothing inside dispatches.
+    let kind = unsafe {
+        with_pane(hwnd, |pane| match pane {
+            Pane::Sheet(_) => DocumentKind::Spreadsheet,
+            Pane::Text(_) => DocumentKind::Text,
+        })
+    }
+    .unwrap_or(DocumentKind::Spreadsheet);
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -1487,6 +1505,13 @@ fn build_menu(hwnd: HWND) {
                             usize::from(command.id()),
                             PCWSTR(label.as_ptr()),
                         );
+                        if !menu::applies_to(*command, kind) {
+                            let _ = EnableMenuItem(
+                                popup,
+                                u32::from(command.id()),
+                                MF_BYCOMMAND | MF_GRAYED,
+                            );
+                        }
                     }
                 }
             }
@@ -2641,6 +2666,9 @@ fn adopt(hwnd: HWND, pane: Pane) {
     // A window that has just become a spreadsheet needs the two `EDIT`s a spreadsheet edits
     // through; one that has just become a document needs nothing and gets nothing.
     make_children(hwnd);
+    // The menu is greyed by pane kind (`build_menu`), and File ▸ Open or File ▸ New can change
+    // that kind in the same window — so it is rebuilt here rather than only once at `WM_CREATE`.
+    build_menu(hwnd);
     refresh(hwnd);
 }
 

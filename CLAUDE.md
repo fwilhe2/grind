@@ -182,10 +182,13 @@ put one in. The same menu's Paragraph and Heading 1/2/3 items, and Ctrl+0/1/2/3 
 `ui_text_gtk`'s own keys, reach `App::set_kind` at the caret's block — no selection needed, unlike
 the three toggles. Ctrl+Shift+O opens an outline dialog — `dialog::choose`, a `LISTBOX`-backed
 popup generic over strings so `dialog.rs` stays ignorant of `Heading`, one row per heading
-indented by depth, a double-click or OK landing the caret on it. **What is still owed**: the IME,
-the format strip itself as a drawn toolbar, levels past 3 and list items from this window, and a
-menu that greys out rather than silently ignores the other document type's verbs. What is unusual
-about the whole thing is
+indented by depth, a double-click or OK landing the caret on it. The menu itself now knows which
+pane it is over, too: `menu::applies_to` — tested on Linux, no window needed — is which verb means
+anything for which document kind, and `build_menu` turns a `false` into `EnableMenuItem`'s
+`MF_GRAYED`, rebuilt whenever `adopt` changes the pane's own kind. **What is still owed**: the
+IME, the format strip itself as a drawn toolbar, levels past 3 and list items from this window,
+and greying by state *within* one kind (Undo with nothing to undo, Paste with an empty clipboard)
+rather than only by which kind is open. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh
