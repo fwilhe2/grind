@@ -64,6 +64,13 @@ pub enum Command {
     SheetDelete,
     SheetNext,
     SheetPrevious,
+    /// Toggle bold/italic/underline across the selection — the text pane's, and a no-op on the
+    /// grid exactly as `GoTo`/`Recalculate`/the sheet verbs are a no-op on the text pane. A menu
+    /// that greys out what the other document type owns is W7's; until then a verb that does
+    /// nothing here says nothing about it, which is the existing rule for the reverse case.
+    Bold,
+    Italic,
+    Underline,
     About,
 }
 
@@ -91,6 +98,9 @@ impl Command {
         Command::SheetDelete,
         Command::SheetNext,
         Command::SheetPrevious,
+        Command::Bold,
+        Command::Italic,
+        Command::Underline,
         Command::About,
     ];
 
@@ -241,6 +251,23 @@ pub const MENUS: &[Menu] = &[
         }],
     },
     Menu {
+        title: "F&ormat",
+        items: &[
+            Item::Verb {
+                command: Command::Bold,
+                label: "&Bold\tCtrl+B",
+            },
+            Item::Verb {
+                command: Command::Italic,
+                label: "&Italic\tCtrl+I",
+            },
+            Item::Verb {
+                command: Command::Underline,
+                label: "&Underline\tCtrl+U",
+            },
+        ],
+    },
+    Menu {
         title: "&Help",
         items: &[Item::Verb {
             command: Command::About,
@@ -274,6 +301,9 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::PageDown, true, _) => Some(Command::SheetNext),
         (Key::PageUp, true, _) => Some(Command::SheetPrevious),
         (Key::F9, false, false) => Some(Command::Recalculate),
+        (Key::Char('B'), true, false) => Some(Command::Bold),
+        (Key::Char('I'), true, false) => Some(Command::Italic),
+        (Key::Char('U'), true, false) => Some(Command::Underline),
         _ => None,
     }
 }
@@ -384,6 +414,9 @@ mod tests {
             (Key::PageDown, ctrl, Command::SheetNext),
             (Key::PageUp, ctrl, Command::SheetPrevious),
             (Key::F9, Mods::default(), Command::Recalculate),
+            (Key::Char('B'), ctrl, Command::Bold),
+            (Key::Char('I'), ctrl, Command::Italic),
+            (Key::Char('U'), ctrl, Command::Underline),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");
