@@ -60,6 +60,18 @@ pub enum Command {
     /// find is a verb this shell does not have.
     GoTo,
     Recalculate,
+    /// Every function this build implements, as a list to pick from — `sheet/assist.rs`'s
+    /// `function_lines`, which is `grind sheet functions --long`'s four columns in a dialog.
+    /// Picking one puts `=NAME(` in the cell, so the list is a way of *writing* a formula and
+    /// not only of reading about one.
+    FunctionList,
+    /// The active cell's formula in full — `formula::friendly::explain`: names spelled out,
+    /// arguments labelled with the parameter they fill, one per line once a call stops fitting
+    /// on one. Read-only, and it never parses back (R1: the document's formula is ODF's).
+    ExplainFormula,
+    /// Whether the formula bar shows that same reading in place of the text that would be typed
+    /// back in — `friendly::explain_inline`, and the `fx` badge says which of the two is up.
+    ToggleFriendly,
     SheetAdd,
     SheetRename,
     SheetDelete,
@@ -127,6 +139,9 @@ impl Command {
         Command::ClearCells,
         Command::GoTo,
         Command::Recalculate,
+        Command::FunctionList,
+        Command::ExplainFormula,
+        Command::ToggleFriendly,
         Command::SheetAdd,
         Command::SheetRename,
         Command::SheetDelete,
@@ -300,10 +315,21 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         title: "&Data",
-        items: &[Item::Verb {
-            command: Command::Recalculate,
-            label: "&Recalculate\tF9",
-        }],
+        items: &[
+            Item::Verb {
+                command: Command::Recalculate,
+                label: "&Recalculate\tF9",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::FunctionList,
+                label: "&Function List…\tCtrl+Shift+F",
+            },
+            Item::Verb {
+                command: Command::ExplainFormula,
+                label: "&Explain Formula…\tCtrl+Shift+E",
+            },
+        ],
     },
     Menu {
         title: "F&ormat",
@@ -363,6 +389,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ToggleNames,
                 label: "&Names",
+            },
+            Item::Verb {
+                command: Command::ToggleFriendly,
+                label: "&Friendly Formulas",
             },
         ],
     },
@@ -451,6 +481,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('O'), true, true) => Some(Command::Outline),
         (Key::Char('K'), true, true) => Some(Command::BlockKindDialog),
         (Key::Char('U'), true, true) => Some(Command::ShowSource),
+        (Key::Char('F'), true, true) => Some(Command::FunctionList),
+        (Key::Char('E'), true, true) => Some(Command::ExplainFormula),
         (Key::F8, false, false) => Some(Command::CheckDocument),
         _ => None,
     }
@@ -476,6 +508,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::SheetDelete
         | Command::SheetNext
         | Command::SheetPrevious
+        // The three formula verbs are the grid's for the plainest of reasons: a text document
+        // has no formulas, so a function list in one would offer things it cannot hold.
+        | Command::FunctionList
+        | Command::ExplainFormula
+        | Command::ToggleFriendly
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleRoles => matches!(kind, Spreadsheet),
@@ -661,6 +698,8 @@ mod tests {
             (Key::Char('O'), ctrl_shift, Command::Outline),
             (Key::Char('K'), ctrl_shift, Command::BlockKindDialog),
             (Key::Char('U'), ctrl_shift, Command::ShowSource),
+            (Key::Char('F'), ctrl_shift, Command::FunctionList),
+            (Key::Char('E'), ctrl_shift, Command::ExplainFormula),
             (Key::F8, Mods::default(), Command::CheckDocument),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
@@ -738,12 +777,16 @@ mod tests {
         }
     }
 
-    /// Recalculate and the four sheet verbs are the grid's alone — the text pane has no sheets.
+    /// Recalculate, the four sheet verbs and the three formula verbs are the grid's alone — the
+    /// text pane has no sheets and no formulas.
     #[test]
     fn sheet_verbs_are_the_grids_alone() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
         for command in [
             Command::Recalculate,
+            Command::FunctionList,
+            Command::ExplainFormula,
+            Command::ToggleFriendly,
             Command::SheetAdd,
             Command::SheetRename,
             Command::SheetDelete,

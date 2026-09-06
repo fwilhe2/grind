@@ -221,46 +221,11 @@ pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)
 
 /// Which call the caret is inside, and which argument of it — what a signature hint shows.
 ///
-/// Scanned backwards over the display text, counting parentheses and skipping string
-/// literals, because the caret is where the user is and the call that matters is the
-/// innermost one containing it.
-pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
-    let head: Vec<char> = text[..caret.min(text.len())].chars().collect();
-    let mut depth = 0i32;
-    let mut argument = 0usize;
-    let mut i = head.len();
-    let mut in_string = false;
-    while i > 0 {
-        i -= 1;
-        match head[i] {
-            // Quotes are counted from the left, so a backwards scan flips at every one.
-            '"' => in_string = !in_string,
-            _ if in_string => {}
-            ')' => depth += 1,
-            ';' if depth == 0 => argument += 1,
-            '(' if depth > 0 => depth -= 1,
-            '(' => {
-                // The name in front of it, if there is one — otherwise this was a grouping
-                // parenthesis and the call, if any, is further out.
-                let end = i;
-                while i > 0 && is_name_char(head[i - 1]) {
-                    i -= 1;
-                }
-                if i == end {
-                    argument = 0;
-                    continue;
-                }
-                return Some((head[i..end].iter().collect(), argument));
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn is_name_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '.'
-}
+/// The core's, since the Windows shell wanted the same answer: a second backwards scan over
+/// parentheses and string literals is how two windows come to disagree about which argument
+/// `SUM`'s caret is in. Re-exported under the name this file already used so the widget and the
+/// tests below reach it unchanged.
+pub use grind_sheet::formula::assist::call_at;
 
 /// Where the cursor goes after a commit, and what to remember for the next one.
 ///
@@ -494,23 +459,6 @@ mod tests {
     fn f4_does_nothing_where_there_is_no_reference() {
         assert!(cycle_absolute("=SUM(1;2)", 6).is_none());
         assert!(cycle_absolute("hello", 2).is_none());
-    }
-
-    /// What a signature hint needs: which call the caret is in, and which argument.
-    #[test]
-    fn the_caret_knows_which_argument_it_is_in() {
-        assert_eq!(call_at("=SUM(", 5), Some(("SUM".to_owned(), 0)));
-        assert_eq!(call_at("=SUM(1;2", 8), Some(("SUM".to_owned(), 1)));
-        assert_eq!(call_at("=SUM(1;2;3", 10), Some(("SUM".to_owned(), 2)));
-        // The innermost call wins, and a closed one is not it.
-        assert_eq!(call_at("=IF(A1;SUM(1;2", 14), Some(("SUM".to_owned(), 1)));
-        assert_eq!(call_at("=IF(A1;SUM(1;2);", 16), Some(("IF".to_owned(), 2)));
-        // A `;` inside a string is not an argument separator, and a bare group is no call.
-        assert_eq!(call_at("=SUM(\"a;b\";2", 12), Some(("SUM".to_owned(), 1)));
-        assert_eq!(call_at("=(1+2", 5), None);
-        assert_eq!(call_at("=A1", 3), None);
-        // Dollars are part of a reference, not of anything the scan cares about.
-        assert_eq!(call_at("=SUM($A$13:$A$15", 16), Some(("SUM".to_owned(), 0)));
     }
 
     /// Tab-column memory: Enter after a run of Tabs returns to where the run began.

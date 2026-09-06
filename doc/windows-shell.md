@@ -368,6 +368,43 @@ not have to change a drop-down to discover they exist. Nothing in either dialog 
 form *is*: `grind_sheet::write_file` reads the extension through `Form::from_path`, which is the
 one place in the workspace where an extension decides anything.
 
+### 8. Help while typing is a **band**, not a popup — *built in W9*
+
+`ui_sheet_gtk` floats a `gtk::Popover` under the cell being edited, with eight offers and their
+summaries. This shell draws one line under the strip instead, in the same manner and the same
+place as the notice bar, and the reason is what a popup costs on Win32 rather than what it
+gains: it is a second top-level window with its own class, its own theming (a `LISTBOX` paints
+itself, so `WM_CTLCOLORLISTBOX`), its own DPI answer, and a focus problem — the whole point is
+that typing carries on into the editor underneath while the list narrows, so the popup must never
+take the keyboard. A band this window draws itself has none of those, follows the theme by
+construction, sits beside the formula bar the text is mirrored in, and — being drawn rather than
+a control — appears in `--render-to`'s windowless frame like every other read-out here.
+
+What it costs is the vertical list: five names on one line rather than eight rows each with its
+summary. So the *chosen* offer's summary is drawn after the names, which is the line a reader
+actually wants, and a longer list says how much of itself it is not showing (`+12`). One more
+keystroke narrows it.
+
+Two bands, not one, and they stack: a formula that will not parse leaves a notice up **while the
+edit is still open**, which is exactly when a signature hint is worth most. Sharing one row would
+mean the more useful of the two hiding the other.
+
+### 9. One accent, and it is the suite's rather than the system's — *decided in W9*
+
+Windows exposes the user's accent colour, and this shell does not read it. Half the values in
+that picker are colours a one-pixel selection edge disappears into or a grid cannot be read
+through — it is chosen for a title bar, where nothing has to stay legible *through* it. One
+accent this shell owns is one it can guarantee reads against both grounds, and it ties the window
+to the mark the icon and the two GTK apps already use: `grind_core::style::PALETTE`'s `blue`,
+deepened for the light palette and lightened for the dark one. Following the system accent is a
+**named gap**, not an omission.
+
+Everything else W9 did to the chrome follows from one sentence — *quieter chrome, one louder
+accent*: the hairlines lost a step of contrast (a grid is read *through*), the header band and
+the status bar moved a shade nearer the paper, the grid past `App::used_extent` is drawn quieter
+still, and what was saved there was spent on the accent — the selection's edge, the bar under a
+selected header button, and the argument being typed.
+
 ## The crate
 
 A `*` marks what W0 through W3 have built; everything else is the plan.
@@ -405,7 +442,12 @@ ui_win32/
       status.rs         * the name box, the formula bar, and the status bar's aggregates, all
                           over a real `App`
       state.rs          * Ready / Enter / Edit, the editing state machine, and the two
-                          conversions an edit needs (display syntax, UTF-8 bytes -> UTF-16)
+                          conversions an edit needs (display syntax, and UTF-8 bytes <-> the
+                          UTF-16 units EM_GETSEL/EM_SETSEL count, both ways)
+      assist.rs         * W9: what to offer somebody typing a formula and what the call under
+                          the caret wants next, over `grind_sheet::formula::assist`; the runs
+                          the band draws; the keys a list of offers claims; and the function
+                          list's rows — all portable, none of it aware of a window
       draw.rs        [~]* a viewport painted onto an HDC — and, portable beside it, what a cell
                           *looks like*: alignment, weight and colour resolved from `CellStyle`,
                           and what the selection wash does to it
@@ -467,6 +509,8 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W6** | **The three shared panes** — *done* | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | **Met.** Ctrl+Shift+U (Show Source) and F8 (Check Document) open `dialog::choose`'s listbox — this shell's existing dialog-for-a-list idiom, already `text_outline`'s and `text_block_kind_dialog`'s, rather than a fourth embedded text-view widget — pre-selected on the line the pane's own selection or caret projects to and, for the lint list, jumping either pane (and, for the grid, either **sheet**) to the row picked; a new **View** menu's Cell Roles and Names toggles read `App::get_viewport_with`'s overlay, drawn as a leading-edge marker plus a muted outline round a name's range on the grid and as a muted `‹name›` beside each bookmark on the text pane. Nothing here writes: `code.rs`/`problems.rs` are portable and tested, and the two overlays are asked for fresh on every paint exactly as `Viewport::role`/`Viewport::names` already are — a stored classification goes stale and a derived one cannot |
 | **W7** | **Chrome and the accessibility floor** — *done* | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | **Met.** `WM_CONTEXTMENU` answers a right click, Shift+F10 **and** the keyboard's Menu key in one handler — Windows sends all three the same message, with `(-1, -1)` telling the keyboard's two apart from the mouse's real point — and builds its popup from `menu::label_for`, so a context-menu row and a menu-bar row can never say two different things about one `Command`; `TrackPopupMenuEx`'s `TPM_RETURNCMD` hands the picked id straight to the same `do_command` a menu click reaches. The grid's cells and headers share one menu (Cut/Copy/Paste/Delete — this build has no header-only verb to add to it) and the text pane its own plus the three format toggles. The "key list" is `menu::shortcuts()`: every accelerator `MENUS`' own labels already carry, read once rather than kept as a second table, shown in `dialog::choose`'s read-only listbox from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` were already built (W1/W3) and needed nothing further. `accesskit_windows` remains **named and deferred**, and the system caret is the floor |
 | **W8** | **Packaging** — *done* | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | **Met.** The release artifact and the import-table gate were both built in W0 (`win32.yml`'s `build` job); what W8 added is `ui_win32/build.rs`, which compiles `ui_win32/data/grind.rc` with `embed_resource` and links in the icon (`grind.ico`, generated from `grind.svg` — the two existing app icons' navy-square-and-white-outline language, with a grid corner and a document's lines in one mark, a placeholder until S11's suite mark exists) and a version block (`ProductName` "Grind", `FileDescription`, a copyright year) — attempted only when `CARGO_CFG_TARGET_OS` is `windows`, and a no-op everywhere this crate is checked from Linux since `embed_resource` finds no cross resource compiler there. `win32.yml` gained a step reading `FileVersionInfo` and extracting the icon back off the linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine where it must not — fails the build rather than shipping unnoticed. The file-associations answer is below, and is deliberately **written down rather than built**: nothing registers a ProgID yet, because doing that is an installer's job and this milestone has none |
+
+| **W9** | **Formula literacy, and the chrome that carries it** — *done* | `sheet/assist.rs` (portable): completion offers, the signature of the call the caret is in, and the band that shows either; `grind_sheet::formula::assist`, which is where the pure half of that came from; the friendly formula bar, the function list and Explain Formula; and a visual pass over every band this window draws | **Met.** Typing `=SU` offers `SUBSTITUTE SUM SUMIF` with the chosen one's summary beside them, Tab takes one, and `=SUM(` shows `Sum(Number…)` with the argument being typed in the accent; the formula bar reads `Sum(Number: B2:B7)` where the document stores `=SUM([.B2:.B7])`; Data ▸ Explain Formula unfolds `=ROUND(PMT(…);2)` into `Round(Value: Payment(Rate: …))`; Data ▸ Function List lists all 110 with their plain-English names and writes the call it is asked for. 197 tests on Linux. `--render-to` still byte-identical across two runs, on **both** panes. One bug found by *running* it — see below |
 
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
@@ -541,9 +585,12 @@ it, which is the R9 answer. W2 did not add the marker: the cursor now steps *ove
 track (`keymap::onto_visible`, above), which was the urgent half, and a hit-test target that is
 one pixel wide is a chrome question rather than a navigation one. No **autoscroll on a drag**
 past the edge of the window — a drag stops at the last visible cell, and Shift+arrow, which does
-scroll, is the way to select further. No **zoom** before W8. No **point mode,
-autocomplete or signature hints** while typing a formula — `doc/sheet-shell.md`'s M6, the single
-largest piece of the GTK window, and nothing about it is Windows-shaped. No **filter UI**: a
+scroll, is the way to select further. No **zoom** before W8. No **point mode** — arrow keys
+building a reference into a half-typed formula, and the last piece of `doc/sheet-shell.md`'s M6
+this shell does not have. ~~No autocomplete or signature hints~~ — **built in W9**, as a drawn
+band rather than a popup (`sheet/assist.rs` says why), over the pure half hoisted into
+`grind_sheet::formula::assist` so this window and the GNOME one cannot disagree about which
+argument the caret is in. No **filter UI**: a
 filter in a file folds its rows away and nothing here creates one. No **find/replace over
 cells**. No **conditional formatting UI**, which exists in no shell. No **command palette**, by
 decision 4.
@@ -907,6 +954,30 @@ half of decision 5 is deferred until a `.bmp` from that runner can be committed 
 renders agreeing is what is asserted today. W3 takes decision 7's modal shape *off* it — the
 modals exist and were driven — and leaves the `*` dirty marker on it, because Wine under a bare
 Xvfb draws no caption to read it from.
+
+Added in W9, once a formula could be read as well as typed:
+
+| Claim | How it was checked |
+|---|---|
+| Typing a word offers what starts with it, and the offers carry the chosen one's summary | Under Xvfb, driven by XTEST: `=SU` into A1 puts up `SUBSTITUTE  SUM  SUMIF  ·  Returns text where an old text is substituted with a new text.`, with `SUBSTITUTE` in the accent; Down moves the accent to `SUM` **and the summary with it** |
+| Tab takes the highlighted offer and the band becomes that call's signature | Tab on `SUM` leaves `=SUM(` in the cell and the bar, and the band reads `Sum(Number…)` with the argument in the accent — one keystroke, two different things in one band |
+| The formula bar reads a formula rather than showing it | B8 holds `=SUM([.B2:.B7])` and the bar reads **`Sum(Number: B2:B7)`**, with the `fx` badge in the accent to say which of the two is up. F2 puts the typed text back, because what is under the caret has to be what will be stored |
+| Explain Formula unfolds a nested call | Ctrl+Shift+E on B16 (`=ROUND(PMT(0.0625/12;360;-350000);2)`) gives `Round(` / `Value: Payment(` / `Rate: 0.0625/12,` / `Number Of Periods: 360,` / `Present Value: -350000` / `),` / `Digits: 2` / `)` — `friendly::explain`, one row per line |
+| The function list writes the call it is asked for | Ctrl+Shift+F on the empty E20, then the row `AVERAGE  Average · Statistical · Average the set of numbers`: the cell holds `=AVERAGE(` and the band immediately reads `Average(Number…)` |
+| A completion is one undo step in the control, not a rewrite of the line | `EM_REPLACESEL` with `wParam` 1 over the span `assist::prefix_at` reports, rather than `SetWindowTextW` |
+| The band and its height cannot disagree | `Sheet::hint` sets both or neither, the same one-function rule `Sheet::say` follows for the notice bar; `hint_h` is derived from the runs being empty rather than from a second flag |
+| Two panes, two renders each, byte-identical | `cmp` on consecutive `--render-to` runs under Wine with `DISPLAY` unset, on `sample.fods` **and** `sample.fodt` |
+| The pure half is the core's, so two shells cannot drift | `grind_sheet::formula::assist` holds `prefix_at`, `call_at`, `candidates` and `signature_parts` with their tests; `ui_sheet_gtk`'s `state::call_at` and `formula_ux::{prefix_at, candidates}` are now re-exports of it |
+| The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 197 passed |
+
+**What running it found**, and reading it did not: **a seeded band was wiped one message after it
+was set.** `begin_edit_with` computed the assist from the text it was about to put in the control,
+then called `SetWindowTextW` — which fires `EN_CHANGE`, which is wired to `editor_changed`, which
+reads the caret back with `EM_GETSEL`. At that moment the control holds the new text with its
+caret still at **zero**, so the band it computed was the band for an empty prefix, which is no
+band at all. Every unit test passed: the assist is a pure function of text and offset, and both
+were right at the moment each was asked. The fix is an ordering one — ask *after* the caret is
+placed, which is also what puts the editor over the cell the band has just moved down.
 
 ### What running it found, which reading it did not
 

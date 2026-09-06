@@ -348,22 +348,28 @@ mod windows_impl {
         if let Some(notice) = frame.banner.filter(|_| page.banner_h > 0.0) {
             let rect = page.banner();
             let (left, top, right, bottom) = rect.edges();
+            // The stripe down the leading edge is the grid's own (W9): two panes in one window
+            // that say things in two different-looking bands are two programs in one binary,
+            // which is the thing `Pane` exists not to be.
+            let stripe = scale(3.0, page.dpi).round().max(1.0) as i32;
             gdi::fill(dc, left, top, right, bottom, theme.banner);
+            gdi::fill(dc, left, top, left + stripe, bottom, theme.banner_edge);
             draw_text(
                 dc,
                 notice,
-                left,
+                left + stripe,
                 top,
                 right,
                 bottom,
                 Align::Left,
                 theme.banner_text,
-                scale(8.0, page.dpi),
+                scale(10.0, page.dpi),
             );
         }
         let rect = page.status();
         let (left, top, right, bottom) = rect.edges();
         gdi::fill(dc, left, top, right, bottom, theme.status);
+        gdi::fill(dc, left, top, right, top + 1, theme.header_line);
         draw_text(
             dc,
             frame.status,
@@ -373,7 +379,7 @@ mod windows_impl {
             bottom,
             Align::Left,
             theme.status_text,
-            scale(8.0, page.dpi),
+            scale(10.0, page.dpi),
         );
 
         draw_strip(dc, page, theme, &frame.format);

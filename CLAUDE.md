@@ -136,8 +136,7 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W8, its last
-milestone**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W9**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -156,6 +155,31 @@ the **clipboard**: `CF_UNICODETEXT`, tab- and CRLF-separated, over `App::input_t
 `clipboard.rs` is the only file that opens it and `sheet/clip.rs` the portable codec either side,
 so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the same
 way Delete already did.
+
+**W9 is formula literacy, and the chrome that carries it.** The pure half of "help somebody
+typing a formula" is now the core's — `grind_sheet::formula::assist`, which holds `prefix_at`,
+`call_at`, `candidates` and `signature_parts` with their tests, hoisted out of `ui_sheet_gtk`
+(whose `state::call_at` and `formula_ux::{prefix_at, candidates}` are re-exports of it now) the
+day a second shell wanted the same answers, the way `grind_core::search::score` came out of
+`ui_web`. On top of it `ui_win32/src/sheet/assist.rs` is portable too: what to offer, which
+argument the caret is in, the runs a band draws, and the keys a list of offers claims — Tab
+accepts, Up/Down step, Escape dismisses for that word only, and **Enter is deliberately left to
+commit the cell**. It is drawn as a **band** under the strip rather than a popup (decision 8: a
+Win32 popup is a second window with its own class, theming, DPI answer and focus problem, and
+this shell must keep the keyboard in the editor), stacked *under* the notice bar rather than
+sharing its row, since a formula that will not parse leaves a notice up while the edit is still
+open. Beside it: the formula bar reads `Sum(Number: B2:B7)` where the document stores
+`=SUM([.B2:.B7])` (View ▸ Friendly Formulas, on by default as in the GNOME window, and the `fx`
+badge in the accent says which of the two is up), Data ▸ Explain Formula unfolds a nested call
+over `friendly::explain`, and Data ▸ Function List is all 110 with their plain-English names,
+categories and summaries — the same four columns `grind sheet functions --long` prints — which
+writes the call it is asked for. Nothing here parses back and nothing is written: R1 says the
+document's formula is ODF's. The **look** changed with it, on one sentence — *quieter chrome, one
+louder accent*: softer hairlines, quieter still past `App::used_extent`, rounded fields, a
+select-all triangle in the corner, an accent bar under a selected header button, a stripe down
+the notice bar, a status bar with the document at one end and the selection's arithmetic at the
+other, and one accent that is the suite's own blue rather than the user's Windows accent
+(decision 9 — following the system accent is a named gap).
 
 **W5a is the text pane, and it settles this shell's one open decision.** `metrics.rs` is the
 fourth `layout::Metrics` implementation and the first one no toolkit handed over: GDI measures
@@ -253,7 +277,8 @@ from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` w
 the context menus and the key list. `accesskit_windows` remains named and deferred, and the
 system caret is the floor.
 
-**W8 is done: packaging, the last milestone this plan named.** The release artifact and the
+**W8 is done: packaging, the last milestone the original plan named** (W9 was added after it).
+The release artifact and the
 import-table gate were both W0's; what W8 added is `ui_win32/build.rs`, compiling
 `ui_win32/data/grind.rc` with `embed_resource` into the icon (`grind.ico`, generated from
 `grind.svg` — the two GTK apps' own navy-square-and-white-outline language, one mark with a grid
@@ -436,7 +461,7 @@ rather than a guest:
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
-| `grind-win32` | `ui_win32/` | The Windows shell — **planned in full, built through W4: a window, the grid, the selection over it, editing, and the clipboard** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, both document types in one binary eventually, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the display-syntax conversion (`sheet/state.rs`), the name box, the formula bar and the status bar's aggregates over a real `App` (`sheet/status.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
+| `grind-win32` | `ui_win32/` | The Windows shell — **built through W9: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, and the formula assist** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
 which asserts the manifest names no document-type crate, that no source dispatches on
@@ -509,7 +534,13 @@ before it can be answered.
   over the dependency graph rather than sorting one. `display.rs` is the formula bar's A1
   syntax layered on top of the same lexer/parser, not a second grammar. All 110 Small Group
   functions are implemented; `funcs::implemented()` is checked against `doc/small-group.md`
-  by a test, which is the anti-bloat rule made mechanical.
+  by a test, which is the anti-bloat rule made mechanical. `assist.rs` is what a shell needs
+  while somebody is *typing* one — which word may be completed, what to offer for it, which call
+  the caret is inside and how a signature splits — three questions about display syntax and a
+  caret offset, and here rather than in a shell since `ui_sheet_gtk` and `ui_win32` both ask
+  them. `friendly.rs` is the plain-English reading of a finished formula (`PV` → `Present
+  Value`, arguments labelled with the parameter they fill); it is presentation only and never
+  parses back.
 - **`ui_sheet_gtk/`** — the spreadsheet's GNOME shell (phase 9, `doc/sheet-shell.md` is
   normative here). Owns no data — every paint reads `App::get_viewport` and throws it away.
   Custom `gtk::Widget` drawing in `snapshot()`, not `GtkColumnView`. `geom.rs` holds all

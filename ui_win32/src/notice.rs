@@ -80,6 +80,15 @@ pub fn bad_formula(message: &str) -> String {
     format!("Not a formula: {message}. Esc leaves the cell as it was.")
 }
 
+/// Data ▸ Explain Formula, asked about a cell that holds no formula — or one this build cannot
+/// parse, which from the reader's side is the same thing: there is no reading to show.
+///
+/// A notice rather than a message box, because the question was asked *about a cell* and this bar
+/// is where this window says things about the cell it is on.
+pub fn nothing_to_explain(address: &str) -> String {
+    format!("{address} holds no formula to explain. F2 opens the cell to write one.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,9 +128,13 @@ mod tests {
             recalculated(3, 1),
             bad_formula("unexpected end of input"),
             references_renamed(4),
+            nothing_to_explain("B3"),
         ] {
             assert!(
-                text.contains("F9") || text.contains("Ctrl+Z") || text.contains("Esc"),
+                text.contains("F9")
+                    || text.contains("Ctrl+Z")
+                    || text.contains("Esc")
+                    || text.contains("F2"),
                 "{text}"
             );
             assert!(text.ends_with('.'), "{text}");

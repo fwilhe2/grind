@@ -20,9 +20,9 @@
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
-    CreateDIBSection, CreateFontIndirectW, CreateSolidBrush, DIB_RGB_COLORS, DeleteDC,
-    DeleteObject, FW_BOLD, FW_NORMAL, FillRect, GdiFlush, HBITMAP, HBRUSH, HDC, HFONT, HGDIOBJ,
-    LOGFONTW, SRCCOPY, SelectObject,
+    CreateDIBSection, CreateFontIndirectW, CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DeleteDC,
+    DeleteObject, FW_BOLD, FW_NORMAL, FillRect, GdiFlush, GetTextExtentPoint32W, HBITMAP, HBRUSH,
+    HDC, HFONT, HGDIOBJ, HPEN, LOGFONTW, PS_SOLID, RoundRect, SRCCOPY, SelectObject,
 };
 
 use crate::theme::Rgb;
@@ -46,6 +46,35 @@ impl Drop for Brush {
         // SAFETY: the handle is ours and was never selected into a DC — `FillRect` takes a
         // brush as an argument rather than selecting it, which is why filling is done that way
         // throughout this shell.
+        unsafe {
+            let _ = DeleteObject(HGDIOBJ(self.0.0));
+        }
+    }
+}
+
+/// A pen that deletes itself.
+///
+/// One width and one colour, which is every line this shell draws that is not a filled
+/// rectangle — in practice the outline of a [`round_rect`], since everything else is a `fill`.
+pub struct Pen(HPEN);
+
+impl Pen {
+    pub fn solid(colour: Rgb, width: i32) -> Self {
+        // SAFETY: creating a pen touches nothing but the GDI handle table.
+        Self(unsafe {
+            CreatePen(
+                PS_SOLID,
+                width.max(1),
+                windows::Win32::Foundation::COLORREF(colour.colorref()),
+            )
+        })
+    }
+}
+
+impl Drop for Pen {
+    fn drop(&mut self) {
+        // SAFETY: the handle is ours, and `Selected` puts the DC's previous pen back before this
+        // runs — a selected object is one `DeleteObject` quietly declines to free.
         unsafe {
             let _ = DeleteObject(HGDIOBJ(self.0.0));
         }
@@ -131,8 +160,20 @@ pub struct Selected<'a> {
 
 impl<'a> Selected<'a> {
     pub fn font(dc: HDC, font: &'a Font) -> Self {
-        // SAFETY: `dc` is live for the caller's scope and the font outlives this guard.
-        let previous = unsafe { SelectObject(dc, HGDIOBJ(font.handle().0)) };
+        Self::object(dc, HGDIOBJ(font.handle().0))
+    }
+
+    pub fn pen(dc: HDC, pen: &'a Pen) -> Self {
+        Self::object(dc, HGDIOBJ(pen.0.0))
+    }
+
+    pub fn brush(dc: HDC, brush: &'a Brush) -> Self {
+        Self::object(dc, HGDIOBJ(brush.0.0))
+    }
+
+    fn object(dc: HDC, object: HGDIOBJ) -> Self {
+        // SAFETY: `dc` is live for the caller's scope and the object outlives this guard.
+        let previous = unsafe { SelectObject(dc, object) };
         Self {
             dc,
             previous,
@@ -264,6 +305,59 @@ pub fn fill(dc: HDC, left: i32, top: i32, right: i32, bottom: i32, colour: Rgb) 
     unsafe {
         FillRect(dc, &rect, brush.handle());
     }
+}
+
+/// One rectangle with rounded corners, filled and outlined.
+///
+/// The whole of this shell's softening: the name box, the formula bar and the assist band's chip
+/// are drawn with one, everything else is still a square `fill`. GDI has no antialiasing, so the
+/// corners are cut rather than smoothed — at the two- to four-pixel radius used here that reads
+/// as a rounded field and not as a staircase, and it costs one call rather than a bitmap.
+///
+/// A radius of zero, or a rectangle too small for the one asked for, comes out square: a corner
+/// bigger than the box it is cutting is how a field turns into an ellipse.
+pub fn round_rect(dc: HDC, rect: RECT, radius: i32, fill: Rgb, border: Rgb) {
+    let RECT {
+        left,
+        top,
+        right,
+        bottom,
+    } = rect;
+    if right <= left || bottom <= top {
+        return;
+    }
+    let radius = radius
+        .max(0)
+        .min((right - left) / 2)
+        .min((bottom - top) / 2);
+    let brush = Brush::solid(fill);
+    let pen = Pen::solid(border, 1);
+    let _brush = Selected::brush(dc, &brush);
+    let _pen = Selected::pen(dc, &pen);
+    // SAFETY: the DC is the caller's and live, and both objects are selected for this scope and
+    // put back by the guards before either is dropped.
+    unsafe {
+        let _ = RoundRect(dc, left, top, right, bottom, radius * 2, radius * 2);
+    }
+}
+
+/// How wide a string is in the DC's current font, in pixels.
+///
+/// What the drawing code needs to place one run of text after another — the assist band's
+/// signature, whose emphasised argument is a separate `TextOut` in a bolder font, and the status
+/// bar's two halves. Measuring and drawing therefore use one font and one engine, which is the
+/// same rule `metrics.rs` follows for the text pane and for the same reason.
+pub fn text_width(dc: HDC, text: &str) -> i32 {
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    if wide.is_empty() {
+        return 0;
+    }
+    let mut size = windows::Win32::Foundation::SIZE::default();
+    // SAFETY: the buffer and the size are live locals that outlive the call.
+    unsafe {
+        let _ = GetTextExtentPoint32W(dc, &wide, &mut size);
+    }
+    size.cx
 }
 
 /// The client area, as GDI measures it.

@@ -31,12 +31,16 @@
 //!
 //! ## What is deliberately missing
 //!
-//! **Point mode**, autocomplete and signature hints — `doc/sheet-shell.md`'s M6, the single
-//! largest piece of the GTK window, and named in `doc/windows-shell.md` as deferred. That is
-//! why [`Outcome`] has no `Point` and why an arrow in Enter mode simply commits: there is no
-//! pending reference for it to move. The mode enum is still three variants rather than a
-//! boolean, because Enter-versus-Edit is what the arrow keys turn on, and it is also where
-//! pointing would attach if it is ever built.
+//! **Point mode** — arrow keys building a reference into a half-typed formula, the last piece of
+//! `doc/sheet-shell.md`'s M6 this shell does not have. That is why [`Outcome`] has no `Point` and
+//! why an arrow in Enter mode simply commits: there is no pending reference for it to move. The
+//! mode enum is still three variants rather than a boolean, because Enter-versus-Edit is what the
+//! arrow keys turn on, and it is also where pointing would attach if it is ever built.
+//!
+//! Autocomplete and the signature hint are **no longer missing** (W9) and are not here: they are
+//! [`super::assist`], asked *before* this table, because the three keys a completion list claims
+//! — Tab, Up/Down, Escape — all already mean something in this one, and a state machine that had
+//! to know whether a popup was up would be two questions in one match.
 
 use grind_sheet::formula::display::{self, DisplayError};
 
@@ -208,6 +212,29 @@ pub fn caret_at(text: &str, byte: usize) -> i32 {
         .map(char::len_utf16)
         .sum();
     i32::try_from(units).unwrap_or(i32::MAX)
+}
+
+/// The same conversion the other way: where the editor's caret is, as a **byte** offset.
+///
+/// `EM_GETSEL` reports UTF-16 units and everything that reads the text — `sheet/assist.rs`'s
+/// completion and signature hint, `formula::display` — counts bytes, so one of the two has to
+/// convert and this is where. A unit past the end lands at the end, and one that falls *inside* a
+/// surrogate pair lands on the character it is half of rather than between its bytes: a caret is
+/// a place in text, and there is no place inside a character.
+pub fn byte_at(text: &str, units: i32) -> usize {
+    let Ok(want) = usize::try_from(units) else {
+        return 0;
+    };
+    let mut seen = 0usize;
+    for (byte, c) in text.char_indices() {
+        // Past it, or *inside* it: either way this character's own start is the answer, which is
+        // what keeps a caret between two units of one surrogate pair from splitting it.
+        if seen + c.len_utf16() > want {
+            return byte;
+        }
+        seen += c.len_utf16();
+    }
+    text.len()
 }
 
 #[cfg(test)]
@@ -405,5 +432,30 @@ mod tests {
         // Past the end is the end, not a panic.
         assert_eq!(caret_at("=A1", 99), 3);
         assert_eq!(caret_at("", 4), 0);
+    }
+
+    /// And back, which is what reading `EM_GETSEL` needs. Every offset a caret can really be at
+    /// round-trips; the ones it cannot — inside a character — land on a boundary rather than
+    /// splitting one, because there is no place inside a character for a caret to be.
+    #[test]
+    fn a_caret_offset_converts_back_from_units_to_bytes() {
+        for text in ["=SUM(B2)", "=ä+1", "=\"\u{1f600}\"&A1", ""] {
+            for (byte, _) in text
+                .char_indices()
+                .chain(std::iter::once((text.len(), ' ')))
+            {
+                let units = caret_at(text, byte);
+                assert_eq!(byte_at(text, units), byte, "{text:?} at {byte}");
+            }
+        }
+        // An emoji is one character and *two* units, and the unit between its halves is not a
+        // place — it lands on the character rather than between its bytes.
+        let text = "=\u{1f600}";
+        assert_eq!(byte_at(text, 1), 1);
+        assert_eq!(byte_at(text, 2), 1);
+        assert_eq!(byte_at(text, 3), text.len());
+        // Nonsense from a control that has no selection, and past the end.
+        assert_eq!(byte_at("=A1", -1), 0);
+        assert_eq!(byte_at("=A1", 99), 3);
     }
 }

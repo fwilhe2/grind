@@ -95,7 +95,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 // `SetScrollInfo` lives in the Controls namespace in Windows' own metadata, which is where the
 // scrollbar API has always been. It is *not* a Common Controls v6 class and needs no manifest —
 // `doc/windows-shell.md`'s rejection of a v6 toolbar does not reach it.
-use windows::Win32::UI::Controls::{EM_SETSEL, SetScrollInfo};
+use windows::Win32::UI::Controls::{EM_GETSEL, EM_REPLACESEL, EM_SETSEL, SetScrollInfo};
 use windows::core::PCWSTR;
 
 use crate::clipboard;
@@ -106,6 +106,7 @@ use crate::menu::{self, Command, Item};
 use crate::metrics::{Faces, Fonts};
 use crate::notice;
 use crate::problems;
+use crate::sheet::assist;
 use crate::sheet::clip;
 use crate::sheet::draw::{self, Frame};
 use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
@@ -343,6 +344,21 @@ struct Sheet {
     /// What the notice bar says, or `None` for a document with nothing to say about itself.
     /// Always set through [`Sheet::say`], which is what keeps it and `geom.banner_h` agreeing.
     banner: Option<String>,
+    /// What is being offered to somebody typing a formula, and which offer Tab would take —
+    /// `sheet/assist.rs`, recomputed from the editor's text on every keystroke rather than
+    /// updated in place.
+    assist: assist::Assist,
+    /// The assist band's runs, as [`assist::band`] renders whatever `assist` holds. Kept beside
+    /// it rather than recomputed inside the paint, because it is the *emptiness* of this that
+    /// decides `geom.hint_h` — a band with height and nothing in it is a gap, and one with
+    /// something in it and no height draws over the headers. Always set through [`Sheet::hint`],
+    /// which is what keeps the two agreeing, exactly as [`Sheet::say`] does for the notice bar.
+    hint: Vec<assist::Piece>,
+    /// Whether the formula bar shows the friendly *reading* of a formula rather than the text
+    /// that would be typed back in — View ▸ Friendly Formulas. Presentation state, like the
+    /// selection and the overlays: nothing here is ever written, and the document's formula stays
+    /// exactly the one ODF spells (R1).
+    friendly: bool,
     /// The face the two child `EDIT`s are set in. Owned here because a `WM_SETFONT` does not
     /// take a copy: the handle has to outlive every paint of the control, and be deleted after
     /// it.
@@ -415,6 +431,7 @@ impl Sheet {
         self.geom = GridGeom {
             strip_h: scale(draw::STRIP_H, dpi),
             banner_h: banner_h(self.banner.as_deref(), dpi),
+            hint_h: hint_h(&self.hint, dpi),
             header_w: scale(draw::HEADER_W, dpi),
             header_h: scale(draw::HEADER_H, dpi),
             status_h: scale(draw::STATUS_H, dpi),
@@ -538,6 +555,36 @@ impl Sheet {
     fn say(&mut self, notice: Option<String>) {
         self.geom.banner_h = banner_h(notice.as_deref(), self.geom.dpi);
         self.banner = notice;
+    }
+
+    /// Recompute the assist band from what the editor holds, and set its height with it.
+    ///
+    /// The counterpart to [`Sheet::say`] and the same one-function rule: the runs and the height
+    /// change together, so no path can leave a band with nothing in it or a run with nowhere to
+    /// go. `caret` is a **byte** offset into `text` — [`state::byte_at`] is the conversion from
+    /// what `EM_GETSEL` counts.
+    ///
+    /// Returns whether the band's height changed, which is the difference between repainting the
+    /// strip and relaying out the window: the grid moves down when the band appears.
+    fn assist(&mut self, text: &str, caret: usize) -> bool {
+        let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
+        self.assist.refresh(text, caret, &names);
+        let pieces = assist::band(&self.assist, self.friendly);
+        self.hint(pieces)
+    }
+
+    /// Put runs in the assist band, or take it away, and move the height with them.
+    fn hint(&mut self, pieces: Vec<assist::Piece>) -> bool {
+        let was = self.geom.hint_h;
+        self.geom.hint_h = hint_h(&pieces, self.geom.dpi);
+        self.hint = pieces;
+        was != self.geom.hint_h
+    }
+
+    /// An edit ended, by any door: no offers, no signature, no band.
+    fn assist_done(&mut self) {
+        self.assist.clear();
+        self.hint(Vec::new());
     }
 
     /// Where the edit control goes.
@@ -927,6 +974,14 @@ fn banner_h(notice: Option<&str>, dpi: u32) -> f64 {
     }
 }
 
+/// The same question for the assist band: zero when there is nothing to assist with.
+fn hint_h(hint: &[assist::Piece], dpi: u32) -> f64 {
+    match hint.is_empty() {
+        true => 0.0,
+        false => scale(draw::HINT_H, dpi),
+    }
+}
+
 /// The bridge from the core to the window: *something changed*.
 ///
 /// Architecture rule 3 — the core pushes and shells never poll — reaching a message queue. It
@@ -1024,6 +1079,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
         geom: GridGeom {
             strip_h: draw::STRIP_H,
             banner_h: 0.0,
+            hint_h: 0.0,
             header_w: draw::HEADER_W,
             header_h: draw::HEADER_H,
             status_h: draw::STATUS_H,
@@ -1045,6 +1101,14 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
         mode: state::Mode::default(),
         dirty: false,
         banner: None,
+        assist: assist::Assist::default(),
+        hint: Vec::new(),
+        // **On**, which is `ui_sheet_gtk`'s own default (`chrome::formula_bar(.., true)`) and is
+        // the reason to have one default rather than two: a formula reads the same in both
+        // windows unless somebody says otherwise. It costs nothing to be wrong about, either —
+        // the reading is only ever *shown*, and the moment the cell is opened for editing the
+        // bar is back to the text that will be stored.
+        friendly: true,
         ui_font: None,
         field_brush: None,
         surrogate: None,
@@ -1587,17 +1651,18 @@ fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
     // reads `false` there rather than a second flag nothing ever sets.
-    let (kind, roles_on, names_on) = unsafe {
+    let (kind, roles_on, names_on, friendly_on) = unsafe {
         with_pane(hwnd, |pane| match pane {
             Pane::Sheet(sheet) => (
                 DocumentKind::Spreadsheet,
                 sheet.overlays.roles,
                 sheet.overlays.names,
+                sheet.friendly,
             ),
-            Pane::Text(text) => (DocumentKind::Text, false, text.show_names),
+            Pane::Text(text) => (DocumentKind::Text, false, text.show_names, false),
         })
     }
-    .unwrap_or((DocumentKind::Spreadsheet, false, false));
+    .unwrap_or((DocumentKind::Spreadsheet, false, false, false));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -1625,13 +1690,14 @@ fn build_menu(hwnd: HWND) {
                             usize::from(command.id()),
                             PCWSTR(label.as_ptr()),
                         );
-                        // The two overlays are the one pair of checkable items this bar has —
-                        // everything else is a plain verb with nothing to report back. `overlays`
-                        // is read once above rather than per item, the same "asked for fresh,
-                        // never stored" shape the overlay itself follows.
+                        // The two overlays and the friendly bar are the checkable items this bar
+                        // has — everything else is a plain verb with nothing to report back.
+                        // Each is read once above rather than per item, the same "asked for
+                        // fresh, never stored" shape the overlays themselves follow.
                         let checked = match command {
                             Command::ToggleRoles => Some(roles_on),
                             Command::ToggleNames => Some(names_on),
+                            Command::ToggleFriendly => Some(friendly_on),
                             _ => None,
                         };
                         if let Some(checked) = checked {
@@ -2025,8 +2091,109 @@ fn child_key(hwnd: HWND, vk: u32, child: HWND) -> bool {
             }
             _ => false,
         },
-        Some(Focused::Editor(mode)) => on_key(hwnd, mode, vk),
+        // The offer list is asked **before** the editing state machine, because the three keys it
+        // claims all mean something else there: Tab commits and moves right, Up and Down commit
+        // in Enter mode, and Escape throws the whole edit away. `assist::on_key` answers `None`
+        // unless a list is actually up, so with nothing offered this costs one match and every
+        // key means exactly what it always meant.
+        Some(Focused::Editor(mode)) => assist_key(hwnd, vk) || on_key(hwnd, mode, vk),
         None => false,
+    }
+}
+
+/// A keystroke aimed at the completion list, if one is up. `true` means it was claimed.
+fn assist_key(hwnd: HWND, vk: u32) -> bool {
+    // SAFETY: one borrow, for one bit; nothing inside dispatches.
+    let offering = unsafe { with_sheet(hwnd, |state| state.assist.is_offering()) }.unwrap_or(false);
+    let Some(reply) = assist::on_key(offering, keymap::key_for(vk), mods()) else {
+        return false;
+    };
+    match reply {
+        assist::Reply::Accept => accept_offer(hwnd),
+        // Stepping and dismissing change only what the band says, so neither goes near the
+        // document, the editor's text or the geometry — the band is already the height it wants.
+        assist::Reply::Step(delta) => {
+            // SAFETY: one borrow, released before the invalidation.
+            unsafe {
+                with_sheet(hwnd, |state| {
+                    state.assist.step(delta);
+                    let pieces = assist::band(&state.assist, state.friendly);
+                    state.hint(pieces);
+                });
+            }
+            refresh_bands(hwnd);
+        }
+        assist::Reply::Dismiss => {
+            // SAFETY: one borrow, released before the refresh — which is a full one, since the
+            // band going away moves the grid back up under it.
+            unsafe {
+                with_sheet(hwnd, |state| {
+                    state.assist.dismiss();
+                    let pieces = assist::band(&state.assist, state.friendly);
+                    state.hint(pieces);
+                });
+            }
+            refresh(hwnd);
+        }
+    }
+    true
+}
+
+/// Put the highlighted offer into the editor, replacing the word that was being typed.
+///
+/// `EM_REPLACESEL` rather than rewriting the whole control: it leaves the caret after what it
+/// inserted — which for `SUM(` is exactly where the first argument goes — and it is one undo step
+/// in the control's own history, so Ctrl+Z inside a half-typed formula still undoes a completion
+/// rather than the whole edit.
+fn accept_offer(hwnd: HWND) {
+    let Some((edit, text)) = editor_text(hwnd) else {
+        return;
+    };
+    // SAFETY: one borrow, for the span and the replacement; nothing inside dispatches.
+    let Some(Some((span, replacement))) =
+        (unsafe { with_sheet(hwnd, |state| state.assist.accept()) })
+    else {
+        return;
+    };
+    let (from, to) = (
+        state::caret_at(&text, span.start),
+        state::caret_at(&text, span.end),
+    );
+    let wide = gdi::wide(&replacement);
+    // SAFETY: nothing is borrowed, and the buffer is a NUL-terminated local that outlives the
+    // call. Both messages go to this window's own control and dispatch synchronously.
+    unsafe {
+        select(edit, from, to);
+        SendMessageW(
+            edit,
+            EM_REPLACESEL,
+            Some(WPARAM(1)),
+            Some(LPARAM(wide.as_ptr() as isize)),
+        );
+    }
+    // The control's `EN_CHANGE` will have arrived already; recompute from the new text so the
+    // band shows the signature of the call that was just completed rather than the offers that
+    // completed it.
+    editor_changed(hwnd);
+}
+
+/// Repaint the strip and the two bands under it, and nothing below them.
+fn refresh_bands(hwnd: HWND) {
+    // SAFETY: one borrow, released before the invalidation.
+    let Some(bottom) =
+        (unsafe { with_sheet(hwnd, |state| state.geom.header_top().round() as i32) })
+    else {
+        return;
+    };
+    // SAFETY: the rectangle is a live local read for the length of the call.
+    unsafe {
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: gdi::client_rect(hwnd).right,
+            bottom,
+        };
+        let _ = InvalidateRect(Some(hwnd), Some(&rect), false);
     }
 }
 
@@ -2373,17 +2540,29 @@ fn close_name_box(hwnd: HWND, commit: bool) {
 /// `on_bar` forces it onto the formula bar; otherwise [`Sheet::editor_rect`] decides, and picks
 /// the bar anyway for a cell that is scrolled out of sight.
 fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
-    // SAFETY: one borrow, for the control, its rectangle and its text.
-    let Some((edit, rect, text)) = (unsafe {
+    // SAFETY: one borrow, for the text the seed means; released before [`begin_edit_with`] takes
+    // its own, which it must, since it moves a window.
+    let Some(text) = (unsafe {
+        with_sheet(hwnd, |state| match seed {
+            Seed::Char(c) => c.to_string(),
+            Seed::Cell => status::formula_bar_text(&state.app, state.sheet, state.selection),
+        })
+    }) else {
+        return;
+    };
+    begin_edit_with(hwnd, text, seed.mode(), on_bar);
+}
+
+/// The same, with the text given rather than derived from a [`Seed`] — the function list's door
+/// in, which starts an edit holding `=SUM(` and belongs to no cell's own content.
+fn begin_edit_with(hwnd: HWND, text: String, mode: state::Mode, on_bar: bool) {
+    // SAFETY: one borrow, for the control and its rectangle.
+    let Some((edit, rect)) = (unsafe {
         with_sheet(hwnd, |state| {
-            state.mode = seed.mode();
+            state.mode = mode;
             state.editor_on_bar = on_bar;
             state.drag = None;
-            let text = match seed {
-                Seed::Char(c) => c.to_string(),
-                Seed::Cell => status::formula_bar_text(&state.app, state.sheet, state.selection),
-            };
-            (state.editor, state.editor_rect(), text)
+            (state.editor, state.editor_rect())
         })
     }) else {
         return;
@@ -2406,6 +2585,18 @@ fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
         select(edit, caret, caret);
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
+    // What the seeded text already says, before a key is pressed: a cell holding `=SUM(B2:B4)`
+    // opened with F2 shows that call's signature at once, and the function list's `=AVERAGE(`
+    // shows what its first argument is.
+    //
+    // **Last**, and that ordering is the whole of it: `SetWindowTextW` fires `EN_CHANGE`, which
+    // is wired to [`editor_changed`], which reads `EM_GETSEL` — and at that moment the control
+    // has the new text with its caret still at **zero**, so the band it computes is the band for
+    // an empty prefix, which is no band at all. Seeding it before the control was filled put a
+    // signature up and had it wiped one message later; asking again here, after the caret is
+    // where it belongs, is what makes it stay. `editor_changed` also refreshes, which is what
+    // moves this control down when the band it just added took height out of the grid.
+    editor_changed(hwnd);
 }
 
 /// Store what the editor holds and close it, moving the cursor if a key asked to.
@@ -2454,8 +2645,9 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
         with_sheet(hwnd, |state| {
             state.editor_on_bar = false;
             state.mode = state::Mode::Ready;
-            // Whatever the banner was saying, it was about this edit.
+            // Whatever the banner was saying, it was about this edit, and so was the band.
             state.say(None);
+            state.assist_done();
             (state.sheet, state.selection.active)
         })
     }) else {
@@ -2497,6 +2689,7 @@ fn cancel_edit(hwnd: HWND) {
             let was_open = std::mem::replace(&mut state.mode, state::Mode::Ready).is_editing();
             state.editor_on_bar = false;
             state.say(None);
+            state.assist_done();
             (state.editor, was_open)
         })
     }) else {
@@ -2514,23 +2707,54 @@ fn cancel_edit(hwnd: HWND) {
 }
 
 /// The text in the editor changed, so the drawn formula bar — which mirrors an in-cell edit —
-/// is repainted. **Only the strip**: a keystroke must not redraw the grid under it.
+/// and the assist band are recomputed and repainted.
+///
+/// **Only the two bands**, when the assist band was already the height it now wants: a keystroke
+/// must not redraw the grid under it. When the band appeared or disappeared the grid really did
+/// move — every rectangle below it is offset by `hint_h` — and then this is a full [`refresh`],
+/// which is also what moves the editor control down with it.
 fn editor_changed(hwnd: HWND) {
-    // SAFETY: one borrow, released before the invalidation.
-    let Some(strip) = (unsafe { with_sheet(hwnd, |state| state.geom.strip_rect()) }) else {
+    let (edit, text) = match editor_text(hwnd) {
+        Some(pair) => pair,
+        None => return,
+    };
+    let caret = editor_caret(edit, &text);
+    // SAFETY: one borrow, released before anything is invalidated. `Sheet::assist` reads
+    // `App::names`, which takes the core's read lock and dispatches nothing.
+    let Some(moved) = (unsafe { with_sheet(hwnd, |state| state.assist(&text, caret)) }) else {
         return;
     };
-    let (left, top, right, bottom) = strip.edges();
-    let rect = RECT {
-        left,
-        top,
-        right,
-        bottom,
-    };
-    // SAFETY: the rectangle is a live local read for the length of the call.
-    unsafe {
-        let _ = InvalidateRect(Some(hwnd), Some(&rect), false);
+    match moved {
+        true => refresh(hwnd),
+        false => refresh_bands(hwnd),
     }
+}
+
+/// The editor control and what it holds, or `None` when no edit is open.
+fn editor_text(hwnd: HWND) -> Option<(HWND, String)> {
+    // SAFETY: one borrow, for the control and whether it is up; nothing inside dispatches.
+    let (edit, open) =
+        (unsafe { with_sheet(hwnd, |state| (state.editor, state.mode.is_editing())) })?;
+    (open && !edit.is_invalid()).then(|| (edit, window_text(edit)))
+}
+
+/// Where the caret is in the editor, as a **byte** offset into `text`.
+///
+/// `EM_GETSEL` reports UTF-16 units and reports a *selection*; its end is the caret, which is
+/// where typing would go and therefore what a completion is about. [`state::byte_at`] is the
+/// conversion, and it is a pure function tested on Linux rather than arithmetic done here.
+fn editor_caret(edit: HWND, text: &str) -> usize {
+    let mut end: u32 = 0;
+    // SAFETY: `edit` is one of this window's controls, and the out-parameter is a live local.
+    unsafe {
+        SendMessageW(
+            edit,
+            EM_GETSEL,
+            Some(WPARAM(0)),
+            Some(LPARAM(std::ptr::from_mut(&mut end) as isize)),
+        );
+    }
+    state::byte_at(text, i32::try_from(end).unwrap_or(i32::MAX))
 }
 
 /// `EM_SETSEL`, which counts UTF-16 units — see [`state::caret_at`], which is the conversion.
@@ -2578,6 +2802,14 @@ fn do_command(hwnd: HWND, command: Command) {
         text_command(hwnd, command);
         return;
     }
+    // The one verb that means something *into* an open edit: picking a function while typing
+    // inserts the call at the caret, where committing first would store whatever half-formula is
+    // in the control — and a half-formula does not commit at all, it puts up a notice and keeps
+    // the editor open, which is a poor answer to "which function did you want?".
+    if matches!(command, Command::FunctionList) {
+        function_list(hwnd);
+        return;
+    }
     commit_edit(hwnd, None);
     match command {
         Command::New => new_document(hwnd),
@@ -2613,6 +2845,11 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleRoles => toggle_overlay(hwnd, false),
         Command::ToggleNames => toggle_overlay(hwnd, true),
+        // Handled above, before the commit — but the match stays exhaustive, which is what says
+        // every command has a handler.
+        Command::FunctionList => function_list(hwnd),
+        Command::ExplainFormula => explain_formula(hwnd),
+        Command::ToggleFriendly => toggle_friendly(hwnd),
         // The text pane's, and this one has no selection, block or outline to work with.
         Command::Bold
         | Command::Italic
@@ -2796,6 +3033,97 @@ fn toggle_overlay(hwnd: HWND, names: bool) {
     }
     build_menu(hwnd);
     refresh(hwnd);
+}
+
+/// Whether the formula bar shows the friendly *reading* of a formula rather than its text.
+///
+/// Menu-only, like the two overlays beside it, and the menu is rebuilt straight after for the
+/// same reason: a checkmark answering with the state before the click is a checkmark that is
+/// always one click behind.
+fn toggle_friendly(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| state.friendly = !state.friendly);
+    }
+    build_menu(hwnd);
+    refresh(hwnd);
+}
+
+/// The function list: every function this build implements, and picking one writes the call.
+///
+/// `dialog::choose`'s listbox again — this shell's one idiom for "a list to pick a line from",
+/// already the outline, the source and the lint pane. What the rows say is `assist::function_lines`,
+/// which is `grind sheet functions --long`'s own four columns, so the window and the CLI cannot
+/// disagree about what a function is called or what it does.
+fn function_list(hwnd: HWND) {
+    let rows = assist::function_lines();
+    // SAFETY: one borrow, for one flag; released before the modal, which runs a nested loop.
+    let editing = unsafe { with_sheet(hwnd, |state| state.mode.is_editing()) }.unwrap_or(false);
+    let Some(at) = dialog::choose(hwnd, "Functions", &rows, 0) else {
+        return;
+    };
+    let Some(insert) = assist::function_insert(at, editing) else {
+        return;
+    };
+    match editing {
+        // Into the edit that is already open, at the caret — `EM_REPLACESEL`, the same call an
+        // accepted completion uses, so both land one undo step in the control's own history.
+        true => {
+            let Some((edit, _)) = editor_text(hwnd) else {
+                return;
+            };
+            let wide = gdi::wide(&insert);
+            // SAFETY: nothing is borrowed; the buffer is a NUL-terminated local that outlives
+            // the call, and both calls dispatch synchronously to this window's own control.
+            unsafe {
+                let _ = SetFocus(Some(edit));
+                SendMessageW(
+                    edit,
+                    EM_REPLACESEL,
+                    Some(WPARAM(1)),
+                    Some(LPARAM(wide.as_ptr() as isize)),
+                );
+            }
+            editor_changed(hwnd);
+        }
+        // Nothing open: this starts the edit, seeded with `=NAME(` and the caret after it, which
+        // is where the first argument goes.
+        false => begin_edit_with(hwnd, insert, state::Mode::Enter, false),
+    }
+}
+
+/// The active cell's formula, explained — `formula::friendly::explain`, one line per row.
+///
+/// Read-only: the answer is thrown away, exactly as Help ▸ Keyboard Shortcuts does with the same
+/// dialog. It never parses back and nothing is written (R1) — this is a *reading* of the formula
+/// the document stores, not a second spelling of it.
+fn explain_formula(hwnd: HWND) {
+    // SAFETY: one borrow, released before the modal.
+    let Some((address, text)) = (unsafe {
+        with_sheet(hwnd, |state| {
+            (
+                grind_sheet::a1::format(None, state.selection.active),
+                status::formula_bar_text(&state.app, state.sheet, state.selection),
+            )
+        })
+    }) else {
+        return;
+    };
+    let Ok(explained) = grind_sheet::formula::friendly::explain(&text) else {
+        // Not a formula, or one this build cannot parse. A sentence in the notice bar rather than
+        // a modal saying no: the question was asked *about a cell*, and the bar is where this
+        // window says things about the cell it is on.
+        // SAFETY: one borrow; nothing inside dispatches.
+        unsafe {
+            with_sheet(hwnd, |state| {
+                state.say(Some(notice::nothing_to_explain(&address)));
+            });
+        }
+        refresh(hwnd);
+        return;
+    };
+    let rows: Vec<String> = explained.lines().map(str::to_owned).collect();
+    dialog::choose(hwnd, &format!("{address} explained"), &rows, 0);
 }
 
 /// `Pane::project`, spelled so [`with_pane`] can be handed it directly rather than a closure that
@@ -3210,15 +3538,22 @@ fn draw_frame(dc: HDC, state: &Sheet) {
                 .get_viewport(0, 0..0, 0..0)
                 .expect("an empty rectangle of the first sheet always reads")
         });
-    let status = status::status_line(&state.app, state.sheet, state.selection);
+    let (status, status_right) = status::status_halves(&state.app, state.sheet, state.selection);
     let name = status::name_box_text(&state.app, state.sheet, state.selection);
     // While an in-cell edit is open the bar mirrors the control, which is what makes the strip a
     // read-out of *the cell* rather than of the document underneath it. When the control is on
     // the bar it is covering this text, and reading it back would be drawing under a window.
-    let formula = match state.mode.is_editing() && !state.editor_on_bar {
+    let editing = state.mode.is_editing();
+    let formula = match editing && !state.editor_on_bar {
         true => window_text(state.editor),
         false => status::formula_bar_text(&state.app, state.sheet, state.selection),
     };
+    // The friendly reading, if it is on and there is a formula to read — never while editing,
+    // because the text under the caret has to be the text that will be stored. A formula this
+    // build cannot parse has no reading, and then the bar shows what it always shows.
+    let friendly = (state.friendly && !editing)
+        .then(|| assist::friendly_line(&formula))
+        .flatten();
     draw::paint(
         dc,
         &Frame {
@@ -3226,10 +3561,14 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             theme: state.theme,
             viewport: &viewport,
             status: &status,
+            status_right: &status_right,
             name: &name,
-            formula: &formula,
+            formula: friendly.as_deref().unwrap_or(&formula),
+            friendly: friendly.is_some(),
             banner: state.banner.as_deref(),
+            hint: &state.hint,
             selection: state.selection,
+            used: state.app.used_extent(state.sheet).unwrap_or((0, 0)),
             font_px: scale(FONT_PX, state.geom.dpi).round() as i32,
             face: FACE,
         },
@@ -3844,14 +4183,17 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ToggleNames => text_toggle_names(hwnd),
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
-        // The spreadsheet's, and this pane has no answer to it: `CellRole` is per-character and
-        // this pane has no cells.
+        // The spreadsheet's, and this pane has no answer to any of them: it has no sheets, no
+        // cells for `CellRole` to classify, and no formulas to list, explain or read out.
         Command::Recalculate
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
         | Command::SheetNext
         | Command::SheetPrevious
+        | Command::FunctionList
+        | Command::ExplainFormula
+        | Command::ToggleFriendly
         | Command::ToggleRoles => {}
     }
 }
