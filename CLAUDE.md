@@ -178,9 +178,12 @@ F5 or Ctrl+G — the grid's own two keys for the verb — opening a modal prompt
 `App::resolve_caret` rather than a strip box, since this pane owns no child control of its own to
 put one in. The same menu's Paragraph and Heading 1/2/3 items, and Ctrl+0/1/2/3 to match
 `ui_text_gtk`'s own keys, reach `App::set_kind` at the caret's block — no selection needed, unlike
-the three toggles. **What is still owed**: the IME, the format strip itself as a drawn toolbar, an
-outline dialog, levels past 3 and list items, and a menu that greys out rather
-than silently ignores the other document type's verbs. What is unusual about the whole thing is
+the three toggles. Ctrl+Shift+O opens an outline dialog — `dialog::choose`, a `LISTBOX`-backed
+popup generic over strings so `dialog.rs` stays ignorant of `Heading`, one row per heading
+indented by depth, a double-click or OK landing the caret on it. **What is still owed**: the IME,
+the format strip itself as a drawn toolbar, levels past 3 and list items from this window, and a
+menu that greys out rather than silently ignores the other document type's verbs. What is unusual
+about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh

@@ -80,6 +80,8 @@ pub enum Command {
     Heading1,
     Heading2,
     Heading3,
+    /// The text pane's outline dialog — every heading, jump to any of them. A no-op on the grid.
+    Outline,
     About,
 }
 
@@ -114,6 +116,7 @@ impl Command {
         Command::Heading1,
         Command::Heading2,
         Command::Heading3,
+        Command::Outline,
         Command::About,
     ];
 
@@ -228,6 +231,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::GoTo,
                 label: "&Go To…\tF5",
             },
+            Item::Verb {
+                command: Command::Outline,
+                label: "&Outline…\tCtrl+Shift+O",
+            },
         ],
     },
     Menu {
@@ -338,6 +345,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('1'), true, false) => Some(Command::Heading1),
         (Key::Char('2'), true, false) => Some(Command::Heading2),
         (Key::Char('3'), true, false) => Some(Command::Heading3),
+        (Key::Char('O'), true, true) => Some(Command::Outline),
         _ => None,
     }
 }
@@ -455,6 +463,7 @@ mod tests {
             (Key::Char('1'), ctrl, Command::Heading1),
             (Key::Char('2'), ctrl, Command::Heading2),
             (Key::Char('3'), ctrl, Command::Heading3),
+            (Key::Char('O'), ctrl_shift, Command::Outline),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");

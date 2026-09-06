@@ -2317,14 +2317,15 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::SheetDelete => sheet_delete(hwnd),
         Command::SheetNext => sheet_step(hwnd, 1),
         Command::SheetPrevious => sheet_step(hwnd, -1),
-        // The text pane's, and this one has no selection or block to format.
+        // The text pane's, and this one has no selection, block or outline to work with.
         Command::Bold
         | Command::Italic
         | Command::Underline
         | Command::Paragraph
         | Command::Heading1
         | Command::Heading2
-        | Command::Heading3 => {}
+        | Command::Heading3
+        | Command::Outline => {}
         Command::About => dialog::about(hwnd),
     }
 }
@@ -3342,6 +3343,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }),
         Command::Heading3 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 3 }),
         Command::GoTo => text_go_to(hwnd),
+        Command::Outline => text_outline(hwnd),
         Command::About => dialog::about(hwnd),
         // The spreadsheet's, and this pane has no answer to any of them.
         Command::Recalculate
@@ -3379,6 +3381,42 @@ fn text_go_to(hwnd: HWND) {
         Some(Ok(())) => refresh(hwnd),
         None => {}
     }
+}
+
+/// The outline dialog: every heading, indented by its own depth, jump to any of them.
+///
+/// `App::outline` is the list and `Heading::address` the same `§2.1.3` spelling `text_go_to`'s
+/// prompt takes, but this goes straight to the block index it already has rather than round
+/// tripping through `loc::parse` for an address it just built.
+fn text_outline(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
+    let headings = unsafe { with_text(hwnd, |text| text.app.outline()) }.unwrap_or_default();
+    if headings.is_empty() {
+        dialog::error(hwnd, "This document has no headings.");
+        return;
+    }
+    let items: Vec<String> = headings
+        .iter()
+        .map(|heading| {
+            let indent = "    ".repeat(heading.path.len().saturating_sub(1));
+            format!("{indent}{}  {}", heading.address(), heading.text)
+        })
+        .collect();
+    let Some(choice) = dialog::choose(hwnd, "Outline", &items) else {
+        return;
+    };
+    let Some(heading) = headings.get(choice) else {
+        return;
+    };
+    let block = heading.index;
+    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.place(Caret { block, offset: 0 }, false);
+            text.caret_on = true;
+        });
+    }
+    refresh(hwnd);
 }
 
 /// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` still owes
