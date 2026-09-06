@@ -54,6 +54,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # `embed-resource` (W8) needs `rc.exe`, and `windows-latest` does not put it on `PATH`
+      # or set the `INCLUDE`/`LIB` variables it needs on its own — those only exist inside a
+      # Developer Command Prompt. This is that prompt's environment, applied to every step
+      # after it in this job.
+      - uses: ilammy/msvc-dev-cmd@7defe9254715b088f12dddd9942945a3d75cdad5 # v1.9.0
 
       # Runs the whole portable half plus whatever assertions genuinely need Windows —
       # the virtual-key codes copied out of `winuser.h` being the real ones, once

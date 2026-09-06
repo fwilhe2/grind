@@ -28,6 +28,10 @@ fn main() {
         // about, since the former is every host but `windows-latest` and the latter would mean
         // `grind.rc` itself is broken.
         let result = embed_resource::compile("data/grind.rc", embed_resource::NONE);
+        // Printed unconditionally, not only on failure: `manifest_optional()` swallows
+        // `Ok` and `NotAttempted` alike, so a run where the resource silently failed to embed
+        // left no warning anywhere to explain why the version check after it failed.
+        println!("cargo:warning=grind.rc: {result}");
         if let Err(failed) = result.manifest_optional() {
             println!("cargo:warning=grind.rc failed to compile: {failed}");
         }
