@@ -198,11 +198,12 @@ pub struct Menu {
 /// Seven menus and nothing that is not a verb. Format holds the text pane's toggles and block
 /// kinds even now that W5b's drawn strip reaches the same four — those items *read and write* a
 /// property of the selection, exactly what a strip is for, but a menu they can also start from
-/// costs nothing and is where Ctrl+B/I/U were reachable first — and `menu::applies_to` greys
-/// every one of them out on the grid so the bar says what it means. View holds W6's three shared
-/// panes: the source, the check, and the two overlays only the grid can draw. What is
-/// deliberately absent: anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was
-/// removed for being one, and the argument carries.
+/// costs nothing and is where Ctrl+B/I/U were reachable first — and `win.rs`'s `build_menu`
+/// leaves the whole menu out of the bar over the grid (`menu_has_items`), since `applies_to`
+/// says every one of its items is the text pane's alone. View holds W6's three shared panes: the
+/// source, the check, and the two overlays only the grid can draw. What is deliberately absent:
+/// anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was removed for being one,
+/// and the argument carries.
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "&File",
@@ -455,12 +456,14 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
     }
 }
 
-/// Whether this verb means anything for a document of this kind — W7's "the menus are finished"
-/// still owes greying an item Windows draws unclickable; this is the half that can be answered
-/// with no window at all, and `win.rs`'s `build_menu` is the caller that turns it into
-/// `EnableMenuItem`. A command silent about both kinds would be a command with nowhere to act,
-/// which is a different bug from the one this answers — that one is `Command::ALL` matching
-/// `MENUS`, checked below.
+/// Whether this verb means anything for a document of this kind — the half of "the menus are
+/// finished" that can be answered with no window at all. `win.rs`'s `build_menu` is the caller,
+/// through [`items_for`]/[`menu_has_items`]: a `false` here is why `Recalculate` is missing from
+/// the bar over a text document rather than shown and unclickable. State *within* a kind — Undo
+/// with nothing to undo, Paste with an empty clipboard — is a separate question this does not
+/// answer, and W7 still owes it. A command silent about both kinds would be a command with
+/// nowhere to act, which is a different bug from the one this answers — that one is
+/// `Command::ALL` matching `MENUS`, checked below.
 ///
 /// `Presentation` answers `false` to everything: this shell opens neither kind of pane for one
 /// (`opened` refuses the document before a `Pane` exists), so there is nothing it could mean.
