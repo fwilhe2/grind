@@ -2457,7 +2457,8 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Heading1
         | Command::Heading2
         | Command::Heading3
-        | Command::Outline => {}
+        | Command::Outline
+        | Command::BlockKindDialog => {}
         Command::About => dialog::about(hwnd),
     }
 }
@@ -3475,6 +3476,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Heading3 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 3 }),
         Command::GoTo => text_go_to(hwnd),
         Command::Outline => text_outline(hwnd),
+        Command::BlockKindDialog => text_block_kind_dialog(hwnd),
         Command::About => dialog::about(hwnd),
         // The spreadsheet's, and this pane has no answer to any of them.
         Command::Recalculate
@@ -3618,6 +3620,40 @@ fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind) {
         });
     }
     refresh(hwnd);
+}
+
+/// Every block kind, listed rather than one key per depth — the schema's headings go past level
+/// 3 and lists have a depth of their own, and `Command::Heading1`/`2`/`3` only reach the common
+/// case. `dialog::choose` is the same `LISTBOX` popup `text_outline` already opens, generic over
+/// strings for the same reason: it has no idea what a `BlockKind` is and does not need one.
+///
+/// This is the first window in the suite to reach a list item from its own UI at all —
+/// `doc/text-shell.md` names "no lists UI" as a gap in both GTK windows and the browser, since a
+/// list read from a file draws its bullet but nothing makes one. Six heading levels plus four
+/// list depths plus Paragraph is the same authoring ceiling `doc/text-core.md` already draws
+/// (headings) or is a reasonable one to draw (`MAX_LIST_DEPTH`) rather than the schema's
+/// literally uncapped nesting.
+const MAX_LIST_DEPTH: u32 = 4;
+
+fn text_block_kind_dialog(hwnd: HWND) {
+    let mut kinds = vec![grind_text::BlockKind::Paragraph];
+    kinds.extend((1..=6).map(|level| grind_text::BlockKind::Heading { level }));
+    kinds.extend((1..=MAX_LIST_DEPTH).map(|depth| grind_text::BlockKind::ListItem { depth }));
+    let items: Vec<String> = kinds
+        .iter()
+        .map(|kind| match kind {
+            grind_text::BlockKind::Paragraph => "Paragraph".to_owned(),
+            grind_text::BlockKind::Heading { level } => format!("Heading {level}"),
+            grind_text::BlockKind::ListItem { depth } => format!("List item, depth {depth}"),
+        })
+        .collect();
+    let Some(choice) = dialog::choose(hwnd, "Block Kind", &items) else {
+        return;
+    };
+    let Some(kind) = kinds.get(choice).cloned() else {
+        return;
+    };
+    text_set_kind(hwnd, kind);
 }
 
 fn text_history(hwnd: HWND, undo: bool) {

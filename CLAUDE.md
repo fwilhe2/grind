@@ -182,7 +182,11 @@ put one in. The same menu's Paragraph and Heading 1/2/3 items, and Ctrl+0/1/2/3 
 `ui_text_gtk`'s own keys, reach `App::set_kind` at the caret's block — no selection needed, unlike
 the three toggles. Ctrl+Shift+O opens an outline dialog — `dialog::choose`, a `LISTBOX`-backed
 popup generic over strings so `dialog.rs` stays ignorant of `Heading`, one row per heading
-indented by depth, a double-click or OK landing the caret on it. The menu itself now knows which
+indented by depth, a double-click or OK landing the caret on it. The same popup lists **every**
+block kind on Ctrl+Shift+K — Paragraph, Heading 1 through 6, List item at four depths — so a
+level past 3 and a list item both reach this window too, and it is the suite's first UI that can
+turn a paragraph into a list item at all rather than only draw one read from a file
+(`doc/text-shell.md`'s "no lists UI" gap, closed here first). The menu itself now knows which
 pane it is over, too: `menu::applies_to` — tested on Linux, no window needed — is which verb means
 anything for which document kind, and `build_menu` turns a `false` into `EnableMenuItem`'s
 `MF_GRAYED`, rebuilt whenever `adopt` changes the pane's own kind. `WM_CHAR`'s surrogate pairs are
@@ -192,8 +196,8 @@ now positions the composition window at the caret before handing the rest of com
 `DefWindowProcW`, the one message this shell answers of the whole IME surface. **What is still
 owed**: an inline composition string in the pane's own ink rather than the IME's default floating
 box, real verification under an actual IME (Wine ships none), a real `CreateCaret` caret, the
-format strip itself as a drawn toolbar, levels past 3 and list items from this window, and greying
-by state *within* one kind (Undo with nothing to undo, Paste with an empty clipboard) rather than
+format strip itself as a drawn toolbar, and greying by state *within* one kind (Undo with nothing
+to undo, Paste with an empty clipboard) rather than
 only by which kind is open. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
