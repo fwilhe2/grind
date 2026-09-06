@@ -193,8 +193,14 @@ level past 3 and a list item both reach this window too, and it is the suite's f
 turn a paragraph into a list item at all rather than only draw one read from a file
 (`doc/text-shell.md`'s "no lists UI" gap, closed here first). The menu itself now knows which
 pane it is over, too: `menu::applies_to` — tested on Linux, no window needed — is which verb means
-anything for which document kind, and `build_menu` turns a `false` into `EnableMenuItem`'s
-`MF_GRAYED`, rebuilt whenever `adopt` changes the pane's own kind. `WM_CHAR`'s surrogate pairs are
+anything for which document kind. It first answered a `false` with `EnableMenuItem`'s
+`MF_GRAYED`, and that did not survive contact with the actual shape of the two panes' verbs — the
+sheet's own six so outnumber the universal ones that `&Sheet` and half of `&View` sat on screen,
+greyed, over every document that was not a spreadsheet. `menu::items_for`/`menu_has_items` now
+**omit** instead: `&Sheet`/`&Data` are missing entirely over a text document, `&Format` is
+missing over a spreadsheet, and `&Edit`/`&View` each lose just the one item that does not apply
+(`Outline`; `Cell Roles`) — rebuilt whenever `adopt` changes the pane's own kind, as before.
+`WM_CHAR`'s surrogate pairs are
 reassembled too — `surrogate.rs` is the pure half, tested with no window, and `typed_char` is
 where a pending high half waits, per pane rather than in a static — and `WM_IME_STARTCOMPOSITION`
 now positions the composition window at the caret before handing the rest of composing back to
