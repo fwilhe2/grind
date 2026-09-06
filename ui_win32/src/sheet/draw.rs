@@ -164,6 +164,11 @@ mod windows_impl {
     /// The padding between a cell's edge and its text, in pixels at 100%.
     const PAD: f64 = 4.0;
 
+    /// The margin the role overlay reserves at a cell's leading edge for its own marker, in
+    /// pixels at 100% — wide enough for the widest glyph [`grind_sheet::view::CellRole::marker`]
+    /// returns, which is one character.
+    const MARKER_W: f64 = 14.0;
+
     /// Everything the painter needs that is not geometry or colour.
     pub struct Frame<'a> {
         pub geom: &'a GridGeom,
@@ -219,6 +224,15 @@ mod windows_impl {
 
         let regular = Font::new(frame.face, frame.font_px, false);
         let bold = Font::new(frame.face, frame.font_px, true);
+        // `doc/view-modes.md`'s role overlay, smaller than the cell's own text so the marker
+        // reads as a margin note rather than a second value — `ui_sheet_gtk`'s own glyph is
+        // drawn at 0.7 of the cell's face for the same reason.
+        let marker_font = Font::new(
+            frame.face,
+            (f64::from(frame.font_px) * 0.7).round() as i32,
+            false,
+        );
+        let marker_w = crate::sheet::geom::scale(MARKER_W, g.dpi).round() as i32;
 
         // SAFETY: the DC is the caller's and live for this function.
         unsafe {
@@ -250,6 +264,37 @@ mod windows_impl {
                     gdi::fill(dc, right - 1, top, right, bottom, theme.grid_line);
                     gdi::fill(dc, left, bottom - 1, right, bottom, theme.grid_line);
 
+                    // The role overlay reserves a margin at the cell's leading edge for its own
+                    // marker rather than drawing over whatever the cell already shows — a label
+                    // cell is left-aligned text and the two would otherwise collide. `role` is
+                    // `None` both for a plain read and for an overlay that found nothing to say
+                    // about an empty cell, and neither wants the margin.
+                    let role = frame
+                        .viewport
+                        .role(row, col)
+                        .filter(|r| !r.marker().is_empty());
+                    let text_left = match role {
+                        Some(_) => left + marker_w,
+                        None => left,
+                    };
+
+                    if let Some(role) = role
+                        && let Some(colour) = crate::theme::role_color(role, theme)
+                    {
+                        let _marker_font = Selected::font(dc, &marker_font);
+                        draw_text(
+                            dc,
+                            role.marker(),
+                            left,
+                            top,
+                            text_left,
+                            bottom,
+                            Align::Left,
+                            colour,
+                            crate::sheet::geom::scale(2.0, g.dpi),
+                        );
+                    }
+
                     let Some(text) = frame.viewport.text(row, col) else {
                         continue;
                     };
@@ -260,7 +305,7 @@ mod windows_impl {
                     draw_text(
                         dc,
                         text,
-                        left,
+                        text_left,
                         top,
                         right,
                         bottom,
@@ -271,6 +316,11 @@ mod windows_impl {
                 }
             }
         }
+
+        // `doc/view-modes.md`'s name overlay: where a defined name anchors, outlined if it
+        // covers more than one cell. Drawn after every cell so the outline sits on the grid
+        // lines the way the selection's own does, and before the headers for the same reason.
+        draw_names(dc, frame);
 
         // The outline round the selected rectangle, drawn after the cells so it sits on top of
         // their hairlines, and before the headers so those still cover it where it runs under
@@ -477,6 +527,38 @@ mod windows_impl {
         }
         if last.y + last.h <= body.y + body.h {
             gdi::fill(dc, left, bottom - weight, right, bottom, edge);
+        }
+    }
+
+    /// `doc/view-modes.md`'s name overlay: an outline round every defined name's range, in the
+    /// theme's own ink moved towards the ground — muted rather than an accent, since this is a
+    /// label on the document's own structure and not a thing to act on the way the selection is.
+    /// Drawn the same whether the name covers one cell or many: a name binds to a *range*, and a
+    /// single cell is simply the range that happens to be one wide.
+    ///
+    /// `Viewport::names` is empty whenever the read did not ask for it, so this has nothing to
+    /// do and returns at once when the mode is off — the same "asked for fresh, never stored"
+    /// shape [`Viewport::role`] follows.
+    fn draw_names(dc: HDC, frame: &Frame) {
+        let g = frame.geom;
+        let body = g.body();
+        let clamp = |v: f64, low: f64, high: f64| v.clamp(low, high).round() as i32;
+        let muted = frame.theme.text.blend(frame.theme.background, 0.55);
+        let weight = crate::sheet::geom::scale(1.0, g.dpi).round().max(1.0) as i32;
+        for anchor in frame.viewport.names() {
+            let first = g.cell_rect(anchor.rows.start, anchor.cols.start);
+            let last = g.cell_rect(anchor.rows.end - 1, anchor.cols.end - 1);
+            let left = clamp(first.x, body.x, body.x + body.w);
+            let top = clamp(first.y, body.y, body.y + body.h);
+            let right = clamp(last.x + last.w, body.x, body.x + body.w);
+            let bottom = clamp(last.y + last.h, body.y, body.y + body.h);
+            if right <= left || bottom <= top {
+                continue;
+            }
+            gdi::fill(dc, left, top, right, top + weight, muted);
+            gdi::fill(dc, left, bottom - weight, right, bottom, muted);
+            gdi::fill(dc, left, top, left + weight, bottom, muted);
+            gdi::fill(dc, right - weight, top, right, bottom, muted);
         }
     }
 

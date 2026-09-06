@@ -162,6 +162,34 @@ const DARK: Theme = Theme {
     banner_text: Rgb(0xf5, 0xdd, 0x8e),
 };
 
+/// What colour `doc/view-modes.md`'s role overlay draws each [`grind_sheet::view::CellRole`] in
+/// — `ui_sheet_gtk::theme::role_color`'s mapping, unchanged: the financial-modelling convention
+/// it borrows (inputs blue, formulas the ordinary text colour, another sheet's a third hue) is a
+/// property of the *mode*, not of a toolkit, so the two shells agree on what a colour means.
+/// `None` for [`grind_sheet::view::CellRole::Empty`] — the one role drawn as nothing at all.
+///
+/// A name from `grind_core::style::PALETTE` rather than a literal, which is the one exception
+/// `doc/sheet-shell.md` names for a colour a shell *offers* — this mode offers a legend, not a
+/// document's own choice — for every role but the two that are not a hue at all: a formula's own
+/// marker is the theme's ordinary text colour, and a label's is that colour blended towards the
+/// ground, which is this shell's `Rgb::blend` doing what GTK's `with_alpha` does with an actual
+/// alpha channel GDI does not have.
+pub fn role_color(role: grind_sheet::view::CellRole, theme: Theme) -> Option<Rgb> {
+    use grind_sheet::view::CellRole as R;
+    let named = |name: &str| grind_core::style::palette(name).and_then(Rgb::parse);
+    match role {
+        R::Empty => None,
+        R::InputNamed => named("blue"),
+        R::InputUnnamed => named("navy"),
+        R::ConstantUnnamed => named("orange"),
+        R::ComputedLocal => Some(theme.text),
+        R::ComputedCrossSheet => named("olive"),
+        R::Label => Some(theme.text.blend(theme.background, 0.4)),
+        R::Error => named("red"),
+        R::Stale => named("maroon"),
+    }
+}
+
 impl Theme {
     pub fn of(mode: Mode) -> Self {
         match mode {
@@ -247,6 +275,36 @@ pub fn apply_title_bar(hwnd: windows::Win32::Foundation::HWND, theme: Theme) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every role but the one drawn as nothing gets a colour, in both palettes.
+    #[test]
+    fn every_role_but_empty_has_a_marker_colour() {
+        use grind_sheet::view::CellRole;
+        for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
+            for role in CellRole::ALL {
+                assert_eq!(
+                    role_color(role, theme).is_none(),
+                    role == CellRole::Empty,
+                    "{role:?} in {:?}",
+                    theme.mode
+                );
+            }
+        }
+    }
+
+    /// A label's marker is muted rather than a hue, and moving further towards the ground than
+    /// a formula's own marker does — the same "quieter, not louder" rule the GTK window's
+    /// `with_alpha` follows.
+    #[test]
+    fn a_label_is_quieter_than_a_computed_cell() {
+        use grind_sheet::view::CellRole;
+        for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
+            let label = role_color(CellRole::Label, theme).unwrap();
+            let computed = role_color(CellRole::ComputedLocal, theme).unwrap();
+            assert_eq!(computed, theme.text);
+            assert_ne!(label, computed, "{:?}", theme.mode);
+        }
+    }
 
     #[test]
     fn a_colorref_swaps_the_ends_and_nothing_else() {

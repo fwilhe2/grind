@@ -40,11 +40,15 @@
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod args;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod code;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod menu;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod metrics;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod notice;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod problems;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod sheet;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]

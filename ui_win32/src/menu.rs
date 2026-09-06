@@ -85,6 +85,20 @@ pub enum Command {
     /// dialog rather than a key per depth — the gap `doc/text-shell.md` names for every shell's
     /// own window ("no lists UI") and the first one to close it.
     BlockKindDialog,
+    /// The document as its own projection (D9) — a modal list of its lines, `App::project`'s
+    /// text-form, opened on whichever line the pane's own selection or caret projects to. Applies
+    /// to both document types, the same as `App::project` reaching both.
+    ShowSource,
+    /// "Check Document" (D6) — every `App::lint` finding, worst first, each row a jump. Applies
+    /// to both document types, the same as `App::lint` reaching both.
+    CheckDocument,
+    /// `doc/view-modes.md`'s role overlay, on or off. The grid's alone: the text pane has no
+    /// `CellRole`.
+    ToggleRoles,
+    /// `doc/view-modes.md`'s name overlay, on or off — a defined name's range on the grid,
+    /// `BlockView::marks`' bookmarks on the text pane (`:names`' equivalent there, since a
+    /// bookmark contributes no characters of its own). Both document types.
+    ToggleNames,
     About,
 }
 
@@ -121,6 +135,10 @@ impl Command {
         Command::Heading3,
         Command::Outline,
         Command::BlockKindDialog,
+        Command::ShowSource,
+        Command::CheckDocument,
+        Command::ToggleRoles,
+        Command::ToggleNames,
         Command::About,
     ];
 
@@ -170,14 +188,14 @@ pub struct Menu {
 
 /// The menu bar.
 ///
-/// Six menus and nothing that is not a verb. Format holds the text pane's toggles and block
-/// kinds ahead of a drawn strip of its own (still W5b's), which is why it exists at all despite
-/// the rule below sounding like an objection to it: those items *read and write* a property of
-/// the selection, exactly what a strip is for, but a menu they can start from beats a verb this
-/// window cannot reach yet, and `menu::applies_to` greys every one of them out on the grid so the
-/// bar says what it means. What is deliberately absent: a View menu (this shell's overlays are
-/// W6), and anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was removed for being
-/// one, and the argument carries.
+/// Seven menus and nothing that is not a verb. Format holds the text pane's toggles and block
+/// kinds even now that W5b's drawn strip reaches the same four — those items *read and write* a
+/// property of the selection, exactly what a strip is for, but a menu they can also start from
+/// costs nothing and is where Ctrl+B/I/U were reachable first — and `menu::applies_to` greys
+/// every one of them out on the grid so the bar says what it means. View holds W6's three shared
+/// panes: the source, the check, and the two overlays only the grid can draw. What is
+/// deliberately absent: anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was
+/// removed for being one, and the argument carries.
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "&File",
@@ -319,6 +337,28 @@ pub const MENUS: &[Menu] = &[
         ],
     },
     Menu {
+        title: "&View",
+        items: &[
+            Item::Verb {
+                command: Command::ShowSource,
+                label: "Show &Source\tCtrl+Shift+U",
+            },
+            Item::Verb {
+                command: Command::CheckDocument,
+                label: "&Check Document\tF8",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::ToggleRoles,
+                label: "Cell R&oles",
+            },
+            Item::Verb {
+                command: Command::ToggleNames,
+                label: "&Names",
+            },
+        ],
+    },
+    Menu {
         title: "&Help",
         items: &[Item::Verb {
             command: Command::About,
@@ -361,6 +401,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('3'), true, false) => Some(Command::Heading3),
         (Key::Char('O'), true, true) => Some(Command::Outline),
         (Key::Char('K'), true, true) => Some(Command::BlockKindDialog),
+        (Key::Char('U'), true, true) => Some(Command::ShowSource),
+        (Key::F8, false, false) => Some(Command::CheckDocument),
         _ => None,
     }
 }
@@ -382,7 +424,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::SheetRename
         | Command::SheetDelete
         | Command::SheetNext
-        | Command::SheetPrevious => matches!(kind, Spreadsheet),
+        | Command::SheetPrevious
+        // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
+        // pane has no per-character role.
+        | Command::ToggleRoles => matches!(kind, Spreadsheet),
         Command::Bold
         | Command::Italic
         | Command::Underline
@@ -404,6 +449,12 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Paste
         | Command::ClearCells
         | Command::GoTo
+        // `App::project` and `App::lint` both reach either document type, so the two W6 verbs
+        // that are not overlays follow the universal group rather than either specific one — and
+        // so does the name overlay, since a bookmark is the text pane's own name anchor.
+        | Command::ShowSource
+        | Command::CheckDocument
+        | Command::ToggleNames
         | Command::About => !matches!(kind, Presentation),
     }
 }
@@ -523,6 +574,8 @@ mod tests {
             (Key::Char('3'), ctrl, Command::Heading3),
             (Key::Char('O'), ctrl_shift, Command::Outline),
             (Key::Char('K'), ctrl_shift, Command::BlockKindDialog),
+            (Key::Char('U'), ctrl_shift, Command::ShowSource),
+            (Key::F8, Mods::default(), Command::CheckDocument),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");
@@ -613,6 +666,33 @@ mod tests {
         ] {
             assert!(applies_to(command, Spreadsheet), "{command:?}");
             assert!(!applies_to(command, Text), "{command:?}");
+        }
+    }
+
+    /// The role overlay is the grid's alone — the text pane has no per-character `CellRole`.
+    #[test]
+    fn the_role_overlay_is_the_grids_alone() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        assert!(applies_to(Command::ToggleRoles, Spreadsheet));
+        assert!(!applies_to(Command::ToggleRoles, Text));
+    }
+
+    /// The name overlay reaches both: a defined name on the grid, a bookmark on the text pane.
+    #[test]
+    fn the_name_overlay_reaches_both_document_types() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        assert!(applies_to(Command::ToggleNames, Spreadsheet));
+        assert!(applies_to(Command::ToggleNames, Text));
+    }
+
+    /// The source and the check are W6's two verbs that are not overlays, and `App::project` /
+    /// `App::lint` reach both document types, so both panes get them.
+    #[test]
+    fn the_source_and_the_check_reach_both_document_types() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for command in [Command::ShowSource, Command::CheckDocument] {
+            assert!(applies_to(command, Spreadsheet), "{command:?}");
+            assert!(applies_to(command, Text), "{command:?}");
         }
     }
 }

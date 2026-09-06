@@ -68,6 +68,10 @@ pub enum Key {
     F2,
     /// Go to an address — the name box's key, and Excel's.
     F5,
+    /// Check the document — the "next problem" key every IDE has, and the one every shell in
+    /// this suite binds "Check Document" to (`doc/sheet-shell.md`'s palette, `ui_text_gtk`'s own
+    /// accelerator).
+    F8,
     /// Recalculate. Excel's key, and the one this shell needs most, since a document whose
     /// cached values this build cannot reproduce is left stale on purpose.
     F9,
@@ -145,6 +149,7 @@ const VK_DOWN: u32 = 0x28;
 const VK_DELETE: u32 = 0x2e;
 const VK_F2: u32 = 0x71;
 const VK_F5: u32 = 0x74;
+const VK_F8: u32 = 0x77;
 const VK_F9: u32 = 0x78;
 
 /// A virtual-key code as this shell's [`Key`].
@@ -169,6 +174,7 @@ pub fn key_for(vk: u32) -> Key {
         VK_DELETE => Key::Delete,
         VK_F2 => Key::F2,
         VK_F5 => Key::F5,
+        VK_F8 => Key::F8,
         VK_F9 => Key::F9,
         0x30..=0x39 | 0x41..=0x5a => Key::Char(char::from(vk as u8)),
         _ => Key::Other,
@@ -496,6 +502,7 @@ mod tests {
             (VK_DELETE, vk::VK_DELETE, "VK_DELETE"),
             (VK_F2, vk::VK_F2, "VK_F2"),
             (VK_F5, vk::VK_F5, "VK_F5"),
+            (VK_F8, vk::VK_F8, "VK_F8"),
             (VK_F9, vk::VK_F9, "VK_F9"),
         ] {
             assert_eq!(ours, u32::from(theirs.0), "{name}");

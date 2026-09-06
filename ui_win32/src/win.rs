@@ -57,21 +57,21 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CreateMenu, CreatePopupMenu,
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE, EN_KILLFOCUS,
-    ES_AUTOHSCROLL, EnableMenuItem, GWLP_USERDATA, GetMessageW, GetParent, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW, MF_BYCOMMAND, MF_GRAYED,
-    MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, MoveWindow, PostMessageW, PostQuitMessage,
-    RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP,
-    SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE,
-    SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage, WHEEL_DELTA, WM_APP,
-    WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD,
-    WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu,
+    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE,
+    EN_KILLFOCUS, ES_AUTOHSCROLL, EnableMenuItem, GWLP_USERDATA, GetMessageW, GetParent,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW,
+    MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG,
+    MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN,
+    SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT,
+    SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE,
+    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
+    TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE,
+    WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION,
+    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE,
+    WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -96,11 +96,13 @@ use windows::Win32::UI::Controls::{EM_SETSEL, SetScrollInfo};
 use windows::core::PCWSTR;
 
 use crate::clipboard;
+use crate::code;
 use crate::dialog::{self, Answer, Com};
 use crate::gdi::{self, BackBuffer, Brush, Dib, Font};
 use crate::menu::{self, Command, Item};
 use crate::metrics::{Faces, Fonts};
 use crate::notice;
+use crate::problems;
 use crate::sheet::clip;
 use crate::sheet::draw::{self, Frame};
 use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
@@ -351,6 +353,11 @@ struct Sheet {
     /// matters in Ready mode: once an edit is open, the native `EDIT` control has focus and
     /// assembles the pair itself, the way every Win32 control does.
     surrogate: Option<u16>,
+    /// `doc/view-modes.md`'s two overlays, W6's — presentation state exactly like `selection`:
+    /// never told to the core, and asked for fresh on every `get_viewport_with` rather than
+    /// stored on a cell, which is what keeps opening one on every R7 document and saving again
+    /// byte-identical (a stored classification goes stale; a derived one cannot).
+    overlays: grind_sheet::view::Overlays,
 }
 
 /// What a click on the strip landed on. The two fields there are *drawn* until somebody clicks
@@ -593,6 +600,9 @@ struct Text {
     /// one that matters every keystroke rather than only at the start of an edit: this pane has
     /// no native control to assemble a pair for it.
     surrogate: Option<u16>,
+    /// `doc/view-modes.md`'s name overlay, this pane's own — `:names`' equivalent, a bookmark
+    /// drawn beside the text it anchors. Presentation state, exactly like `Sheet::overlays`.
+    show_names: bool,
 }
 
 impl Text {
@@ -994,6 +1004,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         banner: None,
         resume: None,
         surrogate: None,
+        show_names: false,
     })
 }
 
@@ -1034,6 +1045,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
         ui_font: None,
         field_brush: None,
         surrogate: None,
+        overlays: grind_sheet::view::Overlays::NONE,
     })
 }
 
@@ -1557,14 +1569,20 @@ fn move_to(child: HWND, rect: Rect, repaint: bool) {
 /// greyed item if one somehow arrives (a stale accelerator, say), and `do_command`'s own
 /// per-pane no-ops are what makes that safe rather than merely unreachable.
 fn build_menu(hwnd: HWND) {
-    // SAFETY: one borrow, for the kind alone; nothing inside dispatches.
-    let kind = unsafe {
+    // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
+    // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
+    // reads `false` there rather than a second flag nothing ever sets.
+    let (kind, roles_on, names_on) = unsafe {
         with_pane(hwnd, |pane| match pane {
-            Pane::Sheet(_) => DocumentKind::Spreadsheet,
-            Pane::Text(_) => DocumentKind::Text,
+            Pane::Sheet(sheet) => (
+                DocumentKind::Spreadsheet,
+                sheet.overlays.roles,
+                sheet.overlays.names,
+            ),
+            Pane::Text(text) => (DocumentKind::Text, false, text.show_names),
         })
     }
-    .unwrap_or(DocumentKind::Spreadsheet);
+    .unwrap_or((DocumentKind::Spreadsheet, false, false));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -1591,6 +1609,26 @@ fn build_menu(hwnd: HWND) {
                                 popup,
                                 u32::from(command.id()),
                                 MF_BYCOMMAND | MF_GRAYED,
+                            );
+                        }
+                        // The two overlays are the one pair of checkable items this bar has —
+                        // everything else is a plain verb with nothing to report back. `overlays`
+                        // is read once above rather than per item, the same "asked for fresh,
+                        // never stored" shape the overlay itself follows.
+                        let checked = match command {
+                            Command::ToggleRoles => Some(roles_on),
+                            Command::ToggleNames => Some(names_on),
+                            _ => None,
+                        };
+                        if let Some(checked) = checked {
+                            let flag = match checked {
+                                true => MF_CHECKED,
+                                false => MF_UNCHECKED,
+                            };
+                            let _ = CheckMenuItem(
+                                popup,
+                                u32::from(command.id()),
+                                (MF_BYCOMMAND | flag).0,
                             );
                         }
                     }
@@ -2474,6 +2512,10 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::SheetDelete => sheet_delete(hwnd),
         Command::SheetNext => sheet_step(hwnd, 1),
         Command::SheetPrevious => sheet_step(hwnd, -1),
+        Command::ShowSource => show_source(hwnd),
+        Command::CheckDocument => check_document(hwnd),
+        Command::ToggleRoles => toggle_overlay(hwnd, false),
+        Command::ToggleNames => toggle_overlay(hwnd, true),
         // The text pane's, and this one has no selection, block or outline to work with.
         Command::Bold
         | Command::Italic
@@ -2588,6 +2630,161 @@ fn clear_cells(hwnd: HWND) {
         });
     }
     refresh(hwnd);
+}
+
+// --- W6: the source, the check, and the two overlays ---
+
+/// The document as its own projection (D9), opened already marked on the line the pane's own
+/// selection or caret projects to — `Projection::line_of`, the reverse of the map `Show Source`'s
+/// own list is built from. Read-only, and a modal list rather than a drawn pane: `code.rs`'s own
+/// doc comment is why — this shell's dialog-for-a-list idiom is already `text_outline`'s and
+/// `text_block_kind_dialog`'s, and a fourth text-view widget for one more read-only list would be
+/// a second way of doing what `dialog::choose` already does.
+fn show_source(hwnd: HWND) {
+    // SAFETY: one borrow, released before the modal — which runs a nested message loop.
+    let Some(projection) = (unsafe { with_pane(hwnd, project) }) else {
+        return;
+    };
+    let rows = code::rows(&projection);
+    if rows.is_empty() {
+        dialog::error(hwnd, "This document has no source to show.");
+        return;
+    }
+    let initial = current_address(hwnd)
+        .and_then(|address| projection.line_of(&address))
+        .unwrap_or(0);
+    let Some(line) = dialog::choose(hwnd, "Show Source", &rows, initial) else {
+        return;
+    };
+    if let Some(target) = projection.address_on_line(line) {
+        go_to_address(hwnd, target);
+    }
+}
+
+/// "Check Document" (D6) — every finding `App::lint` reports, worst first (`Report::diagnostics`
+/// is already sorted), and every row a jump.
+fn check_document(hwnd: HWND) {
+    // SAFETY: one borrow, released before the modal.
+    let Some(report) = (unsafe { with_pane(hwnd, lint) }) else {
+        return;
+    };
+    if report.is_empty() {
+        dialog::error(hwnd, "No problems found.");
+        return;
+    }
+    let rows = problems::rows(&report);
+    let Some(choice) = dialog::choose(hwnd, "Check Document", &rows, 0) else {
+        return;
+    };
+    let Some(diagnostic) = report.diagnostics.get(choice) else {
+        return;
+    };
+    // Empty for a finding about the document as a whole, which is nowhere to jump to.
+    if !diagnostic.at.is_empty() {
+        go_to_address(hwnd, &diagnostic.at.clone());
+    }
+}
+
+/// `doc/view-modes.md`'s two overlays, flipped. Menu-only — neither has a key of its own, the
+/// same as the four sheet verbs beside them — and the menu is rebuilt straight after so its
+/// checkmark answers with the state it just changed to rather than the one before.
+fn toggle_overlay(hwnd: HWND, names: bool) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| match names {
+            true => state.overlays.names = !state.overlays.names,
+            false => state.overlays.roles = !state.overlays.roles,
+        });
+    }
+    build_menu(hwnd);
+    refresh(hwnd);
+}
+
+/// `Pane::project`, spelled so [`with_pane`] can be handed it directly rather than a closure that
+/// only repeats the match `Pane::sheet_mut`/`text_mut` already exist to avoid writing twice.
+fn project(pane: &mut Pane) -> grind_core::projection::Projection {
+    match pane {
+        Pane::Sheet(sheet) => sheet.app.project(),
+        Pane::Text(text) => text.app.project(),
+    }
+}
+
+/// `Pane::lint`, over the default options — every rule, hints off, the same defaults `grind lint`
+/// runs with no flags.
+fn lint(pane: &mut Pane) -> grind_core::lint::Report {
+    let options = grind_core::lint::Options::default();
+    match pane {
+        Pane::Sheet(sheet) => sheet.app.lint(&options),
+        Pane::Text(text) => text.app.lint(&options),
+    }
+}
+
+/// The address the pane's own selection or caret projects to — what `show_source` marks the
+/// source on when it opens.
+fn current_address(hwnd: HWND) -> Option<String> {
+    if is_text(hwnd) {
+        // SAFETY: one borrow; nothing inside dispatches.
+        return unsafe { with_text(hwnd, |text| grind_text::loc::format(text.caret.block)) };
+    }
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let name = state.app.sheet_name(state.sheet).ok();
+            grind_sheet::a1::format(name.as_deref(), state.selection.active)
+        })
+    }
+}
+
+/// Jump either pane to an address `Show Source` or `Check Document` produced.
+///
+/// The same two calls [`text_go_to`] already makes for the word processor, and `a1::parse` /
+/// `a1::resolve` for the grid — **allowed to land on a different sheet than the one open**, unlike
+/// `status::locate`'s name box: a diagnostic or a source line may be about any sheet in the
+/// document, where a name box is answering "where on *this* sheet".
+fn go_to_address(hwnd: HWND, address: &str) {
+    if is_text(hwnd) {
+        // SAFETY: a fresh borrow, taken and released within this call — there is no dialog either
+        // side of it here, unlike `text_go_to`'s own prompt.
+        let outcome = unsafe {
+            with_text(hwnd, |text| {
+                grind_text::loc::parse(address)
+                    .map_err(|e| e.to_string())
+                    .and_then(|loc| text.app.resolve_caret(&loc).map_err(|e| e.to_string()))
+                    .map(|caret| {
+                        text.place(caret, false);
+                        text.caret_on = true;
+                    })
+            })
+        };
+        match outcome {
+            Some(Err(message)) => dialog::error(hwnd, &message),
+            Some(Ok(())) => refresh(hwnd),
+            None => {}
+        }
+        return;
+    }
+    // SAFETY: one borrow.
+    let outcome = unsafe {
+        with_sheet(hwnd, |state| {
+            grind_sheet::a1::parse(address)
+                .map_err(|e| e.to_string())
+                .and_then(|reference| {
+                    grind_sheet::a1::resolve(&state.app, &reference).map_err(|e| e.to_string())
+                })
+                .map(|(found, start, end)| {
+                    state.sheet = found;
+                    state.selection = Selection {
+                        anchor: end,
+                        active: start,
+                    };
+                })
+        })
+    };
+    match outcome {
+        Some(Err(message)) => dialog::error(hwnd, &message),
+        Some(Ok(())) => refresh(hwnd),
+        None => {}
+    }
 }
 
 /// F9. The banner reports what happened, including when nothing did — a key that appears to do
@@ -2900,7 +3097,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
     let cols = state.geom.visible_cols();
     let viewport = state
         .app
-        .get_viewport(state.sheet, rows, cols)
+        .get_viewport_with(state.sheet, rows, cols, state.overlays)
         .unwrap_or_else(|_| {
             state
                 .app
@@ -3536,15 +3733,32 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::GoTo => text_go_to(hwnd),
         Command::Outline => text_outline(hwnd),
         Command::BlockKindDialog => text_block_kind_dialog(hwnd),
+        Command::ShowSource => show_source(hwnd),
+        Command::CheckDocument => check_document(hwnd),
+        Command::ToggleNames => text_toggle_names(hwnd),
         Command::About => dialog::about(hwnd),
-        // The spreadsheet's, and this pane has no answer to any of them.
+        // The spreadsheet's, and this pane has no answer to it: `CellRole` is per-character and
+        // this pane has no cells.
         Command::Recalculate
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
         | Command::SheetNext
-        | Command::SheetPrevious => {}
+        | Command::SheetPrevious
+        | Command::ToggleRoles => {}
     }
+}
+
+/// `doc/view-modes.md`'s name overlay, flipped — `:names`' equivalent for this pane. Menu-only,
+/// like the grid's own two, and the menu is rebuilt straight after for the same reason
+/// [`toggle_overlay`] rebuilds it.
+fn text_toggle_names(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| text.show_names = !text.show_names);
+    }
+    build_menu(hwnd);
+    refresh(hwnd);
 }
 
 /// Go to an address — `p12`, `#intro` or `§2.1.3` — the one item of W5b's "block kinds, outline
@@ -3594,7 +3808,7 @@ fn text_outline(hwnd: HWND) {
             format!("{indent}{}  {}", heading.address(), heading.text)
         })
         .collect();
-    let Some(choice) = dialog::choose(hwnd, "Outline", &items) else {
+    let Some(choice) = dialog::choose(hwnd, "Outline", &items, 0) else {
         return;
     };
     let Some(heading) = headings.get(choice) else {
@@ -3766,7 +3980,7 @@ fn text_block_kind_dialog(hwnd: HWND) {
             grind_text::BlockKind::ListItem { depth } => format!("List item, depth {depth}"),
         })
         .collect();
-    let Some(choice) = dialog::choose(hwnd, "Block Kind", &items) else {
+    let Some(choice) = dialog::choose(hwnd, "Block Kind", &items, 0) else {
         return;
     };
     let Some(kind) = kinds.get(choice).cloned() else {
@@ -3950,6 +4164,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             font_px: scale(FONT_PX, state.page.dpi).round() as i32,
             face: FACE,
             format: format_state(state),
+            names: state.show_names,
         },
     );
 }

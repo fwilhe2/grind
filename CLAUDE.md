@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W5b are done, and W6–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W6 are done, and W7–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -136,7 +136,7 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W5b**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W6**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -211,7 +211,24 @@ stealing and returning focus. **What is still owed**: an inline composition stri
 own ink rather than the IME's default floating box, real verification under an actual IME (Wine
 ships none), and greying by state *within* one kind
 (Undo with nothing to undo, Paste with an empty clipboard) rather than
-only by which kind is open. What is unusual about the whole thing is
+only by which kind is open.
+
+**W6 is done: the three shared panes.** Ctrl+Shift+U (Show Source, D9) and F8 (Check Document,
+D6) both open `dialog::choose`'s listbox — the modal chooser `text_outline` and
+`text_block_kind_dialog` already use, rather than a fourth drawn text-view widget — pre-selected
+on the line the pane's own selection or caret projects to, over `App::project`'s
+`Projection::line_count`/`line_pieces`/`line_of`/`address_on_line` and `App::lint`'s `Report`
+respectively; `code.rs` and `problems.rs` are the portable halves that turn either into the rows
+a listbox shows, and every row is a jump — `a1::parse`/`a1::resolve` for the grid, allowed to land
+on a different sheet than the one open, and `loc::parse`/`resolve_caret` for the text pane, the
+same two calls `text_go_to` makes. A new **View** menu is this shell's `doc/view-modes.md`
+answer: Cell Roles and Names are checkable toggles reaching `App::get_viewport_with`'s overlay,
+drawn as a marker reserved at each cell's leading edge (`theme::role_color`, the same named
+colours `ui_sheet_gtk` uses) plus a muted outline round a defined name's range, and Names reaches
+the text pane too — `:names`' equivalent there, a muted `‹name›` drawn beside each bookmark
+(`BlockView::marks`) rather than spliced into the text the way the CLI prints it, since splicing
+would move every offset after it. Nothing here writes, so opening every overlay and saving is
+still byte-identical. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh
