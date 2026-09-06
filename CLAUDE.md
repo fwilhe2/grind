@@ -816,8 +816,21 @@ up; `.vscode/` holds both snippet files and `cli/tests/editor.rs` holds them to 
 vocabularies. **Still owed**: the projection's *specification* (D11), for which the two guides
 are the evidence of what it would have to settle.
 
-**What remains of the layout work is L3**: `ui_sheet_gtk`'s row auto-height measurement moves onto
-the same trait, so one breaker serves both applications. Then S11 — packaging the suite. Its
-per-app half is done (`grind-text-gtk` has its `.desktop` file, metainfo, icon and packages
-beside the spreadsheet's); what remains is the meta-package that depends on the four, the
-container, and the README as a suite pitch.
+**L3 is done: `ui_sheet_gtk`'s row auto-height measurement moved onto `grind_core::layout`'s own
+trait**, so one breaker serves both applications rather than a second, Pango-only idea of where a
+line may end living beside it. `measure_rows` (`ui_sheet_gtk/src/grid.rs`) builds a `TextStyle`
+from the cell's `CellStyle` and hands one `Fragment` to `grind_core::layout::wrap`, reading the
+row's height off the `Layout` it returns instead of a raw `pango::Layout::pixel_size`; `wrap`'s
+own "a width of zero means do not wrap" answers the unwrapped, oversized-font case the same call
+already had to cover. `SheetMetrics` is the `Metrics` impl this needed — built fresh per
+measurement pass rather than cached the way the text pane's `Face` is one object per block kind,
+since a spreadsheet cell's weight, slant and size vary cell to cell where a block's font does
+not — and `font_desc_for`, the part of it that resolves a style into a `pango::FontDescription`,
+is a free function precisely so it is testable with no Pango context or display, the same as
+`font`/`font_scale` already were. `font_scale` itself now shares its string parsing with the new
+code (`scale_of`) rather than each retyping "ODF points over the default", so a cell can no
+longer be drawn at one size and measured at another.
+
+Then S11 — packaging the suite. Its per-app half is done (`grind-text-gtk` has its `.desktop`
+file, metainfo, icon and packages beside the spreadsheet's); what remains is the meta-package
+that depends on the four, the container, and the README as a suite pitch.

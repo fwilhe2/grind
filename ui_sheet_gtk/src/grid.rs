@@ -419,6 +419,7 @@ fn hide_range_for_hit(selection: Selection, hit: crate::geom::Hit) -> Option<(bo
 mod tests {
     use super::*;
     use crate::geom::Hit;
+    use gtk::pango;
 
     fn sized(size: &str) -> grind_sheet::style::CellStyle {
         grind_sheet::style::CellStyle {
@@ -451,6 +452,48 @@ mod tests {
         assert_eq!(imp::font_scale(&sized("120%")), None);
         assert_eq!(imp::font_scale(&sized("0.35cm")), None);
         assert_eq!(imp::font_scale(&sized("0pt")), None);
+    }
+
+    fn text_style(
+        size: Option<&str>,
+        weight: Option<&str>,
+        style: Option<&str>,
+    ) -> grind_core::style::TextStyle {
+        grind_core::style::TextStyle {
+            font_family: None,
+            font_size: size.map(str::to_owned),
+            font_weight: weight.map(str::to_owned),
+            font_style: style.map(str::to_owned),
+        }
+    }
+
+    /// L3: row auto-height's own font resolution agrees with the cell's drawn one — a
+    /// spreadsheet's font is measured no differently for `layout::wrap` than for `font`, which
+    /// is what keeps a row grown for a size it does not then clip.
+    #[test]
+    fn a_row_height_pass_resolves_the_same_size_the_cell_is_drawn_at() {
+        let mut base = pango::FontDescription::new();
+        base.set_size(10 * pango::SCALE);
+        let doubled = imp::font_desc_for(&base, &text_style(Some("20pt"), None, None));
+        assert_eq!(doubled.size(), 20 * pango::SCALE);
+        // No size at all leaves the base untouched, the same "no attributes either way" the
+        // drawn cell gets.
+        let plain = imp::font_desc_for(&base, &text_style(None, None, None));
+        assert_eq!(plain.size(), base.size());
+    }
+
+    #[test]
+    fn a_row_height_pass_resolves_weight_and_slant_too() {
+        let base = pango::FontDescription::new();
+        let bold = imp::font_desc_for(&base, &text_style(None, Some("bold"), None));
+        assert_eq!(bold.weight(), pango::Weight::Bold);
+        let italic = imp::font_desc_for(&base, &text_style(None, None, Some("italic")));
+        assert_eq!(italic.style(), pango::Style::Italic);
+        // ODF's own numeric spelling, the same as the drawn cell's `font` accepts — 550 rather
+        // than a multiple of 100, since every one of *those* is already a named Pango weight
+        // and its getter normalises back to the name rather than staying `__Unknown`.
+        let numeric = imp::font_desc_for(&base, &text_style(None, Some("550"), None));
+        assert_eq!(numeric.weight(), pango::Weight::__Unknown(550));
     }
 
     /// The whole point of the anchor/active order: the cell the view scrolls to stays next
@@ -1414,6 +1457,96 @@ mod imp {
         }
     }
 
+    /// `grind_core::layout::Metrics` over Pango — [`Grid::measure_rows`]'s join to the same
+    /// breaker `grind-text`'s four shells already answer to, rather than a second, Pango-only
+    /// idea of where a line may end (L3, `CLAUDE.md`'s "Where the work is").
+    ///
+    /// Built fresh per `measure_rows` call rather than cached the way a text pane's `Face` is
+    /// one object per block kind: a spreadsheet cell's weight, slant and size vary cell to
+    /// cell, where a block's font does not change mid-measurement, so `font_desc_for` answers
+    /// per fragment instead of the object answering once for its whole lifetime.
+    struct SheetMetrics {
+        context: pango::Context,
+        /// A layout of this measurement pass's own — never the widget's shared, cached one,
+        /// so a row-height pass needs no "what was set for a measurement has to be unset"
+        /// cleanup afterwards.
+        layout: pango::Layout,
+        /// The widget's own font at zoom 1 — a measurement is never zoomed, the same rule
+        /// [`font`]'s own doc comment states for drawing.
+        base: pango::FontDescription,
+    }
+
+    /// One style's font, as a whole `pango::FontDescription` rather than three separate
+    /// attributes — including the size, which a text run's own measuring never has to
+    /// resolve, because a spreadsheet's "oversized font" row trigger is exactly this field.
+    ///
+    /// A free function over `base` rather than a `SheetMetrics` method, so it is testable with
+    /// no Pango context or display at all — the same reason [`font`] and [`font_scale`] are
+    /// plain functions over data rather than methods needing a live widget.
+    pub(super) fn font_desc_for(
+        base: &pango::FontDescription,
+        style: &grind_core::style::TextStyle,
+    ) -> pango::FontDescription {
+        let mut font = base.clone();
+        if let Some(scale) = scale_of(style.font_size.as_deref()) {
+            font.set_size((f64::from(base.size()) * scale).round() as i32);
+        }
+        match style.font_weight.as_deref() {
+            Some("bold") => font.set_weight(pango::Weight::Bold),
+            Some("normal") => font.set_weight(pango::Weight::Normal),
+            Some(n) => {
+                if let Ok(n) = n.parse::<i32>() {
+                    font.set_weight(pango::Weight::__Unknown(n));
+                }
+            }
+            None => {}
+        }
+        match style.font_style.as_deref() {
+            Some("italic") => font.set_style(pango::Style::Italic),
+            Some("oblique") => font.set_style(pango::Style::Oblique),
+            Some("normal") => font.set_style(pango::Style::Normal),
+            _ => {}
+        }
+        font
+    }
+
+    impl grind_core::layout::Metrics for SheetMetrics {
+        /// `pango::LayoutLine::index_to_x` gives the cumulative advance in one pass, the same
+        /// way `ui_text_gtk`'s own `Face::measure` reads it — `advance("a") + advance("b")` is
+        /// not `advance("ab")` once kerning is involved, which is the whole reason the trait
+        /// asks for the cumulative array rather than a width per character.
+        fn advances(&self, text: &str, style: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+            let font = font_desc_for(&self.base, style);
+            self.layout.set_font_description(Some(&font));
+            let scale = f64::from(pango::SCALE);
+            let mut base = 0.0;
+            for (index, segment) in text.split('\n').enumerate() {
+                if index > 0 {
+                    // The break itself: one advance, no width, because the line ends there —
+                    // `wrap` breaks on it regardless of what this reports.
+                    out.push(base as f32);
+                }
+                self.layout.set_text(segment);
+                let Some(line) = self.layout.line(0) else {
+                    continue;
+                };
+                let mut last = base;
+                for (byte, _) in segment.char_indices() {
+                    last = base + f64::from(line.index_to_x(byte as i32, true)) / scale;
+                    out.push(last as f32);
+                }
+                base = last;
+            }
+        }
+
+        fn line_height(&self, style: &grind_core::style::TextStyle) -> f32 {
+            let font = font_desc_for(&self.base, style);
+            let metrics = self.context.metrics(Some(&font), None);
+            let scale = f64::from(pango::SCALE);
+            (f64::from(metrics.ascent() + metrics.descent()) / scale).max(1.0) as f32
+        }
+    }
+
     impl Grid {
         /// What the document says about one axis, in pixels.
         ///
@@ -1530,6 +1663,12 @@ mod imp {
             measured
         }
 
+        /// L3 (`CLAUDE.md`'s "Where the work is"): a wrapped cell's height comes from
+        /// `grind_core::layout::wrap` — the same breaker `grind-text`'s every shell already
+        /// answers to through [`Metrics`](grind_core::layout::Metrics) — rather than from a
+        /// second, Pango-only idea of where a line may end. [`SheetMetrics`] is the one
+        /// `advances`/`line_height` pair this crate needs to join that; the core does the
+        /// deciding, exactly as it does for a paragraph.
         fn measure_rows(&self) -> Vec<(u32, f64)> {
             let Some(app) = self.app.borrow().clone() else {
                 return Vec::new();
@@ -1550,10 +1689,16 @@ mod imp {
 
             let default = self.metrics.get().row_height;
             let cols = self.col_sizes();
-            let layout = self.layout();
+            let context = self.obj().pango_context();
+            let base = context.font_description().unwrap_or_default();
+            let metrics = SheetMetrics {
+                layout: pango::Layout::new(&context),
+                context,
+                base,
+            };
             let mut measured = Vec::new();
             for row in 0..used_rows {
-                let mut tallest: f64 = 0.0;
+                let mut tallest: f32 = 0.0;
                 for col in 0..used_cols {
                     let Some(style) = viewport.style(row, col) else {
                         continue;
@@ -1565,24 +1710,31 @@ mod imp {
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
                         continue;
                     };
-                    layout.set_attributes(font(Some(style), 1.0).as_ref());
-                    layout.set_width(match wrapping {
-                        true => {
-                            ((cols.size_of(col) - 2.0 * PAD).max(1.0) * f64::from(pango::SCALE))
-                                as i32
-                        }
-                        false => -1,
-                    });
-                    layout.set_text(text);
-                    tallest = tallest.max(f64::from(layout.pixel_size().1));
+                    let text_style = grind_core::style::TextStyle {
+                        font_family: None,
+                        font_size: style.font_size.clone(),
+                        font_weight: style.font_weight.clone(),
+                        font_style: style.font_style.clone(),
+                    };
+                    // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
+                    // mandatory break, which is what the un-wrapped case wants (a cell whose
+                    // only reason to be here is an oversized font).
+                    let width = match wrapping {
+                        true => (cols.size_of(col) - 2.0 * PAD).max(1.0) as f32,
+                        false => 0.0,
+                    };
+                    let fragment = grind_core::layout::Fragment {
+                        text,
+                        style: &text_style,
+                    };
+                    let laid_out =
+                        grind_core::layout::wrap(std::slice::from_ref(&fragment), width, &metrics);
+                    tallest = tallest.max(laid_out.height());
                 }
-                if tallest + ROW_PAD > default {
-                    measured.push((row, (tallest + ROW_PAD).ceil()));
+                if f64::from(tallest) + ROW_PAD > default {
+                    measured.push((row, (f64::from(tallest) + ROW_PAD).ceil()));
                 }
             }
-            // The layout is shared, so what was set for a measurement has to be unset.
-            layout.set_attributes(None);
-            layout.set_width(-1);
             measured
         }
 
@@ -4307,9 +4459,16 @@ mod imp {
     /// from, so it is left alone rather than resolved against the wrong base; so is a length
     /// in any other unit, which no spreadsheet writes for a font.
     pub(super) fn font_scale(style: &grind_sheet::style::CellStyle) -> Option<f64> {
-        style
-            .font_size
-            .as_deref()
+        scale_of(style.font_size.as_deref())
+    }
+
+    /// [`font_scale`]'s own parsing, over the raw `fo:font-size` string rather than a
+    /// `CellStyle` — what [`super::metrics::SheetMetrics`] calls too, since a `TextStyle`
+    /// carries the same string with no document type's vocabulary attached to it (R8). One
+    /// parse either way, which is the point: a cell drawn at one size and measured at another
+    /// is exactly the drift `doc/text-layout.md` decision 3 warns a shell into.
+    pub(super) fn scale_of(font_size: Option<&str>) -> Option<f64> {
+        font_size
             .and_then(|size| size.strip_suffix("pt"))
             .and_then(|points| points.parse::<f64>().ok())
             .filter(|points| *points > 0.0)
