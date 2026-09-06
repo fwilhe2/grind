@@ -9,12 +9,12 @@
 //! of it is selected, [`bullet`] says what marks a list item — and only putting pixels down needs
 //! Windows.
 //!
-//! The Windows half draws **run by run through [`crate::metrics::Face`]**, never with `DrawTextW`.
+//! The Windows half draws **run by run through `crate::metrics::Face`**, never with `DrawTextW`.
 //! That is decision 3 rather than a preference: the core placed every caret with GDI's own
 //! advance array, so the ink has to be placed with the same one or the caret and the glyph
 //! disagree. `Face::draw_run` is `ExtTextOutW` with exactly those advances.
 //!
-//! `paint` takes an `HDC` and a [`Frame`] and nothing about the window — no `HWND` — which is
+//! `paint` takes an `HDC` and a `Frame` and nothing about the window — no `HWND` — which is
 //! what makes `--render-to` a second caller rather than a second drawing path.
 
 use grind_text::RunView;
