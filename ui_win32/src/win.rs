@@ -47,7 +47,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, EndPaint, HDC, InvalidateRect, OPAQUE, PAINTSTRUCT, SetBkColor, SetBkMode,
     SetTextColor, UpdateWindow,
@@ -68,15 +68,21 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetTimer, SetWindowLongPtrW, SetWindowPos,
     SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage, WHEEL_DELTA, WM_APP,
     WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETTINGCHANGE,
-    WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW,
-    WS_VSCROLL,
+    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL,
+    WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_MENU, VK_SHIFT,
+};
+// The one corner of IME support this shell has: positioning the composition window the IME
+// draws for itself. Everything else about composing — the candidate list, committing a result —
+// stays with `DefWindowProcW`, which is why this is the only IME import.
+use windows::Win32::UI::Input::Ime::{
+    CFS_POINT, COMPOSITIONFORM, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
 };
 // The caret's blink rate is the *user's* setting and lives with the rest of the caret API.
 use windows::Win32::UI::WindowsAndMessaging::GetCaretBlinkTime;
@@ -98,6 +104,7 @@ use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
+use crate::surrogate;
 use crate::text;
 use crate::text::geom::{Flow, Page};
 use crate::theme::{self, Mode, Theme};
@@ -189,6 +196,16 @@ impl Pane {
         match self {
             Pane::Text(text) => Some(text),
             Pane::Sheet(_) => None,
+        }
+    }
+
+    /// The pending `WM_CHAR` high surrogate, whichever pane this is — `typed_char`'s slot,
+    /// reached through `Pane` rather than `with_sheet`/`with_text` because a supplementary-plane
+    /// character can arrive whether the window is showing a grid or a document.
+    fn surrogate_mut(&mut self) -> &mut Option<u16> {
+        match self {
+            Pane::Sheet(sheet) => &mut sheet.surrogate,
+            Pane::Text(text) => &mut text.surrogate,
         }
     }
 
@@ -331,6 +348,11 @@ struct Sheet {
     /// demand and thrown away when the theme changes, because a brush is a colour and the
     /// colour is the theme's.
     field_brush: Option<Brush>,
+    /// A `WM_CHAR` high surrogate waiting for the low half that completes it — `typed_char`'s
+    /// state, kept here rather than in a static because two windows must not share it. Only
+    /// matters in Ready mode: once an edit is open, the native `EDIT` control has focus and
+    /// assembles the pair itself, the way every Win32 control does.
+    surrogate: Option<u16>,
 }
 
 /// What a click on the strip landed on. The two fields there are *drawn* until somebody clicks
@@ -566,6 +588,10 @@ struct Text {
     /// style a completed `**bold**` span leaves behind, carried across keystrokes so the shell
     /// does not need its own idea of the notation. `ui_tui`'s `resume` is the same field.
     resume: Option<grind_text::CharStyle>,
+    /// A `WM_CHAR` high surrogate waiting for its low half — `Sheet::surrogate`'s twin, and the
+    /// one that matters every keystroke rather than only at the start of an edit: this pane has
+    /// no native control to assemble a pair for it.
+    surrogate: Option<u16>,
 }
 
 impl Text {
@@ -692,6 +718,25 @@ impl Text {
     fn caret_x(&self) -> Option<f32> {
         let faces = self.faces()?;
         self.app.caret_x(self.caret, &faces).ok()
+    }
+
+    /// Where the caret is drawn, in client pixels — the same geometry `text/draw.rs` uses to
+    /// paint it, answered without a `Frame` because this caller has no reason to build one.
+    /// `position_ime_composition` is the one thing that asks: `ImmSetCompositionWindow` wants a
+    /// point, not a line, so a composing IME's candidate list appears where the caret is rather
+    /// than wherever Windows last happened to leave it.
+    fn caret_point(&self) -> Option<(i32, i32)> {
+        let slot = self.flow.slot(self.caret.block).copied()?;
+        let layout = self.layout_of(self.caret.block)?;
+        let line = layout
+            .lines()
+            .get(layout.line_at(self.caret.offset))
+            .copied()?;
+        let (column_x, _) = self.page.text_column();
+        let body = self.page.body();
+        let x = column_x + slot.indent + f64::from(layout.x_at(self.caret.offset));
+        let y = body.y + slot.top + f64::from(line.top) - self.page.scroll;
+        Some((x.round() as i32, y.round() as i32))
     }
 
     /// One block's plain text, for the questions that are about characters rather than about
@@ -938,6 +983,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         caret_on: true,
         banner: None,
         resume: None,
+        surrogate: None,
     })
 }
 
@@ -977,6 +1023,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
         banner: None,
         ui_font: None,
         field_brush: None,
+        surrogate: None,
     })
 }
 
@@ -1224,6 +1271,16 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             // with — which is what leaves Alt+F4 and the system menu working.
             false => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
         },
+        // A composing IME is about to show its own candidate window — moved to the caret before
+        // `DefWindowProcW` draws it, so it appears where the text is going rather than wherever
+        // Windows last happened to leave it. Everything else about composing (the candidate
+        // list itself, and the committed result arriving as ordinary `WM_CHAR`s) is left to the
+        // default handling; this is the one message this shell answers at all.
+        WM_IME_STARTCOMPOSITION => {
+            position_ime_composition(hwnd);
+            // SAFETY: the arguments this message came with, unchanged.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         // A key that went to one of the child `EDIT`s, relayed by the pump in `run`.
         WM_CHILD_KEY => LRESULT(isize::from(child_key(
             hwnd,
@@ -1862,17 +1919,37 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
     }
 }
 
-/// A character, after the keyboard layout and after the IME. `true` means it started an edit.
+/// A character, after the keyboard layout and after the IME. `true` means it started an edit or
+/// was otherwise claimed.
 ///
-/// ponytail: a character outside the BMP arrives as two `WM_CHAR`s carrying one surrogate each,
-/// and `char::from_u32` refuses both — so an emoji cannot *start* an edit, though it types
-/// perfectly well into one that is already open, because the control assembles the pair itself.
-/// The fix is to hold a pending high surrogate here; it is not written because W5's `WM_IME_*`
-/// path is where that state belongs, and doing it now would be a second copy of it.
+/// `WM_CHAR` carries one UTF-16 code unit at a time, so a character outside the Basic
+/// Multilingual Plane — an emoji, most of the rarer CJK ideographs, some IME output — arrives as
+/// two consecutive messages, and `char::from_u32` refuses each alone. `surrogate::combine` is
+/// where the halves are reassembled; [`Pane::surrogate_mut`] is where the first one waits, which
+/// is the pane's own state rather than a static because two windows must not share it, and per
+/// pane rather than shared between them because a grid and a document mean two different open
+/// documents once `adopt` has run.
 fn typed_char(hwnd: HWND, code: u32) -> bool {
-    let Some(c) = char::from_u32(code) else {
-        return false;
-    };
+    let unit = code as u16;
+    // SAFETY: no nested loop inside.
+    let resolved = unsafe {
+        with_pane(hwnd, |pane| {
+            let pending = pane.surrogate_mut();
+            if surrogate::is_high(unit) {
+                *pending = Some(unit);
+                return None;
+            }
+            match pending.take() {
+                Some(high) => surrogate::combine(high, unit),
+                // Not a low half completing a pair: either a plain code unit, which
+                // `char::from_u32` accepts outright, or a lone low surrogate, which it correctly
+                // refuses — there is no pair to make sense of it as.
+                None => char::from_u32(code),
+            }
+        })
+    }
+    .flatten();
+    let Some(c) = resolved else { return false };
     if is_text(hwnd) {
         return text_char(hwnd, c);
     }
@@ -1884,6 +1961,36 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
             true
         }
         None => false,
+    }
+}
+
+/// Move a composing IME's own composition window to the caret.
+///
+/// Only the text pane needs this: the grid's editing happens inside a native `EDIT` control once
+/// an edit is open, and every Win32 `EDIT` positions its own IME without being asked. This pane
+/// draws its own caret and owns no control for Windows to ask, so with no help `CFS_DEFAULT`
+/// leaves the composition window wherever it last was — often the top-left corner the first time
+/// this process composes anything.
+fn position_ime_composition(hwnd: HWND) {
+    // SAFETY: one borrow, released before the IME calls below; nothing here dispatches.
+    let Some((x, y)) = unsafe { with_text(hwnd, |text| text.caret_point()) }.flatten() else {
+        return;
+    };
+    // SAFETY: `ImmGetContext`/`ImmReleaseContext` are paired within this call, on this thread,
+    // with nothing else holding the context in between — `doc/windows-shell.md` decision 7's
+    // rule for a nested message loop does not apply here because neither call runs one.
+    unsafe {
+        let himc = ImmGetContext(hwnd);
+        if himc.0.is_null() {
+            return;
+        }
+        let form = COMPOSITIONFORM {
+            dwStyle: CFS_POINT,
+            ptCurrentPos: POINT { x, y },
+            ..Default::default()
+        };
+        let _ = ImmSetCompositionWindow(himc, &form);
+        let _ = ImmReleaseContext(hwnd, himc);
     }
 }
 
@@ -3057,16 +3164,12 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
     true
 }
 
-/// A character, after the keyboard layout and after the IME.
+/// A character, after the keyboard layout, the IME and — care of `typed_char` — any surrogate
+/// pair it arrived as.
 ///
 /// Control characters arrive here too — Escape is `\u{1b}` and Enter is `\r`, because
 /// `TranslateMessage` produces a `WM_CHAR` for both — and none of them is text. Return and
 /// Backspace are handled as *keys* above, which is where they belong.
-///
-/// ponytail: a character outside the basic multilingual plane arrives as two `WM_CHAR`s carrying
-/// one surrogate each and `char::from_u32` refuses both, so an emoji cannot be typed here. The fix
-/// is to hold a pending high surrogate in the pane; it belongs with the `WM_IME_*` path, which is
-/// W5's remaining half, and doing it now would be a second copy of that state.
 fn text_char(hwnd: HWND, c: char) -> bool {
     let m = mods();
     if m.ctrl || m.alt || c.is_control() {

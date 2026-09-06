@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W5a are done and W5b–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W5a are done, W5b is under way, and W6–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -183,10 +183,16 @@ popup generic over strings so `dialog.rs` stays ignorant of `Heading`, one row p
 indented by depth, a double-click or OK landing the caret on it. The menu itself now knows which
 pane it is over, too: `menu::applies_to` — tested on Linux, no window needed — is which verb means
 anything for which document kind, and `build_menu` turns a `false` into `EnableMenuItem`'s
-`MF_GRAYED`, rebuilt whenever `adopt` changes the pane's own kind. **What is still owed**: the
-IME, the format strip itself as a drawn toolbar, levels past 3 and list items from this window,
-and greying by state *within* one kind (Undo with nothing to undo, Paste with an empty clipboard)
-rather than only by which kind is open. What is unusual about the whole thing is
+`MF_GRAYED`, rebuilt whenever `adopt` changes the pane's own kind. `WM_CHAR`'s surrogate pairs are
+reassembled too — `surrogate.rs` is the pure half, tested with no window, and `typed_char` is
+where a pending high half waits, per pane rather than in a static — and `WM_IME_STARTCOMPOSITION`
+now positions the composition window at the caret before handing the rest of composing back to
+`DefWindowProcW`, the one message this shell answers of the whole IME surface. **What is still
+owed**: an inline composition string in the pane's own ink rather than the IME's default floating
+box, real verification under an actual IME (Wine ships none), a real `CreateCaret` caret, the
+format strip itself as a drawn toolbar, levels past 3 and list items from this window, and greying
+by state *within* one kind (Undo with nothing to undo, Paste with an empty clipboard) rather than
+only by which kind is open. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh
