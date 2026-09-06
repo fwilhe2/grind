@@ -11,13 +11,14 @@
 //! same generic chooser popup `text_outline` and `text_block_kind_dialog` already use, because a
 //! second list widget for one more list would be a second way of showing what is really the same
 //! question — "pick one of these rows" — those two already answer. Every row is a jump: picking
-//! one hands `win.rs` back the [`Diagnostic`] it came from, and `at` is an address either pane's
-//! own go-to machinery already understands.
+//! one hands `win.rs` back the [`Diagnostic`](grind_core::lint::Diagnostic) it came from, and `at`
+//! is an address either pane's own go-to machinery already understands.
 
 use grind_core::lint::{Report, Severity};
 
-/// One line per finding: a severity mark, then the [`Diagnostic`]'s own `Display`, which already
-/// reads `{at}: {severity}: {message} [{rule}]` — the shape every compiler in the world prints.
+/// One line per finding: a severity mark, then the [`Diagnostic`](grind_core::lint::Diagnostic)'s
+/// own `Display`, which already reads `{at}: {severity}: {message} [{rule}]` — the shape every
+/// compiler in the world prints.
 ///
 /// In the same order `Report`'s own `diagnostics` holds them (already sorted, worst first), so a
 /// row's position in this list is the index `dialog::choose` hands back.

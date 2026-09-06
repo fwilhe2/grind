@@ -358,7 +358,7 @@ mod windows_impl {
             fold_advances(text, &dx, base, out)
         }
 
-        /// How wide one `text:tab` is in `font` — [`TAB_SPACES`] spaces of it.
+        /// How wide one `text:tab` is in `font` — [`super::TAB_SPACES`] spaces of it.
         fn tab_width(&self, font: HFONT) -> f32 {
             let spaces = " ".repeat(super::TAB_SPACES);
             let mut out = Vec::with_capacity(super::TAB_SPACES);

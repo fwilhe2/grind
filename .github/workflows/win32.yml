@@ -30,6 +30,14 @@ jobs:
         run: cargo check -p grind-win32 --target x86_64-pc-windows-msvc
       - name: Lint it, for Windows, without Windows
         run: cargo clippy -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+      # `ci.yml`'s `docs` job runs this crate too, but on the *host* target, where every
+      # `cfg(windows)` item is compiled out — so a broken intra-doc link in `win.rs` or
+      # `metrics.rs` was invisible to it. Six of them had accumulated by W8. rustdoc does not
+      # link either, so the same trick the type-check above uses works here.
+      - name: Document it, for Windows, without Windows
+        run: cargo doc --no-deps -p grind-win32 --target x86_64-pc-windows-msvc
+        env:
+          RUSTDOCFLAGS: -D warnings
       # The portable half — the argument handling, the pixel arithmetic, the key tables, the
       # menus as data — tested where every other crate in this workspace is tested. The
       # `ci` workflow runs this too; here it is the half that pairs with the type-check above.

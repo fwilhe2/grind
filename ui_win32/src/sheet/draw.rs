@@ -538,7 +538,7 @@ mod windows_impl {
     ///
     /// `Viewport::names` is empty whenever the read did not ask for it, so this has nothing to
     /// do and returns at once when the mode is off — the same "asked for fresh, never stored"
-    /// shape [`Viewport::role`] follows.
+    /// shape [`grind_sheet::Viewport::role`] follows.
     fn draw_names(dc: HDC, frame: &Frame) {
         let g = frame.geom;
         let body = g.body();

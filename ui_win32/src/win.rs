@@ -25,7 +25,9 @@
 //!    `doc/windows-shell.md`'s decision 7, and from W3 it has teeth: `dialog.rs`'s file
 //!    dialogs, message boxes and text prompt each run a nested message loop, so every handler
 //!    that opens one borrows the state **on each side of the call and never across it**.
-//!    [`ask`] is that shape as a function, so the pattern is named rather than remembered.
+//!    [`sheet_rename`] is the shape written out: one [`with_sheet`] to read what the prompt
+//!    needs, the prompt, then a *fresh* [`with_sheet`] to apply the answer — each with the
+//!    SAFETY comment that says which side of the nested loop it is on.
 //!
 //! ## What W3 added, and where the state for it lives
 //!
@@ -172,7 +174,7 @@ const RENDER_H: i32 = 800;
 ///
 /// **One binary, both document types** (decision 1), and this is where that stops being a claim
 /// about `main.rs` and becomes one about the window: which pane a window *is* comes from
-/// [`grind_core::kind`] reading the file's bytes, and every message below either belongs to one
+/// [`grind_core::kind()`] reading the file's bytes, and every message below either belongs to one
 /// pane — [`with_sheet`], [`with_text`] — or is answered for both here.
 ///
 /// The two arms deliberately keep their own path, theme and dirty flag rather than sharing a
@@ -339,7 +341,7 @@ struct Sheet {
     /// each handler remembering to.
     dirty: bool,
     /// What the notice bar says, or `None` for a document with nothing to say about itself.
-    /// Always set through [`State::say`], which is what keeps it and `geom.banner_h` agreeing.
+    /// Always set through [`Sheet::say`], which is what keeps it and `geom.banner_h` agreeing.
     banner: Option<String>,
     /// The face the two child `EDIT`s are set in. Owned here because a `WM_SETFONT` does not
     /// take a copy: the handle has to outlive every paint of the control, and be deleted after
@@ -2368,7 +2370,7 @@ fn close_name_box(hwnd: HWND, commit: bool) {
 
 /// Start an edit: put the control where the text goes, seed it, and give it the focus.
 ///
-/// `on_bar` forces it onto the formula bar; otherwise [`State::editor_rect`] decides, and picks
+/// `on_bar` forces it onto the formula bar; otherwise [`Sheet::editor_rect`] decides, and picks
 /// the bar anyway for a cell that is scrolled out of sight.
 fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
     // SAFETY: one borrow, for the control, its rectangle and its text.
