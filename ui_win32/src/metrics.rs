@@ -16,7 +16,7 @@
 //! That is the whole of decision 3 and it is load-bearing rather than tidy. `GetTextExtentExPointW`
 //! does not shape, so a combining mark gets an advance of its own instead of folding onto its
 //! base — the core then believes the text is one mark wider than it looks. That is survivable
-//! **only if drawing agrees**: [`Face::draw_run`] measures with the same call, with the same font,
+//! **only if drawing agrees**: `Face::draw_run` measures with the same call, with the same font,
 //! and hands the result to `ExtTextOutW` as explicit advances, so the mark is drawn floating in a
 //! box of its own — which looks wrong and is not *inconsistent*, and every caret operation stays
 //! right. Measure with DirectWrite and draw with plain `ExtTextOutW` and the two disagree, which
@@ -35,7 +35,7 @@
 //! units are walked and each character takes the entry for its *last* one. A character outside
 //! the basic multilingual plane therefore comes out as one advance, correctly.
 //!
-//! Only [`windows_impl`] needs a window — or rather does not: it holds a memory DC from
+//! Only `windows_impl` needs a window — or rather does not: it holds a memory DC from
 //! `CreateCompatibleDC(None)`, so measuring works with no `HWND` anywhere, which is what lets
 //! `--render-to` lay a document out on a headless runner.
 
