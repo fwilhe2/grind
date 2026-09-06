@@ -10,7 +10,7 @@ The plan for `ui_win32/` — crate `grind-win32`, binary `grind-win32.exe` — a
 behind it. Normative for that directory the way `doc/tui-shell.md` is for `ui_tui/`,
 `doc/web-shell.md` for `ui_web/` and `doc/sheet-shell.md` for the spreadsheet's GTK window.
 
-**Built through W5a; the rest of W5 and W6–W8 are a plan.** This document was W0's deliverable —
+**Built through W5a, with W5b under way; W6–W8 are a plan.** This document was W0's deliverable —
 the shell planned, its decisions argued, its gaps named in advance, and the two claims the whole
 thing rests on measured rather than assumed. W1 added the window and the read-only grid, W2 the
 selection, W3 the editing and W4 the clipboard, so the parts of it that were predictions are now
@@ -452,7 +452,7 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W3** | **Sheet editing** — *done* | the child `EDIT` serving as both formula bar and in-cell editor; Enter/Esc/F2/typing-replaces through `state.rs`; `App::enter`; Delete → `clear_range`; undo/redo; recalculation and the notice bar; open/save/save-as through `IFileDialog` with the three forms; the three-button close confirmation in decision 7's shape; the `*` dirty marker in the title; sheet add/rename/delete; and the menu bar decision 4 makes this platform's growable surface | **Met.** Typing, F2, a double-click and a click on the formula bar all open the editor; a formula is typed in display syntax and stored in ODF's; one that will not parse keeps the edit open with the caret on the problem and says so in the notice bar; Delete, Ctrl+Z, Ctrl+Y and F9 do what they say; the Sheet menu adds, renames — carrying every reference with it, D10 — and deletes; Ctrl+S writes a document that `grind lint` reads back clean. 104 tests on Linux. Two bugs found by *running* it, one of them a crash — see below |
 | **W4** | **The clipboard** — *done* | `CF_UNICODETEXT` TSV copy, cut and paste over `enter_range` / `clear_range` | **Met inside the shell**: copy, cut and paste round-trip through the real Win32 clipboard API under Wine, with recalculation following. Interop with a real LibreOffice Calc or Excel window is unverified here — a bare Xvfb has no clipboard manager to bridge to X11, so this joins *What Wine cannot speak for* |
 | **W5a** | **The text pane** — *done* | `metrics.rs` per decision 3 and `Faces` over it; `text/geom.rs` stacking the whole document into a `Flow`; `text/draw.rs` drawing `App::layout_block` run by run; a drawn caret on the user's own `GetCaretBlinkTime`; selection by Shift+arrow, Shift+click, dragging and double-click; typing, Backspace/Delete, Enter, Tab, undo/redo and the plain-text clipboard; and `Pane`, which makes the window *either* document type rather than only a spreadsheet | **Met.** `examples/sample-text.sh`'s document opens under Wine with its headings, bold, italic, underline, colour, lists and tabs visible, is navigable by keyboard alone, and is editable; `--render-to` is byte-identical across two runs; File ▸ Open on a `.fodt` turns the grid into a document in the same window. 150 tests on Linux, including **the exit criterion itself** — `text/geom.rs`'s `the_pane_breaks_lines_where_the_cli_does` measures a document through the pane's own stacking with `Fixed` and asserts every block's height against `App::layout_block`, which is what `grind text view --width` prints. Three bugs found by *running* it — see below |
-| **W5b** | **The rest of the text pane** | the IME path (`WM_IME_*`, `ImmSetCompositionWindow` at the caret) and the surrogate pair `WM_CHAR` cannot carry; a real `CreateCaret` caret if the drawn one proves not to be enough; ~~`App::type_markdown`, so `**bold**` is read as it is typed~~ (done); a drawn format strip over `char_style` / `set_char_style` (Ctrl+B/I/U and a Format menu reach the same toggle first); ~~block kinds~~ (done, Paragraph/Heading 1/2/3 on the Format menu and Ctrl+0/1/2/3, matching `ui_text_gtk`'s own keys) and ~~an outline dialog~~ (done, Ctrl+Shift+O over a `LISTBOX`); ~~go-to for `p12` / `#intro` / `§2.1.3`~~ (done, as a modal prompt over F5/Ctrl+G); and ~~a menu that knows which pane it is over~~ (done for pane kind — `menu::applies_to` greys every verb the current document type has no answer for; state *within* a kind, Undo with nothing to undo and the like, is still open) | every feature `examples/sample-text.sh` builds is not only visible but *reachable*: a heading can be made one, a run can be made bold, and `§2.1.3` can be gone to |
+| **W5b** | **The rest of the text pane** | ~~the surrogate pair `WM_CHAR` cannot carry~~ (done, `surrogate.rs`) and ~~`WM_IME_STARTCOMPOSITION` positioning the candidate window at the caret~~ (done; no inline composition string, and untested under a real IME); a real `CreateCaret` caret if the drawn one proves not to be enough; ~~`App::type_markdown`, so `**bold**` is read as it is typed~~ (done); a drawn format strip over `char_style` / `set_char_style` (Ctrl+B/I/U and a Format menu reach the same toggle first); ~~block kinds~~ (done, Paragraph/Heading 1/2/3 on the Format menu and Ctrl+0/1/2/3, matching `ui_text_gtk`'s own keys) and ~~an outline dialog~~ (done, Ctrl+Shift+O over a `LISTBOX`); ~~go-to for `p12` / `#intro` / `§2.1.3`~~ (done, as a modal prompt over F5/Ctrl+G); and ~~a menu that knows which pane it is over~~ (done for pane kind — `menu::applies_to` greys every verb the current document type has no answer for; state *within* a kind, Undo with nothing to undo and the like, is still open) | every feature `examples/sample-text.sh` builds is not only visible but *reachable*: a heading can be made one, a run can be made bold, and `§2.1.3` can be gone to |
 | **W6** | **The three shared panes** | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | all three reachable from whichever pane they apply to, and opening every overlay on every R7 document then saving leaves the bytes identical |
 | **W7** | **Chrome and the accessibility floor** | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | the portable menu-table test passes: every command id has a handler and every handler an item. `accesskit_windows` is **named and deferred**, and the system caret is the floor |
 | **W8** | **Packaging** | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | the artifact opens both document types on a clean Windows install with no other install of any kind |
@@ -535,10 +535,7 @@ the *rate* is theirs, and moving to `CreateCaret` is W5b's — the reason it is 
 system caret has to be hidden around the back buffer's blit, which is a pairing to get right
 rather than a call to add.
 
-**W5a's own gaps, and most of them are still open.** No **IME**, so a Japanese or Chinese keyboard
-cannot compose in this pane, and no character outside the basic multilingual plane can be typed
-(`WM_CHAR` carries one surrogate at a time and the pane holds no pending half — the two are the
-same piece of work, which is why neither is done alone). `App::type_markdown` **has since landed**:
+**W5a's own gaps, and most of them are still open.** `App::type_markdown` **has since landed**:
 every character typed into the pane goes through it rather than through a plain `insert_text`, so
 `**bold**` is read as it is typed exactly as `ui_tui`'s is, with the same `resume` field carrying a
 completed span's style across the keystroke that closes it. There is still no drawn **format
@@ -570,6 +567,22 @@ Open on the other document type, or File ▸ New. What W7 still owes is state *i
 Undo greyed with nothing to undo, Paste greyed with an empty clipboard — which needs the bar
 rebuilt on more than a pane change and is a different piece of work from telling the two document
 types apart.
+
+**Surrogate pairs and one corner of the IME have landed too.** `WM_CHAR` carries one UTF-16 code
+unit per message, so any character outside the Basic Multilingual Plane — an emoji, most of the
+rarer CJK ideographs, some IME output — arrives as two consecutive messages; `surrogate.rs`
+(portable, tested with no window) is the pure half that reassembles a pair, and `typed_char` is
+where the pending high half waits, per pane rather than in a static because two windows must not
+share it. `WM_IME_STARTCOMPOSITION` is now the one IME message this shell answers at all: it
+positions the composition window Windows draws for itself — `ImmSetCompositionWindow` at the
+caret's own pixel position, computed the same way `text/draw.rs` places the drawn caret — and
+hands everything else about composing back to `DefWindowProcW`, which is what a native `EDIT`
+control gets automatically and this custom-drawn pane does not. The sheet needs none of this once
+an edit is open (the `EDIT` positions its own IME), so the surrogate state is per pane and the
+composition positioning is text-only. What that one message does **not** buy: no inline
+composition string drawn in the pane's own ink — the IME's default floating box does that
+instead — and nothing has been driven under a real IME, since Wine ships none to test against;
+`win32.yml`'s `windows-latest` runner is the first place this can be watched working for real.
 
 ## Verification
 
