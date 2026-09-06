@@ -49,8 +49,8 @@ use std::sync::Arc;
 
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, HDC, InvalidateRect, OPAQUE, PAINTSTRUCT, SetBkColor, SetBkMode,
-    SetTextColor, UpdateWindow,
+    BeginPaint, ClientToScreen, EndPaint, HDC, InvalidateRect, OPAQUE, PAINTSTRUCT, SetBkColor,
+    SetBkMode, SetTextColor, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -58,8 +58,8 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu,
-    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE,
-    EN_KILLFOCUS, ES_AUTOHSCROLL, EnableMenuItem, GWLP_USERDATA, GetMessageW, GetParent,
+    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
+    EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, EnableMenuItem, GWLP_USERDATA, GetMessageW, GetParent,
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW,
     MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG,
     MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN,
@@ -67,11 +67,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE,
     SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu,
     SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
-    TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CREATE,
-    WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION,
-    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE,
-    WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP,
+    WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL,
+    WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -1278,6 +1279,14 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             double_click(hwnd, lparam);
             LRESULT(0)
         }
+        // A right click, **and** Shift+F10 or the keyboard's own Menu key — Windows sends this
+        // one message for all three, which is what lets W7's context menus answer the keyboard
+        // for free. `lparam`'s point is in *screen* coordinates here, unlike every mouse message
+        // above, and is `(-1, -1)` exactly when the keyboard asked rather than the mouse.
+        WM_CONTEXTMENU => {
+            context_menu(hwnd, lparam);
+            LRESULT(0)
+        }
         // A character, after the keyboard layout and after the IME — which is why a printable
         // key is decided here and not in `WM_KEYDOWN`. Deciding "is this printable" on a
         // virtual-key code is the bug that makes an accented character unable to start an edit.
@@ -1639,6 +1648,89 @@ fn build_menu(hwnd: HWND) {
         }
         let _ = SetMenu(hwnd, Some(bar));
     }
+}
+
+/// W7's context menus: cells and headers get the grid's own clipboard verbs, the text pane its
+/// own plus the three toggles the format strip already draws. A short, fixed list rather than a
+/// state-aware one — the same simplification W7 already names for the menu bar's own greying —
+/// and every entry is a real [`Command`] reused from [`menu::MENUS`] rather than a second
+/// vocabulary, so a click here reaches exactly the handler a click on the bar would.
+fn context_menu(hwnd: HWND, lparam: LPARAM) {
+    let commands: &[Command] = match is_text(hwnd) {
+        true => &[
+            Command::Cut,
+            Command::Copy,
+            Command::Paste,
+            Command::Bold,
+            Command::Italic,
+            Command::Underline,
+        ],
+        false => &[
+            Command::Cut,
+            Command::Copy,
+            Command::Paste,
+            Command::ClearCells,
+        ],
+    };
+    // `(-1, -1)` is Windows' own spelling of "the keyboard asked, not the mouse" — Shift+F10 or
+    // the Menu key carry no position, so the menu opens over a point of this window's choosing
+    // rather than the pointer's.
+    let (x, y) = point(lparam);
+    let at = match (x, y) {
+        (-1.0, -1.0) => context_anchor(hwnd),
+        _ => POINT {
+            x: x.round() as i32,
+            y: y.round() as i32,
+        },
+    };
+    // SAFETY: the popup is built and destroyed within this call, and `TrackPopupMenuEx` is the
+    // one nested message loop in it — decision 7's rule, and nothing is borrowed across it.
+    let picked = unsafe {
+        let Ok(popup) = CreatePopupMenu() else {
+            return;
+        };
+        for command in commands {
+            if let Some(label) = menu::label_for(*command) {
+                let label = gdi::wide(label);
+                let _ = AppendMenuW(
+                    popup,
+                    MF_STRING,
+                    usize::from(command.id()),
+                    PCWSTR(label.as_ptr()),
+                );
+            }
+        }
+        let result = TrackPopupMenuEx(
+            popup,
+            (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
+            at.x,
+            at.y,
+            hwnd,
+            None,
+        );
+        let _ = DestroyMenu(popup);
+        result
+    };
+    if let Some(command) = menu::command_for(picked.0 as u16) {
+        do_command(hwnd, command);
+    }
+}
+
+/// Where a keyboard-invoked context menu opens: the middle of the client area, in screen
+/// coordinates. Simpler than anchoring it on the caret or the active cell, and it costs nothing
+/// real — the menu still opens and still reaches every verb on it, which is the whole of what
+/// Shift+F10 promises.
+fn context_anchor(hwnd: HWND) -> POINT {
+    let rect = gdi::client_rect(hwnd);
+    let mut point = POINT {
+        x: (rect.right - rect.left) / 2,
+        y: (rect.bottom - rect.top) / 2,
+    };
+    // SAFETY: `hwnd` is this window's and `point` is a live local.
+    unsafe {
+        let _ = ClientToScreen(hwnd, &mut point);
+    }
+    point
 }
 
 /// Create the two child `EDIT`s and the face they are both set in.
@@ -2526,6 +2618,7 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Heading3
         | Command::Outline
         | Command::BlockKindDialog => {}
+        Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
 }
@@ -2785,6 +2878,14 @@ fn go_to_address(hwnd: HWND, address: &str) {
         Some(Ok(())) => refresh(hwnd),
         None => {}
     }
+}
+
+/// W7's "key list" — `menu::shortcuts()` in `dialog::choose`'s read-only listbox, the same
+/// widget every other list in this shell already is. There is nowhere to jump to from an
+/// accelerator, so the row picked (or Escape) is thrown away; the list exists to be read.
+fn show_shortcuts(hwnd: HWND) {
+    let rows = menu::shortcuts();
+    let _ = dialog::choose(hwnd, "Keyboard Shortcuts", &rows, 0);
 }
 
 /// F9. The banner reports what happened, including when nothing did — a key that appears to do
@@ -3736,6 +3837,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
+        Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
         // The spreadsheet's, and this pane has no answer to it: `CellRole` is per-character and
         // this pane has no cells.

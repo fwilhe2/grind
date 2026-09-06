@@ -68,7 +68,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
 | `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
 | `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W6 are done, and W7–W8 are not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
+| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`, part record and part plan: W0–W7 are done, and W8 is not.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
@@ -136,7 +136,7 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W6**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W7**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -228,7 +228,23 @@ colours `ui_sheet_gtk` uses) plus a muted outline round a defined name's range, 
 the text pane too — `:names`' equivalent there, a muted `‹name›` drawn beside each bookmark
 (`BlockView::marks`) rather than spliced into the text the way the CLI prints it, since splicing
 would move every offset after it. Nothing here writes, so opening every overlay and saving is
-still byte-identical. What is unusual about the whole thing is
+still byte-identical.
+
+**W7 is done: chrome and the accessibility floor.** `WM_CONTEXTMENU` is one handler for a right
+click, Shift+F10 and the keyboard's own Menu key — Windows sends all three the same message, and
+`(-1, -1)` is how the keyboard's two are told from the mouse's real point — and it builds its
+popup from `menu::label_for`, the one copy of a command's label, so a context-menu row and a
+menu-bar row can never disagree about what a `Command` is called; `TrackPopupMenuEx`'s
+`TPM_RETURNCMD` hands the id picked straight to the same `do_command` a menu click reaches, with
+no borrow held across the nested message loop (decision 7). The grid's cells and headers share
+one menu — Cut, Copy, Paste, Delete, since this build has no header-only verb to add — and the
+text pane its own plus the three format toggles. The "key list" `doc/windows-shell.md` named is
+`menu::shortcuts()`: every accelerator `MENUS`' own labels already carry, read once rather than
+kept as a second table that could drift from them, shown in `dialog::choose`'s read-only listbox
+from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` were already built
+(W1/W3) and About already carried `grind_core::build_info`, so W7's remaining work was exactly
+the context menus and the key list. `accesskit_windows` remains named and deferred, and the
+system caret is the floor. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh
