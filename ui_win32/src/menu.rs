@@ -65,13 +65,14 @@ pub enum Command {
     SheetDelete,
     SheetNext,
     SheetPrevious,
-    /// Toggle bold/italic/underline across the selection — the text pane's, and greyed on the
-    /// grid by [`applies_to`] rather than merely a no-op if it somehow arrives there anyway.
+    /// Toggle bold/italic/underline across the selection — the text pane's, and left out of
+    /// `Format` on the grid by [`applies_to`] rather than a no-op if it somehow arrives there
+    /// anyway (a stale accelerator, say — `do_command`'s per-pane no-ops are the safety net).
     Bold,
     Italic,
     Underline,
     /// The caret's block becomes a plain paragraph — `App::set_kind`, `BlockKind::Paragraph`.
-    /// Greyed on the grid, the same way the three toggles above are.
+    /// Left out of the grid's menus, the same way the three toggles above are.
     Paragraph,
     /// The caret's block becomes a heading at this level — `ui_text_gtk`'s own Ctrl+1/2/3, kept
     /// to the same three quick levels here so a key reaches the common case the way it does in
@@ -80,7 +81,8 @@ pub enum Command {
     Heading1,
     Heading2,
     Heading3,
-    /// The text pane's outline dialog — every heading, jump to any of them. Greyed on the grid.
+    /// The text pane's outline dialog — every heading, jump to any of them. Left out of the
+    /// grid's menus.
     Outline,
     /// Every block kind this build authors, heading levels past 3 and list items included, as one
     /// dialog rather than a key per depth — the gap `doc/text-shell.md` names for every shell's
@@ -506,6 +508,40 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
     }
 }
 
+/// One menu's items for a document of this kind — a verb this pane has no answer for is
+/// **omitted**, not greyed, and a separator left with nothing either side of it (because
+/// everything around it was dropped) goes with it.
+///
+/// This replaced greying: a menu bar with every verb visible and half of them unclickable read
+/// as a text pane that still thought it was a grid, since the sheet's own six verbs (`Sheet`'s
+/// whole menu, `Recalculate`, `Cell Roles`) so outnumbered the universal ones that the &View
+/// and &Sheet menus looked identical open on either pane. Two ends now: `Format` on the grid and
+/// `Sheet`/`Data` on the text pane can end up with nothing in them at all, which is
+/// [`menu_has_items`]'s question, asked before a menu is put in the bar at all.
+pub fn items_for(menu: &Menu, kind: grind_core::DocumentKind) -> Vec<Item> {
+    let mut items: Vec<Item> = Vec::with_capacity(menu.items.len());
+    for item in menu.items {
+        match item {
+            Item::Verb { command, .. } if !applies_to(*command, kind) => continue,
+            Item::Separator if matches!(items.last(), None | Some(Item::Separator)) => continue,
+            other => items.push(*other),
+        }
+    }
+    if matches!(items.last(), Some(Item::Separator)) {
+        items.pop();
+    }
+    items
+}
+
+/// Whether a menu has anything left to show for a document of this kind — a menu whose every
+/// verb [`items_for`] dropped contributes nothing to the bar rather than an empty popup with
+/// only its title.
+pub fn menu_has_items(menu: &Menu, kind: grind_core::DocumentKind) -> bool {
+    items_for(menu, kind)
+        .iter()
+        .any(|item| matches!(item, Item::Verb { .. }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,5 +823,120 @@ mod tests {
             !rows.iter().any(|row| row.starts_with("Add")),
             "a menu item with no accelerator is not a shortcut"
         );
+    }
+
+    fn menu(title: &str) -> &'static Menu {
+        MENUS
+            .iter()
+            .find(|menu| menu.title == title)
+            .unwrap_or_else(|| panic!("no menu titled {title}"))
+    }
+
+    /// `Sheet` and `Data` are the grid's alone — every one of their verbs answers only to
+    /// `Spreadsheet` — so a text document leaves both out of the bar rather than showing them
+    /// with nothing clickable in them.
+    #[test]
+    fn sheet_and_data_vanish_on_the_text_pane() {
+        use grind_core::DocumentKind::Text;
+        assert!(!menu_has_items(menu("&Sheet"), Text));
+        assert!(!menu_has_items(menu("&Data"), Text));
+        assert!(items_for(menu("&Sheet"), Text).is_empty());
+        assert!(items_for(menu("&Data"), Text).is_empty());
+    }
+
+    /// `Format` is the text pane's alone, for the same reason in reverse.
+    #[test]
+    fn format_vanishes_on_the_grid() {
+        use grind_core::DocumentKind::Spreadsheet;
+        assert!(!menu_has_items(menu("F&ormat"), Spreadsheet));
+        assert!(items_for(menu("F&ormat"), Spreadsheet).is_empty());
+    }
+
+    /// `Edit` mixes universal verbs with `Outline`, which is the text pane's alone — so the
+    /// menu survives on the grid, minus that one item, rather than vanishing or keeping a verb
+    /// with nothing to do.
+    #[test]
+    fn edit_loses_only_outline_on_the_grid() {
+        use grind_core::DocumentKind::Spreadsheet;
+        assert!(menu_has_items(menu("&Edit"), Spreadsheet));
+        let items = items_for(menu("&Edit"), Spreadsheet);
+        assert!(!items.iter().any(|item| matches!(
+            item,
+            Item::Verb {
+                command: Command::Outline,
+                ..
+            }
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item,
+            Item::Verb {
+                command: Command::GoTo,
+                ..
+            }
+        )));
+    }
+
+    /// `View` mixes a grid-only toggle (`Cell Roles`) with three universal verbs, so it survives
+    /// on the text pane minus that one item — the same shape `Edit` has on the grid.
+    #[test]
+    fn view_loses_only_cell_roles_on_the_text_pane() {
+        use grind_core::DocumentKind::Text;
+        assert!(menu_has_items(menu("&View"), Text));
+        let items = items_for(menu("&View"), Text);
+        assert!(!items.iter().any(|item| matches!(
+            item,
+            Item::Verb {
+                command: Command::ToggleRoles,
+                ..
+            }
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item,
+            Item::Verb {
+                command: Command::ToggleNames,
+                ..
+            }
+        )));
+    }
+
+    /// Never a leading, trailing, or doubled separator — the visible cost of filtering a menu's
+    /// items by hand, and the reason `items_for` cleans them up rather than leaving them for
+    /// `AppendMenuW` to draw as dead space.
+    #[test]
+    fn filtering_never_leaves_a_stray_separator() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for menu in MENUS {
+            for kind in [Spreadsheet, Text] {
+                let items = items_for(menu, kind);
+                assert_ne!(
+                    items.first(),
+                    Some(&Item::Separator),
+                    "{}: {kind:?}",
+                    menu.title
+                );
+                assert_ne!(
+                    items.last(),
+                    Some(&Item::Separator),
+                    "{}: {kind:?}",
+                    menu.title
+                );
+                assert!(
+                    !items
+                        .windows(2)
+                        .any(|pair| pair == [Item::Separator, Item::Separator]),
+                    "{}: {kind:?} has two separators in a row",
+                    menu.title
+                );
+            }
+        }
+    }
+
+    /// A menu that keeps every one of its items for a kind is unchanged, order included — the
+    /// baseline `filtering_never_leaves_a_stray_separator` and the vanish/survive tests above
+    /// all lean on.
+    #[test]
+    fn a_menu_with_nothing_to_drop_is_returned_whole() {
+        use grind_core::DocumentKind::Text;
+        assert_eq!(items_for(menu("&File"), Text), menu("&File").items.to_vec());
     }
 }
