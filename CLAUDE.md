@@ -193,11 +193,22 @@ anything for which document kind, and `build_menu` turns a `false` into `EnableM
 reassembled too — `surrogate.rs` is the pure half, tested with no window, and `typed_char` is
 where a pending high half waits, per pane rather than in a static — and `WM_IME_STARTCOMPOSITION`
 now positions the composition window at the caret before handing the rest of composing back to
-`DefWindowProcW`, the one message this shell answers of the whole IME surface. **What is still
-owed**: an inline composition string in the pane's own ink rather than the IME's default floating
-box, real verification under an actual IME (Wine ships none), a real `CreateCaret` caret, the
-format strip itself as a drawn toolbar, and greying by state *within* one kind (Undo with nothing
-to undo, Paste with an empty clipboard) rather than
+`DefWindowProcW`, the one message this shell answers of the whole IME surface. The system caret
+is real now too: `place_system_caret` calls `CreateCaret`/`SetCaretPos`/`ShowCaret` at
+`Text::caret_geometry` on `WM_SETFOCUS`, on every `text_refresh` (every motion and every edit)
+and once more after every `WM_PAINT` — the last of which is what catches a handler like
+`text_button_down` that invalidates the window directly rather than through `refresh`, a bug a
+first pass left in and a Wine screenshot caught. `WM_KILLFOCUS` calls `DestroyCaret`, and `paint`
+hides it before the back buffer's `BitBlt` and shows it again after, since the blit knows nothing
+about the caret and paints over it otherwise; `render`'s windowless frame is the one path with no
+`HWND` and so still draws the manual rectangle, which `draw_text_frame`'s `system_caret` flag
+suppresses everywhere else. Verified by screenshot under Wine and Xvfb: the caret tracks a click
+and a keystroke to the right block and offset, has the right height on a heading versus a
+paragraph, blinks on its own with no timer in this process at all, and survives a modal dialog
+stealing and returning focus. **What is still owed**: an inline composition string in the pane's
+own ink rather than the IME's default floating box, real verification under an actual IME (Wine
+ships none), the format strip itself as a drawn toolbar, and greying by state *within* one kind
+(Undo with nothing to undo, Paste with an empty clipboard) rather than
 only by which kind is open. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
