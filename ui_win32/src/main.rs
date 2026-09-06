@@ -131,27 +131,41 @@ fn resolve(command: Command) -> Result<Opening, String> {
 fn main() -> std::process::ExitCode {
     use std::process::ExitCode;
 
-    let command = args::parse(std::env::args().skip(1));
-    match command {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    // Whether this invocation has anybody in front of it.
+    //
+    // `--render-to` draws one frame on a machine with no display and, on a CI runner, no
+    // interactive session either — and a `MessageBoxW` in a session nobody is logged into is
+    // not an error report, it is a hang: the dialog waits for an OK that can never be clicked.
+    // That is exactly what turned one mis-quoted argument into a job that timed out after
+    // twenty minutes having printed nothing at all. So the whole of the headless path reports
+    // through [`say`] rather than through a dialog, *including* the argument errors that are
+    // decided before the flag has been parsed — which is why this asks the raw command line.
+    let headless = argv.iter().any(|arg| arg == "--render-to");
+    let say = |text: &str, error: bool| {
+        if headless {
+            console_line(text);
+        } else {
+            message_box("grind-win32", text, error);
+        }
+    };
+
+    match args::parse(argv) {
         Command::Help => {
-            message_box("grind-win32", args::USAGE, false);
+            say(args::USAGE, false);
             ExitCode::SUCCESS
         }
         Command::Version => {
-            message_box("grind-win32", &version(), false);
+            say(&version(), false);
             ExitCode::SUCCESS
         }
         Command::Error(message) => {
-            message_box(
-                "grind-win32",
-                &format!("{message}\n\n{}", args::USAGE),
-                true,
-            );
+            say(&format!("{message}\n\n{}", args::USAGE), true);
             ExitCode::from(2)
         }
         open => match resolve(open) {
             Err(message) => {
-                message_box("grind-win32", &message, true);
+                say(&message, true);
                 ExitCode::FAILURE
             }
             // `--render-to` draws one frame with no window at all and exits, so it comes
@@ -161,19 +175,30 @@ fn main() -> std::process::ExitCode {
             Ok((kind, path, Some(target))) => match win::render(kind, path, &target) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
-                    message_box("grind-win32", &message, true);
+                    say(&message, true);
                     ExitCode::FAILURE
                 }
             },
             Ok((kind, path, None)) => match win::run(kind, path) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
-                    message_box("grind-win32", &message, true);
+                    say(&message, true);
                     ExitCode::FAILURE
                 }
             },
         },
     }
+}
+
+/// Say something on the headless path, where a dialog would be a deadlock rather than a message.
+///
+/// A GUI-subsystem process has no console of its own, but it does inherit the standard handles
+/// its parent gave it — so `eprintln!` reaches a redirected pipe (which is how a script or a CI
+/// step runs this) and goes nowhere at all otherwise. Nowhere is the right answer for the second
+/// case: the exit code still carries the failure, and unlike a message box it does not wait.
+#[cfg(windows)]
+fn console_line(text: &str) {
+    eprintln!("grind-win32: {text}");
 }
 
 /// Say something before there is a window to say it in.

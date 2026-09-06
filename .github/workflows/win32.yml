@@ -190,25 +190,31 @@ jobs:
       - name: Build
         run: cargo build --release -p grind-win32
 
+      # One way to run this binary, used by both render steps below, because getting it wrong is
+      # not a failure but a *hang* and it has already cost two jobs their twenty minutes.
+      #
+      # Three things it has to get right:
+      #
+      #  * **Quoting.** `Start-Process -ArgumentList @(...)` joins the array with spaces and
+      #    quotes nothing, so `Sales Dashboard.fods` reached the exe as two arguments, `parse`
+      #    said "one file at a time", and that message went to a `MessageBoxW` on a runner with
+      #    no interactive session to dismiss it. `ProcessStartInfo.ArgumentList` applies the real
+      #    Windows quoting rules per element, so a space in a document's name is just a space.
+      #  * **Waiting.** A GUI-subsystem process detaches from the console immediately, so a plain
+      #    `& $exe` would return before a pixel had been drawn and the comparison would read
+      #    whatever the previous step left on disk.
+      #  * **Not waiting forever.** `WaitForExit` gets a bound, so a shell that manages to put a
+      #    dialog up anyway fails this step in two minutes with its output shown, rather than
+      #    burning the job's whole budget and printing nothing.
+      #
+      # `main.rs` is the other half of that last point: `--render-to` on the command line means
+      # nobody is watching, so every message goes to stderr — captured here — and never to a box.
       - name: Draw the same frame twice
         shell: pwsh
         run: |
-          $exe = "target/release/grind-win32.exe"
-          $doc = "sheet/tests/data/samples/Sales Dashboard.fods"
-          # `Start-Process -Wait`, not `&`: a GUI-subsystem process detaches from the console
-          # immediately, so the plain call would return before a single pixel had been drawn and
-          # the comparison below would read whatever was on disk from the step before.
-          #
-          # `-WorkingDirectory` is not optional: `Start-Process` does not inherit pwsh's own
-          # current directory the way `&` does, so a relative `$doc` resolved against whatever
-          # directory .NET picked instead — and the file-not-found error went to a `MessageBoxW`
-          # this GUI-subsystem binary has no console to avoid, which nobody was there to
-          # dismiss. That is what actually made this step hang for 18 minutes rather than fail.
-          foreach ($out in @("one.bmp", "two.bmp")) {
-            $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
-              -WorkingDirectory (Get-Location) -Wait -PassThru -NoNewWindow
-            if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
-          }
+          . .github/scripts/win32-render.ps1
+          Invoke-Render "sheet/tests/data/samples/Sales Dashboard.fods" "one.bmp"
+          Invoke-Render "sheet/tests/data/samples/Sales Dashboard.fods" "two.bmp"
 
       - name: The two frames are byte-identical
         shell: pwsh
@@ -240,13 +246,10 @@ jobs:
       - name: Draw a text document twice, and compare
         shell: pwsh
         run: |
-          $exe = "target/release/grind-win32.exe"
+          . .github/scripts/win32-render.ps1
           $doc = "text/tests/data/edited-default-paragraph-style.fodt"
-          foreach ($out in @("text-one.bmp", "text-two.bmp")) {
-            $run = Start-Process -FilePath $exe -ArgumentList @($doc, "--render-to", $out) `
-              -WorkingDirectory (Get-Location) -Wait -PassThru -NoNewWindow
-            if ($run.ExitCode -ne 0) { Write-Error "rendering $out failed"; exit 1 }
-          }
+          Invoke-Render $doc "text-one.bmp"
+          Invoke-Render $doc "text-two.bmp"
           $a = [IO.File]::ReadAllBytes("text-one.bmp")
           $b = [IO.File]::ReadAllBytes("text-two.bmp")
           if ($a.Length -ne (54 + 1280 * 3 * 800)) {
