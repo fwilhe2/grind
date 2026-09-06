@@ -78,10 +78,12 @@ exists today and is exercised by at least two other shells.
 | The colour list a shell offers | `grind_core::style::PALETTE` |
 | Repaint on change | `grind_core::Observer` — the core pushes, shells never poll |
 
-The one thing it wants and the core does not have yet is **L3**: `ui_sheet_gtk`'s row
-auto-height measurement moving onto `layout::Metrics`, so one breaker serves both applications.
-Until that lands, this shell honours the row heights a document *stores* and does not measure
-its own — a named gap below, not a surprise.
+**L3 has since landed**: `ui_sheet_gtk`'s row auto-height measurement moved onto
+`layout::Metrics`, so one breaker serves both applications, and `metrics.rs`'s `Faces` is proof
+that a fourth `Metrics` implementation costs this crate nothing new. This shell's *own* row
+auto-height is a separate piece of work L3 only clears the way for — this crate has never
+measured a row from its contents at all, honouring only the heights a document *stores* — and
+remains a named gap below rather than something L3 itself builds.
 
 `grind_core::search::score` is deliberately **unused** here. See decision 4.
 
@@ -523,10 +525,14 @@ R10 allows per-shell feature gaps and requires them to be named. These are the n
 nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
 than a stub. An **image** in a text document, likewise.
 
-**Waiting on the core.** Wrapped cells and **row auto-height** need L3 (`ui_sheet_gtk`'s
-measurement moving onto `layout::Metrics`); until it lands, a document's *stored* row heights
-are honoured and no row is measured from its contents. **Pagination**, **printing** and **RTL**
-are gated in `doc/not-doing.md` and `doc/text-layout.md` and are not this shell's to open.
+**Not built, though L3 no longer stands in the way.** Wrapped cells and **row auto-height** are
+still this shell's own gap: `ui_sheet_gtk`'s row auto-height measurement moved onto
+`layout::Metrics` (L3), which was the missing precedent rather than a missing core capability,
+so building the same pass here would mean the `metrics.rs` `Metrics` impl this shell already has
+for the text pane, a second call site, and nothing new in `grind-core`. Until it is built, a
+document's *stored* row heights are honoured and no row is measured from its contents.
+**Pagination**, **printing** and **RTL** are gated in `doc/not-doing.md` and
+`doc/text-layout.md` and are not this shell's to open.
 
 **Deferred by decision, reachable from the CLI (R9).** A hidden row or column is drawn as
 **gone**, with none of `ui_sheet_gtk`'s marker straddling the boundary — so this shell shows what

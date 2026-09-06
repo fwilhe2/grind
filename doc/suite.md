@@ -826,7 +826,7 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | **S7** | **The layout decision, executed.** Path A as recommended; Path B behind its gate | **Partly done, and the decision is reopened — `doc/text-layout.md`.** What landed and is correct under every path: the caret *edits* — `insert_text`, `erase`, `split_block`, `join_block` — and offset addressing (`#intro+5`, not only `p12+40`), each on the CLI per R9, with typing spliced so one keystroke is one line of `git diff`. What is provisional: the Path A *decision* itself, and the three documents recording it. S7 does not exit until `doc/text-layout.md` closes | A: medium · B: very large · C: large |
 | **L1** | **The line breaker, in `grind-core`.** `Metrics`, `Fragment`, `Layout`, UAX #14 via `unicode-linebreak`, and `Fixed` for the CLI and every test | **Done.** `core/src/layout.rs`, tested against a synthetic one-unit-per-character provider so breaking is exactly assertable with no font anywhere. R8-clean: the input is `(text, TextStyle)` fragments and no document type's vocabulary appears | medium |
 | **L2** | **Caret operations defined in terms of a line**, on `grind_text::App` and on the CLI | **Done.** `layout_block`, `caret_x`, `caret_line` (crossing block boundaries), `caret_line_bounds`; `grind text view --width` and `grind text caret --down/--home/--end`. Rule 4 has an answer for Down-arrow for the first time | medium |
-| **L3** | **The spreadsheet adopts the same engine.** `ui_sheet_gtk`'s row auto-height measurement moves onto `Metrics`, so one line breaker serves both applications | One engine, two callers, and `ui_sheet_gtk` implements `Metrics` over Pango once — which is what makes `doc/text-layout.md`'s decision 3 load-bearing rather than aspirational, and the first test of injection against a real shaping engine | medium |
+| **L3** | **The spreadsheet adopts the same engine.** `ui_sheet_gtk`'s row auto-height measurement moves onto `Metrics`, so one line breaker serves both applications | **Done.** `measure_rows` builds a `TextStyle` from the cell's `CellStyle` and reads a row's height off `grind_core::layout::wrap`'s own `Layout` rather than a raw `pango::Layout::pixel_size` — `SheetMetrics` is the `Metrics` impl, built fresh per pass since a cell's weight, slant and size vary cell to cell where a text block's face does not. `ui_win32`'s GDI `Metrics` (W5a) turned out to be the *third* implementation rather than waiting on this as the second, since that shell was built after L1/L2 but before this row closed; the two orders agree regardless, which is the property "one engine, many callers" was for | medium |
 | **S8** | **The terminal text shell.** `grind-tui` opens both types off `grind_core::kind`; vi-modal over blocks; `:outline`, `:style`, bare-`loc` jumps. **Before the GTK shell, on purpose** — it is the cheapest complete editor and the sharpest test of the layout decision | **Done.** One binary, both types, dispatched on the file's bytes and refusing a `--sheet`/`--text` that disagrees with them. `ui_tui/src/text/` is the shell and `Cells` is the whole of its layout contribution — about twenty lines answering "how wide is this, in terminal columns", with breaking and every line-motion coming from the core. `cargo test -p grind-tui` covers both keymaps, the cell metrics and the rendering, 41 tests with no terminal attached | medium |
 | **S9** | **The GTK text shell.** Its own `doc/text-shell.md`. Extract `grind-ui` here | **Done, minimally.** `grind-text-gtk` opens, draws, navigates by line, edits at the caret, saves and undoes; `--render-to` produces an assertable frame; `cargo test -p grind-text-gtk` covers `geom`/`keymap` everywhere and the widget where there is a display; the a11y floor matches M9's. **`grind-ui` was not extracted** — `doc/suite.md` says to do it on evidence and one minimal shell is not evidence of which seam to cut; the three pieces that were copied are named in `doc/text-shell.md`. Its packaging inputs — `.desktop`, metainfo, icon under `io.github.fwilhe2.Text`, plus the two `[package.metadata.*]` blocks — landed later, when `packaging.yml` was found to be building three of the four binaries; the rest of S11 is still S11's | large |
 | **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | **Done, minimally.** `grind-web` is `sheet/` + `text/` + a shell that dispatches on `grind_core::kind`, mirroring `grind-tui`'s shape; it opens, edits and saves a `.fodt` with no path anywhere; `ui_web/smoke.js` drives both panes in jsdom and checks the handover both ways; the gap list is in `doc/text-shell.md` | medium |
@@ -835,16 +835,19 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 **A fifth shell has since been started, and it is planned in `doc/windows-shell.md` rather than
 here.** `grind-win32` is a Win32 window drawn with GDI, hosting both document types in one
 binary — Windows associates files by ProgID, so the reason the two GTK shells are two binaries
-does not apply to it. Its milestones are W0–W8 and it is built through **W1**: the wiring and the
-command line, then a window over `App::get_viewport` — the read-only grid, at the document's own
-column widths, with headers, a status bar, both scrollbars and the wheel — in an `.exe` that
-imports nothing but operating-system DLLs. It matters to this
-document for two reasons. **R10's matrix gains a column**, so `doc/shell-matrix.md` — still
-owed, and now owed at 2×5 rather than 2×4 — has more to say than when S11 named it. And it is
-the **fourth implementation of `doc/text-layout.md`'s `Metrics`**, arriving at the one platform
-whose toolkit does not hand the answer over: Win32 has no Pango, GDI does not shape, and that
-shell's decision 3 is the first time injecting metrics has cost a real argument rather than
-twenty lines. L3 is the milestone it waits on, exactly as this table's own L3 row describes.
+does not apply to it. Its milestones are W0–W8 and **every one of them is done**: the wiring and
+the command line, a window over `App::get_viewport` — the read-only grid, at the document's own
+column widths, with headers, a status bar, both scrollbars and the wheel — the selection, editing,
+the clipboard, the text pane, its formatting and its shared panes (the source, the check, the
+overlays), the menu bar's context menus and keyboard shortcuts list, and finally an icon and a
+version resource — in an `.exe` that imports nothing but operating-system DLLs throughout. It
+matters to this document for two reasons. **R10's matrix gains a column**, so `doc/shell-matrix.md`
+— still owed, and now owed at 2×5 rather than 2×4 — has more to say than when S11 named it. And it
+is the **third implementation of `doc/text-layout.md`'s `Metrics`** built (W5a, ahead of this
+table's own L3 row rather than waiting on it — the two orders agree regardless, which is the
+property "one engine, many callers" was for), arriving at the one platform whose toolkit does not
+hand the answer over: Win32 has no Pango, GDI does not shape, and that shell's decision 3 was the
+first time injecting metrics cost a real argument rather than twenty lines.
 
 Then **phase 11 — xlsx import**, `doc/xlsx-import.md` unchanged but for its number and the
 `grind sheet import` spelling. It is renumbered rather than reprioritised: it is a separate
