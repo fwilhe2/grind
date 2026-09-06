@@ -59,20 +59,20 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu,
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
-    EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, EnableMenuItem, GWLP_USERDATA, GetMessageW, GetParent,
+    EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetMessageW, GetParent,
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW,
-    MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG,
-    MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN,
-    SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT,
-    SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE,
-    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu,
-    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP,
-    WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL,
-    WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow,
+    PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP,
+    SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO,
+    SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE,
+    WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD,
+    WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -1569,14 +1569,18 @@ fn move_to(child: HWND, rect: Rect, repaint: bool) {
 /// a `WM_COMMAND` id cannot happen; and the check that every command is reachable from a menu
 /// runs on Linux with no window at all.
 ///
-/// Every item the current pane has no answer for — `menu::applies_to`'s question — is greyed
-/// with `EnableMenuItem` rather than left clickable and silently ignored, which is what W5b's
-/// "a menu that knows which pane it is over" turned out to mean once the two panes' verbs
-/// stopped being the same handful: greying is a property of the *bar*, so it is set once here
-/// rather than tracked as items are clicked, and rebuilt whenever the pane itself changes
-/// (`adopt`) rather than the selection inside it — `Command::id` still calls `do_command` for a
-/// greyed item if one somehow arrives (a stale accelerator, say), and `do_command`'s own
-/// per-pane no-ops are what makes that safe rather than merely unreachable.
+/// Every item the current pane has no answer for — `menu::applies_to`'s question — is **left out
+/// of the bar**, via `menu::items_for`/`menu::menu_has_items`, rather than shown and greyed. A
+/// grey item was tried first (W5b's "a menu that knows which pane it is over") and did not
+/// survive contact with the actual shape of the two panes' verbs: the sheet's own six so
+/// outnumber the universal ones that `&Sheet` and half of `&View` stayed on screen, greyed, on
+/// every document that was not a spreadsheet, and the bar read as a grid that had not noticed it
+/// was showing a document. Omitting instead means a menu can end up with nothing left in it at
+/// all — `&Sheet`/`&Data` on the text pane, `&Format` on the grid — which is exactly what
+/// `menu_has_items` checks before a menu is put in the bar. This is rebuilt whenever the pane
+/// itself changes (`adopt`) rather than the selection inside it, same as before; `Command::id`
+/// still calls `do_command` for a command with no *item* on screen if one somehow arrives (a
+/// stale accelerator, say), and `do_command`'s own per-pane no-ops are what makes that safe.
 fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
@@ -1597,10 +1601,16 @@ fn build_menu(hwnd: HWND) {
     unsafe {
         let Ok(bar) = CreateMenu() else { return };
         for menu in menu::MENUS {
+            // A menu with nothing this pane answers to — `Sheet`/`Data` on the text pane,
+            // `Format` on the grid — is left out of the bar entirely rather than added with an
+            // empty popup under its title.
+            if !menu::menu_has_items(menu, kind) {
+                continue;
+            }
             let Ok(popup) = CreatePopupMenu() else {
                 continue;
             };
-            for item in menu.items {
+            for item in menu::items_for(menu, kind) {
                 match item {
                     Item::Separator => {
                         let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
@@ -1613,13 +1623,6 @@ fn build_menu(hwnd: HWND) {
                             usize::from(command.id()),
                             PCWSTR(label.as_ptr()),
                         );
-                        if !menu::applies_to(*command, kind) {
-                            let _ = EnableMenuItem(
-                                popup,
-                                u32::from(command.id()),
-                                MF_BYCOMMAND | MF_GRAYED,
-                            );
-                        }
                         // The two overlays are the one pair of checkable items this bar has —
                         // everything else is a plain verb with nothing to report back. `overlays`
                         // is read once above rather than per item, the same "asked for fresh,
