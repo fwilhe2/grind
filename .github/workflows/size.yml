@@ -1,0 +1,375 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# How big is everything this suite ships, and what is inside it.
+#
+# The suite produces six release artifacts across three platforms, and until this workflow
+# existed there was nowhere they could be seen together. Each is built by a different job in
+# a different workflow, for good reasons — `gtk.yml` needs GTK's development packages,
+# `win32.yml` needs Windows, `web.yml` needs a matching `wasm-bindgen` CLI — and the
+# consequence is that a size is only ever visible one artifact at a time, on a runner, in a
+# log nobody reads. Comparing two of them meant building both by hand.
+#
+# Two questions, and the second is the one that pays for the workflow:
+#
+#   1. **How large is each artifact?** One table, every artifact, with the deltas against the
+#      last successful run on `main` — so a dependency that adds two megabytes is visible in
+#      the pull request that adds it rather than a year later.
+#   2. **What is in it?** `cargo bloat --crates` for the five native binaries and `twiggy`
+#      for the browser module, both rolled up per crate. This is the question that has an
+#      actionable answer: at the time this was written `rhai` was 40% of `grind`'s code and
+#      the name section was 30% of the wasm module, and neither fact was discoverable
+#      without running a tool nobody had installed.
+#
+# **Two measurement traps are designed around here, and both produce plausible wrong
+# numbers rather than errors:**
+#
+#   * `cargo bloat` **rebuilds the binary with debug information and leaves it there.** It
+#     needs richer symbols than a release build carries, so it builds its own and overwrites
+#     `target/release/<bin>`. Measured before it ran, `grind` is 10.84 MiB; measured after,
+#     the same path is 14.64 MiB, and neither number is wrong — they are different files. So
+#     every `record` step in this workflow runs **before** the `cargo bloat` step in the same
+#     job, and that order is load-bearing rather than tidy. For the same reason, `cargo
+#     bloat`'s own "the file size is N" footer is *not* the shipped size and must not be
+#     quoted as one; only its `.text` column and its crate shares mean anything here.
+#   * **The wasm module is measured after `wasm-bindgen`, not before.** `cargo build` writes a
+#     3.29 MiB module; the file that lands in `ui_web/dist` — and in the container image — is
+#     2.67 MiB, because `wasm-bindgen` strips the 448 KiB `__wasm_bindgen_unstable` section it
+#     was given, prunes the export list from 202 KiB to 1.4 KiB, and rewrites what is left.
+#     Reading the size off `target/wasm32-unknown-unknown/release/` therefore overstates the
+#     browser's download by about a quarter. (A stale `ui_web/dist` left behind by a
+#     `build.sh debug` run overstates it *fourfold* — 11.4 MiB, nearly all of it a name
+#     section — which is a thing that happens on a developer's machine and cannot happen
+#     here: this job builds `dist` from scratch.)
+#
+# Nothing here gates. It reports. The obvious next step — failing the job when an artifact
+# grows by more than some percent — is deliberately not taken, because the threshold is a
+# product decision and the deltas have to be watched for a while before anyone can pick one
+# honestly.
+
+name: size
+
+# Unlike every other workflow here, `push` is restricted to `main`. This one builds every
+# binary in release on three runners, and a push to a feature branch has nothing to compare
+# against yet — the baseline only ever comes from `main`. So `main` establishes the baseline,
+# a pull request measures itself against it, and a branch with no pull request open costs
+# nothing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# This workflow builds every binary the suite has, in release, on three runners. That is the
+# most expensive thing in this repository, and unlike the test workflows nothing depends on
+# an intermediate result — so a superseded push has no reason to finish.
+concurrency:
+  group: size-${{ github.ref }}
+  cancel-in-progress: true
+
+# Note the absence of `CARGO_TERM_COLOR: always`, which every other workflow here sets. The
+# output of `cargo bloat` and `cargo tree` is captured into `$GITHUB_STEP_SUMMARY` rather than
+# read in a log, and forcing colour on writes real ANSI escapes into the markdown — measured:
+# `cargo tree` emits `\e[2m` around every tree glyph even when its stdout is a pipe. Left at
+# the default, cargo sees no terminal and writes plain text, which is what a summary wants.
+
+jobs:
+  # The four Linux binaries, in one job because they share a runner, a toolchain and a cargo
+  # cache; building them in four would compile `grind-sheet` four times.
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      PY: python3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # The two GTK shells do not compile without these, exactly as in `gtk.yml`.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
+
+      # `--locked`: a build that quietly updated `Cargo.lock` would be measuring a
+      # dependency tree the commit does not describe, which is the one thing a size report
+      # must not do. Same reasoning as `ci.yml`'s build job.
+      - name: Build every Linux binary, release
+        run: cargo build --release --locked -p grind-cli -p grind-tui -p grind-sheet-gtk -p grind-text-gtk
+
+      # FIRST, before anything runs `cargo bloat` — see the header. The stripped copy goes to
+      # a scratch path so the measured binary is never modified in place either.
+      - name: Measure
+        run: |
+          mkdir -p stripped
+          measure() {
+            cp "target/release/$1" "stripped/$1"
+            strip "stripped/$1"
+            $PY .github/scripts/sizes.py record \
+              --artifact "$1" --platform linux-x86_64 \
+              --file "target/release/$1" --stripped "stripped/$1" \
+              --note "$2" --out sizes-linux.jsonl
+          }
+          measure grind          'the CLI — grind-cli'
+          measure grind-tui      'the terminal shell'
+          measure grind-sheet-gtk 'the spreadsheet window'
+          measure grind-text-gtk  'the word processor window'
+
+      # Uploaded here rather than at the end of the job, so the numbers survive anything the
+      # analysis steps below do. They are the deliverable; the breakdowns are the bonus.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sizes-linux
+          path: sizes-linux.jsonl
+          if-no-files-found: error
+
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat --locked
+
+      # What is in each of them, per crate. `--crates` attributes every symbol to the crate
+      # it came from, which is the "which external libraries" question asked directly.
+      #
+      # This step REBUILDS AND REPLACES the binaries measured above. That is fine because the
+      # numbers are already recorded, and it is why this step is last.
+      - name: What went into each binary
+        run: |
+          {
+            echo '## What is in each Linux binary'
+            echo
+            echo 'Per-crate shares of the `.text` section, from `cargo bloat --crates`.'
+            echo 'Its "file size" footer is a *debug-info* build and is **not** what ships —'
+            echo 'the shipped sizes are in the `report` job'"'"'s summary.'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for p in grind-cli grind-tui grind-sheet-gtk grind-text-gtk; do
+            {
+              echo "<details><summary><code>$p</code></summary>"
+              echo
+              echo '```'
+              cargo bloat --release -p "$p" --crates -n 20
+              echo '```'
+              echo
+              echo '</details>'
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # One crate compiled twice at two versions is pure duplicated code in the binary, and
+      # it is the cheapest size regression there is to fix — a version bump. It is also
+      # invisible in `cargo bloat`, which sums both copies under one name.
+      - name: Crates linked at more than one version
+        run: |
+          # `--duplicates` exits 0 and prints nothing when there are none, so the "none"
+          # case has to be detected from the output rather than from the status.
+          dupes="$(cargo tree --duplicates --workspace --edges normal)"
+          {
+            echo '### Duplicate dependency versions'
+            echo
+            echo '```'
+            if [ -n "$dupes" ]; then echo "$dupes"; else echo '(none)'; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Windows, because a PE built anywhere else is not the artifact that ships — `win32.yml`
+  # states that rule and this job is held to it. The executable is measured as it comes off
+  # the linker: statically linked CRT, embedded icon and version resource, no strip (a PE
+  # keeps its symbols in a separate `.pdb`, so there is no stripped column to fill).
+  windows:
+    runs-on: windows-latest
+    env:
+      PY: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # `embed_resource` needs `rc.exe`, which only exists inside a Developer Command Prompt.
+      # Without this the icon and version block silently do not embed (`build.rs` degrades to
+      # a no-op by design) and the measured `.exe` is a few kilobytes lighter than the real
+      # one — a small error, but a wrong one, and `win32.yml` already pays for this step.
+      - uses: ilammy/msvc-dev-cmd@7defe9254715b088f12dddd9942945a3d75cdad5 # v1.9.0
+
+      - name: Build the Windows shell, release
+        run: cargo build --release --locked -p grind-win32
+
+      - name: Measure
+        shell: bash
+        run: |
+          $PY .github/scripts/sizes.py record \
+            --artifact grind-win32.exe --platform windows-x86_64 \
+            --file target/release/grind-win32.exe \
+            --note 'the Windows shell — static CRT' \
+            --out sizes-windows.jsonl
+
+      # Before the analysis, as on Linux, so the number survives it.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sizes-windows
+          path: sizes-windows.jsonl
+          if-no-files-found: error
+
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat --locked
+
+      # Last, for the same reason as on Linux: this rebuilds and replaces the `.exe` measured
+      # above.
+      #
+      # `continue-on-error` on this one step and nowhere else, because it is the only
+      # measurement here that has never been run: on MSVC the symbols `cargo bloat` needs live
+      # in a separate `.pdb` rather than in the image, which is a different code path in the
+      # tool than the ELF one the Linux job exercises. If it turns out to work — check a run —
+      # this can come off. What it must not do is take the whole size table down with it: the
+      # `report` job needs this one to succeed, and the number it needs is already uploaded.
+      - name: What went into it
+        shell: bash
+        continue-on-error: true
+        run: |
+          {
+            echo '## What is in `grind-win32.exe`'
+            echo
+            echo '```'
+            cargo bloat --release -p grind-win32 --crates -n 20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The browser bundle, which is the one artifact whose size a *user* feels directly: it is
+  # downloaded before the application starts. So it is the only one measured compressed as
+  # well, because `ui_web/Dockerfile` serves `dist/` over HTTP and the transfer size is
+  # roughly a quarter of the file size.
+  wasm:
+    runs-on: ubuntu-latest
+    env:
+      PY: python3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Read from `Cargo.lock` rather than pinned here, exactly as `web.yml` and the
+      # Dockerfile do: the CLI must be the version cargo resolved or the glue does not match
+      # the module.
+      - name: Install wasm-bindgen-cli
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
+            | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Build the browser shell, release
+        run: ./ui_web/build.sh release
+
+      # Both numbers, deliberately, because their difference is the trap in the header: the
+      # module cargo writes is not the module that ships, and only the second one is a fact
+      # about the browser.
+      - name: Measure
+        run: |
+          raw=target/wasm32-unknown-unknown/release/grind_web.wasm
+          echo "cargo wrote        $(stat -c%s "$raw") bytes"
+          echo "wasm-bindgen left  $(stat -c%s ui_web/dist/grind_web_bg.wasm) bytes  <- this is what ships"
+
+          $PY .github/scripts/sizes.py record \
+            --artifact grind_web_bg.wasm --platform wasm32 \
+            --file ui_web/dist/grind_web_bg.wasm --gzip \
+            --note 'the browser module, post-wasm-bindgen' \
+            --out sizes-wasm.jsonl
+          $PY .github/scripts/sizes.py record \
+            --artifact grind_web.js --platform wasm32 \
+            --file ui_web/dist/grind_web.js --gzip \
+            --note 'the wasm-bindgen glue' \
+            --out sizes-wasm.jsonl
+
+      # Before the analysis, as in the other two jobs.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sizes-wasm
+          path: sizes-wasm.jsonl
+          if-no-files-found: error
+
+      - name: Install twiggy
+        run: cargo install twiggy --locked
+
+      # `cargo bloat` has no wasm backend and `twiggy` has no notion of a crate, so the two
+      # are joined by `sizes.py wasm-crates` — the same per-crate question the native
+      # binaries are asked, over the module that actually ships.
+      - name: What went into the module
+        run: |
+          twiggy top -f json -o twiggy.json ui_web/dist/grind_web_bg.wasm
+          {
+            echo '## What is in `grind_web_bg.wasm`'
+            echo
+            echo 'Rolled up per crate from `twiggy top`. `(name section)` is the wasm'
+            echo 'equivalent of an unstripped symbol table — it is shipped, and it is'
+            echo 'usually the single largest entry.'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          $PY .github/scripts/sizes.py wasm-crates twiggy.json --top 25
+          {
+            echo
+            echo '<details><summary>The largest individual items</summary>'
+            echo
+            echo '```'
+            twiggy top -n 20 ui_web/dist/grind_web_bg.wasm
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The one table. Every artifact from every runner, sorted largest first, with the delta
+  # against the last successful run of this workflow on `main`.
+  report:
+    needs: [linux, windows, wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # `gh run download` reads another workflow run's artifacts. Without this the baseline
+      # step degrades to "no baseline" rather than failing, which is why it is a soft error
+      # below — but the report is much less useful, so it is granted.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: sizes-*
+          path: parts
+          merge-multiple: true
+
+      # The comparison that turns a number into a signal. `main`'s newest *successful* run,
+      # which is never this one — a run still in progress does not match `--status success`.
+      #
+      # Every failure here is soft: a fork's pull request, a branch whose first run this is,
+      # a `main` history that predates this workflow, an expired artifact. All of them mean
+      # "report absolute sizes only", which `sizes.py report` handles.
+      - name: Fetch the baseline from main
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id="$(gh run list --workflow size.yml --branch main --status success \
+                  --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -z "$id" ]; then
+            echo "no successful run of this workflow on main yet"
+            exit 0
+          fi
+          echo "baseline is run $id"
+          gh run download "$id" --name binary-sizes --dir baseline \
+            || echo "that run's artifact is gone (expired?); continuing without a baseline"
+
+      - name: The table
+        run: |
+          echo '# Release artifact sizes' >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/scripts/sizes.py report parts/*.jsonl \
+            --baseline baseline/sizes.jsonl
+          {
+            echo
+            echo 'Per-binary breakdowns are in the `linux`, `windows` and `wasm` job summaries.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Under one stable name, because that is what the next run's baseline step downloads.
+      - name: Publish the merged report
+        run: cat parts/*.jsonl > sizes.jsonl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary-sizes
+          path: sizes.jsonl
+          if-no-files-found: error
