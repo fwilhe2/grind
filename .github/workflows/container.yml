@@ -3,6 +3,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: Container Image
 
+# Both images are multi-arch, and neither is built under emulation. A qemu
+# `linux/arm64` leg on an amd64 runner compiles Rust perhaps an order of
+# magnitude slower than a native one, and this repository's two images are
+# nothing *but* a Rust compile — so each architecture is built on a runner of its
+# own architecture (`ubuntu-24.04` and `ubuntu-24.04-arm`, both free for a public
+# repository) and the two are joined afterwards.
+#
+# The consequence for the tags: a build job pushes `latest-amd64` /
+# `latest-arm64`, and a manifest job publishes `latest` pointing at both. Nothing
+# pulling `latest` sees the difference.
+
 on:
   push:
     branches: [ "main" ]
@@ -11,94 +22,158 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   # Push container images
   packages: write
 
 jobs:
-  container-image:
-    runs-on: ubuntu-latest
+  cli-image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     env:
-      IMAGE_NAME_ORG: fwilhe2
-      IMAGE_NAME: grind
-      IMAGE_TAG: latest
+      IMAGE: ghcr.io/fwilhe2/grind
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install qemu dependency for multi-arch build
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      - name: Build Image
-        id: build_image
-        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3.0.2
-        with:
-          image: ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}
-          tags: ${{ env.IMAGE_TAG }}
-          platforms: linux/amd64, linux/arm64
-          containerfiles: |
-            ./Containerfile.distroless-cli
-
-      - name: Print Sheet Version
-        run: podman run -t --rm ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} /grind --version
-
-      - name: Push To ghcr.io
-        id: push-to-ghcr
+      - name: Log in to ghcr.io
         if: ${{ github.event_name != 'pull_request' }}
-        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3.0.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          image: ${{ steps.build_image.outputs.image }}
-          tags: ${{ steps.build_image.outputs.tags }}
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-  web-container-image:
-    runs-on: ubuntu-latest
+      # `load: true` rather than `push: true` so the image is in the local daemon
+      # for the smoke test below — an image that cannot run is never pushed.
+      - name: Build Image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Containerfile.distroless-cli
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.IMAGE }}:latest-${{ matrix.arch }}
+          load: true
+          cache-from: type=gha,scope=grind-cli-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=grind-cli-${{ matrix.arch }}
+
+      - name: Print Sheet Version
+        run: docker run --rm "$IMAGE:latest-${{ matrix.arch }}" /grind --version
+
+      - name: Push architecture image
+        if: ${{ github.event_name != 'pull_request' }}
+        run: docker push "$IMAGE:latest-${{ matrix.arch }}"
+
+  cli-manifest:
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: cli-image
+    runs-on: ubuntu-24.04
     env:
-      IMAGE_NAME_ORG: fwilhe2
-      IMAGE_NAME: grind-web
-      IMAGE_TAG: latest
+      IMAGE: ghcr.io/fwilhe2/grind
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-arch manifest
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:latest" \
+            "$IMAGE:latest-amd64" \
+            "$IMAGE:latest-arm64"
+
+  web-image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      IMAGE: ghcr.io/fwilhe2/grind-web
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install qemu dependency for multi-arch build
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      - name: Build Image
-        id: build_image
-        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3.0.2
+      - name: Log in to ghcr.io
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          image: ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}
-          tags: ${{ env.IMAGE_TAG }}
-          platforms: linux/amd64, linux/arm64
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The context is the repository root: grind-web depends on grind-core,
+      # grind-sheet and grind-text, so ui_web/ alone would not build.
+      - name: Build Image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
           context: .
-          containerfiles: |
-            ./ui_web/Dockerfile
+          file: ./ui_web/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.IMAGE }}:latest-${{ matrix.arch }}
+          load: true
+          cache-from: type=gha,scope=grind-web-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=grind-web-${{ matrix.arch }}
 
       # The image serves static files, so there is no --version to print; run it
       # and ask for the page it built instead, the same shape of check as the
       # CLI job's "Print Sheet Version" step above.
       - name: Smoke test the served page
         run: |
-          podman run -d --rm --name grind-web-smoke -p 8080:80 \
-            ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker run -d --rm --name grind-web-smoke -p 8080:80 \
+            "$IMAGE:latest-${{ matrix.arch }}"
           timeout 10 sh -c 'until curl -sf http://localhost:8080/index.html >/dev/null; do sleep 0.5; done'
-          podman stop grind-web-smoke
+          docker stop grind-web-smoke
 
-      - name: Push To ghcr.io
-        id: push-to-ghcr
+      - name: Push architecture image
         if: ${{ github.event_name != 'pull_request' }}
-        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3.0.0
+        run: docker push "$IMAGE:latest-${{ matrix.arch }}"
+
+  web-manifest:
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: web-image
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE: ghcr.io/fwilhe2/grind-web
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          image: ${{ steps.build_image.outputs.image }}
-          tags: ${{ steps.build_image.outputs.tags }}
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-arch manifest
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:latest" \
+            "$IMAGE:latest-amd64" \
+            "$IMAGE:latest-arm64"
