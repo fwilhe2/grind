@@ -54,3 +54,51 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+  web-container-image:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME_ORG: fwilhe2
+      IMAGE_NAME: grind-web
+      IMAGE_TAG: latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install qemu dependency for multi-arch build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Build Image
+        id: build_image
+        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3.0.2
+        with:
+          image: ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}
+          tags: ${{ env.IMAGE_TAG }}
+          platforms: linux/amd64, linux/arm64
+          context: .
+          containerfiles: |
+            ./ui_web/Dockerfile
+
+      # The image serves static files, so there is no --version to print; run it
+      # and ask for the page it built instead, the same shape of check as the
+      # CLI job's "Print Sheet Version" step above.
+      - name: Smoke test the served page
+        run: |
+          podman run -d --rm --name grind-web-smoke -p 8080:80 \
+            ${{ env.IMAGE_NAME_ORG }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          timeout 10 sh -c 'until curl -sf http://localhost:8080/index.html >/dev/null; do sleep 0.5; done'
+          podman stop grind-web-smoke
+
+      - name: Push To ghcr.io
+        id: push-to-ghcr
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3.0.0
+        with:
+          image: ${{ steps.build_image.outputs.image }}
+          tags: ${{ steps.build_image.outputs.tags }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
