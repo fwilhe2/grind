@@ -68,11 +68,25 @@ concurrency:
   group: size-${{ github.ref }}
   cancel-in-progress: true
 
-# Note the absence of `CARGO_TERM_COLOR: always`, which every other workflow here sets. The
-# output of `cargo bloat` and `cargo tree` is captured into `$GITHUB_STEP_SUMMARY` rather than
-# read in a log, and forcing colour on writes real ANSI escapes into the markdown — measured:
-# `cargo tree` emits `\e[2m` around every tree glyph even when its stdout is a pipe. Left at
-# the default, cargo sees no terminal and writes plain text, which is what a summary wants.
+# `never`, and it is not a style preference — the first run of this workflow filled the
+# duplicate-dependency block with `\e[2m ... \e[0m` around every tree glyph.
+#
+# Simply *omitting* `CARGO_TERM_COLOR` does not work, which is the part worth writing down:
+# `dtolnay/rust-toolchain` sets `CARGO_TERM_COLOR=always` into `$GITHUB_ENV` itself, and it is
+# used by every job here. Cargo does not colour a pipe on its own — neither `CI` nor
+# `GITHUB_ACTIONS` makes it — so with no toolchain action in the way the default really would
+# be plain, and that is exactly the wrong conclusion to draw from a laptop.
+#
+# The action guards its assignment with `if [ -z "${CARGO_TERM_COLOR+set}" ]`, so setting it
+# here means the action leaves it alone. `cargo tree` is *also* passed `--color never`
+# explicitly, because that flag beats the environment however the environment got that way.
+#
+# This matters here and not in the other workflows because these outputs are captured into
+# `$GITHUB_STEP_SUMMARY` and rendered as markdown, where an escape sequence is just garbage.
+# (`cargo bloat`'s table is unaffected either way — measured under `CARGO_TERM_COLOR=always`,
+# it prints no escapes at all.)
+env:
+  CARGO_TERM_COLOR: never
 
 jobs:
   # The four Linux binaries, in one job because they share a runner, a toolchain and a cargo
@@ -159,7 +173,11 @@ jobs:
         run: |
           # `--duplicates` exits 0 and prints nothing when there are none, so the "none"
           # case has to be detected from the output rather than from the status.
-          dupes="$(cargo tree --duplicates --workspace --edges normal)"
+          #
+          # `--color never` belongs on the command rather than being left to the environment:
+          # this output goes into markdown, and the toolchain action turns colour on. See the
+          # note above `jobs:`.
+          dupes="$(cargo tree --duplicates --workspace --edges normal --color never)"
           {
             echo '### Duplicate dependency versions'
             echo
@@ -212,23 +230,39 @@ jobs:
       # Last, for the same reason as on Linux: this rebuilds and replaces the `.exe` measured
       # above.
       #
-      # `continue-on-error` on this one step and nowhere else, because it is the only
-      # measurement here that has never been run: on MSVC the symbols `cargo bloat` needs live
-      # in a separate `.pdb` rather than in the image, which is a different code path in the
-      # tool than the ELF one the Linux job exercises. If it turns out to work — check a run —
-      # this can come off. What it must not do is take the whole size table down with it: the
-      # `report` job needs this one to succeed, and the number it needs is already uploaded.
+      # **PowerShell, not `shell: bash`, and that is the whole bug this step once had.** On a
+      # Windows runner `shell: bash` is Git Bash, which puts `C:\Program Files\Git\usr\bin` at
+      # the front of `PATH` — and that directory contains a `link.exe`, the GNU coreutils
+      # `link(1)`. rustc resolves its linker by name, finds that one first, and hands a
+      # coreutils program MSVC's arguments:
+      #
+      #     "C:\Program Files\Git\usr\bin\link.exe" "/NOLOGO" ... "/STACK:8388608"
+      #     /usr/bin/link: extra operand '...build_script_build...rcgu.o'
+      #
+      # It fails while linking a *build script*, so the error names `windows_x86_64_msvc` and
+      # `shlex` and looks like a dependency problem rather than a `PATH` one. `msvc-dev-cmd`
+      # above is not at fault and neither is the toolchain: the rule is simply that **nothing
+      # on a Windows runner may invoke cargo from a bash step.** The `Measure` step above is
+      # bash and stays bash — it runs Python and links nothing.
+      #
+      # This step is deliberately *not* `continue-on-error`. An earlier revision made it so on
+      # the guess that `cargo bloat` might not read MSVC symbols, and that guess was wrong
+      # twice over: cargo-bloat's own README lists PE alongside ELF and Mach-O, and the real
+      # failure was the linker above. The cost of that guard was worse than the risk it
+      # covered — the job went green with a full red linker error inside it, which reads as a
+      # broken build to anyone who opens the log.
       - name: What went into it
-        shell: bash
-        continue-on-error: true
         run: |
-          {
-            echo '## What is in `grind-win32.exe`'
-            echo
-            echo '```'
-            cargo bloat --release -p grind-win32 --crates -n 20
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          $bloat = cargo bloat --release -p grind-win32 --crates -n 20
+          if ($LASTEXITCODE -ne 0) { throw "cargo bloat failed with $LASTEXITCODE" }
+          # Single-quoted throughout, because a backtick is PowerShell's escape character and
+          # every one of these lines is a markdown fence or contains code punctuation.
+          $s = $env:GITHUB_STEP_SUMMARY
+          Add-Content $s '## What is in `grind-win32.exe`'
+          Add-Content $s ''
+          Add-Content $s '```'
+          Add-Content $s $bloat
+          Add-Content $s '```'
 
   # The browser bundle, which is the one artifact whose size a *user* feels directly: it is
   # downloaded before the application starts. So it is the only one measured compressed as
