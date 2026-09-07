@@ -152,7 +152,26 @@ jobs:
           Write-Host "ProductName:      $($info.ProductName)"
           Write-Host "FileDescription:  $($info.FileDescription)"
           if ($info.ProductName -ne "Grind") {
-            Write-Error "no version resource embedded (ProductName was '$($info.ProductName)')"
+            # Two very different failures reach this line, and telling them apart used to cost a
+            # whole CI round trip. `GetVersionInfo` asks for RT_VERSION under the name `1` and
+            # returns empty fields for anything else, so "empty" says nothing about whether the
+            # resource is *in* the binary. The strings are stored as UTF-16 in `.rsrc`, so
+            # looking for them directly answers that, and the answer picks the fix:
+            #
+            #   * "Grind" absent   -> the resource never linked. Look at `build.rs`'s
+            #     `cargo:warning`: `NotAttempted` means `rc.exe` was not found (the
+            #     `msvc-dev-cmd` step above is what puts it on PATH).
+            #   * "Grind" present  -> it linked, but under a name `GetFileVersionInfo` does not
+            #     ask for. That is `grind.rc`'s version block being named something other than
+            #     the literal `1` — the bug that comment in `grind.rc` is about.
+            $utf16 = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($exe))
+            if ($utf16.Contains("ProductName") -and $utf16.Contains("Grind")) {
+              Write-Error ("the version resource IS in the binary but not as RT_VERSION/1 - " +
+                           "check the resource name in ui_win32/data/grind.rc")
+            } else {
+              Write-Error ("no version resource in the binary at all - check build.rs's " +
+                           "cargo:warning for whether rc.exe ran")
+            }
             exit 1
           }
           # A PE's icon lives in its `.rsrc` section as an `RT_GROUP_ICON`/`RT_ICON` pair rather
