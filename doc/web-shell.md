@@ -150,6 +150,14 @@ to the transport. `ui_web/Dockerfile` packages it as a container image, in two s
   distroless, so no shell and no package manager reach the container — with `ui_web/dist`
   copied to `/public`, the directory that image serves by default.
 
+The published image is `ghcr.io/fwilhe2/grind-web:latest`, and running it is the whole deployment
+— it holds no state, so there is no volume, no database and nothing to back up:
+
+```sh
+docker pull ghcr.io/fwilhe2/grind-web:latest
+docker run --rm -p 8080:80 ghcr.io/fwilhe2/grind-web:latest   # http://localhost:8080/index.html
+```
+
 ```sh
 docker build -f ui_web/Dockerfile -t grind-web .   # context must be the repo root:
                                                     # grind-web depends on grind-core/sheet/text
@@ -163,9 +171,20 @@ static-web-server's own `SERVER_*` environment variables, documented on its site
 sets only `SERVER_ROOT` and `SERVER_PORT` because everything else is that server's sensible
 default.
 
-`.github/workflows/container.yml`'s `web-container-image` job builds and pushes this image on
-every push to `main`, the same shape as `container-image`'s job for the CLI's
-`Containerfile.distroless-cli`: `buildah-build` for both `linux/amd64` and `linux/arm64`, a smoke
-test before trusting the result (curl `index.html` instead of the CLI's `--version`, since a
-static file server has no version to print), then `push-to-registry` to `ghcr.io/fwilhe2/grind-web`
-— skipped on a pull request, so a fork cannot push under this project's name.
+`.github/workflows/container.yml`'s `web-image` job builds and pushes this image on every push to
+`main`, the same shape as `cli-image` does for the CLI's `Containerfile.distroless-cli`: one leg
+per architecture, each on a runner of *its own* architecture rather than under qemu (this image is
+nothing but a Rust compile, and emulating one costs about an order of magnitude), built with
+`load: true` so it is in the daemon for a smoke test before it is trusted — curl `index.html`
+rather than the CLI's `--version`, since a static file server has no version to print — and only
+then pushed as `latest-amd64` / `latest-arm64`. `web-manifest` joins the two into `latest`
+afterwards, so nothing pulling that tag sees the split. Every push step is skipped on a pull
+request, so a fork cannot push under this project's name.
+
+Size is measured rather than asserted, in both jobs and by one script,
+`.github/scripts/image-size.sh`: in `web-image` from the daemon that just built it, which is the
+only measurement a pull request can have since it never pushes, and in `web-manifest` off the
+registry, where the number is the compressed bytes a `docker pull` transfers. Both go to the job
+summary. The base image is the larger part of it — around 3.7 MB of static-web-server against
+0.8 MB of page, bundle and WebAssembly — which is worth knowing before optimising the half that
+is not the problem.

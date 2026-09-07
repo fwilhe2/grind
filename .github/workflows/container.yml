@@ -71,6 +71,13 @@ jobs:
       - name: Print Sheet Version
         run: docker run --rm "$IMAGE:latest-${{ matrix.arch }}" /grind --version
 
+      # The README calls this image "about as small as one gets", which is a
+      # claim, so measure it. Here rather than only in the manifest job because
+      # this step runs on a pull request too, where nothing is pushed — a change
+      # that doubles the image is then visible before it is merged.
+      - name: Measure image size
+        run: .github/scripts/image-size.sh local "$IMAGE:latest-${{ matrix.arch }}"
+
       - name: Push architecture image
         if: ${{ github.event_name != 'pull_request' }}
         run: docker push "$IMAGE:latest-${{ matrix.arch }}"
@@ -82,6 +89,9 @@ jobs:
     env:
       IMAGE: ghcr.io/fwilhe2/grind
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -98,6 +108,12 @@ jobs:
             --tag "$IMAGE:latest" \
             "$IMAGE:latest-amd64" \
             "$IMAGE:latest-arm64"
+
+      # What a `docker pull ghcr.io/fwilhe2/grind:latest` costs, per architecture,
+      # read back off the registry: the build jobs' figure is whatever the daemon
+      # that built it says, this one is the compressed bytes a client transfers.
+      - name: Measure published image size
+        run: .github/scripts/image-size.sh remote "$IMAGE:latest"
 
   web-image:
     strategy:
@@ -150,6 +166,11 @@ jobs:
           timeout 10 sh -c 'until curl -sf http://localhost:8080/index.html >/dev/null; do sleep 0.5; done'
           docker stop grind-web-smoke
 
+      # As in the CLI job: on a pull request this is the only size measurement
+      # there can be, since a fork never pushes.
+      - name: Measure image size
+        run: .github/scripts/image-size.sh local "$IMAGE:latest-${{ matrix.arch }}"
+
       - name: Push architecture image
         if: ${{ github.event_name != 'pull_request' }}
         run: docker push "$IMAGE:latest-${{ matrix.arch }}"
@@ -161,6 +182,9 @@ jobs:
     env:
       IMAGE: ghcr.io/fwilhe2/grind-web
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -177,3 +201,6 @@ jobs:
             --tag "$IMAGE:latest" \
             "$IMAGE:latest-amd64" \
             "$IMAGE:latest-arm64"
+
+      - name: Measure published image size
+        run: .github/scripts/image-size.sh remote "$IMAGE:latest"

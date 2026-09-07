@@ -246,14 +246,24 @@ cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' C
 python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
 ```
 
-To deploy it instead of serving it locally, `ui_web/Dockerfile` builds the bundle and packages it
-with [static-web-server](https://static-web-server.net)'s distroless image — no shell, no package
-manager, just the binary and the static files (`doc/web-shell.md`'s "Deployment" section has the
-two stages):
+To deploy it instead of serving it locally, that bundle is published as a container image, built
+on every push to `main` for `amd64` and `arm64` alike. It is the same static files with
+[static-web-server](https://static-web-server.net)'s distroless image in front of them — no shell,
+no package manager, and still nothing that stores a document (`doc/web-shell.md`'s "Deployment"
+section has the two stages):
 
 ```sh
-docker build -f ui_web/Dockerfile -t grind-web .   # context must be the repo root
-docker run --rm -p 8080:80 grind-web               # http://localhost:8080/index.html
+docker pull ghcr.io/fwilhe2/grind-web:latest
+docker run --rm -p 8080:80 ghcr.io/fwilhe2/grind-web:latest   # http://localhost:8080/index.html
+```
+
+Port, compression and the rest are static-web-server's own `SERVER_*` environment variables; the
+image sets only `SERVER_ROOT` and `SERVER_PORT`. To build it yourself instead, the context must be
+the repository root — `grind-web` depends on `grind-core`, `grind-sheet` and `grind-text`:
+
+```sh
+docker build -f ui_web/Dockerfile -t grind-web .
+docker run --rm -p 8080:80 grind-web
 ```
 
 It is a web page, not a window pretending to be one: one bar of verbs, one row of tools for
@@ -413,12 +423,53 @@ cargo test  -p grind-win32                                   # its portable half
 ```
 
 `.deb` and `.rpm` packages for all four Linux binaries are built on every push and kept as workflow
-artifacts, as is a `grind-win32.exe` built and tested on Windows itself. The command line is also
-a container image, about as small as one gets:
+artifacts, as is a `grind-win32.exe` built and tested on Windows itself.
+
+### Containers
+
+Two images are published to the GitHub container registry on every push to `main` — the command
+line and the browser shell. Both are `linux/amd64` and `linux/arm64`, built on a runner of each
+architecture rather than under emulation, so `latest` is a manifest over the two and a pull picks
+the right one:
 
 ```sh
-podman run --rm -v "$PWD:/work:z" ghcr.io/fwilhe2/grind:latest /grind info /work/book.fods
+docker pull ghcr.io/fwilhe2/grind:latest       # the command line, on a distroless base
+docker pull ghcr.io/fwilhe2/grind-web:latest   # the browser shell and a static file server
 ```
+
+The CLI image is the `grind` binary and nothing else — no shell, so `docker exec … sh` will not
+work and every invocation names the binary at the image's root. Documents come in as a mounted
+directory, since the container has no filesystem of its own worth writing to:
+
+```sh
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/fwilhe2/grind:latest /grind info book.fods
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/fwilhe2/grind:latest \
+  /grind sheet set book.fods A1 '=SUM([.B1:.B9])'
+```
+
+Two things about that mount, neither of them specific to this image. On an SELinux host (Fedora,
+RHEL) it needs `:z` — `-v "$PWD:/work:z"` — under `docker` exactly as much as under `podman`;
+without it the container sees the directory and every read is a permission error. And a document
+the container writes is owned by root unless you say otherwise, so:
+
+```sh
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/work:z" -w /work \
+  ghcr.io/fwilhe2/grind:latest /grind sheet new book.fods
+```
+
+The web image serves the bundle on port 80 and holds no state, so it scales by running more of
+them and needs no volume at all:
+
+```sh
+docker run --rm -p 8080:80 ghcr.io/fwilhe2/grind-web:latest   # http://localhost:8080/index.html
+```
+
+Both are small, and in both the base image is the larger half: about 13 MB to pull the command
+line, of which 3.6 MB is `grind` itself, and about 5 MB for the browser shell, of which 0.8 MB is
+the page and its WebAssembly. Those numbers are **measured on every build** rather than claimed —
+`.github/scripts/image-size.sh` writes them into the workflow's job summary, once for the image as
+built (so a pull request sees a size change before it is merged) and again for the pushed
+manifest, per architecture, where the figure is what a `docker pull` actually transfers.
 
 To see what a build can actually do, `examples/sample-sheet.sh` and `examples/sample-text.sh`
 build a document out of **every feature it has**, through the command line and nothing else:
