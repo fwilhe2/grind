@@ -136,3 +136,36 @@ lot: the command table and its fuzzy match (`command.rs`), both keymaps, the vie
 arithmetic (`sheet/layout.rs`), the chart's own geometry and escaping (`sheet/chart.rs`), and
 the line-cutting that turns formatting, a selection and a caret into `<span>`s
 (`text/runs.rs`). Everything a browser is actually needed for is in `smoke.js`.
+
+## Deployment
+
+`ui_web/dist` is static output — no server-side state, no path on disk, rule 5 held all the way
+to the transport. `ui_web/Dockerfile` packages it as a container image, in two stages:
+
+- **Build**: `rust:1-slim-bookworm`, adds the `wasm32-unknown-unknown` target, installs the
+  `wasm-bindgen-cli` version pinned in `Cargo.lock` (the same check `ui_web/build.sh` does at
+  dev time, so the image can never drift from what cargo actually resolved), then runs
+  `ui_web/build.sh release`.
+- **Runtime**: [`joseluisq/static-web-server`](https://static-web-server.net)'s own `2` image —
+  distroless, so no shell and no package manager reach the container — with `ui_web/dist`
+  copied to `/public`, the directory that image serves by default.
+
+```sh
+docker build -f ui_web/Dockerfile -t grind-web .   # context must be the repo root:
+                                                    # grind-web depends on grind-core/sheet/text
+docker run --rm -p 8080:80 grind-web               # http://localhost:8080/index.html
+```
+
+Nothing in the image is specific to one document type or one deployment target — it is the same
+`dist/` the CI `build` job already uploads as an artifact, just handed to a web server instead of
+a browser's file picker. Configuration (a different port, compression, CORS) is
+static-web-server's own `SERVER_*` environment variables, documented on its site; the Dockerfile
+sets only `SERVER_ROOT` and `SERVER_PORT` because everything else is that server's sensible
+default.
+
+`.github/workflows/container.yml`'s `web-container-image` job builds and pushes this image on
+every push to `main`, the same shape as `container-image`'s job for the CLI's
+`Containerfile.distroless-cli`: `buildah-build` for both `linux/amd64` and `linux/arm64`, a smoke
+test before trusting the result (curl `index.html` instead of the CLI's `--version`, since a
+static file server has no version to print), then `push-to-registry` to `ghcr.io/fwilhe2/grind-web`
+— skipped on a pull request, so a fork cannot push under this project's name.

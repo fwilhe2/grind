@@ -246,6 +246,16 @@ cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' C
 python3 -m http.server --directory ui_web/dist 8000  # a module needs http, not file://
 ```
 
+To deploy it instead of serving it locally, `ui_web/Dockerfile` builds the bundle and packages it
+with [static-web-server](https://static-web-server.net)'s distroless image — no shell, no package
+manager, just the binary and the static files (`doc/web-shell.md`'s "Deployment" section has the
+two stages):
+
+```sh
+docker build -f ui_web/Dockerfile -t grind-web .   # context must be the repo root
+docker run --rm -p 8080:80 grind-web               # http://localhost:8080/index.html
+```
+
 It is a web page, not a window pretending to be one: one bar of verbs, one row of tools for
 whichever document is open, and **Ctrl+K** for everything else — a searchable list of every
 command, which doubles as the go-to box. Type `B12`, a sheet's name, a defined name or a heading
