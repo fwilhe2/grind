@@ -10,9 +10,10 @@ An office suite that opens fast, does the parts you actually use, and keeps your
 format nobody owns.
 
 Spreadsheets and text documents in OpenDocument — the real thing, not an import filter. The
-same document opens four ways: a **command line**, a **terminal UI**, a **desktop window**, and
-a **browser tab that runs entirely on your own machine**. One core underneath all four, so they
-cannot disagree with each other.
+same document opens four ways: a **command line**, a **terminal UI**, a **desktop window** —
+GNOME's and Windows' own, each native rather than one toolkit pretending — and a **browser tab
+that runs entirely on your own machine**. One core underneath all of them, so they cannot
+disagree with each other.
 
 ## Read this first
 
@@ -29,7 +30,7 @@ Take it, use it, fork it. Just do not expect it to fit your work because it fits
 
 | | |
 |---|---|
-| **The spreadsheet** | Furthest along by a long way, and the part I use daily. Formulas, number formats, styling, charts, named ranges, multiple sheets — in all four front ends. |
+| **The spreadsheet** | Furthest along by a long way, and the part I use daily. Formulas, number formats, styling, charts, named ranges, multiple sheets — in every one of the front ends. |
 | **The word processor** | Early. It reads, writes and edits real documents — headings, lists, bookmarks, character formatting, images — and it has **no page model**: a document is one reflowed column. Plenty of people would call that a rich-text editor rather than a word processor, and today they are right. |
 | **Anything else** | Presentations, drawings, a database: not built, not scheduled, and quite possibly never. The suite is *shaped* so a third document type could be added without rewriting the first two. That is the whole claim. |
 
@@ -93,7 +94,7 @@ they are simply never *drawn* as pages. **Line** layout, though, lives in the sh
 answer them too; each front end supplies only font metrics. What is missing beyond pages: tables,
 footnotes, fields, style definitions, and right-to-left layout.
 
-## Four ways in
+## Five ways in
 
 Every capability lives in one Rust core, and each front end is a window onto it that owns
 nothing. The rule — enforced by a test, not by good intentions — is that **anything a window can
@@ -147,7 +148,7 @@ block, `# ` makes a heading and `- ` a list item. Over a selection each is a sin
 draws each cell's own styling, folds away rows a filter hides, and yanks a range as
 tab-separated text. `:help` lists every key without leaving the document.
 
-### The desktop
+### The GNOME desktop
 
 ```sh
 grind-sheet-gtk book.ods        # or a .fods; with no file, an empty document
@@ -165,17 +166,62 @@ There is no ribbon: a header bar, one format bar over the selection, context men
 minimal — it opens, draws, moves by line, types, formats a selection, saves and undoes, with an
 outline and a go-to box for `p12` / `#intro` / `§2.1.3`.
 
-**The Windows client is planned and has been started; the macOS one has not.** `doc/windows-shell.md`
-is the plan — a Win32 window drawn with GDI, hosting both document types, whose `.exe` is meant to
-need nothing Windows does not already ship. What exists today is the wiring and the command-line
-handling, and **no window**, so there is nothing to run yet. Nothing about macOS is written or
-scheduled.
+### The Windows desktop
 
-Everything here is built and tested on Linux. That said, the command line is now known to work on
-Windows rather than assumed to: it cross-compiles, links with a static C runtime, imports only
-operating-system DLLs, and creates, edits, recalculates and lints a spreadsheet correctly when run
-under Wine. That is evidence, not proof — nobody has run it on real Windows — and it is more than
-this paragraph could previously claim.
+```sh
+grind-win32.exe book.ods        # or a .fods
+grind-win32.exe report.fodt     # the word processor, same binary, same window
+```
+
+**The Windows client exists and is built out**, planned in
+[`doc/windows-shell.md`](doc/windows-shell.md), which is normative for it. Win32 and GDI directly,
+through the `windows` crate — no toolkit, no runtime to install: the `.exe` links the C runtime
+statically and imports nothing but DLLs Windows already ships, which CI checks by reading the
+import table back off the binary. One binary holds **both document types** and picks the pane from
+the file's own bytes, so opening a `.fodt` turns the grid into a document in the same window.
+
+The spreadsheet pane is a grid with the document's own column widths and row heights, headers,
+both scrollbars and the wheel, per-monitor DPI, and a theme read from the registry. It selects
+(arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, drag, whole rows and columns from the
+headers, F5 for a name box) and it **edits**: one editor serving as both the in-cell editor and
+the formula bar, formulas typed in the A1 form you know and stored in ODF's, Delete, undo/redo,
+F9, open/save/save-as, sheets added, renamed and deleted, and the system clipboard as
+tab-separated text. Help while typing a formula is a **band** under the formula bar rather than a
+popup — completion, the argument the caret is in, and a signature — and the formula bar can read
+`Sum(Number: B2:B7)` where the file stores `=SUM([.B2:.B7])`, with Explain Formula and a browsable
+list of all 110 functions beside it.
+
+The text pane lays the document out with the same core the other shells use, and draws it with its
+headings, bold, italic, underline, colour, highlight, lists and tabs. It has a real system caret,
+a selection by keyboard, click and drag, typing, undo/redo and a clipboard; `**bold**` is read as
+it is typed here too; Ctrl+B/I/U, a Format menu and a drawn format strip all reach the same core
+call. It is also the first shell here that can turn a paragraph into a **list item** rather than
+only draw one read from a file, and it has an outline dialog and go-to for `p12` / `#intro` /
+`§2.1.3`.
+
+Where the GNOME window grows through Ctrl+K, this one grows through the **menu bar** — the
+platform's own surface — built from a table, so a verb in no menu fails a test and a verb with no
+handler fails the build, and the menus over a text document simply omit what a spreadsheet's verbs
+would say. Beside it a notice bar carries the state the document is in. There are context menus, a
+keyboard-shortcut list read out of the menus themselves, an icon and a version block Explorer
+reads, and the code view, the linter's findings and the view overlays that every other shell has.
+
+What it does **not** have is written down rather than left to be discovered: no charts drawn, no
+row auto-height, no point mode, no filter or find/replace UI, no recent-files list, no greying of
+verbs that are unavailable right now, message boxes in the system's light colours under a dark
+theme, and no text shaping — GDI measures and draws, which keeps the caret and the ink in one
+engine at the cost of ligatures and the complex scripts. No installer, and therefore no registered
+file associations. `doc/windows-shell.md`'s "What it will not do" is the full list.
+
+Everything here is developed on Linux, which is unusual and deliberate: the portable half — the
+geometry, the key tables, the selection and editing models, the menus, the status bar and every
+sentence the notice bar says — compiles and **tests on any host**, and `cargo check --target
+x86_64-pc-windows-msvc` type-checks the Windows source with no Windows at all. The shipped
+executable is built and tested on `windows-latest` in CI and kept as an artifact; during
+development it is linked with `cargo-xwin` and run under Wine, which is how most of its bugs were
+found — every one of them was one glance at a screenshot and none was visible in review.
+
+**The macOS client has not been started.** Nothing about it is written or scheduled.
 
 ### The browser
 
@@ -317,8 +363,9 @@ fixture is data, and the point of one is that anybody can take it.
 There are **no releases yet**. Build it, or take a CI artifact.
 
 Install Rust via [rustup](https://rustup.rs/) rather than your distribution's package — this
-tracks current stable, which is what CI builds against. The desktop windows also need GTK 4 and
-libadwaita development headers; nothing else does.
+tracks current stable, which is what CI builds against. The GNOME windows also need GTK 4 and
+libadwaita development headers; nothing else does, and the Windows one needs nothing at all
+beyond the MSVC toolchain.
 
 ```sh
 # Debian / Ubuntu
@@ -335,8 +382,19 @@ cargo run -p grind-sheet-gtk -- book.fods
 cargo run -p grind-text-gtk  -- report.fodt
 ```
 
-`.deb` and `.rpm` packages for all four binaries are built on every push and kept as workflow
-artifacts. The command line is also a container image, about as small as one gets:
+On Windows, `cargo run -p grind-win32 -- book.fods` is the whole story — no headers, no
+toolkit. From Linux the same crate can be type-checked, linted and half-tested without a Windows
+machine anywhere:
+
+```sh
+rustup target add x86_64-pc-windows-msvc
+cargo check -p grind-win32 --target x86_64-pc-windows-msvc   # the Windows source, no Windows
+cargo test  -p grind-win32                                   # its portable half, on any host
+```
+
+`.deb` and `.rpm` packages for all four Linux binaries are built on every push and kept as workflow
+artifacts, as is a `grind-win32.exe` built and tested on Windows itself. The command line is also
+a container image, about as small as one gets:
 
 ```sh
 podman run --rm -v "$PWD:/work:z" ghcr.io/fwilhe2/grind:latest /grind info /work/book.fods
