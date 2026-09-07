@@ -6,6 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # grind
 
+[![ci](https://img.shields.io/github/actions/workflow/status/fwilhe2/grind/ci.yml?branch=main&label=ci)](https://github.com/fwilhe2/grind/actions/workflows/ci.yml)
+[![gtk](https://img.shields.io/github/actions/workflow/status/fwilhe2/grind/gtk.yml?branch=main&label=gtk)](https://github.com/fwilhe2/grind/actions/workflows/gtk.yml)
+[![win32](https://img.shields.io/github/actions/workflow/status/fwilhe2/grind/win32.yml?branch=main&label=win32)](https://github.com/fwilhe2/grind/actions/workflows/win32.yml)
+[![artifacts](https://img.shields.io/github/actions/workflow/status/fwilhe2/grind/artifacts.yml?branch=main&label=artifacts)](https://github.com/fwilhe2/grind/actions/workflows/artifacts.yml)
+[![containers](https://img.shields.io/github/actions/workflow/status/fwilhe2/grind/container.yml?branch=main&label=containers)](https://github.com/fwilhe2/grind/actions/workflows/container.yml)
+[![REUSE](https://api.reuse.software/badge/github.com/fwilhe2/grind)](https://api.reuse.software/info/github.com/fwilhe2/grind)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSES/AGPL-3.0-or-later.txt)
+
 An office suite that opens fast, does the parts you actually use, and keeps your files in a
 format nobody owns.
 
