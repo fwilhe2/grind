@@ -286,6 +286,36 @@ mod tests {
         }
     }
 
+    /// W8's version block is named with the literal `1`, and never `VS_VERSION_INFO`.
+    ///
+    /// A text test for a binary fact, because the binary fact is only observable on
+    /// `windows-latest` and this one is not: `VS_VERSION_INFO` is a `#define` in `winver.h`,
+    /// `grind.rc` includes no headers, and an undefined identifier in a resource's *name*
+    /// position is a **string name** to `rc.exe` rather than an error. So the resource compiled,
+    /// linked, and reached the executable as `RT_VERSION`/"VS_VERSION_INFO" — while
+    /// `GetFileVersionInfo`, Explorer's Properties dialog and `win32.yml`'s own check all ask
+    /// for `RT_VERSION`/1 and found nothing. The icon was unaffected (`1 ICON` was already a
+    /// literal), which is exactly why the failure looked like "no resource embedded" when the
+    /// resource was demonstrably there.
+    ///
+    /// Measured rather than reasoned: compiling both spellings and reading the resource
+    /// directory back out of a linked PE showed a string-named entry for one and `name=1` for
+    /// the other. This test is the cheap half of that, and the half that runs on every host.
+    #[test]
+    fn the_version_block_is_named_with_the_literal_one() {
+        let rc = include_str!("../data/grind.rc");
+        let declaration = rc
+            .lines()
+            .map(str::trim)
+            .find(|line| line.ends_with("VERSIONINFO"))
+            .expect("grind.rc declares a version block");
+        assert_eq!(
+            declaration, "1 VERSIONINFO",
+            "the version block must be named `1` — `VS_VERSION_INFO` is undefined without \
+             winver.h and becomes a string name, which GetFileVersionInfo never looks for"
+        );
+    }
+
     #[test]
     fn an_empty_invocation_opens_a_spreadsheet() {
         assert_eq!(

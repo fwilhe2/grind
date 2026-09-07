@@ -14,7 +14,21 @@
 // dependency on it for six pixels nobody edits at build time.
 1 ICON "grind.ico"
 
-VS_VERSION_INFO VERSIONINFO
+// The version block's name is the literal `1`, not `VS_VERSION_INFO`.
+//
+// They mean the same thing only when `winver.h` has been included: `VS_VERSION_INFO` is a
+// `#define` for `1` and nothing more. This file includes no headers — deliberately, so that
+// `rc.exe` needs nothing but the two files in this directory — and an undefined identifier in a
+// resource's *name* position is not an error to `rc.exe`. It is a **string name**. So the
+// resource compiled cleanly, linked cleanly, and landed in the binary as
+// `RT_VERSION`/"VS_VERSION_INFO" instead of `RT_VERSION`/1, which is the one name
+// `GetFileVersionInfo` — and so Explorer's Properties dialog, and `win32.yml`'s check — will
+// ask for. Every field came back empty from a resource that was demonstrably there.
+//
+// Microsoft's own VERSIONINFO reference says the identifier "must be 1", so the literal is the
+// spelling that cannot drift: it depends on no include path, and `1 ICON` above it is already
+// written the same way.
+1 VERSIONINFO
 FILEVERSION     0,0,0,0
 PRODUCTVERSION  0,0,0,0
 FILEFLAGSMASK   0x3fL

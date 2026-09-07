@@ -15,12 +15,15 @@
 //! workspace, but not forbidden either) stays silent instead of printing a compiler search that
 //! could never succeed.
 //!
-//! Nothing here can be verified further than "did not panic" on this development machine: no
-//! resource compiler for `x86_64-pc-windows-msvc` is installed on Linux, `cargo-xwin`'s bundled
-//! SDK does not ship `rc.exe`, and `embed_resource` degrades to a no-op rather than an error in
-//! that case (`CompilationResult::NotAttempted`, logged but not propagated). **The only place
-//! this can be seen actually embedding anything is `windows-latest`**, which ships a real MSVC
-//! toolchain — the same rule every other Windows-only claim in this crate is held to.
+//! How far this can be verified off Windows is a property of the machine, not of this crate.
+//! With no resource compiler present, `embed_resource` degrades to a no-op rather than an error
+//! (`CompilationResult::NotAttempted`, logged but not propagated) and nothing here is checked
+//! beyond "did not panic". With `llvm-windres` installed it compiles the resource for real, and
+//! `cargo xwin build` then links an executable whose `.rsrc` directory can be read back — which
+//! is how W8's version-block bug was found and fixed from Linux (`doc/windows-shell.md`). The
+//! shipped claim is still only ever asserted on `windows-latest`, where `win32.yml` reads
+//! `FileVersionInfo` off the linked `.exe` — the same rule every other Windows-only claim in
+//! this crate is held to.
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         // `manifest_optional` is the crate's own answer to "no compiler found is fine, a

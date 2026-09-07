@@ -4463,7 +4463,7 @@ mod imp {
     }
 
     /// [`font_scale`]'s own parsing, over the raw `fo:font-size` string rather than a
-    /// `CellStyle` — what [`super::metrics::SheetMetrics`] calls too, since a `TextStyle`
+    /// `CellStyle` — what [`SheetMetrics`] calls too, since a `TextStyle`
     /// carries the same string with no document type's vocabulary attached to it (R8). One
     /// parse either way, which is the point: a cell drawn at one size and measured at another
     /// is exactly the drift `doc/text-layout.md` decision 3 warns a shell into.
