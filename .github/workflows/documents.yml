@@ -1,0 +1,342 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Documents
+
+# A worked example of building documents in CI with nothing installed but Docker:
+# `ghcr.io/fwilhe2/grind:latest` creates, edits, converts and checks both document
+# types, and the results leave as workflow artifacts. Copy this file into another
+# repository and it runs there unchanged — the only thing it needs from this one is
+# the published image.
+#
+# Two facts about that image shape everything below, and both bite the first time:
+#
+#   1. **It is distroless — there is no shell in it.** So `jobs.<id>.container:`
+#      cannot be used: Actions runs every `run:` step with `sh` *inside* the
+#      container and there is none to run. Each invocation is its own `docker run`
+#      instead, which is what the wrapper in the first step of each job is for.
+#   2. **The binary is `/grind`, at the image root, and the container has no
+#      filesystem worth writing to.** Documents arrive on a mounted directory and
+#      the command names the binary by its absolute path, because `-w` moves the
+#      working directory away from the one the image's own `CMD` assumes.
+#
+# It doubles as a check that the image still does what README's "Containers"
+# section says it does — which is why it runs weekly as well as on demand.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths: [ ".github/workflows/documents.yml" ]
+  schedule:
+    # Monday morning: the image is rebuilt on every push to main, so this is the
+    # check that a rebuild has not quietly broken the shape of these commands.
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  # The published image is public, so no registry login is needed to pull it.
+  # `latest` is a multi-arch manifest and follows `main`; a pipeline whose output
+  # has to be reproducible should pin the digest instead —
+  # ghcr.io/fwilhe2/grind@sha256:… — exactly as this workflow pins its actions.
+  GRIND_IMAGE: ghcr.io/fwilhe2/grind:latest
+
+jobs:
+  spreadsheet:
+    name: Create, edit and convert a spreadsheet
+    runs-on: ubuntu-latest
+    steps:
+      # Repeated in each job rather than factored out, so that one job is one
+      # copyable example. Three things in six lines that are all load-bearing:
+      #
+      #   -u  the container writes as root otherwise, and a root-owned document in
+      #       the workspace is one a later step cannot overwrite and the artifact
+      #       upload cannot read.
+      #   -i  so that `grind sheet set book.fods A1 -` can read a value from a pipe.
+      #   -v  the workspace, since the container's own filesystem is read-only in
+      #       every way that matters. A path that escapes `$PWD` is not visible in
+      #       there, so steps using this wrapper stay in the workspace.
+      #
+      # On an SELinux host — a self-hosted Fedora or RHEL runner — the mount needs
+      # `:z` as well ("$PWD:/work:z"); the GitHub-hosted Ubuntu runners do not.
+      - name: Put `grind` on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/grind" <<'WRAPPER'
+          #!/bin/sh
+          exec docker run --rm -i \
+            -u "$(id -u):$(id -g)" \
+            -v "$PWD:/work" -w /work \
+            "$GRIND_IMAGE" /grind "$@"
+          WRAPPER
+          chmod +x "$RUNNER_TEMP/bin/grind"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Pull the image
+        run: docker pull "$GRIND_IMAGE"
+
+      - name: Which build is this
+        run: grind --version
+
+      # `.fods` rather than `.ods`: the flat form is one XML file that `git diff`
+      # can read, and this build writes changes into it by splicing rather than
+      # regenerating, so one edited cell is one edited line. A document produced by
+      # CI and committed back wants that; a document handed to a person may as well
+      # be the zip, which the conversion step below writes.
+      - name: Create a document
+        run: |
+          mkdir -p out && cd out
+          grind sheet new sales.fods --force
+          grind sheet rename sales.fods Sheet1 Sales
+
+      # Editing is one verb per invocation, each loading the file and writing it
+      # back. Undo history does not survive an invocation unless --session names a
+      # file to keep it in, which a pipeline that only moves forward does not need.
+      - name: Edit it
+        run: |
+          cd out
+          grind sheet set sales.fods A1 'Region'
+          grind sheet set sales.fods B1 'Units'
+          grind sheet set sales.fods C1 'Unit price'
+          grind sheet set sales.fods D1 'Revenue'
+
+          # Data usually arrives as a file rather than as arguments. The delimiter
+          # is sniffed when nobody names one, and --locale reads 1.234,50 as a
+          # number where that is how numbers are written.
+          cat > sales.csv <<'CSV'
+          North,120,19.99
+          South,86,19.99
+          East,143,17.50
+          West,97,21.00
+          CSV
+          grind sheet import-csv sales.fods sales.csv --at A2
+
+          # Formulas are ODF's own syntax, stored verbatim — [.B2] is this sheet's
+          # B2. `fill` shifts the relative references the way a drag handle does,
+          # so the calculation is written once.
+          grind sheet set sales.fods D2 '=[.B2]*[.C2]'
+          grind sheet fill sales.fods D2 D3:D5
+          grind sheet set sales.fods A6 'Total'
+          grind sheet set sales.fods D6 '=SUM([.D2:.D5])'
+          grind sheet name sales.fods revenue 'Sales.D2:D5'
+
+          # Formatting is display only and never touches a value: the number in
+          # D6 is the same number whether or not it is shown with a currency sign.
+          grind sheet style sales.fods A1:D1 --bold --background silver
+          grind sheet style sales.fods A6:D6 --bold
+          grind sheet format sales.fods C2:D6 currency --symbol '$' --grouping
+
+          grind sheet recalc sales.fods
+
+      # Non-zero exit on an error, so this step is the gate: a formula that reads an
+      # empty cell, a cached value that is no longer what the formula computes, a
+      # name pointing nowhere. --hints adds the house-style rules, which are off by
+      # default because they are opinions rather than defects.
+      - name: Check it
+        run: |
+          cd out
+          grind lint sales.fods
+
+      # The form comes from the output extension and the kind never changes: .ods
+      # is the zip, .fods the flat XML, .grind the projection — the same document
+      # as plain text a person can write by hand and a reviewer can read in a diff.
+      - name: Convert it
+        run: |
+          cd out
+          grind convert sales.fods sales.ods
+          grind convert sales.fods sales.grind
+          grind sheet export-csv sales.fods --out sales-export.csv
+
+      # What the run produced, in the run's own summary — `view` prints what each
+      # cell displays, and `info --format json` is the machine-readable shape of
+      # the same answer, for a step that has to decide something.
+      - name: Report
+        run: |
+          cd out
+          {
+            echo '### Sales'
+            echo '```'
+            grind sheet view sales.fods A1:D6
+            echo '```'
+            echo "Revenue total: $(grind sheet get sales.fods D6)"
+            echo "Sheets: $(grind --format json info sales.ods | jq -r '.sheets[].name' | paste -sd, -)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spreadsheet
+          path: |
+            out/sales.fods
+            out/sales.ods
+            out/sales.grind
+            out/sales-export.csv
+
+  text:
+    name: Create, edit and convert a text document
+    runs-on: ubuntu-latest
+    steps:
+      - name: Put `grind` on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/grind" <<'WRAPPER'
+          #!/bin/sh
+          exec docker run --rm -i \
+            -u "$(id -u):$(id -g)" \
+            -v "$PWD:/work" -w /work \
+            "$GRIND_IMAGE" /grind "$@"
+          WRAPPER
+          chmod +x "$RUNNER_TEMP/bin/grind"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Pull the image
+        run: docker pull "$GRIND_IMAGE"
+
+      # One binary, two applications: `grind text` is the word processor, and the
+      # suite-level verbs (info, convert, lint) read which of the two a file is out
+      # of the file's own bytes rather than out of its name.
+      - name: Create and edit a document
+        run: |
+          mkdir -p out && cd out
+          grind text new notes.fodt --force
+          grind text insert notes.fodt --heading 1 --text 'Quarterly sales'
+          grind text insert notes.fodt --text 'Revenue for the quarter came to 8,657.44 across four regions.'
+          grind text insert notes.fodt --heading 2 --text 'By region'
+          grind text insert notes.fodt --list 1 --text 'East led on units.'
+          grind text insert notes.fodt --list 1 --text 'West led on price.'
+
+          # Blocks are addressed by position (p2), and a range of characters within
+          # one is that address plus an offset — so p2+0:p2+7 is the first word of
+          # the second block, and this bolds it.
+          grind text format notes.fodt p2+0:p2+7 --bold
+
+      - name: Check it
+        run: |
+          cd out
+          grind lint notes.fodt
+
+      - name: Convert it
+        run: |
+          cd out
+          grind convert notes.fodt notes.odt
+
+      - name: Report
+        run: |
+          cd out
+          {
+            echo '### Notes'
+            echo '```'
+            grind text outline notes.fodt
+            echo '```'
+            grind text words notes.fodt | head -1
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: text-document
+          path: |
+            out/notes.fodt
+            out/notes.odt
+
+  generated:
+    name: Generate a document from data
+    runs-on: ubuntu-latest
+    steps:
+      - name: Put `grind` on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/grind" <<'WRAPPER'
+          #!/bin/sh
+          exec docker run --rm -i \
+            -u "$(id -u):$(id -g)" \
+            -v "$PWD:/work" -w /work \
+            "$GRIND_IMAGE" /grind "$@"
+          WRAPPER
+          chmod +x "$RUNNER_TEMP/bin/grind"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Pull the image
+        run: docker pull "$GRIND_IMAGE"
+
+      # The other way to make a document: a script that *returns* one. This is the
+      # shape a real pipeline usually wants — the numbers come out of a job that ran
+      # earlier and the layout is said once, rather than a hundred `sheet set` calls.
+      #
+      # A script has no filesystem, network, clock or randomness, and JSON beside it
+      # is the one thing it may read: data, never code. It cannot open a document
+      # either, so `build` is the only verb in the suite that runs one.
+      - name: Write the data and the script
+        run: |
+          mkdir -p out && cd out
+          cat > regions.json <<'JSON'
+          {
+            "currency": "$",
+            "rows": [
+              { "region": "North", "units": 120, "price": 19.99 },
+              { "region": "South", "units": 86,  "price": 19.99 },
+              { "region": "East",  "units": 143, "price": 17.50 },
+              { "region": "West",  "units": 97,  "price": 21.00 }
+            ]
+          }
+          JSON
+          cat > quarter.rhai <<'RHAI'
+          let source = json("regions.json");
+          let money = format("currency").symbol(source.currency).grouping().decimals(2);
+
+          let s = sheet("Sales");
+          s.push(row(["Region", "Units", "Unit price", "Revenue"]).bold());
+
+          // `push` returns the row it landed on, so the formula is written for that
+          // row rather than counted out by hand.
+          for r in source.rows {
+              let at = s.push([r.region, r.units, r.price]);
+              s.set(s.at(at, 3), formula(s.at(at, 1) + "*" + s.at(at, 2)));
+          }
+
+          // `sum_above` is told nothing: it sums the run of numbers directly above
+          // wherever it lands, which is what an AutoSum does.
+          let total = s.push(row(["Total", (), (), sum_above()]).bold());
+
+          s.format("C2:D" + (total + 1), money);
+          s.name("revenue", "D2:D" + total);
+          s.style("A1:D1", style().background("silver"));
+
+          // A script's value is its last expression, and it has to be a document.
+          s
+          RHAI
+
+      - name: Build the document
+        run: |
+          cd out
+          grind build quarter.rhai -o quarter.fods
+          grind lint quarter.fods
+
+      # The same source produces the same bytes — no clock, no randomness, nothing
+      # read that was not named. Worth asserting in the pipeline that relies on it:
+      # a document that is byte-identical when nothing changed is one whose commits
+      # mean something.
+      - name: The same script twice is the same document
+        run: |
+          cd out
+          grind build quarter.rhai -o again.fods
+          cmp quarter.fods again.fods
+          rm again.fods
+
+      - name: Report
+        run: |
+          cd out
+          {
+            echo '### Generated from regions.json'
+            echo '```'
+            grind sheet view quarter.fods
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-spreadsheet
+          path: |
+            out/quarter.fods
+            out/regions.json
+            out/quarter.rhai

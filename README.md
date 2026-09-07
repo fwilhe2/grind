@@ -471,6 +471,15 @@ the page and its WebAssembly. Those numbers are **measured on every build** rath
 built (so a pull request sees a size change before it is merged) and again for the pushed
 manifest, per architecture, where the figure is what a `docker pull` actually transfers.
 
+The CLI image is what makes a document a build artifact, and
+[`.github/workflows/documents.yml`](.github/workflows/documents.yml) is the worked example: a GitHub
+runner with nothing installed but Docker creates, edits, formats, converts and checks both document
+types, generates a third from a JSON file, and uploads what it built. It is also where the two things
+that catch everybody are written down — the image is distroless, so `jobs.<id>.container:` cannot be
+used (Actions runs each step with a shell *inside* the container and there is none), and a document
+the container writes is root-owned unless the run says `-u`. It runs weekly as well as on demand, so
+a rebuild that broke any of that is caught here rather than by somebody's pipeline.
+
 To see what a build can actually do, `examples/sample-sheet.sh` and `examples/sample-text.sh`
 build a document out of **every feature it has**, through the command line and nothing else:
 
