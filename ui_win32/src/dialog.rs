@@ -18,11 +18,16 @@
 //!
 //! The file dialogs are `IFileDialog` (COM, Vista and later) rather than `GetOpenFileNameW`,
 //! because it is the modern dialog and needs no application manifest to be one. Its filters
-//! follow `doc/flat-first.md`: **the flat form is the default** — `.fods` first, then the
-//! package, then `.grind` — because in doubt this project writes the form that diffs. Nothing
-//! here decides what a form *is*: `grind_sheet::write_file` reads the extension the user chose
-//! (`Form::from_path`), which is the one place in the workspace where an extension decides
-//! anything.
+//! follow `doc/flat-first.md`, the same as both GTK shells' `*_filters`/`*_save_filters`:
+//! **Open offers one combined filter and prefers neither form** — a user looking for a document
+//! does not know which physical form it is in, and this window shows either document kind so the
+//! filter combines both kinds' extensions rather than making the user guess before they have even
+//! seen the file. **Save leads with flat** — `.fods`/`.fodt` first, then the package, then
+//! `.grind` — because in doubt this project writes the form that diffs, and it offers only the
+//! kind of the pane that is open: a spreadsheet suggests `.fods`, a text document `.fodt`.
+//! Nothing here decides what a form *is*: `grind_sheet::write_file`/`grind_text::write_file` read
+//! the extension the user chose (`Form::from_path`), which is the one place in the workspace
+//! where an extension decides anything.
 
 #![cfg(windows)]
 
@@ -42,6 +47,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MB_OK, MB_YESNO, MB_YESNOCANCEL, MESSAGEBOX_STYLE, MessageBoxW,
 };
 use windows::core::PCWSTR;
+
+use grind_core::{DocumentKind, Form};
 
 use crate::gdi;
 
@@ -142,33 +149,54 @@ pub fn confirm(owner: HWND, text: &str) -> bool {
     ) == IDYES.0
 }
 
-/// The three forms this shell reads and writes.
-///
-/// The order differs between the two dialogs, and deliberately. **Saving is flat first**
-/// (`doc/flat-first.md`): in doubt this project writes the form that diffs, so `.fods` leads,
-/// then the package, then `.grind`. **Opening leads with all of them**, because a filter is a
-/// way of finding a file rather than a statement about form, and a user whose documents are
-/// `.ods` should not have to change a drop-down to see that they exist.
+/// The plain-language name a filter uses for a document kind, matching what the GTK shells'
+/// `spreadsheet_filters`/`text_filters` call theirs.
+fn kind_label(kind: DocumentKind) -> &'static str {
+    match kind {
+        DocumentKind::Spreadsheet => "OpenDocument Spreadsheet",
+        DocumentKind::Text => "OpenDocument Text",
+        DocumentKind::Presentation => "OpenDocument Presentation",
+    }
+}
+
+/// The Open dialog's filter: **one, matching both document kinds this window can show**, and
+/// both physical forms plus the projection within each — `doc/flat-first.md`'s "one filter
+/// matching both [forms]" extended over kinds too, since a single window here can hold either.
+/// A user opening a `.fodt` should see it without switching away from whatever filter greeted
+/// them, the same reason `ui_sheet_gtk`'s and `ui_text_gtk`'s own `*_filters` are one filter
+/// each rather than a leading "All spreadsheets" plus a per-extension breakdown.
 ///
 /// Held as owned UTF-16 by the caller, because `COMDLG_FILTERSPEC` is two borrowed pointers and
 /// the dialog reads them after `SetFileTypes` returns.
-fn filters(for_opening: bool) -> Vec<(Vec<u16>, Vec<u16>)> {
-    let mut out = vec![
-        (gdi::wide("Spreadsheet (*.fods)"), gdi::wide("*.fods")),
-        (gdi::wide("Spreadsheet package (*.ods)"), gdi::wide("*.ods")),
-        (gdi::wide("Projection (*.grind)"), gdi::wide("*.grind")),
-    ];
-    if for_opening {
-        out.insert(
-            0,
-            (
-                gdi::wide("All spreadsheets"),
-                gdi::wide("*.fods;*.ods;*.grind"),
-            ),
-        );
-        out.push((gdi::wide("All files"), gdi::wide("*.*")));
-    }
-    out
+fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
+    vec![(
+        gdi::wide("OpenDocument Spreadsheet or Text"),
+        gdi::wide("*.fods;*.ods;*.fodt;*.odt;*.grind"),
+    )]
+}
+
+/// The Save dialog's filters, for whichever `kind` the open pane is. **Flat first**
+/// (`doc/flat-first.md`): in doubt this project writes the form that diffs, so `.fods`/`.fodt`
+/// leads, then the package, then `.grind` — the same order and the same three entries as
+/// `ui_sheet_gtk`'s `spreadsheet_save_filters` and `ui_text_gtk`'s `text_save_filters`, and the
+/// extensions come from [`Form::extension`] so this list cannot name one the writer disagrees
+/// with.
+fn save_filters(kind: DocumentKind) -> Vec<(Vec<u16>, Vec<u16>)> {
+    let label = kind_label(kind);
+    vec![
+        (
+            gdi::wide(&format!("{label} (flat XML)")),
+            gdi::wide(&format!("*.{}", Form::Flat.extension(kind))),
+        ),
+        (
+            gdi::wide(&format!("{label} (package)")),
+            gdi::wide(&format!("*.{}", Form::Package.extension(kind))),
+        ),
+        (
+            gdi::wide("Grind projection"),
+            gdi::wide(&format!("*.{}", Form::Projection.extension(kind))),
+        ),
+    ]
 }
 
 fn specs(filters: &[(Vec<u16>, Vec<u16>)]) -> Vec<COMDLG_FILTERSPEC> {
@@ -197,7 +225,7 @@ fn item_path(item: &windows::Win32::UI::Shell::IShellItem) -> Option<PathBuf> {
 
 /// Ask for a document to open. `None` means the user cancelled.
 pub fn open_path(owner: HWND) -> Option<PathBuf> {
-    let filters = filters(true);
+    let filters = open_filters();
     let specs = specs(&filters);
     // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
     unsafe {
@@ -210,16 +238,18 @@ pub fn open_path(owner: HWND) -> Option<PathBuf> {
     }
 }
 
-/// Ask where to save. `suggested` seeds the name and the folder.
-pub fn save_path(owner: HWND, suggested: Option<&Path>) -> Option<PathBuf> {
-    let filters = filters(false);
+/// Ask where to save. `suggested` seeds the name and the folder; `kind` is which document type
+/// the open pane holds, so a text document suggests `.fodt` rather than always `.fods`.
+pub fn save_path(owner: HWND, suggested: Option<&Path>, kind: DocumentKind) -> Option<PathBuf> {
+    let filters = save_filters(kind);
     let specs = specs(&filters);
+    let flat_extension = Form::Flat.extension(kind);
     let name = suggested
         .and_then(|path| path.file_name())
         .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Untitled.fods".to_owned());
+        .unwrap_or_else(|| format!("Untitled.{flat_extension}"));
     let name = gdi::wide(&name);
-    let extension = gdi::wide("fods");
+    let extension = gdi::wide(flat_extension);
     // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
     unsafe {
         let dialog: IFileSaveDialog =
