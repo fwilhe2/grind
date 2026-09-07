@@ -36,7 +36,7 @@ gtk4 = { version = "0.9", features = ["v4_14"] }
 # replaced it.
 async-channel = "2"
 
-# Read by `cargo deb` (packaging.yml). `depends = "$auto"` reads the actual shared-library
+# Read by `cargo deb` (artifacts.yml). `depends = "$auto"` reads the actual shared-library
 # needs off the built binary (`libgtk-4-1`, `libadwaita-1-0`, …) rather than naming them
 # twice and letting the two lists drift.
 [package.metadata.deb]
@@ -57,7 +57,7 @@ assets = [
     ],
 ]
 
-# Read by `cargo generate-rpm` (packaging.yml). It has no `$auto` equivalent, so the
+# Read by `cargo generate-rpm` (artifacts.yml). It has no `$auto` equivalent, so the
 # shared-library names are spelled out — the same two libraries `depends` above discovers.
 [package.metadata.generate-rpm]
 name = "grind-sheet-gtk"

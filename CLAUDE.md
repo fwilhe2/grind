@@ -306,7 +306,7 @@ cargo test   -p grind-win32                                     # the portable h
 
 `cargo build --target x86_64-pc-windows-msvc` **fails** here and that is not a bug — it tries to
 link and there is no MSVC. To link one anyway, for inspection only, `cargo xwin build` does it and
-Wine runs it; the shipped artifact comes off `windows-latest` in `win32.yml` and nowhere else.
+Wine runs it; the shipped artifact comes off `windows-latest` in `artifacts.yml` and nowhere else.
 `scripts/run.sh win32` is both halves in one command — link with `cargo-xwin`, run under Wine, on
 the same sample document every other shell gets. It earns its place: all three of W1's bugs, W2's
 one and both of W3's were one glance at a screenshot and none was visible in review. **W3's first
@@ -320,7 +320,7 @@ resolves an offset to the *later* line, so the wash came out with negative width
 `--render-to` (W2, `doc/windows-shell.md` decision 5) draws **one frame with no window, no
 compositor and no display** — `CreateCompatibleDC(None)` + `CreateDIBSection` — and writes a
 `.bmp` that is 54 bytes of header in front of the section's own bits. Two renders of one document
-are byte-identical, which is how a drawing refactor is proved one; `win32.yml`'s `render` job
+are byte-identical, which is how a drawing refactor is proved one; `artifacts.yml`'s `windows` job
 asserts exactly that on `windows-latest`, and it works headless under Wine here:
 
 ```sh
@@ -421,12 +421,45 @@ than assuming it.
 Loop E is at 913/1000 on the pinned
 image at its default seed (same binary locally and in CI, so the figure should match), with
 the untriaged disagreements classified in `doc/differential-fuzz.md`. All four
-loops now run in CI (`build`, `roundtrip`, `loop_e`, `corpus` jobs) rather than only where a
+loops now run in CI (`build`, `oracle`, `corpus` jobs — `oracle` is loops C-out and E, which
+want the same `soffice` and the same compile) rather than only where a
 developer's machine happens to have a LibreOffice checkout.
 
 Each loop has exactly one documented loosening (loop A accepts `Error::Encrypted`; loop C
 compares doubles at 15 significant digits, all LibreOffice writes). A third exception is a
 bug in the code, not the loop.
+
+## CI, and the one rule that shapes it
+
+Six workflows, in two tiers. **A binary is built once per platform, and everything that has
+something to say about that binary is a later step in the same job.** The tier a job belongs to
+is decided by its profile, which is the real seam: debug checks and release artifacts cannot
+share a compile, and everything within one of them can.
+
+| Workflow | Tier | Does |
+|---|---|---|
+| `ci.yml` | checks (debug) | `reuse`, `fmt`, `clippy`, `docs`, `build` (build + test), `oracle` (loops C-out and E), `corpus` (loops A, B, C-back). The five compiling jobs share one `rust-cache` key, `linux-debug` |
+| `gtk.yml` | checks (debug) | The two GTK shells: test, clippy, doc. Its own cache key, since it is the only job that compiles gtk4-rs |
+| `win32.yml` | checks (debug) | `check-from-linux` only — `cargo check`/`clippy`/`doc`/`test` for the msvc target with no Windows. The fast Windows signal, and this crate's only clippy run |
+| `artifacts.yml` | artifacts (release) | **One release build per platform**, then everything downstream of it: `linux` (4 binaries → sizes → `.deb` + `.rpm` → bloat), `windows` (the `.exe` → import-table/stack/version checks → two reproducible renders → size → bloat), `wasm` (module → smoke test → sizes → twiggy), `report` (the size table, with `main`'s last green run as baseline) |
+| `container.yml` | images | Both images, per-arch on native runners, then a manifest. Genuinely cannot reuse a runner's binary: `distroless/cc-debian12` is glibc 2.36 and the runners are 2.39 |
+| `documents.yml` | sample | Drives the *published* image; compiles nothing |
+
+Things that will bite if forgotten:
+
+- **`cargo bloat` rebuilds the binary with debug info and leaves it there**, so it is the last
+  step of every job that runs it — after the measurement, the packages and the uploads. A
+  `.deb` built after it would ship the debug-info binary.
+- **`cargo deb` is passed `--no-build`.** It builds what it packages otherwise, which is how one
+  release build became three.
+- **`push` is restricted to `main`** in every workflow. With `on: [push, pull_request]` each
+  commit on a branch with a PR open ran everything twice, to the same conclusion.
+- **`save-if: main` on every `rust-cache`.** Caches are scoped per branch; without it each
+  branch kept its own copy and the repository sat over the 10 GB limit, evicting the entries
+  that were being hit. `container.yml` uses `mode=min` for the same budget.
+- `cli/tests/packaging.rs` **reads `artifacts.yml`** and fails the build when a binary has no
+  `cargo deb`/`cargo generate-rpm` line. Its `release_line()` matches on `-p grind-cli`, because
+  that workflow has more than one `cargo build --release`.
 
 ## Architecture
 
@@ -463,7 +496,7 @@ rather than a guest:
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
-| `grind-win32` | `ui_win32/` | The Windows shell — **built through W9: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, and the formula assist** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `win32.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
+| `grind-win32` | `ui_win32/` | The Windows shell — **built through W9: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, and the formula assist** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `artifacts.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
 which asserts the manifest names no document-type crate, that no source dispatches on
@@ -666,14 +699,18 @@ icon — nothing builds or installs them yet, since this is a pure Cargo workspa
 files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section already reads,
 so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
 selection move, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
-manifest was the one "stretch" item and was skipped. `.github/workflows/packaging.yml` builds
-`.deb` (`cargo deb`) and `.rpm` (`cargo generate-rpm`) packages for **every binary the suite
-has** — `grind-cli`, `grind-sheet-gtk`, `grind-text-gtk` and `grind-tui` — reading the
-`[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in each crate's `Cargo.toml`, as
-artifacts on every push — not yet attached to a release. A shell that is not named there is
+manifest was the one "stretch" item and was skipped. `.github/workflows/artifacts.yml`'s `linux`
+job builds `.deb` (`cargo deb --no-build`) and `.rpm` (`cargo generate-rpm`) packages for **every
+binary the suite has** — `grind-cli`, `grind-sheet-gtk`, `grind-text-gtk` and `grind-tui` —
+reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in each crate's
+`Cargo.toml`, as artifacts on every push to `main` and every pull request — not yet attached to a
+release. Both packagers read the binaries that job's one `cargo build --release` produced, which
+is why `cargo deb` is passed `--no-build`: it builds what it packages otherwise, and that was one
+of the four release builds this workspace used to do per push. A shell that is not named there is
 invisible in exactly the way a feature with no line in `examples/sample-*.sh` is: adding one
 means adding its two manifest blocks, its `data/` (`.desktop`, metainfo, icon under its own app
-ID) and its two lines in that workflow. The **meta-package** is what S11 still owes.
+ID) and its two lines in that workflow — held to it by `cli/tests/packaging.rs`, which reads the
+workflow. The **meta-package** is what S11 still owes.
 
 `ui_web/` is the wasm shell — rule 5's honest test, and it needed no core change: a document
 arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download

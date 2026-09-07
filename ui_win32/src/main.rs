@@ -13,7 +13,7 @@
 //! What it buys is one line and is meant literally: **the built `.exe` needs nothing that
 //! Windows does not already ship.** No .NET runtime, no Windows App SDK, no Visual C++
 //! redistributable — the MSVC C runtime is linked statically by `.cargo/config.toml`, and
-//! `win32.yml` reads the import table back rather than trusting it.
+//! `artifacts.yml` reads the import table back rather than trusting it.
 //!
 //! What it costs is the Fluent control set. This window is drawn with GDI, so it follows
 //! Windows' *conventions* — the shell font, the user's wheel and caret settings, Ctrl+Y for

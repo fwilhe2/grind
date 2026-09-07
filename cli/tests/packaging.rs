@@ -6,11 +6,19 @@
 //! `build/tests/manifest.rs`: read the manifests and the workflow, and fail the build.
 //!
 //! The bug this exists to prevent already happened once. `grind-text-gtk` was built by
-//! `gtk.yml`, tested, linted and documented, and `packaging.yml` produced packages for the
-//! other three binaries — so the word processor was a shell somebody could run from a checkout
-//! and not one anybody could install, and nothing said so. A shell with no `.deb` is invisible
-//! in exactly the way `doc/plan.md` rule 4 says a capability with no CLI verb is, and for the
-//! same reason: the omission is silent.
+//! `gtk.yml`, tested, linted and documented, and the packaging workflow produced packages for
+//! the other three binaries — so the word processor was a shell somebody could run from a
+//! checkout and not one anybody could install, and nothing said so. A shell with no `.deb` is
+//! invisible in exactly the way `doc/plan.md` rule 4 says a capability with no CLI verb is, and
+//! for the same reason: the omission is silent.
+//!
+//! The workflow read here is `artifacts.yml`, which absorbed the former `packaging.yml` when
+//! the release builds were consolidated: one `cargo build --release` per platform, with the
+//! packages, the sizes and the breakdowns as later steps of the same job. What that changed
+//! for this file is that `cargo deb` is now invoked with `--no-build` — it packages the
+//! binary that job already built rather than building a second one — so the assertion below
+//! looks for `cargo deb -p <package>` as a *prefix*, and the flag order in the workflow is
+//! `-p` first for exactly that reason.
 //!
 //! **Why this lives in `cli/tests/`.** The rule is suite-level rather than any one app's, and
 //! the two GTK crates are deliberately outside `cargo build --workspace`'s path (they need
@@ -22,7 +30,7 @@
 //! the wrong place at runtime.
 
 const WORKSPACE: &str = include_str!("../../Cargo.toml");
-const WORKFLOW: &str = include_str!("../../.github/workflows/packaging.yml");
+const WORKFLOW: &str = include_str!("../../.github/workflows/artifacts.yml");
 
 /// A crate that ships a binary: its directory, its package name, the binary that lands in
 /// `/usr/bin`, and its manifest.
@@ -72,14 +80,14 @@ const UNPACKAGED: [(&str, &str); 6] = [
         "a wasm bundle served as files, not installed from a repository",
     ),
     // Not an oversight and not deferred work: a `.deb` or an `.rpm` of a `.exe` would install
-    // something no Linux machine can run. `win32.yml` builds it on `windows-latest` and
-    // uploads it as an artifact, which is that platform's equivalent of the two jobs here.
-    // What Windows *packaging* means — a portable executable, an installer, file associations
-    // through ProgIDs — is W8's question in `doc/windows-shell.md`, and the day it is answered
-    // the answer belongs in a guard of its own rather than in this one.
+    // something no Linux machine can run. `artifacts.yml`'s `windows` job builds it on
+    // `windows-latest` and uploads it, which is that platform's equivalent of the packaging
+    // steps here. What Windows *packaging* means — a portable executable, an installer, file
+    // associations through ProgIDs — is W8's question in `doc/windows-shell.md`, and the day it
+    // is answered the answer belongs in a guard of its own rather than in this one.
     (
         "ui_win32",
-        "a Windows executable; `win32.yml` builds and uploads it, and a .deb would be unrunnable",
+        "a Windows executable; artifacts.yml builds and uploads it, and a .deb would be unrunnable",
     ),
 ];
 
@@ -128,12 +136,25 @@ const INSTALLED: [&str; 4] = [
     include_str!("../../ui_text_gtk/data/icons/hicolor/scalable/apps/io.github.fwilhe2.Text.svg"),
 ];
 
-/// The rpm job's release build, which is the one line naming every package at once.
+/// The Linux job's release build, which is the one line naming every packaged binary at once.
+///
+/// `artifacts.yml` has more than one `cargo build --release` — the `windows` job has its own,
+/// for a binary that is deliberately not packaged ([`UNPACKAGED`]) — so this cannot simply take
+/// the first one and must say which it means. Matching on `-p grind-cli` is that: the CLI is in
+/// every packaged set and in no other job's build line.
 fn release_line() -> &'static str {
-    WORKFLOW
+    let mut lines = WORKFLOW
         .lines()
-        .find(|line| line.contains("cargo build --release"))
-        .expect("packaging.yml's rpm job builds the binaries before packaging them")
+        .filter(|line| line.contains("cargo build --release") && line.contains("-p grind-cli"));
+    let line = lines
+        .next()
+        .expect("artifacts.yml's linux job builds the binaries before packaging them");
+    assert!(
+        lines.next().is_none(),
+        "more than one release build in artifacts.yml names grind-cli, so this test cannot \
+         tell which one the packaging steps read"
+    );
+    line
 }
 
 /// Both package formats, for every binary. `cargo deb` and `cargo generate-rpm` read different
@@ -163,19 +184,19 @@ fn every_binary_is_built_by_the_packaging_workflow() {
 
         assert!(
             WORKFLOW.contains(&format!("cargo deb -p {package}")),
-            "packaging.yml does not run `cargo deb -p {package}`, so {package} builds \
+            "artifacts.yml does not run `cargo deb -p {package}`, so {package} builds \
              everywhere except where somebody could install it"
         );
         assert!(
             WORKFLOW.contains(&format!("cargo generate-rpm -p {dir}")),
-            "packaging.yml does not run `cargo generate-rpm -p {dir}` (that tool takes the \
+            "artifacts.yml does not run `cargo generate-rpm -p {dir}` (that tool takes the \
              directory, not the package name)"
         );
         assert!(
             release_line().contains(&format!("-p {package}")),
-            "packaging.yml's rpm job does not build {package} in release, so \
-             `cargo generate-rpm -p {dir}` would find no binary. `cargo deb` builds what it \
-             packages and `cargo generate-rpm` does not, which is why this line exists at all"
+            "artifacts.yml's linux job does not build {package} in release, so neither \
+             `cargo deb --no-build` nor `cargo generate-rpm -p {dir}` would find a binary. \
+             That one line is what both packagers read, which is why it exists at all"
         );
     }
 }
@@ -208,7 +229,7 @@ fn every_member_of_the_workspace_is_accounted_for() {
         assert!(
             packaged || exempt,
             "{member} is in the workspace and in neither list here. If it ships a binary, add \
-             it to PACKAGED and to packaging.yml; if it does not, add it to UNPACKAGED with \
+             it to PACKAGED and to artifacts.yml; if it does not, add it to UNPACKAGED with \
              the reason."
         );
     }

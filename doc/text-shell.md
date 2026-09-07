@@ -33,7 +33,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
-| Packaging | `.desktop`, AppStream metainfo and a scalable icon under `io.github.fwilhe2.Text` (`ui_text_gtk/data/`), and `.deb` + `.rpm` built by `packaging.yml` from the two `[package.metadata.*]` blocks — the twin of the spreadsheet's, since S11's binary split is what makes them two entries and not one | nothing to install |
+| Packaging | `.desktop`, AppStream metainfo and a scalable icon under `io.github.fwilhe2.Text` (`ui_text_gtk/data/`), and `.deb` + `.rpm` built by `artifacts.yml` from the two `[package.metadata.*]` blocks — the twin of the spreadsheet's, since S11's binary split is what makes them two entries and not one | nothing to install |
 
 Both are renderers that own nothing: every paint reads `App::get_viewport` and
 `App::layout_block` and throws the result away. Neither has a text buffer, and neither has a

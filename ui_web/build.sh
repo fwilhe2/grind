@@ -13,7 +13,7 @@
 #
 #   ui_web/build.sh [debug|release]
 #
-# Prerequisites (see .github/workflows/web.yml for the CI equivalent):
+# Prerequisites (see .github/workflows/artifacts.yml's `wasm` job for the CI equivalent):
 #   rustup target add wasm32-unknown-unknown
 #   cargo install wasm-bindgen-cli --version <the version printed below>
 

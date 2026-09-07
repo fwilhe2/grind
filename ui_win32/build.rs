@@ -21,7 +21,7 @@
 //! beyond "did not panic". With `llvm-windres` installed it compiles the resource for real, and
 //! `cargo xwin build` then links an executable whose `.rsrc` directory can be read back — which
 //! is how W8's version-block bug was found and fixed from Linux (`doc/windows-shell.md`). The
-//! shipped claim is still only ever asserted on `windows-latest`, where `win32.yml` reads
+//! shipped claim is still only ever asserted on `windows-latest`, where `artifacts.yml` reads
 //! `FileVersionInfo` off the linked `.exe` — the same rule every other Windows-only claim in
 //! this crate is held to.
 fn main() {

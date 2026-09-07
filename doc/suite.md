@@ -614,7 +614,7 @@ The suite shape, which is the shape every suite has for a reason:
 
 `.deb` via `cargo deb` and `.rpm` via `cargo generate-rpm`, as today. The meta-package has no
 Cargo equivalent — `cargo deb` builds from a crate — so it is either a hand-written `control`
-stanza in `packaging.yml` or a stub crate with an empty asset list and a `depends` line. The
+stanza in `artifacts.yml` or a stub crate with an empty asset list and a `depends` line. The
 stub crate is uglier and keeps everything in one mechanism; recommend it, and note that
 `generate-rpm` needs its `requires` block spelled out because it has no `$auto`.
 
@@ -643,8 +643,8 @@ otherwise. The GUI apps are not containerised.
 manifest, so it is two manifests, not one suite manifest with two desktop files — which is the
 same conclusion the binary split reached, for the same reason.
 
-**CI.** `ci.yml`'s jobs (`build`, `roundtrip`, `loop_e`, `corpus`) become matrixed over apps
-where the loop applies. `gtk.yml` builds two shells. `packaging.yml` builds four packages. The
+**CI.** `ci.yml`'s jobs (`build`, `oracle`, `corpus`) become matrixed over apps
+where the loop applies. `gtk.yml` checks two shells. `artifacts.yml` builds four packages. The
 `corpus` job's blobless sparse clone widens from `sc/qa/unit/data` to include Writer's test data
 — which is much larger and mostly *not* ODF, so the sparse pattern and the loop's own file
 filter both need to select `.odt`/`.fodt` rather than walking everything.
@@ -830,7 +830,7 @@ started before the previous is met. Sizes are relative, in `doc/plan.md`'s idiom
 | **S8** | **The terminal text shell.** `grind-tui` opens both types off `grind_core::kind`; vi-modal over blocks; `:outline`, `:style`, bare-`loc` jumps. **Before the GTK shell, on purpose** — it is the cheapest complete editor and the sharpest test of the layout decision | **Done.** One binary, both types, dispatched on the file's bytes and refusing a `--sheet`/`--text` that disagrees with them. `ui_tui/src/text/` is the shell and `Cells` is the whole of its layout contribution — about twenty lines answering "how wide is this, in terminal columns", with breaking and every line-motion coming from the core. `cargo test -p grind-tui` covers both keymaps, the cell metrics and the rendering, 41 tests with no terminal attached | medium |
 | **S9** | **The GTK text shell.** Its own `doc/text-shell.md`. Extract `grind-ui` here | **Done, minimally.** `grind-text-gtk` opens, draws, navigates by line, edits at the caret, saves and undoes; `--render-to` produces an assertable frame; `cargo test -p grind-text-gtk` covers `geom`/`keymap` everywhere and the widget where there is a display; the a11y floor matches M9's. **`grind-ui` was not extracted** — `doc/suite.md` says to do it on evidence and one minimal shell is not evidence of which seam to cut; the three pieces that were copied are named in `doc/text-shell.md`. Its packaging inputs — `.desktop`, metainfo, icon under `io.github.fwilhe2.Text`, plus the two `[package.metadata.*]` blocks — landed later, when `packaging.yml` was found to be building three of the four binaries; the rest of S11 is still S11's | large |
 | **S10** | **The web text shell.** One bundle, dispatching on kind. Rule 5's honest test, now for the second type | **Done, minimally.** `grind-web` is `sheet/` + `text/` + a shell that dispatches on `grind_core::kind`, mirroring `grind-tui`'s shape; it opens, edits and saves a `.fodt` with no path anywhere; `ui_web/smoke.js` drives both panes in jsdom and checks the handover both ways; the gap list is in `doc/text-shell.md` | medium |
-| **S11** | **Package the suite.** Meta-package, the container, README rewritten as a suite pitch. **The two desktop entries, four mime types, AppStream components and icons are done** — `packaging.yml` builds all four binaries' packages; what is left is the meta-package that depends on them, which has no Cargo equivalent | `packaging.yml` produces all five packages; `reuse lint` green; `doc/shell-matrix.md` full and green (R10); double-clicking a `.fodt` opens the text app on a clean machine | medium |
+| **S11** | **Package the suite.** Meta-package, the container, README rewritten as a suite pitch. **The two desktop entries, four mime types, AppStream components and icons are done** — `artifacts.yml` builds all four binaries' packages; what is left is the meta-package that depends on them, which has no Cargo equivalent | `artifacts.yml` produces all five packages; `reuse lint` green; `doc/shell-matrix.md` full and green (R10); double-clicking a `.fodt` opens the text app on a clean machine | medium |
 
 **A fifth shell has since been started, and it is planned in `doc/windows-shell.md` rather than
 here.** `grind-win32` is a Win32 window drawn with GDI, hosting both document types in one

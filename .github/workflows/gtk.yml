@@ -3,14 +3,39 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 name: gtk
-on: [push, pull_request]
+
+# See `ci.yml` for why `push` is restricted to `main`: with `on: [push, pull_request]` this
+# workflow ran twice per commit on any branch with a pull request open.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: gtk-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   gtk:
     # Its own workflow on its own runner, never cross-compiled (doc/sheet-shell.md).
+    #
+    # **Checks only.** This job used to end with `cargo build --release -p grind-sheet-gtk
+    # -p grind-text-gtk`, whose output nothing uploaded and nothing read — a fourth release
+    # build of two binaries that `artifacts.yml` now builds once and turns into packages.
+    # The release build proved only that they link in release, which packaging them proves
+    # on the same triggers.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Not `ci.yml`'s `linux-debug` key: this is the only job that compiles the GTK
+          # bindings, and mixing them into that cache would make every other job restore
+          # gtk4-rs to ignore it.
+          shared-key: linux-gtk
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
       # The shell's testable half is the widget-free modules — geometry, keys, the
       # edit state machine — and none of them need a display, so nothing here wants
@@ -18,11 +43,10 @@ jobs:
       #
       # Both GTK shells, in one job: they need the same packages, and a second job would
       # install them twice to say the same thing.
-      - run: cargo test -p grind-sheet-gtk -p grind-text-gtk --all-targets
+      - run: cargo test --locked -p grind-sheet-gtk -p grind-text-gtk --all-targets
       # The lint and doc gates the `ci` workflow runs for every other crate. They live here
       # because they compile the shells, and compiling them needs the packages above.
-      - run: cargo clippy -p grind-sheet-gtk -p grind-text-gtk --all-targets -- -D warnings
-      - run: cargo doc --no-deps -p grind-sheet-gtk -p grind-text-gtk
+      - run: cargo clippy --locked -p grind-sheet-gtk -p grind-text-gtk --all-targets -- -D warnings
+      - run: cargo doc --no-deps --locked -p grind-sheet-gtk -p grind-text-gtk
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo build --release -p grind-sheet-gtk -p grind-text-gtk

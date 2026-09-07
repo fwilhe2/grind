@@ -8,9 +8,12 @@
 #   scripts/install.sh [deb|rpm] [package ...]
 #
 # There is no release process yet: the .deb and .rpm files are artifacts of the
-# `packaging` workflow's last green run on main (.github/workflows/packaging.yml),
+# `artifacts` workflow's last green run on main (.github/workflows/artifacts.yml),
 # and every build carries the same version number. So this forces the install —
 # same version over same version is the normal case here, not an accident.
+#
+# That workflow only runs `push` on `main`, so "last green run on main" is every
+# commit on the default branch rather than a subset of them.
 #
 # Needs the GitHub CLI, logged in: the artifacts are only reachable with a token.
 # With no arguments it installs every package for this system's format.
@@ -32,10 +35,10 @@ deb | rpm) ;;
     ;;
 esac
 
-run=$(gh run list -R "$repo" --workflow packaging.yml --branch main \
+run=$(gh run list -R "$repo" --workflow artifacts.yml --branch main \
     --status success --limit 1 --json databaseId -q '.[0].databaseId')
 if [ -z "$run" ]; then
-    echo "no green packaging run on main to install from" >&2
+    echo "no green artifacts run on main to install from" >&2
     exit 1
 fi
 

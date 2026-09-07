@@ -1,0 +1,742 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Everything the suite ships, built **once per platform**.
+#
+# This workflow is the answer to a question the previous arrangement kept answering badly:
+# how many times is one binary compiled to produce one release? `grind-sheet-gtk` was built
+# four times per push — by `gtk.yml` (which then threw the result away), by `packaging.yml`'s
+# `deb` job, again by its `rpm` job, and again by `size.yml` — on four runners, none of which
+# could see the other three's output. `grind-win32.exe` was built three times and
+# `grind_web_bg.wasm` four. Nothing was wrong with any single job; the duplication was the
+# *shape*, one workflow per thing-you-can-do-with-a-binary rather than one job per binary.
+#
+# So the rule here is **one release build per platform, and every consumer of that build is a
+# later step in the same job**: the packages, the size record, the per-crate breakdown, the
+# executable's own self-checks, the rendered frames. A consumer that needed its own runner
+# would have to rebuild, which is the thing being removed.
+#
+# The three jobs are three *platforms*, not three products — they are separate because a PE
+# must be linked on Windows and a wasm module needs a matching `wasm-bindgen`, not because
+# they produce different kinds of artifact. `report` then joins their measurements.
+#
+# What is deliberately **not** here: the container images (`container.yml`). Those compile
+# inside the image and cannot reuse a runner's binary — `distroless/cc-debian12` is glibc 2.36
+# and the runners are 2.39, so a host-built `grind` would not start. That duplication is real
+# and is the price of a distroless image, rather than an oversight.
+#
+# ---
+#
+# **Two measurement traps are designed around here, and both produce plausible wrong numbers
+# rather than errors:**
+#
+#   * `cargo bloat` **rebuilds the binary with debug information and leaves it there.** It
+#     needs richer symbols than a release build carries, so it builds its own and overwrites
+#     `target/release/<bin>`. Measured before it ran, `grind` is 10.84 MiB; measured after,
+#     the same path is 14.64 MiB, and neither number is wrong — they are different files. So
+#     in every job below, **`cargo bloat` is the last step**, after the measurement, after the
+#     packages and after the uploads. That order is load-bearing rather than tidy, and it is
+#     now load-bearing for more than the numbers: a `.deb` built after `cargo bloat` would
+#     ship the debug-info binary. For the same reason, `cargo bloat`'s own "the file size is
+#     N" footer is *not* the shipped size and must not be quoted as one; only its `.text`
+#     column and its crate shares mean anything here.
+#   * **The wasm module is measured after `wasm-bindgen`, not before.** `cargo build` writes a
+#     3.29 MiB module; the file that lands in `ui_web/dist` — and in the container image — is
+#     2.67 MiB, because `wasm-bindgen` strips the 448 KiB `__wasm_bindgen_unstable` section it
+#     was given, prunes the export list from 202 KiB to 1.4 KiB, and rewrites what is left.
+#     Reading the size off `target/wasm32-unknown-unknown/release/` therefore overstates the
+#     browser's download by about a quarter. (A stale `ui_web/dist` left behind by a
+#     `build.sh debug` run overstates it *fourfold* — 11.4 MiB, nearly all of it a name
+#     section — which is a thing that happens on a developer's machine and cannot happen
+#     here: this job builds `dist` from scratch.)
+#
+# The size half of this workflow **reports and does not gate.** The obvious next step —
+# failing the job when an artifact grows by more than some percent — is deliberately not
+# taken, because the threshold is a product decision and the deltas have to be watched for a
+# while before anyone can pick one honestly. The *artifact* half does gate: the Windows
+# import-table, stack-reserve and version-resource checks all fail the build.
+
+name: artifacts
+
+# `push` is restricted to `main`. This workflow builds every binary the suite has, in release,
+# on three runners; a push to a feature branch has nothing to compare against yet — the size
+# baseline only ever comes from `main` — and the pull request covers the branch anyway. So
+# `main` establishes the baseline and produces the installable packages, a pull request
+# measures itself against it, and a branch with no pull request open costs nothing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded pull-request run has no reason to finish — nothing depends on its output.
+# `main` is exempt: its runs are what `scripts/install.sh` downloads and what the next run
+# takes its size baseline from, so they are always allowed to complete.
+concurrency:
+  group: artifacts-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# `never`, and it is not a style preference — the first run of the workflow this was extracted
+# from filled the duplicate-dependency block with `\e[2m ... \e[0m` around every tree glyph.
+#
+# Simply *omitting* `CARGO_TERM_COLOR` does not work, which is the part worth writing down:
+# `dtolnay/rust-toolchain` sets `CARGO_TERM_COLOR=always` into `$GITHUB_ENV` itself, and it is
+# used by every job here. Cargo does not colour a pipe on its own — neither `CI` nor
+# `GITHUB_ACTIONS` makes it — so with no toolchain action in the way the default really would
+# be plain, and that is exactly the wrong conclusion to draw from a laptop.
+#
+# The action guards its assignment with `if [ -z "${CARGO_TERM_COLOR+set}" ]`, so setting it
+# here means the action leaves it alone. `cargo tree` is *also* passed `--color never`
+# explicitly, because that flag beats the environment however the environment got that way.
+#
+# This matters here and not in the check workflows because these outputs are captured into
+# `$GITHUB_STEP_SUMMARY` and rendered as markdown, where an escape sequence is just garbage.
+# (`cargo bloat`'s table is unaffected either way — measured under `CARGO_TERM_COLOR=always`,
+# it prints no escapes at all.)
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  # The four Linux binaries: one `cargo build --release`, then the packages, the sizes and the
+  # breakdown all read what it produced.
+  #
+  # This job must stay **first in the file**: `cli/tests/packaging.rs` finds the one line that
+  # names every packaged binary by looking for the first `cargo build --release` in this
+  # workflow, and the `windows` job below has one too.
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      PY: python3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Only `main` writes a cache. A pull request restores one and throws its own away,
+          # because GitHub scopes caches per branch and keeps a copy for each: with this off,
+          # every branch kept its own ~500 MiB entry and the repository sat over the 10 GB
+          # limit, evicting the entries that were actually being hit.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The two GTK shells do not compile without these.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
+
+      # THE ONE LINUX BUILD. Everything below reads `target/release/`.
+      #
+      # `--locked`: a build that quietly updated `Cargo.lock` would ship a dependency tree the
+      # commit does not describe, and would measure one too. Same reasoning as `ci.yml`'s
+      # build job, and it matters more here, because these binaries are the ones that leave.
+      - name: Build every Linux binary, release
+        run: cargo build --release --locked -p grind-cli -p grind-tui -p grind-sheet-gtk -p grind-text-gtk
+
+      # FIRST, before anything runs `cargo bloat` — see the header. The stripped copy goes to
+      # a scratch path so the measured binary is never modified in place either, which also
+      # means the packaging steps below still package the binary that was measured.
+      - name: Measure
+        run: |
+          mkdir -p stripped
+          measure() {
+            cp "target/release/$1" "stripped/$1"
+            strip "stripped/$1"
+            $PY .github/scripts/sizes.py record \
+              --artifact "$1" --platform linux-x86_64 \
+              --file "target/release/$1" --stripped "stripped/$1" \
+              --note "$2" --out sizes-linux.jsonl
+          }
+          measure grind          'the CLI — grind-cli'
+          measure grind-tui      'the terminal shell'
+          measure grind-sheet-gtk 'the spreadsheet window'
+          measure grind-text-gtk  'the word processor window'
+
+      # Uploaded here rather than at the end of the job, so the numbers survive anything the
+      # steps below do. They are the deliverable; the breakdowns are the bonus.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sizes-linux
+          path: sizes-linux.jsonl
+          if-no-files-found: error
+
+      # Prebuilt, from `install-action`'s own manifest — this used to be `cargo install
+      # cargo-deb --locked`, which compiled a few hundred crates on every run to produce a
+      # tool whose version nothing here pins.
+      - uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2.87.7
+        with:
+          tool: cargo-deb
+
+      # `cargo generate-rpm` is not in `install-action`'s manifest and publishes no prebuilt
+      # binaries, so this stays a source build — made nearly free from the second run onward by
+      # `rust-cache`, which caches `~/.cargo/bin`: `cargo install` finds the binary already
+      # there and says so instead of rebuilding.
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+
+      # **`--no-build`, and that flag is the whole point of this job.** `cargo deb` builds what
+      # it packages by default, which is how one release build became three: this job's, then
+      # `cargo deb`'s own, then the explicit one the rpm job needed because `cargo
+      # generate-rpm` — unlike `cargo deb` — never builds anything. Now neither builds: both
+      # read the `target/release/` binaries above, which is exactly what every
+      # `[package.metadata.*]` assets list already names.
+      #
+      # The two tools are invoked differently on purpose: `-p` is a *package* name for
+      # `cargo deb` and a *directory* for `cargo generate-rpm`. `cli/tests/packaging.rs`
+      # asserts both spellings, per binary, against this file.
+      - name: Debian packages
+        run: |
+          cargo deb -p grind-cli --no-build
+          cargo deb -p grind-sheet-gtk --no-build
+          cargo deb -p grind-text-gtk --no-build
+          cargo deb -p grind-tui --no-build
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb-packages
+          path: target/debian/*.deb
+          if-no-files-found: error
+
+      - name: RPM packages
+        run: |
+          cargo generate-rpm -p cli
+          cargo generate-rpm -p ui_sheet_gtk
+          cargo generate-rpm -p ui_text_gtk
+          cargo generate-rpm -p ui_tui
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rpm-packages
+          path: target/generate-rpm/*.rpm
+          if-no-files-found: error
+
+      # Not in `install-action`'s manifest and no prebuilt releases; see the note on
+      # `cargo-generate-rpm` above for why that is acceptable.
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat --locked
+
+      # What is in each of them, per crate. `--crates` attributes every symbol to the crate
+      # it came from, which is the "which external libraries" question asked directly.
+      #
+      # **This step REBUILDS AND REPLACES the binaries measured and packaged above**, which is
+      # fine only because it is last. See the header.
+      - name: What went into each binary
+        run: |
+          {
+            echo '## What is in each Linux binary'
+            echo
+            echo 'Per-crate shares of the `.text` section, from `cargo bloat --crates`.'
+            echo 'Its "file size" footer is a *debug-info* build and is **not** what ships —'
+            echo 'the shipped sizes are in the `report` job'"'"'s summary.'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for p in grind-cli grind-tui grind-sheet-gtk grind-text-gtk; do
+            {
+              echo "<details><summary><code>$p</code></summary>"
+              echo
+              echo '```'
+              cargo bloat --release -p "$p" --crates -n 20
+              echo '```'
+              echo
+              echo '</details>'
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # One crate compiled twice at two versions is pure duplicated code in the binary, and
+      # it is the cheapest size regression there is to fix — a version bump. It is also
+      # invisible in `cargo bloat`, which sums both copies under one name.
+      - name: Crates linked at more than one version
+        run: |
+          # `--duplicates` exits 0 and prints nothing when there are none, so the "none"
+          # case has to be detected from the output rather than from the status.
+          #
+          # `--color never` belongs on the command rather than being left to the environment:
+          # this output goes into markdown, and the toolchain action turns colour on. See the
+          # note above `jobs:`.
+          dupes="$(cargo tree --duplicates --workspace --edges normal --color never)"
+          {
+            echo '### Duplicate dependency versions'
+            echo
+            echo '```'
+            if [ -n "$dupes" ]; then echo "$dupes"; else echo '(none)'; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Windows, because a PE built anywhere else is not the artifact that ships
+  # (`doc/windows-shell.md`, Verification). One release build, and then everything that has
+  # anything to say about it: its own tests, the three checks on the linked image, both
+  # reproducible-render assertions, its size, and its breakdown.
+  #
+  # The three checks and the two renders used to be two jobs on two runners that each compiled
+  # this executable, plus a third in the size workflow that compiled it again.
+  windows:
+    runs-on: windows-latest
+    # A failing render puts its message in a *message box*, because this is a GUI-subsystem
+    # binary with no stderr — and a message box on a headless runner is a wait with no end. The
+    # limit turns that into a failed job rather than a hung one.
+    timeout-minutes: 30
+    env:
+      PY: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # `embed-resource` (W8) needs `rc.exe`, and `windows-latest` does not put it on `PATH`
+      # or set the `INCLUDE`/`LIB` variables it needs on its own — those only exist inside a
+      # Developer Command Prompt. This is that prompt's environment, applied to every step
+      # after it in this job. Without it the icon and version block silently do not embed
+      # (`build.rs` degrades to a no-op by design), the checks below fail, and the measured
+      # `.exe` would be a few kilobytes lighter than the real one.
+      - uses: ilammy/msvc-dev-cmd@7defe9254715b088f12dddd9942945a3d75cdad5 # v1.9.0
+
+      # The assertions that genuinely need Windows — the virtual-key codes copied out of
+      # `winuser.h` being the real ones, and everything else behind `cfg(windows)`. The
+      # portable half runs on Linux in `ci.yml` and `win32.yml`; this is the other half.
+      #
+      # There is no `cargo clippy` step here any more: `win32.yml`'s `check-from-linux` job
+      # lints this crate for `x86_64-pc-windows-msvc`, which is this runner's host target, so
+      # the two invocations produced the same lints from the same source.
+      - name: Test
+        run: cargo test -p grind-win32
+
+      # THE ONE WINDOWS BUILD.
+      - name: Build the Windows shell, release
+        run: cargo build --release --locked -p grind-win32
+
+      # The point of this shell, made checkable.
+      #
+      # `doc/windows-shell.md` claims the executable needs nothing Windows does not ship. A
+      # dependency on the Visual C++ redistributable is the silent way to lose that: it links
+      # fine on a developer machine and on this runner, and fails on a clean install with a
+      # missing-DLL dialog. So the import table is read back and checked rather than trusted.
+      #
+      # The binary is never *run* here. It is a GUI-subsystem application whose argument
+      # errors go into a message box, and a message box on a headless runner waits forever.
+      # (`--render-to` below is the one exception, and `main.rs` is the other half of that:
+      # that flag means nobody is watching, so every message goes to stderr instead.)
+      - name: Check the executable depends on nothing but Windows
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          $dlls = [regex]::Matches($ascii, '[A-Za-z0-9_\-]+\.[Dd][Ll][Ll]') |
+            ForEach-Object { $_.Value.ToLower() } | Sort-Object -Unique
+          Write-Host "DLL names in ${exe}:"
+          $dlls | ForEach-Object { Write-Host "  $_" }
+
+          # Everything here is an install, not part of Windows: the VC++ redistributable,
+          # the dynamically linked Universal CRT, the .NET runtime, and the Windows App SDK
+          # a WinUI shell would have needed.
+          $forbidden = @(
+            'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll',
+            'ucrtbase.dll', 'mscoree.dll', 'hostfxr.dll', 'hostpolicy.dll'
+          )
+          $bad = $dlls | Where-Object { $forbidden -contains $_ -or $_ -like 'api-ms-win-crt-*' `
+            -or $_ -like 'microsoft.windowsappruntime*' -or $_ -like 'microsoft.ui.xaml*' }
+          if ($bad) {
+            Write-Error "the executable depends on components Windows does not ship: $($bad -join ', ')"
+            exit 1
+          }
+          Write-Host "OK - no runtime dependency outside Windows itself."
+
+      # Measured on Linux and asserted here, because it is a fact about the PE header rather
+      # than about the machine: a debug build with the MSVC default of 1 MB overflows its
+      # stack before `main` does anything. `.cargo/config.toml` sets 8 MB and says why; this
+      # fails if that flag ever stops reaching the linker.
+      - name: Check the stack reserve survived
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          # The signature is 4 bytes and the COFF header 20, so the optional header starts
+          # there. Its magic says which of the two layouts it is, and this check only knows
+          # PE32+ (0x20B) — asserted rather than assumed, because reading a PE32 header at
+          # PE32+ offsets returns a plausible-looking number from the wrong field.
+          $optional = $peOffset + 4 + 20
+          $magic = [BitConverter]::ToUInt16($bytes, $optional)
+          if ($magic -ne 0x20B) {
+            Write-Error ("not a PE32+ image: optional header magic is 0x{0:X}" -f $magic)
+            exit 1
+          }
+          # SizeOfStackReserve sits at +0x48 of a PE32+ optional header. An earlier version of
+          # this step read +0x60, which is SizeOfHeapCommit — it reported 0x1000 for a binary
+          # whose reserve was correctly 0x800000, so this gate failed on a good build.
+          $reserve = [BitConverter]::ToUInt64($bytes, $optional + 0x48)
+          Write-Host ("SizeOfStackReserve = 0x{0:X}" -f $reserve)
+          if ($reserve -lt 8388608) {
+            Write-Error "stack reserve is $reserve, expected at least 8 MB - see .cargo/config.toml"
+            exit 1
+          }
+
+      # W8: the icon and version resource `build.rs` links in from `ui_win32/data/grind.rc`.
+      # `embed_resource` degrades to a silent no-op when it finds no resource compiler
+      # (`build.rs`'s own doc comment), which is the right answer on every other machine this
+      # crate is checked on and the wrong one here — `windows-latest` ships the MSVC toolchain
+      # `embed_resource` needs, so a resource that failed to embed on *this* runner is a real
+      # regression rather than an expected gap. `GetVersionInfo` is what Explorer's own
+      # Properties dialog reads, so this is the same fact a user would see.
+      - name: Check the version resource and icon embedded
+        shell: pwsh
+        run: |
+          $exe = "target/release/grind-win32.exe"
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $exe))
+          Write-Host "ProductName:      $($info.ProductName)"
+          Write-Host "FileDescription:  $($info.FileDescription)"
+          if ($info.ProductName -ne "Grind") {
+            # Two very different failures reach this line, and telling them apart used to cost a
+            # whole CI round trip. `GetVersionInfo` asks for RT_VERSION under the name `1` and
+            # returns empty fields for anything else, so "empty" says nothing about whether the
+            # resource is *in* the binary. The strings are stored as UTF-16 in `.rsrc`, so
+            # looking for them directly answers that, and the answer picks the fix:
+            #
+            #   * "Grind" absent   -> the resource never linked. Look at `build.rs`'s
+            #     `cargo:warning`: `NotAttempted` means `rc.exe` was not found (the
+            #     `msvc-dev-cmd` step above is what puts it on PATH).
+            #   * "Grind" present  -> it linked, but under a name `GetFileVersionInfo` does not
+            #     ask for. That is `grind.rc`'s version block being named something other than
+            #     the literal `1` — the bug that comment in `grind.rc` is about.
+            $utf16 = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($exe))
+            if ($utf16.Contains("ProductName") -and $utf16.Contains("Grind")) {
+              Write-Error ("the version resource IS in the binary but not as RT_VERSION/1 - " +
+                           "check the resource name in ui_win32/data/grind.rc")
+            } else {
+              Write-Error ("no version resource in the binary at all - check build.rs's " +
+                           "cargo:warning for whether rc.exe ran")
+            }
+            exit 1
+          }
+          # A PE's icon lives in its `.rsrc` section as an `RT_GROUP_ICON`/`RT_ICON` pair rather
+          # than anywhere `FileVersionInfo` reads, so this asks Shell32 for the icon Explorer
+          # itself would show — null only when the executable carries none.
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $exe))
+          if ($null -eq $icon) {
+            Write-Error "no icon embedded in $exe"
+            exit 1
+          }
+          Write-Host "Icon: $($icon.Width)x$($icon.Height)"
+
+      # The assertion that makes a drawing refactor provable (W2, `doc/windows-shell.md`
+      # decision 5).
+      #
+      # `--render-to` draws one frame onto a DIB section and writes a `.bmp`. There is **no
+      # window and no display** involved — `CreateCompatibleDC(None)` + `CreateDIBSection` need
+      # neither — which is why this can run on a headless runner at all.
+      #
+      # Two renders, compared byte for byte. That is the whole assertion, and it is the W2 exit
+      # criterion verbatim. What it catches is a drawing change: nothing in the output is
+      # allowed to vary between runs, so the theme is forced to light and the frame size is a
+      # constant rather than the window's.
+      #
+      # What it deliberately does **not** yet do is compare against a committed fixture. A
+      # `.bmp` from here and one from the Wine path on a developer's machine cannot match —
+      # Consolas and Segoe UI are absent under Wine, so every glyph comes from a substitution —
+      # so the fixture has to be produced on this runner before it can be committed, and the
+      # artifact below is how.
+      #
+      # `Invoke-Render` is a function rather than four copies because getting it wrong is not a
+      # failure but a *hang*, and it has already cost two jobs their whole budget. Its own file
+      # says which three properties it has to have.
+      - name: Draw the same frame twice
+        shell: pwsh
+        run: |
+          . .github/scripts/win32-render.ps1
+          Invoke-Render "sheet/tests/data/samples/Sales Dashboard.fods" "one.bmp"
+          Invoke-Render "sheet/tests/data/samples/Sales Dashboard.fods" "two.bmp"
+
+      - name: The two frames are byte-identical
+        shell: pwsh
+        run: |
+          $a = [IO.File]::ReadAllBytes("one.bmp")
+          $b = [IO.File]::ReadAllBytes("two.bmp")
+          Write-Host "$($a.Length) bytes"
+          # A 1280x800 24-bit bottom-up BMP: 54 bytes of header and no padding, since 1280*3 is
+          # already a multiple of four. Asserted rather than assumed, so that a frame that came
+          # out empty or the wrong size fails here rather than passing a comparison with another
+          # empty frame.
+          if ($a.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($a.Length)"; exit 1
+          }
+          if ([Text.Encoding]::ASCII.GetString($a[0..1]) -ne "BM") {
+            Write-Error "not a BMP"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -ne 0) {
+            Write-Error "two renders of the same document differ"; exit 1
+          }
+          Write-Host "OK - the frame is reproducible."
+
+      # The same assertion for the **text pane** (W5a). It is a separate step rather than a loop
+      # because it is a separate claim: the grid's frame proves the drawing is reproducible, and
+      # this one proves that *measuring a document* is — every line here was broken by
+      # `grind_core::layout` asking GDI how wide the text is, on a runner with the real Segoe UI
+      # rather than Wine's substitution, and a font cache that answered differently on the second
+      # pass would show up here and nowhere else.
+      - name: Draw a text document twice, and compare
+        shell: pwsh
+        run: |
+          . .github/scripts/win32-render.ps1
+          $doc = "text/tests/data/edited-default-paragraph-style.fodt"
+          Invoke-Render $doc "text-one.bmp"
+          Invoke-Render $doc "text-two.bmp"
+          $a = [IO.File]::ReadAllBytes("text-one.bmp")
+          $b = [IO.File]::ReadAllBytes("text-two.bmp")
+          if ($a.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($a.Length)"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -ne 0) {
+            Write-Error "two renders of the same document differ"; exit 1
+          }
+          Write-Host "OK - the text pane is reproducible too."
+
+      # The executable is measured as it comes off the linker: statically linked CRT, embedded
+      # icon and version resource, no strip (a PE keeps its symbols in a separate `.pdb`, so
+      # there is no stripped column to fill). Before `cargo bloat`, as everywhere here.
+      #
+      # `shell: bash` is safe for *this* step and only because it links nothing — see the
+      # warning on the `cargo bloat` step below.
+      - name: Measure
+        shell: bash
+        run: |
+          $PY .github/scripts/sizes.py record \
+            --artifact grind-win32.exe --platform windows-x86_64 \
+            --file target/release/grind-win32.exe \
+            --note 'the Windows shell — static CRT' \
+            --out sizes-windows.jsonl
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sizes-windows
+          path: sizes-windows.jsonl
+          if-no-files-found: error
+
+      - name: Upload the executable
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-x64
+          path: target/release/grind-win32.exe
+          if-no-files-found: error
+
+      - name: Upload the frames
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-frame
+          path: |
+            one.bmp
+            text-one.bmp
+          if-no-files-found: error
+
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat --locked
+
+      # Last, for the same reason as on Linux: this rebuilds and replaces the `.exe` that every
+      # step above measured, checked, rendered and uploaded.
+      #
+      # **PowerShell, not `shell: bash`, and that is the whole bug this step once had.** On a
+      # Windows runner `shell: bash` is Git Bash, which puts `C:\Program Files\Git\usr\bin` at
+      # the front of `PATH` — and that directory contains a `link.exe`, the GNU coreutils
+      # `link(1)`. rustc resolves its linker by name, finds that one first, and hands a
+      # coreutils program MSVC's arguments:
+      #
+      #     "C:\Program Files\Git\usr\bin\link.exe" "/NOLOGO" ... "/STACK:8388608"
+      #     /usr/bin/link: extra operand '...build_script_build...rcgu.o'
+      #
+      # It fails while linking a *build script*, so the error names `windows_x86_64_msvc` and
+      # `shlex` and looks like a dependency problem rather than a `PATH` one. `msvc-dev-cmd`
+      # above is not at fault and neither is the toolchain: the rule is simply that **nothing
+      # on a Windows runner may invoke cargo from a bash step.** The `Measure` step above is
+      # bash and stays bash — it runs Python and links nothing.
+      #
+      # This step is deliberately *not* `continue-on-error`. An earlier revision made it so on
+      # the guess that `cargo bloat` might not read MSVC symbols, and that guess was wrong
+      # twice over: cargo-bloat's own README lists PE alongside ELF and Mach-O, and the real
+      # failure was the linker above. The cost of that guard was worse than the risk it
+      # covered — the job went green with a full red linker error inside it, which reads as a
+      # broken build to anyone who opens the log.
+      - name: What went into it
+        run: |
+          $bloat = cargo bloat --release -p grind-win32 --crates -n 20
+          if ($LASTEXITCODE -ne 0) { throw "cargo bloat failed with $LASTEXITCODE" }
+          # Single-quoted throughout, because a backtick is PowerShell's escape character and
+          # every one of these lines is a markdown fence or contains code punctuation.
+          $s = $env:GITHUB_STEP_SUMMARY
+          Add-Content $s '## What is in `grind-win32.exe`'
+          Add-Content $s ''
+          Add-Content $s '```'
+          Add-Content $s $bloat
+          Add-Content $s '```'
+
+  # The browser bundle, which is the one artifact whose size a *user* feels directly: it is
+  # downloaded before the application starts. So it is the only one measured compressed as
+  # well, because `ui_web/Dockerfile` serves `dist/` over HTTP and the transfer size is
+  # roughly a quarter of the file size.
+  #
+  # The browser is also the one platform that is not an operating system, so this is the one
+  # shell whose artifact is the same everywhere. It is built once, on Linux — still not a
+  # cross-compile: `wasm32-unknown-unknown` *is* the target it runs on.
+  wasm:
+    runs-on: ubuntu-latest
+    env:
+      PY: python3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Read from `Cargo.lock` rather than pinned here, exactly as `ui_web/build.sh` and the
+      # Dockerfile do: the CLI must be the version cargo resolved or the glue it writes will
+      # not match the module, and `build.sh` refuses to run when the two disagree.
+      - name: The wasm-bindgen version cargo resolved
+        id: wasm_bindgen
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
+            | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+          echo "wasm-bindgen $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Prebuilt rather than `cargo install wasm-bindgen-cli --version …`, which compiled the
+      # tool from source on every cold cache.
+      - uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2.87.7
+        with:
+          tool: wasm-bindgen@${{ steps.wasm_bindgen.outputs.version }}
+
+      # THE ONE WASM BUILD. `build.sh` compiles the module and runs `wasm-bindgen` over it into
+      # `ui_web/dist`; `smoke.sh` then re-binds the *same* module for node.
+      - name: Build the browser shell, release
+        run: ./ui_web/build.sh release
+
+      # Drives the real module against the real page in jsdom, before anything cares how it
+      # looks. A failure here is wasm or wiring, not CSS — and it is where rule 5 (no
+      # filesystem assumptions) is checked end to end.
+      - name: Browser boundary smoke test
+        run: ./ui_web/smoke.sh release
+
+      # Both numbers, deliberately, because their difference is the trap in the header: the
+      # module cargo writes is not the module that ships, and only the second one is a fact
+      # about the browser.
+      - name: Measure
+        run: |
+          raw=target/wasm32-unknown-unknown/release/grind_web.wasm
+          echo "cargo wrote        $(stat -c%s "$raw") bytes"
+          echo "wasm-bindgen left  $(stat -c%s ui_web/dist/grind_web_bg.wasm) bytes  <- this is what ships"
+
+          $PY .github/scripts/sizes.py record \
+            --artifact grind_web_bg.wasm --platform wasm32 \
+            --file ui_web/dist/grind_web_bg.wasm --gzip \
+            --note 'the browser module, post-wasm-bindgen' \
+            --out sizes-wasm.jsonl
+          $PY .github/scripts/sizes.py record \
+            --artifact grind_web.js --platform wasm32 \
+            --file ui_web/dist/grind_web.js --gzip \
+            --note 'the wasm-bindgen glue' \
+            --out sizes-wasm.jsonl
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sizes-wasm
+          path: sizes-wasm.jsonl
+          if-no-files-found: error
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-web
+          path: ui_web/dist
+          if-no-files-found: error
+
+      # Not in `install-action`'s manifest and publishes no prebuilt binaries; see the note in
+      # the `linux` job. Last in the job, as everywhere here — though `twiggy` only reads the
+      # module rather than rebuilding it, so the rule costs nothing to keep.
+      - name: Install twiggy
+        run: cargo install twiggy --locked
+
+      # `cargo bloat` has no wasm backend and `twiggy` has no notion of a crate, so the two
+      # are joined by `sizes.py wasm-crates` — the same per-crate question the native
+      # binaries are asked, over the module that actually ships.
+      - name: What went into the module
+        run: |
+          twiggy top -f json -o twiggy.json ui_web/dist/grind_web_bg.wasm
+          {
+            echo '## What is in `grind_web_bg.wasm`'
+            echo
+            echo 'Rolled up per crate from `twiggy top`. `(name section)` is the wasm'
+            echo 'equivalent of an unstripped symbol table — it is shipped, and it is'
+            echo 'usually the single largest entry.'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          $PY .github/scripts/sizes.py wasm-crates twiggy.json --top 25
+          {
+            echo
+            echo '<details><summary>The largest individual items</summary>'
+            echo
+            echo '```'
+            twiggy top -n 20 ui_web/dist/grind_web_bg.wasm
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The one table. Every artifact from every runner, sorted largest first, with the delta
+  # against the last successful run of this workflow on `main`.
+  report:
+    needs: [linux, windows, wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # `gh run download` reads another workflow run's artifacts. Without this the baseline
+      # step degrades to "no baseline" rather than failing, which is why it is a soft error
+      # below — but the report is much less useful, so it is granted.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: sizes-*
+          path: parts
+          merge-multiple: true
+
+      # The comparison that turns a number into a signal. `main`'s newest *successful* run,
+      # which is never this one — a run still in progress does not match `--status success`.
+      #
+      # Every failure here is soft: a fork's pull request, a branch whose first run this is,
+      # a `main` history that predates this workflow, an expired artifact. All of them mean
+      # "report absolute sizes only", which `sizes.py report` handles.
+      - name: Fetch the baseline from main
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id="$(gh run list --workflow artifacts.yml --branch main --status success \
+                  --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -z "$id" ]; then
+            echo "no successful run of this workflow on main yet"
+            exit 0
+          fi
+          echo "baseline is run $id"
+          gh run download "$id" --name binary-sizes --dir baseline \
+            || echo "that run's artifact is gone (expired?); continuing without a baseline"
+
+      - name: The table
+        run: |
+          echo '# Release artifact sizes' >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/scripts/sizes.py report parts/*.jsonl \
+            --baseline baseline/sizes.jsonl
+          {
+            echo
+            echo 'Per-binary breakdowns are in the `linux`, `windows` and `wasm` job summaries.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Under one stable name, because that is what the next run's baseline step downloads.
+      - name: Publish the merged report
+        run: cat parts/*.jsonl > sizes.jsonl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary-sizes
+          path: sizes.jsonl
+          if-no-files-found: error

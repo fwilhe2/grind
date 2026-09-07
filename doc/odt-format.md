@@ -524,7 +524,7 @@ appears. Against a Calc-only `soffice` the four soffice-backed tests skipped wit
 against a full one they ran.
 
 The image has since been rebuilt with Writer in it
-(`sha256:adb88646…`), and loop C for text **began gating CI's `roundtrip` and `corpus` jobs
+(`sha256:adb88646…`), and loop C for text **began gating CI's `oracle` and `corpus` jobs
 without a line of any file changing** — which is the whole argument for detecting a capability
 over hard-coding a skip. Every figure in this section now comes from the pin itself, and
 `FLOOR` in `sheet/tests/loop_e.rs` was re-read against the new image as the upgrade procedure

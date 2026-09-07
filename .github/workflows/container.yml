@@ -57,6 +57,22 @@ jobs:
 
       # `load: true` rather than `push: true` so the image is in the local daemon
       # for the smoke test below — an image that cannot run is never pushed.
+      #
+      # **`mode=min`, not `mode=max`, and the reason is a budget rather than a preference.**
+      # A repository gets 10 GB of Actions cache, shared by everything in it. `mode=max`
+      # exports every intermediate layer of both images on both architectures, and it grew to
+      # 5.88 GiB across 179 entries — 54% of the whole allowance — which pushed the total to
+      # 10.88 GB and made GitHub evict by least-recent-use. What it evicted was the Rust
+      # caches the other workflows depend on, so those quietly recompiled from cold and the
+      # measured saving from caching them at all was near zero.
+      #
+      # `mode=min` exports only the layers of the final image. That is a real loss for a
+      # multi-stage build, and here it is close to a nominal one: both Containerfiles `COPY`
+      # the whole repository immediately before the compile, so any source change already
+      # invalidates the build layer and the intermediates could never be reused between
+      # commits anyway. Giving them a dependency layer — as `ui_web/Dockerfile` already does
+      # for `wasm-bindgen-cli` — is what would make caching these builds worth its space, and
+      # is the open item here.
       - name: Build Image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -66,7 +82,7 @@ jobs:
           tags: ${{ env.IMAGE }}:latest-${{ matrix.arch }}
           load: true
           cache-from: type=gha,scope=grind-cli-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=grind-cli-${{ matrix.arch }}
+          cache-to: type=gha,mode=min,scope=grind-cli-${{ matrix.arch }}
 
       - name: Print Sheet Version
         run: docker run --rm "$IMAGE:latest-${{ matrix.arch }}" /grind --version
@@ -154,7 +170,7 @@ jobs:
           tags: ${{ env.IMAGE }}:latest-${{ matrix.arch }}
           load: true
           cache-from: type=gha,scope=grind-web-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=grind-web-${{ matrix.arch }}
+          cache-to: type=gha,mode=min,scope=grind-web-${{ matrix.arch }}
 
       # The image serves static files, so there is no --version to print; run it
       # and ask for the page it built instead, the same shape of check as the

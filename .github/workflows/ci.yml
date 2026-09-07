@@ -3,7 +3,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 name: ci
-on: [push, pull_request]
+
+# `push` is restricted to `main`, and that is a halving rather than a narrowing: with
+# `on: [push, pull_request]`, every commit on a branch with a pull request open ran this
+# whole workflow **twice** — once for the branch push and once for the pull request, on the
+# same commit, to the same conclusion. The pull request is the run that matters on a branch;
+# `main` is covered by its own push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded pull-request run has no reason to finish. `main` is exempt: its runs are the
+# record that a commit on the default branch was green.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   reuse:
@@ -26,7 +42,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo clippy -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32 --all-targets -- -D warnings
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # One cache for every job in this workflow that compiles the same dependency tree
+          # in debug. They cannot share a *runner*, so each used to compile ~300 crates from
+          # cold, five times per push; sharing the key means the first of them to finish
+          # populates what the rest restore on the next run.
+          shared-key: linux-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo clippy --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32 --all-targets -- -D warnings
 
   docs:
     # The doc comments are this project's design record — `CLAUDE.md` sends a reader to them
@@ -37,12 +62,22 @@ jobs:
       RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo doc --no-deps -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo doc --no-deps --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
 
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Named crates rather than --workspace: `ui_sheet_gtk` needs GTK4 and libadwaita
       # development packages, which this job does not install and the shells' own
       # workflow does.
@@ -51,13 +86,18 @@ jobs:
       - run: cargo build --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
       # Loops A and B need a LibreOffice *checkout* for its corpus and skip without
       # one, so this job is the unit tests plus whatever else runs everywhere.
-      - run: cargo test -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
+      - run: cargo test --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
 
-  roundtrip:
-    # Loop C's "out" direction needs only the `soffice` binary — no corpus — so the
-    # rule that every feature must survive a LibreOffice round trip (doc/plan.md,
-    # rule 7) is enforced here by a machine rather than by remembering to run it.
-    # Its "back" direction still skips: that one wants the checkout.
+  oracle:
+    # Loops C ("out") and E, which are one job because they want exactly the same thing: the
+    # `soffice` binary, no corpus, and the same debug compile of `grind-sheet` and
+    # `grind-text`. They were two jobs on two runners that pulled the same image and
+    # compiled the same test binaries to run one target each.
+    #
+    # Loop C's "out" direction enforces the rule that every feature must survive a
+    # LibreOffice round trip (doc/plan.md, rule 7) by machine rather than by remembering to
+    # run it. Its "back" direction still skips here: that one wants the checkout, and gets it
+    # in `corpus` below.
     #
     # `soffice` comes out of a container image pinned by digest
     # (`ci/libreoffice-image`, `doc/differential-fuzz.md` "Pinning LibreOffice") rather than
@@ -66,25 +106,27 @@ jobs:
     # a digest is the same binary here and on a developer's machine, which an Ubuntu package
     # version was only ever on Ubuntu.
     #
-    # No `-p`: both `grind-sheet` and `grind-text` have a `roundtrip` target and both are loop C.
-    # Both gate. The pinned image was Calc-only when the text half was written, so that half
-    # probes the oracle's capability rather than assuming it (`oracle_ready` in
-    # `text/tests/roundtrip.rs`); the image now carries Writer, so the probe passes and the
-    # tests run — which happened with no change to this file.
+    # No `-p` on the roundtrip line: both `grind-sheet` and `grind-text` have a `roundtrip`
+    # target and both are loop C. Both gate. The pinned image was Calc-only when the text half
+    # was written, so that half probes the oracle's capability rather than assuming it
+    # (`oracle_ready` in `text/tests/roundtrip.rs`); the image now carries Writer, so the probe
+    # passes and the tests run — which happened with no change to this file.
+    #
+    # The two are separate `run:` steps rather than one `--test roundtrip --test loop_e`, so
+    # that a red loop C and a red loop E are still two different lines in the log.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: docker pull -q "$(cat ci/libreoffice-image)" && echo "$PWD/scripts/soffice-docker" >> "$GITHUB_PATH"
-      - run: cargo test --test roundtrip -- --nocapture
-
-  loop_e:
-    # Loop E (doc/differential-fuzz.md) needs only `soffice`, same as loop C's "out"
-    # direction, so it gets its own job rather than waiting on a LibreOffice checkout.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: docker pull -q "$(cat ci/libreoffice-image)" && echo "$PWD/scripts/soffice-docker" >> "$GITHUB_PATH"
-      - run: cargo test --test loop_e -- --nocapture
+      - name: Loop C, out
+        run: cargo test --locked --test roundtrip -- --nocapture
+      - name: Loop E
+        run: cargo test --locked --test loop_e -- --nocapture
 
   corpus:
     # Loops A and B, and loop C's "back" direction, want LibreOffice's own test-fixture
@@ -99,16 +141,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: docker pull -q "$(cat ci/libreoffice-image)" && echo "$PWD/scripts/soffice-docker" >> "$GITHUB_PATH"
       - run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
           git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data sw/qa
-      - run: cargo test -p grind-sheet --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
+      - run: cargo test --locked -p grind-sheet --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
         env:
           GRIND_LO_CORPUS: /tmp/lo-core
       # Loop A for text, and loop C's "back" direction for text — which needs both the corpus
-      # and a `soffice`. See the note in the `roundtrip` job for why that half probes the
+      # and a `soffice`. See the note in the `oracle` job for why that half probes the
       # oracle's capability before using it.
-      - run: cargo test -p grind-text --test corpus_read --test roundtrip -- --nocapture
+      - run: cargo test --locked -p grind-text --test corpus_read --test roundtrip -- --nocapture
         env:
           GRIND_LO_CORPUS: /tmp/lo-core

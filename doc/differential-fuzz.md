@@ -131,7 +131,7 @@ the code. The
 container sees the host's temp directory at the same path, which is where every input is
 staged and every output collected, and nothing else — a converter that could reach the
 repository would be a worse oracle, not a better one. `.github/workflows/ci.yml`'s
-`roundtrip`, `loop_e` and `corpus` jobs pull the image and prepend that directory; the build
+`oracle` and `corpus` jobs pull the image and prepend that directory; the build
 itself stays on the runner, so the usual cargo caching still applies.
 
 **Running it locally, at the same pin.** `scripts/soffice-tests.sh` does the pull and the

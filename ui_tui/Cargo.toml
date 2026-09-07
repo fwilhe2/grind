@@ -23,7 +23,7 @@ grind-text = { path = "../text" }
 ratatui = "0.30"
 unicode-width = "0.2.2"
 
-# Read by `cargo deb` (packaging.yml). No runtime deps beyond libc: `grind-sheet` is
+# Read by `cargo deb` (artifacts.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.
 [package.metadata.deb]
 name = "grind-tui"
@@ -33,7 +33,7 @@ license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
 section = "utils"
 assets = [["target/release/grind-tui", "usr/bin/grind-tui", "755"]]
 
-# Read by `cargo generate-rpm` (packaging.yml).
+# Read by `cargo generate-rpm` (artifacts.yml).
 [package.metadata.generate-rpm]
 name = "grind-tui"
 assets = [{ source = "target/release/grind-tui", dest = "/usr/bin/grind-tui", mode = "755" }]

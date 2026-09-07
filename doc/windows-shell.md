@@ -712,7 +712,7 @@ an edit is open (the `EDIT` positions its own IME), so the surrogate state is pe
 composition positioning is text-only. What that one message does **not** buy: no inline
 composition string drawn in the pane's own ink — the IME's default floating box does that
 instead — and nothing has been driven under a real IME, since Wine ships none to test against;
-`win32.yml`'s `windows-latest` runner is the first place this can be watched working for real.
+`artifacts.yml`'s `windows-latest` runner is the first place this can be watched working for real.
 
 ## Verification
 
@@ -791,21 +791,33 @@ about it is made here:
 - The `*` dirty marker in the title, which Wine under a bare Xvfb draws no caption for.
 - Per-monitor DPI, `WM_DPICHANGED`, and how any of it looks under Windows 11's compositor.
 
-**In CI (`win32.yml`), three jobs:**
+**In CI, two jobs — and they used to be three.**
 
-1. `check-from-linux` (ubuntu) — `cargo check --target`, `cargo clippy --target`, and
-   `cargo test -p grind-win32` for the portable half.
-2. `build` (windows-latest) — test, clippy, release build, then **read the import table back**
-   and fail on `vcruntime140*.dll`, `msvcp140.dll`, `ucrtbase.dll`, `api-ms-win-crt-*`,
-   `mscoree.dll`, `hostfxr.dll`, `microsoft.windowsappruntime*` or `microsoft.ui.xaml*`. The
-   binary is never *run* there: it is a GUI-subsystem application whose argument errors go into
-   a message box, and a message box on a headless runner waits forever.
-3. `render` (windows-latest) — **built in W2.** `--render-to` on a fixture, twice, compared byte
-   for byte, with the size and the `BM` magic asserted so that two *empty* frames cannot agree
-   their way past it. This is the job that makes a drawing refactor provable. It is the one
-   place the binary *is* run on a runner, which is safe because this path opens no window and no
-   message box on success — and **on failure it no longer opens one either**, which took two
-   timed-out jobs to get right and is worth writing down:
+1. `win32.yml`'s `check-from-linux` (ubuntu) — `cargo check --target`, `cargo clippy --target`,
+   `cargo doc --target`, and `cargo test -p grind-win32` for the portable half. This is also the
+   only clippy run this crate gets: `x86_64-pc-windows-msvc` is the Windows runner's own host
+   target, so a second lint pass there read the same source through the same `cfg`s.
+2. `artifacts.yml`'s `windows` (windows-latest) — **one release build**, and then everything
+   that has something to say about the executable it produced:
+
+   * `cargo test -p grind-win32` for the `cfg(windows)` half — the virtual-key codes checked
+     against the real `winuser.h` values.
+   * **Read the import table back** and fail on `vcruntime140*.dll`, `msvcp140.dll`,
+     `ucrtbase.dll`, `api-ms-win-crt-*`, `mscoree.dll`, `hostfxr.dll`,
+     `microsoft.windowsappruntime*` or `microsoft.ui.xaml*`.
+   * The PE32+ stack reserve, and the version resource and icon (W8).
+   * `--render-to` on two fixtures — a spreadsheet and a text document — **twice each, compared
+     byte for byte**, with the size and the `BM` magic asserted so that two *empty* frames
+     cannot agree their way past it. This is what makes a drawing refactor provable, and it is
+     the one place the binary *is* run on a runner.
+   * The size record and the `cargo bloat` breakdown, last, because `cargo bloat` rebuilds the
+     binary with debug info and leaves it there.
+
+   Except for the renders, the binary is never *run*: it is a GUI-subsystem application whose
+   argument errors go into a message box, and a message box on a headless runner waits forever.
+   The render path is safe because it opens no window and no message box on success — and **on
+   failure it no longer opens one either**, which took two timed-out jobs to get right and is
+   worth writing down:
 
    > `Start-Process -ArgumentList @(…)` joins its array with **spaces and quotes nothing**, so
    > the fixture `Sales Dashboard.fods` arrived at the exe as two arguments. `args::parse` said
@@ -826,6 +838,16 @@ about it is made here:
    The frame is uploaded as an artifact, which is how the committed fixture the plan asked for
    gets produced: a `.bmp` from Wine cannot stand in for one from Windows, since every glyph
    there comes from a substituted font.
+
+**Why two jobs and not the original three.** The `build` and `render` jobs were separate
+`windows-latest` runners, and each compiled `grind-win32` in release to do its own half — plus a
+third in the former `size.yml`, which compiled it again to weigh it. Three release builds of one
+executable, on three runners, none able to see the others' output. They are now steps of one
+job in `artifacts.yml`, which builds it once; the checks, the renders, the size and the
+breakdown all read that. Nothing was dropped in the merge except the duplicate `cargo clippy`
+noted above, which `check-from-linux` already ran for the same target. What could *not* be
+merged is the Linux job: `cargo check` needs no MSVC and answers in about a minute, which is the
+whole reason it exists.
 
 ## Risks
 
@@ -905,7 +927,7 @@ Added in W2, once there was a selection:
 | The name box goes where it is told, and cancels | F5 shows the control with the current address selected; typing `g20` and pressing Enter moves to G20 and the box goes back to being drawn; typing `zz` and pressing Escape leaves the selection where it was and says nothing |
 | The view follows the cursor | `A200` typed into the name box scrolls the sheet so row 200 is the last one drawn — `Sizes::start_showing`, which walks back a screenful rather than stepping a hundred and seventy-four times |
 | `--render-to` draws a frame with no window and no display | Under Wine with `DISPLAY` **unset**: a 3 072 054-byte `.bmp` — 54 bytes of header and 1280 × 800 × 3 of pixels — with the grid, the headers, the name box and the status bar all in it |
-| The same frame twice is the same bytes | `cmp` on two consecutive renders: identical. `win32.yml`'s `render` job asserts the same on `windows-latest` |
+| The same frame twice is the same bytes | `cmp` on two consecutive renders: identical. `artifacts.yml`'s `windows` job asserts the same on `windows-latest` |
 | The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 79 passed |
 
 Added in W3, once cells could be typed into:
@@ -1140,7 +1162,7 @@ A reserve is address space rather than committed memory, so this costs a 64-bit 
 it will notice. It is set in the config rather than worked around per binary because the
 alternative — running the real work on a spawned thread with an explicit stack size — is a
 change every entry point has to remember, and forgetting it fails only on Windows and only in
-debug. `win32.yml` asserts the header on every build so the flag cannot silently stop reaching
+debug. `artifacts.yml` asserts the header on every build so the flag cannot silently stop reaching
 the linker.
 
 **Note what this was a fact about.** `grind.exe` is a `grind-cli` build with no shell code in it

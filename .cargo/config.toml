@@ -16,7 +16,7 @@ rustflags = [
     # also pulls in `vcruntime140.dll`, which is not — it comes from the Visual C++
     # redistributable, and a machine without it gets a missing-DLL dialog rather than a
     # program. The whole point of `doc/windows-shell.md` is an `.exe` that runs on a clean
-    # install, so `win32.yml` reads the import table back and fails if anything outside
+    # install, so `artifacts.yml` reads the import table back and fails if anything outside
     # Windows appears in it.
     "-C", "target-feature=+crt-static",
 
