@@ -238,6 +238,16 @@ impl Pane {
         }
     }
 
+    /// Which document kind this pane is showing, for the Save dialog's filters and suggested
+    /// name — `dialog::save_path` needs to know whether to offer `.fods`/`.ods` or
+    /// `.fodt`/`.odt`.
+    fn kind(&self) -> DocumentKind {
+        match self {
+            Pane::Sheet(_) => DocumentKind::Spreadsheet,
+            Pane::Text(_) => DocumentKind::Text,
+        }
+    }
+
     fn set_dirty(&mut self, dirty: bool) {
         match self {
             Pane::Sheet(sheet) => sheet.dirty = dirty,
@@ -3373,8 +3383,9 @@ fn save(hwnd: HWND) -> bool {
 
 fn save_as(hwnd: HWND) -> bool {
     // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
-    let suggested = unsafe { with_pane(hwnd, |pane| pane.path()) }.flatten();
-    let Some(path) = dialog::save_path(hwnd, suggested.as_deref()) else {
+    let (suggested, kind) = unsafe { with_pane(hwnd, |pane| (pane.path(), pane.kind())) }
+        .unwrap_or((None, DocumentKind::Spreadsheet));
+    let Some(path) = dialog::save_path(hwnd, suggested.as_deref(), kind) else {
         return false;
     };
     write(hwnd, &path)
@@ -3446,12 +3457,7 @@ fn new_document(hwnd: HWND) {
         return;
     }
     // SAFETY: one borrow, released before anything else happens.
-    let kind = unsafe {
-        with_pane(hwnd, |pane| match pane {
-            Pane::Sheet(_) => DocumentKind::Spreadsheet,
-            Pane::Text(_) => DocumentKind::Text,
-        })
-    };
+    let kind = unsafe { with_pane(hwnd, |pane| pane.kind()) };
     let Some(kind) = kind else { return };
     // SAFETY: one borrow, for the theme the new pane starts in.
     let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);

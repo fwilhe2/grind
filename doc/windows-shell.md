@@ -357,16 +357,17 @@ manager would have: Tab between the controls, Enter for the default button, Esca
 
 The file dialogs are `IFileDialog` (COM, Vista+) rather than `GetOpenFileNameW`, because
 `IFileDialog` is the modern dialog and needs no manifest to be one, and because the `windows`
-crate makes COM ergonomic. Its filters follow `doc/flat-first.md`: **the flat form is the
-default** — `.fods` / `.fodt` first, then the package, then `.grind` — because in doubt this
-project writes the form that diffs.
-
-W3 built both, and running them added one qualification the plan had wrong: that ordering is
-**Save's**. The *Open* dialog leads with "All spreadsheets", because a filter there is a way of
-finding a file rather than a statement about form, and a user whose documents are `.ods` should
-not have to change a drop-down to discover they exist. Nothing in either dialog decides what a
-form *is*: `grind_sheet::write_file` reads the extension through `Form::from_path`, which is the
-one place in the workspace where an extension decides anything.
+crate makes COM ergonomic. Its filters follow `doc/flat-first.md`, the same rule the two GTK
+shells' `*_filters`/`*_save_filters` implement: **the flat form is the default on Save** —
+`.fods` / `.fodt` first, then the package, then `.grind` — because in doubt this project writes
+the form that diffs, and Save offers only the kind the open pane holds, so a text document
+suggests `Untitled.fodt` rather than a spreadsheet's `.fods`. **Open offers one combined filter
+and prefers neither form** — a user looking for a document does not know which physical form it
+is in, and since one window here can hold either document kind the filter combines both kinds'
+extensions too, rather than a leading "All spreadsheets" that hid `.fodt` behind a drop-down.
+Nothing in either dialog decides what a form *is*: `grind_sheet::write_file`/
+`grind_text::write_file` read the extension through `Form::from_path`, which is the one place in
+the workspace where an extension decides anything.
 
 ### 8. Help while typing is a **band**, not a popup — *built in W9*
 
