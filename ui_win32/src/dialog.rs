@@ -161,7 +161,7 @@ fn kind_label(kind: DocumentKind) -> &'static str {
 
 /// The Open dialog's filter: **one, matching both document kinds this window can show**, and
 /// both physical forms plus the projection within each — `doc/flat-first.md`'s "one filter
-/// matching both [forms]" extended over kinds too, since a single window here can hold either.
+/// matching both \[forms\]" extended over kinds too, since a single window here can hold either.
 /// A user opening a `.fodt` should see it without switching away from whatever filter greeted
 /// them, the same reason `ui_sheet_gtk`'s and `ui_text_gtk`'s own `*_filters` are one filter
 /// each rather than a leading "All spreadsheets" plus a per-extension breakdown.
