@@ -20,12 +20,19 @@ FROM docker.io/rust:1-slim-bookworm AS build
 RUN rustup target add wasm32-unknown-unknown
 
 WORKDIR /src
-COPY . .
 
+# Cargo.lock alone decides which wasm-bindgen-cli this needs, so it arrives on its
+# own: compiling the tool then lands in a layer that only a dependency change
+# invalidates, rather than one that any edit to any source file rebuilds from
+# scratch. That layer is the expensive one, and it is what the workflow's
+# `cache-from: type=gha` is there to hit.
+COPY Cargo.lock .
 RUN version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
         | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)" \
-    && cargo install wasm-bindgen-cli --version "$version" --locked \
-    && ./ui_web/build.sh release
+    && cargo install wasm-bindgen-cli --version "$version" --locked
+
+COPY . .
+RUN ./ui_web/build.sh release
 
 # static-web-server's own image: distroless, so no shell and no package manager —
 # only the binary, CA certs and this build's static files go in.
