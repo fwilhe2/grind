@@ -65,6 +65,8 @@ mod dialog;
 #[cfg(windows)]
 mod gdi;
 #[cfg(windows)]
+mod image;
+#[cfg(windows)]
 mod win;
 
 use std::path::Path;

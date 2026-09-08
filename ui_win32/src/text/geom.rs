@@ -44,6 +44,10 @@ pub const TOP: f64 = 24.0;
 pub const GAP: f64 = 10.0;
 pub const HEADING_GAP: f64 = 18.0;
 
+/// The gap between a picture and its caption — small, since the two read as one figure.
+/// `ui_text_gtk`'s own `CAPTION_GAP`, at the same value.
+pub const CAPTION_GAP: f64 = 4.0;
+
 /// The status bar, the same height the grid's is so that the two panes' windows agree.
 pub const STATUS_H: f64 = 22.0;
 
@@ -375,7 +379,21 @@ impl Flow {
 /// Each block's height is `Layout::height()` and nothing else: the pane never decides how tall a
 /// paragraph is, it asks. A block the core cannot lay out at all takes no room rather than
 /// stopping the document — R5's tolerance, carried up into the window.
-pub fn flow_of(app: &grind_text::App, faces: &dyn grind_text::Faces, dpi: u32) -> Flow {
+///
+/// `picture` is the one exception, and it is a hook rather than a special case here: a block
+/// that is a picture (`grind_text::picture_of`) is not measured as text at all — its height
+/// comes from the image's own decoded pixels, scaled to fit the column — and decoding needs an
+/// OS decoder this module must not depend on (it has no Windows types at all, W5's own rule).
+/// `picture(view, width)` answers `Some(height)` when `view` is a picture this caller could
+/// decode and size, `None` otherwise, in which case the ordinary text height is used — so a
+/// document with no pictures, or a Linux caller with no decoder, passes `&|_, _| None` and gets
+/// exactly the old behaviour.
+pub fn flow_of(
+    app: &grind_text::App,
+    faces: &dyn grind_text::Faces,
+    dpi: u32,
+    picture: &dyn Fn(&grind_text::BlockView, f64) -> Option<f64>,
+) -> Flow {
     let count = app.block_count();
     let viewport = app.get_viewport(0..count);
     let mut flow = Flow::new(scale(TOP, dpi));
@@ -387,10 +405,13 @@ pub fn flow_of(app: &grind_text::App, faces: &dyn grind_text::Faces, dpi: u32) -
         // which is the whole point of asking through `grind_text::Faces`: a block laid out one
         // way for drawing and another for Down-arrow is a caret in the wrong place.
         let (width, metrics) = faces.of(index, &view.kind, view.style.as_deref());
-        let height = app
-            .layout_block(index, width, metrics)
-            .map(|layout| f64::from(layout.height()))
-            .unwrap_or(0.0);
+        let height = match picture(view, f64::from(width)) {
+            Some(height) => height,
+            None => app
+                .layout_block(index, width, metrics)
+                .map(|layout| f64::from(layout.height()))
+                .unwrap_or(0.0),
+        };
         let (above, below) = spacing(&view.kind, dpi);
         flow.push(index, height, indent(&view.kind, dpi), above, below);
     }
@@ -422,6 +443,12 @@ pub fn indent(kind: &grind_text::BlockKind, dpi: u32) -> f64 {
 mod tests {
     use super::*;
     use grind_text::BlockKind;
+
+    /// `flow_of`'s picture hook, answering "not a picture" for every block — what a caller with
+    /// no image decoder passes, and what every test here that is not about pictures wants.
+    fn no_pictures(_: &grind_text::BlockView, _: f64) -> Option<f64> {
+        None
+    }
 
     /// Three paragraphs of one line each, 10 tall, with a gap of 10 under each.
     fn flow() -> Flow {
@@ -668,7 +695,7 @@ mod tests {
         let app = document();
         let width = 30.0f32;
         let faces = grind_text::Uniform::new(width, &grind_text::Fixed);
-        let flow = flow_of(&app, &faces, 96);
+        let flow = flow_of(&app, &faces, 96, &no_pictures);
 
         assert_eq!(flow.slots.len(), app.block_count());
         for index in 0..app.block_count() {
@@ -688,6 +715,19 @@ mod tests {
         assert!(lines.lines().len() > 1, "the fixture has to wrap");
     }
 
+    /// The picture hook's answer wins over the text layout entirely — a decoded image is never
+    /// also measured as if its placeholder character were a line of text.
+    #[test]
+    fn a_picture_is_measured_by_the_hook_and_not_as_text() {
+        let app = document();
+        let faces = grind_text::Uniform::new(30.0, &grind_text::Fixed);
+        let flow = flow_of(&app, &faces, 96, &|_, _| Some(123.0));
+        assert!(
+            flow.slots.iter().all(|slot| slot.height == 123.0),
+            "every block answered by the hook, not by its own text"
+        );
+    }
+
     /// Blocks come out in document order, none overlapping the next, and the document is as tall
     /// as the last one's bottom plus its gap.
     #[test]
@@ -696,6 +736,7 @@ mod tests {
             &document(),
             &grind_text::Uniform::new(30.0, &grind_text::Fixed),
             96,
+            &no_pictures,
         );
         let tops: Vec<f64> = flow.slots.iter().map(|slot| slot.top).collect();
         assert!(tops.windows(2).all(|w| w[1] > w[0]), "{tops:?}");
@@ -713,6 +754,7 @@ mod tests {
             &grind_text::App::new(),
             &grind_text::Uniform::new(30.0, &grind_text::Fixed),
             96,
+            &no_pictures,
         );
         assert_eq!(flow.at_y(0.0), None);
         assert_eq!(flow.limit(500.0), 0.0, "nothing to scroll");

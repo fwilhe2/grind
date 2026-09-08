@@ -573,11 +573,32 @@ R10 allows per-shell feature gaps and requires them to be named. These are the n
 
 **Not drawn, kept intact.** A **chart** in a file is read, kept and written back untouched, and
 nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
-than a stub. An **image** in a text document, likewise. A **table** in a text document is the
-third: the core carries one now (`doc/text-core.md`) and a cell holds blocks, so this pane
-already *edits* one correctly — every caret motion and format reaches inside a cell, because
-`p12` is the twelfth block whether it is in a table or not — and what is missing is the grid
-round it, which is GDI rectangles and a second look at `text/geom.rs`'s `Flow`.
+than a stub. A **table** in a text document is the second: the core carries one now
+(`doc/text-core.md`) and a cell holds blocks, so this pane already *edits* one correctly — every
+caret motion and format reaches inside a cell, because `p12` is the twelfth block whether it is
+in a table or not — and what is missing is the grid round it, which is GDI rectangles and a
+second look at `text/geom.rs`'s `Flow`.
+
+**Images are decoded and drawn now, not just kept.** `image.rs` is WIC — `IWICImagingFactory`
+over an `IStream` `SHCreateMemStream` wraps the bytes in, a format converter to premultiplied
+`32bppPBGRA`, `CopyPixels` into a buffer `gdi::blit_image` composites with `AlphaBlend` — the
+Windows answer to the question `ui_text_gtk`'s `texture_of` asks gdk-pixbuf, catching this shell
+up with that one rather than staying a named gap. Ctrl+Shift+I or Format ▸ Insert Picture… opens
+`dialog::open_image_path` and reaches `App::insert_image` the same way `Ui::embed_image` does: an
+empty block is used as it stands, anything else gets a fresh paragraph after it, and the picture
+is fit to the column, aspect kept, never larger than its own pixels — `grind_text::picture_of`,
+hoisted out of `ui_text_gtk/src/view.rs` the same day `format::Change` and `indent_kind` were, so
+"is this block a picture, optionally with a caption" is one answer both shells share. A caption
+(the run of text after the image, in the same block) is measured and drawn with `DrawTextW`'s own
+word wrap rather than the core's line layout — the one text in this pane drawn outside decision
+3's rule, and on purpose: nothing puts a caret inside a caption, so there is no layout for GDI's
+wrapping to disagree with. `text::geom::flow_of` takes a picture-height hook now instead of
+knowing about images itself, which is what keeps that function testable with no Windows and no
+decoder at all (`&|_, _| None` is what a Linux caller, or a document with no pictures, passes).
+Two things are true of every shell alike and not just this one: an image sitting *mid-sentence*
+still draws as the placeholder character (`\u{fffc}`), because nothing here lays inline content
+out around one yet, and `svg:width`/`svg:height` are not honoured — "fit the column" is the
+answer every simple viewer gives instead, `ui_text_gtk`'s included.
 
 **Not built, though L3 no longer stands in the way.** Wrapped cells and **row auto-height** are
 still this shell's own gap: `ui_sheet_gtk`'s row auto-height measurement moved onto

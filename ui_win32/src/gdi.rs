@@ -19,10 +19,11 @@
 
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
-    CreateDIBSection, CreateFontIndirectW, CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DeleteDC,
-    DeleteObject, FW_BOLD, FW_NORMAL, FillRect, GdiFlush, GetTextExtentPoint32W, HBITMAP, HBRUSH,
-    HDC, HFONT, HGDIOBJ, HPEN, LOGFONTW, PS_SOLID, RoundRect, SRCCOPY, SelectObject,
+    AC_SRC_ALPHA, AC_SRC_OVER, AlphaBlend, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateDIBSection, CreateFontIndirectW,
+    CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DeleteDC, DeleteObject, FW_BOLD, FW_NORMAL,
+    FillRect, GdiFlush, GetTextExtentPoint32W, HBITMAP, HBRUSH, HDC, HFONT, HGDIOBJ, HPEN,
+    LOGFONTW, PS_SOLID, RoundRect, SRCCOPY, SelectObject,
 };
 
 use crate::theme::Rgb;
@@ -505,5 +506,85 @@ impl Drop for Dib {
             let _ = DeleteObject(HGDIOBJ(self.bitmap.0));
             let _ = DeleteDC(self.dc);
         }
+    }
+}
+
+/// Composite a decoded picture onto `dc` — `image.rs`'s only caller, and the reason this is here
+/// rather than there: a source `HBITMAP` is a GDI object, and this file is the only one that
+/// creates one.
+///
+/// `pixels` is `src_w * src_h * 4` bytes of **premultiplied** BGRA, top-down — WIC's
+/// `GUID_WICPixelFormat32bppPBGRA` is exactly that layout, which is why `image.rs` asks WIC for
+/// it rather than converting afterwards. `AlphaBlend` resamples when `w, h` differ from
+/// `src_w, src_h`, which is what lets a picture be drawn at less than its own pixels without a
+/// resampler this crate would then own.
+pub fn blit_image(
+    dc: HDC,
+    dest: crate::sheet::geom::Rect,
+    size: (u32, u32),
+    pixels: &[u8],
+) -> bool {
+    let (x, y, right, bottom) = dest.edges();
+    let (w, h) = (right - x, bottom - y);
+    let (src_w, src_h) = size;
+    let (Ok(src_w_i), Ok(src_h_i)) = (i32::try_from(src_w), i32::try_from(src_h)) else {
+        return false;
+    };
+    if w <= 0 || h <= 0 || src_w_i <= 0 || src_h_i <= 0 {
+        return false;
+    }
+    let Some(len) = (src_w as usize)
+        .checked_mul(src_h as usize)
+        .and_then(|n| n.checked_mul(4))
+    else {
+        return false;
+    };
+    if pixels.len() < len {
+        return false;
+    }
+    let info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: u32::try_from(std::mem::size_of::<BITMAPINFOHEADER>()).expect("forty"),
+            biWidth: src_w_i,
+            // Negative: top-down, matching WIC's own row order — [`Dib`] above is bottom-up
+            // instead, for a `.bmp` file's own layout, so nothing about that shape is shared here.
+            biHeight: -src_h_i,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+    // SAFETY: `info` is a fully initialised local for the length of the call; `bits` is written
+    // by it with a pointer owned by the bitmap and freed by `DeleteObject` before returning.
+    unsafe {
+        let mem_dc = CreateCompatibleDC(Some(dc));
+        if mem_dc.is_invalid() {
+            return false;
+        }
+        let Ok(bitmap) = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0)
+        else {
+            let _ = DeleteDC(mem_dc);
+            return false;
+        };
+        if bitmap.is_invalid() || bits.is_null() {
+            let _ = DeleteDC(mem_dc);
+            return false;
+        }
+        std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits.cast(), len);
+        let previous = SelectObject(mem_dc, HGDIOBJ(bitmap.0));
+        let blend = BLENDFUNCTION {
+            BlendOp: AC_SRC_OVER as u8,
+            BlendFlags: 0,
+            SourceConstantAlpha: 255,
+            AlphaFormat: AC_SRC_ALPHA as u8,
+        };
+        let ok = AlphaBlend(dc, x, y, w, h, mem_dc, 0, 0, src_w_i, src_h_i, blend).as_bool();
+        SelectObject(mem_dc, previous);
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        let _ = DeleteDC(mem_dc);
+        ok
     }
 }

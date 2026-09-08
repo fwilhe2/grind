@@ -238,6 +238,30 @@ pub fn open_path(owner: HWND) -> Option<PathBuf> {
     }
 }
 
+/// Insert Picture's own filter — the same extensions `ui_text_gtk`'s `image_filters` offers,
+/// since both reach the same `image.rs`/WIC (this shell) or gdk-pixbuf (that one) decoders.
+fn image_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
+    vec![(
+        gdi::wide("Images"),
+        gdi::wide("*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.tif;*.tiff"),
+    )]
+}
+
+/// Ask for a picture to insert. `None` means the user cancelled.
+pub fn open_image_path(owner: HWND) -> Option<PathBuf> {
+    let filters = image_filters();
+    let specs = specs(&filters);
+    // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
+    unsafe {
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let _ = dialog.SetFileTypes(&specs);
+        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Insert Picture").as_ptr()));
+        dialog.Show(Some(owner)).ok()?;
+        item_path(&dialog.GetResult().ok()?)
+    }
+}
+
 /// Ask where to save. `suggested` seeds the name and the folder; `kind` is which document type
 /// the open pane holds, so a text document suggests `.fodt` rather than always `.fods`.
 pub fn save_path(owner: HWND, suggested: Option<&Path>, kind: DocumentKind) -> Option<PathBuf> {

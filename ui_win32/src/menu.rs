@@ -123,6 +123,10 @@ pub enum Command {
     /// dialog rather than a key per depth — the gap `doc/text-shell.md` names for every shell's
     /// own window ("no lists UI") and the first one to close it.
     BlockKindDialog,
+    /// Insert a picture at the caret — a file dialog, then `App::insert_image`, into a paragraph
+    /// of its own below the caret's block (an empty block is used as it stands). Decoded and
+    /// drawn for real (`image.rs`, WIC), matching `ui_text_gtk`'s own Ctrl+Shift+I.
+    InsertPicture,
     /// The document as its own projection (D9) — a modal list of its lines, `App::project`'s
     /// text-form, opened on whichever line the pane's own selection or caret projects to. Applies
     /// to both document types, the same as `App::project` reaching both.
@@ -188,6 +192,7 @@ impl Command {
         Command::Heading3,
         Command::Outline,
         Command::BlockKindDialog,
+        Command::InsertPicture,
         Command::ShowSource,
         Command::CheckDocument,
         Command::ToggleRoles,
@@ -438,6 +443,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::BlockKindDialog,
                 label: "Block &Kind…\tCtrl+Shift+K",
             },
+            Item::Verb {
+                command: Command::InsertPicture,
+                label: "I&nsert Picture…\tCtrl+Shift+I",
+            },
         ],
     },
     Menu {
@@ -552,6 +561,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('3'), true, false) => Some(Command::Heading3),
         (Key::Char('O'), true, true) => Some(Command::Outline),
         (Key::Char('K'), true, true) => Some(Command::BlockKindDialog),
+        (Key::Char('I'), true, true) => Some(Command::InsertPicture),
         (Key::Char('U'), true, true) => Some(Command::ShowSource),
         (Key::Char('F'), true, true) => Some(Command::FunctionList),
         (Key::Char('E'), true, true) => Some(Command::ExplainFormula),
@@ -605,7 +615,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Heading2
         | Command::Heading3
         | Command::Outline
-        | Command::BlockKindDialog => matches!(kind, Text),
+        | Command::BlockKindDialog
+        | Command::InsertPicture => matches!(kind, Text),
         Command::New
         | Command::Open
         | Command::Save
@@ -862,6 +873,7 @@ mod tests {
             Command::Heading3,
             Command::Outline,
             Command::BlockKindDialog,
+            Command::InsertPicture,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");

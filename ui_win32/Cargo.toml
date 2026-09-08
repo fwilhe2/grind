@@ -48,6 +48,9 @@ windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    # WIC: decoding an inserted picture's bytes into pixels `AlphaBlend` can composite —
+    # `image.rs`'s whole reason to exist, and the one namespace here that is not GDI.
+    "Win32_Graphics_Imaging",
     # `IFileDialog` is COM, and COM is a namespace of its own — W3's two file dialogs are the
     # only reason either of these is here.
     "Win32_System_Com",

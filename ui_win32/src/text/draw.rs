@@ -237,7 +237,7 @@ mod windows_impl {
         }
 
         let body = page.body();
-        let (column_x, _) = page.text_column();
+        let (column_x, column_w) = page.text_column();
         let (from, to) = frame.selection;
         // The chrome's own font, small and never the document's — used here for the name
         // overlay's marks and again below for the banner and the status bar. One `Font`, so a
@@ -250,6 +250,35 @@ mod windows_impl {
             let face = frame
                 .faces
                 .face(&painted.view.kind, painted.view.style.as_deref());
+
+            // A block that is a picture — optionally with its caption's text — is drawn as one
+            // rather than as the placeholder character `RunView::text` returns everywhere else
+            // (`grind_text::picture_of`'s own doc comment). Decoding happens here rather than in
+            // `text::geom::flow_of`'s picture hook a second time — `image.rs`'s own `ponytail`
+            // names the cost and the trigger for a cache.
+            if let Some((image, caption)) = grind_text::picture_of(painted.view) {
+                let width = (column_w - painted.slot.indent).max(1.0);
+                if let Some(decoded) = crate::image::decode(&image.data) {
+                    let (w, h) = (f64::from(decoded.width), f64::from(decoded.height));
+                    let draw_w = width.min(w);
+                    let draw_h = h * (draw_w / w);
+                    crate::image::draw(
+                        dc,
+                        Rect {
+                            x,
+                            y: top,
+                            w: draw_w,
+                            h: draw_h,
+                        },
+                        &decoded,
+                    );
+                    if let Some(caption) = caption.filter(|text| !text.is_empty()) {
+                        let gap = scale(super::super::geom::CAPTION_GAP, page.dpi);
+                        face.draw_wrapped(dc, caption, x, top + draw_h + gap, width, muted);
+                    }
+                }
+                continue;
+            }
 
             // The bullet, drawn outside the text column and outside the model — a list's
             // numbering lives in a list style this build does not read.

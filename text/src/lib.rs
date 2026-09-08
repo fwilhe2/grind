@@ -250,6 +250,27 @@ pub struct ImageView {
     pub height: Option<String>,
 }
 
+/// Whether a block is a picture, optionally followed by its caption's plain text — the shape
+/// [`App::insert_image`] produces into an empty paragraph (no caption) and the shape a real ODF
+/// frame reads as (an image run, then the caption paragraph's own text, `doc/odt-format.md`'s
+/// "An inserted image is a frame inside a frame"). A shell draws both as a picture rather than
+/// the placeholder character [`RunView::text`] carries for an image everywhere else — an image
+/// sitting mid-sentence with other text around it still draws as `\u{fffc}`, which is the gap
+/// `doc/text-shell.md` names.
+///
+/// Built for `ui_text_gtk/src/view.rs` and hoisted here the day `grind-win32` wanted the same
+/// answer, the same move `format::Change` and `indent_kind` already made.
+pub fn picture_of(block: &BlockView) -> Option<(&ImageView, Option<&str>)> {
+    match block.runs.as_slice() {
+        [run] => run.image.as_ref().map(|image| (image, None)),
+        [run, caption] if caption.image.is_none() => run
+            .image
+            .as_ref()
+            .map(|image| (image, Some(caption.text.as_str()))),
+        _ => None,
+    }
+}
+
 impl Viewport {
     pub fn get(&self, index: usize) -> Option<&BlockView> {
         self.items.get(index.checked_sub(self.blocks.start)?)
@@ -1833,6 +1854,78 @@ mod tests {
 
     fn read(body: &str) -> Document {
         odf::read(fodt(body).as_bytes()).expect("the document parses")
+    }
+
+    fn image_run(mime: &str) -> RunView {
+        RunView {
+            start: 0,
+            text: "\u{fffc}".to_owned(),
+            props: CharStyle::default(),
+            style: None,
+            href: None,
+            image: Some(ImageView {
+                mime: mime.to_owned(),
+                data: Vec::new(),
+                width: None,
+                height: None,
+            }),
+        }
+    }
+
+    fn text_run(start: usize, text: &str) -> RunView {
+        RunView {
+            start,
+            text: text.to_owned(),
+            props: CharStyle::default(),
+            style: None,
+            href: None,
+            image: None,
+        }
+    }
+
+    fn block(runs: Vec<RunView>) -> BlockView {
+        BlockView {
+            index: 0,
+            id: BlockId(0),
+            kind: BlockKind::Paragraph,
+            style: None,
+            text: String::new(),
+            runs,
+            styled: false,
+            marks: Vec::new(),
+            cell: None,
+        }
+    }
+
+    #[test]
+    fn a_lone_image_run_is_a_picture_with_no_caption() {
+        let view = block(vec![image_run("image/png")]);
+        let (image, caption) = picture_of(&view).expect("reads as a picture");
+        assert_eq!(image.mime, "image/png");
+        assert_eq!(caption, None);
+    }
+
+    #[test]
+    fn an_image_then_text_is_a_picture_with_a_caption() {
+        let view = block(vec![image_run("image/png"), text_run(1, "A caption")]);
+        let (_, caption) = picture_of(&view).expect("reads as a picture");
+        assert_eq!(caption, Some("A caption"));
+    }
+
+    #[test]
+    fn text_before_the_image_is_not_a_picture() {
+        let view = block(vec![text_run(0, "Some words "), image_run("image/png")]);
+        assert_eq!(
+            picture_of(&view),
+            None,
+            "an image mid-sentence is not a figure"
+        );
+    }
+
+    #[test]
+    fn a_second_image_is_not_a_caption() {
+        let view = block(vec![image_run("image/png"), image_run("image/png")]);
+        assert_eq!(picture_of(&view), None);
     }
 
     #[test]

@@ -102,6 +102,7 @@ use crate::clipboard;
 use crate::code;
 use crate::dialog::{self, Answer, Com};
 use crate::gdi::{self, BackBuffer, Brush, Dib, Font};
+use crate::image;
 use crate::menu::{self, Command, Item};
 use crate::metrics::{Faces, Fonts};
 use crate::notice;
@@ -711,7 +712,32 @@ impl Text {
         let Some(faces) = self.faces() else {
             return;
         };
-        self.flow = text::geom::flow_of(&self.app, &faces, self.page.dpi);
+        let dpi = self.page.dpi;
+        // A picture is measured from its own decoded pixels rather than as a line of text —
+        // `flow_of`'s own doc comment is the rule, and this closure is `image.rs`'s answer to
+        // it: fit the column, keep the aspect ratio, never larger than the picture's own size,
+        // the same rule `ui_text_gtk`'s `image_size` follows. `None` when the block is not a
+        // picture, or WIC could not read it (a corrupt file, a format nobody's decoder knows) —
+        // R5's tolerance, so a bad picture takes no more room than its placeholder character
+        // would rather than stopping the document.
+        let picture = |view: &grind_text::BlockView, width: f64| -> Option<f64> {
+            let (image, caption) = grind_text::picture_of(view)?;
+            let (w, h) = image::size(&image.data)?;
+            let picture_h = f64::from(h) * (width.min(f64::from(w)) / f64::from(w));
+            match caption {
+                Some(text) if !text.is_empty() => {
+                    let body = faces.face(&grind_text::BlockKind::Paragraph, None);
+                    let gap = scale(text::geom::CAPTION_GAP, dpi);
+                    Some(
+                        picture_h
+                            + gap
+                            + body.wrapped_height(self.fonts.as_ref()?.dc(), text, width),
+                    )
+                }
+                _ => Some(picture_h),
+            }
+        };
+        self.flow = text::geom::flow_of(&self.app, &faces, dpi, &picture);
     }
 
     /// Whether anything is selected at all.
@@ -1139,6 +1165,9 @@ pub fn render(
     path: Option<PathBuf>,
     target: &std::path::Path,
 ) -> Result<(), String> {
+    // COM, for `image.rs`'s WIC calls — a picture is measured in `relayout` and drawn in
+    // `draw_text_frame`, and this windowless path has no `run`'s own guard to lean on.
+    let _com = Com::new();
     let mut pane = opened(kind, path, Theme::of(Mode::Light))?;
     let (w, h) = (f64::from(RENDER_W), f64::from(RENDER_H));
     let dib = Dib::new(RENDER_W, RENDER_H).ok_or("could not make the drawing surface")?;
@@ -2881,7 +2910,8 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Heading2
         | Command::Heading3
         | Command::Outline
-        | Command::BlockKindDialog => {}
+        | Command::BlockKindDialog
+        | Command::InsertPicture => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
@@ -4214,6 +4244,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::GoTo => text_go_to(hwnd),
         Command::Outline => text_outline(hwnd),
         Command::BlockKindDialog => text_block_kind_dialog(hwnd),
+        Command::InsertPicture => text_insert_picture(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
@@ -4649,6 +4680,83 @@ fn text_block_kind_dialog(hwnd: HWND) {
         return;
     };
     text_set_kind(hwnd, kind, None);
+}
+
+/// Insert a picture at the caret — a file dialog, then `App::insert_image`, mirroring
+/// `ui_text_gtk`'s own `Ui::embed_image`: an empty block is used as it stands, and any other
+/// block gets a fresh paragraph inserted after it, so the picture always lands in a paragraph of
+/// its own rather than mid-sentence, where every shell in the suite still draws the placeholder
+/// character instead of the picture.
+fn text_insert_picture(hwnd: HWND) {
+    let Some(path) = dialog::open_image_path(hwnd) else {
+        return;
+    };
+    let data = match std::fs::read(&path) {
+        Ok(data) => data,
+        Err(error) => {
+            dialog::error(hwnd, &format!("Could not read {}: {error}", path.display()));
+            return;
+        }
+    };
+    let mime = image::mime_of(&path);
+    // SAFETY: one borrow. `insert`/`insert_image` notify, and the observer posts rather than
+    // sends.
+    let outcome = unsafe {
+        with_text(hwnd, |text| {
+            let block = text.caret.block;
+            let empty = text
+                .app
+                .input_text(block)
+                .is_ok_and(|content| content.is_empty());
+            let at = match empty {
+                true => block,
+                false => {
+                    if let Err(error) =
+                        text.app
+                            .insert(block + 1, grind_text::BlockKind::Paragraph, "")
+                    {
+                        return Err(error.to_string());
+                    }
+                    block + 1
+                }
+            };
+            text.app
+                .insert_image(
+                    Caret {
+                        block: at,
+                        offset: 0,
+                    },
+                    mime,
+                    data,
+                    None,
+                    None,
+                )
+                .map(|()| at)
+                .map_err(|error| error.to_string())
+        })
+    };
+    match outcome {
+        // Past the picture, which is one caret position — so the next thing typed is a caption
+        // rather than text wrapped around a frame nothing lays out yet.
+        Some(Ok(at)) => {
+            // SAFETY: a fresh borrow, taken after the one above released.
+            unsafe {
+                with_text(hwnd, |text| {
+                    text.place(
+                        Caret {
+                            block: at,
+                            offset: 1,
+                        },
+                        false,
+                    );
+                    text.caret_on = true;
+                });
+            }
+            refresh(hwnd);
+        }
+        Some(Err(message)) => dialog::error(hwnd, &message),
+        None => {}
+    }
 }
 
 fn text_history(hwnd: HWND, undo: bool) {

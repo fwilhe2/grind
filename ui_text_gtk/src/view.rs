@@ -1384,24 +1384,14 @@ mod imp {
         Some((left, right - left))
     }
 
-    /// Whether a block is a picture, optionally followed by its caption's plain text — the
-    /// shape `App::insert_image` produces into an empty paragraph (no caption) and the shape
-    /// a real ODF frame reads as (an image run, then the caption paragraph's text, `doc/
-    /// odt-format.md`'s "An inserted image is a frame inside a frame"). Both are drawn as a
-    /// picture rather than the placeholder character every other block context sees. An image
-    /// sitting mid-sentence with other text around it still draws as `\u{fffc}`, which is the
-    /// gap `doc/text-shell.md` names.
+    /// Whether a block is a picture, optionally followed by its caption's plain text.
+    ///
+    /// `grind_text::picture_of`'s own doc comment has the rest; this is a re-export under this
+    /// module's own name because it started here and `grind-win32` wanted the same answer.
     pub(super) fn picture_of(
         block: &grind_text::BlockView,
     ) -> Option<(&grind_text::ImageView, Option<&str>)> {
-        match block.runs.as_slice() {
-            [run] => run.image.as_ref().map(|image| (image, None)),
-            [run, caption] if caption.image.is_none() => run
-                .image
-                .as_ref()
-                .map(|image| (image, Some(caption.text.as_str()))),
-            _ => None,
-        }
+        grind_text::picture_of(block)
     }
 
     /// Decode an embedded image's bytes into something [`gtk::Snapshot`] can paint. `None` for

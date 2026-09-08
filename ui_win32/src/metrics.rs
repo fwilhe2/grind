@@ -217,8 +217,9 @@ mod windows_impl {
 
     use windows::Win32::Foundation::{COLORREF, RECT, SIZE};
     use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, DeleteDC, ETO_OPAQUE, ExtTextOutW, GetTextExtentExPointW,
-        GetTextMetricsW, HDC, HFONT, HGDIOBJ, SelectObject, SetBkColor, SetTextColor, TEXTMETRICW,
+        CreateCompatibleDC, DT_CALCRECT, DT_LEFT, DT_NOPREFIX, DT_WORDBREAK, DeleteDC, DrawTextW,
+        ETO_OPAQUE, ExtTextOutW, GetTextExtentExPointW, GetTextMetricsW, HDC, HFONT, HGDIOBJ,
+        SelectObject, SetBkColor, SetTextColor, TEXTMETRICW,
     };
     use windows::core::PCWSTR;
 
@@ -280,6 +281,14 @@ mod windows_impl {
 
         pub fn body_px(&self) -> f64 {
             self.body_px
+        }
+
+        /// The measuring surface itself — `CreateCompatibleDC(None)`, needing no window. A
+        /// picture's caption is measured and drawn with `DrawTextW` rather than the core's own
+        /// layout (`Face::wrapped_height`'s own doc comment says why), and that needs a `DC` of
+        /// its own where nothing else in this file's callers already have a window's.
+        pub fn dc(&self) -> HDC {
+            self.dc
         }
 
         /// The handle for one exact font, made once and kept.
@@ -510,6 +519,75 @@ mod windows_impl {
                 SelectObject(dc, previous);
             }
             f64::from(size.cx)
+        }
+
+        /// How tall `text` comes out wrapped to `width`, in this face — a picture's caption,
+        /// measured with `DrawTextW`'s own word wrap rather than the core's `grind_core::layout`.
+        ///
+        /// This is the one text this pane draws outside decision 3's rule, and on purpose: a
+        /// caption is not addressable by a [`grind_text::Caret`] the way the rest of a block's
+        /// text is (there is no line layout to disagree with the caret over, because nothing
+        /// here puts a caret in it), so asking GDI to wrap it costs nothing decision 3 was
+        /// protecting. `ui_text_gtk`'s own `Face::draw_wrapped` makes the same call, with Pango.
+        pub fn wrapped_height(&self, dc: HDC, text: &str, width: f64) -> f64 {
+            f64::from(self.wrapped_rect(dc, text, width).bottom)
+        }
+
+        /// Draw `text` wrapped to `width`, top-left at `x, y` — the caption's own ink.
+        pub fn draw_wrapped(&self, dc: HDC, text: &str, x: f64, y: f64, width: f64, ink: Rgb) {
+            let mut wide: Vec<u16> = text.encode_utf16().collect();
+            if wide.is_empty() {
+                return;
+            }
+            let mut rect = RECT {
+                left: x.round() as i32,
+                top: y.round() as i32,
+                right: (x + width).round() as i32,
+                bottom: i32::MAX,
+            };
+            let font = self.fonts.resolve(&self.spec, &CharStyle::default());
+            // SAFETY: `wide` and `rect` are live locals for the length of the call; the DC's
+            // previous font is restored before returning.
+            unsafe {
+                let previous = SelectObject(dc, HGDIOBJ(font.0));
+                SetTextColor(dc, COLORREF(ink.colorref()));
+                let _ = DrawTextW(
+                    dc,
+                    &mut wide[..],
+                    &mut rect,
+                    DT_WORDBREAK | DT_NOPREFIX | DT_LEFT,
+                );
+                SelectObject(dc, previous);
+            }
+        }
+
+        /// [`Self::wrapped_height`]'s own measurement, factored out so drawing never asks GDI a
+        /// second question the height did not already answer.
+        fn wrapped_rect(&self, dc: HDC, text: &str, width: f64) -> RECT {
+            let mut wide: Vec<u16> = text.encode_utf16().collect();
+            if wide.is_empty() {
+                return RECT::default();
+            }
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: width.max(1.0).round() as i32,
+                bottom: 0,
+            };
+            let font = self.fonts.resolve(&self.spec, &CharStyle::default());
+            // SAFETY: `wide` and `rect` are live locals for the length of the call; the DC's
+            // previous font is restored before returning.
+            unsafe {
+                let previous = SelectObject(dc, HGDIOBJ(font.0));
+                let _ = DrawTextW(
+                    dc,
+                    &mut wide[..],
+                    &mut rect,
+                    DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_LEFT,
+                );
+                SelectObject(dc, previous);
+            }
+            rect
         }
     }
 
