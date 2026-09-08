@@ -669,8 +669,24 @@ three rectangles in `text_button_down` before the caret-placement fallback runs,
 precedence `button_down`'s own `Strip` match gives the grid's name box and formula bar, and every
 path converges on the one `text_emphasise` function: the click, Ctrl+B/I/U, and the Format menu
 all toggle through it, over the same logic `ui_tui::emphasise_selection` uses (on across the whole
-selection, or off when it already agrees). It carries bold, italic and underline only — strike and
-code stay menu-and-key-only, the same as `ui_tui`'s bar. **Go-to has since landed too**, as F5 or
+selection, or off when it already agrees). **The strip now carries all five of
+`markdown::Emphasis`** — Strike and Code joined Bold, Italic and Underline as drawn toggles rather
+than staying menu-and-key-only, catching this pane up with `grind-text-gtk`'s own bar — and four
+more controls beyond the toggles: Family and Size open `dialog::choose` (`text_pick_family`,
+`text_pick_size`), the two swatches (`text::geom::Page::strip_color`/`strip_highlight`, filled with
+`gdi::round_rect` at radius zero, hollow for *Automatic*) open the same popup over
+`grind_core::style::PALETTE`, and *Clear* is one shot through `grind_text::format::Change::Clear`.
+`grind_text::format::Change` — the whole vocabulary of what a control writes, `Bold`/`Family`/
+`Clear` and the rest, tested with no display — is hoisted into `grind-text` itself rather than
+copied, the same move `sheet/src/formula/assist.rs` made when `grind-win32` wanted the same
+formula-typing answers a second shell already had; `ui_text_gtk/src/format.rs` now re-exports it
+instead of defining its own. The families this picker offers are **curated, not enumerated** —
+eight common Windows faces plus the document's own when it set one none of them name — because
+this shell has no `EnumFontFamiliesExW` wiring yet, which is a named gap rather than an oversight;
+`grind-text-gtk`'s font drop-down lists every family Pango can resolve. `text_format` is
+`text_emphasise`'s general form, applying any `Change` to the selection's `CharStyle` the same way;
+`text_button_down`'s hit test answers a `text::geom::StripHit` now rather than a bare button index,
+since the strip has controls that are not toggles. **Go-to has since landed too**, as F5 or
 Ctrl+G (the grid's own two keys for the same verb) opening a modal prompt rather than a strip
 box — this pane owns no child control to put one in — over `loc::parse` and `App::resolve_caret`,
 the same two calls `ui_tui`'s `cmd_jump` makes; `p12` / `#intro` / `§2.1.3` are all addresses it

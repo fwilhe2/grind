@@ -145,6 +145,7 @@ pub use windows_impl::{Frame, Painted, paint};
 
 #[cfg(windows)]
 mod windows_impl {
+    use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Gdi::{HDC, SetBkMode, TRANSPARENT};
 
     use grind_core::layout::Layout;
@@ -154,7 +155,7 @@ mod windows_impl {
     use crate::gdi::{self, Font, Selected};
     use crate::metrics::Faces;
     use crate::sheet::draw::{Align, draw_text};
-    use crate::sheet::geom::scale;
+    use crate::sheet::geom::{Rect, scale};
     use crate::theme::Theme;
 
     use super::super::geom::{Page, Slot};
@@ -194,8 +195,18 @@ mod windows_impl {
         /// Which of the strip's three buttons — Bold, Italic, Underline — apply to the selection,
         /// or to the style the next character typed would carry when there is none. Presentation
         /// state, computed by the caller for the same reason the selection is: the core is never
-        /// told which of its own answers a shell drew a button in response to.
-        pub format: [bool; 3],
+        /// told which of its own answers a shell drew a button in response to. Bold, Italic,
+        /// Underline, Strike, Code — [`super::super::geom::Page::strip_buttons`]'s own order.
+        pub format: [bool; 5],
+        /// The family and size the strip's two pickers show, already resolved to what
+        /// `text_style_here` says the selection or the next keystroke agrees on — `None` draws
+        /// *Font*/*Size*, the same "nothing set" the two drop-downs mean in `grind-text-gtk`.
+        pub family: Option<&'a str>,
+        pub size: Option<&'a str>,
+        /// The two swatches' own fill, `#rrggbb` verbatim — `None` draws the swatch hollow, which
+        /// is what *Automatic* looks like.
+        pub color: Option<&'a str>,
+        pub highlight: Option<&'a str>,
         /// `doc/view-modes.md`'s name overlay, this pane's answer to it — `:names`' equivalent
         /// for a document with no cells. A bookmark contributes no characters of its own
         /// (`doc/text-core.md` §3.6), so nothing a reader sees says it is there; `BlockView::marks`
@@ -382,23 +393,25 @@ mod windows_impl {
             scale(10.0, page.dpi),
         );
 
-        draw_strip(dc, page, theme, &frame.format);
+        draw_strip(dc, page, theme, frame);
     }
 
-    /// The format strip: three buttons, pressed in when [`Frame::format`] says the property
-    /// applies. `doc/windows-shell.md`'s admission test for this surface — "a property of the
+    /// The format strip: five toggles, pressed in when [`Frame::format`] says the property
+    /// applies, then the Family and Size pickers, the two colour swatches and *Clear*.
+    /// `doc/windows-shell.md`'s admission test for this surface — "a property of the
     /// selection" — is exactly `App::char_style`, so this is the drawn half of what
-    /// `super::super::super::text_emphasise` already reads and writes; the button only decides
-    /// whether to wash its own ground before drawing the same label every one of its callers
-    /// agrees on.
-    fn draw_strip(dc: HDC, page: &Page, theme: Theme, format: &[bool; 3]) {
-        const LABELS: [&str; 3] = ["B", "I", "U"];
+    /// `super::super::super::text_emphasise` and `super::super::super::text_format` already read
+    /// and write; a control only decides whether to wash its own ground or draw a swatch before
+    /// drawing the same label every one of its callers agrees on.
+    fn draw_strip(dc: HDC, page: &Page, theme: Theme, frame: &Frame) {
+        const LABELS: [&str; 5] = ["B", "I", "U", "S", "M"];
         let strip = page.strip();
         let (left, top, right, bottom) = strip.edges();
         gdi::fill(dc, left, top, right, bottom, theme.header);
+        let mut dividers = Vec::new();
         for (index, button) in page.strip_buttons().iter().enumerate() {
             let (bl, bt, br, bb) = button.edges();
-            if format[index] {
+            if frame.format[index] {
                 gdi::fill(dc, bl, bt, br, bb, theme.header_active);
             }
             draw_text(
@@ -413,10 +426,84 @@ mod windows_impl {
                 0.0,
             );
             if index > 0 {
-                gdi::fill(dc, bl, top, bl + 1, bottom, theme.header_line);
+                dividers.push(bl);
             }
         }
+
+        let family = page.strip_family();
+        let (fl, ft, fr, fb) = family.edges();
+        dividers.push(fl);
+        draw_text(
+            dc,
+            frame.family.unwrap_or("Font"),
+            fl,
+            ft,
+            fr,
+            fb,
+            Align::Center,
+            theme.header_text,
+            0.0,
+        );
+
+        let size = page.strip_size();
+        let (sl, st, sr, sb) = size.edges();
+        dividers.push(sl);
+        draw_text(
+            dc,
+            frame.size.unwrap_or("Size"),
+            sl,
+            st,
+            sr,
+            sb,
+            Align::Center,
+            theme.header_text,
+            0.0,
+        );
+
+        let color = page.strip_color();
+        dividers.push(color.edges().0);
+        draw_swatch(dc, color, theme, frame.color);
+        let highlight = page.strip_highlight();
+        dividers.push(highlight.edges().0);
+        draw_swatch(dc, highlight, theme, frame.highlight);
+
+        let clear = page.strip_clear();
+        let (cl, ct, cr, cb) = clear.edges();
+        dividers.push(cl);
+        draw_text(
+            dc,
+            "Clear",
+            cl,
+            ct,
+            cr,
+            cb,
+            Align::Center,
+            theme.header_text,
+            0.0,
+        );
+
+        for x in dividers {
+            gdi::fill(dc, x, top, x + 1, bottom, theme.header_line);
+        }
         gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
+    }
+
+    /// One colour swatch: the colour it carries filled in, or hollow — a border and the strip's
+    /// own ground, over `gdi::round_rect` with no radius — for *Automatic*, so a swatch with
+    /// nothing set does not lie about having a colour.
+    fn draw_swatch(dc: HDC, rect: Rect, theme: Theme, hex: Option<&str>) {
+        let (left, top, right, bottom) = rect.edges();
+        let margin = ((rect.h.min(rect.w) as i32) / 4).max(2);
+        let win_rect = RECT {
+            left: left + margin,
+            top: top + margin,
+            right: right - margin,
+            bottom: bottom - margin,
+        };
+        let fill = hex
+            .and_then(crate::theme::Rgb::parse)
+            .unwrap_or(theme.header);
+        gdi::round_rect(dc, win_rect, 0, fill, theme.header_line);
     }
 
     /// The part of `block` a selection from `from` to `to` covers, as two offsets into that block.

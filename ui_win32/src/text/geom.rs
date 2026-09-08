@@ -58,6 +58,17 @@ pub const STRIP_H: f64 = 28.0;
 /// One toggle button's width on the strip.
 pub const BUTTON_W: f64 = 34.0;
 
+/// The Family and Size pickers' width — wide enough for a short font name or `"999pt"`, and
+/// [`crate::sheet::draw::Align::Center`] handles anything longer by clipping rather than wrapping.
+pub const PICKER_W: f64 = 72.0;
+
+/// One colour swatch's width — narrower than a picker, since a swatch draws a fill rather than
+/// text and needs no room for a label.
+pub const SWATCH_W: f64 = 28.0;
+
+/// *Clear Formatting*'s width — wider than a toggle, since "Clear" does not fit `BUTTON_W`.
+pub const CLEAR_W: f64 = 44.0;
+
 /// The text column inside a pane `width` pixels wide: where it starts and how wide it is.
 ///
 /// Centred rather than left-aligned once the window is wider than [`MEASURE`], which keeps the
@@ -67,6 +78,18 @@ pub fn column(width: f64, dpi: u32) -> (f64, f64) {
     let available = (width - 2.0 * margin).max(1.0);
     let text = available.min(scale(MEASURE, dpi));
     (margin + (available - text) / 2.0, text)
+}
+
+/// Which of the strip's controls a click landed on — [`Page::strip_hit`]'s answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StripHit {
+    /// One of the five toggles, by [`Page::strip_buttons`]'s own order.
+    Toggle(usize),
+    Family,
+    Size,
+    Color,
+    Highlight,
+    Clear,
 }
 
 /// The window's furniture around the page: what is left for the document, and where.
@@ -126,8 +149,8 @@ impl Page {
         }
     }
 
-    /// The strip's three toggle buttons, left to right: Bold, Italic, Underline.
-    pub fn strip_buttons(&self) -> [Rect; 3] {
+    /// The strip's five toggle buttons, left to right: Bold, Italic, Underline, Strike, Code.
+    pub fn strip_buttons(&self) -> [Rect; 5] {
         let w = scale(BUTTON_W, self.dpi);
         let strip = self.strip();
         std::array::from_fn(|i| Rect {
@@ -138,11 +161,87 @@ impl Page {
         })
     }
 
-    /// Which button, if any, a click at `x, y` landed on.
-    pub fn strip_hit(&self, x: f64, y: f64) -> Option<usize> {
-        self.strip_buttons()
+    /// Where the toggles end and the four pickers begin.
+    fn strip_pickers_x(&self) -> f64 {
+        scale(BUTTON_W, self.dpi) * 5.0
+    }
+
+    /// *Font* — opens [`super::super::dialog::choose`] over the families this build knows.
+    pub fn strip_family(&self) -> Rect {
+        let strip = self.strip();
+        Rect {
+            x: self.strip_pickers_x(),
+            y: strip.y,
+            w: scale(PICKER_W, self.dpi),
+            h: strip.h,
+        }
+    }
+
+    /// *Size* — the ladder `grind_text::format::sizes` offers.
+    pub fn strip_size(&self) -> Rect {
+        let family = self.strip_family();
+        Rect {
+            x: family.x + family.w,
+            y: family.y,
+            w: scale(PICKER_W, self.dpi),
+            h: family.h,
+        }
+    }
+
+    /// The text colour swatch.
+    pub fn strip_color(&self) -> Rect {
+        let size = self.strip_size();
+        Rect {
+            x: size.x + size.w,
+            y: size.y,
+            w: scale(SWATCH_W, self.dpi),
+            h: size.h,
+        }
+    }
+
+    /// The highlight swatch.
+    pub fn strip_highlight(&self) -> Rect {
+        let color = self.strip_color();
+        Rect {
+            x: color.x + color.w,
+            y: color.y,
+            w: scale(SWATCH_W, self.dpi),
+            h: color.h,
+        }
+    }
+
+    /// *Clear Formatting* — the one-shot the toggles can only approximate.
+    pub fn strip_clear(&self) -> Rect {
+        let highlight = self.strip_highlight();
+        Rect {
+            x: highlight.x + highlight.w,
+            y: highlight.y,
+            w: scale(CLEAR_W, self.dpi),
+            h: highlight.h,
+        }
+    }
+
+    /// Which control, if any, a click at `x, y` on the strip landed on.
+    pub fn strip_hit(&self, x: f64, y: f64) -> Option<StripHit> {
+        if let Some(index) = self
+            .strip_buttons()
             .iter()
             .position(|rect| rect.contains(x, y))
+        {
+            return Some(StripHit::Toggle(index));
+        }
+        for (rect, hit) in [
+            (self.strip_family(), StripHit::Family),
+            (self.strip_size(), StripHit::Size),
+            (self.strip_color(), StripHit::Color),
+            (self.strip_highlight(), StripHit::Highlight),
+            (self.strip_clear(), StripHit::Clear),
+        ] {
+            if rect.contains(x, y) {
+                return Some(hit);
+            }
+        }
+        None
     }
 
     /// The text column, in window coordinates.
@@ -465,11 +564,11 @@ mod tests {
         }
         assert_eq!(
             page.strip_hit(buttons[0].x + 1.0, buttons[0].y + 1.0),
-            Some(0)
+            Some(StripHit::Toggle(0))
         );
         assert_eq!(
             page.strip_hit(buttons[2].x + 1.0, buttons[2].y + 1.0),
-            Some(2)
+            Some(StripHit::Toggle(2))
         );
         assert_eq!(
             page.strip_hit(0.0, page.body().y + 5.0),
@@ -491,6 +590,53 @@ mod tests {
             scroll: 0.0,
         };
         assert_eq!(page.strip_buttons()[0].w, 2.0 * BUTTON_W);
+    }
+
+    /// The four pickers pick up exactly where the five toggles leave off, in the same
+    /// no-gap-no-overlap order, and each is its own [`StripHit`].
+    #[test]
+    fn the_pickers_continue_where_the_toggles_end_and_dont_overlap() {
+        let page = Page {
+            width: 800.0,
+            height: 600.0,
+            banner_h: 0.0,
+            strip_h: STRIP_H,
+            status_h: STATUS_H,
+            dpi: 96,
+            scroll: 0.0,
+        };
+        let toggles = page.strip_buttons();
+        let rects = [
+            page.strip_family(),
+            page.strip_size(),
+            page.strip_color(),
+            page.strip_highlight(),
+            page.strip_clear(),
+        ];
+        assert_eq!(rects[0].x, toggles[4].x + toggles[4].w);
+        for pair in rects.windows(2) {
+            assert_eq!(pair[0].x + pair[0].w, pair[1].x, "no gap and no overlap");
+        }
+        assert_eq!(
+            page.strip_hit(rects[0].x + 1.0, rects[0].y + 1.0),
+            Some(StripHit::Family)
+        );
+        assert_eq!(
+            page.strip_hit(rects[1].x + 1.0, rects[1].y + 1.0),
+            Some(StripHit::Size)
+        );
+        assert_eq!(
+            page.strip_hit(rects[2].x + 1.0, rects[2].y + 1.0),
+            Some(StripHit::Color)
+        );
+        assert_eq!(
+            page.strip_hit(rects[3].x + 1.0, rects[3].y + 1.0),
+            Some(StripHit::Highlight)
+        );
+        assert_eq!(
+            page.strip_hit(rects[4].x + 1.0, rects[4].y + 1.0),
+            Some(StripHit::Clear)
+        );
     }
 
     /// A document, three blocks, one of them long enough to wrap at the width below.

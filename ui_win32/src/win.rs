@@ -115,7 +115,7 @@ use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
 use crate::surrogate;
 use crate::text;
-use crate::text::geom::{Flow, Page};
+use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use grind_core::DocumentKind;
 use grind_sheet::{App, Pos, RecalcMode};
@@ -1732,7 +1732,7 @@ fn build_menu(hwnd: HWND) {
 }
 
 /// W7's context menus: cells and headers get the grid's own clipboard verbs, the text pane its
-/// own plus the three toggles the format strip already draws. A short, fixed list rather than a
+/// own plus the five toggles the format strip already draws. A short, fixed list rather than a
 /// state-aware one — the same simplification W7 already names for the menu bar's own greying —
 /// and every entry is a real [`Command`] reused from [`menu::MENUS`] rather than a second
 /// vocabulary, so a click here reaches exactly the handler a click on the bar would.
@@ -1745,6 +1745,9 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             Command::Bold,
             Command::Italic,
             Command::Underline,
+            Command::Strike,
+            Command::Code,
+            Command::ClearFormatting,
         ],
         false => &[
             Command::Cut,
@@ -2864,6 +2867,13 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::Bold
         | Command::Italic
         | Command::Underline
+        | Command::Strike
+        | Command::Code
+        | Command::PickFamily
+        | Command::PickSize
+        | Command::PickColor
+        | Command::PickHighlight
+        | Command::ClearFormatting
         | Command::Paragraph
         | Command::Heading1
         | Command::Heading2
@@ -4049,9 +4059,16 @@ fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
     // SAFETY: one borrow; the hit test is arithmetic over the page geometry and dispatches
     // nothing.
-    let button = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
-    if let Some(which) = button {
-        text_emphasise(hwnd, STRIP_BUTTONS[which]);
+    let hit = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
+    if let Some(hit) = hit {
+        match hit {
+            StripHit::Toggle(which) => text_emphasise(hwnd, STRIP_BUTTONS[which]),
+            StripHit::Family => text_pick_family(hwnd),
+            StripHit::Size => text_pick_size(hwnd),
+            StripHit::Color => text_pick_color(hwnd, false),
+            StripHit::Highlight => text_pick_color(hwnd, true),
+            StripHit::Clear => text_format(hwnd, grind_text::format::Change::Clear),
+        }
         // SAFETY: no borrow held.
         unsafe {
             let _ = SetFocus(Some(hwnd));
@@ -4177,6 +4194,13 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Bold => text_emphasise(hwnd, markdown::Emphasis::Bold),
         Command::Italic => text_emphasise(hwnd, markdown::Emphasis::Italic),
         Command::Underline => text_emphasise(hwnd, markdown::Emphasis::Underline),
+        Command::Strike => text_emphasise(hwnd, markdown::Emphasis::Strike),
+        Command::Code => text_emphasise(hwnd, markdown::Emphasis::Code),
+        Command::PickFamily => text_pick_family(hwnd),
+        Command::PickSize => text_pick_size(hwnd),
+        Command::PickColor => text_pick_color(hwnd, false),
+        Command::PickHighlight => text_pick_color(hwnd, true),
+        Command::ClearFormatting => text_format(hwnd, grind_text::format::Change::Clear),
         Command::Paragraph => text_set_kind(hwnd, grind_text::BlockKind::Paragraph),
         Command::Heading1 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 1 }),
         Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }),
@@ -4280,12 +4304,14 @@ fn text_outline(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Which emphasis each of the strip's three buttons is, left to right — [`text::geom::Page::strip_buttons`]'s
+/// Which emphasis each of the strip's five toggles is, left to right — [`text::geom::Page::strip_buttons`]'s
 /// order and this array's are the one place that ordering is written down.
-const STRIP_BUTTONS: [markdown::Emphasis; 3] = [
+const STRIP_BUTTONS: [markdown::Emphasis; 5] = [
     markdown::Emphasis::Bold,
     markdown::Emphasis::Italic,
     markdown::Emphasis::Underline,
+    markdown::Emphasis::Strike,
+    markdown::Emphasis::Code,
 ];
 
 /// The property this emphasis lives in, read off a style rather than written to one — the half of
@@ -4346,8 +4372,8 @@ fn text_style_here(text: &Text) -> grind_text::CharStyle {
     text.app.char_style(before, caret).unwrap_or_default()
 }
 
-/// Which of the strip's three buttons should be drawn pressed in, for [`text::draw::paint`].
-fn format_state(text: &Text) -> [bool; 3] {
+/// Which of the strip's five toggles should be drawn pressed in, for [`text::draw::paint`].
+fn format_state(text: &Text) -> [bool; 5] {
     let style = text_style_here(text);
     STRIP_BUTTONS.map(|emphasis| emphasis_active(&style, emphasis))
 }
@@ -4390,6 +4416,126 @@ fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
         });
     }
     refresh(hwnd);
+}
+
+/// Apply a formatting-bar change over the selection — [`text_emphasise`]'s general form, over
+/// [`grind_text::format::Change`] rather than one `markdown::Emphasis`, for the strip's four
+/// controls that write more than a boolean: Family, Size, the two swatches and Clear. The same
+/// vocabulary `grind-text-gtk`'s `format.rs` writes through, hoisted into `grind-text` itself so
+/// the two shells cannot disagree about what a control does.
+fn text_format(hwnd: HWND, change: grind_text::format::Change) {
+    // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            if !text.has_selection() {
+                text.say(Some("nothing selected".to_owned()));
+                return;
+            }
+            let (from, to) = text.range();
+            let mut style = text.app.char_style(from, to).unwrap_or_default();
+            change.apply(&mut style);
+            match text.app.set_char_style(from, to, &style) {
+                Ok(_) => text.say(None),
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// The families the picker offers — curated rather than enumerated. `grind-text-gtk` lists every
+/// family Pango can resolve; this shell has no `EnumFontFamiliesExW` wiring yet, which is a named
+/// gap in `doc/windows-shell.md` rather than an oversight. The document's own family is added
+/// when it set one this list does not carry, so a document written elsewhere still shows what it
+/// chose.
+const FONT_CHOICES: [&str; 8] = [
+    "Segoe UI",
+    "Calibri",
+    "Arial",
+    "Times New Roman",
+    "Georgia",
+    "Verdana",
+    "Consolas",
+    "Courier New",
+];
+
+/// *Font* — `dialog::choose` over [`FONT_CHOICES`], [`grind_text::format::DEFAULT`] first.
+fn text_pick_family(hwnd: HWND) {
+    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let mut items: Vec<String> = std::iter::once(grind_text::format::DEFAULT.to_owned())
+        .chain(FONT_CHOICES.iter().map(|name| (*name).to_owned()))
+        .collect();
+    if let Some(current) = style.font_family.as_deref()
+        && !items.iter().any(|item| item == current)
+    {
+        items.insert(1, current.to_owned());
+    }
+    let initial = style
+        .font_family
+        .as_deref()
+        .and_then(|current| items.iter().position(|item| item == current))
+        .unwrap_or(0);
+    let Some(choice) = dialog::choose(hwnd, "Font", &items, initial) else {
+        return;
+    };
+    let value = (choice != 0).then(|| items[choice].clone());
+    text_format(hwnd, grind_text::format::Change::Family(value));
+}
+
+/// *Size* — `dialog::choose` over [`grind_text::format::sizes`], the same ladder
+/// `grind-text-gtk`'s drop-down offers.
+fn text_pick_size(hwnd: HWND) {
+    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let items = grind_text::format::sizes(style.font_size.as_deref());
+    let initial = style
+        .font_size
+        .as_deref()
+        .and_then(|current| items.iter().position(|item| item == current))
+        .unwrap_or(0);
+    let Some(choice) = dialog::choose(hwnd, "Font Size", &items, initial) else {
+        return;
+    };
+    let value = (choice != 0).then(|| items[choice].clone());
+    text_format(hwnd, grind_text::format::Change::Size(value));
+}
+
+/// Either swatch — `grind_core::style::PALETTE` as the choices, *Automatic* first, over the same
+/// `dialog::choose` popup a colour name is one row of.
+fn text_pick_color(hwnd: HWND, highlight: bool) {
+    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let current = match highlight {
+        true => style.background.clone(),
+        false => style.color.clone(),
+    };
+    let items: Vec<String> = std::iter::once("Automatic".to_owned())
+        .chain(
+            grind_core::style::PALETTE
+                .iter()
+                .map(|(name, _)| (*name).to_owned()),
+        )
+        .collect();
+    let initial = current
+        .as_deref()
+        .and_then(|hex| {
+            grind_core::style::PALETTE
+                .iter()
+                .position(|(_, value)| *value == hex)
+        })
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let title = match highlight {
+        true => "Highlight",
+        false => "Text Colour",
+    };
+    let Some(choice) = dialog::choose(hwnd, title, &items, initial) else {
+        return;
+    };
+    let value = (choice != 0).then(|| grind_core::style::PALETTE[choice - 1].1.to_owned());
+    let change = match highlight {
+        true => grind_text::format::Change::Highlight(value),
+        false => grind_text::format::Change::Color(value),
+    };
+    text_format(hwnd, change);
 }
 
 /// Turn the caret's own block into this kind — `App::set_kind`, `ui_text_gtk`'s own Ctrl+0/1/2/3
@@ -4604,6 +4750,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         selected_chars(state),
         state.app.counts(),
     );
+    let style = text_style_here(state);
     text::draw::paint(
         dc,
         &text::draw::Frame {
@@ -4619,6 +4766,10 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             font_px: scale(FONT_PX, state.page.dpi).round() as i32,
             face: FACE,
             format: format_state(state),
+            family: style.font_family.as_deref(),
+            size: style.font_size.as_deref(),
+            color: style.color.as_deref(),
+            highlight: style.background.as_deref(),
             names: state.show_names,
         },
     );

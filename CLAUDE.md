@@ -202,10 +202,13 @@ and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text c
 done**: every character typed now goes through `App::type_markdown` rather than a plain
 `insert_text`, carrying its `resume` style across keystrokes the same way `ui_tui` does, so
 `**bold**` is read as it is typed here too. Ctrl+B/I/U, a Format menu, and now a **drawn format
-strip** — three buttons under the banner (`text::geom::Page::strip`/`strip_buttons`,
-`text::draw::draw_strip`) — all reach `char_style`/`set_char_style` over the selection through the
-one `text_emphasise` function, whose toggle logic is `ui_tui`'s `emphasise_selection` mirrored, on
-across the whole selection or off when it already agrees. The strip's own buttons press themselves
+strip** — five toggles (Bold, Italic, Underline, Strike, Code) under the banner
+(`text::geom::Page::strip`/`strip_buttons`, `text::draw::draw_strip`), then Family and Size
+pickers, two colour swatches and Clear (`text::geom::StripHit`, `grind_text::format::Change`,
+hoisted out of `ui_text_gtk/src/format.rs` the day this shell wanted the same vocabulary) — all
+reach `char_style`/`set_char_style` over the selection through `text_emphasise` and its general
+form `text_format`, whose toggle logic is `ui_tui`'s `emphasise_selection` mirrored, on across the
+whole selection or off when it already agrees. The strip's own toggles press themselves
 in when the selection already agrees, or — with nothing selected — when the style the next
 character typed would carry does (`resume` if a markdown span left one pending, otherwise the
 character just behind the caret), and it is a no-op on the grid exactly as the sheet's own verbs

@@ -16,9 +16,11 @@
 //! properties that carry a value rather than a boolean. No widget here holds an opinion about
 //! what is bold — there is one such fact and it is in the document.
 //!
-//! What is testable without a display lives in [`Change`], which is the whole vocabulary of the
-//! bar as a pure function over a [`CharStyle`], and in [`sizes`]. The widgets around them need
-//! GTK and are exercised by `view.rs`'s one widget harness.
+//! What is testable without a display lives in [`grind_text::format::Change`], the whole
+//! vocabulary of the bar as a pure function over a `CharStyle`, and in
+//! [`grind_text::format::sizes`] — hoisted into `grind-text` itself the day `grind-win32`
+//! wanted the same answers, the way `sheet/src/formula/assist.rs` was. The widgets around them
+//! need GTK and are exercised by `view.rs`'s one widget harness.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -28,76 +30,8 @@ use libadwaita::prelude::*;
 
 use grind_core::style::PALETTE;
 use grind_text::CharStyle;
+pub use grind_text::format::{Change, DEFAULT, sizes};
 use gtk::{gdk, glib, pango};
-
-/// What one control asks for, as a change to the selection's common formatting.
-///
-/// A pure enum rather than eight closures, so that "what does the Code button do" is answerable
-/// — and answered — with no display: [`Change::apply`] is the whole of it, and its test is the
-/// specification of this bar.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Change {
-    Bold(bool),
-    Italic(bool),
-    Underline(bool),
-    Strike(bool),
-    /// The monospace family, which is what the `` `code` `` notation sets — a *family* and not
-    /// a fifth boolean, because that is what the document stores (`grind_text::markdown`).
-    Code(bool),
-    /// `fo:font-family`, verbatim. `None` clears it, which is what "the document's own font"
-    /// means: the attribute is absent rather than set to a name.
-    Family(Option<String>),
-    /// `fo:font-size`, an ODF length such as `14pt`.
-    Size(Option<String>),
-    Color(Option<String>),
-    Highlight(Option<String>),
-    /// Every property at once, off. The one-shot the four toggles could only approximate.
-    Clear,
-}
-
-impl Change {
-    /// Lay this change over what the selection already agrees about.
-    ///
-    /// Everything but [`Change::Clear`] touches exactly one property and leaves the other seven
-    /// alone, which is what makes italicising a bold run leave it bold.
-    pub fn apply(&self, style: &mut CharStyle) {
-        match self {
-            Change::Bold(on) => style.set_bold(*on),
-            Change::Italic(on) => style.set_italic(*on),
-            Change::Underline(on) => style.set_underlined(*on),
-            Change::Strike(on) => style.set_struck(*on),
-            Change::Code(on) => {
-                style.font_family = on.then(|| grind_text::markdown::MONOSPACE.to_owned());
-            }
-            Change::Family(family) => style.font_family = family.clone(),
-            Change::Size(size) => style.font_size = size.clone(),
-            Change::Color(color) => style.color = color.clone(),
-            Change::Highlight(color) => style.background = color.clone(),
-            Change::Clear => *style = CharStyle::default(),
-        }
-    }
-}
-
-/// The sizes the drop-down offers, in points.
-///
-/// A word processor's usual ladder. It is a **default and not a limit**, the same stance
-/// `grind_core::style::PALETTE` takes for colours: `grind text format --size 13pt` writes one
-/// that is not on this list, the document keeps it verbatim, and [`Bar::show`] puts it in the
-/// list for as long as it is selected.
-pub const SIZES: [u32; 12] = [8, 9, 10, 11, 12, 14, 16, 18, 24, 32, 48, 72];
-
-/// The sizes as a document spells them — `"11pt"` — with the document's own size first when it
-/// is not one of them, so a selection at `13pt` has something to be selected.
-pub fn sizes(current: Option<&str>) -> Vec<String> {
-    let mut out: Vec<String> = SIZES.iter().map(|pt| format!("{pt}pt")).collect();
-    if let Some(current) = current
-        && !out.iter().any(|size| size == current)
-    {
-        out.insert(0, current.to_owned());
-    }
-    out.insert(0, DEFAULT.to_owned());
-    out
-}
 
 /// The Monospace toggle's icon.
 ///
@@ -106,11 +40,6 @@ pub fn sizes(current: Option<&str>) -> Vec<String> {
 /// screenshot, and this one was found exactly that way. The terminal icon is in Adwaita's own
 /// set and reads as "fixed width" to anybody who would reach for this button.
 const CODE_ICON: &str = "utilities-terminal-symbolic";
-
-/// What the two drop-downs call "no value set at all". Not a size and not a family: the
-/// attribute is absent and the block's own face decides, which is a different thing from
-/// setting the same value the face happens to have.
-pub const DEFAULT: &str = "Default";
 
 /// One toggle and the [`Change`] it asks for when pressed.
 type Toggle = (gtk::ToggleButton, fn(bool) -> Change);
@@ -583,49 +512,8 @@ fn capitalised(name: &str) -> String {
 mod tests {
     use super::*;
 
-    /// The bar's whole vocabulary, as a specification: what each control writes, and what it
-    /// leaves alone. No display needed, which is the point of `Change` being a value.
-    #[test]
-    fn every_control_touches_one_property_and_clear_touches_all_of_them() {
-        let mut style = CharStyle::default();
-        Change::Bold(true).apply(&mut style);
-        Change::Color(Some("#ff4136".into())).apply(&mut style);
-        assert!(style.is_bold());
-        assert_eq!(style.color.as_deref(), Some("#ff4136"));
-
-        // Italic leaves the bold and the colour exactly as they were.
-        Change::Italic(true).apply(&mut style);
-        assert!(style.is_bold() && style.is_italic());
-        assert_eq!(style.color.as_deref(), Some("#ff4136"));
-
-        // Code is the monospace family, which is what the notation writes.
-        Change::Code(true).apply(&mut style);
-        assert_eq!(
-            style.font_family.as_deref(),
-            Some(grind_text::markdown::MONOSPACE)
-        );
-        Change::Code(false).apply(&mut style);
-        assert_eq!(style.font_family, None, "off means absent, not \"sans\"");
-
-        Change::Clear.apply(&mut style);
-        assert!(style.is_plain(), "one shot, everything off");
-    }
-
-    /// A size the document chose that is not on the ladder still has to be selectable, or the
-    /// drop-down would silently rewrite it the moment somebody clicked anything else.
-    #[test]
-    fn the_size_list_makes_room_for_a_size_the_document_chose() {
-        let usual = sizes(None);
-        assert_eq!(usual[0], DEFAULT);
-        assert!(usual.contains(&"12pt".to_owned()));
-        assert!(!usual.contains(&"13pt".to_owned()));
-
-        let odd = sizes(Some("13pt"));
-        assert_eq!(odd[0], DEFAULT);
-        assert_eq!(odd[1], "13pt", "the document's own, right where it is used");
-        // And one already on the ladder is not doubled.
-        assert_eq!(sizes(Some("12pt")), usual);
-    }
+    // `Change`'s own vocabulary and `sizes`' ladder are specified and tested in
+    // `grind_text::format` now, which is where they are defined.
 
     #[test]
     fn a_colour_round_trips_through_the_dialogs_own_spelling() {

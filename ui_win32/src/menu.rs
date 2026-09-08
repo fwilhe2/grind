@@ -83,6 +83,24 @@ pub enum Command {
     Bold,
     Italic,
     Underline,
+    /// Toggle strikethrough — the fourth of `markdown::Emphasis`'s five, drawn on the strip now
+    /// alongside Bold/Italic/Underline rather than left menu-and-key-only the way
+    /// `grind-text-gtk`'s own bar still has it.
+    Strike,
+    /// Toggle the monospace family — what the `` `code` `` notation writes, and the strip's
+    /// fifth toggle.
+    Code,
+    /// *Font* — `dialog::choose` over a curated list, `fo:font-family` verbatim.
+    PickFamily,
+    /// *Font Size* — `dialog::choose` over `grind_text::format::sizes`.
+    PickSize,
+    /// *Text Colour* — `dialog::choose` over `grind_core::style::PALETTE`.
+    PickColor,
+    /// *Highlight* — the same picker, writing `fo:background-color` instead.
+    PickHighlight,
+    /// Every property of the selection's formatting, off at once — the one-shot the toggles can
+    /// only approximate, and the strip's own *Clear* button.
+    ClearFormatting,
     /// The caret's block becomes a plain paragraph — `App::set_kind`, `BlockKind::Paragraph`.
     /// Left out of the grid's menus, the same way the three toggles above are.
     Paragraph,
@@ -150,6 +168,13 @@ impl Command {
         Command::Bold,
         Command::Italic,
         Command::Underline,
+        Command::Strike,
+        Command::Code,
+        Command::PickFamily,
+        Command::PickSize,
+        Command::PickColor,
+        Command::PickHighlight,
+        Command::ClearFormatting,
         Command::Paragraph,
         Command::Heading1,
         Command::Heading2,
@@ -346,6 +371,35 @@ pub const MENUS: &[Menu] = &[
                 command: Command::Underline,
                 label: "&Underline\tCtrl+U",
             },
+            Item::Verb {
+                command: Command::Strike,
+                label: "S&trikethrough\tCtrl+Shift+X",
+            },
+            Item::Verb {
+                command: Command::Code,
+                label: "&Monospace\tCtrl+Shift+M",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::PickFamily,
+                label: "&Font…",
+            },
+            Item::Verb {
+                command: Command::PickSize,
+                label: "&Size…",
+            },
+            Item::Verb {
+                command: Command::PickColor,
+                label: "Text &Colour…",
+            },
+            Item::Verb {
+                command: Command::PickHighlight,
+                label: "&Highlight…",
+            },
+            Item::Verb {
+                command: Command::ClearFormatting,
+                label: "C&lear Formatting",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::Paragraph,
@@ -474,6 +528,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('B'), true, false) => Some(Command::Bold),
         (Key::Char('I'), true, false) => Some(Command::Italic),
         (Key::Char('U'), true, false) => Some(Command::Underline),
+        (Key::Char('X'), true, true) => Some(Command::Strike),
+        (Key::Char('M'), true, true) => Some(Command::Code),
         (Key::Char('0'), true, false) => Some(Command::Paragraph),
         (Key::Char('1'), true, false) => Some(Command::Heading1),
         (Key::Char('2'), true, false) => Some(Command::Heading2),
@@ -519,6 +575,13 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         Command::Bold
         | Command::Italic
         | Command::Underline
+        | Command::Strike
+        | Command::Code
+        | Command::PickFamily
+        | Command::PickSize
+        | Command::PickColor
+        | Command::PickHighlight
+        | Command::ClearFormatting
         | Command::Paragraph
         | Command::Heading1
         | Command::Heading2
@@ -756,8 +819,9 @@ mod tests {
         }
     }
 
-    /// The four Format menu toggles and the outline dialog are the text pane's and only the text
-    /// pane's — the sheet has no `char_style` and no headings to grey them into meaning.
+    /// The Format menu's toggles, pickers and Clear, plus the outline dialog, are the text
+    /// pane's and only the text pane's — the sheet has no `char_style` and no headings to grey
+    /// them into meaning.
     #[test]
     fn formatting_and_the_outline_are_the_text_panes_alone() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
@@ -765,6 +829,13 @@ mod tests {
             Command::Bold,
             Command::Italic,
             Command::Underline,
+            Command::Strike,
+            Command::Code,
+            Command::PickFamily,
+            Command::PickSize,
+            Command::PickColor,
+            Command::PickHighlight,
+            Command::ClearFormatting,
             Command::Paragraph,
             Command::Heading1,
             Command::Heading2,
