@@ -170,7 +170,7 @@ impl Page {
         scale(BUTTON_W, self.dpi) * 5.0
     }
 
-    /// *Font* — opens [`super::super::dialog::choose`] over the families this build knows.
+    /// *Font* — opens `dialog::choose` over the families this build knows.
     pub fn strip_family(&self) -> Rect {
         let strip = self.strip();
         Rect {
