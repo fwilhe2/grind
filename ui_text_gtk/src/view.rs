@@ -121,6 +121,54 @@ impl Doc {
         self.imp().anchor.set(None);
         self.imp().move_caret(caret, true);
     }
+
+    /// One step deeper into a list, or one step out of it. `false` when the caret's block is
+    /// not a list item and this was not the gesture that makes one — see [`imp::Doc::indent`].
+    pub fn indent(&self, by: i32) -> bool {
+        self.imp().indent(by)
+    }
+
+    /// Put the selection on the system clipboard. `false` when there is nothing selected.
+    ///
+    /// **Plain text, deliberately.** The clipboard this writes is the one every other
+    /// application reads, and a run's `CharStyle` has no spelling in `text/plain` — the same
+    /// answer `grind-web` gives, and the reason both shells' Copy is one line of arithmetic
+    /// rather than a serialiser.
+    pub fn copy(&self) -> bool {
+        let Some(text) = self.imp().selected_text() else {
+            return false;
+        };
+        self.clipboard().set_text(&text);
+        true
+    }
+
+    /// Copy, then erase what was copied.
+    pub fn cut(&self) -> bool {
+        if !self.copy() {
+            return false;
+        }
+        self.imp().erase_back();
+        true
+    }
+
+    /// Read the clipboard and put its text in at the caret, replacing the selection.
+    ///
+    /// Asynchronous because a clipboard read is: the bytes may be coming from another process
+    /// that has not been asked for them yet, and GTK will not block for them.
+    pub fn paste(&self) {
+        self.clipboard().read_text_async(
+            gtk::gio::Cancellable::NONE,
+            glib::clone!(
+                #[weak(rename_to = doc)]
+                self,
+                move |result| {
+                    if let Ok(Some(text)) = result {
+                        doc.imp().paste_text(&text);
+                    }
+                }
+            ),
+        );
+    }
 }
 
 mod imp {
@@ -384,10 +432,29 @@ mod imp {
             let palette = self.palette();
             let faces = self.faces();
             let flow = self.flow(width);
-            let (left, column) = geom::column(width);
+            let (left, _) = geom::column(width);
             let scroll = self.scroll();
 
             snapshot.append_color(&palette.background, &rect(0.0, 0.0, width, height));
+
+            // A table's rules, under everything: one rectangle per cell, drawn as four thin
+            // bands rather than an outlined box, because a `gtk::Snapshot` has no stroke and
+            // two neighbouring cells sharing an edge must not draw it twice at different
+            // widths.
+            for cell in flow.cells() {
+                if cell.bottom() < scroll || cell.top > scroll + height {
+                    continue;
+                }
+                let (x, y) = (left + cell.left, cell.top - scroll);
+                for band in [
+                    rect(x, y, cell.width, geom::RULE),
+                    rect(x, y + cell.height - geom::RULE, cell.width, geom::RULE),
+                    rect(x, y, geom::RULE, cell.height),
+                    rect(x + cell.width - geom::RULE, y, geom::RULE, cell.height),
+                ] {
+                    snapshot.append_color(&palette.rule, &band);
+                }
+            }
 
             let slots = flow.visible(scroll, scroll + height);
             let Some((first, last)) = slots.first().zip(slots.last()) else {
@@ -413,7 +480,7 @@ mod imp {
                     let Some(texture) = texture_of(image) else {
                         continue;
                     };
-                    let (w, h) = image_size(&texture, column - slot.indent);
+                    let (w, h) = image_size(&texture, slot.width);
                     snapshot.append_texture(&texture, &rect(x, y, w, h));
                     if selection.is_none() && slot.index == caret.block && widget.is_focus() {
                         snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
@@ -422,7 +489,7 @@ mod imp {
                         let caption_y = y + h + CAPTION_GAP;
                         draw_at(
                             snapshot,
-                            faces.body().draw_wrapped(caption, column - slot.indent),
+                            faces.body().draw_wrapped(caption, slot.width),
                             x,
                             caption_y,
                             palette.dim,
@@ -433,8 +500,7 @@ mod imp {
 
                 let style = block.style.as_deref();
                 let face = faces.of(&block.kind, style);
-                let Ok(layout) = app.layout_block(slot.index, (column - slot.indent) as f32, face)
-                else {
+                let Ok(layout) = app.layout_block(slot.index, slot.width as f32, face) else {
                     continue;
                 };
                 let text: Vec<char> = block.text.chars().collect();
@@ -494,7 +560,8 @@ mod imp {
                     // A line's `end` includes the break that ended it, and a newline handed
                     // to Pango would start a second line inside this one.
                     let piece = piece.trim_end_matches('\n');
-                    let attrs = run_attributes(&block.runs, line.start, line.end, piece);
+                    let attrs =
+                        run_attributes(&block.runs, line.start, line.end, piece, face.size());
                     draw_at(
                         snapshot,
                         face.draw_styled(piece, &attrs),
@@ -607,34 +674,29 @@ mod imp {
         fn build_flow(&self, column: f64) -> Flow {
             // The page's top margin is part of the flow rather than a fixed band, so it
             // scrolls away with the text the way the top of a page does.
-            let mut flow = Flow::new(geom::MARGIN);
+            let mut flow = Flow::new(geom::MARGIN, column);
             let Some(app) = self.app() else { return flow };
             let faces = self.faces();
             let viewport = app.get_viewport(0..app.block_count());
-            for block in viewport.iter() {
+            let mut index = 0;
+            while index < viewport.len() {
+                let Some(block) = viewport.get(index) else {
+                    break;
+                };
+                // A table is laid out as a grid rather than stacked, and its blocks are placed
+                // rather than pushed. `App::table` is the same fold the writer and the
+                // projection use, asked of the core so that four callers cannot answer it four
+                // ways.
+                if block.cell.is_some()
+                    && let Some(table) = app.table(index)
+                {
+                    self.lay_out_table(&mut flow, &viewport, &table, column);
+                    index = table.blocks.end;
+                    continue;
+                }
                 let style = block.style.as_deref();
                 let indent = indent_of(&block.kind);
-                let height = match picture_of(block)
-                    .and_then(|(image, caption)| Some((texture_of(image)?, caption)))
-                {
-                    Some((texture, caption)) => {
-                        let picture = image_size(&texture, column - indent).1;
-                        match caption {
-                            Some(caption) => {
-                                picture
-                                    + CAPTION_GAP
-                                    + caption_height(faces.body(), caption, column - indent)
-                            }
-                            None => picture,
-                        }
-                    }
-                    None => {
-                        let face = faces.of(&block.kind, style);
-                        app.layout_block(block.index, (column - indent) as f32, face)
-                            .map(|layout| f64::from(layout.height()))
-                            .unwrap_or_else(|_| face.height())
-                    }
-                };
+                let height = self.block_height(block, column - indent, &faces);
                 let space = match (style, &block.kind) {
                     (Some("Title" | "Subtitle"), _) | (_, BlockKind::Heading { .. }) => {
                         geom::HEADING_GAP
@@ -642,8 +704,133 @@ mod imp {
                     _ => geom::GAP,
                 };
                 flow.push(block.index, height, indent, space, geom::GAP);
+                index += 1;
             }
             flow
+        }
+
+        /// How tall one block comes out at `width` — a picture and its caption, or the lines
+        /// the core breaks its text into.
+        fn block_height(
+            &self,
+            block: &grind_text::BlockView,
+            width: f64,
+            faces: &Rc<Faces>,
+        ) -> f64 {
+            let Some(app) = self.app() else { return 0.0 };
+            match picture_of(block).and_then(|(image, caption)| Some((texture_of(image)?, caption)))
+            {
+                Some((texture, caption)) => {
+                    let picture = image_size(&texture, width).1;
+                    match caption {
+                        Some(caption) => {
+                            picture + CAPTION_GAP + caption_height(faces.body(), caption, width)
+                        }
+                        None => picture,
+                    }
+                }
+                None => {
+                    let face = faces.of(&block.kind, block.style.as_deref());
+                    app.layout_block(block.index, width as f32, face)
+                        .map(|layout| f64::from(layout.height()))
+                        .unwrap_or_else(|_| face.height())
+                }
+            }
+        }
+
+        /// One table, as a grid: equal columns across the measure, each row as tall as its
+        /// tallest cell, each cell's blocks stacked inside it.
+        ///
+        /// **The columns are equal shares**, and that is a shell decision with a reason: the
+        /// model carries no column widths (`grind_text::Cell` — a table's own style is not read),
+        /// so there is nothing to honour, and equal shares is the answer that never overflows
+        /// the measure. A `span=` cell takes the width of every column it covers, rules and all,
+        /// which is what makes a merged cell look merged rather than misaligned.
+        fn lay_out_table(
+            &self,
+            flow: &mut Flow,
+            viewport: &grind_text::Viewport,
+            table: &grind_text::Table,
+            column: f64,
+        ) {
+            let faces = self.faces();
+            let columns = table.columns.max(1);
+            let width = column / f64::from(columns);
+            let x_of = |c: u32| f64::from(c) * width;
+            let top = flow.height() + geom::GAP;
+
+            // Two passes, because a cell cannot be positioned until its row's height is known
+            // and a row's height is the tallest cell in it. A cell that spans rows contributes
+            // its share to each row it covers — the honest approximation, since which of the
+            // covered rows should grow is a question only a full table layout answers.
+            let cells: Vec<CellRun> = cell_runs(viewport, table);
+            let mut heights =
+                vec![faces.body().height() + 2.0 * geom::CELL_PAD; table.rows.max(1) as usize];
+            for cell in &cells {
+                let content = self.cell_height(viewport, cell, cell.width(width), &faces);
+                let over = cell.rows_spanned.max(1);
+                for row in cell.row..(cell.row + over).min(table.rows.max(1)) {
+                    let share = content / f64::from(over);
+                    let at = row as usize;
+                    if at < heights.len() {
+                        heights[at] = heights[at].max(share);
+                    }
+                }
+            }
+
+            let tops: Vec<f64> = heights
+                .iter()
+                .scan(top, |at, height| {
+                    let here = *at;
+                    *at += height;
+                    Some(here)
+                })
+                .collect();
+            for cell in &cells {
+                let row = cell.row as usize;
+                let Some(cell_top) = tops.get(row).copied() else {
+                    continue;
+                };
+                let over = cell.rows_spanned.max(1) as usize;
+                let height: f64 = heights[row..(row + over).min(heights.len())].iter().sum();
+                let left = x_of(cell.column);
+                flow.cell(geom::CellBox {
+                    top: cell_top,
+                    left,
+                    width: cell.width(width),
+                    height,
+                });
+                let inner = cell.width(width) - 2.0 * geom::CELL_PAD;
+                let mut at = cell_top + geom::CELL_PAD;
+                for index in &cell.blocks {
+                    let Some(block) = viewport.get(*index) else {
+                        continue;
+                    };
+                    let block_height = self.block_height(block, inner, &faces);
+                    flow.place(*index, at, block_height, left + geom::CELL_PAD, inner);
+                    at += block_height + geom::GAP;
+                }
+            }
+            flow.advance(top + heights.iter().sum::<f64>() + geom::GAP);
+        }
+
+        /// How tall one cell's blocks come out, stacked, with the padding above and below.
+        fn cell_height(
+            &self,
+            viewport: &grind_text::Viewport,
+            cell: &CellRun,
+            width: f64,
+            faces: &Rc<Faces>,
+        ) -> f64 {
+            let inner = width - 2.0 * geom::CELL_PAD;
+            let mut stacked = 0.0;
+            for index in &cell.blocks {
+                let Some(block) = viewport.get(*index) else {
+                    continue;
+                };
+                stacked += self.block_height(block, inner, faces) + geom::GAP;
+            }
+            (stacked - geom::GAP).max(0.0) + 2.0 * geom::CELL_PAD
         }
 
         /// One block's lines, measured in its own face — what a caret operation is asked in.
@@ -657,12 +844,25 @@ mod imp {
             let kind = block.kind.clone();
             let style = block.style.clone();
             let faces = self.faces();
-            let (_, column) = geom::column(f64::from(self.obj().width()));
-            let width = (column - indent_of(&kind)) as f32;
+            // The width this block was actually laid out at, which is its *cell's* inside a
+            // table and the column less its indent everywhere else. Taken from the flow rather
+            // than recomputed, so that a caret operation and the paint cannot disagree.
+            let width = self.width_of(index, &kind) as f32;
             let layout = app
                 .layout_block(index, width, faces.of(&kind, style.as_deref()))
                 .ok()?;
             Some((layout, faces, kind))
+        }
+
+        /// The measure one block is laid out at: what [`Flow`] placed it with, and the column
+        /// less its own indent when there is no flow yet (before the first allocation).
+        fn width_of(&self, index: usize, kind: &BlockKind) -> f64 {
+            let (_, column) = geom::column(f64::from(self.obj().width()));
+            self.flow
+                .borrow()
+                .as_ref()
+                .and_then(|(_, flow)| flow.slot(index).map(|slot| slot.width))
+                .unwrap_or_else(|| (column - indent_of(kind)).max(1.0))
         }
 
         /// How each block is set — this window's [`grind_text::Faces`], which is what every
@@ -671,10 +871,16 @@ mod imp {
         /// Rebuilt per question rather than kept, because both halves of it change under the
         /// window: the faces on a theme change, the column on a resize.
         fn column(&self) -> Column {
-            let (_, column) = geom::column(f64::from(self.obj().width()));
+            let width = f64::from(self.obj().width());
+            let (_, column) = geom::column(width);
             Column {
                 faces: self.faces(),
                 column,
+                // The flow answers the width of a block inside a table cell, which no rule
+                // about the block's own kind can. Cloned rather than rebuilt: a motion asks per
+                // block, and rebuilding the flow per question would lay the document out once
+                // per keystroke.
+                flow: self.flow(width),
             }
         }
 
@@ -699,8 +905,52 @@ mod imp {
                 Action::Split => self.split(),
                 Action::EraseBack => self.erase_back(),
                 Action::EraseForward => self.erase_forward(),
+                // Tab is structural where there is structure to change and a `text:tab`
+                // otherwise, which is the rule every word processor's Tab follows: it nests a
+                // list item, it indents a block from its front, and in the middle of a
+                // sentence it is a tab. Shift+Tab with nothing to un-nest does nothing rather
+                // than typing anything — there is no such character.
+                Action::Indent(by) => {
+                    if !self.indent(by) && by > 0 {
+                        self.type_text("\t");
+                    }
+                }
             }
             glib::Propagation::Stop
+        }
+
+        /// Change the caret block's list depth, or make a list item out of a block the caret
+        /// is at the front of. `false` when neither applied, which is what leaves Tab free to
+        /// mean a tab character.
+        ///
+        /// Depth stops at [`crate::MAX_DEPTH`] going in and at a paragraph coming out: a list
+        /// item at depth 0 is not a list item, so Shift+Tab out of the first level is how a
+        /// list ends.
+        pub fn indent(&self, by: i32) -> bool {
+            let Some(app) = self.app() else { return false };
+            let index = self.caret.get().block;
+            let viewport = app.get_viewport(index..index + 1);
+            let Some(block) = viewport.get(index) else {
+                return false;
+            };
+            let kind = match &block.kind {
+                BlockKind::ListItem { depth } => {
+                    match (*depth as i32 + by).clamp(0, crate::MAX_DEPTH as i32) {
+                        0 => BlockKind::Paragraph,
+                        depth => BlockKind::ListItem {
+                            depth: depth as u32,
+                        },
+                    }
+                }
+                // Not a list yet: only the front of the block starts one, so Tab after a word
+                // is still a tab.
+                _ if by > 0 && self.caret.get().offset == 0 => BlockKind::ListItem { depth: 1 },
+                _ => return false,
+            };
+            if let Err(error) = app.set_kind(index, kind) {
+                self.notice(error.to_string());
+            }
+            true
         }
 
         /// Every motion, routed to the core. `extend` is Shift: it grows the selection from
@@ -816,7 +1066,11 @@ mod imp {
             let flow = self.flow(width);
             let (left, _) = geom::column(width);
             let scroll = self.scroll();
-            let slot = flow.at_y(y + scroll).and_then(|index| flow.slot(index))?;
+            // Both coordinates, measured from the column's left edge: inside a table the cells
+            // of one row share a band of the page, so "which block" is a horizontal question
+            // as well as a vertical one.
+            let index = flow.at(x - left, y + scroll)?;
+            let slot = *flow.slot(index)?;
             let (layout, _, _) = self.measured(slot.index)?;
             let line = line_at_y(&layout, y + scroll - slot.top);
             let offset = layout.offset_at(line, (x - left - slot.indent) as f32);
@@ -863,6 +1117,61 @@ mod imp {
             let anchor = self.anchor.get()?;
             let caret = self.caret.get();
             (anchor != caret).then(|| (anchor.min(caret), anchor.max(caret)))
+        }
+
+        // --- the clipboard ---
+
+        /// The selected text, blocks joined by a newline — a document has no character for a
+        /// block boundary, and `\n` is what every other application means by one.
+        pub fn selected_text(&self) -> Option<String> {
+            let app = self.app()?;
+            let (from, to) = self.selection()?;
+            let mut out = String::new();
+            for index in from.block..=to.block {
+                let text = app.input_text(index).ok()?;
+                let chars: Vec<char> = text.chars().collect();
+                let start = if index == from.block { from.offset } else { 0 };
+                let end = if index == to.block {
+                    to.offset
+                } else {
+                    chars.len()
+                };
+                if index > from.block {
+                    out.push('\n');
+                }
+                out.extend(&chars[start.min(chars.len())..end.min(chars.len())]);
+            }
+            Some(out)
+        }
+
+        /// Text in, at the caret, replacing the selection. A newline splits a block, which is
+        /// what pasting two paragraphs has to mean in a model whose blocks are the paragraphs.
+        ///
+        /// Pasted text is **not** read as markdown ([`Doc::type_text`] is): text arriving from
+        /// a clipboard is text, and turning somebody's asterisks into bold is this program
+        /// editing what it was handed. `grind-web` draws the same line in the same place.
+        pub fn paste_text(&self, text: &str) {
+            let Some(app) = self.app() else { return };
+            let mut caret = self.consume_selection(&app);
+            for (index, line) in text.replace("\r\n", "\n").split('\n').enumerate() {
+                if index > 0 {
+                    if let Err(error) = app.split_block(caret) {
+                        return self.notice(error.to_string());
+                    }
+                    caret = Caret {
+                        block: caret.block + 1,
+                        offset: 0,
+                    };
+                }
+                if line.is_empty() {
+                    continue;
+                }
+                match app.insert_text(caret, line) {
+                    Ok(()) => caret.offset += line.chars().count(),
+                    Err(error) => return self.notice(error.to_string()),
+                }
+            }
+            self.move_caret(caret, true);
         }
 
         // --- editing ---
@@ -1153,20 +1462,68 @@ mod imp {
         faces: Rc<Faces>,
         /// The text column's width in pixels, before any indent comes out of it.
         column: f64,
+        /// Where every block was placed, which is the only thing that knows a block is in a
+        /// table cell and therefore measured narrower than the column.
+        flow: Rc<Flow>,
     }
 
     impl grind_text::Faces for Column {
         fn of(
             &self,
-            _index: usize,
+            index: usize,
             kind: &BlockKind,
             style: Option<&str>,
         ) -> (f32, &dyn grind_text::Metrics) {
-            (
-                (self.column - indent_of(kind)) as f32,
-                self.faces.of(kind, style),
-            )
+            let width = self
+                .flow
+                .slot(index)
+                .map(|slot| slot.width)
+                .unwrap_or_else(|| (self.column - indent_of(kind)).max(1.0));
+            (width as f32, self.faces.of(kind, style))
         }
+    }
+
+    /// One cell of a table being laid out: where it is, how far it reaches, and which blocks
+    /// are in it. Built from the blocks themselves — a cell *is* its blocks — rather than asked
+    /// for, since the viewport already has every one of them.
+    pub(super) struct CellRun {
+        row: u32,
+        column: u32,
+        columns_spanned: u32,
+        rows_spanned: u32,
+        blocks: Vec<usize>,
+    }
+
+    impl CellRun {
+        /// How wide this cell is, given the width of one column: every column it spans, since
+        /// the positions between are covered rather than drawn.
+        fn width(&self, column: f64) -> f64 {
+            f64::from(self.columns_spanned.max(1)) * column
+        }
+    }
+
+    /// Every cell of a table, in the order its blocks appear.
+    fn cell_runs(viewport: &grind_text::Viewport, table: &grind_text::Table) -> Vec<CellRun> {
+        let mut out: Vec<CellRun> = Vec::new();
+        for index in table.blocks.clone() {
+            let Some(cell) = viewport.get(index).and_then(|b| b.cell.as_ref()) else {
+                continue;
+            };
+            match out
+                .iter_mut()
+                .find(|run| run.row == cell.row && run.column == cell.column)
+            {
+                Some(run) => run.blocks.push(index),
+                None => out.push(CellRun {
+                    row: cell.row,
+                    column: cell.column,
+                    columns_spanned: cell.columns_spanned,
+                    rows_spanned: cell.rows_spanned,
+                    blocks: vec![index],
+                }),
+            }
+        }
+        out
     }
 
     /// How far a block's text is indented — a list's nesting, and nothing else.
@@ -1234,6 +1591,9 @@ mod imp {
             K::Page_Up | K::KP_Page_Up => Key::PageUp,
             K::Page_Down | K::KP_Page_Down => Key::PageDown,
             K::Return | K::KP_Enter => Key::Return,
+            // `ISO_Left_Tab` is what a keyboard sends for Shift+Tab, and a shell that only
+            // matched `Tab` would leave Shift+Tab moving the focus out of the document.
+            K::Tab | K::KP_Tab | K::ISO_Left_Tab => Key::Tab,
             K::BackSpace => Key::Backspace,
             K::Delete | K::KP_Delete => Key::Delete,
             _ => Key::Other,
@@ -1396,6 +1756,18 @@ mod tests {
         (
             "code is measured and drawn in a monospace face",
             code_is_measured_and_drawn_in_a_monospace_face,
+        ),
+        (
+            "a run's colour, highlight and size are drawn",
+            a_runs_colour_highlight_and_size_are_drawn,
+        ),
+        (
+            "Tab nests a list item and Shift+Tab ends the list",
+            tab_nests_a_list_item_and_shift_tab_ends_the_list,
+        ),
+        (
+            "the clipboard's two halves are plain text and blocks",
+            the_clipboards_two_halves_are_plain_text_and_blocks,
         ),
         (
             "the code view shows the projection, tagged and marked",
@@ -1880,7 +2252,13 @@ mod tests {
         );
 
         // Drawn. The family reaches the Pango attribute list the line is painted with.
-        let attrs = run_attributes(&block.runs, 0, block.text.chars().count(), &block.text);
+        let attrs = run_attributes(
+            &block.runs,
+            0,
+            block.text.chars().count(),
+            &block.text,
+            face.size(),
+        );
         assert!(
             attrs
                 .attributes()
@@ -1903,6 +2281,164 @@ mod tests {
             fenced_width.last(),
             "a fenced block is set in its own face rather than the body's"
         );
+    }
+
+    /// The gap `doc/text-shell.md` used to name for this shell alone: a document that coloured
+    /// a word drew it in the theme's own ink, and a size was neither measured nor drawn. All
+    /// three reach the attribute list now, and the size reaches the *height* with them — the
+    /// half that made honouring it a real change rather than one attribute.
+    fn a_runs_colour_highlight_and_size_are_drawn() {
+        use crate::metrics::run_attributes;
+        use grind_core::style::TextStyle;
+        use grind_text::Metrics;
+        use gtk::pango;
+
+        let (doc, app) = shell(&["coloured and large"]);
+        let imp = doc.imp();
+        let span = |from: usize, to: usize| {
+            (
+                Caret {
+                    block: 0,
+                    offset: from,
+                },
+                Caret {
+                    block: 0,
+                    offset: to,
+                },
+            )
+        };
+        let (from, to) = span(0, 8);
+        app.set_char_style(
+            from,
+            to,
+            &grind_text::CharStyle {
+                color: Some("#ff4136".into()),
+                background: Some("#ffdc00".into()),
+                font_size: Some("24pt".into()),
+                ..Default::default()
+            },
+        )
+        .expect("formats");
+
+        let view = app.get_viewport(0..1);
+        let block = view.get(0).expect("the block");
+        let (_, faces, _) = imp.measured(0).expect("the paragraph lays out");
+        let face = faces.of(&BlockKind::Paragraph, None);
+        let attrs = run_attributes(
+            &block.runs,
+            0,
+            block.text.chars().count(),
+            &block.text,
+            face.size(),
+        );
+        let kinds: Vec<pango::AttrType> =
+            attrs.attributes().iter().map(|attr| attr.type_()).collect();
+        for wanted in [
+            pango::AttrType::Foreground,
+            pango::AttrType::Background,
+            pango::AttrType::Size,
+        ] {
+            assert!(kinds.contains(&wanted), "{wanted:?} is drawn: {kinds:?}");
+        }
+
+        // And measured: a bigger size is a taller line, or the run would overprint the one
+        // above it — which is why this file did not honour a size at all until it honoured
+        // all three halves of one.
+        let big = TextStyle {
+            font_size: Some("24pt".into()),
+            ..TextStyle::default()
+        };
+        assert!(
+            face.line_height(&big) > face.line_height(&TextStyle::default()),
+            "a 24pt run makes room for itself"
+        );
+    }
+
+    /// Authoring a list, which this window could not do at all: Tab at the front of a
+    /// paragraph starts one, Tab again nests it, and Shift+Tab out of the first level ends it.
+    fn tab_nests_a_list_item_and_shift_tab_ends_the_list() {
+        let (doc, app) = shell(&["an item"]);
+        let imp = doc.imp();
+        let kind = || {
+            app.get_viewport(0..1)
+                .get(0)
+                .expect("the block")
+                .kind
+                .clone()
+        };
+
+        assert!(imp.indent(1), "the front of a paragraph starts a list");
+        assert_eq!(kind(), BlockKind::ListItem { depth: 1 });
+        assert!(imp.indent(1));
+        assert_eq!(kind(), BlockKind::ListItem { depth: 2 });
+        assert!(imp.indent(-1));
+        assert_eq!(kind(), BlockKind::ListItem { depth: 1 });
+        assert!(imp.indent(-1), "out of the first level");
+        assert_eq!(
+            kind(),
+            BlockKind::Paragraph,
+            "a list item at depth 0 is not one"
+        );
+
+        // Mid-word there is nothing structural to do, and the caller types a tab instead.
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 3,
+            },
+            true,
+        );
+        assert!(!imp.indent(1));
+        assert_eq!(kind(), BlockKind::Paragraph);
+    }
+
+    /// The gap this shell used to be alone in having: neither a system clipboard nor a
+    /// register. What is checked here is the two halves either side of `gdk::Clipboard` — a
+    /// selection as plain text, and plain text back into blocks — because the clipboard itself
+    /// is asynchronous and belongs to a display server rather than to this program.
+    fn the_clipboards_two_halves_are_plain_text_and_blocks() {
+        let (doc, app) = shell(&["first line", "second line"]);
+        let imp = doc.imp();
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 6,
+            },
+            true,
+        );
+        imp.anchor.set(Some(Caret {
+            block: 0,
+            offset: 6,
+        }));
+        imp.move_caret(
+            Caret {
+                block: 1,
+                offset: 6,
+            },
+            true,
+        );
+        assert_eq!(
+            imp.selected_text().as_deref(),
+            Some("line\nsecond"),
+            "across a block boundary, joined by the newline a block boundary is"
+        );
+
+        // And back: a newline is a block, not a character.
+        let (doc, app2) = shell(&[""]);
+        let imp = doc.imp();
+        imp.paste_text("one\r\ntwo");
+        assert_eq!(text(&app2), "one\ntwo");
+        assert_eq!(
+            app2.block_count(),
+            2,
+            "two paragraphs, not one with a break"
+        );
+        assert_eq!(doc.caret().offset, 3, "the caret is after what was pasted");
+        // Nothing was read as markdown on the way in.
+        let (doc, app3) = shell(&[""]);
+        doc.imp().paste_text("**not bold**");
+        assert_eq!(text(&app3), "**not bold**");
+        drop(app);
     }
 
     #[test]

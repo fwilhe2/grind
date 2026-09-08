@@ -30,6 +30,7 @@ pub enum Key {
     PageUp,
     PageDown,
     Return,
+    Tab,
     Backspace,
     Delete,
     /// Anything else, including every printable character — see the module note.
@@ -71,6 +72,13 @@ pub enum Action {
     EraseForward,
     /// Enter — a new block, split at the caret.
     Split,
+    /// Tab and Shift+Tab: one step deeper into a list, or one step out of it.
+    ///
+    /// A *structural* motion rather than a character, which is what a word processor's Tab at
+    /// the front of a block has always meant. The widget decides what a block that is not a
+    /// list item does with it — see `Doc::indent_or_tab`, where it becomes a `text:tab` in the
+    /// text instead.
+    Indent(i32),
 }
 
 pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
@@ -87,6 +95,8 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
         Key::Home => go(Motion::LineStart),
         Key::End => go(Motion::LineEnd),
         Key::Return => Some(Action::Split),
+        Key::Tab if mods.shift => Some(Action::Indent(-1)),
+        Key::Tab => Some(Action::Indent(1)),
         Key::Backspace => Some(Action::EraseBack),
         Key::Delete => Some(Action::EraseForward),
         Key::Other => None,
@@ -141,6 +151,18 @@ mod tests {
         assert_eq!(action_for(Key::Return, PLAIN), Some(Action::Split));
         assert_eq!(action_for(Key::Backspace, PLAIN), Some(Action::EraseBack));
         assert_eq!(action_for(Key::Delete, PLAIN), Some(Action::EraseForward));
+    }
+
+    /// Tab is the one key here that is about *structure* rather than about a caret: it nests a
+    /// list item, and Shift+Tab un-nests one.
+    #[test]
+    fn tab_nests_a_list_item_and_shift_tab_un_nests_one() {
+        const SHIFT: Mods = Mods {
+            ctrl: false,
+            shift: true,
+        };
+        assert_eq!(action_for(Key::Tab, PLAIN), Some(Action::Indent(1)));
+        assert_eq!(action_for(Key::Tab, SHIFT), Some(Action::Indent(-1)));
     }
 
     /// A key this shell does not claim has to keep travelling, or the input method never

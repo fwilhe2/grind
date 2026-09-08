@@ -220,26 +220,26 @@ on a status line; none has a whole-grid "show formulas" mode.
 | Type, Enter, Backspace, Delete | ● | ● | ● | ● | ● |
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● |
 | Insert / delete / move whole blocks by address | ● | ○ | ◐ ᵇ | ○ | ○ |
-| System clipboard | — | ○ ᶜ | ◐ ᵈ | ● | ● |
+| System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● |
 | Find | ● | ○ | ● | ○ | ○ |
 | Replace | ● | ○ | ● | ○ | ○ |
 | Word count | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● |
 | Strikethrough | ● | ● | ● | ● | ◐ ᵉ |
-| Monospace / code | ● | ◐ ᵉ | ● | ◐ ᵉ | ◐ ᵉ |
-| Colour, highlight | ● | ○ | ● | ● | ○ |
-| Font family, font size | ● | ○ | ○ | ○ | ○ |
-| Clear formatting | ● | ◐ ᶠ | ● | ● | ○ |
+| Monospace / code | ● | ● | ● | ◐ ᵉ | ◐ ᵉ |
+| Colour, highlight | ● | ● | ● | ● | ○ |
+| Font family, font size | ● | ● | ○ | ○ | ○ |
+| Clear formatting | ● | ● | ● | ● | ○ |
 | **Drawn**: the four booleans | — | ● | ● | ● | ● |
-| **Drawn**: colour, highlight | — | ○ ᵍ | ◐ ʰ | ● | ○ |
-| **Drawn**: family, size | — | ◐ ⁱ | ○ ʰ | ● | ◐ ⁱ |
+| **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ○ |
+| **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ |
 | **Block structure** | | | | | |
 | Paragraph, Heading 1–3 | ● | ● | ● | ● | ● |
-| Heading 4–6 | ● | ○ | ● | ◐ ʲ | ● |
-| Title, Subtitle | ● | ○ | ● | ● | ○ |
-| List item | ● | ○ | ● | ● | ● |
-| Change a list item's depth | ● | ○ | ● ᵐ | ● ⁿ | ● ᵒ |
+| Heading 4–6 | ● | ● | ● | ◐ ʲ | ● |
+| Title, Subtitle | ● | ● | ● | ● | ○ |
+| List item | ● | ● | ● | ● | ● |
+| Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ |
 | A named paragraph style | ● | ○ | ● | ○ | ○ |
 | **Addressing and navigation** | | | | | |
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● |
@@ -247,30 +247,48 @@ on a status line; none has a whole-grid "show formulas" mode.
 | Create a bookmark | ● | ○ | ○ | ○ | ○ |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ |
 | **Pictures** | | | | | |
-| Insert an image | ● | ○ | ○ | ○ | ○ |
+| Insert an image | ● | ● | ○ | ○ | ○ |
 | **Draws** an image | — | ● | ○ | ● | ○ |
+| **Tables** | | | | | |
+| Insert a table | ● | ● | ○ | ○ | ○ |
+| Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ |
+| **Draws** a table as a grid | — | ● | ○ ᵖ | ○ ᵖ | ○ ᵖ |
+| Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ |
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
 ᵇ `o` opens a paragraph below and `X` deletes the block; there is no move.
-ᶜ **The one shell with neither a clipboard nor a register.** `App::erase` takes two carets and
-the selection can name them; nothing puts either end on a `gdk::Clipboard`.
+ᶜ Cut/Copy/Paste over `gdk::Clipboard`, plain text both ways, a newline being a block boundary —
+the same two halves `grind-web` has. This used to be the one shell in the suite with neither a
+clipboard nor a register.
 ᵈ A vi register, plain text, a newline splitting a block.
 ᵉ Reachable only by typing the markdown notation (`~~struck~~`, `` `code` ``) — no button, no
 key, no menu item. On Win32 the toggle exists in `text_emphasise` and nothing calls it with
-`Emphasis::Strike` or `::Code`.
-ᶠ Toggling each of the four off; there is no one-shot Clear.
-ᵍ **Named**: `run_attributes` emits the family and the four booleans, and each line is then
-painted in one theme ink, so a document that coloured a word draws it in the theme's foreground.
+`Emphasis::Strike` or `::Code`. `grind-text-gtk`'s format bar has a Monospace toggle, which is
+the same thing under the name the document uses: `` `code` `` is a *family*, not a fifth boolean.
 ʰ Sixteen colours, nearest match; one font at one size, so a code run is *dimmed* instead.
-ⁱ The family is honoured, the size deliberately is not — a line's height is one `line_height`
+ⁱ Both, and the size reaches the line's *height* as well as its width — `metrics::size_units` is
+one parse feeding the measuring attribute, `Metrics::line_height` and the drawing attribute, so a
+24pt word makes room for itself. A size in a unit with no resolution here (`5cm`) is left alone.
+ʳ The family is honoured, the size deliberately is not — a line's height is one `line_height`
 per fragment, so honouring a size in the width and not in the height would measure a big word
 wide on a line too short to hold it.
 ʲ Heading 4 only.
 ᵏ Printed to the status line rather than opened as a pane.
 ˡ The name is drawn at the end of the line the anchor falls on rather than at its offset in it.
 Only `grind-text-gtk` puts a tick at the exact offset — it already has `x_at` for the caret.
-ᵐ `:li [depth]`. ⁿ Tab and Shift+Tab. ᵒ Ctrl+Shift+K's block-kind dialog lists four depths;
-there is no Tab.
+ᵐ `:li [depth]`. ⁿ Tab and Shift+Tab — in `grind-text-gtk`, Tab at the front of a paragraph
+starts a list and Shift+Tab out of depth 1 ends it. ᵒ Ctrl+Shift+K's block-kind dialog lists four
+depths; there is no Tab.
+ᵖ **Free, and that is the point of the model.** A cell holds *blocks* and a block carries the
+coordinate of the cell it is in (`grind_text::Cell`), so `p12` is the twelfth block whether it is
+in a table or not — every caret motion, every formatting edit and every address already worked
+inside a cell before any client knew tables existed. What the three clients marked ○ do not do is
+*draw the grid*: they stack a cell's blocks like any other, so the text is all there and the
+shape is not.
+ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
+implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**
+one, and no client sets a column width, because the model carries no table style
+(`doc/text-core.md`).
 
 ## 8. The divergences that matter, ranked
 
@@ -288,11 +306,12 @@ of a client's own job is missing.
    largest hole in this matrix, and the only one that was invisible in all five shell documents.
 2. **`grind-sheet-gtk` has no borders control** (§5 ᵃ). The one formatting property the most
    complete spreadsheet shell cannot write, and both the browser and the terminal can.
-3. **`grind-text-gtk` has no clipboard.** The only shell in the suite, either document type,
-   with neither a system clipboard nor a register.
-4. **`grind-text-gtk` cannot author a list, a `Title`/`Subtitle`, or a heading past level 3** —
-   it draws all of them. Every other client can make at least some of them, and the Win32 pane
-   can make all of them from one dialog.
+3. **`grind-win32` cannot colour a run either**, and `grind-tui` approximates one. Colour and
+   highlight are the word processor's twin of row 1: the CLI writes them, loop C round-trips
+   them, `grind-web` and `grind-text-gtk` draw them, and the Windows pane shows neither.
+4. **Font family and size are a `grind-text-gtk`-and-CLI pair.** No other shell offers either
+   control; the terminal has one font at one size by construction, and the browser and Windows
+   panes both carry a family they cannot let anybody set.
 5. **No browser client has formula assist.** Autocomplete, signature hints and point mode are
    `doc/web-shell.md`'s own "largest remaining gap", and the GNOME and Windows shells both have
    the first two out of one shared `grind_sheet::formula::assist`.
@@ -302,12 +321,17 @@ of a client's own job is missing.
 7. **Column widths, row heights, hidden tracks, filters and defined names are CLI-and-GNOME
    only.** Every other client honours all five faithfully and can create none of them.
 8. **Charts are CLI-and-GNOME to author, and only the browser joins them in drawing one.**
-9. **An image can only be inserted from the CLI**, and only two clients draw one.
-10. **Find and replace exist for text on the CLI and in the terminal, and nowhere else** — and
+9. **An image can be inserted from the CLI and from `grind-text-gtk`**, and only those two
+   clients draw one.
+10. **Only `grind-text-gtk` draws a table.** Every client *edits* one correctly, because a cell
+    holds blocks and a block is addressed the way every other block is (§7 ᵖ) — so the terminal,
+    the browser and the Windows pane show a table's text as a run of paragraphs with no grid
+    round it. The same shape as row 8: the content is there and the drawing is not.
+11. **Find and replace exist for text on the CLI and in the terminal, and nowhere else** — and
     for *cells* they exist nowhere at all.
-11. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
+12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
     it is a decision about `grind_text::Action` rather than about the CLI.
-12. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
+13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
 
 ## 9. Absent from every client
 
@@ -318,9 +342,12 @@ shell document, and none of them is reachable from the CLI either.
 freeze panes · sort · find/replace over cells · autosave · printing · pivot tables · macros
 (`doc/not-doing.md` §1 — the generator is the answer, and `grind build` is a CLI verb by R11).
 
-**Word processor.** Tables · footnotes · fields (`text:page-number`, `text:date`, …) · style
+**Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style
 *definitions* (a named character style is kept and never interpreted) · pages · printing · an
-image anchored mid-sentence, which draws as the placeholder character everywhere.
+image anchored mid-sentence, which draws as the placeholder character everywhere · a table's own
+style (column widths, borders), merging cells from any client, and `table:formula` in a cell —
+the last of which is gated on `doc/odt-format.md` §5's unanswered question about whether a
+Writer table's formula is OpenFormula at all.
 
 **Both.** Pagination and RTL, both gated — RTL by explicit decision in `doc/text-layout.md`.
 Editing the code view (`doc/dsl.md` §6.4). `grind test`, D8's half of the generator.
@@ -364,4 +391,5 @@ carries a date.
 
 **Read on 2026-09-08**, at `main`. The clients as of then: `grind sheet` complete through phase
 9, `grind text` through S10, the GNOME spreadsheet through M10 plus charts, filters and the
-chrome rework, the Windows shell through W9.
+chrome rework, the Windows shell through W9, and `grind-text-gtk` through the showcase pass that
+gave it a formatting bar, a clipboard, block structure and Insert Picture (`doc/text-shell.md`).

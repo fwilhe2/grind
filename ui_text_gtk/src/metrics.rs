@@ -36,12 +36,15 @@
 //! kind and its style name, so it hands the core a provider already set to that block's font.
 //! The core neither knows nor needs to: it does arithmetic in whatever unit it is answered in.
 //!
-//! **What a fragment's style still does not change is its `fo:font-size`.** A line's height is
+//! **A fragment's `fo:font-size` is honoured now, in all three places at once.** It used to be
+//! the one property this file measured nothing of, and the reason was real: a line's height is
 //! [`Metrics::line_height`]'s answer per fragment and `layout::wrap` takes the tallest, so a
-//! size honoured in the width and not in the height would measure a big word wide on a line
-//! too short to hold it. Both halves and the drawing move together or none of them does; the
-//! notation this file exists for sets a family and no size, so this is where the work stops
-//! and is written down rather than half done.
+//! size honoured in the width and not in the height would measure a big word wide on a line too
+//! short to hold it. The answer was never to draw it — it was to move all three together, which
+//! is what [`size_units`] now does: the same parse feeds the attribute a fragment is *measured*
+//! with, the height it reports, and the attribute the run is *drawn* with. A size this shell
+//! cannot read (a length in `cm`, say) is left alone rather than guessed at, exactly as
+//! `ui_sheet_gtk`'s `scale_of` leaves one alone.
 
 use libadwaita::gtk;
 
@@ -82,6 +85,9 @@ pub struct Face {
     /// Ascent plus descent, in pixels. Measured once: it is a property of the font, and
     /// asking Pango per line would be a font-metrics lookup per line of the document.
     height: f64,
+    /// The face's own size, in Pango units — what a run's `fo:font-size` is resolved against
+    /// when the document spells it as a percentage, and what its height is scaled from.
+    size: i32,
 }
 
 impl Face {
@@ -97,11 +103,17 @@ impl Face {
             layout,
             drawing,
             height: height.max(1.0),
+            size: font.size().max(1),
         }
     }
 
     pub fn height(&self) -> f64 {
         self.height
+    }
+
+    /// This face's own font size, in Pango units.
+    pub fn size(&self) -> i32 {
+        self.size
     }
 
     /// A layout holding `text`, ready to be drawn — in the same font the caret arithmetic
@@ -171,7 +183,7 @@ impl Face {
 
 impl Metrics for Face {
     fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
-        let attrs = fragment_attributes(style);
+        let attrs = fragment_attributes(style, self.size);
         let mut base = 0.0;
         for (index, segment) in text.split('\n').enumerate() {
             if index > 0 {
@@ -183,14 +195,61 @@ impl Metrics for Face {
         }
     }
 
-    /// The block face's own height, whatever the fragment is set in.
+    /// The block face's own height, scaled by whatever size the fragment set.
     ///
     /// A monospace run in a paragraph of prose is measured in a monospace face and drawn in
-    /// one, and sits on a line as tall as the paragraph's — the module documentation says why
-    /// a per-fragment height is the same change as a per-fragment size and waits for it.
-    fn line_height(&self, _style: &TextStyle) -> f32 {
-        self.height as f32
+    /// one, and sits on a line as tall as the paragraph's — a family changes the width of text
+    /// and not, to any degree worth a font-metrics lookup per fragment, its height. A **size**
+    /// does, and `layout::wrap` takes the tallest fragment's answer for the whole block, so a
+    /// 24pt word in a body paragraph makes room for itself instead of overprinting the line
+    /// above. Scaled from this face's own measured height rather than looked up, because the
+    /// ratio is what changes and the ascent-to-descent proportion of one family does not.
+    fn line_height(&self, style: &TextStyle) -> f32 {
+        match size_units(style.font_size.as_deref(), self.size) {
+            Some(size) => (self.height * f64::from(size) / f64::from(self.size)) as f32,
+            None => self.height as f32,
+        }
     }
+}
+
+/// A run's `fo:font-size` in Pango units, resolved against the face it sits in.
+///
+/// Two spellings, which are the two ODF allows for this attribute and the two anything writes:
+/// a length in points (`14pt`), which is absolute, and a percentage (`120%`), which is relative
+/// to the surrounding style — here the block's own face, since that is what the surrounding
+/// style resolves to on screen. **Anything else is `None`** — a length in `cm` or `in` is a
+/// unit this shell has no resolution for, and guessing at one would move the caret away from
+/// the ink. The same stance `ui_sheet_gtk`'s `scale_of` takes, in the unit this shell measures
+/// in rather than that one's.
+pub fn size_units(font_size: Option<&str>, base: i32) -> Option<i32> {
+    let value = font_size?.trim();
+    if let Some(points) = value
+        .strip_suffix("pt")
+        .and_then(|v| v.trim().parse::<f64>().ok())
+    {
+        return (points > 0.0).then(|| (points * f64::from(pango::SCALE)) as i32);
+    }
+    let percent = value
+        .strip_suffix('%')
+        .and_then(|v| v.trim().parse::<f64>().ok())?;
+    (percent > 0.0).then(|| (f64::from(base) * percent / 100.0) as i32)
+}
+
+/// An ODF colour — `#rrggbb`, or one of the names GDK already knows — as Pango's three
+/// channels. `transparent` is not a colour a run of text can be painted in and answers `None`,
+/// which is what leaves a highlight of it undrawn rather than painted black.
+fn channels(value: Option<&str>) -> Option<(u16, u16, u16)> {
+    let value = value?;
+    if value.eq_ignore_ascii_case("transparent") {
+        return None;
+    }
+    let rgba = gtk::gdk::RGBA::parse(value).ok()?;
+    let channel = |v: f32| (v.clamp(0.0, 1.0) * f32::from(u16::MAX)) as u16;
+    Some((
+        channel(rgba.red()),
+        channel(rgba.green()),
+        channel(rgba.blue()),
+    ))
 }
 
 /// One fragment's formatting as Pango attributes over the whole of it, or `None` where it has
@@ -198,8 +257,9 @@ impl Metrics for Face {
 ///
 /// The mirror image of [`run_attributes`]: that one builds the attributes a line is *drawn*
 /// with from the block's runs, this one the attributes a fragment is *measured* with from the
-/// [`TextStyle`] the core projected out of the same run. Three properties, both sides.
-fn fragment_attributes(style: &TextStyle) -> Option<pango::AttrList> {
+/// [`TextStyle`] the core projected out of the same run. Four properties, both sides — the
+/// four that change how *wide* text is, which is exactly what `TextStyle` carries.
+fn fragment_attributes(style: &TextStyle, base: i32) -> Option<pango::AttrList> {
     // Whether `fo:font-weight: 600` reads as bold is a question `CharStyle` already answers,
     // and it is asked rather than restated: two readings of ODF's own vocabulary in one
     // program is one too many, whichever of them is right.
@@ -209,7 +269,8 @@ fn fragment_attributes(style: &TextStyle) -> Option<pango::AttrList> {
         ..CharStyle::default()
     };
     let family = style.font_family.as_deref();
-    if family.is_none() && !props.is_bold() && !props.is_italic() {
+    let size = size_units(style.font_size.as_deref(), base);
+    if family.is_none() && size.is_none() && !props.is_bold() && !props.is_italic() {
         return None;
     }
     // A fresh attribute covers the whole text it is set on, which is exactly one fragment
@@ -218,6 +279,9 @@ fn fragment_attributes(style: &TextStyle) -> Option<pango::AttrList> {
     let add = |attr: pango::Attribute| attrs.insert(attr);
     if let Some(family) = family {
         add(pango::AttrString::new_family(family).into());
+    }
+    if let Some(size) = size {
+        add(pango::AttrSize::new(size).into());
     }
     if props.is_bold() {
         add(pango::AttrInt::new_weight(pango::Weight::Bold).into());
@@ -321,14 +385,18 @@ impl Faces {
     }
 }
 
-/// The family/bold/italic/underline/strikethrough Pango attributes for one line of `text`,
-/// from the block's own runs — the toolbar's other half, and the drawing half of the pair
-/// [`fragment_attributes`] measures with. `App::layout_block` hands each run's
-/// [`grind_text::CharStyle`] to the provider as a [`TextStyle`] (`lay_out`), that function
-/// turns three of those properties into the attributes the run is *measured* with, and this
-/// one turns five of them into the attributes it is *drawn* with. Underline and strikethrough
-/// are in this list and not in that one because they change how text looks and not how wide
-/// it is, which is the same split `TextStyle` itself makes.
+/// Every drawable property of a block's runs, as Pango attributes over one line of `text` —
+/// the toolbar's other half, and the drawing half of the pair [`fragment_attributes`] measures
+/// with. `App::layout_block` hands each run's [`grind_text::CharStyle`] to the provider as a
+/// [`TextStyle`] (`lay_out`), that function turns the four *metric* properties into the
+/// attributes the run is measured with, and this one turns all eight into the attributes it is
+/// drawn with. Underline, strikethrough, colour and highlight are in this list and not in that
+/// one because they change how text looks and not how wide it is, which is the same split
+/// `TextStyle` itself makes.
+///
+/// `base` is the block face's own size in Pango units, which is what a run's `fo:font-size`
+/// resolves against when the document spelled it as a percentage — the same argument
+/// [`Metrics::line_height`] passes, so the size drawn is the size measured.
 ///
 /// `line_start`/`line_end` are character offsets into the whole block, matching
 /// [`grind_core::layout::Line::start`]/`end` and [`RunView::start`]/`end`; `text` is that same
@@ -339,6 +407,7 @@ pub fn run_attributes(
     line_start: usize,
     line_end: usize,
     text: &str,
+    base: i32,
 ) -> pango::AttrList {
     let attrs = pango::AttrList::new();
     // A char-offset-to-byte-offset table for this line alone — built once rather than once
@@ -369,6 +438,23 @@ pub fn run_attributes(
         if let Some(family) = run.props.font_family.as_deref() {
             mark(pango::AttrString::new_family(family).into());
         }
+        // The size, on the same terms and for the same reason: `fragment_attributes` put it on
+        // the measuring layout and `line_height` made the line tall enough to hold it, so this
+        // is the third of three and none of them is optional.
+        if let Some(size) = size_units(run.props.font_size.as_deref(), base) {
+            mark(pango::AttrSize::new(size).into());
+        }
+        // The two colours. Neither changes how wide anything is, so neither has a measuring
+        // twin — but until now neither was drawn either, and a document that coloured a word
+        // came out in the theme's own ink. The run's colour is drawn where it has one and the
+        // theme's is left alone where it does not, which is what keeps a plain document
+        // readable in a dark theme.
+        if let Some((r, g, b)) = channels(run.props.color.as_deref()) {
+            mark(pango::AttrColor::new_foreground(r, g, b).into());
+        }
+        if let Some((r, g, b)) = channels(run.props.background.as_deref()) {
+            mark(pango::AttrColor::new_background(r, g, b).into());
+        }
         if run.props.is_bold() {
             mark(pango::AttrInt::new_weight(pango::Weight::Bold).into());
         }
@@ -383,4 +469,35 @@ pub fn run_attributes(
         }
     }
     attrs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The parse that had to exist before a size could be honoured anywhere: it feeds the
+    /// measuring attribute, the line's height and the drawing attribute, so all three agree by
+    /// construction rather than by three matching edits.
+    #[test]
+    fn a_size_is_read_in_points_or_per_cent_and_otherwise_left_alone() {
+        let base = 11 * pango::SCALE;
+        assert_eq!(size_units(Some("14pt"), base), Some(14 * pango::SCALE));
+        assert_eq!(size_units(Some(" 14pt "), base), Some(14 * pango::SCALE));
+        assert_eq!(size_units(Some("200%"), base), Some(2 * base));
+        // Nothing set, and the two shapes this shell cannot resolve: a length in a unit it has
+        // no resolution for, and a size of zero.
+        assert_eq!(size_units(None, base), None);
+        assert_eq!(size_units(Some("5cm"), base), None);
+        assert_eq!(size_units(Some("0pt"), base), None);
+    }
+
+    /// `transparent` is ODF's spelling for "no highlight", and it is a value rather than an
+    /// absence — drawing it as a colour would paint every un-highlighted run black.
+    #[test]
+    fn a_colour_is_parsed_and_transparent_is_not_one() {
+        assert_eq!(channels(Some("#ff0000")), Some((u16::MAX, 0, 0)));
+        assert_eq!(channels(Some("transparent")), None);
+        assert_eq!(channels(None), None);
+        assert_eq!(channels(Some("not a colour")), None);
+    }
 }

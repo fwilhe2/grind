@@ -37,6 +37,11 @@ pub struct Palette {
     pub accent: gdk::RGBA,
     /// The band behind selected text.
     pub selection: gdk::RGBA,
+    /// A table's rules. Quieter than the text and stronger than the furniture — a grid a reader
+    /// can see the shape of without it competing with what is written in it. Derived from the
+    /// theme's own ink like everything else here, because a literal is what makes a page stay
+    /// white in a dark theme.
+    pub rule: gdk::RGBA,
 }
 
 impl Palette {
@@ -57,6 +62,7 @@ impl Palette {
             dim: with_alpha(foreground, 0.55),
             accent,
             selection: with_alpha(accent, 0.35),
+            rule: with_alpha(foreground, 0.28),
         }
     }
 }

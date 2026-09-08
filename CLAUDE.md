@@ -26,11 +26,15 @@ shells are deliberately *minimal*; `doc/text-shell.md` lists what they do and do
 `examples/sample-text.sh` builds a document out of every feature it has, through the CLI only.
 Loops A and C are both green. **Line layout lives in `grind-core`** (`doc/text-layout.md`,
 decided on Path C), so `j`/`k`/Home/End mean one thing in every shell and the CLI can answer
-them; a shell supplies only font metrics. What it does **not** have: a session (so no `undo`
-across invocations), tables, footnotes, fields, style definitions, RTL layout and pages. Every
-shell *does* now have a selection and a formatting toolbar over it; the clipboard is the uneven
-one — `grind-tui` has a register and `grind-web` the browser's own, and `grind-text-gtk` has
-neither.
+them; a shell supplies only font metrics. **Tables are built** (`doc/text-core.md`'s Tables
+section): a block carries the coordinate of the cell it is in, a cell holds blocks because
+`table-table-cell-content` is the body's own production (rng:16126), and so every caret motion,
+formatting edit and address already worked inside one — read, written, projected, linted, and
+drawn as a grid by `grind-text-gtk`. What it does **not** have: a session (so no `undo` across
+invocations), a table's own style (column widths, borders) or `table:formula`, footnotes, fields,
+style definitions, RTL layout and pages. Every shell *does* now have a selection and a formatting
+toolbar over it; the clipboard is uneven only in the terminal — `grind-tui` has a register,
+`grind-web` the browser's own and `grind-text-gtk` the system one.
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
 ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
@@ -399,8 +403,10 @@ loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 re
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
 `GRIND_LOOP_B_DUMP=LOG cargo test -p grind-sheet --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions for the sheet and for text (16 documents out, 20 corpus
-documents / 5095 blocks back, 0 differences) and gates CI in all four. The text loop compares
+Loop C is green both directions for the sheet and for text (17 documents out, 20 corpus
+documents / 10235 blocks back, 0 differences — the block count doubled when tables entered the
+model, since the sample is the twenty documents with the most blocks in them) and gates CI in
+all four. The text loop compares
 structure, text, bookmarks and — **out only** — the character formatting of every character;
 formatting is excluded on the way back because LibreOffice hoists a character style covering a
 whole paragraph onto the paragraph, which is measured rather than assumed
@@ -490,11 +496,11 @@ rather than a guest:
 |---|---|---|
 | `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header, the token and span maps of `doc/dsl.md`'s third physical form, and `projection/source.rs`, which is R6 for it |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
-| `grind-text` | `text/` | The word processor (phase 10): the block model, `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
+| `grind-text` | `text/` | The word processor (phase 10): the block model — flat, with two axes: a block's *kind* (paragraph, heading, list item) and the `Cell` coordinate that says which table cell it is in, since a cell holds blocks rather than a value — `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-build` | `build/` | **The generator** (`doc/dsl.md` layer 1, D7): a Rhai script that *returns* a document, and the sandbox it runs in. `sheet.rs` and `text.rs` are the two host vocabularies — the projection's own nouns — `engine.rs` is every restriction §2 promises, in one screen, and `data.rs` is the one exception to them: `json(…)`, which reads **data and never code** from one directory a person named, with `..`, absolute paths and symlinks out all refused. **Nothing that opens a document may depend on this crate** (R11), which `build/tests/manifest.rs` reads the manifests to enforce |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
-| `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell (S9, minimal). Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` stacks blocks, `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics`, `view.rs` is the widget |
+| `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell — the suite's **showcase** for this document type, and the client that gets a text feature first. Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` places blocks (a stack, and a grid where a table is), `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics` and honours all eight `CharStyle` properties, `format.rs` is the formatting bar, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
 | `grind-win32` | `ui_win32/` | The Windows shell — **built through W9: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, and the formula assist** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `artifacts.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |

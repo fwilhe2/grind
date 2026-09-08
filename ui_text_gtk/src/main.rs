@@ -21,6 +21,7 @@
 //! minimal shell is not yet evidence of which seam to cut.
 
 mod code;
+mod format;
 mod geom;
 mod keymap;
 mod lint;
@@ -39,7 +40,7 @@ use libadwaita::gtk;
 use libadwaita::prelude::*;
 
 use grind_core::{DocumentKind, Observer, kind};
-use grind_text::{App, BlockKind, CharStyle, Form};
+use grind_text::{App, BlockKind, Form};
 use gtk::{gio, glib};
 
 use view::Doc;
@@ -53,6 +54,14 @@ const KIND: DocumentKind = DocumentKind::Text;
 
 /// The sibling shell, launched by name when a spreadsheet is opened here.
 const SHEET_APP: &str = "grind-sheet-gtk";
+
+/// How deeply Tab will nest a list item.
+///
+/// The model has no ceiling — `BlockKind::ListItem`'s depth is a `u32` and a file may say
+/// anything — and this is a *shell* limit rather than a document one: past nine levels the
+/// indent (`geom::INDENT` each) is wider than the column, so Tab stops rather than pushing the
+/// text off the page. A deeper list read from a file still loads and still draws.
+const MAX_DEPTH: u32 = 9;
 
 type Handler = fn(&Rc<Ui>);
 
@@ -150,17 +159,14 @@ struct Ui {
     goto: gtk::MenuButton,
     undo: gtk::Button,
     redo: gtk::Button,
-    /// The four character-formatting toggles. Each reads as pressed when the selection
-    /// agrees it is on, and both reading and writing go through the same `App` the rest of
-    /// this file does (`App::char_style`/`set_char_style`) — no toolbar has its own idea of
-    /// what bold means.
-    bold: gtk::ToggleButton,
-    italic: gtk::ToggleButton,
-    underline: gtk::ToggleButton,
-    strike: gtk::ToggleButton,
-    /// Guards [`Ui::refresh`]'s own `set_active` calls from being read back as a click —
-    /// without it, painting the toolbar's state would immediately rewrite the document it
-    /// was reporting on.
+    /// The formatting bar — every property of a *run* this window can read and write
+    /// (`crate::format`). Each control reads as the selection agrees it is, and both reading
+    /// and writing go through the same `App` the rest of this file does
+    /// (`App::char_style`/`set_char_style`) — no toolbar has its own idea of what bold means.
+    format: Rc<format::Bar>,
+    /// Guards the code view's own writes from being read back as a cursor move — without it,
+    /// painting the projection would immediately move the caret it is reporting on. The
+    /// formatting bar keeps its own latch for the same reason, in `format.rs`.
     updating: Cell<bool>,
     /// The two pages of the window: the document, and its projection (`doc/dsl.md` §6, D9).
     stack: gtk::Stack,
@@ -257,38 +263,10 @@ impl Ui {
 
         // The formatting toolbar — a second top bar rather than crowded into the header, the
         // way a spreadsheet's format strip sits under its own header (`ui_sheet_gtk`). Every
-        // button here writes through `App::set_char_style`, so a run it touches survives a
-        // LibreOffice round-trip the same way typing does (R6).
-        let bold = gtk::ToggleButton::builder()
-            .icon_name("format-text-bold-symbolic")
-            .tooltip_text("Bold")
-            .build();
-        let italic = gtk::ToggleButton::builder()
-            .icon_name("format-text-italic-symbolic")
-            .tooltip_text("Italic")
-            .build();
-        let underline = gtk::ToggleButton::builder()
-            .icon_name("format-text-underline-symbolic")
-            .tooltip_text("Underline")
-            .build();
-        let strike = gtk::ToggleButton::builder()
-            .icon_name("format-text-strikethrough-symbolic")
-            .tooltip_text("Strikethrough")
-            .build();
-        let format_group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        format_group.add_css_class("linked");
-        for button in [&bold, &italic, &underline, &strike] {
-            format_group.append(button);
-        }
-        let formatting = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(6)
-            .margin_start(6)
-            .margin_end(6)
-            .margin_top(4)
-            .margin_bottom(4)
-            .build();
-        formatting.append(&format_group);
+        // control there writes through `App::set_char_style`, so a run it touches survives a
+        // LibreOffice round-trip the same way typing does (R6). It is connected to the document
+        // in `wire`, because the `Ui` it writes through does not exist yet.
+        let format = format::Bar::new(&doc.pango_context());
 
         let banner = adw::Banner::new("");
         let status = gtk::Label::builder()
@@ -306,7 +284,7 @@ impl Ui {
 
         let content = adw::ToolbarView::builder().content(&toasts).build();
         content.add_top_bar(&header);
-        content.add_top_bar(&formatting);
+        content.add_top_bar(&format.widget);
         content.add_top_bar(&banner);
         content.add_bottom_bar(&status_bar);
 
@@ -335,10 +313,7 @@ impl Ui {
             goto,
             undo,
             redo,
-            bold,
-            italic,
-            underline,
-            strike,
+            format,
             updating: Cell::new(false),
             path: RefCell::new(path),
             handoff: RefCell::new(None),
@@ -399,24 +374,11 @@ impl Ui {
             }
         ));
 
-        for (button, mutate) in [
-            (&self.bold, CharStyle::set_bold as fn(&mut CharStyle, bool)),
-            (&self.italic, CharStyle::set_italic),
-            (&self.underline, CharStyle::set_underlined),
-            (&self.strike, CharStyle::set_struck),
-        ] {
-            button.connect_toggled(glib::clone!(
-                #[strong(rename_to = ui)]
-                self,
-                move |button| {
-                    // `refresh` sets these to reflect the document; only a click — the user
-                    // actually toggling one — should write anything back.
-                    if !ui.updating.get() {
-                        ui.apply_char_style(mutate, button.is_active());
-                    }
-                }
-            ));
-        }
+        self.format.connect(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |change| ui.apply_char_style(change)
+        ));
 
         // The banner's one button: hand this document to the shell that does open it.
         self.banner.connect_button_clicked(glib::clone!(
@@ -804,49 +766,216 @@ impl Ui {
         ));
     }
 
-    /// Make the caret's block a heading of `level`, or a paragraph again at level 0 — the
-    /// window's `grind text kind`.
-    fn set_kind(self: &Rc<Self>, level: u32) {
-        let kind = match level {
-            0 => BlockKind::Paragraph,
-            level => BlockKind::Heading { level },
+    /// Make the caret's block this kind, wearing this named paragraph style — the window's
+    /// `grind text kind` and `grind text style` in one gesture.
+    ///
+    /// **The style is only ever taken off when this window put it on.** `Title` and `Subtitle`
+    /// are the two names this shell knows how to apply and draw, so choosing Paragraph after
+    /// one of them clears it; a document's own `Quotations` is a name this build keeps and does
+    /// not interpret (`doc/text-core.md`), and a menu item that silently threw one away would
+    /// be this window deciding it knows better than the document.
+    ///
+    /// Two calls where the block needs both changed, and therefore two undo steps in that one
+    /// case. Named rather than hidden: the core's edits are `set_kind` and `set_style`, and a
+    /// third that batched them would be a method the CLI has no verb for (rule 4).
+    fn set_kind(self: &Rc<Self>, kind: BlockKind, style: Option<&str>) {
+        let index = self.doc.caret().block;
+        let viewport = self.app.get_viewport(index..index + 1);
+        let Some(block) = viewport.get(index) else {
+            return;
         };
-        if let Err(error) = self.app.set_kind(self.doc.caret().block, kind) {
+        let was = block.style.clone();
+        let ours = matches!(was.as_deref(), Some("Title" | "Subtitle"));
+        let wanted = match (style, ours) {
+            (Some(name), _) => Some(name.to_owned()),
+            (None, true) => None,
+            // Somebody else's name on the block: left exactly as it is.
+            (None, false) => was.clone(),
+        };
+        if block.kind != kind
+            && let Err(error) = self.app.set_kind(index, kind)
+        {
+            return self.toast(&error.to_string());
+        }
+        if wanted != was
+            && let Err(error) = self.app.set_style(index..index + 1, wanted)
+        {
             self.toast(&error.to_string());
         }
     }
 
-    /// The toolbar's other half of `refresh`: what the four toggles show, read from the
-    /// selection rather than kept as state of their own — there is exactly one fact anywhere
-    /// about whether a run is bold, and it is in the document (`App::char_style`).
-    fn refresh_formatting(self: &Rc<Self>) {
-        let selected = self.doc.selection();
-        let style = selected
-            .and_then(|(from, to)| self.app.char_style(from, to).ok())
-            .unwrap_or_default();
-        self.updating.set(true);
-        for button in [&self.bold, &self.italic, &self.underline, &self.strike] {
-            button.set_sensitive(selected.is_some());
-        }
-        self.bold.set_active(style.is_bold());
-        self.italic.set_active(style.is_italic());
-        self.underline.set_active(style.is_underlined());
-        self.strike.set_active(style.is_struck());
-        self.updating.set(false);
+    /// Make the caret's block a heading at this level.
+    fn heading(self: &Rc<Self>, level: u32) {
+        self.set_kind(BlockKind::Heading { level }, None);
     }
 
-    /// One toolbar toggle, applied to the current selection. `mutate` sets the one property
-    /// that button owns — `CharStyle::set_bold` and its three siblings — on top of what the
-    /// selection already agrees about, so toggling Italic on a bold-and-italic run leaves the
-    /// bold alone.
-    fn apply_char_style(self: &Rc<Self>, mutate: fn(&mut CharStyle, bool), on: bool) {
+    /// The two menu items beside Tab and Shift+Tab. Same call the keys make, and it says so
+    /// when there is nothing to indent — a menu item that silently does nothing is one the
+    /// user reports as broken.
+    fn indent(self: &Rc<Self>, by: i32) {
+        if !self.doc.indent(by) {
+            self.toast("Only a list item can be indented — make one first (Ctrl+L).");
+        }
+    }
+
+    /// Insert a table below the caret's block — the window's `grind text table`.
+    ///
+    /// Two spin buttons and nothing else: a table's *size* is the only thing this build can
+    /// author about one, since the model carries no column widths or borders
+    /// (`doc/text-core.md`), and a dialog offering what the document cannot keep would be a
+    /// dialog that lies.
+    fn insert_table(self: &Rc<Self>) {
+        let rows = gtk::SpinButton::with_range(1.0, 64.0, 1.0);
+        rows.set_value(3.0);
+        let columns = gtk::SpinButton::with_range(1.0, 16.0, 1.0);
+        columns.set_value(3.0);
+
+        let grid = gtk::Grid::builder()
+            .row_spacing(8)
+            .column_spacing(12)
+            .margin_top(6)
+            .build();
+        for (row, (label, spin)) in [("Rows", &rows), ("Columns", &columns)].iter().enumerate() {
+            let caption = gtk::Label::builder().label(*label).xalign(1.0).build();
+            grid.attach(&caption, 0, row as i32, 1, 1);
+            grid.attach(*spin, 1, row as i32, 1, 1);
+        }
+
+        let dialog = adw::AlertDialog::new(Some("Insert Table"), None);
+        dialog.set_extra_child(Some(&grid));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("insert", "Insert");
+        dialog.set_response_appearance("insert", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("insert"));
+        dialog.set_close_response("cancel");
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response == "insert" {
+                        ui.add_table(rows.value() as u32, columns.value() as u32);
+                    }
+                }
+            ),
+        );
+    }
+
+    fn add_table(self: &Rc<Self>, rows: u32, columns: u32) {
+        let at = self.doc.caret().block + 1;
+        if let Err(error) = self.app.insert_table(at, rows, columns, None) {
+            return self.toast(&error.to_string());
+        }
+        // A document must not *end* with a table: there would be nowhere to type after it, and
+        // LibreOffice appends a paragraph to any document that does (`doc/odt-format.md` §5b).
+        // A second action, and so a second Ctrl+Z, which is the honest cost of the core's own
+        // verb doing exactly what it says (`grind text table` inserts a table and nothing else).
+        if at + (rows * columns) as usize == self.app.block_count()
+            && let Err(error) = self
+                .app
+                .insert(self.app.block_count(), BlockKind::Paragraph, "")
+        {
+            return self.toast(&error.to_string());
+        }
+        self.doc.go_to(grind_text::Caret {
+            block: at,
+            offset: 0,
+        });
+        self.doc.grab_focus();
+    }
+
+    /// Insert a picture at the caret — the window's `grind text image`.
+    ///
+    /// The picture goes in a **paragraph of its own**, below the caret's block, rather than at
+    /// the caret itself. That is a shell decision and it is the one that makes the result
+    /// visible: an image sitting mid-sentence still draws as the placeholder character
+    /// everywhere in this suite (`doc/text-shell.md`), because nothing lays inline content out
+    /// around one yet, and a menu item whose result is `\u{fffc}` would be a bug report. A
+    /// block that is *already* empty is used as it stands, so pressing Return and then inserting
+    /// does what it looks like.
+    fn insert_image(self: &Rc<Self>) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Insert Picture")
+            .filters(&image_filters())
+            .build();
+        dialog.open(
+            Some(&self.window),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |result| {
+                    if let Some(path) = result.ok().and_then(|file| file.path()) {
+                        ui.embed_image(&path);
+                    }
+                }
+            ),
+        );
+    }
+
+    fn embed_image(self: &Rc<Self>, path: &Path) {
+        let data = match std::fs::read(path) {
+            Ok(data) => data,
+            Err(error) => {
+                return self.toast(&format!("Could not read {}: {error}", path.display()));
+            }
+        };
+        let mime = image_mime(path, &data);
+        let caret = self.doc.caret();
+        let empty = self
+            .app
+            .input_text(caret.block)
+            .is_ok_and(|text| text.is_empty());
+        let at = match empty {
+            true => caret.block,
+            false => {
+                if let Err(error) = self.app.insert(caret.block + 1, BlockKind::Paragraph, "") {
+                    return self.toast(&error.to_string());
+                }
+                caret.block + 1
+            }
+        };
+        let at = grind_text::Caret {
+            block: at,
+            offset: 0,
+        };
+        match self.app.insert_image(at, mime, data, None, None) {
+            // Past the picture, which is one caret position — so the next thing typed is a
+            // caption rather than text wrapped around a frame nothing lays out yet.
+            Ok(()) => self.doc.go_to(grind_text::Caret {
+                block: at.block,
+                offset: 1,
+            }),
+            Err(error) => self.toast(&error.to_string()),
+        }
+    }
+
+    /// The toolbar's other half of `refresh`: what the bar shows, read from the selection
+    /// rather than kept as state of its own — there is exactly one fact anywhere about whether
+    /// a run is bold, and it is in the document (`App::char_style`).
+    fn refresh_formatting(self: &Rc<Self>) {
+        let selected = self.doc.selection();
+        // With no selection the caret still has an answer — `char_style` reports what the next
+        // keystroke would carry — so the bar shows it and is insensitive rather than blank.
+        let caret = self.doc.caret();
+        let (from, to) = selected.unwrap_or((caret, caret));
+        let style = self.app.char_style(from, to).unwrap_or_default();
+        self.format.show(&style, selected.is_some());
+    }
+
+    /// One control of the formatting bar, applied to the current selection. The [`format::
+    /// Change`] sets the one property that control owns, on top of what the selection already
+    /// agrees about, so toggling Italic on a bold-and-italic run leaves the bold alone.
+    fn apply_char_style(self: &Rc<Self>, change: format::Change) {
         let Some((from, to)) = self.doc.selection() else {
-            // The toggle is insensitive with no selection, so a click here would have to be
-            // a stray key event rather than a person — nothing to toast about.
+            // Every control is insensitive with no selection, so reaching here would have to be
+            // a stray event rather than a person — nothing to toast about.
             return;
         };
         let mut style = self.app.char_style(from, to).unwrap_or_default();
-        mutate(&mut style, on);
+        change.apply(&mut style);
         if let Err(error) = self.app.set_char_style(from, to, &style) {
             self.toast(&error.to_string());
         }
@@ -933,10 +1062,41 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         // F8, the "next problem" key, and the same one `grind-sheet-gtk` uses — one suite, one
         // key for one job (`doc/dsl.md` §4.3, D6).
         ("lint", &["F8"][..], |ui| ui.lint()),
-        ("paragraph", &["<Control>0"][..], |ui| ui.set_kind(0)),
-        ("heading-1", &["<Control>1"][..], |ui| ui.set_kind(1)),
-        ("heading-2", &["<Control>2"][..], |ui| ui.set_kind(2)),
-        ("heading-3", &["<Control>3"][..], |ui| ui.set_kind(3)),
+        // The clipboard. Plain text both ways — see `Doc::copy` — and the three keys every
+        // other application uses, so nothing here needs learning.
+        ("cut", &["<Control>x"][..], |ui| {
+            ui.doc.cut();
+        }),
+        ("copy", &["<Control>c"][..], |ui| {
+            ui.doc.copy();
+        }),
+        ("paste", &["<Control>v"][..], |ui| ui.doc.paste()),
+        ("image", &["<Control><Shift>i"][..], |ui| ui.insert_image()),
+        ("table", &["<Control><Shift>t"][..], |ui| ui.insert_table()),
+        ("paragraph", &["<Control>0"][..], |ui| {
+            ui.set_kind(BlockKind::Paragraph, None)
+        }),
+        ("heading-1", &["<Control>1"][..], |ui| ui.heading(1)),
+        ("heading-2", &["<Control>2"][..], |ui| ui.heading(2)),
+        ("heading-3", &["<Control>3"][..], |ui| ui.heading(3)),
+        // Four to six have no accelerator: Ctrl+4…6 are free here, and a key for a level
+        // nobody reaches for is a key somebody hits by accident.
+        ("heading-4", &[][..], |ui| ui.heading(4)),
+        ("heading-5", &[][..], |ui| ui.heading(5)),
+        ("heading-6", &[][..], |ui| ui.heading(6)),
+        // The two named paragraph styles this window can both apply and draw
+        // (`metrics.rs`'s `TITLE_SCALE`), and the only two it will ever apply — see `set_kind`.
+        ("title", &[][..], |ui| {
+            ui.set_kind(BlockKind::Paragraph, Some("Title"))
+        }),
+        ("subtitle", &[][..], |ui| {
+            ui.set_kind(BlockKind::Paragraph, Some("Subtitle"))
+        }),
+        ("list-item", &["<Control>l"][..], |ui| {
+            ui.set_kind(BlockKind::ListItem { depth: 1 }, None)
+        }),
+        ("indent", &[][..], |ui| ui.indent(1)),
+        ("outdent", &[][..], |ui| ui.indent(-1)),
         ("about", &[][..], |ui| ui.about()),
     ]
 }
@@ -950,6 +1110,12 @@ fn primary_menu() -> gio::Menu {
     files.append(Some("Save As…"), Some("win.save-as"));
     menu.append_section(None, &files);
 
+    let edit = gio::Menu::new();
+    edit.append(Some("Cut"), Some("win.cut"));
+    edit.append(Some("Copy"), Some("win.copy"));
+    edit.append(Some("Paste"), Some("win.paste"));
+    menu.append_section(None, &edit);
+
     let structure = gio::Menu::new();
     structure.append(Some("Outline…"), Some("win.outline"));
     structure.append(Some("Go to Address"), Some("win.goto"));
@@ -959,12 +1125,33 @@ fn primary_menu() -> gio::Menu {
     structure.append(Some("Check Document"), Some("win.lint"));
     menu.append_section(None, &structure);
 
+    // Every block kind `doc/text-core.md` allows an author, in one submenu rather than eight
+    // items in the primary one: the six heading levels are a ladder and read as one.
     let kinds = gio::Menu::new();
-    kinds.append(Some("Paragraph"), Some("win.paragraph"));
-    kinds.append(Some("Heading 1"), Some("win.heading-1"));
-    kinds.append(Some("Heading 2"), Some("win.heading-2"));
-    kinds.append(Some("Heading 3"), Some("win.heading-3"));
-    menu.append_section(None, &kinds);
+    let body = gio::Menu::new();
+    body.append(Some("Paragraph"), Some("win.paragraph"));
+    body.append(Some("Title"), Some("win.title"));
+    body.append(Some("Subtitle"), Some("win.subtitle"));
+    kinds.append_section(None, &body);
+    let headings = gio::Menu::new();
+    for level in 1..=6 {
+        headings.append(
+            Some(&format!("Heading {level}")),
+            Some(&format!("win.heading-{level}")),
+        );
+    }
+    kinds.append_section(None, &headings);
+    let lists = gio::Menu::new();
+    lists.append(Some("List Item"), Some("win.list-item"));
+    lists.append(Some("Increase Indent"), Some("win.indent"));
+    lists.append(Some("Decrease Indent"), Some("win.outdent"));
+    kinds.append_section(None, &lists);
+
+    let structure_kinds = gio::Menu::new();
+    structure_kinds.append_submenu(Some("Paragraph Style"), &kinds);
+    structure_kinds.append(Some("Insert Picture…"), Some("win.image"));
+    structure_kinds.append(Some("Insert Table…"), Some("win.table"));
+    menu.append_section(None, &structure_kinds);
 
     let rest = gio::Menu::new();
     rest.append(Some("About Text"), Some("win.about"));
@@ -1020,6 +1207,32 @@ fn text_save_filters() -> gio::ListStore {
         filters.append(&filter);
     }
     filters
+}
+
+/// What the Insert Picture dialog shows: the raster formats gdk-pixbuf has loaders for, since
+/// a picture this window cannot decode is one it would embed and then draw as nothing.
+fn image_filters() -> gio::ListStore {
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Images"));
+    for pattern in [
+        "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp", "*.tif", "*.tiff",
+    ] {
+        filter.add_pattern(pattern);
+    }
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    filters
+}
+
+/// The MIME type to store on the frame — asked of GIO rather than of a table of extensions
+/// this file would then own a second copy of. The bytes are offered as well as the name, so a
+/// `.png` that is really a JPEG is stored as what it is.
+fn image_mime(path: &Path, data: &[u8]) -> String {
+    let (content_type, _) = gio::content_type_guess(Some(path), data);
+    gio::content_type_get_mime_type(&content_type)
+        .map(|mime| mime.to_string())
+        .filter(|mime| mime.starts_with("image/"))
+        .unwrap_or_else(|| "image/png".to_owned())
 }
 
 fn remember_recent(path: &Path) {

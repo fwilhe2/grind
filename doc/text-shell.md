@@ -27,10 +27,13 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Editing | type, Enter, Backspace, Delete | the same four |
 | Markdown as you type | `**bold**`, `*italic*`, `__underline__`, `~~struck~~`, `` `code` ``, `# `, ``` — `App::type_markdown` | the same, same call. The two backtick notations were reported broken in every shell and each shell turned out to have its own reason — a dropped dead key here, an undrawn family in the window, an optional SGR in the terminal. All three are addressed; what is still owed is somebody typing on the reporter's own keyboard (`TODO:` at the top of `text/src/markdown.rs`) |
 | Undo/redo | `App::undo`, in the core | the same, on the shared toolbar |
-| Structure | outline dialog, go-to-address popover, heading level 0–3 on Ctrl+0…3 | the same three, all inside the Ctrl+K palette (`doc/web-shell.md`) |
+| Structure | outline dialog, go-to-address popover, Ctrl+0…3 for the first three heading levels | the same three, all inside the Ctrl+K palette (`doc/web-shell.md`) |
 | Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | the same |
-| Formatting | a toolbar (Bold/Italic/Underline/Strikethrough) over the selection, `App::char_style`/`set_char_style`; those four and `Title`/`Subtitle` paragraphs are drawn, not only measured — a run's colour, highlight, family and size are not | the same toolbar, plus colour and highlight, and every one of those drawn: the four booleans as classes, the values the document chose as inline CSS |
-| Images | `grind text image` inserts one (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
+| Formatting | a **bar** (`format.rs`): the four booleans, Monospace, a font and a size drop-down, two colour swatches and Clear Formatting, all over the selection through `App::char_style`/`set_char_style`. Every one of the eight `CharStyle` properties is drawn as well as measured, and `Title`/`Subtitle` paragraphs get their own face | the same toolbar, plus colour and highlight, and every one of those drawn: the four booleans as classes, the values the document chose as inline CSS |
+| Clipboard | Cut/Copy/Paste over `gdk::Clipboard`, plain text; a newline is a block boundary either way, and a paste is not read as markdown | the browser's own, the same two halves |
+| Block structure | Paragraph, `Title`, `Subtitle`, Heading 1–6 and list items from the *Paragraph Style* submenu; Tab and Shift+Tab nest and un-nest a list | the same set, in the Ctrl+K palette |
+| Tables | **Insert Table…** (Ctrl+Shift+T) makes one, and a table read from a file is **drawn as a grid**: equal columns across the measure, each row as tall as its tallest cell, a rule round every cell, and a merged cell as wide as the columns it spans. Every other verb reaches inside a cell unchanged — a cell holds blocks, so typing, formatting, Tab and the caret all work there because they never knew about tables in the first place | not drawn: the pane stacks a cell's blocks like any other and shows no grid (`doc/web-shell.md`) |
+| Images | **Insert Picture…** (Ctrl+Shift+I) puts one in a paragraph of its own, and `grind text image` inserts one anywhere (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
 | Assertable output | `--render-to <png>`, one frame then exit | `ui_web/smoke.js`, jsdom, no browser |
 | Packaging | `.desktop`, AppStream metainfo and a scalable icon under `io.github.fwilhe2.Text` (`ui_text_gtk/data/`), and `.deb` + `.rpm` built by `artifacts.yml` from the two `[package.metadata.*]` blocks — the twin of the spreadsheet's, since S11's binary split is what makes them two entries and not one | nothing to install |
@@ -77,10 +80,12 @@ windows — and there is a test in `ui_web` that says so.
 > carry a value (`ui_web/src/text/runs.rs`, which is pure offset arithmetic and therefore tested
 > on the host with no browser).
 >
-> The two are **not** equal, and the difference is the GTK window's: `run_attributes` emits the
-> four booleans and the line is then painted in a single theme ink, so a run the document
-> coloured draws in the theme's foreground there and in its own colour in the browser. That is in
-> the gap list below rather than here.
+> The two used to be **unequal**, and the difference was the GTK window's: `run_attributes`
+> emitted the four booleans and the line was then painted in a single theme ink, so a run the
+> document coloured drew in the theme's foreground there and in its own colour in the browser.
+> That is closed — the window emits all eight properties now, and the size reaches
+> `Metrics::line_height` with them, which is what made honouring it correct rather than merely
+> visible.
 >
 > `Title` and `Subtitle` get the same treatment one level up, in both shells: `Faces::of` checks
 > the block's named style before its kind, because both are `BlockKind::Paragraph` with nothing
@@ -136,9 +141,11 @@ with `loc` where that one has `a1`, and the two are copies for `code.rs`'s reaso
 `ponytail` there covers both. Activating a row puts the caret where the finding is, through the
 same `view::caret_of` the outline dialog and the go-to box already use.
 
-**Both shells.** No find/replace UI (`grind text find`/`replace` exist). No tables or footnotes,
-because the core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
-`text:file-name`) are also out, both for the same reason `doc/text-core.md` gives. No pages, no
+**Both shells.** No find/replace UI (`grind text find`/`replace` exist). No footnotes, because
+the core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
+`text:file-name`) are also out, both for the same reason `doc/text-core.md` gives. Tables were
+in this sentence until the core grew them; `grind-text-gtk` draws and inserts one now and
+`grind-web` does neither, which is that shell's gap rather than a shared one. No pages, no
 print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are measured per
 run rather than per line, so a line with several tabs drifts from where a word processor would
 put them. A named-style picker stays out: a run's *named* style (as opposed to its direct
@@ -186,23 +193,57 @@ does it with a Pango attribute list per line (`run_attributes`); `grind-web` cut
 one shape in both windows. What the two do *not* agree on is how much of a `CharStyle` reaches
 the screen, and that is the next paragraph's first line.
 
-**`grind-text-gtk` only.** **A run's colour, highlight and size are not drawn.**
-`run_attributes` emits the family and the four booleans and nothing else, and every line is then
-painted in one theme ink (`view.rs`'s `ink`), so a document that coloured a word draws it in the
-theme's foreground — where the browser pane hands the same values to inline CSS. The core carries
-them, `grind text format --color/--background` writes them, loop C round-trips them, and this
-window alone does not show them; the toolbar has no colour button for the same reason. The size
-is the one of the three with a reason rather than an omission: a line's height is one
-`line_height` per fragment and `layout::wrap` takes the tallest, so honouring a size in the width
-and not in the height would measure a big word wide on a line too short to hold it — measurement
-and drawing move together here or not at all (`metrics.rs`). **No clipboard**: `App::erase` takes
-two carets and the selection can now name them, but nothing puts either end on a
-`gdk::Clipboard` — the browser pane has copy/cut/paste and `grind-tui` has a register, so this is
-the one shell with neither. **No lists UI**: a list item read from a file draws with its bullet
-and its indent, and nothing here creates or renests one (Ctrl+K → *List item*, and Tab, do in the
-browser). **No `Title`/`Subtitle` in the kind menu** either — the window draws both and offers
-Paragraph and Heading 1–3 (Ctrl+0…3) to *make* one, so a face it can render is one only the CLI
-and the other shells can apply. Then the plumbing: no `grind-ui` crate — `doc/suite.md` says to
+**`grind-text-gtk` only.** Four of the five things this section used to list are **closed**, and
+they were closed here first because this is the shell the suite showcases:
+
+* **A run's colour, highlight and size are drawn now.** `run_attributes` emits all eight
+  properties of a `CharStyle` rather than five, so a document that coloured a word draws it in
+  that colour. The size was the one of the three with a *reason* rather than an omission — a
+  line's height is one `line_height` per fragment and `layout::wrap` takes the tallest, so
+  honouring a size in the width and not in the height would measure a big word wide on a line too
+  short to hold it — and the answer turned out to be to move all three halves at once:
+  `metrics::size_units` is one parse feeding the attribute a fragment is *measured* with, the
+  height it reports, and the attribute it is *drawn* with. A size in a unit this shell has no
+  resolution for (`5cm`) is still left alone rather than guessed at.
+* **The formatting bar is `format.rs` now**, and its admission test is `doc/sheet-shell.md`'s:
+  a control belongs there when it reads and writes a property of the selection. That is the four
+  booleans, a Monospace toggle (a *family*, which is what `` `code` `` stores), a font drop-down
+  built from what Pango can actually resolve, a size drop-down, two colour swatches over
+  `grind_core::style::PALETTE`, and one-shot Clear Formatting. The vocabulary is `format::Change`
+  — a pure enum over `CharStyle`, so what a button does is answerable with no display.
+* **The clipboard.** Cut, Copy and Paste over `gdk::Clipboard`, plain text both ways, which is
+  what `grind-web` already did and what the matrix ranked third among the suite's divergences.
+  A selection's blocks join with a newline going out and split into blocks coming back, and
+  pasted text is deliberately **not** read as markdown: text from a clipboard is text.
+* **Lists, `Title` and `Subtitle` are authorable.** Tab at the front of a block starts a list and
+  nests one already in it, Shift+Tab un-nests and ends it, and the primary menu's *Paragraph
+  Style* submenu carries Paragraph, Title, Subtitle, Heading 1–6 and the three list items. The
+  named style is only ever *removed* when this window put it on: `Title` and `Subtitle` are the
+  two names it can apply and draw, and a document's own `Quotations` is a name this build keeps
+  and does not interpret (`doc/text-core.md`), so Paragraph leaves it alone.
+* **Insert Picture** (Ctrl+Shift+I) reaches `App::insert_image` from a file dialog. The picture
+  goes in a **paragraph of its own** below the caret's block rather than at the caret, and that
+  is the decision that makes it visible: an image mid-sentence still draws as the placeholder
+  character everywhere in this suite, so a menu item whose result was `\u{fffc}` would be a bug
+  report. The MIME type comes from GIO's own content-type guess over the name *and* the bytes.
+
+**Tables are drawn, and what that cost is worth writing down.** The grid is `geom.rs`'s: a
+`Slot` now carries the box a block was laid out in rather than only its height, because a block
+in a cell is measured at the *cell's* width and nothing about the block itself says so — and
+`view.rs`'s `Column` reads that same width back, which is what makes Down-arrow inside a cell
+land where the ink is. **The columns are equal shares of the measure**, because the model
+carries no column widths (`doc/text-core.md`: a table's own style is not read), so there is
+nothing to honour and equal shares is the answer that never overflows. A click is answered by
+`Flow::at`, which takes both coordinates now: the cells of one row share a band of the page, so
+"which block" became a horizontal question as well as a vertical one, with vertical distance
+dominating and horizontal only settling a tie.
+
+What is still owed here: no shell in the suite can *merge* cells, add a row to an existing table
+or set a column width — the model carries a span and draws one, and only a file can produce one;
+the size ladder and the family list are a shell's, so a document that
+sets `fo:font-size` in `cm` shows *Default* in the drop-down while keeping its own value in the
+file; and Cut/Copy/Paste are plain text, so formatting does not survive a round trip through the
+clipboard even within this window. Then the plumbing: no `grind-ui` crate — `doc/suite.md` says to
 extract the shared GTK plumbing "on evidence, at S9, when the second shell shows the seam", and
 one *minimal* shell is not that evidence; this one copied the observer bridge, the `--render-to`
 harness and the window-close latch, which is three data points and the right time to look again
