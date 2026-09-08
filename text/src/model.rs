@@ -62,6 +62,135 @@ pub enum BlockKind {
     ListItem { depth: u32 },
 }
 
+/// How deep a list may nest before Tab stops adding another level — `ui_text_gtk`'s own ceiling,
+/// shared now that `grind-win32` wants the same one.
+pub const MAX_LIST_DEPTH: u32 = 9;
+
+/// What Tab (`by = 1`) or Shift+Tab (`by = -1`) does to the block at `kind`, given the caret's
+/// own offset into it — the rule every word processor's Tab follows: it nests a list item one
+/// level deeper, un-nests one, or starts a list out of a block the caret is at the front of.
+/// `None` when none of those applies, which is what leaves the key free to mean something
+/// else — a literal tab in the middle of a sentence, or nothing at all when there is nothing
+/// left to un-nest.
+///
+/// Built for `ui_text_gtk/src/view.rs`'s `Doc::indent` and hoisted here the day `grind-win32`
+/// wanted the same answer, the same move `format::Change` made for the formatting bar: one rule
+/// rather than two shells maintaining their own idea of what Tab does to a list.
+pub fn indent_kind(kind: &BlockKind, offset: usize, by: i32) -> Option<BlockKind> {
+    match kind {
+        BlockKind::ListItem { depth } => {
+            let depth = (*depth as i32 + by).clamp(0, MAX_LIST_DEPTH as i32);
+            Some(match depth {
+                0 => BlockKind::Paragraph,
+                depth => BlockKind::ListItem {
+                    depth: depth as u32,
+                },
+            })
+        }
+        // Not a list yet: only the front of the block starts one, so Tab after a word is still
+        // a tab.
+        _ if by > 0 && offset == 0 => Some(BlockKind::ListItem { depth: 1 }),
+        _ => None,
+    }
+}
+
+/// The two named paragraph styles a shell may both apply and draw — `Title` and `Subtitle`.
+/// `Emphasis` — `doc/text-core.md`'s Styles section — is why the set stops at two: a run's
+/// *named* style is a name this build keeps and never interprets, and only these two are ones a
+/// shell also knows how to draw. Shared so `ui_text_gtk` and `ui_win32` do not each carry their
+/// own list of which two.
+pub const NAMED_STYLES: [&str; 2] = ["Title", "Subtitle"];
+
+/// What a block's `text:style-name` should become after asking for `requested` — `Some("Title")`
+/// or `Some("Subtitle")` from a menu, `None` from *Paragraph*.
+///
+/// **A style is only ever taken off when a shell put it on.** Choosing *Paragraph* after
+/// *Title* clears the name because this build knows it applied `Title`; choosing *Paragraph* on
+/// a block wearing a document's own `Quotations` leaves that name exactly as it is, because a
+/// menu that silently threw it away would be the shell deciding it knows better than the
+/// document. `requested` is `None` for *Paragraph* and any of the heading/list-item picks that
+/// carry no named style of their own.
+pub fn named_style_for(current: Option<&str>, requested: Option<&str>) -> Option<String> {
+    let ours = current.is_some_and(|name| NAMED_STYLES.contains(&name));
+    match (requested, ours) {
+        (Some(name), _) => Some(name.to_owned()),
+        (None, true) => None,
+        (None, false) => current.map(str::to_owned),
+    }
+}
+
+#[cfg(test)]
+mod indent_tests {
+    use super::*;
+
+    #[test]
+    fn tab_at_the_front_of_a_paragraph_starts_a_list() {
+        assert_eq!(
+            indent_kind(&BlockKind::Paragraph, 0, 1),
+            Some(BlockKind::ListItem { depth: 1 })
+        );
+    }
+
+    #[test]
+    fn tab_mid_paragraph_does_nothing() {
+        assert_eq!(indent_kind(&BlockKind::Paragraph, 3, 1), None);
+    }
+
+    #[test]
+    fn shift_tab_out_of_the_first_level_ends_the_list() {
+        assert_eq!(
+            indent_kind(&BlockKind::ListItem { depth: 1 }, 0, -1),
+            Some(BlockKind::Paragraph)
+        );
+    }
+
+    #[test]
+    fn depth_is_clamped_at_the_ceiling_and_the_floor() {
+        assert_eq!(
+            indent_kind(
+                &BlockKind::ListItem {
+                    depth: MAX_LIST_DEPTH
+                },
+                0,
+                1
+            ),
+            Some(BlockKind::ListItem {
+                depth: MAX_LIST_DEPTH
+            })
+        );
+        assert_eq!(
+            indent_kind(&BlockKind::Paragraph, 0, -1),
+            None,
+            "shift+tab on a paragraph is not a gesture"
+        );
+    }
+
+    #[test]
+    fn choosing_paragraph_after_title_clears_the_name_this_build_put_on() {
+        assert_eq!(named_style_for(Some("Title"), None), None);
+    }
+
+    #[test]
+    fn choosing_paragraph_on_a_documents_own_name_leaves_it_alone() {
+        assert_eq!(
+            named_style_for(Some("Quotations"), None),
+            Some("Quotations".to_owned())
+        );
+    }
+
+    #[test]
+    fn asking_for_a_name_always_wins() {
+        assert_eq!(
+            named_style_for(Some("Quotations"), Some("Title")),
+            Some("Title".to_owned())
+        );
+        assert_eq!(
+            named_style_for(None, Some("Subtitle")),
+            Some("Subtitle".to_owned())
+        );
+    }
+}
+
 /// A piece of a paragraph's content — `paragraph-content` in the schema (rng:8405).
 ///
 /// `text:s` never appears here: it is ODF's run-length encoding of spaces and is **expanded on

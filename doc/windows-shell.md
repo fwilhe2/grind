@@ -692,10 +692,19 @@ box — this pane owns no child control to put one in — over `loc::parse` and 
 the same two calls `ui_tui`'s `cmd_jump` makes; `p12` / `#intro` / `§2.1.3` are all addresses it
 now understands. **A block's kind can be changed too**: the same Format menu's Paragraph and
 Heading 1/2/3 items, and `ui_text_gtk`'s own Ctrl+0/1/2/3, reach `App::set_kind` at the caret's own
-block — no selection needed, unlike the three toggles above. **The outline dialog has landed
-too** — Ctrl+Shift+O or Edit ▸ Outline, a modal list built on the built-in `LISTBOX` control
-rather than a strip box (this shell's own popup type, `dialog::choose`, generic over strings so
-`dialog.rs` stays ignorant of `Heading`), one row per heading indented by depth and a
+block — no selection needed, unlike the three toggles above. **Title and Subtitle joined them**:
+`text_set_kind` now takes an optional named style alongside the `BlockKind`, and
+`grind_text::named_style_for` — the rule that a style is only ever taken off when a shell put it
+on, hoisted out of `ui_text_gtk`'s own `Ui::set_kind` the same way `indent_kind` was — decides
+whether Paragraph clears `Title`/`Subtitle` or leaves a document's own name (`Quotations`, say)
+exactly as it found it. **Tab now nests a list the same way it does in `grind-text-gtk`**:
+`text::keymap::Action::Tab` carries `back` so Shift+Tab is told from Tab, and `text_indent`
+answers `grind_text::indent_kind` — nest one level deeper, un-nest one, or start a list at the
+front of a block — before falling back to a literal `text:tab` character, exactly the rule
+`ui_text_gtk`'s `Doc::indent` already had and now shares rather than repeats. **The outline dialog
+has landed too** — Ctrl+Shift+O or Edit ▸ Outline, a modal list built on the built-in `LISTBOX`
+control rather than a strip box (this shell's own popup type, `dialog::choose`, generic over
+strings so `dialog.rs` stays ignorant of `Heading`), one row per heading indented by depth and a
 double-click or OK jumping straight to its block. **A level past 3 and a list item both reach
 this window too now**, over the same `dialog::choose` popup: Ctrl+Shift+K or Format ▸ Block
 Kind… lists Paragraph, Heading 1 through 6 and List item at four depths, and picking one is

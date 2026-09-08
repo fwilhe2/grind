@@ -923,9 +923,9 @@ mod imp {
         /// is at the front of. `false` when neither applied, which is what leaves Tab free to
         /// mean a tab character.
         ///
-        /// Depth stops at [`crate::MAX_DEPTH`] going in and at a paragraph coming out: a list
-        /// item at depth 0 is not a list item, so Shift+Tab out of the first level is how a
-        /// list ends.
+        /// The rule itself is [`grind_text::indent_kind`] now — hoisted out of this file the
+        /// day `grind-win32` wanted the same answer, so a list nests the same way in both
+        /// windows.
         pub fn indent(&self, by: i32) -> bool {
             let Some(app) = self.app() else { return false };
             let index = self.caret.get().block;
@@ -933,19 +933,9 @@ mod imp {
             let Some(block) = viewport.get(index) else {
                 return false;
             };
-            let kind = match &block.kind {
-                BlockKind::ListItem { depth } => {
-                    match (*depth as i32 + by).clamp(0, crate::MAX_DEPTH as i32) {
-                        0 => BlockKind::Paragraph,
-                        depth => BlockKind::ListItem {
-                            depth: depth as u32,
-                        },
-                    }
-                }
-                // Not a list yet: only the front of the block starts one, so Tab after a word
-                // is still a tab.
-                _ if by > 0 && self.caret.get().offset == 0 => BlockKind::ListItem { depth: 1 },
-                _ => return false,
+            let Some(kind) = grind_text::indent_kind(&block.kind, self.caret.get().offset, by)
+            else {
+                return false;
             };
             if let Err(error) = app.set_kind(index, kind) {
                 self.notice(error.to_string());

@@ -101,6 +101,11 @@ pub enum Command {
     /// Every property of the selection's formatting, off at once — the one-shot the toggles can
     /// only approximate, and the strip's own *Clear* button.
     ClearFormatting,
+    /// The caret's block becomes a paragraph wearing the `Title` named style —
+    /// `ui_text_gtk`'s own `win.title`, mirrored so the two windows both know how to apply and
+    /// draw the same two names (`grind_text::NAMED_STYLES`).
+    Title,
+    Subtitle,
     /// The caret's block becomes a plain paragraph — `App::set_kind`, `BlockKind::Paragraph`.
     /// Left out of the grid's menus, the same way the three toggles above are.
     Paragraph,
@@ -175,6 +180,8 @@ impl Command {
         Command::PickColor,
         Command::PickHighlight,
         Command::ClearFormatting,
+        Command::Title,
+        Command::Subtitle,
         Command::Paragraph,
         Command::Heading1,
         Command::Heading2,
@@ -386,7 +393,7 @@ pub const MENUS: &[Menu] = &[
             },
             Item::Verb {
                 command: Command::PickSize,
-                label: "&Size…",
+                label: "Si&ze…",
             },
             Item::Verb {
                 command: Command::PickColor,
@@ -399,6 +406,15 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ClearFormatting,
                 label: "C&lear Formatting",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::Title,
+                label: "Titl&e",
+            },
+            Item::Verb {
+                command: Command::Subtitle,
+                label: "&Subtitle",
             },
             Item::Separator,
             Item::Verb {
@@ -582,6 +598,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::PickColor
         | Command::PickHighlight
         | Command::ClearFormatting
+        | Command::Title
+        | Command::Subtitle
         | Command::Paragraph
         | Command::Heading1
         | Command::Heading2
@@ -836,6 +854,8 @@ mod tests {
             Command::PickColor,
             Command::PickHighlight,
             Command::ClearFormatting,
+            Command::Title,
+            Command::Subtitle,
             Command::Paragraph,
             Command::Heading1,
             Command::Heading2,

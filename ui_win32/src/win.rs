@@ -2874,6 +2874,8 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::PickColor
         | Command::PickHighlight
         | Command::ClearFormatting
+        | Command::Title
+        | Command::Subtitle
         | Command::Paragraph
         | Command::Heading1
         | Command::Heading2
@@ -3862,7 +3864,7 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
         }
         text::keymap::Action::Erase { forward } => text_erase(hwnd, forward),
         text::keymap::Action::Split => text_split(hwnd),
-        text::keymap::Action::Tab => text_insert(hwnd, "\t"),
+        text::keymap::Action::Tab { back } => text_indent(hwnd, back),
     }
     true
 }
@@ -4201,10 +4203,14 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::PickColor => text_pick_color(hwnd, false),
         Command::PickHighlight => text_pick_color(hwnd, true),
         Command::ClearFormatting => text_format(hwnd, grind_text::format::Change::Clear),
-        Command::Paragraph => text_set_kind(hwnd, grind_text::BlockKind::Paragraph),
-        Command::Heading1 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 1 }),
-        Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }),
-        Command::Heading3 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 3 }),
+        Command::Paragraph => text_set_kind(hwnd, grind_text::BlockKind::Paragraph, None),
+        Command::Title => text_set_kind(hwnd, grind_text::BlockKind::Paragraph, Some("Title")),
+        Command::Subtitle => {
+            text_set_kind(hwnd, grind_text::BlockKind::Paragraph, Some("Subtitle"))
+        }
+        Command::Heading1 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 1 }, None),
+        Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }, None),
+        Command::Heading3 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 3 }, None),
         Command::GoTo => text_go_to(hwnd),
         Command::Outline => text_outline(hwnd),
         Command::BlockKindDialog => text_block_kind_dialog(hwnd),
@@ -4538,22 +4544,77 @@ fn text_pick_color(hwnd: HWND, highlight: bool) {
     text_format(hwnd, change);
 }
 
-/// Turn the caret's own block into this kind — `App::set_kind`, `ui_text_gtk`'s own Ctrl+0/1/2/3
-/// mirrored here so a heading is one key everywhere rather than a shell-specific idea of it.
+/// Turn the caret's own block into this kind, wearing this named paragraph style —
+/// `App::set_kind` and `App::set_style` in one gesture, `ui_text_gtk`'s own `Ui::set_kind`
+/// mirrored here so a heading and a *Title* behave one way everywhere rather than a
+/// shell-specific idea of either.
+///
+/// **The style is only ever taken off when this window put it on** — `grind_text::named_style_for`
+/// is the whole rule, shared with that window: choosing Paragraph after *Title* or *Subtitle*
+/// clears the name, and a document's own name this build does not interpret (`Quotations`, say)
+/// is left exactly as it is.
 ///
 /// Unlike [`text_emphasise`], which needs a selection, a block's kind is asked of wherever the
 /// caret sits — the same reason `App::set_kind` takes an index and not a range.
-fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind) {
-    // SAFETY: one borrow. `set_kind` notifies, and the observer posts rather than sends.
+fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind, style: Option<&str>) {
+    // SAFETY: one borrow. `set_kind`/`set_style` notify, and the observer posts rather than
+    // sends.
     unsafe {
         with_text(hwnd, |text| {
-            match text.app.set_kind(text.caret.block, kind) {
-                Ok(()) => text.say(None),
-                Err(error) => text.say(Some(error.to_string())),
+            let index = text.caret.block;
+            let viewport = text.app.get_viewport(index..index + 1);
+            let Some(block) = viewport.get(index) else {
+                return;
+            };
+            let was = block.style.clone();
+            let wanted = grind_text::named_style_for(was.as_deref(), style);
+            let kind_changed = block.kind != kind;
+            if kind_changed && let Err(error) = text.app.set_kind(index, kind) {
+                text.say(Some(error.to_string()));
+                return;
+            }
+            if wanted != was {
+                match text.app.set_style(index..index + 1, wanted) {
+                    Ok(_) => text.say(None),
+                    Err(error) => text.say(Some(error.to_string())),
+                }
+            } else if kind_changed {
+                text.say(None);
             }
         });
     }
     refresh(hwnd);
+}
+
+/// Tab or Shift+Tab: nest a list item one level deeper, un-nest one, or start one at the front
+/// of a block — `grind_text::indent_kind` is the whole rule, the same one `ui_text_gtk`'s
+/// `Doc::indent` calls, so a list nests the same way in both windows. A literal tab character
+/// where none of that applies, which is what a word processor's Tab does in the middle of a
+/// sentence; Shift+Tab with nothing to un-nest types nothing, since there is no such character.
+fn text_indent(hwnd: HWND, back: bool) {
+    let by = if back { -1 } else { 1 };
+    // SAFETY: one borrow. `set_kind` notifies, and the observer posts rather than sends.
+    let handled = unsafe {
+        with_text(hwnd, |text| {
+            let index = text.caret.block;
+            let viewport = text.app.get_viewport(index..index + 1);
+            let Some(block) = viewport.get(index) else {
+                return false;
+            };
+            let Some(kind) = grind_text::indent_kind(&block.kind, text.caret.offset, by) else {
+                return false;
+            };
+            if let Err(error) = text.app.set_kind(index, kind) {
+                text.say(Some(error.to_string()));
+            }
+            true
+        })
+    };
+    match handled {
+        Some(true) => refresh(hwnd),
+        _ if !back => text_insert(hwnd, "\t"),
+        _ => {}
+    }
 }
 
 /// Every block kind, listed rather than one key per depth — the schema's headings go past level
@@ -4587,7 +4648,7 @@ fn text_block_kind_dialog(hwnd: HWND) {
     let Some(kind) = kinds.get(choice).cloned() else {
         return;
     };
-    text_set_kind(hwnd, kind);
+    text_set_kind(hwnd, kind, None);
 }
 
 fn text_history(hwnd: HWND, undo: bool) {

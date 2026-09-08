@@ -57,8 +57,13 @@ pub enum Action {
     },
     /// Enter: one block becomes two.
     Split,
-    /// A literal tab, which is a character in the model (`text:tab`) rather than an indent.
-    Tab,
+    /// Tab or Shift+Tab. Structural where `grind_text::indent_kind` says there is structure to
+    /// change — it nests a list item, un-nests one, or starts a list at the front of a block —
+    /// and a literal `text:tab` character otherwise, which is what leaves the key free to mean
+    /// one in the middle of a sentence.
+    Tab {
+        back: bool,
+    },
 }
 
 /// What a key means, or `None` for one this pane does not claim — which must go back to
@@ -90,7 +95,7 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
         (Key::Backspace, false) => Some(Action::Erase { forward: false }),
         (Key::Delete, false) => Some(Action::Erase { forward: true }),
         (Key::Return, false) => Some(Action::Split),
-        (Key::Tab, false) => Some(Action::Tab),
+        (Key::Tab, false) => Some(Action::Tab { back: mods.shift }),
         _ => None,
     }
 }
@@ -313,5 +318,19 @@ mod tests {
     fn word_motion_counts_characters_and_not_bytes() {
         // Four characters, six bytes: an offset is a caret's unit, and `Caret::offset` is chars.
         assert_eq!(word_boundary("héllo wörld", 0, true), Some(6));
+    }
+
+    /// Tab and Shift+Tab are the same key, told apart only by `back` — `win.rs`'s `text_indent`
+    /// decides whether that means nesting a list or typing a literal tab.
+    #[test]
+    fn tab_and_shift_tab_carry_their_own_direction() {
+        assert_eq!(
+            action_for(Key::Tab, mods(false, false), 20),
+            Some(Action::Tab { back: false })
+        );
+        assert_eq!(
+            action_for(Key::Tab, mods(false, true), 20),
+            Some(Action::Tab { back: true })
+        );
     }
 }

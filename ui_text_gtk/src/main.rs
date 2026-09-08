@@ -55,14 +55,6 @@ const KIND: DocumentKind = DocumentKind::Text;
 /// The sibling shell, launched by name when a spreadsheet is opened here.
 const SHEET_APP: &str = "grind-sheet-gtk";
 
-/// How deeply Tab will nest a list item.
-///
-/// The model has no ceiling — `BlockKind::ListItem`'s depth is a `u32` and a file may say
-/// anything — and this is a *shell* limit rather than a document one: past nine levels the
-/// indent (`geom::INDENT` each) is wider than the column, so Tab stops rather than pushing the
-/// text off the page. A deeper list read from a file still loads and still draws.
-const MAX_DEPTH: u32 = 9;
-
 type Handler = fn(&Rc<Ui>);
 
 fn main() -> ExitCode {
