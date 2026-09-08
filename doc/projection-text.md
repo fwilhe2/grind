@@ -42,6 +42,22 @@ are numbers rather than nesting.
 | `h` | `BlockKind::Heading`, its `text:outline-level` as the first argument | `h 2 "Addresses"` |
 | `li` | `BlockKind::ListItem`, its nesting depth as the first argument | `li 2 "a nested item"` |
 | `list` | **read only** — the authoring spelling for a run of `li`, which supplies their depth by nesting. The writer never emits one, because the model is flat | `list { li "in a list" }` |
+| `table` | one `table:table`, its `table:name` as its argument. A table is the maximal run of consecutive blocks naming it (`model::Cell`), so this node *is* that run | `table "Prices" { row { cell { p "Item" } } }` |
+| `row` | one `table:table-row`. It carries no number: a row is the *n*th row because *n* rows came before it, exactly as a `list`'s nesting supplies a depth | `table "T" { row { cell { p "a" } }; row { cell { p "b" } } }` |
+| `cell` | one `table:table-cell`, holding blocks — its content is the body's own production (rng:16126), so a cell holds paragraphs, headings and lists. Its column is how many columns came before it; `span=` and `rows=` are `table:number-columns-spanned` and `table:number-rows-spanned` | `table "T" { row { cell span=2 { p "wide" } } }` |
+
+**Two of the five table elements are spelled by implication rather than by a node**, which is
+what a coordinate model buys and is worth stating: `table:table-column` is the *width* of the
+widest row, so the writer counts the cells rather than being told; and
+`table:covered-table-cell` is every position a `span=`/`rows=` reaches over, so the reader steps
+past those positions instead of reading a placeholder for each. Both are written back into the
+ODF the model implies, which is why `text/tests/loop_f.rs` compares `Block::cell` whole — a span
+this file got wrong moves every cell after it and nothing else would notice.
+
+A table's own `table:style-name` — its column widths, its borders, its background — has no
+spelling here because the model does not carry one (`doc/text-core.md`), and neither does a
+table **nested inside a cell**, whose paragraphs are read as paragraphs of the cell that holds
+it. Both are that document's decisions rather than this one's.
 
 `style=` on any of the three is `Block::style`, the block's `text:style-name` kept as a *name*:
 `p "code" style="Preformatted Text"`.

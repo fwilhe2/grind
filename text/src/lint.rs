@@ -441,6 +441,7 @@ mod tests {
                 data: vec![0; 12],
                 width: None,
                 height: None,
+                anchor: None,
             }],
         );
         let report = lint(&doc, &Options::default());

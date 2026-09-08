@@ -127,6 +127,15 @@ pub enum Run {
         /// preferred, since that is the size a person actually sees.
         width: Option<String>,
         height: Option<String>,
+        /// `text:anchor-type` (rng:6519) — `as-char`, `char`, `paragraph`, `page`, `frame`.
+        ///
+        /// Kept verbatim and **written back**, because it is the difference between a picture
+        /// that sits where it was typed and one that jumps to the top of its paragraph. Loop C
+        /// found that the hard way: a document with an `as-char` image at the end of a list
+        /// item came back with the image at the *front*, since a frame written without the
+        /// attribute takes ODF's own default of `paragraph`. `None` means the document did not
+        /// say, and then neither does the writer.
+        anchor: Option<String>,
     },
 }
 
@@ -274,7 +283,65 @@ pub fn coalesce(runs: &mut Vec<Run>) {
     }
 }
 
-/// One block: a paragraph, a heading, or a list item.
+/// Where a block sits inside a `table:table` — the **second axis** of the flat sequence.
+///
+/// A cell is not a *kind* of block, and that is the whole design. `table-table-cell-content` is
+/// `zeroOrMore text-content` (rng:16126) — the **same production as the body itself**
+/// (rng:16938) — so a cell holds paragraphs, headings and lists exactly as the body does. A
+/// `BlockKind::TableCell` would therefore have had to compete with the three kinds a cell may
+/// contain, and lose. This is a coordinate carried *beside* the kind instead: a block is a
+/// heading, and it is the heading in row 0, column 2 of the table called `Prices`.
+///
+/// **A table is a maximal run of consecutive blocks naming it**, which is the same fold
+/// [`BlockKind::ListItem`]'s depth already asks the writer to do, for the same reason: the model
+/// matches the body's flatness rather than re-introducing a tree the schema does not have, and
+/// addressing stays uniform — `p12` is the twelfth block whether it is in a table or not, so
+/// every caret operation, every formatting edit, `#intro`, `§2.1.3` and the projection's span
+/// map all work inside a table with no code that knows about tables.
+///
+/// What it costs, named rather than discovered: **the table's own style** (`table:style-name`,
+/// its column widths and its borders) is not carried, so re-emitting a table this build *edited*
+/// loses it — R6 keeps every byte of one nobody touched. And a table **nested inside a cell** is
+/// read as its own table, flattened after the outer one's blocks, so a regenerate makes it a
+/// sibling rather than a child. Both are the `text:list` trade in a second costume.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Cell {
+    /// `table:name` (rng:15970) — the table's identity, and the only thing that says where one
+    /// table ends and the next begins in a flat sequence. Kept verbatim, and LibreOffice keeps
+    /// it verbatim too (`doc/odt-format.md` §5b), which is what lets a table survive loop C.
+    pub table: String,
+    /// 0-based, like every other position in this crate. `loc.rs` is still the only place a
+    /// number a person types is converted.
+    pub row: u32,
+    pub column: u32,
+    /// `table:number-columns-spanned` / `table:number-rows-spanned` (rng:16102), 1 when the
+    /// cell spans only itself. Carried because a merged cell is the first thing anybody does to
+    /// a table after making one, and because the positions it covers have to be written back as
+    /// `table:covered-table-cell` or the table changes shape.
+    pub columns_spanned: u32,
+    pub rows_spanned: u32,
+}
+
+impl Cell {
+    /// A cell spanning only itself.
+    pub fn new(table: impl Into<String>, row: u32, column: u32) -> Self {
+        Cell {
+            table: table.into(),
+            row,
+            column,
+            columns_spanned: 1,
+            rows_spanned: 1,
+        }
+    }
+
+    /// Whether two blocks are in the *same* cell — the fold the writer performs, and the reason
+    /// a cell holding two paragraphs is two blocks rather than one with a break in it.
+    pub fn is_same(&self, other: &Cell) -> bool {
+        self.table == other.table && self.row == other.row && self.column == other.column
+    }
+}
+
+/// One block: a paragraph, a heading, or a list item — possibly inside a table cell.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
     pub id: BlockId,
@@ -284,6 +351,8 @@ pub struct Block {
     /// Not resolved through `style:parent-style-name`. That matters more here than it does for
     /// cells and is a named gap: see `doc/text-core.md`.
     pub style: Option<String>,
+    /// Where this block sits in a table, when it is in one. See [`Cell`].
+    pub cell: Option<Cell>,
     pub runs: Vec<Run>,
 }
 
@@ -293,6 +362,7 @@ impl Block {
             id,
             kind,
             style: None,
+            cell: None,
             runs: Vec::new(),
         }
     }
@@ -423,6 +493,42 @@ impl Document {
             .iter()
             .enumerate()
             .filter_map(|(i, b)| b.outline_level().map(|level| (i, level)))
+    }
+
+    /// The blocks of the table the block at `index` is in — the **maximal run** of consecutive
+    /// blocks naming the same table. `None` for a block that is not in one.
+    ///
+    /// The fold [`Cell`] describes, in one place because three callers need exactly it: the
+    /// writer reconstructing `table:table`, a shell laying a grid out, and the projection. A
+    /// paragraph between two tables of the same name makes them two tables, which is what
+    /// "consecutive" means and is the only reading a flat sequence can offer.
+    pub fn table(&self, index: usize) -> Option<std::ops::Range<usize>> {
+        let name = &self.block(index)?.cell.as_ref()?.table;
+        let named = |block: &Block| block.cell.as_ref().is_some_and(|c| &c.table == name);
+        let start = self.blocks[..index]
+            .iter()
+            .rposition(|block| !named(block))
+            .map_or(0, |before| before + 1);
+        let end = self.blocks[index + 1..]
+            .iter()
+            .position(|block| !named(block))
+            .map_or(self.blocks.len(), |offset| index + 1 + offset);
+        Some(start..end)
+    }
+
+    /// How many rows and columns the table occupying `blocks` has, counting a spanned cell for
+    /// every position it covers.
+    ///
+    /// Derived rather than stored, exactly as the outline is: two copies of one fact disagree
+    /// eventually, and the cells *are* the table.
+    pub fn table_extent(&self, blocks: std::ops::Range<usize>) -> (u32, u32) {
+        let mut rows = 0;
+        let mut columns = 0;
+        for cell in self.blocks[blocks].iter().filter_map(|b| b.cell.as_ref()) {
+            rows = rows.max(cell.row + cell.rows_spanned.max(1));
+            columns = columns.max(cell.column + cell.columns_spanned.max(1));
+        }
+        (rows, columns)
     }
 
     /// The blocks belonging to the heading at `index`: the heading itself, plus everything up

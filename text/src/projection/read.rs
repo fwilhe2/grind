@@ -20,7 +20,7 @@
 use grind_core::projection::kdl::{KdlDocument, KdlNode, KdlValue};
 use grind_core::projection::{Shape, Source, node_span};
 
-use crate::model::{Block, BlockKind, Document};
+use crate::model::{Block, BlockKind, Cell, Document};
 use crate::{Error, Result, loc};
 
 /// Read a projection.
@@ -35,15 +35,22 @@ pub fn read(text: &str) -> Result<Document> {
     }
     let mut doc = Document::new();
     let mut source = Source::new(text);
-    blocks(&mut doc, body.nodes(), 0, &mut source)?;
+    blocks(&mut doc, body.nodes(), 0, None, &mut source)?;
     doc.reindex_bookmarks();
     doc.projection_source = Some(Box::new(source));
     Ok(doc)
 }
 
 /// One level of nodes. `depth` is how many `list` blocks are open around them, which is zero
-/// everywhere except inside the authoring spelling.
-fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32, source: &mut Source) -> Result<()> {
+/// everywhere except inside the authoring spelling; `cell` is the table cell they are in, which
+/// is `None` everywhere except inside a `table`.
+fn blocks(
+    doc: &mut Document,
+    nodes: &[KdlNode],
+    depth: u32,
+    cell: Option<&Cell>,
+    source: &mut Source,
+) -> Result<()> {
     for node in nodes {
         let kind = match node.name().value() {
             "p" => BlockKind::Paragraph,
@@ -56,7 +63,11 @@ fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32, source: &mut Source
                 depth: number(node, 0).unwrap_or(depth.max(1)),
             },
             "list" => {
-                blocks(doc, children(node), depth + 1, source)?;
+                blocks(doc, children(node), depth + 1, cell, source)?;
+                continue;
+            }
+            "table" => {
+                table(doc, node, source)?;
                 continue;
             }
             other => return Err(unknown(node, other)),
@@ -71,6 +82,7 @@ fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32, source: &mut Source
 
         let id = doc.next_id();
         let mut block = Block::new(id, kind);
+        block.cell = cell.cloned();
         if let Some((text, raw)) = string_of(node) {
             block.runs = super::inline::read(&text, raw);
         }
@@ -80,6 +92,90 @@ fn blocks(doc: &mut Document, nodes: &[KdlNode], depth: u32, source: &mut Source
         doc.blocks.push(block);
     }
     Ok(())
+}
+
+/// One `table` node: rows of cells, whose coordinates come from where they sit.
+///
+/// The authoring shape, and the only one: a row is a row because of its position and a cell is
+/// in column *n* because *n* columns came before it — `list { li }`'s trick on two axes. A
+/// `span=` moves the counter on by that many columns, which is how the positions a merged cell
+/// covers get no node of their own and still exist.
+///
+/// A table with no name gets one from its position, because a name is a table's identity in
+/// this model (`model::Cell`) and two unnamed tables in a row would otherwise be one table.
+fn table(doc: &mut Document, node: &KdlNode, source: &mut Source) -> Result<()> {
+    let name = match node
+        .entries()
+        .iter()
+        .find(|e| e.name().is_none())
+        .and_then(|e| e.value().as_string())
+    {
+        Some(name) => name.to_owned(),
+        None => format!("Table{}", doc.blocks.len() + 1),
+    };
+    // The positions a `rows=` span reaches into. A column span moves the counter along inside
+    // its own row and needs no memory; a *row* span reaches into rows that have not been read
+    // yet, so the positions it covers are remembered until they are stepped over. Without this
+    // every cell after a vertically merged one shifts one column left, which is what loop F
+    // found in fifteen corpus documents the day this comparison started looking at cells.
+    let mut covered: std::collections::BTreeSet<(u32, u32)> = std::collections::BTreeSet::new();
+    for (row, child) in children(node).iter().enumerate() {
+        let row = row as u32;
+        if child.name().value() != "row" {
+            return Err(at(
+                child,
+                format!(
+                    "`{}` is not something a table holds — a table holds rows",
+                    child.name().value()
+                ),
+            ));
+        }
+        let mut column = 0u32;
+        for entry in children(child) {
+            if entry.name().value() != "cell" {
+                return Err(at(
+                    entry,
+                    format!(
+                        "`{}` is not something a row holds — a row holds cells",
+                        entry.name().value()
+                    ),
+                ));
+            }
+            while covered.contains(&(row, column)) {
+                column += 1;
+            }
+            let cell = Cell {
+                table: name.clone(),
+                row,
+                column,
+                columns_spanned: span(entry, "span")?,
+                rows_spanned: span(entry, "rows")?,
+            };
+            for r in cell.row..cell.row + cell.rows_spanned.max(1) {
+                for c in cell.column..cell.column + cell.columns_spanned.max(1) {
+                    if (r, c) != (cell.row, cell.column) {
+                        covered.insert((r, c));
+                    }
+                }
+            }
+            column += cell.columns_spanned.max(1);
+            blocks(doc, children(entry), 0, Some(&cell), source)?;
+        }
+    }
+    Ok(())
+}
+
+/// A `span=` or `rows=` property: how many columns or rows this cell covers. One when it does
+/// not say, which is what a cell that covers only itself is.
+fn span(node: &KdlNode, name: &str) -> Result<u32> {
+    match node.get(name) {
+        None => Ok(1),
+        Some(KdlValue::Integer(n)) => u32::try_from(*n)
+            .ok()
+            .filter(|n| *n >= 1)
+            .ok_or_else(|| at(node, format!("{n} is not a span"))),
+        Some(_) => Err(at(node, format!("`{name}` needs a number"))),
+    }
 }
 
 /// The block's text: its last string argument, and **whether it was written raw**.

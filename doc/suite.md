@@ -384,6 +384,13 @@ Writer appears to write its own dialect into `table:formula` under a vendor pref
 `of:`. That is a claim to *verify by observation and cite*, per the clean-room rule, not to
 carry into code from this sentence.
 
+> **Built since, and the paragraph above was right about the model.** A table is read, written,
+> projected and drawn (`doc/text-core.md`'s Tables section, `doc/projection-text.md`), and
+> nothing about the spreadsheet's reader was shared: a block carries the *coordinate* of the
+> cell it is in, and a cell holds blocks because `table-table-cell-content` is the body's own
+> production (rng:16126). The formula question is still open and still unimplemented, which is
+> what the clean-room rule asks — a cell in this build holds text and never a formula.
+
 ---
 
 ## The CLI
@@ -774,7 +781,7 @@ as layout boxes · a drawing canvas · mail merge · forms and controls · bibli
 citations · master documents · generated indices · `.docx` **writing** (the same asymmetry the
 xlsx plan records, for the same reason) · WYSIWYG page view, if Path A is taken.
 
-*Not yet, with gates:* tables in text (S6) · table of contents generation · comments
+*Not yet, with gates:* table of contents generation · comments
 (`office:annotation` — arguably in, and genuinely used; decide with evidence) · Markdown
 **import** (a one-way filter at the edge, exactly like xlsx, so it is allowed by the same
 argument that allows that one) · change tracking, which stays in §1 "Never" for editing but

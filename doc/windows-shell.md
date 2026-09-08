@@ -573,7 +573,11 @@ R10 allows per-shell feature gaps and requires them to be named. These are the n
 
 **Not drawn, kept intact.** A **chart** in a file is read, kept and written back untouched, and
 nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
-than a stub. An **image** in a text document, likewise.
+than a stub. An **image** in a text document, likewise. A **table** in a text document is the
+third: the core carries one now (`doc/text-core.md`) and a cell holds blocks, so this pane
+already *edits* one correctly — every caret motion and format reaches inside a cell, because
+`p12` is the twelfth block whether it is in a table or not — and what is missing is the grid
+round it, which is GDI rectangles and a second look at `text/geom.rs`'s `Flow`.
 
 **Not built, though L3 no longer stands in the way.** Wrapped cells and **row auto-height** are
 still this shell's own gap: `ui_sheet_gtk`'s row auto-height measurement moved onto

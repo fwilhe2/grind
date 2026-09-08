@@ -63,6 +63,25 @@ free under R6; the first is a feature with a gate.
 | `text:list` | rng:17494 | `text:style-name` | Nests through its items, never through itself |
 | `text:list-item` | rng:17538 | `text:start-value` | Holds blocks, so nesting is structural |
 
+### Tables
+
+| Element | Schema | Carries | Note |
+|---|---|---|---|
+| `table:table` | rng:15939 | `table:name` | One of `text-content`'s own alternatives (rng:16938), so in a text document a **table is a block**. Flattened into the block sequence the way a list is: a block carries the coordinate of the cell it is in (`model::Cell`), and a table is the maximal run of consecutive blocks naming it. The table's own `table:style-name` — its column widths and borders — is **not** carried |
+| `table:table-column` | rng:16153 | `table:number-columns-repeated` | Written because `table-columns-and-groups` is a `oneOrMore` (rng:14200) and R2 says everything written validates. Its width is a table style, which is out |
+| `table:table-row` | rng:16223 | `table:number-rows-repeated` | The repeat is **expanded on read and written out as rows** — `text:s`'s doctrine on a second axis |
+| `table:table-cell` | rng:16052 | `table:number-columns-repeated`, `table:number-columns-spanned`, `table:number-rows-spanned` | Its content is `zeroOrMore text-content` (rng:16126) — **the same production as the body** — so a cell holds paragraphs, headings and lists exactly as the body does. An **empty** cell is read as one empty paragraph, because LibreOffice materialises one on every save (`doc/odt-format.md` §5b) and a model that did not would gain a block on the first round trip |
+| `table:covered-table-cell` | rng:14298 | — | The position a merged cell covers. Contributes no block, and is written back for every position a span reaches, or the table changes shape |
+
+**What is deliberately not carried, and each is one sentence:** the table's style (widths,
+borders, background), `table:formula` in a cell (`doc/odt-format.md` §5's first UNVERIFIED
+question — whether a Writer table's formula is even OpenFormula — and nothing may be built on an
+unanswered one), and a table **nested inside a cell**, whose paragraphs are read as paragraphs
+of the cell that holds it. That last one is a real choice rather than an omission: a nested table
+splits the outer table's run of blocks in two, and a flat model cannot then say which half is
+which — so the text is kept, the inner structure is not, and R6 means a document nobody edited
+keeps every byte of it.
+
 ### Inline
 
 | Element | Schema | Carries | Note |
@@ -184,7 +203,6 @@ the argument that reopened it.
 
 | Not yet | Gate |
 |---|---|
-| **`table:table` in a text document** | S6 or later. The *element vocabulary* is shared with the spreadsheet; the model is not — an ODT table cell holds **blocks**, not a value. And `doc/odt-format.md` §5 has an open UNVERIFIED question about whether `table:formula` in a Writer table is even OpenFormula |
 | **`text:note` — footnotes and endnotes** | When there is somewhere to put one. A footnote's *content* is ordinary blocks and models fine; a footnote's *placement* is the page model, which is gated. A continuous view can still show one — inline, or at the end of the flow — so this waits for a shell rather than for pages |
 | **Fields** (`text:page-number`, `text:date`, `text:title`, `text:file-name`) | A small named set, when something can display one. `text:page-number` is the one that needs a page model specifically, and it stays out with the rest of pagination |
 | **`text:table-of-content`** | Read and preserved from the start (R6). *Authoring* one needs heading numbering and an update policy |

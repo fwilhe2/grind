@@ -806,6 +806,7 @@ mod tests {
                 data: vec![1, 2, 3],
                 width: None,
                 height: None,
+                anchor: None,
             },
         ];
         assert!(write(&runs).is_none());

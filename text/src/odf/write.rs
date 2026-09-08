@@ -28,7 +28,7 @@
 use std::fmt::Write as _;
 
 use grind_core::Result;
-use grind_core::odf::names::{DRAW, FO, OFFICE, STYLE, SVG, TEXT, XLINK};
+use grind_core::odf::names::{DRAW, FO, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
 use grind_core::odf::package::{VERSION, write_package};
 use grind_core::odf::xml::esc;
 
@@ -153,6 +153,10 @@ struct Used {
     /// `draw:` and `svg:`, which arrive together for the same reason — the only thing either
     /// namespace carries here is one image's frame and its size.
     image: bool,
+    /// `table:`, in a document that has a table in it. The one namespace this writer shares
+    /// with the spreadsheet, and it is the same vocabulary — a text table's rows and cells are
+    /// spelled exactly as a sheet's are (`doc/text-core.md`).
+    table: bool,
 }
 
 impl Used {
@@ -162,6 +166,7 @@ impl Used {
             xlink: runs().any(|r| matches!(r, Run::Text { href: Some(_), .. })),
             styles: !pool.is_empty(),
             image: runs().any(|r| matches!(r, Run::Image { .. })),
+            table: doc.blocks.iter().any(|b| b.cell.is_some()),
         }
     }
 }
@@ -266,6 +271,10 @@ fn content(doc: &Document, form: Form) -> String {
     if used.image {
         let _ = write!(out, " xmlns:draw=\"{DRAW}\" xmlns:svg=\"{SVG}\"");
     }
+    // `table:` only in one that has a table in it.
+    if used.table {
+        let _ = write!(out, " xmlns:table=\"{TABLE}\"");
+    }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
@@ -300,14 +309,153 @@ fn automatic_styles(out: &mut String, pool: &Pool) {
     out.push_str(" </office:automatic-styles>\n");
 }
 
-/// The blocks, with `text:list` nesting folded back in from their depths.
+/// The body: runs of ordinary blocks, and the tables between them.
+///
+/// **Two folds, one flat sequence.** A `text:list` is reconstructed from block depths and a
+/// `table:table` from the cell coordinates the blocks carry (`crate::model::Cell`) — both are
+/// the same trade the model makes on purpose, and both are a walk rather than a traversal.
+/// Tables are the outer one because a cell holds blocks and a list item does not hold a table
+/// in this model.
 fn body(out: &mut String, doc: &Document, pool: &Pool) {
+    let mut index = 0;
+    while index < doc.blocks.len() {
+        match doc.blocks[index].cell {
+            None => {
+                let end = doc.blocks[index..]
+                    .iter()
+                    .position(|block| block.cell.is_some())
+                    .map_or(doc.blocks.len(), |offset| index + offset);
+                blocks(out, &doc.blocks[index..end], 0, pool);
+                index = end;
+            }
+            Some(_) => {
+                // The maximal run naming this table — the model's own fold, asked of the
+                // model rather than repeated here.
+                let range = doc.table(index).unwrap_or(index..index + 1);
+                table(out, doc, range.clone(), pool);
+                index = range.end;
+            }
+        }
+    }
+}
+
+/// One `table:table` (rng:15939), from the blocks of its cells.
+///
+/// The rectangle comes from the coordinates: a position no block names is written as an empty
+/// cell, and a position covered by a span is written as `table:covered-table-cell` (rng:14298),
+/// which is what keeps a merged table the same shape after a regenerate.
+fn table(out: &mut String, doc: &Document, range: std::ops::Range<usize>, pool: &Pool) {
+    let name = match doc.blocks[range.start].cell.as_ref() {
+        Some(cell) => cell.table.clone(),
+        None => return,
+    };
+    let (rows, columns) = doc.table_extent(range.clone());
+    let blocks_in = &doc.blocks[range];
+
+    let _ = writeln!(
+        out,
+        "{}<table:table table:name=\"{}\">",
+        indent(3),
+        esc(&name)
+    );
+    // At least one `table:table-column` is required — `table-columns-and-groups` is a
+    // `oneOrMore` (rng:14200) — so a table with no columns at all still declares one, and R2
+    // (everything written validates) is why that is not a detail.
+    let repeat = match columns.max(1) {
+        1 => String::new(),
+        n => format!(" table:number-columns-repeated=\"{n}\""),
+    };
+    let _ = writeln!(out, "{}<table:table-column{repeat}/>", indent(4));
+
+    for row in 0..rows.max(1) {
+        let _ = writeln!(out, "{}<table:table-row>", indent(4));
+        let mut column = 0;
+        while column < columns.max(1) {
+            let cell = blocks_in.iter().find_map(|b| {
+                b.cell
+                    .as_ref()
+                    .filter(|c| c.row == row && c.column == column)
+            });
+            match cell {
+                Some(cell) => {
+                    let spans = span_attributes(cell);
+                    let content: Vec<Block> = blocks_in
+                        .iter()
+                        .filter(|b| b.cell.as_ref().is_some_and(|c| c.is_same(cell)))
+                        .cloned()
+                        .collect();
+                    if content.iter().all(Block::is_empty) && content.len() <= 1 {
+                        // An empty cell, written the way the schema's shortest form allows.
+                        // Reading it back makes one empty paragraph again — the normalisation
+                        // `TableCell::end` performs, and the same one LibreOffice performs
+                        // (`doc/odt-format.md` §5b), so the two agree.
+                        let _ = writeln!(out, "{}<table:table-cell{spans}/>", indent(5));
+                    } else {
+                        let _ = writeln!(out, "{}<table:table-cell{spans}>", indent(5));
+                        blocks(out, &content, 3, pool);
+                        let _ = writeln!(out, "{}</table:table-cell>", indent(5));
+                    }
+                    column += 1;
+                }
+                // Nothing names this position. Either a cell above or to the left covers it —
+                // in which case ODF wants the covered element, and a reader counts it as a
+                // column — or the model simply has a gap, which is an empty cell.
+                None => {
+                    let element = match covered(blocks_in, row, column) {
+                        true => "table:covered-table-cell",
+                        false => "table:table-cell",
+                    };
+                    let _ = writeln!(out, "{}<{element}/>", indent(5));
+                    column += 1;
+                }
+            }
+        }
+        let _ = writeln!(out, "{}</table:table-row>", indent(4));
+    }
+    let _ = writeln!(out, "{}</table:table>", indent(3));
+}
+
+/// `table:number-columns-spanned` / `table:number-rows-spanned` (rng:16102), written only where
+/// they say something — a span of one is the default and LibreOffice drops it too.
+fn span_attributes(cell: &crate::model::Cell) -> String {
+    let mut out = String::new();
+    if cell.columns_spanned > 1 {
+        let _ = write!(
+            out,
+            " table:number-columns-spanned=\"{}\"",
+            cell.columns_spanned
+        );
+    }
+    if cell.rows_spanned > 1 {
+        let _ = write!(out, " table:number-rows-spanned=\"{}\"", cell.rows_spanned);
+    }
+    out
+}
+
+/// Whether some cell's span reaches over this position.
+fn covered(blocks: &[Block], row: u32, column: u32) -> bool {
+    blocks.iter().filter_map(|b| b.cell.as_ref()).any(|cell| {
+        (cell.columns_spanned > 1 || cell.rows_spanned > 1)
+            && row >= cell.row
+            && row < cell.row + cell.rows_spanned.max(1)
+            && column >= cell.column
+            && column < cell.column + cell.columns_spanned.max(1)
+            && !(row == cell.row && column == cell.column)
+    })
+}
+
+/// A sequence of blocks, with `text:list` nesting folded back in from their depths.
+///
+/// `extra` is how much further in this sequence sits than the body does — three levels inside a
+/// table cell, nothing at the top. The fold itself is the same either way, which is the point
+/// of it being one function: a list inside a cell nests exactly as a list in the body does.
+fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool) {
     // How many `text:list` elements are currently open. The model is flat and the file is
     // not, so this counter *is* the reconstruction: a depth rise opens elements, a fall closes
-    // them, and the end of the document closes whatever is left.
+    // them, and the end of the sequence closes whatever is left.
     let mut open = 0u32;
 
-    for block in &doc.blocks {
+    for block in list {
         let depth = match block.kind {
             BlockKind::ListItem { depth } => depth,
             _ => 0,
@@ -317,27 +465,27 @@ fn body(out: &mut String, doc: &Document, pool: &Pool) {
         // elements rather than a malformed one.
         while open > depth {
             open -= 1;
-            let _ = writeln!(out, "{}</text:list-item>", indent(open + 2));
-            let _ = writeln!(out, "{}</text:list>", indent(open + 1));
+            let _ = writeln!(out, "{}</text:list-item>", indent(open + 2 + extra));
+            let _ = writeln!(out, "{}</text:list>", indent(open + 1 + extra));
         }
         while open < depth {
-            let _ = writeln!(out, "{}<text:list>", indent(open + 1));
-            let _ = writeln!(out, "{}<text:list-item>", indent(open + 2));
+            let _ = writeln!(out, "{}<text:list>", indent(open + 1 + extra));
+            let _ = writeln!(out, "{}<text:list-item>", indent(open + 2 + extra));
             open += 1;
         }
         // A sibling item at the same depth closes the previous item and opens a new one.
         if depth > 0 && !just_opened(out) {
-            let _ = writeln!(out, "{}</text:list-item>", indent(open + 2));
-            let _ = writeln!(out, "{}<text:list-item>", indent(open + 2));
+            let _ = writeln!(out, "{}</text:list-item>", indent(open + 2 + extra));
+            let _ = writeln!(out, "{}<text:list-item>", indent(open + 2 + extra));
         }
 
-        paragraph(out, block, indent(open + 3), "", pool);
+        paragraph(out, block, indent(open + 3 + extra), "", pool);
     }
 
     while open > 0 {
         open -= 1;
-        let _ = writeln!(out, "{}</text:list-item>", indent(open + 2));
-        let _ = writeln!(out, "{}</text:list>", indent(open + 1));
+        let _ = writeln!(out, "{}</text:list-item>", indent(open + 2 + extra));
+        let _ = writeln!(out, "{}</text:list>", indent(open + 1 + extra));
     }
 }
 
@@ -426,19 +574,43 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
             data,
             width,
             height,
-        } => image(out, mime, data, width.as_deref(), height.as_deref()),
+            anchor,
+        } => image(
+            out,
+            mime,
+            data,
+            width.as_deref(),
+            height.as_deref(),
+            anchor.as_deref(),
+        ),
     }
 }
 
 /// One `draw:frame` holding a `draw:image` — always the flat shape (no `draw:text-box`
-/// wrapper, `text:anchor-type="paragraph"` always), regardless of what a document this build
-/// read might have nested it in. R3's rule applied to a new element: minimal boilerplate over
-/// reproducing a producer's own habits, and R6 means this only fires for an image a person
-/// actually inserted or a paragraph a person actually edited — everything else splices its
-/// source bytes back verbatim, wrapper and all.
-fn image(out: &mut String, mime: &str, data: &[u8], width: Option<&str>, height: Option<&str>) {
+/// wrapper), regardless of what a document this build read might have nested it in. R3's rule
+/// applied to a new element: minimal boilerplate over reproducing a producer's own habits, and
+/// R6 means this only fires for an image a person actually inserted or a paragraph a person
+/// actually edited — everything else splices its source bytes back verbatim, wrapper and all.
+///
+/// **The anchor is the document's own**, and that is not boilerplate: a frame written without
+/// `text:anchor-type` takes ODF's default of `paragraph`, which moves an `as-char` picture from
+/// where it was typed to the top of its paragraph. Loop C caught exactly that, in a corpus
+/// document whose image sat at the end of a list item and came back at the front. `paragraph`
+/// is still the default for an image this build inserts, which has no anchor of its own.
+fn image(
+    out: &mut String,
+    mime: &str,
+    data: &[u8],
+    width: Option<&str>,
+    height: Option<&str>,
+    anchor: Option<&str>,
+) {
     use base64::Engine as _;
-    let _ = write!(out, "<draw:frame text:anchor-type=\"paragraph\"");
+    let _ = write!(
+        out,
+        "<draw:frame text:anchor-type=\"{}\"",
+        esc(anchor.unwrap_or("paragraph"))
+    );
     if let Some(width) = width {
         let _ = write!(out, " svg:width=\"{}\"", esc(width));
     }

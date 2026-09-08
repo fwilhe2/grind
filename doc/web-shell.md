@@ -96,7 +96,10 @@ is taken from `compositionend` instead, which is the one event that carries what
 produced. **What is still missing is the rest of an input method**: the same event ought to
 deliver an IME's committed text, but a candidate window has no editable host to position itself
 against — this shell has no `contenteditable` by decision — so CJK input is *unverified* rather
-than working, and is written here as a gap until somebody types into it. No tables, footnotes or fields, because the core has
+than working, and is written here as a gap until somebody types into it. **A table's text is
+shown and its grid is not**: the core carries tables now (`doc/text-core.md`) and this pane
+stacks a cell's blocks like any other block, so a table reads as a run of paragraphs here where
+`grind-text-gtk` draws it as a grid. No footnotes or fields, because the core has
 none. No pages, no print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. An
 image sitting *mid-sentence* (`text:anchor-type="char"`) still draws as the placeholder
 character, and an image is fit to the column rather than to its own `svg:width` — both are

@@ -80,6 +80,13 @@ operations that feel like they belong to a UI.
 - `insert_image` — `grind text image <at> --from <path>`. One caret position, like a tab — the
   MIME type is guessed from the file's extension unless `--mime` overrides it, and
   `--width`/`--height` are ODF lengths, both optional
+- `insert_table` — `grind text table <at> --rows <n> --columns <n>`. A grid of cells, each
+  holding one empty paragraph, in **one** undo step. A cell holds *blocks* — the body's own
+  production (rng:16126) — so every other verb here reaches inside one unchanged: `p12` is the
+  twelfth block whether it is in a table or not
+- `table` — `grind text table <at> --show`. Which table a block is in, how big it is, and which
+  blocks it is made of; the extent is derived from the cells rather than stored, so this is the
+  one answer four shells share instead of computing four times
 
 ## Layout
 

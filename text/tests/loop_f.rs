@@ -204,6 +204,7 @@ fn images_are_the_one_named_gap() {
             data: vec![1, 2, 3],
             width: Some("8cm".to_owned()),
             height: Some("5cm".to_owned()),
+            anchor: None,
         },
         Run::plain("after"),
     ];
@@ -441,6 +442,12 @@ fn block_differences(i: usize, a: &Block, b: &Block, out: &mut Vec<String>) {
     }
     if a.style != b.style {
         out.push(format!("p{}: style {:?} vs {:?}", i + 1, a.style, b.style));
+    }
+    // The table axis. Compared whole — the name, the coordinate and both spans — because the
+    // projection spells a cell by *where it sits*, so a row or a `span=` this writer got wrong
+    // moves every cell after it and nothing else in this comparison would notice.
+    if a.cell != b.cell {
+        out.push(format!("p{}: cell {:?} vs {:?}", i + 1, a.cell, b.cell));
     }
     let (x, y) = (spellable(a), spellable(b));
     if x != y {

@@ -337,6 +337,35 @@ Loop C allows for exactly that and nothing more, and
 LibreOffice ever stops doing it. An allowance that nothing checks is indistinguishable from a
 bug.
 
+### What Writer does with a table — VERIFIED
+
+Measured against LibreOffice 26.2.6.1 by writing a minimal flat ODT with a table in it,
+converting it with `soffice --headless --convert-to fodt`, and reading what came out. Six facts,
+and every one of them is load-bearing for `text/src/odf/read.rs` or its writer:
+
+| What was written | What came back |
+|---|---|
+| `table:name="Prices"` | **`table:name="Prices"`**, verbatim, plus a generated `table:style-name="Prices"` |
+| `<table:table-column table:number-columns-repeated="3"/>` | the same, with a `table:style-name` added |
+| `<table:table-cell><text:p>Item</text:p></table:table-cell>` | the same, plus `office:value-type="string"` |
+| `<table:table-cell/>` — an **empty** cell | `<table:table-cell office:value-type="string"><text:p/></table:table-cell>` — **a paragraph materialised in it** |
+| `table:number-columns-spanned="2"` with a `table:covered-table-cell` beside it | both, verbatim. `table:number-rows-spanned="1"` was dropped, being the default |
+| a `table:table` at the very **end** of the body | the table, and **an empty `text:p` after it** |
+| a `table:table` inside a `table:table-cell` | the same, nested, unchanged |
+| `<text:h text:outline-level="2">` inside a cell | the same, with `text:style-name="Heading_20_2"` |
+
+Two of those are the reason this build reads a table the way it does. **The empty cell** is why
+`TableCell::end` materialises a paragraph: a model that left the cell blockless would gain a
+block on its first round trip and loop C would fail for a difference that is not one — so both
+sides normalise, and reading stays idempotent. **The trailing paragraph** is why
+`allowing_libreoffices_paragraph` has a second arm: a Writer document cannot *end* with a table,
+because there would be nowhere to put the cursor. `a_document_ending_with_a_table_comes_back_with_a_paragraph_after_it`
+pins it, exactly as its sibling pins the empty document.
+
+The name surviving verbatim is what makes the model's fold safe at all: a table *is* the maximal
+run of consecutive blocks naming it (`text/src/model.rs`), so a converter that renamed tables
+would split every one of them in half on the way back.
+
 ### What happens to a `text:style-name`
 
 Six cases, measured together because only the contrast makes the rule legible:

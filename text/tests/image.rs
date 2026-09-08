@@ -74,11 +74,17 @@ fn a_nested_frame_reads_as_one_image_sized_from_both_frames() {
         data,
         width,
         height,
+        anchor,
     } = image_run(&doc)
     else {
         unreachable!()
     };
     assert_eq!(mime, "image/jpeg");
+    // The **outermost** frame's anchor — `char` here, where the inner one says `paragraph` —
+    // for the same reason the outermost frame's size wins: that is the frame the document
+    // actually anchored, and the inner one is LibreOffice's own resizing wrapper. What decides
+    // where the picture sits, and what loop C caught this build losing (`Run::Image::anchor`).
+    assert_eq!(anchor.as_deref(), Some("char"));
     assert_eq!(data, PIXELS);
     // The outer frame's width wins; it had no height, so the inner frame's fills in.
     assert_eq!(width.as_deref(), Some("13.229cm"));
@@ -113,6 +119,7 @@ fn a_regenerated_document_writes_the_flat_shape_and_reads_it_back() {
         data: PIXELS.to_vec(),
         width: Some("5cm".to_owned()),
         height: Some("5cm".to_owned()),
+        anchor: None,
     });
     doc.blocks.push(block);
 
@@ -124,11 +131,15 @@ fn a_regenerated_document_writes_the_flat_shape_and_reads_it_back() {
             data,
             width,
             height,
+            anchor,
         } = image_run(&reread)
         else {
             unreachable!()
         };
         assert_eq!(mime, "image/png");
+        // An image with no anchor of its own is written anchored to its paragraph, which is
+        // what a picture on a line of its own is — so it comes back saying so.
+        assert_eq!(anchor.as_deref(), Some("paragraph"));
         assert_eq!(data, PIXELS);
         assert_eq!(width.as_deref(), Some("5cm"));
         assert_eq!(height.as_deref(), Some("5cm"));

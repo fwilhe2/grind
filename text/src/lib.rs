@@ -57,7 +57,7 @@ pub use action::Action;
 pub use grind_core::layout::{self, Fixed, Layout, Metrics};
 pub use grind_core::{DocumentKind, Error, Form, Observer, Result, kind};
 pub use loc::{Caret, Loc, Target};
-pub use model::{Block, BlockId, BlockKind, Document, Run};
+pub use model::{Block, BlockId, BlockKind, Cell, Document, Run};
 pub use style::CharStyle;
 
 use std::ops::Range;
@@ -89,6 +89,15 @@ pub fn implemented() -> Vec<&'static str> {
         "text:a",
         "text:bookmark",
         "draw:frame",
+        // Tables. The one part of this list whose elements are the *spreadsheet's* vocabulary
+        // as well — a text table's rows and cells are spelled exactly as a sheet's are, and
+        // that is the schema's doing rather than a shortcut: `table:table` is one of
+        // `text-content`'s own alternatives (rng:16938).
+        "table:table",
+        "table:table-column",
+        "table:table-row",
+        "table:table-cell",
+        "table:covered-table-cell",
     ]
 }
 
@@ -185,6 +194,11 @@ pub struct BlockView {
     /// analysis and this costs a walk of the block's own runs, which the line above already
     /// does.
     pub marks: Vec<(usize, String)>,
+    /// Where this block sits in a table, when it is in one (`model::Cell`) — the second axis of
+    /// the flat sequence, carried here for the reason every other field is: a shell drawing a
+    /// grid needs the block's text and its coordinate at the same moment, and two calls would
+    /// be two moments.
+    pub cell: Option<model::Cell>,
 }
 
 /// One run of uniformly formatted characters, as a reader sees it.
@@ -250,6 +264,19 @@ impl Viewport {
     }
 }
 
+/// One table, as a reader sees it — [`App::table`]'s answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Table {
+    /// `table:name`, which is the table's identity in a flat sequence ([`model::Cell`]).
+    pub name: String,
+    /// The blocks it is made of: the maximal run of consecutive blocks naming it.
+    pub blocks: Range<usize>,
+    /// Counting every position a span covers, so a two-column table with one merged cell is
+    /// still two columns wide.
+    pub rows: u32,
+    pub columns: u32,
+}
+
 /// One heading, as the outline lists it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Heading {
@@ -283,6 +310,24 @@ impl Match {
     pub fn address(&self) -> String {
         loc::format_offset(self.index, self.offset)
     }
+}
+
+/// A `table:name` no table in this document already has.
+///
+/// `Table1`, `Table2`, … — LibreOffice's own spelling, so a document this build makes and one
+/// Writer makes read alike. Uniqueness matters more here than it looks: a table *is* the run of
+/// blocks naming it, so two tables sharing a name and sitting next to each other would be one
+/// table.
+fn unused_table_name(doc: &Document) -> String {
+    let taken: std::collections::BTreeSet<&str> = doc
+        .blocks
+        .iter()
+        .filter_map(|b| b.cell.as_ref().map(|c| c.table.as_str()))
+        .collect();
+    (1..)
+        .map(|n| format!("Table{n}"))
+        .find(|name| !taken.contains(name.as_str()))
+        .unwrap_or_else(|| "Table".to_owned())
 }
 
 /// What `words` counts.
@@ -452,6 +497,7 @@ impl App {
                 runs: run_views(block),
                 styled: block.is_styled(),
                 marks: marks(block),
+                cell: block.cell.clone(),
             })
             .collect();
         Viewport {
@@ -919,6 +965,10 @@ impl App {
                 data,
                 width,
                 height,
+                // An image this build inserts is anchored to its paragraph, which is what a
+                // picture on a line of its own is. A document's own anchor is kept verbatim
+                // instead (`Run::Image::anchor`).
+                anchor: None,
             });
             runs.extend(tail);
             model::coalesce(&mut runs);
@@ -1023,9 +1073,16 @@ impl App {
             let id = state.doc.next_id();
             let mut second = Block::new(id, block.kind.clone());
             second.style = block.style.clone();
+            // And the cell it is in, if any: Return inside a table cell makes a second block
+            // **in that cell**, not a paragraph after the table. A table is the run of
+            // consecutive blocks naming it (`model::Cell`), so a half that forgot its cell
+            // would cut the table in two at the caret.
+            second.cell = block.cell.clone();
             second.runs = tail;
             if second.is_empty() && matches!(block.kind, BlockKind::Heading { .. }) {
                 second.kind = BlockKind::Paragraph;
+                // Only the kind and the style change here; the cell stays, because a heading
+                // ending a cell still leaves the next paragraph inside that cell.
                 // The heading's style went with the heading; a body paragraph wearing
                 // `Heading_20_1` would look like a heading and not be one.
                 second.style = None;
@@ -1074,6 +1131,77 @@ impl App {
                     Action::RemoveBlock { index: index + 1 },
                 ]),
             )
+        })
+    }
+
+    /// Insert a table before `index` — `rows` by `columns`, every cell holding one empty
+    /// paragraph. `index == block_count()` appends.
+    ///
+    /// **One `Action::Batch`, so it is one Ctrl+Z**, which is the whole reason this is a method
+    /// rather than a shell looping over [`App::insert`]: a five-by-three table undone one cell
+    /// at a time is fifteen keystrokes of surprise.
+    ///
+    /// A cell gets an empty paragraph rather than nothing, because that is what a cell always
+    /// has once it has been through a file: the ODF reader materialises one and so does
+    /// LibreOffice (`doc/odt-format.md` §5b), and a cell with no block in it is a cell a caret
+    /// cannot be put in.
+    ///
+    /// `name` is the table's `table:name`, which is its identity in this model
+    /// ([`model::Cell`]); one is generated when the caller has no opinion, unique among the
+    /// tables the document already has.
+    pub fn insert_table(
+        &self,
+        index: usize,
+        rows: u32,
+        columns: u32,
+        name: Option<String>,
+    ) -> Result<()> {
+        self.mutate(|state| {
+            if rows == 0 || columns == 0 {
+                return Err(Error::Xml(
+                    "a table needs at least one row and one column".to_owned(),
+                ));
+            }
+            if index > state.doc.blocks.len() {
+                return Err(Error::Xml(format!(
+                    "{} is past the end",
+                    loc::format(index)
+                )));
+            }
+            let name = name.unwrap_or_else(|| unused_table_name(&state.doc));
+            let mut batch = Vec::with_capacity((rows * columns) as usize);
+            let mut at = index;
+            for row in 0..rows {
+                for column in 0..columns {
+                    let id = state.doc.next_id();
+                    let mut block = Block::new(id, BlockKind::Paragraph);
+                    block.cell = Some(model::Cell::new(name.clone(), row, column));
+                    batch.push(Action::InsertBlock {
+                        index: at,
+                        block: Box::new(block),
+                    });
+                    at += 1;
+                }
+            }
+            Self::commit(state, Action::Batch(batch))
+        })
+    }
+
+    /// The table the block at `index` is in: where it starts and ends, how big it is, and what
+    /// it is called. `None` for a block that is not in a table.
+    ///
+    /// What a shell needs to draw a grid, and the reason it is a method rather than arithmetic
+    /// in four shells: the extent is derived from the cells (`Document::table_extent`), and four
+    /// derivations of one fact disagree eventually.
+    pub fn table(&self, index: usize) -> Option<Table> {
+        let state = self.state.read().unwrap();
+        let blocks = state.doc.table(index)?;
+        let (rows, columns) = state.doc.table_extent(blocks.clone());
+        Some(Table {
+            name: state.doc.block(blocks.start)?.cell.as_ref()?.table.clone(),
+            blocks,
+            rows,
+            columns,
         })
     }
 
@@ -1648,6 +1776,7 @@ fn run_views(block: &Block) -> Vec<RunView> {
                 data,
                 width,
                 height,
+                ..
             } => Some(ImageView {
                 mime: mime.clone(),
                 data: data.clone(),

@@ -171,15 +171,23 @@ fn every_element_in_scope_has_a_spelling() {
         elements.len()
     );
     for element in elements {
-        // `text:p`, `text:h`, `text:list` and `text:list-item` are blocks, and their spellings
-        // are the nodes rather than the notation. The mapping is by name and deliberately
-        // hard-coded here: it is four rows, and a rule that derived it would be a third scope
-        // line to keep in step.
+        // These are blocks, and their spellings are the nodes rather than the notation. The
+        // mapping is by name and deliberately hard-coded here: it is nine rows, and a rule that
+        // derived it would be a third scope line to keep in step.
+        //
+        // Two of the table elements map to a node they do not have to themselves, and the
+        // document says so in the same words: `table:table-column` is *implied* by how wide the
+        // widest row is, and `table:covered-table-cell` by a `span=` reaching over a position.
+        // A coordinate model spells both by implication, and a row claiming otherwise would be
+        // promising a node that does not exist.
         let block = match element {
             "text:p" => Some("p"),
             "text:h" => Some("h"),
             "text:list-item" => Some("li"),
             "text:list" => Some("list"),
+            "table:table" | "table:table-column" => Some("table"),
+            "table:table-row" => Some("row"),
+            "table:table-cell" | "table:covered-table-cell" => Some("cell"),
             _ => None,
         };
         if let Some(node) = block {
@@ -255,12 +263,34 @@ fn every_example_still_holds_its_spelling_after_a_round_trip() {
             );
             continue;
         }
+        // A **block-shaped** example is compared with its whitespace collapsed, because the
+        // line structure inside `{ }` is the writer's formatting rather than the spelling: a
+        // table is written one node per line and its row here is one line. Everything else is
+        // compared exactly, which matters most for the notation rows — `p "two  spaces"` has to
+        // come back with both spaces, and collapsing that comparison would hide it.
+        let (want, got) = match example.contains('{') {
+            true => (collapsed(example), collapsed(&text)),
+            false => (example.to_owned(), text.clone()),
+        };
         assert!(
-            text.contains(example),
+            got.contains(&want),
             "`{name}`'s example does not come back as it went in:\n--- in ---\n{source}\
              --- out ---\n{text}"
         );
     }
+}
+
+/// One spelling with every run of whitespace collapsed to a single space and every `;` dropped
+/// — how a nested node written on one line is compared with the same node written over several.
+///
+/// Both are the same normalisation rather than two: in KDL a semicolon ends a node exactly as a
+/// line break does, so a row written `row { … }; row { … }` and the same two rows written on
+/// two lines are the same document. Nothing else about the spelling is touched.
+fn collapsed(text: &str) -> String {
+    text.replace(';', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Every example in the document, block and inline alike, with the thing it is about.

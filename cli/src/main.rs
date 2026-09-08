@@ -228,7 +228,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                         true if n == 0 => format!(
                             "{}\t{}\t{}",
                             grind_text::loc::format(block.index),
-                            describe_kind(&block.kind),
+                            describe_block(&block.kind, block.cell.as_ref()),
                             piece
                         ),
                         true => format!("\t\t{piece}"),
@@ -367,6 +367,39 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                 None => app.block_count(),
             };
             app.insert(index, kind_of(*heading, *list)?, &read_stdin_if_dash(text)?)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::Table {
+            file,
+            at: address,
+            show,
+            after,
+            rows,
+            columns,
+            name,
+        } => {
+            let app = open_text(file)?;
+            if *show {
+                let index = at(&app, address.as_deref().unwrap_or("p1"))?;
+                let table = app.table(index).ok_or_else(|| {
+                    format!("{} is not in a table", grind_text::loc::format(index))
+                })?;
+                return text_lines(vec![format!(
+                    "{}\t{} rows\t{} columns\t{}:{}",
+                    table.name,
+                    table.rows,
+                    table.columns,
+                    grind_text::loc::format(table.blocks.start),
+                    grind_text::loc::format(table.blocks.end - 1),
+                )]);
+            }
+            let index = match address {
+                Some(address) => at(&app, address)? + usize::from(*after),
+                None => app.block_count(),
+            };
+            app.insert_table(index, *rows, *columns, name.clone())
                 .map_err(|e| e.to_string())?;
             finish_text(&app, cli, file, true)
         }
@@ -585,6 +618,18 @@ fn sniff_image_mime(path: &Path) -> String {
         _ => "application/octet-stream",
     }
     .to_owned()
+}
+
+/// What a block is, for `--marks`: its kind, and the cell it is in when it is in one.
+///
+/// A cell reads as `Prices!r1c2` — the table's name and the coordinate — because a paragraph
+/// inside a table is still `p12` and nothing else in this line would say it is in one.
+fn describe_block(kind: &grind_text::BlockKind, cell: Option<&grind_text::Cell>) -> String {
+    let kind = describe_kind(kind);
+    match cell {
+        Some(cell) => format!("{kind} {}!r{}c{}", cell.table, cell.row, cell.column),
+        None => kind,
+    }
 }
 
 fn describe_kind(kind: &grind_text::BlockKind) -> String {
@@ -921,6 +966,37 @@ enum TextCommand {
         /// Read **bold**, *italic*, __underline__, ~~struck~~, `code`, "# " and ``` as they land
         #[arg(long)]
         markdown: bool,
+    },
+
+    /// Insert a table, or print the one at an address
+    ///
+    /// A table in a text document is a grid of cells, and a cell holds *blocks* — the same
+    /// paragraphs, headings and lists a body holds (rng:16126), which is why every other verb
+    /// here works inside one unchanged: `p12` is the twelfth block whether it is in a table or
+    /// not. Inserting one puts an empty paragraph in every cell, in a single undo step.
+    ///
+    /// What it does not do: column widths, borders and merged cells. The model carries a span
+    /// it reads from a file and writes back, and nothing here creates one
+    /// (`doc/text-core.md`).
+    Table {
+        file: PathBuf,
+        /// Where it goes, e.g. p3 — omit to append to the end of the document
+        at: Option<String>,
+        /// Print the table at the address instead of inserting one
+        #[arg(long, conflicts_with_all = ["rows", "columns", "name", "after"])]
+        show: bool,
+        /// Insert after the address rather than before it
+        #[arg(long)]
+        after: bool,
+        /// How many rows
+        #[arg(long, default_value_t = 2)]
+        rows: u32,
+        /// How many columns
+        #[arg(long, default_value_t = 2)]
+        columns: u32,
+        /// The table's name, which is its identity; generated when omitted
+        #[arg(long)]
+        name: Option<String>,
     },
 
     /// Insert an image at a caret, from a file on disk

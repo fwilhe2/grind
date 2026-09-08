@@ -74,6 +74,17 @@ pub struct Builder {
     href: Option<String>,
     /// How deep in `text:list` elements we are. 0 outside any list.
     list_depth: u32,
+    /// The tables currently open, outermost first — each with the row number the next
+    /// `table:table-row` in it will take. A stack, because `table-table-cell-content` admits
+    /// `table:table` (rng:16126) and a table inside a cell counts its own rows.
+    tables: Vec<OpenTable>,
+    /// How many tables have been opened, for naming one the document did not name.
+    next_table: u32,
+    /// The `table:table-cell` currently open, if any — every block opened while this is set is
+    /// a block *in* that cell (`crate::model::Cell`). Not a stack: `TableCell` keeps the one it
+    /// displaced and puts it back, which is what makes a table inside a cell read as its own
+    /// table rather than as part of the outer one.
+    cell: Option<crate::model::Cell>,
     /// The image being assembled out of the `draw:frame`(s) currently open, if any — see
     /// [`PendingImage`].
     image: Option<PendingImage>,
@@ -85,6 +96,12 @@ pub struct Builder {
     /// `content.xml` (`Pictures/foo.jpg`) that a `draw:image`'s `xlink:href` may point at, and
     /// resolving one means going back to the archive it came from.
     package: Option<Vec<u8>>,
+}
+
+/// One `table:table` being read: its name, and the row number the next row in it takes.
+struct OpenTable {
+    name: String,
+    row: u32,
 }
 
 /// One `draw:frame` (rng:5089) being read, gathered from however many of them turn out to be
@@ -100,6 +117,9 @@ struct PendingImage {
     /// since that is the size a person actually sees.
     width: Option<String>,
     height: Option<String>,
+    /// `text:anchor-type` off the outermost frame — where the picture is anchored, which is
+    /// what decides whether it sits in the sentence or at the top of the paragraph.
+    anchor: Option<String>,
     /// The plain text of the frame's own caption paragraph (`text:p text:style-name="Figure"`
     /// or whatever a document called it) — everything [`TextBoxSearch`] sees that is not the
     /// nested resizing frame itself. Not a separate run until the outermost frame closes, so
@@ -127,6 +147,9 @@ impl Builder {
             fonts: HashMap::new(),
             href: None,
             list_depth: 0,
+            tables: Vec::new(),
+            next_table: 0,
+            cell: None,
             image: None,
             frame_depth: 0,
             package: None,
@@ -209,6 +232,9 @@ impl Builder {
         let id = self.doc.next_id();
         let mut block = Block::new(id, kind);
         block.style = style;
+        // Where it sits in a table, if a `table:table-cell` is open around it. The second axis
+        // of the flat sequence, and the only line in this function that knows tables exist.
+        block.cell = self.cell.clone();
         self.doc.blocks.push(block);
         id
     }
@@ -478,7 +504,250 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             Some(Box::new(Paragraph))
         }
         (Ns::Text, "list") => Some(Box::new(List::new())),
+        // `table:table` is one of `text-content`'s own alternatives (rng:16938), which is why
+        // it belongs here beside the paragraph and not somewhere special: in a text document a
+        // table is a *block*, and its cells hold blocks in turn.
+        (Ns::Table, "table") => Some(Box::new(Table::open(attrs.get(Ns::Table, "name"), b))),
         _ => None,
+    }
+}
+
+/// `table:table` (rng:15939) in a text document.
+///
+/// Its columns are skipped — `table:table-column` carries a width and a style, both of which
+/// live in the table style this model does not carry (`crate::model::Cell`) — so what is read
+/// is the rows, and the extent is derived from the cells that turn up in them.
+///
+/// The name and the running row number live on [`Builder::tables`] rather than in this context,
+/// because the rows of one table can arrive through three different containers
+/// (`table:table-header-rows` and the two group elements) and all of them have to keep counting
+/// from where the last one stopped.
+struct Table {
+    /// Whether this context is the `table:table` itself, rather than one of the row containers
+    /// inside it — which is to say, whether its `end` is the one that closes the table.
+    owns: bool,
+}
+
+impl Table {
+    fn open(name: Option<&str>, b: &mut Builder) -> Self {
+        // A table with no `table:name` is legal — the attribute is optional (rng:15970) — and
+        // still has to be told from the table after it, since the model folds a table out of
+        // the blocks that name it. So one is generated, from a counter that makes it unique
+        // within this document.
+        let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(name) => name.to_owned(),
+            None => {
+                b.next_table += 1;
+                format!("Table{}", b.next_table)
+            }
+        };
+        b.tables.push(OpenTable { name, row: 0 });
+        Table { owns: true }
+    }
+
+    /// A container of rows that is not the table — a header-row group, or one of the two
+    /// grouping elements. It shares the table's name and its row counter, and closing it
+    /// closes nothing.
+    fn group() -> Self {
+        Table { owns: false }
+    }
+}
+
+impl Context<Builder> for Table {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            // The three containers that hold rows without being the table: a header-row group
+            // and the two grouping elements. Reading them as row containers is one arm and
+            // keeps a header row's cells, which are ordinary cells with a style this model does
+            // not carry anyway.
+            (Ns::Table, "table-header-rows" | "table-row-group" | "table-rows") => {
+                Some(Box::new(Table::group()))
+            }
+            (Ns::Table, "table-row") => {
+                let repeated = attrs.count(Ns::Table, "number-rows-repeated", MAX_TABLE_SPAN);
+                Some(Box::new(Row::open(repeated, b)))
+            }
+            _ => None,
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        // One pop per push, and `Table::open` is the only constructor that pushes: a row
+        // container's `end` runs while the table around it is still open, so popping there
+        // would close a table that has rows left to read.
+        if self.owns {
+            b.tables.pop();
+        }
+    }
+}
+
+/// The largest repeat or span this reader will honour.
+///
+/// `MAX_LIST_DEPTH`'s rule on the table axis: `table:number-columns-repeated` is a
+/// `positiveInteger` with no ceiling, and a document claiming a million columns is a
+/// memory-exhaustion vector rather than an intent. The same clamp `Attrs::count` already takes
+/// for `text:s`.
+const MAX_TABLE_SPAN: u32 = 1024;
+
+/// `table:table-row` (rng:16223) — the cells of one row, numbered as they arrive.
+struct Row {
+    table: String,
+    row: u32,
+    column: u32,
+    /// `table:number-rows-repeated`: how many identical rows this element stands for.
+    repeated: u32,
+    /// How many blocks the document had when this row opened, so the repeats can be copies.
+    before: usize,
+}
+
+impl Row {
+    /// Take the next row number from the table this row is in.
+    fn open(repeated: u32, b: &mut Builder) -> Self {
+        let (table, row) = match b.tables.last_mut() {
+            Some(table) => {
+                let row = table.row;
+                table.row += repeated.max(1);
+                (table.name.clone(), row)
+            }
+            None => (String::new(), 0),
+        };
+        Row {
+            table,
+            row,
+            column: 0,
+            repeated: repeated.max(1),
+            before: b.doc.blocks.len(),
+        }
+    }
+}
+
+impl Context<Builder> for Row {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let covered = match (name.ns, name.local.as_str()) {
+            (Ns::Table, "table-cell") => false,
+            // A position covered by a span above or to the left of it (rng:14298). It carries
+            // no content of its own and its only job here is to move the column on.
+            (Ns::Table, "covered-table-cell") => true,
+            _ => return None,
+        };
+        let repeated = attrs
+            .count(Ns::Table, "number-columns-repeated", MAX_TABLE_SPAN)
+            .max(1);
+        let column = self.column;
+        self.column += repeated;
+        if covered {
+            return None;
+        }
+        let cell = crate::model::Cell {
+            table: self.table.clone(),
+            row: self.row,
+            column,
+            columns_spanned: attrs
+                .count(Ns::Table, "number-columns-spanned", MAX_TABLE_SPAN)
+                .max(1),
+            rows_spanned: attrs
+                .count(Ns::Table, "number-rows-spanned", MAX_TABLE_SPAN)
+                .max(1),
+        };
+        Some(Box::new(TableCell::open(cell, repeated, b)))
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        // `table:number-rows-repeated` **expanded**, for `text:s`'s reason
+        // (`doc/odt-format.md` §3.3): a repeat is run-length encoding, and a model that stored
+        // the count instead of the rows would make every reader of it repeat this arithmetic.
+        // Bounded by `MAX_TABLE_SPAN`, since the attribute is an unbounded `positiveInteger`.
+        repeat_blocks(b, self.before, self.repeated, |cell, copy| cell.row += copy);
+    }
+}
+
+/// Copy the blocks added since `before` once per extra repeat, moving each copy's cell by
+/// `shift` — the expansion `table:number-rows-repeated` and `table:number-columns-repeated`
+/// both need, in one place because they are the same operation on two axes.
+fn repeat_blocks(
+    b: &mut Builder,
+    before: usize,
+    repeated: u32,
+    shift: impl Fn(&mut crate::model::Cell, u32),
+) {
+    if repeated <= 1 || b.doc.blocks.len() <= before {
+        return;
+    }
+    let original: Vec<Block> = b.doc.blocks[before..].to_vec();
+    for copy in 1..repeated {
+        for block in &original {
+            let id = b.doc.next_id();
+            let mut clone = block.clone();
+            clone.id = id;
+            if let Some(cell) = clone.cell.as_mut() {
+                shift(cell, copy);
+            }
+            b.doc.blocks.push(clone);
+        }
+    }
+}
+
+/// `table:table-cell` (rng:16052), whose content is `zeroOrMore text-content` (rng:16126) —
+/// **the same production as the body**, which is why this dispatches through `block_child` and
+/// a cell may hold a heading or a list as readily as a paragraph.
+struct TableCell {
+    /// How many blocks the document had before this cell opened, so that an empty cell can be
+    /// told from one that read something.
+    before: usize,
+    /// The cell this one is nested inside, restored on the way out.
+    outer: Option<crate::model::Cell>,
+    /// `table:number-columns-repeated`, expanded on the way out the way a row's is.
+    repeated: u32,
+    /// Whether this cell is the one blocks are attributed to. False for a cell of a **nested**
+    /// table: `table-table-cell-content` admits `table:table` (rng:16126), and this model has
+    /// one coordinate per block rather than a path, so the inner table's paragraphs are read as
+    /// paragraphs of the cell that holds it. Lossy for the inner table's *structure* and
+    /// lossless for its text — the `text:list` trade again (`crate::model::Cell`), and the
+    /// alternative was worse: a nested table splits the outer table's block run in two, and a
+    /// flat model cannot then say which of the two is which.
+    owns: bool,
+}
+
+impl TableCell {
+    fn open(cell: crate::model::Cell, repeated: u32, b: &mut Builder) -> Self {
+        let owns = b.cell.is_none();
+        let outer = match owns {
+            true => b.cell.replace(cell),
+            false => b.cell.clone(),
+        };
+        TableCell {
+            before: b.doc.blocks.len(),
+            outer,
+            repeated: repeated.max(1),
+            owns,
+        }
+    }
+}
+
+impl Context<Builder> for TableCell {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        block_child(name, attrs, b)
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        // **An empty cell still gets a paragraph**, which is a measured decision rather than a
+        // convenience: LibreOffice materialises one for `<table:table-cell/>` on every save
+        // (`doc/odt-format.md` §5b), so a model that left the cell blockless would gain a block
+        // on the first round trip and fail loop C. Normalising here makes reading idempotent
+        // instead — and gives a shell somewhere to put the caret, which is the same thing seen
+        // from the other end.
+        if self.owns && b.doc.blocks.len() == self.before {
+            b.open(BlockKind::Paragraph, None);
+        }
+        // The columns this one element stands for, expanded — `Row::end`'s twin on the other
+        // axis, and the reason a repeated empty cell comes back as the cells it meant rather
+        // than as a gap in the coordinates.
+        if self.owns {
+            repeat_blocks(b, self.before, self.repeated, |cell, copy| {
+                cell.column += copy
+            });
+        }
+        b.cell = self.outer.take();
     }
 }
 
@@ -597,6 +866,9 @@ fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
     if pending.height.is_none() {
         pending.height = attrs.get(Ns::Svg, "height").map(str::to_owned);
     }
+    if pending.anchor.is_none() {
+        pending.anchor = attrs.get(Ns::Text, "anchor-type").map(str::to_owned);
+    }
     b.frame_depth += 1;
     Box::new(Frame)
 }
@@ -652,6 +924,7 @@ impl Context<Builder> for Frame {
                 data,
                 width: pending.width,
                 height: pending.height,
+                anchor: pending.anchor,
             });
             // After the image, never before it — whatever order its text nodes and its
             // sequence field arrived in while the text-box was still open.

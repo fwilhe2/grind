@@ -135,6 +135,23 @@ text format "$doc" 'p2+0:p2+7' --show
 say "and over a mixed span, only what every character agrees about — here, nothing"
 text format "$doc" 'p2+0:p2+17' --show
 
+# A table is a *block* in a text document (rng:16938) and its cells hold blocks in turn
+# (rng:16126), which is why every verb above reaches inside one with no new vocabulary: the
+# cells are `p12`, `p13`, … exactly as everything else is.
+say "table: a grid of cells, each holding one empty paragraph"
+run table "$doc" --rows 2 --columns 3
+
+say "and its cells are ordinary blocks, so set and format reach into them"
+first=$(text view "$doc" --marks | awk -F'\t' '$2 ~ /!r0c0$/ { print $1; exit }')
+second=$(text view "$doc" --marks | awk -F'\t' '$2 ~ /!r0c1$/ { print $1; exit }')
+text set "$doc" "$first" 'Region' >/dev/null
+text set "$doc" "$second" 'Revenue' >/dev/null
+text format "$doc" "$first:$second" --bold >/dev/null
+text view "$doc" --marks | grep '!r0c'
+
+say "table --show: which table a block is in, and how big it is"
+text table "$doc" "$first" --show
+
 say "name: a bookmark, which is the named-range analogue"
 run name "$doc" addresses '§1.2'
 

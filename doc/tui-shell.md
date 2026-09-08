@@ -114,8 +114,11 @@ No point mode, autocomplete or signature hints while typing a formula. No filter
 in the file folds its rows away, and nothing creates one. No row heights, no wrapping — a row
 is one line. No conditional formatting UI, no find/replace over cells.
 
-**The document.** No pages, no print, no zoom, no RTL (`doc/text-layout.md`). No tables,
-footnotes or fields, because the core has none. `:outline` prints to the status line rather
+**The document.** No pages, no print, no zoom, no RTL (`doc/text-layout.md`). **A table's cells
+are edited and its grid is not drawn**: the core carries tables now (`doc/text-core.md`), and a
+cell holds blocks, so every key here already works inside one — what is missing is the rules
+round them, which a terminal could draw with box characters and does not yet. No footnotes or
+fields, because the core has none. `:outline` prints to the status line rather
 than opening a pane. An image in a file is kept and not drawn, and a named *character* style
 is kept and not interpreted (`doc/text-core.md`).
 

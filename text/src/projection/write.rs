@@ -23,10 +23,115 @@ pub fn project(doc: &Document) -> Projection {
     let mut out = Emitter::new();
     out.header(DocumentKind::Text);
     out.blank();
-    for (index, block) in doc.blocks.iter().enumerate() {
-        write_block(&mut out, doc, index, block);
+    let mut index = 0;
+    while index < doc.blocks.len() {
+        match doc.blocks[index].cell {
+            None => {
+                write_block(&mut out, doc, index, &doc.blocks[index]);
+                index += 1;
+            }
+            // A table is the one place this file *does* fold something, and it folds the same
+            // run `odf::write` does — `Document::table`, asked rather than repeated.
+            Some(_) => {
+                let range = doc.table(index).unwrap_or(index..index + 1);
+                write_table(&mut out, doc, range.clone());
+                index = range.end;
+            }
+        }
     }
     out.finish()
+}
+
+/// One `table` node: rows of cells, each holding its own blocks.
+///
+/// **Nesting, where the model has coordinates.** A row's position is where it sits and a cell's
+/// is how many columns came before it, exactly as `list { li }` supplies a depth by nesting —
+/// so a hand-written table needs no numbers at all and a merged cell moves the ones after it
+/// along by saying `span=`. The cells are emitted in row-major order rather than in block
+/// order, which is the order both readers produce them in and the only order a grid reads in.
+fn write_table(out: &mut Emitter, doc: &Document, range: std::ops::Range<usize>) {
+    let Some(name) = doc.blocks[range.start]
+        .cell
+        .as_ref()
+        .map(|cell| cell.table.clone())
+    else {
+        return;
+    };
+    let (rows, columns) = doc.table_extent(range.clone());
+    out.begin("table");
+    out.arg_string(&name);
+    out.open();
+    for row in 0..rows.max(1) {
+        out.begin("row");
+        out.open();
+        let mut column = 0;
+        while column < columns.max(1) {
+            let at = range.clone().find(|index| {
+                doc.blocks[*index]
+                    .cell
+                    .as_ref()
+                    .is_some_and(|c| c.row == row && c.column == column)
+            });
+            let Some(at) = at else {
+                // A position no block names: either covered by a span — in which case the
+                // `span=` that covers it already moved the column counter on when it was read
+                // back — or a hole, which is an empty cell either way.
+                if !covered(doc, range.clone(), row, column) {
+                    out.begin("cell");
+                    out.end();
+                }
+                column += 1;
+                continue;
+            };
+            let cell = doc.blocks[at].cell.clone().expect("found by its cell");
+            out.begin("cell");
+            if cell.columns_spanned > 1 {
+                out.prop("span", i128::from(cell.columns_spanned));
+            }
+            if cell.rows_spanned > 1 {
+                out.prop("rows", i128::from(cell.rows_spanned));
+            }
+            let content: Vec<usize> = range
+                .clone()
+                .filter(|index| {
+                    doc.blocks[*index]
+                        .cell
+                        .as_ref()
+                        .is_some_and(|c| c.is_same(&cell))
+                })
+                .collect();
+            match content.is_empty() {
+                true => out.end(),
+                false => {
+                    out.open();
+                    for index in content {
+                        write_block(out, doc, index, &doc.blocks[index]);
+                    }
+                    out.close();
+                }
+            }
+            column += cell.columns_spanned.max(1);
+        }
+        out.close();
+    }
+    out.close();
+}
+
+/// Whether a cell's span reaches over this position — the same question `odf::write` asks, and
+/// asked here because a covered position gets no node at all: the `span=` that covers it is
+/// what moves the reader's column counter past it.
+fn covered(doc: &Document, range: std::ops::Range<usize>, row: u32, column: u32) -> bool {
+    doc.blocks[range]
+        .iter()
+        .filter_map(|b| b.cell.as_ref())
+        .any(|cell| {
+            (cell.columns_spanned > 1 || cell.rows_spanned > 1)
+                && row >= cell.row
+                && row < cell.row + cell.rows_spanned.max(1)
+                && column >= cell.column
+                && column < cell.column + cell.columns_spanned.max(1)
+                && !(row == cell.row && column == cell.column)
+        })
 }
 
 /// The projection this document was read from, with the edited blocks put back in place.

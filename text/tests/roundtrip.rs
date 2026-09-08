@@ -29,7 +29,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use grind_text::model::{Block, BlockKind, Document, Run};
+use grind_text::model::{Block, BlockKind, Cell, Document, Run};
 use grind_text::{CharStyle, Form, odf};
 
 fn text(s: &str) -> Run {
@@ -60,6 +60,29 @@ fn italic() -> CharStyle {
     let mut style = CharStyle::default();
     style.set_italic(true);
     style
+}
+
+/// One block of a table cell: which cell, and what is in it.
+fn cell(table: &str, row: u32, column: u32, text: &str) -> (BlockKind, Option<Cell>, Vec<Run>) {
+    (
+        BlockKind::Paragraph,
+        Some(Cell::new(table, row, column)),
+        vec![self::text(text)],
+    )
+}
+
+/// Build a document from `(kind, cell, runs)` triples — [`build`] with the table axis.
+fn build_cells(spec: Vec<(BlockKind, Option<Cell>, Vec<Run>)>) -> Document {
+    let mut doc = Document::new();
+    for (kind, cell, runs) in spec {
+        let id = doc.next_id();
+        let mut block = Block::new(id, kind);
+        block.cell = cell;
+        block.runs = runs;
+        doc.blocks.push(block);
+    }
+    doc.reindex_bookmarks();
+    doc
 }
 
 /// Build a document from `(kind, runs)` pairs.
@@ -452,21 +475,37 @@ fn converted(out: &Path, input: &Path) -> Document {
     grind_text::read_file(&path).unwrap_or_else(|e| panic!("re-reading {}: {e}", path.display()))
 }
 
-/// What came back, with LibreOffice's one structural addition allowed for.
+/// What came back, with LibreOffice's two structural additions allowed for.
 ///
-/// **A Writer document cannot be empty.** Its model has no body without a paragraph in it, so
-/// the degenerate document — `grind text new` and nothing else — comes back holding one empty
-/// paragraph. Measured, not assumed: `a_document_with_no_blocks_comes_back_holding_one` below
-/// is the test that pins it, so this allowance goes red if LibreOffice ever stops doing it.
+/// **A Writer document cannot be empty**, and **it cannot end with a table.** Its model has no
+/// body without a paragraph in it, and a table at the very end of one gets a paragraph after it
+/// so there is somewhere to put the cursor. Both are measured rather than assumed —
+/// `a_document_with_no_blocks_comes_back_holding_one` and
+/// `a_document_ending_with_a_table_comes_back_with_a_paragraph_after_it` are the tests that pin
+/// them, so either allowance goes red if LibreOffice stops doing it.
 ///
-/// Deliberately narrow. It fires only for a document that had *no* blocks at all, so a real
-/// document that loses or gains a trailing paragraph still fails.
+/// Deliberately narrow, both of them: the first fires only for a document that had *no* blocks,
+/// the second only for one whose last block is in a table and which came back with exactly one
+/// more block than it went in with. A real document that loses or gains a trailing paragraph
+/// anywhere else still fails.
 fn allowing_libreoffices_paragraph<'a>(want: &Document, got: &'a Document) -> &'a [Block] {
-    let gained_one = want.blocks.is_empty()
+    let empty_gained_one = want.blocks.is_empty()
         && got.blocks.len() == 1
         && got.blocks[0].kind == BlockKind::Paragraph
         && got.blocks[0].is_empty();
-    if gained_one { &[] } else { &got.blocks }
+    if empty_gained_one {
+        return &[];
+    }
+    let ended_with_a_table = want.blocks.last().is_some_and(|b| b.cell.is_some())
+        && got.blocks.len() == want.blocks.len() + 1
+        && got
+            .blocks
+            .last()
+            .is_some_and(|b| b.cell.is_none() && b.kind == BlockKind::Paragraph && b.is_empty());
+    match ended_with_a_table {
+        true => &got.blocks[..got.blocks.len() - 1],
+        false => &got.blocks,
+    }
 }
 
 /// Whether a comparison holds the two documents to the same *formatting*, or only to the same
@@ -555,6 +594,15 @@ fn differences(label: &str, want: &Document, got: &Document, styling: Styling) -
                 g.text()
             ));
         }
+        // Where the block sits in a table, if it is in one. Compared whole — the table's name
+        // included, because LibreOffice keeps `table:name` verbatim (`doc/odt-format.md` §5b)
+        // and a table that came back under another name would be one this model had split.
+        if w.cell != g.cell {
+            out.push(format!(
+                "{label}: block {i} was in {:?}, back in {:?}",
+                w.cell, g.cell
+            ));
+        }
         if styling == Styling::Compared {
             for line in formatting_differences(w, g) {
                 out.push(format!("{label}: block {i} {line}"));
@@ -639,6 +687,53 @@ fn cases() -> Vec<(String, Document)> {
                     BlockKind::Paragraph,
                     vec![text("&amp; is not an ampersand")],
                 ),
+            ]),
+        ),
+        // **Tables.** The second axis of the flat sequence (`crate::model::Cell`), and every
+        // shape the writer has to fold back: several paragraphs in one cell, a cell holding a
+        // heading rather than a paragraph, an empty cell, and a merged one with the covered
+        // position beside it. It ends with a paragraph on purpose — a Writer document cannot
+        // *end* with a table, and LibreOffice appends one when it does (`doc/odt-format.md`
+        // §5b), which is a measurement rather than something to work around here.
+        (
+            "tables".to_owned(),
+            build_cells(vec![
+                (BlockKind::Paragraph, None, vec![text("before the table")]),
+                cell("Prices", 0, 0, "Item"),
+                cell("Prices", 0, 1, "Qty"),
+                (
+                    BlockKind::Heading { level: 3 },
+                    Some(Cell::new("Prices", 0, 2)),
+                    vec![text("Price")],
+                ),
+                cell("Prices", 1, 0, "Oak"),
+                // Two blocks in one cell: `table-table-cell-content` is the body's own
+                // production (rng:16126), so a cell holds as many blocks as it likes.
+                cell("Prices", 1, 0, "second paragraph"),
+                cell("Prices", 1, 1, "2"),
+                // An empty cell — one block with nothing in it, which is what a cell always
+                // has: `TableCell::end` materialises one for `<table:table-cell/>` because
+                // LibreOffice does, so the two normalise alike and reading stays idempotent.
+                (
+                    BlockKind::Paragraph,
+                    Some(Cell::new("Prices", 1, 2)),
+                    vec![],
+                ),
+                (BlockKind::Paragraph, None, vec![text("between two tables")]),
+                (
+                    BlockKind::Paragraph,
+                    Some(Cell {
+                        table: "Merged".to_owned(),
+                        row: 0,
+                        column: 0,
+                        columns_spanned: 2,
+                        rows_spanned: 1,
+                    }),
+                    vec![text("spans two columns")],
+                ),
+                cell("Merged", 1, 0, "left"),
+                cell("Merged", 1, 1, "right"),
+                (BlockKind::Paragraph, None, vec![text("after the table")]),
             ]),
         ),
         (
@@ -844,6 +939,39 @@ fn a_document_with_no_blocks_comes_back_holding_one() {
     assert_eq!(back.blocks.len(), 1, "one paragraph, not none and not two");
     assert_eq!(back.blocks[0].kind, BlockKind::Paragraph);
     assert!(back.blocks[0].is_empty(), "and nothing in it");
+}
+
+/// **A Writer document cannot end with a table**, which is the second half of the same rule:
+/// there has to be somewhere to put the cursor after one, so LibreOffice appends an empty
+/// paragraph. Measured here so that [`allowing_libreoffices_paragraph`]'s second allowance is a
+/// recorded fact about the oracle rather than a convenience, and so it goes red the day the
+/// oracle stops doing it.
+///
+/// `doc/odt-format.md` §5b records it beside the others.
+#[test]
+fn a_document_ending_with_a_table_comes_back_with_a_paragraph_after_it() {
+    if !oracle_ready("trailing table") {
+        return;
+    }
+    let lab = Lab::new("trailing-table");
+    let doc = build_cells(vec![
+        (BlockKind::Paragraph, None, vec![text("before")]),
+        cell("Last", 0, 0, "in a cell"),
+    ]);
+    let bytes = grind_text::write_bytes(&doc, Form::Flat).expect("writes");
+    let path = lab.input("trailing-table.fodt", &bytes);
+    let back = converted(&lab.convert(std::slice::from_ref(&path)), &path);
+
+    assert_eq!(back.blocks.len(), 3, "the two we wrote, and one more");
+    assert_eq!(
+        back.blocks[1].cell.as_ref().map(|c| c.table.as_str()),
+        Some("Last"),
+        "the table itself came back under its own name"
+    );
+    let last = back.blocks.last().expect("a last block");
+    assert_eq!(last.kind, BlockKind::Paragraph);
+    assert!(last.cell.is_none(), "and it is outside the table");
+    assert!(last.is_empty(), "with nothing in it");
 }
 
 /// **A `text:style-name` this build wrote does not survive, because this build declares no
