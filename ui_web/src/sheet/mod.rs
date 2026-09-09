@@ -15,6 +15,7 @@
 //! knows which box the pointer is in, and `layout.rs` is left with only the arithmetic the
 //! platform cannot do.
 
+mod assist;
 mod chart;
 pub mod keymap;
 mod layout;
@@ -121,6 +122,9 @@ struct Dom {
     /// An `<input>`, not a label — typing an address in it goes there.
     address: HtmlInputElement,
     formula: HtmlInputElement,
+    /// The assist band under the formula bar — autocomplete offers or a signature hint
+    /// (`assist.rs`).
+    assist: HtmlElement,
     tabs: HtmlElement,
     /// The layer charts float in, over the cells they sit above.
     charts: HtmlElement,
@@ -138,6 +142,7 @@ impl Dom {
             body: element(document, "body")?,
             address: element(document, "address")?,
             formula: element(document, "formula")?,
+            assist: element(document, "assist")?,
             tabs: element(document, "tabs")?,
             charts: element(document, "charts")?,
             message: element(document, "message")?,
@@ -160,6 +165,9 @@ pub struct Ui {
     editing: Cell<bool>,
     /// Whether the pointer is down and dragging a rectangle out.
     dragging: Cell<bool>,
+    /// The formula assist band's own state — autocomplete offers or a signature hint,
+    /// recomputed from the formula bar's text and caret on every change (`assist.rs`).
+    assist: RefCell<assist::Assist>,
     /// Which of `doc/view-modes.md`'s overlays this pane draws. Presentation state, like
     /// everything else here: a view mode is a reading of the document and never a change to
     /// it, so turning one off puts the page back exactly.
@@ -185,6 +193,7 @@ impl Ui {
             scroll: Cell::new(Pos::new(0, 0)),
             editing: Cell::new(false),
             dragging: Cell::new(false),
+            assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             message: RefCell::new(String::new()),
         });
@@ -207,6 +216,7 @@ impl Ui {
         self.scroll.set(Pos::new(0, 0));
         self.selection.set(Selection::default());
         self.editing.set(false);
+        self.assist.borrow_mut().clear();
         Ok(())
     }
 
@@ -516,6 +526,34 @@ impl Ui {
 
     fn on_key(&self, event: &KeyboardEvent) {
         let key = event.key();
+        // The assist band gets first refusal on Tab, the arrows and Escape while it is
+        // offering — the same three keys `ui_win32`'s band claims, and for the same reason:
+        // everything else stays with the `<input>`.
+        let offering = self.editing.get() && self.assist.borrow().is_offering();
+        if let Some(reply) = assist::on_key(
+            offering,
+            &key,
+            event.ctrl_key() || event.meta_key(),
+            event.alt_key(),
+            event.shift_key(),
+        ) {
+            event.prevent_default();
+            let result = match reply {
+                assist::Reply::Accept => self.accept_assist(),
+                assist::Reply::Step(delta) => {
+                    self.assist.borrow_mut().step(delta);
+                    self.render_assist()
+                }
+                assist::Reply::Dismiss => {
+                    self.assist.borrow_mut().dismiss();
+                    self.render_assist()
+                }
+            };
+            if let Err(error) = result {
+                web_sys::console::error_1(&error);
+            }
+            return;
+        }
         let chord = Chord {
             key: &key,
             // ⌘ on macOS, Ctrl everywhere else, resolved here so the keymap never
@@ -1081,7 +1119,69 @@ impl Ui {
         let end = text.chars().count() as u32;
         self.dom.formula.set_selection_range(end, end)?;
         self.set_message(String::new());
+        self.refresh_assist()
+    }
+
+    /// Recompute the assist band from the formula bar's own text and caret, and draw it
+    /// (`assist.rs`). Called on every keystroke and every caret move while editing, and
+    /// clears the band the moment editing ends.
+    fn refresh_assist(&self) -> Result<(), JsValue> {
+        if !self.editing.get() {
+            self.assist.borrow_mut().clear();
+            return self.render_assist();
+        }
+        let text = self.dom.formula.value();
+        // `selection_start` counts in the same units the rest of this file already treats a
+        // caret position as (`begin`'s and `commit`'s own `chars().count()`), not strict
+        // UTF-16 — formula text is overwhelmingly ASCII, and a second, more careful caret
+        // arithmetic for the rare astral character is not worth a second convention.
+        let caret_chars = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
+        let caret = text
+            .char_indices()
+            .nth(caret_chars)
+            .map_or(text.len(), |(byte, _)| byte);
+        let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
+        self.assist.borrow_mut().refresh(&text, caret, &names);
+        self.render_assist()
+    }
+
+    /// Draw the band `assist::band` describes, one `<span>` per run — or hide it, when there
+    /// is nothing to say.
+    fn render_assist(&self) -> Result<(), JsValue> {
+        let pieces = assist::band(&self.assist.borrow());
+        self.dom.assist.set_text_content(None);
+        self.dom.assist.set_hidden(pieces.is_empty());
+        for piece in pieces {
+            let span = self.dom.document.create_element("span")?;
+            span.set_class_name(match piece.ink {
+                assist::Ink::Plain => "plain",
+                assist::Ink::Muted => "muted",
+                assist::Ink::Strong => "strong",
+            });
+            span.set_text_content(Some(&piece.text));
+            self.dom.assist.append_child(&span)?;
+        }
         Ok(())
+    }
+
+    /// Put the highlighted offer into the formula bar and keep editing — Tab, while the band
+    /// is offering.
+    fn accept_assist(&self) -> Result<(), JsValue> {
+        let Some((span, replacement)) = self.assist.borrow_mut().accept() else {
+            return Ok(());
+        };
+        let text = self.dom.formula.value();
+        let mut next = String::with_capacity(text.len() + replacement.len());
+        next.push_str(&text[..span.start]);
+        next.push_str(&replacement);
+        next.push_str(&text[span.end..]);
+        let caret_byte = span.start + replacement.len();
+        let caret = next[..caret_byte].chars().count() as u32;
+        self.dom.formula.set_value(&next);
+        self.dom.formula.focus()?;
+        self.dom.formula.set_selection_range(caret, caret)?;
+        self.request_repaint();
+        self.refresh_assist()
     }
 
     /// Store what the formula bar holds, then move on.
@@ -1150,7 +1250,7 @@ impl Ui {
         self.editing.set(false);
         self.dom.surface.focus()?;
         self.request_repaint();
-        Ok(())
+        self.refresh_assist()
     }
 
     /// Empty the selection. `App::enter` with nothing in it is what clearing *is*,
@@ -1569,6 +1669,25 @@ fn wire_editor(ui: &Rc<Ui>) -> Result<(), JsValue> {
     listen(&ui.dom.formula, "input", move |_: Event| {
         input.editing.set(true);
         input.request_repaint();
+        if let Err(error) = input.refresh_assist() {
+            web_sys::console::error_1(&error);
+        }
+    })?;
+
+    // Neither a click nor an arrow key changes the text, so `input` never fires for them —
+    // and the band has to catch up to a caret the mouse or the browser's own text handling
+    // just moved.
+    let moved = ui.clone();
+    listen(&ui.dom.formula, "keyup", move |_: Event| {
+        if let Err(error) = moved.refresh_assist() {
+            web_sys::console::error_1(&error);
+        }
+    })?;
+    let clicked = ui.clone();
+    listen(&ui.dom.formula, "click", move |_: Event| {
+        if let Err(error) = clicked.refresh_assist() {
+            web_sys::console::error_1(&error);
+        }
     })
 }
 

@@ -83,6 +83,9 @@ const frame = () => new Promise((resolve) => dom.window.requestAnimationFrame(re
 // is about anyway.
 const shown = () => document.querySelector("td.active").textContent;
 
+// The formula assist band under the formula bar (ui_web/src/sheet/assist.rs).
+const assistText = () => byId("assist").textContent;
+
 const press = (key, modifiers = {}) =>
   byId("surface").dispatchEvent(
     new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers })
@@ -309,6 +312,34 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   press("Escape");
   await frame();
   check("Escape leaves the cell alone", shown(), "42");
+
+  type("=SU");
+  await frame();
+  check("the assist band offers a completion for a prefix", assistText().includes("SUM"), true);
+  check("the cell mirrors the formula bar while it offers", shown(), "=SU");
+  press("Escape");
+  await frame();
+  check("Escape dismisses the offers rather than the edit", byId("assist").hidden, true);
+  check("and the edit stays open", shown(), "=SU");
+  press("Escape");
+  await frame();
+  check("a second Escape leaves the cell alone", shown(), "42");
+
+  // "SU" offers several functions; Tab takes whichever is first (the catalog's own order —
+  // this shell has no ranking of its own) and leaves the caret inside its argument list.
+  type("=SU");
+  press("Tab");
+  await frame();
+  const accepted = byId("formula").value;
+  check("Tab accepts the highlighted offer and opens its parenthesis", accepted.endsWith("("), true);
+  check(
+    "and the band becomes the signature of the call the caret is now in",
+    document.querySelector("#assist .strong") !== null,
+    true
+  );
+  press("Escape");
+  await frame();
+  check("Escape leaves the cell alone again", shown(), "42");
 
   press("z", { ctrlKey: true });
   await frame();

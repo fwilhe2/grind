@@ -48,7 +48,7 @@ because a page has no icon theme to ask.
 | Open, save | File API in, download out — no path anywhere (rule 5); also drag-and-drop, and `?doc=<url>` | the same |
 | Draw | one element per visible cell, from `App::get_viewport` | one `<div>` per **laid-out line**, from `App::layout_block` |
 | Select | click, Shift+click, **drag**, Shift+arrow, Ctrl+A | caret, Shift+arrow, Shift+click, **drag**, Ctrl+A |
-| Edit | the formula bar, in A1 syntax; Enter/Tab commit | type, Enter, Backspace, Delete; typing over a selection replaces it |
+| Edit | the formula bar, in A1 syntax; Enter/Tab commit; autocomplete and a signature hint in a band under it | type, Enter, Backspace, Delete; typing over a selection replaces it |
 | Format | bold, italic, alignment, wrap, borders, text and fill colour, eight number-format presets, more/fewer decimals | bold, italic, underline, strikethrough, colour, highlight; body/Title/Subtitle/H1–H4/list; Tab and Shift+Tab renest a list item |
 | Clipboard | copy/cut/paste as TSV, so a range moves between this and any other spreadsheet | copy/cut/paste as plain text; a newline pasted splits a block |
 | The document's own layout | column widths, row heights, hidden and filtered rows, hidden columns — and now Ctrl+K → *Hide*/*Unhide row(s)/column(s)*, over `App::set_row_hidden`/`set_col_hidden` on the selection's own span, the same call the CLI's `sheet hide`/`--unhide` makes | the six heading faces, `Title` and `Subtitle`, list indents, **runs drawn as the document formatted them** — bold, italic, underline, strike, colour, highlight, links |
@@ -77,8 +77,15 @@ the one function that decides which of the three panes is on screen, from the mo
 whether a projection is open — it was two, and closing the command palette closed the code view.
 Editing it is gated in `doc/dsl.md` §6.4.
 
-**The grid.** No point mode, autocomplete or signature hints while typing a formula — the
-three things `doc/sheet-shell.md`'s M7 gave the GTK window, and the largest remaining gap.
+**The grid.** **Autocomplete and signature hints are built** (`ui_web/src/sheet/assist.rs`,
+over `grind_sheet::formula::assist` — the same answers `ui_sheet_gtk`'s M7 and `ui_win32`'s W9
+read), drawn as a one-line band under the formula bar rather than a popover, for the reason
+`ui_win32`'s own band exists: the keyboard must never leave the `<input>` while the list
+narrows, and a popover is a second focusable element. Tab accepts, the arrows step, Escape
+dismisses for that word only — Enter is left to commit the cell, as everywhere else. **Point
+mode** — arrow keys building a reference into a half-typed formula — is still not built and is
+now the largest remaining gap: this shell edits in exactly one place, the formula bar, and a
+caret that leaves it to build a reference would be a third editing mode.
 No dragging a column edge to resize one (the document's own widths are *drawn*, and
 `grind sheet width` sets them). No fill handle — Ctrl+D and Ctrl+R are the whole of filling
 here. No filter UI: a filter in the file hides the rows it says to, and nothing creates one.

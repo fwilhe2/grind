@@ -203,6 +203,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       />
     </div>
 
+    <!-- The formula assist band: autocomplete offers or the signature of the call the caret
+         is in, while a formula is being typed (ui_web/src/sheet/assist.rs). One line under
+         the formula bar rather than a popover, so focus never leaves the `<input>`. -->
+    <div id="assist" class="bar assist" hidden></div>
+
     <!-- tabindex, because a div holds no keyboard otherwise and every key this
          shell claims arrives here. -->
     <main id="surface" class="surface" tabindex="0">

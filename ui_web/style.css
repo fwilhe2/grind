@@ -317,6 +317,28 @@ input[type="text"] {
   position: relative;
 }
 
+/* The formula assist band — one line, under the formula bar, in the same manner as the
+   status bar rather than a popover (ui_web/src/sheet/assist.rs). */
+.assist {
+  font: 12px/1.4 ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assist .plain {
+  color: CanvasText;
+}
+
+.assist .muted {
+  color: color-mix(in srgb, CanvasText 45%, Canvas);
+}
+
+.assist .strong {
+  color: AccentColor;
+  font-weight: 600;
+}
+
 /* --- the document pane ---------------------------------------------------
    Structure only. Every font, line height and indent is written inline by the
    shell from the face that measured the text (ui_web/src/text/mod.rs), because
