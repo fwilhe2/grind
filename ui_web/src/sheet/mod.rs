@@ -338,11 +338,16 @@ impl Ui {
                         }
                     }
                 }
-                if overlays.names
-                    && let Some(name) = viewport.name_at(row, col)
-                    && hint_here(&viewport, &hidden, row, col)
-                {
-                    cell.set_attribute("data-name", name)?;
+                if overlays.names {
+                    if let Some(name) = viewport.name_at(row, col)
+                        && hint_here(&viewport, &hidden, row, col)
+                    {
+                        cell.set_attribute("data-name", name)?;
+                    }
+                    let edges = anchor_edges(&viewport, row, col);
+                    if !edges.is_empty() {
+                        cell.set_attribute("data-anchor", &edges)?;
+                    }
                 }
                 line.append_child(&cell)?;
             }
@@ -558,6 +563,10 @@ impl Ui {
             "edit.fill-down" => self.fill(true),
             "edit.fill-right" => self.fill(false),
             "edit.select-all" => self.select_all(),
+            "sheet.hide-rows" => self.hide_rows(true),
+            "sheet.unhide-rows" => self.hide_rows(false),
+            "sheet.hide-cols" => self.hide_cols(true),
+            "sheet.unhide-cols" => self.hide_cols(false),
 
             "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
             "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
@@ -991,6 +1000,42 @@ impl Ui {
         }
     }
 
+    /// Hide — or, with `hidden: false`, unhide — the rows the selection spans.
+    ///
+    /// `doc/sheet-shell.md`'s row/column hiding, over `App::set_row_hidden`, the same call
+    /// the CLI's `sheet hide`/`--unhide` makes. There is no fill handle or drag here to hide
+    /// a column edge, so a selected rectangle's own row span is the whole of "which rows" —
+    /// unhiding reaches a hidden run the same way, since Shift+arrow through one still moves
+    /// the selection's index across it even though it draws at no height.
+    fn hide_rows(&self, hidden: bool) {
+        let (start, end) = self.selection.get().rect();
+        match self
+            .app
+            .set_row_hidden(self.sheet.get(), start.row..end.row + 1, hidden)
+        {
+            Ok(n) => self.set_message(match hidden {
+                true => format!("Hid {n} row(s)"),
+                false => format!("Unhid {n} row(s)"),
+            }),
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// The column twin of [`Ui::hide_rows`].
+    fn hide_cols(&self, hidden: bool) {
+        let (start, end) = self.selection.get().rect();
+        match self
+            .app
+            .set_col_hidden(self.sheet.get(), start.col..end.col + 1, hidden)
+        {
+            Ok(n) => self.set_message(match hidden {
+                true => format!("Hid {n} column(s)"),
+                false => format!("Unhid {n} column(s)"),
+            }),
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
     fn move_to(&self, motion: Motion, extend: bool) {
         let sheet = self.sheet.get();
         let extent = self.app.used_extent(sheet).unwrap_or((0, 0));
@@ -1337,6 +1382,35 @@ fn hint_here(viewport: &grind_sheet::Viewport, hidden: &[u32], row: u32, col: u3
     })
 }
 
+/// Which edges of a name anchor's range this cell sits on, space-separated for
+/// `data-anchor` — `doc/view-modes.md`'s "a range anchor is not outlined" gap, closed the
+/// way `ui_sheet_gtk/src/grid.rs`'s `draw_hints` does it: a range says how far it reaches
+/// by being outlined, and a single cell needs no outline since the hint already sits
+/// inside the only cell it means. `content: attr(data-anchor)` is not used here — the
+/// stylesheet reads each edge word with `~=` and turns it into a `border-*`, so the
+/// outline is one attribute per boundary cell rather than a second element.
+fn anchor_edges(viewport: &grind_sheet::Viewport, row: u32, col: u32) -> String {
+    let mut edges = Vec::new();
+    for anchor in viewport.names() {
+        if !anchor.is_range() || !anchor.rows.contains(&row) || !anchor.cols.contains(&col) {
+            continue;
+        }
+        if row == anchor.rows.start {
+            edges.push("top");
+        }
+        if row == anchor.rows.end - 1 {
+            edges.push("bottom");
+        }
+        if col == anchor.cols.start {
+            edges.push("left");
+        }
+        if col == anchor.cols.end - 1 {
+            edges.push("right");
+        }
+    }
+    edges.join(" ")
+}
+
 fn css_of(style: Option<&CellStyle>, numeric: bool) -> String {
     let mut css = String::new();
     // A number right-aligns unless the document says otherwise — the convention
@@ -1559,5 +1633,34 @@ mod tests {
             ..CellStyle::default()
         };
         assert_eq!(css_of(Some(&middle), false), "vertical-align:middle;");
+    }
+
+    /// A range anchor is outlined on its boundary cells only — `doc/view-modes.md`'s "a range
+    /// anchor is not outlined" gap, closed the way `ui_sheet_gtk`'s `draw_hints` outlines the
+    /// same rectangle. A single-cell name gets no edges at all: the hint already sits inside
+    /// the only cell it means (`NameAnchor::is_range`).
+    #[test]
+    fn a_range_anchor_is_outlined_on_its_boundary_cells_only() {
+        let app = App::new();
+        app.set_cell(0, Pos::new(0, 0), 1.0).unwrap();
+        let sheet_name = app.sheet_name(0).unwrap();
+        app.set_name("sales", &format!("[${sheet_name}.$A$1:.$B$3]"))
+            .unwrap();
+        let overlays = grind_sheet::view::Overlays {
+            names: true,
+            ..Default::default()
+        };
+        let viewport = app.get_viewport_with(0, 0..5, 0..5, overlays).unwrap();
+
+        assert_eq!(anchor_edges(&viewport, 0, 0), "top left");
+        assert_eq!(anchor_edges(&viewport, 0, 1), "top right");
+        assert_eq!(anchor_edges(&viewport, 1, 0), "left");
+        assert_eq!(anchor_edges(&viewport, 2, 1), "bottom right");
+        assert_eq!(anchor_edges(&viewport, 3, 0), "");
+
+        app.set_name("total", &format!("[${sheet_name}.$D$4]"))
+            .unwrap();
+        let viewport = app.get_viewport_with(0, 0..5, 0..5, overlays).unwrap();
+        assert_eq!(anchor_edges(&viewport, 3, 3), "");
     }
 }

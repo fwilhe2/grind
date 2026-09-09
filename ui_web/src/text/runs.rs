@@ -36,12 +36,15 @@ pub struct Piece {
 ///
 /// A `caret` inside the line is a boundary too, so the caret element can be appended between
 /// two pieces rather than inside one — which is what lets the browser place it against its own
-/// kerning (`text/mod.rs`).
+/// kerning (`text/mod.rs`). `anchors` are bookmark offsets, boundaries for the same reason: a
+/// tick drawn at one has to sit against its own kerning too, not inside whichever run it lands
+/// in the middle of.
 pub fn cut(
     line: Range<usize>,
     runs: &[RunView],
     selection: Option<Range<usize>>,
     caret: Option<usize>,
+    anchors: &[usize],
 ) -> Vec<Piece> {
     if line.start >= line.end {
         return Vec::new();
@@ -62,6 +65,9 @@ pub fn cut(
     }
     if let Some(caret) = caret {
         mark(caret);
+    }
+    for at in anchors {
+        mark(*at);
     }
     bounds.sort_unstable();
     bounds.dedup();
@@ -162,7 +168,7 @@ mod tests {
     #[test]
     fn a_line_of_one_run_is_one_piece() {
         let runs = [run(0, "hello world", CharStyle::default())];
-        let pieces = cut(0..11, &runs, None, None);
+        let pieces = cut(0..11, &runs, None, None, &[]);
         assert_eq!(pieces.len(), 1);
         assert_eq!(pieces[0].range, 0..11);
         assert!(!pieces[0].selected);
@@ -175,7 +181,7 @@ mod tests {
             run(6, "bold", bold()),
             run(10, " tail", CharStyle::default()),
         ];
-        let pieces = cut(0..15, &runs, None, None);
+        let pieces = cut(0..15, &runs, None, None, &[]);
         assert_eq!(
             pieces.iter().map(|p| p.range.clone()).collect::<Vec<_>>(),
             vec![0..6, 6..10, 10..15]
@@ -191,7 +197,7 @@ mod tests {
             run(6, "bold", bold()),
         ];
         // Selected from the middle of the plain run into the middle of the bold one.
-        let pieces = cut(0..10, &runs, Some(3..8), None);
+        let pieces = cut(0..10, &runs, Some(3..8), None, &[]);
         assert_eq!(
             pieces.iter().map(|p| p.range.clone()).collect::<Vec<_>>(),
             vec![0..3, 3..6, 6..8, 8..10]
@@ -206,28 +212,39 @@ mod tests {
     #[test]
     fn the_caret_splits_the_piece_it_sits_in() {
         let runs = [run(0, "abcdef", CharStyle::default())];
-        let pieces = cut(0..6, &runs, None, Some(3));
+        let pieces = cut(0..6, &runs, None, Some(3), &[]);
         assert_eq!(pieces.len(), 2);
         assert_eq!(pieces[0].range, 0..3);
         assert_eq!(pieces[1].range, 3..6);
         // At either end it adds nothing: there is already a boundary there.
-        assert_eq!(cut(0..6, &runs, None, Some(0)).len(), 1);
-        assert_eq!(cut(0..6, &runs, None, Some(6)).len(), 1);
+        assert_eq!(cut(0..6, &runs, None, Some(0), &[]).len(), 1);
+        assert_eq!(cut(0..6, &runs, None, Some(6), &[]).len(), 1);
+    }
+
+    /// A bookmark's own offset splits the piece it sits in too, the same as the caret —
+    /// `doc/view-modes.md` §3.6's tick needs a boundary to sit against, not a spot mid-run.
+    #[test]
+    fn a_bookmark_anchor_splits_the_piece_it_sits_in() {
+        let runs = [run(0, "abcdef", CharStyle::default())];
+        let pieces = cut(0..6, &runs, None, None, &[3]);
+        assert_eq!(pieces.len(), 2);
+        assert_eq!(pieces[0].range, 0..3);
+        assert_eq!(pieces[1].range, 3..6);
     }
 
     /// A selection that covers the whole line, and one that misses it entirely.
     #[test]
     fn a_selection_outside_the_line_selects_nothing_in_it() {
         let runs = [run(0, "abcdef", CharStyle::default())];
-        let all = cut(0..6, &runs, Some(0..6), None);
+        let all = cut(0..6, &runs, Some(0..6), None, &[]);
         assert!(all.iter().all(|p| p.selected));
-        let none = cut(0..6, &runs, Some(20..30), None);
+        let none = cut(0..6, &runs, Some(20..30), None, &[]);
         assert!(none.iter().all(|p| !p.selected));
     }
 
     #[test]
     fn an_empty_line_has_no_pieces_at_all() {
-        assert!(cut(4..4, &[], None, Some(4)).is_empty());
+        assert!(cut(4..4, &[], None, Some(4), &[]).is_empty());
     }
 
     /// A document's own colour is a value, not a class — it has to reach the page verbatim.

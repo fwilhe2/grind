@@ -502,8 +502,28 @@ impl Ui {
             })
         });
 
+        // `doc/view-modes.md` §3.6: a bookmark contributes no characters, so a tick at its
+        // own offset is the only way to say *exactly* where one is — the name at the end of
+        // the line (below) says only which line. `ui_text_gtk`'s `x_at` twin: a boundary
+        // between two pieces places it against its own kerning rather than in the middle of
+        // whichever run it falls in.
+        let anchors_here: Vec<usize> = match self.names.get() {
+            true => block
+                .marks
+                .iter()
+                .map(|(at, _)| *at)
+                .filter(|at| line.contains(at))
+                .collect(),
+            false => Vec::new(),
+        };
+
         let mut drawn = false;
-        for piece in runs::cut(line.clone(), &block.runs, within, caret) {
+        for piece in runs::cut(line.clone(), &block.runs, within, caret, &anchors_here) {
+            if anchors_here.contains(&piece.range.start) {
+                let tick = self.dom.document.create_element("span")?;
+                tick.set_class_name("mark-tick");
+                row.append_child(&tick)?;
+            }
             if caret == Some(piece.range.start) {
                 self.append_caret(row)?;
                 drawn = true;

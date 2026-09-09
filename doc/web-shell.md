@@ -51,7 +51,7 @@ because a page has no icon theme to ask.
 | Edit | the formula bar, in A1 syntax; Enter/Tab commit | type, Enter, Backspace, Delete; typing over a selection replaces it |
 | Format | bold, italic, alignment, wrap, borders, text and fill colour, eight number-format presets, more/fewer decimals | bold, italic, underline, strikethrough, colour, highlight; body/Title/Subtitle/H1–H4/list; Tab and Shift+Tab renest a list item |
 | Clipboard | copy/cut/paste as TSV, so a range moves between this and any other spreadsheet | copy/cut/paste as plain text; a newline pasted splits a block |
-| The document's own layout | column widths, row heights, hidden and filtered rows, hidden columns | the six heading faces, `Title` and `Subtitle`, list indents, **runs drawn as the document formatted them** — bold, italic, underline, strike, colour, highlight, links |
+| The document's own layout | column widths, row heights, hidden and filtered rows, hidden columns — and now Ctrl+K → *Hide*/*Unhide row(s)/column(s)*, over `App::set_row_hidden`/`set_col_hidden` on the selection's own span, the same call the CLI's `sheet hide`/`--unhide` makes | the six heading faces, `Title` and `Subtitle`, list indents, **runs drawn as the document formatted them** — bold, italic, underline, strike, colour, highlight, links |
 | Pictures | — | decoded and drawn, as a `data:` URL |
 | Charts | **drawn as SVG** — bar, line and pie, scaled against `grind_sheet::axis_ticks` so the axis is the one the GTK shell draws | — |
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
@@ -107,14 +107,18 @@ character, and an image is fit to the column rather than to its own `svg:width` 
 (`doc/text-core.md`), so there is no style picker for one.
 
 **The view modes** (`doc/view-modes.md` V7). Drawn entirely in the stylesheet: `data-role`,
-`data-mark` and `data-name` on a cell, and `content: attr(…)` for the marker and the hint, so a
-mode costs one attribute per cell rather than a second element per cell. The hues are
-`style::PALETTE`'s, mixed towards `CanvasText` — the CSS form of `ui_sheet_gtk`'s
-`theme::readable`, so they separate from whichever ground the browser is painting. What is
-missing beside the GTK window: a range anchor is not outlined, the hint is not *measured* against
-the value (CSS ellipsis rather than §3.2's drop, so a narrow column shows a truncated name where
-the window would show none), and the word processor's marks sit at the end of the line they fall
-on rather than at their offset in it.
+`data-mark`, `data-name` and `data-anchor` on a cell, and `content: attr(…)` for the marker and
+the hint, so a mode costs one attribute per cell rather than a second element per cell. The hues
+are `style::PALETTE`'s, mixed towards `CanvasText` — the CSS form of `ui_sheet_gtk`'s
+`theme::readable`, so they separate from whichever ground the browser is painting. **A range
+anchor is now outlined too**: `data-anchor` carries the boundary edges a cell sits on
+(`top`/`bottom`/`left`/`right`, space-separated) and a `border-*` per edge draws the same muted
+rectangle `ui_sheet_gtk`'s `draw_hints` does, one attribute rather than a second element. The
+word processor's bookmark marks now carry a tick at their own offset too (`.mark-tick`, the
+`x_at` boundary `ui_text_gtk` draws), beside the name still written at the end of the line they
+fall on. What is still missing beside the GTK window: the hint is not *measured* against the
+value (CSS ellipsis rather than §3.2's drop, so a narrow column shows a truncated name where the
+window would show none).
 
 **Both.** The whole document is in the DOM — no windowing, because a document has as many
 blocks as somebody typed and a scroll-position-to-block map only pays for itself on documents

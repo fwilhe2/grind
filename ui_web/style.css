@@ -717,6 +717,25 @@ input[type="text"] {
   text-overflow: ellipsis;
 }
 
+/* A range anchor says how far it reaches by being outlined — one `border-*` per
+   boundary edge rather than a second element, matching `ui_sheet_gtk`'s muted
+   rectangle round the same range. */
+.cell[data-anchor~="top"] {
+  border-top: 1px solid color-mix(in srgb, CanvasText 55%, transparent);
+}
+
+.cell[data-anchor~="bottom"] {
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 55%, transparent);
+}
+
+.cell[data-anchor~="left"] {
+  border-left: 1px solid color-mix(in srgb, CanvasText 55%, transparent);
+}
+
+.cell[data-anchor~="right"] {
+  border-right: 1px solid color-mix(in srgb, CanvasText 55%, transparent);
+}
+
 .cell[data-role="input-named"] {
   color: color-mix(in srgb, #0074d9 75%, CanvasText);
 }
@@ -772,6 +791,18 @@ input[type="text"] {
   font-size: 0.8em;
   font-style: italic;
   vertical-align: super;
+}
+
+/* The other half of §3.6, and the gap `doc/web-shell.md` named: the name alone says which
+   *line* a bookmark is on, not where — this tick sits at its exact offset, the same
+   two-pixel accent `ui_text_gtk` draws with `x_at`. */
+.mark-tick {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+  border-left: 2px solid color-mix(in srgb, CanvasText 55%, transparent);
+  margin-right: -2px;
 }
 
 /* --- the code view (doc/dsl.md §6, D9) ------------------------------------------------ */

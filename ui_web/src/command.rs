@@ -134,6 +134,12 @@ pub const SHEET: &[Command] = &[
     cmd("sheet.add", "Add a sheet", "Sheets", "", true),
     cmd("sheet.rename", "Rename this sheet…", "Sheets", "", false),
     cmd("sheet.delete", "Delete this sheet", "Sheets", "", false),
+    // §5.4, the CLI's `sheet hide`/`--unhide` reached from here: hide or show the rows or
+    // columns the selection spans.
+    cmd("sheet.hide-rows", "Hide row(s)", "Sheets", "", false),
+    cmd("sheet.unhide-rows", "Unhide row(s)", "Sheets", "", false),
+    cmd("sheet.hide-cols", "Hide column(s)", "Sheets", "", false),
+    cmd("sheet.unhide-cols", "Unhide column(s)", "Sheets", "", false),
 ];
 
 /// The word processor's verbs.
