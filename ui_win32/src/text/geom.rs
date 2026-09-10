@@ -23,7 +23,11 @@
 use crate::sheet::geom::{Rect, scale};
 
 /// Space either side of the text column, in pixels at 100%.
-pub const MARGIN: f64 = 32.0;
+///
+/// Wide enough since W10 to hold the **page** the column is set on: the card is [`PAGE_PAD`]
+/// outside the text on each side, and this has to leave a strip of the window's own backdrop
+/// showing either side of that or the page is not a page, it is the window.
+pub const MARGIN: f64 = 48.0;
 
 /// The widest the text column is allowed to get.
 ///
@@ -37,7 +41,17 @@ pub const INDENT: f64 = 28.0;
 
 /// The page's own top margin — space above the first block, which **scrolls with the text**
 /// rather than framing it, so that a document scrolled to the bottom has no dead band at the top.
-pub const TOP: f64 = 24.0;
+///
+/// It is also the page card's top padding, which is why it grew in W10: a sheet of paper with
+/// twenty-four pixels above the first line looks like a mistake, and forty like a margin.
+pub const TOP: f64 = 40.0;
+
+/// How far the page card extends past the text column on each side, and below the last block.
+///
+/// The card is the document's own surface — `Theme::background` — standing on the window's
+/// backdrop, which is the whole of W10's answer for this pane: a word processor whose text sits
+/// directly on the window chrome has no document in it, only some text.
+pub const PAGE_PAD: f64 = 40.0;
 
 /// Space under a block, and the extra a heading gets above it — the whole of this pane's
 /// typography beyond the font itself.
@@ -49,29 +63,37 @@ pub const HEADING_GAP: f64 = 18.0;
 pub const CAPTION_GAP: f64 = 4.0;
 
 /// The status bar, the same height the grid's is so that the two panes' windows agree.
-pub const STATUS_H: f64 = 22.0;
+pub const STATUS_H: f64 = crate::sheet::draw::STATUS_H;
 
 /// The notice bar, when there is a notice. Zero when there is not — see `win.rs`'s `banner_h`.
-pub const BANNER_H: f64 = 26.0;
+/// The grid's own height, and drawn the same way since W10: an inset card, not a stripe.
+pub const BANNER_H: f64 = crate::sheet::draw::BANNER_H;
 
 /// The format strip — decision 4's admission test applied to this pane: it reads and writes
 /// `CharStyle`, so it goes under the menu rather than in it. Never zero, unlike the banner: this
-/// bar has no "nothing to show" state, since the three toggles always mean something.
-pub const STRIP_H: f64 = 28.0;
+/// bar has no "nothing to show" state, since the five toggles always mean something.
+///
+/// One Fluent control tall plus its surround, which is the grid's own strip height, so that the
+/// two panes' chrome measures the same in the same window.
+pub const STRIP_H: f64 = crate::sheet::draw::STRIP_H;
 
-/// One toggle button's width on the strip.
-pub const BUTTON_W: f64 = 34.0;
+/// One toggle button's width on the strip — square, at Fluent's control height, which is what a
+/// one-letter toggle wants and what lets the five of them read as one segmented group.
+pub const BUTTON_W: f64 = crate::theme::space::CONTROL_H;
 
-/// The Family and Size pickers' width — wide enough for a short font name or `"999pt"`, and
-/// [`crate::sheet::draw::Align::Center`] handles anything longer by clipping rather than wrapping.
-pub const PICKER_W: f64 = 72.0;
+/// The Family picker's width — wide enough for a short font name and the chevron that says it
+/// opens something; [`crate::sheet::draw::Align::Left`] elides anything longer.
+pub const PICKER_W: f64 = 108.0;
 
-/// One colour swatch's width — narrower than a picker, since a swatch draws a fill rather than
-/// text and needs no room for a label.
-pub const SWATCH_W: f64 = 28.0;
+/// The Size picker's, which needs room for `999pt` and a chevron and nothing else.
+pub const SIZE_W: f64 = 72.0;
 
-/// *Clear Formatting*'s width — wider than a toggle, since "Clear" does not fit `BUTTON_W`.
-pub const CLEAR_W: f64 = 44.0;
+/// One colour swatch's width — square, like a toggle: a swatch draws a fill rather than a label
+/// and needs no room for one.
+pub const SWATCH_W: f64 = crate::theme::space::CONTROL_H;
+
+/// *Clear Formatting*'s width — wider than a toggle, since "Clear" does not fit [`BUTTON_W`].
+pub const CLEAR_W: f64 = 64.0;
 
 /// The text column inside a pane `width` pixels wide: where it starts and how wide it is.
 ///
@@ -153,75 +175,96 @@ impl Page {
         }
     }
 
-    /// The strip's five toggle buttons, left to right: Bold, Italic, Underline, Strike, Code.
-    pub fn strip_buttons(&self) -> [Rect; 5] {
-        let w = scale(BUTTON_W, self.dpi);
+    /// One control on the strip: `w` wide, at Fluent's control height, centred in the band.
+    ///
+    /// Every rectangle below is one of these, which is what stops the strip drifting back into
+    /// full-height slabs the moment a control is added: a button is a *control standing on a
+    /// band*, and the band's own height is not its business.
+    fn strip_control(&self, x: f64, w: f64) -> Rect {
         let strip = self.strip();
-        std::array::from_fn(|i| Rect {
-            x: w * i as f64,
-            y: strip.y,
+        let h = scale(crate::theme::space::CONTROL_H, self.dpi).min(strip.h);
+        Rect {
+            x,
+            y: strip.y + ((strip.h - h) / 2.0).max(0.0),
             w,
-            h: strip.h,
-        })
+            h,
+        }
     }
 
-    /// Where the toggles end and the four pickers begin.
-    fn strip_pickers_x(&self) -> f64 {
-        scale(BUTTON_W, self.dpi) * 5.0
+    /// Where the strip's controls begin — the same margin the grid's name box keeps, so the two
+    /// panes' chrome lines up down the left of the window.
+    fn strip_start(&self) -> f64 {
+        scale(crate::theme::space::GROUP, self.dpi)
+    }
+
+    /// The gap between two controls that belong together, and between two groups of them.
+    ///
+    /// Three groups, and the grouping is the point (W10): the five emphasis toggles are one
+    /// segmented control, the two pickers are the *shape* of the text, the two swatches are its
+    /// *colour*, and Clear stands alone because it undoes all three. A row of nine evenly spaced
+    /// buttons says none of that.
+    fn strip_gaps(&self) -> (f64, f64) {
+        (
+            scale(crate::theme::space::GAP / 2.0, self.dpi),
+            scale(crate::theme::space::GROUP, self.dpi),
+        )
+    }
+
+    /// The strip's five toggle buttons, left to right: Bold, Italic, Underline, Strike, Code.
+    pub fn strip_buttons(&self) -> [Rect; 5] {
+        let (tight, _) = self.strip_gaps();
+        let w = scale(BUTTON_W, self.dpi);
+        let start = self.strip_start();
+        std::array::from_fn(|i| self.strip_control(start + (w + tight) * i as f64, w))
     }
 
     /// *Font* — opens `dialog::choose` over the families this build knows.
     pub fn strip_family(&self) -> Rect {
-        let strip = self.strip();
-        Rect {
-            x: self.strip_pickers_x(),
-            y: strip.y,
-            w: scale(PICKER_W, self.dpi),
-            h: strip.h,
-        }
+        let (_, group) = self.strip_gaps();
+        let last = self.strip_buttons()[4];
+        self.strip_control(last.x + last.w + group, scale(PICKER_W, self.dpi))
     }
 
     /// *Size* — the ladder `grind_text::format::sizes` offers.
     pub fn strip_size(&self) -> Rect {
+        let (tight, _) = self.strip_gaps();
         let family = self.strip_family();
-        Rect {
-            x: family.x + family.w,
-            y: family.y,
-            w: scale(PICKER_W, self.dpi),
-            h: family.h,
-        }
+        self.strip_control(family.x + family.w + tight, scale(SIZE_W, self.dpi))
     }
 
     /// The text colour swatch.
     pub fn strip_color(&self) -> Rect {
+        let (_, group) = self.strip_gaps();
         let size = self.strip_size();
-        Rect {
-            x: size.x + size.w,
-            y: size.y,
-            w: scale(SWATCH_W, self.dpi),
-            h: size.h,
-        }
+        self.strip_control(size.x + size.w + group, scale(SWATCH_W, self.dpi))
     }
 
     /// The highlight swatch.
     pub fn strip_highlight(&self) -> Rect {
+        let (tight, _) = self.strip_gaps();
         let color = self.strip_color();
-        Rect {
-            x: color.x + color.w,
-            y: color.y,
-            w: scale(SWATCH_W, self.dpi),
-            h: color.h,
-        }
+        self.strip_control(color.x + color.w + tight, scale(SWATCH_W, self.dpi))
     }
 
     /// *Clear Formatting* — the one-shot the toggles can only approximate.
     pub fn strip_clear(&self) -> Rect {
+        let (_, group) = self.strip_gaps();
         let highlight = self.strip_highlight();
+        self.strip_control(highlight.x + highlight.w + group, scale(CLEAR_W, self.dpi))
+    }
+
+    /// Where a separator goes between two groups: the middle of the gap before `next`, drawn at
+    /// half a control's height. Fluent's `AppBarSeparator`, which is what says "these two things
+    /// are not the same kind of thing" without a border round either of them.
+    pub fn strip_separator(&self, next: Rect) -> Rect {
+        let (_, group) = self.strip_gaps();
+        let control = self.strip_control(0.0, 0.0);
+        let h = control.h / 2.0;
         Rect {
-            x: highlight.x + highlight.w,
-            y: highlight.y,
-            w: scale(CLEAR_W, self.dpi),
-            h: highlight.h,
+            x: (next.x - group / 2.0).round(),
+            y: control.y + (control.h - h) / 2.0,
+            w: 1.0,
+            h,
         }
     }
 
@@ -251,6 +294,29 @@ impl Page {
     /// The text column, in window coordinates.
     pub fn text_column(&self) -> (f64, f64) {
         column(self.width, self.dpi)
+    }
+
+    /// **The page** — the document's own surface, `height` pixels of content tall.
+    ///
+    /// The card the text is set on, in window coordinates and already scrolled: its top is the
+    /// top of the document, so it moves off the screen as the document does, and its bottom is
+    /// the last block plus one [`PAGE_PAD`]. Nothing is clipped here — the painter clips to the
+    /// body, and a card whose top is a thousand pixels above the window is exactly what a
+    /// document scrolled a thousand pixels down should have.
+    ///
+    /// This is decorative and the caret knows nothing about it: [`Page::text_column`] is
+    /// unchanged, so where a line breaks and where a click lands are the same answers they were
+    /// before there was a page to draw them on.
+    pub fn page_card(&self, height: f64) -> Rect {
+        let body = self.body();
+        let (x, w) = self.text_column();
+        let pad = scale(PAGE_PAD, self.dpi);
+        Rect {
+            x: x - pad,
+            y: body.y - self.scroll,
+            w: w + pad * 2.0,
+            h: height + pad,
+        }
     }
 }
 
@@ -450,6 +516,19 @@ mod tests {
         None
     }
 
+    /// An ordinary window on an ordinary document: 800 by 600 at 100%, no notice up.
+    fn page() -> Page {
+        Page {
+            width: 800.0,
+            height: 600.0,
+            banner_h: 0.0,
+            strip_h: STRIP_H,
+            status_h: STATUS_H,
+            dpi: 96,
+            scroll: 0.0,
+        }
+    }
+
     /// Three paragraphs of one line each, 10 tall, with a gap of 10 under each.
     fn flow() -> Flow {
         let mut flow = Flow::default();
@@ -543,18 +622,37 @@ mod tests {
         assert_eq!(wide, 2.0 * MEASURE, "the measure is a physical size");
     }
 
+    /// The page is the document's own surface: wider than the text on it, starting where the
+    /// document starts, and moving with the scroll rather than framing the window.
+    #[test]
+    fn the_page_is_a_surface_the_text_stands_on() {
+        let page = page();
+        let (x, w) = page.text_column();
+        let card = page.page_card(1000.0);
+        assert!(card.x < x, "the page is wider than the text on it");
+        assert_eq!(card.x, x - PAGE_PAD);
+        assert_eq!(card.x + card.w, x + w + PAGE_PAD);
+        assert_eq!(card.y, page.body().y, "unscrolled, it starts at the body");
+        assert!(card.h > 1000.0, "and there is room under the last line");
+        // Scrolled, it moves with the document — a page is a thing in the document, not a frame
+        // round the window.
+        let scrolled = Page {
+            scroll: 300.0,
+            ..page
+        };
+        assert_eq!(scrolled.page_card(1000.0).y, page.body().y - 300.0);
+        // And there is always window left either side of it, or it would not read as a page.
+        for width in [400.0, 800.0, 2400.0] {
+            let card = Page { width, ..page }.page_card(100.0);
+            assert!(card.x > 0.0, "{width}: the page touches the window's edge");
+            assert!(card.x + card.w < width, "{width}");
+        }
+    }
+
     /// The four bands are contiguous and add up to the window, banner or no banner.
     #[test]
     fn the_page_bands_tile_the_window() {
-        let page = Page {
-            width: 800.0,
-            height: 600.0,
-            banner_h: 0.0,
-            strip_h: STRIP_H,
-            status_h: STATUS_H,
-            dpi: 96,
-            scroll: 0.0,
-        };
+        let page = page();
         assert_eq!(page.body().y, STRIP_H);
         assert_eq!(page.strip().h + page.body().h + page.status().h, 600.0);
         let with_notice = Page {
@@ -571,24 +669,24 @@ mod tests {
         );
     }
 
-    /// The three buttons sit side by side on the strip, none overlapping, and a click between two
-    /// of them belongs to neither.
+    /// The five toggles sit side by side on the strip, in order, none overlapping — a segmented
+    /// group with the tight gap between its members and the window's own margin before the first.
     #[test]
     fn the_strip_buttons_tile_left_to_right_and_dont_overlap() {
-        let page = Page {
-            width: 800.0,
-            height: 600.0,
-            banner_h: 0.0,
-            strip_h: STRIP_H,
-            status_h: STATUS_H,
-            dpi: 96,
-            scroll: 0.0,
-        };
+        let page = page();
         let buttons = page.strip_buttons();
-        assert_eq!(buttons[0].x, 0.0);
+        assert_eq!(buttons[0].x, crate::theme::space::GROUP);
         for pair in buttons.windows(2) {
-            assert_eq!(pair[0].x + pair[0].w, pair[1].x, "no gap and no overlap");
+            assert!(pair[0].x + pair[0].w < pair[1].x, "they overlap");
+            assert!(
+                pair[1].x - (pair[0].x + pair[0].w) <= crate::theme::space::GAP,
+                "a segmented group, not a scattering"
+            );
         }
+        // A control standing on the band rather than filling it, which is what makes the strip
+        // read as a surface with things on it.
+        assert_eq!(buttons[0].h, crate::theme::space::CONTROL_H);
+        assert!(buttons[0].y > page.strip().y);
         assert_eq!(
             page.strip_hit(buttons[0].x + 1.0, buttons[0].y + 1.0),
             Some(StripHit::Toggle(0))
@@ -602,36 +700,24 @@ mod tests {
             None,
             "below the strip"
         );
+        // The window's own margin is not a button: a click there is a click on the band.
+        assert_eq!(page.strip_hit(1.0, buttons[0].y + 1.0), None);
     }
 
     /// The buttons scale with the monitor, the same rule every other measurement here follows.
     #[test]
     fn the_strip_buttons_scale_with_the_monitor() {
-        let page = Page {
-            width: 800.0,
-            height: 600.0,
-            banner_h: 0.0,
-            strip_h: STRIP_H,
-            status_h: STATUS_H,
-            dpi: 192,
-            scroll: 0.0,
-        };
+        let page = Page { dpi: 192, ..page() };
         assert_eq!(page.strip_buttons()[0].w, 2.0 * BUTTON_W);
+        assert_eq!(page.strip_buttons()[0].x, 2.0 * crate::theme::space::GROUP);
     }
 
-    /// The four pickers pick up exactly where the five toggles leave off, in the same
-    /// no-gap-no-overlap order, and each is its own [`StripHit`].
+    /// The four pickers follow the five toggles in order, none overlapping, each its own
+    /// [`StripHit`] — and the gap between two *groups* is wider than the gap inside one, which is
+    /// the whole of how the strip says which controls belong together.
     #[test]
     fn the_pickers_continue_where_the_toggles_end_and_dont_overlap() {
-        let page = Page {
-            width: 800.0,
-            height: 600.0,
-            banner_h: 0.0,
-            strip_h: STRIP_H,
-            status_h: STATUS_H,
-            dpi: 96,
-            scroll: 0.0,
-        };
+        let page = page();
         let toggles = page.strip_buttons();
         let rects = [
             page.strip_family(),
@@ -640,10 +726,20 @@ mod tests {
             page.strip_highlight(),
             page.strip_clear(),
         ];
-        assert_eq!(rects[0].x, toggles[4].x + toggles[4].w);
+        let after = |a: Rect, b: Rect| b.x - (a.x + a.w);
+        let tight = after(toggles[0], toggles[1]);
+        assert!(after(toggles[4], rects[0]) > tight, "toggles | pickers");
+        assert_eq!(after(rects[0], rects[1]), tight, "family and size pair up");
+        assert!(after(rects[1], rects[2]) > tight, "pickers | colour");
+        assert_eq!(after(rects[2], rects[3]), tight, "the two swatches pair up");
+        assert!(after(rects[3], rects[4]) > tight, "colour | clear");
         for pair in rects.windows(2) {
-            assert_eq!(pair[0].x + pair[0].w, pair[1].x, "no gap and no overlap");
+            assert!(pair[0].x + pair[0].w < pair[1].x, "no overlap");
         }
+        // The separator sits in a group gap and touches neither side of it.
+        let rule = page.strip_separator(rects[0]);
+        assert!(rule.x > toggles[4].x + toggles[4].w && rule.x < rects[0].x);
+        assert!(rule.h < toggles[0].h, "half a control tall");
         assert_eq!(
             page.strip_hit(rects[0].x + 1.0, rects[0].y + 1.0),
             Some(StripHit::Family)

@@ -156,9 +156,9 @@ mod windows_impl {
     use crate::metrics::Faces;
     use crate::sheet::draw::{Align, draw_text};
     use crate::sheet::geom::{Rect, scale};
-    use crate::theme::Theme;
+    use crate::theme::{Rgb, Theme};
 
-    use super::super::geom::{Page, Slot};
+    use super::super::geom::{Page, Slot, StripHit};
     use super::{CARET_W, WASH, bullet, drawable, line_x, pieces, selected_range};
 
     /// One block, ready to draw: where it goes, what is in it, and how its lines broke.
@@ -179,6 +179,10 @@ mod windows_impl {
         pub faces: &'a Faces<'a>,
         /// The blocks on screen, in document order, and nothing else — architecture rule 1.
         pub blocks: &'a [Painted<'a>],
+        /// How tall the whole document measured — `Flow::height`, which is what the page card is
+        /// drawn to and what the scrollbar already reports. The blocks above are only the ones on
+        /// screen, so this cannot be derived from them.
+        pub height: f64,
         /// The selection's two ends, in document order. Presentation state: the core is never
         /// told about it, and it reaches `App` as two carets when something is done to it.
         pub selection: (Caret, Caret),
@@ -189,9 +193,23 @@ mod windows_impl {
         pub caret_on: bool,
         pub status: &'a str,
         pub banner: Option<&'a str>,
-        /// The chrome's font — the status bar's and the notice bar's, not the document's.
+        /// The chrome's two sizes — never the document's. `font_px` is `theme::text::CAPTION`,
+        /// for the status bar and the name overlay's marks; `body_px` is `theme::text::BODY`, for
+        /// the strip's own labels and the notice bar's sentence.
         pub font_px: i32,
+        pub body_px: i32,
         pub face: &'a str,
+        /// Which strip control the pointer is over, if any — the whole of this pane's hover
+        /// feedback, and presentation state like the selection: the core is never told.
+        ///
+        /// A control with no fill of its own is invisible until you point at it, which is what
+        /// lets nine of them sit in a row without the strip looking like a wall of boxes. Without
+        /// this the row is dead under the pointer, which is the single thing that most makes a
+        /// custom-drawn window feel unlike the rest of the system.
+        pub hover: Option<StripHit>,
+        /// Which one is held down, if any — drawn a step quieter than a hover, and the reason
+        /// this strip acts on *release*: a press you can take back has to look pressed first.
+        pub pressed: Option<StripHit>,
         /// Which of the strip's three buttons — Bold, Italic, Underline — apply to the selection,
         /// or to the style the next character typed would carry when there is none. Presentation
         /// state, computed by the caller for the same reason the selection is: the core is never
@@ -228,7 +246,7 @@ mod windows_impl {
             0,
             page.width.round() as i32,
             page.height.round() as i32,
-            theme.background,
+            theme.backdrop,
         );
         // SAFETY: the DC is the caller's and live for this function. Every run is drawn with
         // `ExtTextOutW`, which paints its own ground only when the run asks for a highlight.
@@ -238,6 +256,37 @@ mod windows_impl {
 
         let body = page.body();
         let (column_x, column_w) = page.text_column();
+
+        // **The page** (W10): the document's own surface, standing on the window's backdrop.
+        // Drawn before anything on it and clipped to the body by hand, since GDI's clipping
+        // region is state on the DC and this file sets none — a card whose top is a thousand
+        // pixels above the window is what a document scrolled that far should have, and a
+        // `RoundRect` given those coordinates would put its corner off-screen, which is exactly
+        // right, but its *other* corner has to stay on.
+        {
+            let card = page.page_card(frame.height);
+            let radius = scale(crate::theme::space::RADIUS_SURFACE, page.dpi).round() as i32;
+            let (left, mut top, right, mut bottom) = card.edges();
+            let (body_top, body_bottom) = (body.y.round() as i32, (body.y + body.h).round() as i32);
+            // Overshoot the band by a corner's worth rather than clamping to it: that way an edge
+            // that is really off-screen is drawn off-screen, and only the visible corners round.
+            top = top.max(body_top - radius * 2);
+            bottom = bottom.min(body_bottom + radius * 2);
+            if bottom > top {
+                gdi::round_rect(
+                    dc,
+                    RECT {
+                        left,
+                        top,
+                        right,
+                        bottom,
+                    },
+                    radius,
+                    theme.background,
+                    theme.stroke,
+                );
+            }
+        }
         let (from, to) = frame.selection;
         // The chrome's own font, small and never the document's — used here for the name
         // overlay's marks and again below for the banner and the status bar. One `Font`, so a
@@ -321,6 +370,19 @@ mod windows_impl {
                 }
 
                 for piece in pieces(&painted.view.runs, line.start, line.end) {
+                    // A run the document highlighted but gave no colour to is ODF's *automatic*
+                    // over that highlight, not over the page — the grid's own rule
+                    // (`theme::automatic_ink`), and the case that matters here is a yellow
+                    // highlight in a dark palette, where the theme's near-white ink vanishes.
+                    let ink = match piece
+                        .props
+                        .background
+                        .as_deref()
+                        .and_then(crate::theme::Rgb::parse)
+                    {
+                        Some(ground) => crate::theme::automatic_ink(ground, theme),
+                        None => theme.text,
+                    };
                     // Every segment is placed at the x the **core** measured for its first
                     // character, never at where the last one happened to end — which is what
                     // makes a tab and a line break work: both are measured and neither is drawn.
@@ -331,7 +393,7 @@ mod windows_impl {
                             line_top,
                             segment,
                             piece.props,
-                            theme.text,
+                            ink,
                         );
                     }
                 }
@@ -384,16 +446,37 @@ mod windows_impl {
         // The bands, over the text: a line scrolled under the status bar must not show through
         // it, and drawing them second is cheaper than clipping the loop above. The chrome is set
         // in the shell font at the shell's size — it is the *window* talking, not the document.
-        let _chrome = Selected::font(dc, &chrome);
         if let Some(notice) = frame.banner.filter(|_| page.banner_h > 0.0) {
-            let rect = page.banner();
-            let (left, top, right, bottom) = rect.edges();
-            // The stripe down the leading edge is the grid's own (W9): two panes in one window
-            // that say things in two different-looking bands are two programs in one binary,
-            // which is the thing `Pane` exists not to be.
+            // An inset card with a stripe down its leading edge — the grid's own notice bar, to
+            // the pixel (W9 gave them the stripe, W10 the card): two panes in one window that say
+            // things in two different-looking bands are two programs in one binary, which is the
+            // thing `Pane` exists not to be.
+            let body_font = Font::new(frame.face, frame.body_px, false);
+            let _font = Selected::font(dc, &body_font);
+            let card = crate::sheet::geom::card_in(page.banner(), page.dpi);
+            let (left, top, right, bottom) = card.edges();
             let stripe = scale(3.0, page.dpi).round().max(1.0) as i32;
-            gdi::fill(dc, left, top, right, bottom, theme.banner);
-            gdi::fill(dc, left, top, left + stripe, bottom, theme.banner_edge);
+            let radius = scale(crate::theme::space::RADIUS, page.dpi).round() as i32;
+            gdi::round_rect(
+                dc,
+                RECT {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+                radius,
+                theme.banner,
+                theme.banner_edge.blend(theme.banner, 0.55),
+            );
+            gdi::fill(
+                dc,
+                left + 1,
+                top + radius,
+                left + 1 + stripe,
+                bottom - radius,
+                theme.banner_edge,
+            );
             draw_text(
                 dc,
                 notice,
@@ -403,13 +486,15 @@ mod windows_impl {
                 bottom,
                 Align::Left,
                 theme.banner_text,
-                scale(10.0, page.dpi),
+                scale(crate::theme::space::GROUP, page.dpi),
             );
         }
+        let _chrome = Selected::font(dc, &chrome);
         let rect = page.status();
         let (left, top, right, bottom) = rect.edges();
-        gdi::fill(dc, left, top, right, bottom, theme.status);
-        gdi::fill(dc, left, top, right, top + 1, theme.header_line);
+        // No hairline over it: the page's own surface already ends above, and the change from
+        // one ground to the other is the edge. See `sheet::draw::paint`'s status bar.
+        gdi::fill(dc, left, top, right, bottom, theme.backdrop);
         draw_text(
             dc,
             frame.status,
@@ -418,8 +503,8 @@ mod windows_impl {
             right,
             bottom,
             Align::Left,
-            theme.status_text,
-            scale(10.0, page.dpi),
+            theme.text_secondary,
+            scale(crate::theme::space::GROUP, page.dpi),
         );
 
         draw_strip(dc, page, theme, frame);
@@ -433,106 +518,241 @@ mod windows_impl {
     /// and write; a control only decides whether to wash its own ground or draw a swatch before
     /// drawing the same label every one of its callers agrees on.
     fn draw_strip(dc: HDC, page: &Page, theme: Theme, frame: &Frame) {
+        use crate::theme::{Interaction, control_fill};
+
         const LABELS: [&str; 5] = ["B", "I", "U", "S", "M"];
         let strip = page.strip();
         let (left, top, right, bottom) = strip.edges();
-        gdi::fill(dc, left, top, right, bottom, theme.header);
-        let mut dividers = Vec::new();
-        for (index, button) in page.strip_buttons().iter().enumerate() {
-            let (bl, bt, br, bb) = button.edges();
-            if frame.format[index] {
-                gdi::fill(dc, bl, bt, br, bb, theme.header_active);
+        gdi::fill(dc, left, top, right, bottom, theme.backdrop);
+
+        let radius = scale(crate::theme::space::RADIUS, page.dpi).round() as i32;
+        let state = |hit: StripHit| match (frame.pressed == Some(hit), frame.hover == Some(hit)) {
+            (true, _) => Interaction::Pressed,
+            (false, true) => Interaction::Hover,
+            (false, false) => Interaction::Rest,
+        };
+        // One control, drawn: its ground if it has one in this state, then its label. `filled`
+        // is the difference between a *toggle* — transparent until you point at it, so five in a
+        // row read as one group — and a *picker*, which is a field and looks like one.
+        let button = |rect: Rect, hit: StripHit, checked: bool, filled: bool| {
+            let (l, t, r, b) = rect.edges();
+            if let Some(fill) = control_fill(theme, state(hit), checked, filled) {
+                let border = match checked {
+                    true => theme.accent.blend(fill, 0.55),
+                    false => match filled {
+                        true => theme.stroke,
+                        false => fill,
+                    },
+                };
+                gdi::round_rect(
+                    dc,
+                    RECT {
+                        left: l,
+                        top: t,
+                        right: r,
+                        bottom: b,
+                    },
+                    radius,
+                    fill,
+                    border,
+                );
             }
-            draw_text(
-                dc,
-                LABELS[index],
-                bl,
-                bt,
-                br,
-                bb,
-                Align::Center,
-                theme.header_text,
-                0.0,
+        };
+
+        // The five emphasis toggles. A pressed-in toggle is drawn in the accent's own ink as well
+        // as on its own ground — Fluent's `ToggleButton` does both, and one without the other is
+        // either a button that looks selected and says nothing, or ink with nothing under it.
+        let toggles = page.strip_buttons();
+        for (index, rect) in toggles.iter().enumerate() {
+            let hit = StripHit::Toggle(index);
+            let on = frame.format[index];
+            button(*rect, hit, on, false);
+            let (l, t, r, b) = rect.edges();
+            let ink = match on {
+                true => theme.accent,
+                false => theme.text,
+            };
+            // Bold's own label is bold, Italic's italic, and so on: the control shows what it
+            // does rather than naming it, which is the one place a letter can carry its own icon.
+            let font = Font::styled(
+                frame.face,
+                frame.body_px,
+                index == 0,
+                index == 1,
+                index == 2,
+                index == 3,
             );
-            if index > 0 {
-                dividers.push(bl);
-            }
+            let _font = Selected::font(dc, &font);
+            draw_text(dc, LABELS[index], l, t, r, b, Align::Center, ink, 0.0);
         }
 
-        let family = page.strip_family();
-        let (fl, ft, fr, fb) = family.edges();
-        dividers.push(fl);
-        draw_text(
-            dc,
+        let pad = scale(crate::theme::space::GAP + 2.0, page.dpi);
+        let picker = |rect: Rect, hit: StripHit, label: &str, set: bool| {
+            button(rect, hit, false, true);
+            let (l, t, r, b) = rect.edges();
+            let chevron = scale(14.0, page.dpi).round() as i32;
+            draw_text(
+                dc,
+                label,
+                l,
+                t,
+                r - chevron,
+                b,
+                Align::Left,
+                match set {
+                    true => theme.text,
+                    // Nothing set is a *placeholder*, and Fluent's placeholders are the tertiary
+                    // ink — the difference between "this text is set in Consolas" and "this
+                    // picker sets the family" was invisible before W10, since both were drawn in
+                    // the same grey.
+                    false => theme.text_tertiary,
+                },
+                pad,
+            );
+            // Drawn, not typed: see `gdi::triangle_down`, which is here because a rendered
+            // frame came back with a missing-glyph box where `▾` should have been.
+            gdi::triangle_down(
+                dc,
+                r - chevron / 2,
+                (t + b) / 2 - scale(1.0, page.dpi).round() as i32,
+                scale(7.0, page.dpi).round() as i32,
+                theme.text_tertiary,
+            );
+        };
+        picker(
+            page.strip_family(),
+            StripHit::Family,
             frame.family.unwrap_or("Font"),
-            fl,
-            ft,
-            fr,
-            fb,
-            Align::Center,
-            theme.header_text,
-            0.0,
+            frame.family.is_some(),
         );
-
-        let size = page.strip_size();
-        let (sl, st, sr, sb) = size.edges();
-        dividers.push(sl);
-        draw_text(
-            dc,
+        picker(
+            page.strip_size(),
+            StripHit::Size,
             frame.size.unwrap_or("Size"),
-            sl,
-            st,
-            sr,
-            sb,
-            Align::Center,
-            theme.header_text,
-            0.0,
+            frame.size.is_some(),
         );
 
         let color = page.strip_color();
-        dividers.push(color.edges().0);
-        draw_swatch(dc, color, theme, frame.color);
-        let highlight = page.strip_highlight();
-        dividers.push(highlight.edges().0);
-        draw_swatch(dc, highlight, theme, frame.highlight);
-
-        let clear = page.strip_clear();
-        let (cl, ct, cr, cb) = clear.edges();
-        dividers.push(cl);
-        draw_text(
+        button(color, StripHit::Color, false, false);
+        draw_swatch(
             dc,
-            "Clear",
-            cl,
-            ct,
-            cr,
-            cb,
-            Align::Center,
-            theme.header_text,
-            0.0,
+            color,
+            theme,
+            frame.color,
+            false,
+            frame.body_px,
+            frame.face,
+        );
+        let highlight = page.strip_highlight();
+        button(highlight, StripHit::Highlight, false, false);
+        draw_swatch(
+            dc,
+            highlight,
+            theme,
+            frame.highlight,
+            true,
+            frame.body_px,
+            frame.face,
         );
 
-        for x in dividers {
-            gdi::fill(dc, x, top, x + 1, bottom, theme.header_line);
+        let clear = page.strip_clear();
+        button(clear, StripHit::Clear, false, true);
+        let (cl, ct, cr, cb) = clear.edges();
+        draw_text(dc, "Clear", cl, ct, cr, cb, Align::Center, theme.text, 0.0);
+
+        // The separators between the three groups. Fluent's `AppBarSeparator`: half a control
+        // tall, one pixel wide, in the middle of the gap — which says "a different kind of thing
+        // follows" without putting a border round anything.
+        for next in [page.strip_family(), color, clear] {
+            let rule = page.strip_separator(next);
+            let (l, t, r, b) = rule.edges();
+            gdi::fill(dc, l, t, r.max(l + 1), b, theme.divider);
         }
-        gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
     }
 
-    /// One colour swatch: the colour it carries filled in, or hollow — a border and the strip's
-    /// own ground, over `gdi::round_rect` with no radius — for *Automatic*, so a swatch with
-    /// nothing set does not lie about having a colour.
-    fn draw_swatch(dc: HDC, rect: Rect, theme: Theme, hex: Option<&str>) {
+    /// One colour swatch: an **A** with the colour it carries shown the way that colour is used —
+    /// as a bar under the letter for the text colour, and as the ground behind it for the
+    /// highlight. So the two swatches are told apart by what they *do* rather than by a label,
+    /// and neither needs a glyph beyond the one letter.
+    ///
+    /// Every ornament here is drawn or is an ASCII letter, which is the rule the chevron above
+    /// arrived at the hard way: a `▓` for the highlight came back from a rendered frame as a
+    /// missing-glyph box under the face Wine substitutes.
+    ///
+    /// *Automatic* — no colour set — draws the bar in the theme's own ink, since that is what
+    /// automatic resolves to, with a hairline round it so an empty swatch is still a swatch; a
+    /// highlight with nothing set draws no ground at all, which is what no highlight looks like.
+    fn draw_swatch(
+        dc: HDC,
+        rect: Rect,
+        theme: Theme,
+        hex: Option<&str>,
+        ground: bool,
+        font_px: i32,
+        face: &str,
+    ) {
         let (left, top, right, bottom) = rect.edges();
-        let margin = ((rect.h.min(rect.w) as i32) / 4).max(2);
-        let win_rect = RECT {
-            left: left + margin,
-            top: top + margin,
-            right: right - margin,
-            bottom: bottom - margin,
-        };
-        let fill = hex
-            .and_then(crate::theme::Rgb::parse)
-            .unwrap_or(theme.header);
-        gdi::round_rect(dc, win_rect, 0, fill, theme.header_line);
+        let inset = ((right - left) / 5).max(2);
+        let bar = (rect.h / 6.0).round().max(3.0) as i32;
+        let fill = hex.and_then(crate::theme::Rgb::parse);
+        if ground {
+            // Hollow when nothing is set, which is what no highlight looks like — and still a
+            // control rather than a bare letter floating on the strip.
+            gdi::round_rect(
+                dc,
+                RECT {
+                    left: left + inset,
+                    top: top + inset,
+                    right: right - inset,
+                    bottom: bottom - bar - inset / 2,
+                },
+                2,
+                fill.unwrap_or(theme.backdrop),
+                fill.unwrap_or(theme.stroke),
+            );
+        }
+        {
+            let font = Font::new(face, font_px, false);
+            let _font = Selected::font(dc, &font);
+            // On a highlight the letter has to read against the *document's* colour, which can be
+            // any of `PALETTE`'s — so it is chosen for contrast rather than fixed, the same
+            // question `Theme::on_accent` answers for the accent.
+            let ink = match (ground, fill) {
+                (true, Some(colour)) => match colour.contrast(theme.text) > 3.0 {
+                    true => theme.text,
+                    false => Rgb(0, 0, 0),
+                },
+                _ => theme.text,
+            };
+            draw_text(
+                dc,
+                "A",
+                left,
+                top,
+                right,
+                bottom - bar,
+                Align::Center,
+                ink,
+                0.0,
+            );
+        }
+        if !ground {
+            gdi::round_rect(
+                dc,
+                RECT {
+                    left: left + inset,
+                    top: bottom - bar - inset,
+                    right: right - inset,
+                    bottom: bottom - inset,
+                },
+                1,
+                fill.unwrap_or(theme.text),
+                match fill {
+                    Some(colour) => colour,
+                    None => theme.stroke,
+                },
+            );
+        }
     }
 
     /// The part of `block` a selection from `from` to `to` covers, as two offsets into that block.

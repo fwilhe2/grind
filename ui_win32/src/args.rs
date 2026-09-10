@@ -29,6 +29,15 @@ pub enum Command {
         /// `--render-to <file>`: draw one frame, write it, exit. Not a user feature — it is how
         /// custom drawing gets an assertable output (`doc/windows-shell.md`, decision 5).
         render_to: Option<PathBuf>,
+        /// `--dark`: which palette that frame is drawn in.
+        ///
+        /// **Only meaningful with `--render-to`**, and it is there because until W10 the dark
+        /// palette could not be looked at without a Windows machine set to dark — the window
+        /// reads the registry and the render path hardcoded light, so half of every colour
+        /// decision in `theme.rs` was shipped unseen. A flag rather than a registry read keeps
+        /// the render deterministic, which is the whole point of that path: the same command
+        /// produces the same bytes on any machine, in whichever palette it names.
+        dark: bool,
     },
     Help,
     Version,
@@ -37,7 +46,7 @@ pub enum Command {
 }
 
 /// What `--help` prints, and what the message box shows when there is no console.
-pub const USAGE: &str = "usage: grind-win32 [--sheet|--text] [file] [--render-to <bmp>]
+pub const USAGE: &str = "usage: grind-win32 [--sheet|--text] [file] [--render-to <bmp> [--dark]]
 
 One window, both document types. Which one opens is read out of the file, not guessed
 from its name; with no file, --sheet (the default) or --text says which to start empty.
@@ -45,6 +54,7 @@ from its name; with no file, --sheet (the default) or --text says which to start
   --sheet          start an empty spreadsheet
   --text           start an empty text document
   --render-to <f>  draw one frame to a BMP and exit
+  --dark           draw that frame in the dark palette
   -h, --help       this text
   -V, --version    version and build stamp
 ";
@@ -54,6 +64,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let mut kind: Option<DocumentKind> = None;
     let mut path: Option<PathBuf> = None;
     let mut render_to: Option<PathBuf> = None;
+    let mut dark = false;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
@@ -66,6 +77,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
                 Some(target) => render_to = Some(PathBuf::from(target)),
                 None => return Command::Error("--render-to needs a file to write".into()),
             },
+            "--dark" => dark = true,
             other if other.starts_with("--") => {
                 return Command::Error(format!("unknown option {other}"));
             }
@@ -81,10 +93,16 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         }
     }
 
+    if dark && render_to.is_none() {
+        // Refused rather than ignored: a window follows the user's own theme, and a flag that
+        // silently did nothing there would read as this shell failing to honour it.
+        return Command::Error("--dark only means something with --render-to".into());
+    }
     Command::Open {
         kind,
         path,
         render_to,
+        dark,
     }
 }
 
@@ -130,9 +148,32 @@ mod tests {
                 kind,
                 path,
                 render_to,
+                ..
             } => (kind, path, render_to),
             other => panic!("expected an open, got {other:?}"),
         }
+    }
+
+    /// Which palette a render was asked for.
+    fn dark(args: &[&str]) -> bool {
+        match parse_str(args) {
+            Command::Open { dark, .. } => dark,
+            other => panic!("expected an open, got {other:?}"),
+        }
+    }
+
+    /// `--dark` is a property of a *render*, and on a window it is refused rather than ignored —
+    /// a window follows the user's own theme, and a flag that silently did nothing there would
+    /// read as this shell failing to honour it.
+    #[test]
+    fn dark_belongs_to_a_render_and_nowhere_else() {
+        assert!(!dark(&["book.fods", "--render-to", "shot.bmp"]));
+        assert!(dark(&["book.fods", "--render-to", "shot.bmp", "--dark"]));
+        assert!(dark(&["--dark", "--render-to", "shot.bmp"]), "either order");
+        assert!(matches!(
+            parse_str(&["book.fods", "--dark"]),
+            Command::Error(message) if message.contains("--render-to")
+        ));
     }
 
     #[test]

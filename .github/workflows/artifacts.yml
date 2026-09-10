@@ -489,6 +489,30 @@ jobs:
           }
           Write-Host "OK - the text pane is reproducible too."
 
+      # **The dark palette is drawn at all** (W10).
+      #
+      # Until `--dark` existed, half of `theme.rs` could only be seen on a Windows machine set to
+      # dark: the window reads the registry and this path forced light, so the dark table was
+      # shipped unlooked-at and a colour that had collapsed into its own ground would have been
+      # found by a user. Two assertions, and the second is the one with teeth — the dark frame
+      # has to *differ* from the light one, which fails if the flag stops reaching the painter or
+      # if the two palettes ever converge.
+      - name: Draw the same document dark, and prove it is a different frame
+        shell: pwsh
+        run: |
+          . .github/scripts/win32-render.ps1
+          $doc = "sheet/tests/data/samples/Sales Dashboard.fods"
+          Invoke-Render $doc "dark.bmp" -Dark
+          $a = [IO.File]::ReadAllBytes("one.bmp")
+          $b = [IO.File]::ReadAllBytes("dark.bmp")
+          if ($b.Length -ne (54 + 1280 * 3 * 800)) {
+            Write-Error "unexpected size $($b.Length)"; exit 1
+          }
+          if (@(Compare-Object $a $b -SyncWindow 0).Count -eq 0) {
+            Write-Error "the dark frame is the light one - --dark reached nothing"; exit 1
+          }
+          Write-Host "OK - the dark palette draws, and is its own frame."
+
       # The executable is measured as it comes off the linker: statically linked CRT, embedded
       # icon and version resource, no strip (a PE keeps its symbols in a separate `.pdb`, so
       # there is no stripped column to fill). Before `cargo bloat`, as everywhere here.

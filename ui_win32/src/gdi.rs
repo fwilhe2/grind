@@ -342,6 +342,31 @@ pub fn round_rect(dc: HDC, rect: RECT, radius: i32, fill: Rgb, border: Rgb) {
     }
 }
 
+/// A small filled triangle pointing down, centred on `(x, y)` and `size` pixels across.
+///
+/// The chevron on a picker, and it is **drawn rather than typed** for a reason a rendered frame
+/// gave: `▾` (U+25BE) is not in every font GDI might substitute, and a picker whose chevron is a
+/// missing-glyph box says less than one with no chevron at all. The same is true of every other
+/// ornament character a shell is tempted to reach for — this file already draws the grid's corner
+/// triangle the same way and for the same reason.
+///
+/// Rows of one-pixel fills rather than `Polygon`, which needs a pen and a brush and would be
+/// aliased anyway; at the six-to-nine pixels used here the staircase is the shape.
+pub fn triangle_down(dc: HDC, x: i32, y: i32, size: i32, colour: Rgb) {
+    let half = (size / 2).max(1);
+    let height = half; // a right-angled pair of slopes: as tall as it is half-wide
+    for step in 0..height {
+        fill(
+            dc,
+            x - half + step,
+            y + step,
+            x + half - step,
+            y + step + 1,
+            colour,
+        );
+    }
+}
+
 /// How wide a string is in the DC's current font, in pixels.
 ///
 /// What the drawing code needs to place one run of text after another — the assist band's
@@ -374,6 +399,75 @@ pub fn client_rect(hwnd: HWND) -> RECT {
 /// A Rust string as the NUL-terminated UTF-16 every `…W` entry point wants.
 pub fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// The shell font this machine actually has, asked once and remembered.
+///
+/// Windows 11's UI face is *Segoe UI Variable*, whose three optical sizes GDI sees as three
+/// families; `Text` is the one drawn between 12 and 24 pixels, which is every size in this
+/// shell's ramp. Windows 10 has none of them.
+///
+/// The reason this is a **probe** rather than a constant is that GDI does not fail when asked for
+/// a face it has not got — `CreateFontIndirectW` substitutes, silently, by a matching algorithm
+/// that has no reason to land on Segoe UI. `GetTextFaceW` cannot tell you either: it answers with
+/// the *logical* font's name, which is the one that was asked for. `EnumFontFamiliesExW` is the
+/// call that actually knows, because its callback runs once per installed face and not at all for
+/// one that is absent.
+pub fn ui_face() -> &'static str {
+    static FACE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    FACE.get_or_init(|| {
+        ["Segoe UI Variable Text", "Segoe UI"]
+            .into_iter()
+            .find(|face| has_face(face))
+            .unwrap_or("Segoe UI")
+    })
+}
+
+/// Whether GDI has a font family by this name.
+fn has_face(name: &str) -> bool {
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::Graphics::Gdi::{DEFAULT_CHARSET, EnumFontFamiliesExW, TEXTMETRICW};
+
+    unsafe extern "system" fn found(
+        _: *const windows::Win32::Graphics::Gdi::LOGFONTW,
+        _: *const TEXTMETRICW,
+        _: u32,
+        found: LPARAM,
+    ) -> i32 {
+        // SAFETY: `found` is the `&mut bool` the caller below passed, alive for the whole
+        // enumeration — the callback cannot outlive `EnumFontFamiliesExW`.
+        unsafe {
+            *(found.0 as *mut bool) = true;
+        }
+        0 // stop at the first match: the question is whether there is one, not how many
+    }
+
+    let mut log = LOGFONTW {
+        lfCharSet: DEFAULT_CHARSET,
+        ..Default::default()
+    };
+    for (slot, unit) in log.lfFaceName.iter_mut().zip(name.encode_utf16()) {
+        *slot = unit;
+    }
+    log.lfFaceName[31] = 0;
+    let mut answer = false;
+    // SAFETY: the memory DC is created and deleted here, `log` and `answer` are live locals that
+    // outlive the enumeration, and the callback writes only through the pointer it is handed.
+    unsafe {
+        let dc = CreateCompatibleDC(None);
+        if dc.is_invalid() {
+            return false;
+        }
+        EnumFontFamiliesExW(
+            dc,
+            &log,
+            Some(found),
+            LPARAM(std::ptr::from_mut(&mut answer) as isize),
+            0,
+        );
+        let _ = DeleteDC(dc);
+    }
+    answer
 }
 
 /// A drawing surface with **no window, no compositor and no display** — the whole of

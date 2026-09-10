@@ -15,6 +15,10 @@ function Invoke-Render {
     param(
         [Parameter(Mandatory = $true)][string] $Document,
         [Parameter(Mandatory = $true)][string] $Output,
+        # W10's `--dark`: which palette the frame is drawn in. A flag rather than a registry
+        # read, so that the output stays a function of the command line alone — the whole point
+        # of this path is that two runs produce the same bytes.
+        [switch] $Dark,
         [int] $TimeoutSeconds = 120
     )
 
@@ -27,6 +31,7 @@ function Invoke-Render {
     $info.ArgumentList.Add($Document)
     $info.ArgumentList.Add("--render-to")
     $info.ArgumentList.Add($Output)
+    if ($Dark) { $info.ArgumentList.Add("--dark") }
     # Not inherited: .NET resolves a relative path against its own idea of the current
     # directory, which is not pwsh's.
     $info.WorkingDirectory = (Get-Location).Path

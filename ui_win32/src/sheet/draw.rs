@@ -172,13 +172,14 @@ mod windows_impl {
 
     /// The padding between a band's edge and the sentence in it — the notice bar, the assist
     /// band and the status bar, all of which are text on a ground rather than text in a box.
-    const BAND_PAD: f64 = 10.0;
+    /// Fluent's group spacing, so a band's text lines up with the strip's fields above it.
+    const BAND_PAD: f64 = crate::theme::space::GROUP;
 
     /// How far the corners of the strip's two fields are cut, in pixels at 100%.
-    const FIELD_RADIUS: f64 = 4.0;
+    const FIELD_RADIUS: f64 = crate::theme::space::RADIUS;
 
     /// The width of the `fx` badge at the head of the formula bar, in pixels at 100%.
-    const BADGE_W: f64 = 26.0;
+    const BADGE_W: f64 = 30.0;
 
     /// The accent bar marking a header button whose track is selected, in pixels at 100%. Drawn
     /// on the band's *inner* edge — under a column's letter, beside a row's number — so the two
@@ -235,8 +236,15 @@ mod windows_impl {
         /// How far the document's own content reaches — `App::used_extent`, the same answer the
         /// status bar reports. Past it the hairlines are drawn quieter (`Theme::grid_line_soft`).
         pub used: (u32, u32),
-        /// The point size the shell font is drawn at, already scaled for this monitor's DPI.
+        /// The size a **cell's** text is drawn at, already scaled for this monitor's DPI.
         pub font_px: i32,
+        /// The two chrome sizes, scaled the same way — `theme::text::CAPTION` for the header
+        /// bands and the status bar, `theme::text::BODY` for the strip and the two message bands.
+        ///
+        /// A ramp rather than one number (W10): a status bar and a formula bar are not the same
+        /// kind of text, and a window that sets them identically reads as undesigned.
+        pub caption_px: i32,
+        pub body_px: i32,
         pub face: &'a str,
     }
 
@@ -249,20 +257,34 @@ mod windows_impl {
         let theme = frame.theme;
         let body = g.body();
 
-        // The ground. The header bands and the status bar are painted *after* the cells rather
-        // than before, so that a cell scrolled under a header cannot show through it — which is
-        // cheaper than clipping the cell loop and is why they are not painted here as well.
+        // The two grounds (W10). The window is the *backdrop* and the grid is a **layer on it**:
+        // the paper the document is written on is a different surface from the chrome round it,
+        // which is Fluent's layering and the single change that most stops this window reading as
+        // a toolbar stack with a grid underneath.
+        //
+        // The header bands and the status bar are painted *after* the cells rather than before,
+        // so that a cell scrolled under a header cannot show through it — which is cheaper than
+        // clipping the cell loop and is why they are not painted here as well.
         gdi::fill(
             dc,
             0,
             0,
             g.width.round() as i32,
             g.height.round() as i32,
-            theme.background,
+            theme.backdrop,
         );
+        {
+            let (left, top, right, bottom) = body.edges();
+            gdi::fill(dc, left, top, right, bottom, theme.background);
+        }
 
         let regular = Font::new(frame.face, frame.font_px, false);
         let bold = Font::new(frame.face, frame.font_px, true);
+        // The chrome's own two sizes — see `Frame::caption_px`. Built once per frame, like every
+        // other font here, because creating one per label would be visible on every keystroke.
+        let caption = Font::new(frame.face, frame.caption_px, false);
+        let caption_bold = Font::new(frame.face, frame.caption_px, true);
+        let body_font = Font::new(frame.face, frame.body_px, false);
         // `doc/view-modes.md`'s role overlay, smaller than the cell's own text so the marker
         // reads as a margin note rather than a second value — `ui_sheet_gtk`'s own glyph is
         // drawn at 0.7 of the cell's face for the same reason.
@@ -348,6 +370,18 @@ mod windows_impl {
                         continue;
                     }
                     let _bold = look.bold.then(|| Selected::font(dc, &bold));
+                    // A cell with no colour of its own gets ODF's *automatic* — the theme's ink
+                    // where that reads on whatever ground this cell ended up with, and black or
+                    // white where it does not. See `theme::automatic_ink`: a document that fills
+                    // its heading row and leaves the text alone is the ordinary case, and in a
+                    // dark palette the theme's near-white on that fill is unreadable.
+                    let ink = look.text.unwrap_or_else(|| {
+                        crate::theme::automatic_ink(
+                            super::ground(look.background, theme, selected, active)
+                                .unwrap_or(theme.background),
+                            theme,
+                        )
+                    });
                     draw_text(
                         dc,
                         text,
@@ -356,7 +390,7 @@ mod windows_impl {
                         right,
                         bottom,
                         look.align,
-                        look.text.unwrap_or(theme.text),
+                        ink,
                         crate::sheet::geom::scale(PAD, g.dpi),
                     );
                 }
@@ -376,14 +410,14 @@ mod windows_impl {
         // The headers, over the cells — a cell scrolled under the header band must not show
         // through it, and drawing them second is cheaper than clipping the loop above.
         {
-            let _font = Selected::font(dc, &regular);
+            let _font = Selected::font(dc, &caption);
             gdi::fill(
                 dc,
                 0,
                 g.header_top().round() as i32,
                 g.width.round() as i32,
                 (g.header_top() + g.header_h).round() as i32,
-                theme.header,
+                theme.backdrop,
             );
             gdi::fill(
                 dc,
@@ -391,7 +425,7 @@ mod windows_impl {
                 g.header_top().round() as i32,
                 g.header_w.round() as i32,
                 (body.y + body.h).round() as i32,
-                theme.header,
+                theme.backdrop,
             );
             let (start, end) = frame.selection.rect();
             // A selected track's own button is marked twice: a tinted ground, and a bar of the
@@ -409,11 +443,11 @@ mod windows_impl {
                 let (left, top, right, bottom) = rect.edges();
                 let active = (start.col..=end.col).contains(&col);
                 if active {
-                    gdi::fill(dc, left, top, right, bottom, theme.header_active);
-                    gdi::fill(dc, left, bottom - bar, right, bottom, theme.selection_edge);
+                    gdi::fill(dc, left, top, right, bottom, theme.accent_soft);
+                    gdi::fill(dc, left, bottom - bar, right, bottom, theme.accent);
                 }
-                gdi::fill(dc, right - 1, top, right, bottom, theme.header_line);
-                let _weight = active.then(|| Selected::font(dc, &bold));
+                gdi::fill(dc, right - 1, top, right, bottom, theme.divider);
+                let _weight = active.then(|| Selected::font(dc, &caption_bold));
                 draw_text(
                     dc,
                     &grind_sheet::formula::lex::column_name(col),
@@ -434,11 +468,11 @@ mod windows_impl {
                 let (left, top, right, bottom) = rect.edges();
                 let active = (start.row..=end.row).contains(&row);
                 if active {
-                    gdi::fill(dc, left, top, right, bottom, theme.header_active);
-                    gdi::fill(dc, right - bar, top, right, bottom, theme.selection_edge);
+                    gdi::fill(dc, left, top, right, bottom, theme.accent_soft);
+                    gdi::fill(dc, right - bar, top, right, bottom, theme.accent);
                 }
-                gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
-                let _weight = active.then(|| Selected::font(dc, &bold));
+                gdi::fill(dc, left, bottom - 1, right, bottom, theme.divider);
+                let _weight = active.then(|| Selected::font(dc, &caption_bold));
                 draw_text(
                     dc,
                     // The only `+ 1` in this shell, and it is a label rather than arithmetic —
@@ -460,7 +494,7 @@ mod windows_impl {
                 (g.header_top() + g.header_h - 1.0).round() as i32,
                 g.width.round() as i32,
                 (g.header_top() + g.header_h).round() as i32,
-                theme.header_line,
+                theme.divider,
             );
             gdi::fill(
                 dc,
@@ -468,19 +502,23 @@ mod windows_impl {
                 g.header_top().round() as i32,
                 g.header_w.round() as i32,
                 (body.y + body.h).round() as i32,
-                theme.header_line,
+                theme.divider,
             );
             corner(dc, frame);
         }
 
         // The strip along the top, with the two read-outs in it: where the selection is, and
         // what is in the cell.
+        //
+        // No line under it, and that is W10 rather than an omission: the strip, the header band
+        // and the status bar are all one surface now — the *backdrop* — and the only boundary
+        // worth drawing is the one where the document's own paper starts, which the header band
+        // closes above. A hairline between two bands of the same colour is a seam, not an edge.
         {
-            let _font = Selected::font(dc, &regular);
+            let _font = Selected::font(dc, &body_font);
             let strip = g.strip_rect();
             let (left, top, right, bottom) = strip.edges();
-            gdi::fill(dc, left, top, right, bottom, theme.header);
-            gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
+            gdi::fill(dc, left, top, right, bottom, theme.backdrop);
 
             let pad = crate::sheet::geom::scale(PAD, g.dpi);
             let radius = crate::sheet::geom::scale(FIELD_RADIUS, g.dpi).round() as i32;
@@ -496,8 +534,8 @@ mod windows_impl {
                         bottom,
                     },
                     radius,
-                    theme.field,
-                    theme.field_line,
+                    theme.card,
+                    theme.stroke,
                 );
                 draw_text(
                     dc,
@@ -524,8 +562,8 @@ mod windows_impl {
                         bottom,
                     },
                     radius,
-                    theme.field,
-                    theme.field_line,
+                    theme.card,
+                    theme.stroke,
                 );
                 // The `fx` badge, which is the one piece of ornament on this strip and earns it
                 // twice: it says which of the two fields is the formula bar, and — drawn in the
@@ -533,11 +571,11 @@ mod windows_impl {
                 // the text that would be typed back in.
                 let badge = crate::sheet::geom::scale(BADGE_W, g.dpi).round() as i32;
                 let ink = match frame.friendly {
-                    true => theme.selection_edge,
-                    false => theme.text.blend(theme.field, 0.45),
+                    true => theme.accent,
+                    false => theme.text_tertiary,
                 };
                 {
-                    let italic = Font::styled(frame.face, frame.font_px, false, true, false, false);
+                    let italic = Font::styled(frame.face, frame.body_px, false, true, false, false);
                     let _badge_font = Selected::font(dc, &italic);
                     draw_text(
                         dc,
@@ -557,7 +595,7 @@ mod windows_impl {
                     top + 1 + radius / 2,
                     left + badge + 1,
                     bottom - 1 - radius / 2,
-                    theme.field_line,
+                    theme.stroke,
                 );
                 draw_text(
                     dc,
@@ -575,13 +613,39 @@ mod windows_impl {
 
         // The notice bar, if there is one. Under the strip and over the grid, which is where
         // the eye goes next after the thing that caused it.
+        //
+        // **An inset card since W10, not a stripe across the window** — Fluent's `InfoBar` is a
+        // rounded rectangle with a margin round it, and the difference is most of why the band
+        // used to read as one more toolbar. The stripe down its leading edge survives the change
+        // and is what the two panes still have in common.
         if let Some(notice) = frame.banner.filter(|_| g.banner_h > 0.0) {
-            let _font = Selected::font(dc, &regular);
-            let (left, top, right, bottom) = g.banner_rect().edges();
+            let _font = Selected::font(dc, &body_font);
+            let card = g.card_in(g.banner_rect());
+            let (left, top, right, bottom) = card.edges();
             let stripe = crate::sheet::geom::scale(STRIPE_W, g.dpi).round().max(1.0) as i32;
-            gdi::fill(dc, left, top, right, bottom, theme.banner);
-            gdi::fill(dc, left, top, left + stripe, bottom, theme.banner_edge);
-            gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
+            let radius = crate::sheet::geom::scale(FIELD_RADIUS, g.dpi).round() as i32;
+            gdi::round_rect(
+                dc,
+                RECT {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+                radius,
+                theme.banner,
+                theme.banner_edge.blend(theme.banner, 0.55),
+            );
+            // Inside the rounded corner rather than on it: a bar drawn at the card's own edge
+            // would be cut by the corner and leave two nicks.
+            gdi::fill(
+                dc,
+                left + 1,
+                top + radius,
+                left + 1 + stripe,
+                bottom - radius,
+                theme.banner_edge,
+            );
             draw_text(
                 dc,
                 notice,
@@ -597,12 +661,25 @@ mod windows_impl {
 
         // The assist band, if a formula is being typed. Under the notice bar rather than
         // instead of it: a formula that would not parse leaves a notice up *while the edit is
-        // still open*, which is exactly when a signature hint is worth most.
+        // still open*, which is exactly when a signature hint is worth most. An inset card too,
+        // and a quieter one — help while typing is not a state the document is in.
         if g.hint_h > 0.0 && !frame.hint.is_empty() {
-            let (left, top, right, bottom) = g.hint_rect().edges();
-            gdi::fill(dc, left, top, right, bottom, theme.hint);
-            gdi::fill(dc, left, bottom - 1, right, bottom, theme.header_line);
-            runs(dc, frame, left, top, right, bottom, &regular, &bold);
+            let card = g.card_in(g.hint_rect());
+            let (left, top, right, bottom) = card.edges();
+            let radius = crate::sheet::geom::scale(FIELD_RADIUS, g.dpi).round() as i32;
+            gdi::round_rect(
+                dc,
+                RECT {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+                radius,
+                theme.hint,
+                theme.accent.blend(theme.hint, 0.78),
+            );
+            runs(dc, frame, left, top, right, bottom, &body_font, &bold);
         }
 
         // The status bar: which sheet on the left, where the selection is and what it adds up to
@@ -610,12 +687,13 @@ mod windows_impl {
         // the document does and the right half on every keystroke — and an eye that knows which
         // side a number is on does not have to read the whole bar to find it.
         {
-            let _font = Selected::font(dc, &regular);
+            let _font = Selected::font(dc, &caption);
             let rect = g.status_rect();
             let (left, top, right, bottom) = rect.edges();
             let pad = crate::sheet::geom::scale(BAND_PAD, g.dpi);
-            gdi::fill(dc, left, top, right, bottom, theme.status);
-            gdi::fill(dc, left, top, right, top + 1, theme.header_line);
+            // No hairline over it, for the same reason the strip has none under it: the grid's
+            // paper stops exactly here and the change of surface *is* the edge.
+            gdi::fill(dc, left, top, right, bottom, theme.backdrop);
             // The right half is measured and placed first, and the left half is given what is
             // left over — so the two can never overlap, and it is the *sheet's name* that is
             // elided on a narrow window rather than the arithmetic.
@@ -636,7 +714,7 @@ mod windows_impl {
                 right,
                 bottom,
                 Align::Right,
-                theme.status_text,
+                theme.text_secondary,
                 pad,
             );
             draw_text(
@@ -647,7 +725,7 @@ mod windows_impl {
                 split,
                 bottom,
                 Align::Left,
-                theme.status_text.blend(theme.status, 0.15),
+                theme.text_tertiary,
                 pad,
             );
         }
@@ -656,8 +734,8 @@ mod windows_impl {
     /// A header button's lettering: the theme's own, or the accent when its track is selected.
     fn header_ink(theme: Theme, active: bool) -> Rgb {
         match active {
-            true => theme.selection_edge,
-            false => theme.header_text,
+            true => theme.accent,
+            false => theme.text_secondary,
         }
     }
 
@@ -673,7 +751,7 @@ mod windows_impl {
         let inset = crate::sheet::geom::scale(4.0, g.dpi).round().max(1.0) as i32;
         let right = g.header_w.round() as i32 - inset;
         let bottom = (g.header_top() + g.header_h).round() as i32 - inset;
-        let ink = frame.theme.header_text.blend(frame.theme.header, 0.35);
+        let ink = frame.theme.text_tertiary;
         // Widest at the bottom, so the right angle is the corner it sits in and the hypotenuse
         // faces the grid. Drawn the other way up first, which looked like a mistake because it
         // was one.
@@ -716,7 +794,7 @@ mod windows_impl {
             let colour = match ink {
                 Ink::Plain => theme.hint_text,
                 Ink::Muted => theme.hint_text.blend(theme.hint, 0.45),
-                Ink::Strong => theme.selection_edge,
+                Ink::Strong => theme.accent,
             };
             let _font = Selected::font(
                 dc,
@@ -771,7 +849,7 @@ mod windows_impl {
             return;
         }
         let weight = crate::sheet::geom::scale(2.0, g.dpi).round().max(1.0) as i32;
-        let edge = frame.theme.selection_edge;
+        let edge = frame.theme.accent;
         // A bar is drawn only if the edge it marks is really where the body stops, so a
         // selection running off the bottom of the window has no bottom bar.
         if first.x >= body.x {
@@ -889,22 +967,25 @@ mod windows_impl {
 /// The header band at 100%, in pixels — a design measurement, scaled for the monitor by
 /// `geom::scale` at the one place the geometry is built.
 ///
-/// Every band here grew by two to four pixels in W9, and it is the cheapest of that milestone's
-/// changes: the chrome was drawn at the smallest size its text fits in, which is a different
-/// thing from the size it reads at. Nothing else had to move, because every rectangle in
-/// `geom.rs` is expressed in these.
-pub const HEADER_H: f64 = 24.0;
+/// Every band here grew by two to four pixels in W9 and again in W10, and the reason is the same
+/// both times: the chrome was drawn at the smallest size its text fits in, which is a different
+/// thing from the size it reads at. W10's numbers are Fluent's own — a 32-pixel control with a
+/// 6-pixel surround is a 44-pixel strip — rather than a judgement about how it looks. Nothing
+/// else had to move, because every rectangle in `geom.rs` is expressed in these.
+pub const HEADER_H: f64 = 26.0;
 pub const HEADER_W: f64 = 48.0;
 /// The status bar's height at 100%.
-pub const STATUS_H: f64 = 26.0;
-/// The strip along the top that holds the name box and the formula bar.
-pub const STRIP_H: f64 = 32.0;
+pub const STATUS_H: f64 = 28.0;
+/// The strip along the top that holds the name box and the formula bar: one Fluent control
+/// (`theme::space::CONTROL_H`) with a `GAP`-and-a-half either side of it.
+pub const STRIP_H: f64 = 44.0;
 /// The notice bar's height at 100%, when there is a notice. One line of the shell font with
-/// room to breathe — a banner that needs two lines is a banner saying too much.
-pub const BANNER_H: f64 = 26.0;
+/// room to breathe — a banner that needs two lines is a banner saying too much — plus the margin
+/// that makes it an inset card rather than a stripe across the window.
+pub const BANNER_H: f64 = 36.0;
 /// The assist band's height at 100%, when a formula is being typed. One line, like the notice
-/// bar, and for the same reason.
-pub const HINT_H: f64 = 26.0;
+/// bar, and for the same reason; a shade shorter, because a hint is quieter than a state.
+pub const HINT_H: f64 = 34.0;
 /// The default track sizes at 100%, for the columns and rows a document does not size.
 pub const COL_W: f64 = 80.0;
 pub const ROW_H: f64 = 20.0;

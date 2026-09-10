@@ -18,6 +18,20 @@ records: what is written down about the geometry, the theme, the double buffer, 
 **decision 5's windowless render target**, **decision 4's menu bar**, **decision 7's modals** and
 **decision 6's `CF_UNICODETEXT`** has been run.
 
+**W10 is the Fluent pass, and it is the first milestone here that changed no capability at
+all.** Everything this window could do before it, it does after; what changed is what it looks
+like, and the argument is decision 10. The short form: the W9 chrome was drawn at the smallest
+size its text fits in, on one ground, in one size of type, and that is what a Win32 window has
+looked like since 1995 — not because GDI cannot do better but because nobody had written down
+what better would be. So `theme.rs` is now **Fluent 2's own tokens**, composited to opaque values
+because `FillRect` has no alpha; there are **three grounds** where there was one (the window, the
+document, a control); the type is a **ramp** with Windows 11's 14-pixel body at the middle of it
+rather than one size for everything; every measurement is on Fluent's four-pixel grid with its
+32-pixel control height; the notice bar and the assist band are **inset cards** rather than
+stripes across the window; the text pane's document stands on a **page**; the format strip is a
+row of real buttons that **respond to the pointer**; and the accent is **the user's own**, which
+reverses decision 9 and is the one thing here that is a decision rather than a measurement.
+
 **W5a is the text pane, and it settles decision 3** — the one genuinely open question this
 document had. `metrics.rs` is GDI on both halves, as the table below chose: `GetTextExtentExPointW`
 to measure and `ExtTextOutW` with the advances that same call produced to draw. The pane reads,
@@ -290,8 +304,18 @@ Not a user feature, same as the other two shells.
 `CreateDIBSection`, and `win::render` is a second *caller* of `draw_frame` rather than a second
 drawing path — the same `opened()` state, the same `paint`, no `HWND` anywhere. Two things are
 pinned rather than read, because the output's only purpose is to be compared with another one:
-the frame is 1280×800 at 96 dpi, and **the theme is forced to light**, so a screenshot does not
-depend on what the machine running it has under `Themes\Personalize`.
+the frame is 1280×800 at 96 dpi, and **the palette comes from the command line rather than from
+the machine**, so a screenshot does not depend on what the machine running it has under
+`Themes\Personalize`.
+
+**W10 made that second pin a choice rather than a constant**, and had to. It was `Mode::Light`,
+full stop, which kept the output reproducible and had the side effect that the dark palette could
+not be rendered *at all* — the window reads the registry and this path did not, so half of
+`theme.rs` was shipped unlooked-at, and the first frame `--dark` ever produced had a bug in it
+that had been there since W1 (see below). `--dark` names the palette; nothing reads the registry
+here; the output is still a function of the command line alone, which is the property that
+mattered. `artifacts.yml` renders both and asserts the dark one is a *different* frame, which
+fails if the flag ever stops reaching the painter.
 
 The section is **24-bit and bottom-up**, which is what makes the "no encoder" claim true rather
 than nearly true: a bottom-up 24-bit DIB's bits *are* a `.bmp` file's pixel data, padding and
@@ -390,21 +414,87 @@ Two bands, not one, and they stack: a formula that will not parse leaves a notic
 edit is still open**, which is exactly when a signature hint is worth most. Sharing one row would
 mean the more useful of the two hiding the other.
 
-### 9. One accent, and it is the suite's rather than the system's — *decided in W9*
+### 9. One accent — **the user's own**, tinted until it can be seen — *decided in W9, reversed in W10*
 
-Windows exposes the user's accent colour, and this shell does not read it. Half the values in
-that picker are colours a one-pixel selection edge disappears into or a grid cannot be read
-through — it is chosen for a title bar, where nothing has to stay legible *through* it. One
-accent this shell owns is one it can guarantee reads against both grounds, and it ties the window
-to the mark the icon and the two GTK apps already use: `grind_core::style::PALETTE`'s `blue`,
-deepened for the light palette and lightened for the dark one. Following the system accent is a
-**named gap**, not an omission.
+W9 refused to read the user's accent colour. The argument was that half the values in that
+picker are colours a one-pixel selection edge disappears into: it is chosen for a title bar,
+where nothing has to stay legible *through* it, and one accent this shell owns is one it can
+guarantee reads against both grounds.
 
-Everything else W9 did to the chrome follows from one sentence — *quieter chrome, one louder
-accent*: the hairlines lost a step of contrast (a grid is read *through*), the header band and
-the status bar moved a shade nearer the paper, the grid past `App::used_extent` is drawn quieter
-still, and what was saved there was spent on the accent — the selection's edge, the bar under a
-selected header button, and the argument being typed.
+**That is true of the accent as the user picked it, and false of the accent as Windows itself
+draws it**, which is what W10 noticed. WinUI never paints `SystemAccentColor` onto a surface. It
+paints `SystemAccentColorDark1` on a light one and `SystemAccentColorLight2` on a dark one, and
+those are tints of the same hue at a lightness chosen so they read. The objection was therefore
+to a step nobody takes.
+
+So `theme::accent_for` takes the same step — one ramp position by mode — and then does the thing
+a fixed ramp still cannot promise: it keeps moving the lightness until `Rgb::contrast` against
+that palette's own document ground clears 3.0, WCAG's floor for a shape you have to be able to
+see. The hue is left alone throughout, so it is still recognisably the colour the user chose.
+
+What makes this *safe* rather than optimistic is that it is a pure function of one colour, and
+therefore checkable with no Windows and no user:
+`any_accent_at_all_is_legible_once_it_has_been_tinted` sweeps every hue at every lightness at
+three saturations, in both palettes, and asserts the contrast floor on the page, the contrast of
+the accent against its own wash (which is where a selected header button's letter is drawn), and
+the contrast of whatever is written *on* the accent. A sweep rather than the forty-eight swatches
+the Settings app offers today, because the swatch list is a fact about one Windows build and this
+is a fact about the function.
+
+Three things stay as W9 left them. The **fallback is the suite's own blue** — a machine that has
+said nothing, every `--render-to` frame, and every Wine run get `PALETTE`'s `blue`, so the mark
+still ties to the icon and the two GTK apps. The **wash** a selected cell moves towards is the
+accent as the *user* chose it rather than the tint, because a wash is diluted to a fifth before
+it touches a cell and the legibility argument that moves the neat colour does not apply to it.
+And `grind_core::search::score` is still unused here, because there is still no palette.
+
+### 10. Fluent by **measurement**, not by toolkit — *decided in W10*
+
+This window has no Fluent controls and will not get any: they are downstream of the manifest and
+the Windows App SDK decision 2 rules out. What it *can* have is every number Fluent publishes,
+and that turns out to be most of what "looks like a Windows 11 application" means.
+
+The distinction matters because the obvious reading of "no Fluent" is "so it will look like
+Win32", and W9's chrome is what that reading produces: one grey for every band, one size of type,
+every measurement the smallest its content fits in, no state under the pointer. None of that was
+forced by GDI. It was the absence of a written-down alternative.
+
+So the alternative is written down, in `theme.rs`, as three tables a drawing call is handed and
+cannot reach past:
+
+- **Colour.** Fluent 2's neutral ramp, resolved to **opaque values**. Fluent states most surface
+  tokens as a white or black at some alpha over the layer beneath, and `FillRect` has no alpha —
+  so the composite is done once, here, and written down as the colour it comes out as. That is
+  the move `Rgb::blend` already made for the selection wash, applied to the whole palette.
+- **Three grounds, where there was one.** A window is a `backdrop` with chrome on it, a
+  `background` where the document is — the grid's paper, the text pane's page — and a `card` for
+  the things you type in and click. Fluent calls those the base, a layer and a control fill.
+  `the_document_and_the_window_are_different_surfaces` asserts all three stay distinct and that
+  the document is the *lighter* of the first two **in both palettes**, which is Fluent's layering
+  rather than an inversion of it.
+- **Type.** A ramp — Caption 12, Body **14**, and the two the documents own — where there was one
+  size. Windows 11's body text is 14 pixels, not the 12 a Win32 window has drawn since 1995, and
+  a window that sets its status bar and its formula bar identically reads as undesigned. A cell's
+  own text is the one size that did *not* move, and the reason is in the constant's own comment:
+  a document's column widths were chosen against a size near it, so raising it is data loss
+  dressed as typography.
+- **Space.** Fluent's four-pixel grid, its 32-pixel control height, and its two corner radii — 4
+  for anything you click or type in, 8 for a surface that holds other things. The strips are
+  44 tall because that is one control plus its surround, not because 44 looked right.
+
+Two consequences worth naming. A band that is *one sentence about something* — the notice bar,
+the assist band — is drawn as an **inset card** rather than edge to edge, because that is what an
+`InfoBar` is; and a **control responds to the pointer**, which needed the one piece of state in
+this shell that exists purely so something looks alive (`Text::hover`) and is what most gives a
+custom-painted window away when it is missing.
+
+The **modals follow the theme too** (`dialog.rs`), which is where this stops being a repaint: a
+white listbox inside a dark window is what "not themed" looks like at its worst, and the chooser
+*is* a listbox. The ground, the static text, the edit box and the list all take the palette
+through `WM_CTLCOLOR…` and `WM_ERASEBKGND`. What does not is listed with the gaps: a `BUTTON`
+ignores the brush it is handed, a `LISTBOX` draws its own selection bar in the system colour, and
+the menu bar and the message boxes are Windows' own. Those are four small light rectangles in a
+dark window rather than the whole window, which is the trade this milestone makes.
 
 ## The crate
 
@@ -432,11 +522,16 @@ ui_win32/
     metrics.rs       [~]* Metrics + Faces over a memory DC, with the font cache — and, portable
                           beside it, which face a block is set in and the per-code-unit ->
                           per-char fold decision 3 turns on (W5a)
-    theme.rs         [~]* the palette (portable, incl. the selection wash's `Rgb::blend`) and
-                          the registry read + dark title bar [W]
+    theme.rs         [~]* W10: Fluent's three ramps — colour (three grounds), type and space —
+                          the accent tinted until it reads, `automatic_ink`, and the control
+                          states; all portable, incl. the selection wash's `Rgb::blend`. The
+                          registry read and the window chrome (dark title bar, caption colour,
+                          rounded corner) are the [W] half
     menu.rs           *   the menus as data, the accelerators, and the command-id table
     notice.rs         *   every sentence the notice bar says, as a pure function
-    dialog.rs        [W]* every modal: the file dialogs, the questions, and the text prompt
+    dialog.rs        [W]* every modal: the file dialogs, the questions, the text prompt and the
+                          chooser — themed since W10, through the one lever a self-painting
+                          control offers
     sheet/
       geom.rs           * pixels <-> cells, prefix sums over the document's own widths, the
                           strip, and which visible track a cursor may stop on
@@ -517,6 +612,8 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 Measured rather than argued, and measurable from Linux: compiling both spellings and parsing the `.res` shows a string name against an ordinal `1`, and doing the same to the `.rsrc` directory of an executable linked by `cargo xwin` shows `RT_VERSION STRING-NAMED` against `RT_VERSION name=1`. `the_version_block_is_named_with_the_literal_one` in `main.rs` is the cheap half of that measurement — it reads `grind.rc` as text, so it runs on every host — and the check in `win32.yml` now scans the binary for the UTF-16 `ProductName`/`Grind` strings when it fails, so a future failure says which of the two things went wrong (never linked, or linked under the wrong name) instead of costing a round trip to find out. The file-associations answer is below, and is deliberately **written down rather than built**: nothing registers a ProgID yet, because doing that is an installer's job and this milestone has none |
 
 | **W9** | **Formula literacy, and the chrome that carries it** — *done* | `sheet/assist.rs` (portable): completion offers, the signature of the call the caret is in, and the band that shows either; `grind_sheet::formula::assist`, which is where the pure half of that came from; the friendly formula bar, the function list and Explain Formula; and a visual pass over every band this window draws | **Met.** Typing `=SU` offers `SUBSTITUTE SUM SUMIF` with the chosen one's summary beside them, Tab takes one, and `=SUM(` shows `Sum(Number…)` with the argument being typed in the accent; the formula bar reads `Sum(Number: B2:B7)` where the document stores `=SUM([.B2:.B7])`; Data ▸ Explain Formula unfolds `=ROUND(PMT(…);2)` into `Round(Value: Payment(Rate: …))`; Data ▸ Function List lists all 110 with their plain-English names and writes the call it is asked for. 197 tests on Linux. `--render-to` still byte-identical across two runs, on **both** panes. One bug found by *running* it — see below |
+
+| **W10** | **The Fluent pass** — *done* | `theme.rs` rebuilt on Fluent 2's tokens (three grounds, a type ramp, a spacing ramp, the accent read from the system and tinted until it reads); every band in both panes re-measured onto that; the notice bar and the assist band as inset cards; the text pane's page; a format strip of real buttons with hover and press; `automatic_ink`; the shell font asked for rather than assumed; the modals themed; `--dark` so the dark palette can be looked at at all | **Met.** Every capability is exactly what W9 left; 212 tests on Linux, of which the load-bearing new ones are the accent sweep (every hue at every lightness, both palettes, WCAG 3.0 on the page), `every_ink_reads_on_the_ground_it_is_drawn_on` over six palettes including the awkward accents, and `automatic_ink_reads_on_whatever_the_document_chose`. `--render-to` is still byte-identical across two runs on both panes, and `artifacts.yml` now also renders **dark** and asserts it is a different frame — which is what makes the dark table something other than untested code. Two bugs found by *running* it, and one of them was a bug this shell had shipped since W1 — see below |
 
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
@@ -636,11 +733,37 @@ rather than from a tab strip**: Ctrl+PageUp/PageDown and Sheet ▸ Next/Previous
 the status bar says which one and how many, and `doc/sheet-shell.md` removed its own tab strip
 for looking like a ribbon.
 
-**System-drawn, and therefore not themed by us.** The message boxes and the sheet-name prompt
-are drawn by Windows in the *system* colours, so in dark mode they are the light dialogs Windows
-itself still draws for a `MessageBoxW`. The window and its two child `EDIT`s do follow the theme
-— the latter through `WM_CTLCOLOREDIT`, which is the only lever a control that paints itself
-offers. Making a message box dark means not using a message box, which is a worse trade.
+**System-drawn, and therefore not themed by us — narrowed in W10.** This shell's *own* modals do
+follow the theme now: `dialog.rs`'s prompt and chooser take the palette for their ground, their
+label, their edit box and — the one that matters, since the chooser *is* a list — their listbox,
+through `WM_ERASEBKGND` and `WM_CTLCOLOR…`. What is left system-coloured is four things, and each
+is a control that ignores the lever rather than one nobody has got to:
+
+* a **`BUTTON` ignores the brush** it is handed by `WM_CTLCOLORBTN`, so OK and Cancel are the
+  system's. Following the theme means owner-drawing them, and with it the focus ring, the default
+  border and the keyboard states — a large amount of drawing for two words in a corner.
+* a **`LISTBOX` draws its own selection bar** in the system highlight colour, so the selected row
+  in the chooser is Windows' blue rather than this window's accent. Same answer: `LBS_OWNERDRAW`.
+* the **menu bar** is `user32`'s, which is what buys Alt navigation, mnemonics and DPI for free
+  (decision 4) and what makes it light over a dark window. Owner-drawn menus are a well-known
+  swamp and the trade is not obviously worth it.
+* a **`MessageBoxW`** is Windows'. Making one dark means not using one, which is a worse trade.
+
+The whole of that is four small light rectangles in a dark window, where before W10 it was every
+dialog this shell can open.
+
+**W10's own gaps.** The **system accent is followed but not its ramp**: Windows publishes
+`AccentPalette`, six precomputed tints, and this shell derives its own from `DWM\AccentColor`
+instead — an undocumented binary layout against arithmetic that can be tested, and the arithmetic
+won. If the two ever visibly disagree on a real machine, the fix is to read the palette and keep
+the contrast guard on top of it. **`--dark` is a flag, not a preview**: the *window* still follows
+the registry, so a developer cannot flip the running window's theme without changing the machine's
+(what W10 did instead was a throwaway Wine prefix with the two registry values set, which is
+written up in the verification section). **Hover is the text pane's only interaction state** — the
+grid's header buttons and its corner do not light up under the pointer, which they should, and the
+sheet's strip has no controls to light up. And there is no **focus ring** on anything drawn: the
+`focus`/`focus_inner` tokens exist and nothing paints them, because nothing drawn in this window
+takes the keyboard yet (the two `EDIT`s draw their own).
 
 **The toolkit's own limits.** No **Mica**: `DWMWA_SYSTEMBACKDROP_TYPE` is reachable and shipped,
 but a backdrop only shows through pixels the application does not paint, and a GDI window that
@@ -802,11 +925,28 @@ DISPLAY=:99 import -window root /tmp/shot.png     # python-xlib + XTEST drives t
 ```
 
 From W2 there is a second, quieter way in, and it needs no display at all — which makes it the
-faster loop for anything about *drawing* rather than about input:
+faster loop for anything about *drawing* rather than about input. Since W10 it draws **either
+palette**, which is the only way to look at the dark one without a Windows machine set to dark:
 
 ```sh
 env -u DISPLAY wine target/x86_64-pc-windows-msvc/debug/grind-win32.exe book.fods \
     --render-to /tmp/frame.bmp
+env -u DISPLAY wine target/x86_64-pc-windows-msvc/debug/grind-win32.exe book.fods \
+    --render-to /tmp/dark.bmp --dark
+```
+
+A *window* still reads the registry, so seeing the running window dark — and seeing what this
+shell does with somebody's **accent colour**, which no render can show, since a render is always
+the suite's blue — takes a throwaway Wine prefix with the two values set. W10 used exactly this,
+and it is the way to do it without touching your own prefix:
+
+```sh
+export WINEPREFIX=/tmp/wine-dark && wineboot -i
+wine reg add 'HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' \
+     /v AppsUseLightTheme /t REG_DWORD /d 0 /f
+wine reg add 'HKCU\Software\Microsoft\Windows\DWM' \
+     /v AccentColor /t REG_DWORD /d 4283272960 /f   # 0xAABBGGRR — this one is a green
+DISPLAY=:99 wine target/x86_64-pc-windows-msvc/debug/grind-win32.exe book.fods
 ```
 
 `cargo-xwin` links a real msvc binary with `lld-link` against Microsoft's own CRT and SDK. **The
@@ -829,10 +969,14 @@ about it is made here:
 
 - `DwmSetWindowAttribute` is largely inert, so the dark title bar is unverified.
 - The theme registry key does not exist in a fresh prefix, so the shell takes its light-mode
-  fallback. Writing it by hand (`wine reg add …\\Themes\\Personalize /v AppsUseLightTheme /t
-  REG_DWORD /d 0`) does exercise the dark palette here, and W3 used it to check the one thing
-  this shell does *not* paint itself: the child `EDIT`s answer `WM_CTLCOLOREDIT` and come back
-  dark with light text, where a control left alone is a white field in a dark window.
+  fallback. Writing it by hand — the recipe above — does exercise the dark palette and the accent
+  path here, and both W3 and W10 used it: W3 to check the one thing this shell does *not* paint
+  itself (the child `EDIT`s answer `WM_CTLCOLOREDIT` and come back dark with light text, where a
+  control left alone is a white field in a dark window), W10 to see a green system accent reach
+  the selection edge, the header bar and the assist band. What it cannot say is how the *system*
+  chrome round all that looks: recent Wine has a dark mode of its own for common controls, so a
+  themed listbox there is not evidence that a listbox on Windows would be themed, and the
+  push buttons and the menu bar this shell leaves alone may look different there than here.
 - Consolas is absent, so every screenshot exercises the `FIXED_PITCH | FF_MODERN` substitution
   path rather than the intended font.
 - The IME path, and clipboard interop with real Excel. `IFileDialog`'s COM path *does* run
@@ -1165,6 +1309,40 @@ run from the wrong working directory, and Wine's failure to find the `.exe` left
 frame on disk to be compared. Worth recording because it is the failure mode this whole
 render-and-compare loop has — a byte-identical frame proves nothing if it is the same frame — and
 because it cost two rounds of looking for a drawing bug that had already been fixed.
+
+### W10 found two, and the older one had been shipping since W1
+
+**1. Two ornament characters were missing-glyph boxes.** The Family and Size pickers were given a
+`▾` (U+25BE) to say they open something, and the highlight swatch a `▓` (U+2593). Both came back
+from a rendered frame as the font's missing-glyph box — not under Segoe UI, which has them, but
+under whatever GDI substitutes when Segoe UI is absent, which is every screenshot taken here.
+A picker whose chevron is a box says less than one with no chevron at all.
+
+The fix is the rule the grid's corner triangle already followed without anybody stating it:
+**an ornament is drawn, not typed.** `gdi::triangle_down` is six lines of `fill`, the highlight
+swatch became an `A` on a coloured ground (which also says *what the colour does*, where a
+coloured square only said what it is), and the only characters this shell now draws that are not
+the document's own are one ASCII letter per swatch and the list bullets — which are the model's
+business rather than the chrome's.
+
+**2. A document's own fill made its text unreadable, and had done since W1.** `--dark` exists
+because the dark palette could not be looked at without a Windows machine set to dark; the first
+frame it produced had `examples/sample-sheet.sh`'s heading row — a pale grey the *document*
+chooses, with no text colour of its own — drawn in the theme's near-white ink. Six unreadable
+cells, in the row a spreadsheet is read from first.
+
+The bug is not the dark palette's. A cell with no `fo:color` is ODF's **automatic**, and
+automatic means *the application picks something that can be read*; this shell had been resolving
+it to "the theme's ink" since W1, which is right for every cell whose ground the theme also chose
+and wrong for every cell the document filled. The light palette had the same bug waiting behind
+any dark fill. `theme::automatic_ink` is the whole fix — the theme's ink where it clears 4.5:1
+against *this cell's actual ground*, black or white where it does not — and the text pane's
+highlighted runs go through it too, which is the same case with a yellow highlight in place of a
+grey fill.
+
+Worth recording for what it says about the render loop rather than about the bug: this had been
+in every frame drawn since W1 and in none of them was it visible, because every frame was light.
+A palette that cannot be rendered is a palette nobody is looking at.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

@@ -100,10 +100,13 @@ fn sniff(path: &Path) -> Result<DocumentKind, String> {
 ///
 /// Split out from [`main`] because it is the whole of the decision and none of the platform:
 /// it is exercised by the tests at the bottom of this file on any host, where `run` cannot be.
+///
+/// Which document, from where, and — when this invocation is a render rather than a window —
+/// where the frame goes and in which palette.
 type Opening = (
     DocumentKind,
     Option<std::path::PathBuf>,
-    Option<std::path::PathBuf>,
+    Option<(std::path::PathBuf, bool)>,
 );
 
 fn resolve(command: Command) -> Result<Opening, String> {
@@ -111,21 +114,23 @@ fn resolve(command: Command) -> Result<Opening, String> {
         kind,
         path,
         render_to,
+        dark,
     } = command
     else {
         unreachable!("help, version and errors are handled before this")
     };
+    let render = render_to.map(|target| (target, dark));
     match &path {
         // A file decides for itself; the flag only gets to disagree, and disagreeing is an
         // error rather than an override.
         Some(file) => {
             let found = sniff(file)?;
             let kind = args::reconcile(kind, found, &file.display().to_string())?;
-            Ok((kind, path, render_to))
+            Ok((kind, path, render))
         }
         // Nothing to read, so the flag is the only opinion there is. A spreadsheet by default,
         // matching `grind-tui`.
-        None => Ok((kind.unwrap_or(DocumentKind::Spreadsheet), None, render_to)),
+        None => Ok((kind.unwrap_or(DocumentKind::Spreadsheet), None, render)),
     }
 }
 
@@ -174,13 +179,15 @@ fn main() -> std::process::ExitCode {
             // before the window is opened rather than after (`doc/windows-shell.md`,
             // decision 5). Its errors still go to a message box: this is a GUI-subsystem
             // binary and there is no stderr, even when it is doing something headless.
-            Ok((kind, path, Some(target))) => match win::render(kind, path, &target) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(message) => {
-                    say(&message, true);
-                    ExitCode::FAILURE
+            Ok((kind, path, Some((target, dark)))) => {
+                match win::render(kind, path, &target, dark) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(message) => {
+                        say(&message, true);
+                        ExitCode::FAILURE
+                    }
                 }
-            },
+            }
             Ok((kind, path, None)) => match win::run(kind, path) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
@@ -285,6 +292,7 @@ mod tests {
             kind,
             path: path.map(std::path::PathBuf::from),
             render_to: None,
+            dark: false,
         }
     }
 

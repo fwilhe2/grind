@@ -397,13 +397,19 @@ impl GridGeom {
 
     /// The name box inside the strip: the width of the row header band plus a column, so that it
     /// is wide enough for `Sheet1.AA1234` without being wide enough to look like a formula bar.
+    ///
+    /// **A 32-pixel control centred in a 44-pixel strip** (W10), which is Fluent's own control
+    /// height and its own 12-pixel margin rather than a fraction of whatever the strip happens to
+    /// be — the previous arrangement made the field as tall as the strip less a twelfth, so
+    /// growing the strip grew the field with it and the whole row read as one slab.
     pub fn name_box_rect(&self) -> Rect {
-        let inset = self.inset();
+        let margin = scale(crate::theme::space::GROUP, self.dpi);
+        let h = scale(crate::theme::space::CONTROL_H, self.dpi).min(self.strip_h);
         Rect {
-            x: inset,
-            y: inset,
-            w: (self.header_w * 3.0).min((self.width - inset * 2.0).max(0.0)),
-            h: (self.strip_h - inset * 2.0).max(0.0),
+            x: margin,
+            y: ((self.strip_h - h) / 2.0).max(0.0),
+            w: (self.header_w * 3.0).min((self.width - margin * 2.0).max(0.0)),
+            h,
         }
     }
 
@@ -413,20 +419,20 @@ impl GridGeom {
     /// rule for it — *where* the selection is and *what is in it*. It is not a place verbs may
     /// go, which is what keeps it a strip rather than a second toolbar.
     pub fn formula_rect(&self) -> Rect {
-        let inset = self.inset();
+        let margin = scale(crate::theme::space::GROUP, self.dpi);
         let name = self.name_box_rect();
-        let x = name.x + name.w + inset * 2.0;
+        let x = name.x + name.w + scale(crate::theme::space::GAP * 2.0, self.dpi);
         Rect {
             x,
             y: name.y,
-            w: (self.width - x - inset).max(0.0),
+            w: (self.width - x - margin).max(0.0),
             h: name.h,
         }
     }
 
-    /// The gap between the strip's edge and the fields in it.
-    fn inset(&self) -> f64 {
-        (self.strip_h * 0.12).round().max(1.0)
+    /// [`card_in`] at this window's scaling — the notice bar and the assist band.
+    pub fn card_in(&self, band: Rect) -> Rect {
+        card_in(band, self.dpi)
     }
 
     /// Where the in-cell editor goes: the active cell, clipped to the body.
@@ -578,6 +584,26 @@ impl GridGeom {
     }
 }
 
+/// A band drawn as an **inset card** rather than edge to edge: the notice bar in either pane, and
+/// the grid's assist band. Each of those is one sentence *about* something rather than a piece of
+/// the window's structure, and Fluent's `InfoBar` is a rounded rectangle with a margin round it —
+/// the difference between that and a full-bleed stripe is most of why the W9 chrome read as a
+/// stack of toolbars.
+///
+/// The horizontal margin is the same [`crate::theme::space::GROUP`] the grid's strip keeps for
+/// its fields, so the left edges of the name box and every band below it line up down the window.
+/// A free function because both panes need it and neither owns the other's geometry.
+pub fn card_in(band: Rect, dpi: u32) -> Rect {
+    let margin = scale(crate::theme::space::GROUP, dpi);
+    let gap = scale(crate::theme::space::GAP, dpi);
+    Rect {
+        x: margin,
+        y: band.y + gap,
+        w: (band.w - margin * 2.0).max(0.0),
+        h: (band.h - gap * 2.0).max(0.0),
+    }
+}
+
 /// One axis' scroll step: `delta` visible tracks from `from`, clamped to `[0, max]`.
 fn step(sizes: &Sizes, from: u32, delta: i64, max: u32) -> u32 {
     let mut at = from;
@@ -722,10 +748,30 @@ mod tests {
     #[test]
     fn the_name_box_sits_inside_the_strip() {
         let mut g = geom();
-        g.strip_h = 28.0;
+        g.strip_h = crate::sheet::draw::STRIP_H;
         let box_ = g.name_box_rect();
         assert!(box_.y > 0.0 && box_.y + box_.h <= g.strip_h);
         assert!(box_.x > 0.0 && box_.w > 0.0);
+        // A control of Fluent's own height, centred — not the strip less a fraction of itself,
+        // which is what made the whole row read as one slab before W10.
+        assert_eq!(box_.h, crate::theme::space::CONTROL_H);
+        assert_eq!(box_.y, (g.strip_h - box_.h) / 2.0);
+        assert_eq!(box_.x, crate::theme::space::GROUP);
+    }
+
+    /// A band that is a sentence is drawn as a card inside its own band, with the same margin the
+    /// strip's fields keep — so the left edges of the name box, the notice bar and the assist
+    /// band line up down the window.
+    #[test]
+    fn an_inset_band_keeps_the_strips_own_margin() {
+        let mut g = geom();
+        g.strip_h = crate::sheet::draw::STRIP_H;
+        g.banner_h = crate::sheet::draw::BANNER_H;
+        let card = g.card_in(g.banner_rect());
+        assert_eq!(card.x, g.name_box_rect().x, "the left edges line up");
+        assert_eq!(card.x + card.w, g.width - card.x, "and it is symmetrical");
+        assert!(card.y > g.banner_rect().y);
+        assert!(card.y + card.h < g.banner_rect().y + g.banner_h);
     }
 
     /// Two read-outs on one strip, side by side and not overlapping — the whole of decision 4's
@@ -733,7 +779,7 @@ mod tests {
     #[test]
     fn the_formula_bar_takes_the_rest_of_the_strip() {
         let mut g = geom();
-        g.strip_h = 28.0;
+        g.strip_h = crate::sheet::draw::STRIP_H;
         let name = g.name_box_rect();
         let formula = g.formula_rect();
         assert!(formula.x > name.x + name.w, "they overlap");

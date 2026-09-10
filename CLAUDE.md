@@ -143,7 +143,7 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W9**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W10**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -187,6 +187,35 @@ select-all triangle in the corner, an accent bar under a selected header button,
 the notice bar, a status bar with the document at one end and the selection's arithmetic at the
 other, and one accent that is the suite's own blue rather than the user's Windows accent
 (decision 9 — following the system accent is a named gap).
+
+**W10 is the Fluent pass, and it changed no capability at all** — everything this window could
+do before it, it does after. `theme.rs` is **Fluent 2's tokens**, composited to opaque values
+because `FillRect` has no alpha, and the shape of it is that there are now **three grounds where
+there was one**: a `backdrop` the chrome stands on, a `background` the *document* is (the grid's
+paper, the text pane's page — a layer above the backdrop in both palettes, which is Fluent's
+layering rather than an inversion), and a `card` for things you type in and click. Beside it two
+more ramps: type (Caption 12, **Body 14** — Windows 11's, not the 12 a Win32 window has drawn
+since 1995 — with a cell's own size deliberately left where it was, since a document's column
+widths were chosen against it) and space (the four-pixel grid, the 32-pixel control height, and
+the two corner radii). Every band in both panes is re-measured onto those, the notice bar and the
+assist band are **inset cards** rather than stripes (`sheet::geom::card_in`), the text pane's
+document stands on a **page** (`text::geom::Page::page_card`), and the format strip is a row of
+real buttons in three groups with separators, a chevron on each picker and a swatch that shows
+what its colour *does* — every one of them **responding to the pointer** (`theme::Interaction`,
+`Text::hover`, and a press that acts on release so it can be taken back). **Decision 9 is
+reversed**: the accent is the user's own, read from `DWM\AccentColor` and moved along its own
+hue until `Rgb::contrast` against the ground clears 3.0 — the objection W9 raised was to
+`SystemAccentColor` painted neat, which is a step WinUI does not take either, and the whole thing
+is a pure function swept over every hue and lightness in both palettes by one test. The suite's
+blue is still the fallback, and still what every `--render-to` frame draws. Two more things W10
+needed: `--dark`, because until it existed the dark palette could not be rendered at all and was
+therefore shipping unlooked-at (the first frame it drew had a W1 bug in it — `theme::automatic_ink`
+is the fix, and ODF's *automatic* colour is what it means: the theme's ink where it reads on the
+ground the **document** chose, black or white where it does not); and `gdi::ui_face`, which asks
+`EnumFontFamiliesExW` for *Segoe UI Variable Text* before falling back to Segoe UI, since GDI
+substitutes silently for a face it has not got. The modals are themed too (`dialog.rs`), leaving
+the push buttons, a listbox's own selection bar, the menu bar and the message boxes as the named
+system-drawn remainder.
 
 **W5a is the text pane, and it settles this shell's one open decision.** `metrics.rs` is the
 fourth `layout::Metrics` implementation and the first one no toolkit handed over: GDI measures
@@ -506,7 +535,7 @@ rather than a guest:
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell — the suite's **showcase** for this document type, and the client that gets a text feature first. Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` places blocks (a stack, and a grid where a table is), `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics` and honours all eight `CharStyle` properties, `format.rs` is the formatting bar, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
 | `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
-| `grind-win32` | `ui_win32/` | The Windows shell — **built through W9: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, and the formula assist** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `artifacts.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette, the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
+| `grind-win32` | `ui_win32/` | The Windows shell — **built through W10: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, the formula assist, and the Fluent pass** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `artifacts.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette and the rest of `theme.rs`'s Fluent ramps (including the accent tinting, which is swept over every hue there), the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
 which asserts the manifest names no document-type crate, that no source dispatches on

@@ -126,14 +126,19 @@ use grind_text::{Caret, Layout, markdown};
 const APP_NAME: &str = "Grind";
 const CLASS_NAME: &str = "GrindWindowClass";
 
-/// The face the grid is drawn in.
+/// The face everything in this window is drawn in — **asked for rather than assumed**, since W10.
 ///
-/// Segoe UI is the shell font on every Windows this shell targets. GDI substitutes when it is
-/// absent — which is what happens under Wine, and is the substitution path
-/// `doc/windows-shell.md` says every screenshot taken there exercises.
-const FACE: &str = "Segoe UI";
-/// The grid's text size at 100%, in pixels.
-const FONT_PX: f64 = 13.0;
+/// Windows 11's shell font is *Segoe UI Variable*, a variable font whose optical sizes GDI sees
+/// as three families; `Text` is the one meant for 12 to 24 pixels, which is every size in this
+/// shell's ramp. Windows 10 has none of them and Segoe UI is the shell font there. Asking for a
+/// face GDI does not have does **not** fail — it substitutes something arbitrary — so the two are
+/// tried in order against `EnumFontFamiliesExW`, which is what makes this a probe and not a
+/// guess (`gdi::ui_face`). Under Wine neither is usually installed and the fallback is whatever
+/// GDI substitutes, which is the path `doc/windows-shell.md` says every screenshot taken there
+/// exercises.
+fn face() -> &'static str {
+    gdi::ui_face()
+}
 
 /// The two child `EDIT`s, one id each — `WM_COMMAND`'s low word is how a notification says
 /// which child it came from. Both are below [`menu::FIRST_ID`], which is what keeps a control's
@@ -141,12 +146,9 @@ const FONT_PX: f64 = 13.0;
 const ID_NAME_BOX: usize = 1;
 const ID_EDITOR: usize = 2;
 
-/// The size prose is set at, in pixels at 100%.
-///
-/// Larger than the grid's [`FONT_PX`] on purpose: a spreadsheet is read by scanning a table and a
-/// document is read by reading it, and every word processor there has ever been sets body text
-/// bigger than a cell. Headings scale off this (`metrics.rs`).
-const TEXT_PX: i32 = 15;
+/// The size prose is set at, in pixels at 100% — the ramp's own, and larger than a cell's for
+/// the reason `theme::text::PROSE` gives. Headings scale off this (`metrics.rs`).
+const TEXT_PX: i32 = theme::text::PROSE as i32;
 
 /// "A key went to one of our child controls", sent by the message loop.
 ///
@@ -664,6 +666,16 @@ struct Text {
     /// `doc/view-modes.md`'s name overlay, this pane's own — `:names`' equivalent, a bookmark
     /// drawn beside the text it anchors. Presentation state, exactly like `Sheet::overlays`.
     show_names: bool,
+    /// Which format-strip control is held down, and therefore the one a release over it will
+    /// activate. See `text_button_down`.
+    pressed: Option<text::geom::StripHit>,
+    /// Which format-strip control the pointer is over, or `None` when it is anywhere else (W10).
+    ///
+    /// The only state in this shell that exists purely so that something *looks* alive, and it
+    /// earns it: a row of drawn buttons with no hover feedback is the single thing that most
+    /// gives a custom-painted window away. Repainting is guarded on the value actually changing,
+    /// so an ordinary mouse move across the document costs one comparison.
+    hover: Option<text::geom::StripHit>,
 }
 
 impl Text {
@@ -1099,6 +1111,8 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         resume: None,
         surrogate: None,
         show_names: false,
+        hover: None,
+        pressed: None,
     })
 }
 
@@ -1164,11 +1178,21 @@ pub fn render(
     kind: DocumentKind,
     path: Option<PathBuf>,
     target: &std::path::Path,
+    dark: bool,
 ) -> Result<(), String> {
     // COM, for `image.rs`'s WIC calls — a picture is measured in `relayout` and drawn in
     // `draw_text_frame`, and this windowless path has no `run`'s own guard to lean on.
     let _com = Com::new();
-    let mut pane = opened(kind, path, Theme::of(Mode::Light))?;
+    // The palette this frame is drawn in is the **flag's**, never the machine's: two renders of
+    // one document on two machines have to be the same bytes, and a registry read would make the
+    // developer's own theme part of the output. `--dark` is how the dark palette gets looked at
+    // at all without a Windows machine set to dark (W10) — before it, half of `theme.rs` shipped
+    // unseen.
+    let mode = match dark {
+        true => Mode::Dark,
+        false => Mode::Light,
+    };
+    let mut pane = opened(kind, path, Theme::of(mode))?;
     let (w, h) = (f64::from(RENDER_W), f64::from(RENDER_H));
     let dib = Dib::new(RENDER_W, RENDER_H).ok_or("could not make the drawing surface")?;
     match &mut pane {
@@ -1331,7 +1355,10 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                 with_pane(hwnd, |pane| {
                     let theme = theme::current();
                     pane.retheme(theme);
-                    theme::apply_title_bar(hwnd, theme);
+                    theme::apply_window_chrome(hwnd, theme);
+                    // The modals paint themselves in this palette too, and cannot be handed it
+                    // at the call site — `dialog::use_theme` says why.
+                    dialog::use_theme(theme);
                     // Registered here rather than in `opened`, because it needs a window to
                     // post to — and because a document read *before* there is one must not
                     // arrive as a change the user made. That is the whole of why this shell
@@ -1480,8 +1507,8 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                 with_sheet(hwnd, |state| {
                     SetBkMode(dc, OPAQUE);
                     SetTextColor(dc, COLORREF(state.theme.text.colorref()));
-                    SetBkColor(dc, COLORREF(state.theme.field.colorref()));
-                    let field = state.theme.field;
+                    SetBkColor(dc, COLORREF(state.theme.card.colorref()));
+                    let field = state.theme.card;
                     state
                         .field_brush
                         .get_or_insert_with(|| Brush::solid(field))
@@ -1537,7 +1564,10 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                     // The cached brush is the old palette's; `retheme` drops it, and the next
                     // `WM_CTLCOLOREDIT` makes one in the new one.
                     pane.retheme(theme);
-                    theme::apply_title_bar(hwnd, theme);
+                    theme::apply_window_chrome(hwnd, theme);
+                    // The modals paint themselves in this palette too, and cannot be handed it
+                    // at the call site — `dialog::use_theme` says why.
+                    dialog::use_theme(theme);
                 });
                 let _ = InvalidateRect(Some(hwnd), None, false);
                 DefWindowProcW(hwnd, message, wparam, lparam)
@@ -1868,7 +1898,10 @@ fn make_children(hwnd: HWND) {
     // and the font they are given is owned by the state, which outlives both.
     unsafe {
         let dpi = GetDpiForWindow(hwnd).max(96);
-        let font = Font::new(FACE, scale(FONT_PX, dpi).round() as i32, false);
+        // The strip's own size, not a cell's: the two `EDIT`s stand in for the name box and the
+        // formula bar, which are drawn at `theme::text::BODY`, and a control whose text is a
+        // pixel smaller than the read-out it replaces makes the whole strip twitch on every edit.
+        let font = Font::new(face(), scale(theme::text::BODY, dpi).round() as i32, false);
         let make = |id: usize| -> HWND {
             let Ok(edit) = CreateWindowExW(
                 Default::default(),
@@ -2471,10 +2504,34 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
 
 fn button_up(hwnd: HWND) {
     if is_text(hwnd) {
+        // A strip control that was pressed and is still under the pointer is *now* activated —
+        // see `text_button_down`. Released before the verb runs, because three of the six open a
+        // modal dialog and a borrow may not be held across one (decision 7).
         // SAFETY: one borrow, and nothing inside it dispatches.
+        let pressed = unsafe {
+            with_text(hwnd, |text| {
+                text.dragging = false;
+                text.pressed.take().filter(|hit| text.hover == Some(*hit))
+            })
+        }
+        .flatten();
+        // SAFETY: the borrow above is released.
         unsafe {
-            with_text(hwnd, |text| text.dragging = false);
             let _ = ReleaseCapture();
+        }
+        if let Some(hit) = pressed {
+            match hit {
+                StripHit::Toggle(which) => text_emphasise(hwnd, STRIP_BUTTONS[which]),
+                StripHit::Family => text_pick_family(hwnd),
+                StripHit::Size => text_pick_size(hwnd),
+                StripHit::Color => text_pick_color(hwnd, false),
+                StripHit::Highlight => text_pick_color(hwnd, true),
+                StripHit::Clear => text_format(hwnd, grind_text::format::Change::Clear),
+            }
+        }
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = InvalidateRect(Some(hwnd), None, false);
         }
         return;
     }
@@ -3617,8 +3674,10 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             hint: &state.hint,
             selection: state.selection,
             used: state.app.used_extent(state.sheet).unwrap_or((0, 0)),
-            font_px: scale(FONT_PX, state.geom.dpi).round() as i32,
-            face: FACE,
+            font_px: scale(theme::text::CELL, state.geom.dpi).round() as i32,
+            caption_px: scale(theme::text::CAPTION, state.geom.dpi).round() as i32,
+            body_px: scale(theme::text::BODY, state.geom.dpi).round() as i32,
+            face: face(),
         },
     );
 }
@@ -4093,17 +4152,22 @@ fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     // nothing.
     let hit = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
     if let Some(hit) = hit {
-        match hit {
-            StripHit::Toggle(which) => text_emphasise(hwnd, STRIP_BUTTONS[which]),
-            StripHit::Family => text_pick_family(hwnd),
-            StripHit::Size => text_pick_size(hwnd),
-            StripHit::Color => text_pick_color(hwnd, false),
-            StripHit::Highlight => text_pick_color(hwnd, true),
-            StripHit::Clear => text_format(hwnd, grind_text::format::Change::Clear),
-        }
-        // SAFETY: no borrow held.
+        // **Pressed here, done on release** (W10) — which is what every button on this platform
+        // does and is not only cosmetic: a press that has not been let go of can be taken back by
+        // dragging off the control, and until W10 this strip acted the instant the button went
+        // down, so a mis-aimed click was a formatting edit and a Ctrl+Z.
+        // SAFETY: one borrow; assigning a field dispatches nothing.
         unsafe {
+            with_text(hwnd, |text| {
+                text.pressed = Some(hit);
+                // The pointer is over it by definition, and `button_up` asks whether it still
+                // is — a press that arrives before any `WM_MOUSEMOVE` (the window opened under
+                // the pointer) would otherwise be released onto a stale `None`.
+                text.hover = Some(hit);
+            });
+            SetCapture(hwnd);
             let _ = SetFocus(Some(hwnd));
+            let _ = InvalidateRect(Some(hwnd), None, false);
         }
         return;
     }
@@ -4131,15 +4195,23 @@ fn text_mouse_move(hwnd: HWND, x: f64, y: f64) {
     // SAFETY: one borrow; nothing inside dispatches.
     let moved = unsafe {
         with_text(hwnd, |text| {
+            // The strip's hover (W10), asked on every move and repainted only when the answer
+            // *changes* — which is what keeps a move across the document down to one comparison.
+            // `WM_MOUSELEAVE` is not tracked and does not need to be: the pointer cannot leave
+            // the window from inside the strip without passing over the rest of it first, and
+            // any point that is not on a control clears the hover anyway.
+            let hover = text.page.strip_hit(x, y);
+            let hovered = hover != text.hover;
+            text.hover = hover;
             if !text.dragging {
-                return false;
+                return hovered;
             }
             match text.caret_at(x, y) {
                 Some(at) if at != text.caret => {
                     text.place(at, true);
                     true
                 }
-                _ => false,
+                _ => hovered,
             }
         })
     };
@@ -4927,13 +4999,17 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             theme: state.theme,
             faces: &faces,
             blocks: &blocks,
+            height: state.flow.height(),
             selection: state.range(),
             caret: state.caret,
             caret_on: state.caret_on && !system_caret,
             status: &status,
             banner: state.banner.as_deref(),
-            font_px: scale(FONT_PX, state.page.dpi).round() as i32,
-            face: FACE,
+            font_px: scale(theme::text::CAPTION, state.page.dpi).round() as i32,
+            body_px: scale(theme::text::BODY, state.page.dpi).round() as i32,
+            face: face(),
+            hover: state.hover,
+            pressed: state.pressed,
             format: format_state(state),
             family: style.font_family.as_deref(),
             size: style.font_size.as_deref(),

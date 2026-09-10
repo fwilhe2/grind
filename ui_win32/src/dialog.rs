@@ -295,8 +295,7 @@ pub fn save_path(owner: HWND, suggested: Option<&Path>, kind: DocumentKind) -> O
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows::Win32::Graphics::Gdi::{
-    COLOR_BTNFACE, COLOR_BTNTEXT, GetSysColor, GetSysColorBrush, HBRUSH, HDC, SetBkMode,
-    SetTextColor, TRANSPARENT,
+    HBRUSH, HDC, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::EM_SETSEL;
@@ -308,11 +307,67 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IsDialogMessageW, LB_ADDSTRING,
     LB_GETCURSEL, LB_SETCURSEL, LBN_DBLCLK, LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage,
     RegisterClassW, SW_SHOW, SendMessageW, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WM_COMMAND, WM_CTLCOLORSTATIC, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_BORDER,
-    WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_COMMAND, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE,
+    WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
-use crate::gdi::Font;
+use crate::gdi::{Brush, Font};
+use crate::theme::Theme;
+
+/// The palette every popup in this file paints itself in.
+///
+/// **A static, and the one in this crate.** Everywhere else the rule `theme.rs` states holds —
+/// the drawing code is handed a palette and cannot reach past it — and this is the exception the
+/// rule's own reason allows: a modal here is opened at a point where the caller has deliberately
+/// *released* its borrow of the pane (decision 7 forbids holding one across a nested message
+/// loop), so there is no `&Pane` to read a theme out of at the call site, and threading one
+/// through all fourteen callers would put a parameter on every one of them purely to work around
+/// that. The window sets it when it learns the theme and again on `WM_SETTINGCHANGE`; there is
+/// one UI thread, and a popup that opened before the first call gets the light palette, which is
+/// also what a machine that has said nothing gets.
+static THEME: std::sync::Mutex<Option<Theme>> = std::sync::Mutex::new(None);
+
+/// Tell this module which palette to paint in — called by `win.rs` whenever the theme changes.
+pub fn use_theme(theme: Theme) {
+    if let Ok(mut slot) = THEME.lock() {
+        *slot = Some(theme);
+    }
+}
+
+fn theme() -> Theme {
+    THEME
+        .lock()
+        .ok()
+        .and_then(|slot| *slot)
+        .unwrap_or_else(|| Theme::of(crate::theme::Mode::Light))
+}
+
+/// Answer one of the three `WM_CTLCOLOR…` messages in this shell's own colours.
+///
+/// A control that paints itself offers exactly this one lever, and it is enough for the two that
+/// matter — the listbox that *is* the chooser, and the edit box that is the prompt. The **push
+/// buttons are not themed**, because a `BUTTON` ignores the brush it is handed and would need
+/// owner-drawing to follow anything but the system: a named gap, and a small one, since the
+/// buttons are two words in the corner of a dialog whose ground and content now follow the theme.
+///
+/// The brush is the popup's own and lives as long as it does — returning a brush that has been
+/// freed is a use-after-free Windows performs on your behalf at the next repaint.
+fn control_colour(
+    wparam: WPARAM,
+    ink: crate::theme::Rgb,
+    ground: crate::theme::Rgb,
+    brush: HBRUSH,
+) -> LRESULT {
+    let dc = HDC(wparam.0 as *mut std::ffi::c_void);
+    // SAFETY: `wparam` is the control's `HDC` for this message, live for the length of it.
+    unsafe {
+        SetBkMode(dc, TRANSPARENT);
+        SetBkColor(dc, COLORREF(ground.colorref()));
+        SetTextColor(dc, COLORREF(ink.colorref()));
+    }
+    LRESULT(brush.0 as isize)
+}
 
 const PROMPT_CLASS: &str = "GrindPromptClass";
 static PROMPT_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -327,6 +382,12 @@ struct Prompt {
     finished: bool,
     /// Kept alive because `WM_SETFONT` does not copy the handle.
     _font: Option<Font>,
+    /// This popup's palette, and the two brushes it answers `WM_CTLCOLOR…` with — kept here
+    /// rather than made per message, because a brush handed to Windows has to outlive the
+    /// repaint it is handed for.
+    theme: Theme,
+    ground: Brush,
+    field: Brush,
 }
 
 /// Ask for one line of text. `None` means the user cancelled or typed nothing.
@@ -349,7 +410,10 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
                 hInstance: instance.into(),
                 lpszClassName: PCWSTR(class.as_ptr()),
                 hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-                hbrBackground: HBRUSH(COLOR_BTNFACE.0 as isize as *mut std::ffi::c_void),
+                // No class brush: the ground is this shell's own and is painted in
+                // `WM_ERASEBKGND`, because a class is registered once and the theme can change
+                // under it — a brush chosen here would be the palette at first use for the life
+                // of the process.
                 ..Default::default()
             };
             if RegisterClassW(&wc) == 0 {
@@ -366,11 +430,15 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
         let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
         let y = owner_rect.top + ((owner_rect.bottom - owner_rect.top) - h) / 3;
 
+        let theme = theme();
         let state = Box::new(Prompt {
             edit: HWND::default(),
             answer: None,
             finished: false,
             _font: None,
+            theme,
+            ground: Brush::solid(theme.backdrop),
+            field: Brush::solid(theme.card),
         });
         let title = gdi::wide(title);
         let Ok(popup) = CreateWindowExW(
@@ -390,7 +458,7 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
             return None;
         };
 
-        let font = Font::new("Segoe UI", px(13.0), false);
+        let font = Font::new(crate::gdi::ui_face(), px(crate::theme::text::BODY), false);
         let set_font = |control: HWND| {
             SendMessageW(
                 control,
@@ -541,17 +609,40 @@ extern "system" fn prompt_proc(
                 DefWindowProcW(hwnd, message, wparam, lparam)
             }
         }
-        // The label sits on the dialog's own face rather than on a white patch of its own.
-        WM_CTLCOLORSTATIC => {
-            // SAFETY: `wparam` is the control's `HDC` for this message.
-            unsafe {
-                SetBkMode(HDC(wparam.0 as *mut std::ffi::c_void), TRANSPARENT);
-                SetTextColor(
-                    HDC(wparam.0 as *mut std::ffi::c_void),
-                    COLORREF(GetSysColor(COLOR_BTNTEXT)),
-                );
-                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
-            }
+        // The popup's own ground, since the class has no brush — see the registration.
+        WM_ERASEBKGND => {
+            // SAFETY: `wparam` is the `HDC` to erase with, live for this message.
+            let filled = unsafe {
+                with_prompt(hwnd, |prompt| {
+                    let dc = HDC(wparam.0 as *mut std::ffi::c_void);
+                    let rect = crate::gdi::client_rect(hwnd);
+                    windows::Win32::Graphics::Gdi::FillRect(dc, &rect, prompt.ground.handle());
+                })
+            };
+            LRESULT(i32::from(filled.is_some()) as isize)
+        }
+        // The label sits on the dialog's own face rather than on a white patch of its own; the
+        // edit box is a control and takes the control fill.
+        WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT => {
+            // SAFETY: one borrow; `control_colour` only writes to the message's own `HDC`.
+            let answered = unsafe {
+                with_prompt(hwnd, |prompt| match message == WM_CTLCOLOREDIT {
+                    true => control_colour(
+                        wparam,
+                        prompt.theme.text,
+                        prompt.theme.card,
+                        prompt.field.handle(),
+                    ),
+                    false => control_colour(
+                        wparam,
+                        prompt.theme.text,
+                        prompt.theme.backdrop,
+                        prompt.ground.handle(),
+                    ),
+                })
+            };
+            // SAFETY: the borrow is released; the default is what an unthemed popup would do.
+            answered.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, message, wparam, lparam) })
         }
         WM_COMMAND => {
             let id = (wparam.0 & 0xffff) as i32;
@@ -619,6 +710,10 @@ struct Chooser {
     answer: Option<usize>,
     finished: bool,
     _font: Option<Font>,
+    /// See [`Prompt::theme`].
+    theme: Theme,
+    ground: Brush,
+    field: Brush,
 }
 
 /// Ask the user to pick one of a list of lines. `None` means cancelled, or nothing to pick from.
@@ -649,7 +744,10 @@ pub fn choose(owner: HWND, title: &str, items: &[String], initial: usize) -> Opt
                 hInstance: instance.into(),
                 lpszClassName: PCWSTR(class.as_ptr()),
                 hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-                hbrBackground: HBRUSH(COLOR_BTNFACE.0 as isize as *mut std::ffi::c_void),
+                // No class brush: the ground is this shell's own and is painted in
+                // `WM_ERASEBKGND`, because a class is registered once and the theme can change
+                // under it — a brush chosen here would be the palette at first use for the life
+                // of the process.
                 ..Default::default()
             };
             if RegisterClassW(&wc) == 0 {
@@ -671,11 +769,15 @@ pub fn choose(owner: HWND, title: &str, items: &[String], initial: usize) -> Opt
         let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
         let y = owner_rect.top + ((owner_rect.bottom - owner_rect.top) - h) / 3;
 
+        let theme = theme();
         let state = Box::new(Chooser {
             list: HWND::default(),
             answer: None,
             finished: false,
             _font: None,
+            theme,
+            ground: Brush::solid(theme.backdrop),
+            field: Brush::solid(theme.card),
         });
         let title = gdi::wide(title);
         let Ok(popup) = CreateWindowExW(
@@ -695,7 +797,7 @@ pub fn choose(owner: HWND, title: &str, items: &[String], initial: usize) -> Opt
             return None;
         };
 
-        let font = Font::new("Segoe UI", px(13.0), false);
+        let font = Font::new(crate::gdi::ui_face(), px(crate::theme::text::BODY), false);
         let set_font = |control: HWND| {
             SendMessageW(
                 control,
@@ -843,16 +945,40 @@ extern "system" fn chooser_proc(
                 DefWindowProcW(hwnd, message, wparam, lparam)
             }
         }
-        WM_CTLCOLORSTATIC => {
-            // SAFETY: `wparam` is the control's `HDC` for this message.
-            unsafe {
-                SetBkMode(HDC(wparam.0 as *mut std::ffi::c_void), TRANSPARENT);
-                SetTextColor(
-                    HDC(wparam.0 as *mut std::ffi::c_void),
-                    COLORREF(GetSysColor(COLOR_BTNTEXT)),
-                );
-                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
-            }
+        WM_ERASEBKGND => {
+            // SAFETY: `wparam` is the `HDC` to erase with, live for this message.
+            let filled = unsafe {
+                with_chooser(hwnd, |chooser| {
+                    let dc = HDC(wparam.0 as *mut std::ffi::c_void);
+                    let rect = crate::gdi::client_rect(hwnd);
+                    windows::Win32::Graphics::Gdi::FillRect(dc, &rect, chooser.ground.handle());
+                })
+            };
+            LRESULT(i32::from(filled.is_some()) as isize)
+        }
+        // The list is the whole of this dialog, and it is the one control here that really had
+        // to follow the theme: a white pane of rows inside a dark window is what "not themed"
+        // looks like at its worst.
+        WM_CTLCOLORSTATIC | WM_CTLCOLORLISTBOX => {
+            // SAFETY: one borrow; `control_colour` only writes to the message's own `HDC`.
+            let answered = unsafe {
+                with_chooser(hwnd, |chooser| match message == WM_CTLCOLORLISTBOX {
+                    true => control_colour(
+                        wparam,
+                        chooser.theme.text,
+                        chooser.theme.card,
+                        chooser.field.handle(),
+                    ),
+                    false => control_colour(
+                        wparam,
+                        chooser.theme.text,
+                        chooser.theme.backdrop,
+                        chooser.ground.handle(),
+                    ),
+                })
+            };
+            // SAFETY: the borrow is released; the default is what an unthemed popup would do.
+            answered.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, message, wparam, lparam) })
         }
         WM_COMMAND => {
             let id = (wparam.0 & 0xffff) as i32;
