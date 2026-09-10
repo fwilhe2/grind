@@ -17,10 +17,12 @@
 
 mod assist;
 mod chart;
+mod filter_ui;
 pub mod keymap;
 mod layout;
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,10 +30,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
-use grind_sheet::{App, CellValue, Form, Pos, RecalcMode, a1};
+use grind_sheet::{App, CellValue, Filter, Form, Pos, RecalcMode, a1};
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    Document, Element, Event, HtmlElement, HtmlInputElement, KeyboardEvent, MouseEvent, WheelEvent,
+    Document, Element, Event, HtmlButtonElement, HtmlElement, HtmlInputElement, KeyboardEvent,
+    MouseEvent, WheelEvent,
 };
 
 use crate::command::Entry;
@@ -130,6 +133,13 @@ struct Dom {
     charts: HtmlElement,
     message: HtmlElement,
     summary: HtmlElement,
+    /// The autofilter's dropdown (§9.4, `filter_ui.rs`): one popover, reused for every field
+    /// and moved under whichever button opened it — the same technique `swatch.rs` uses.
+    filter_menu: HtmlElement,
+    filter_list: Element,
+    filter_all: HtmlInputElement,
+    filter_clear: HtmlButtonElement,
+    filter_apply: HtmlButtonElement,
 }
 
 impl Dom {
@@ -147,6 +157,11 @@ impl Dom {
             charts: element(document, "charts")?,
             message: element(document, "message")?,
             summary: element(document, "summary")?,
+            filter_menu: element(document, "filter-menu")?,
+            filter_list: element(document, "filter-list")?,
+            filter_all: element(document, "filter-select-all")?,
+            filter_clear: element(document, "filter-clear")?,
+            filter_apply: element(document, "filter-apply")?,
         })
     }
 }
@@ -173,6 +188,12 @@ pub struct Ui {
     /// it, so turning one off puts the page back exactly.
     overlays: Cell<grind_sheet::view::Overlays>,
     message: RefCell<String>,
+    /// Which field the autofilter's popover is open for, when it is open (`filter_ui.rs`).
+    /// `None` *is* "closed" — one fact rather than two that can disagree.
+    filter_field: Cell<Option<u32>>,
+    /// The checkbox behind each value the popover currently lists, so `Ui::filter_ticked` can
+    /// read them back without a DOM query — the same cache `ui_sheet_gtk`'s `FilterMenu` keeps.
+    filter_checks: RefCell<Vec<(String, HtmlInputElement)>>,
 }
 
 impl Ui {
@@ -196,9 +217,12 @@ impl Ui {
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             message: RefCell::new(String::new()),
+            filter_field: Cell::new(None),
+            filter_checks: RefCell::new(Vec::new()),
         });
         wire_grid(&ui)?;
         wire_editor(&ui)?;
+        wire_filter_menu(&ui)?;
         Ok(ui)
     }
 
@@ -217,6 +241,7 @@ impl Ui {
         self.selection.set(Selection::default());
         self.editing.set(false);
         self.assist.borrow_mut().clear();
+        self.close_filter_menu();
         Ok(())
     }
 
@@ -249,6 +274,9 @@ impl Ui {
         // a row with no height is one the document says is not there.
         let hidden = self.app.hidden_rows(sheet).unwrap_or_default();
         let hidden_cols = self.app.hidden_cols(sheet).unwrap_or_default();
+        // The autofilter, read once and reused for the heading row's dropdown buttons below
+        // (§9.4, `filter_ui.rs`).
+        let filter = self.filter();
 
         let selection = self.selection.get();
         let editing = self.editing.get();
@@ -358,6 +386,31 @@ impl Ui {
                     if !edges.is_empty() {
                         cell.set_attribute("data-anchor", &edges)?;
                     }
+                }
+                // The autofilter's dropdown button (§9.4): one per field, on the range's
+                // own heading row — appended last, since `set_text_content` above would
+                // have thrown it away. `table:display-filter-buttons="false"` is honoured:
+                // the document asked for no buttons, and `run("sheet.filter")` still reaches
+                // the filter itself.
+                if let Some(filter) = &filter
+                    && filter.buttons
+                    && row == filter.start.row
+                    && (filter.start.col..=filter.end.col).contains(&col)
+                {
+                    let field = col - filter.start.col;
+                    let button = self.dom.document.create_element("button")?;
+                    button.set_attribute("type", "button")?;
+                    button.set_class_name(match filter.keep.contains_key(&field) {
+                        true => "filter-btn on",
+                        false => "filter-btn",
+                    });
+                    button.set_attribute("data-field", &field.to_string())?;
+                    button.set_attribute("title", "Filter this column")?;
+                    let label = self.dom.document.create_element("span")?;
+                    label.set_class_name("sr");
+                    label.set_text_content(Some("Filter this column"));
+                    button.append_child(&label)?;
+                    cell.append_child(&button)?;
                 }
                 line.append_child(&cell)?;
             }
@@ -605,6 +658,7 @@ impl Ui {
             "sheet.unhide-rows" => self.hide_rows(false),
             "sheet.hide-cols" => self.hide_cols(true),
             "sheet.unhide-cols" => self.hide_cols(false),
+            "sheet.filter" => self.toggle_filter(),
 
             "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
             "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
@@ -1074,6 +1128,180 @@ impl Ui {
         }
     }
 
+    // --- the autofilter (§9.4) ---
+
+    /// The sheet's filter, if it has one.
+    fn filter(&self) -> Option<Filter> {
+        self.app.filter(self.sheet.get()).ok().flatten()
+    }
+
+    pub fn is_filter_open(&self) -> bool {
+        self.filter_field.get().is_some()
+    }
+
+    pub fn close_filter_menu(&self) {
+        if self.filter_field.take().is_some() {
+            self.dom.filter_menu.set_hidden(true);
+        }
+    }
+
+    /// Filter the selection, or clear the filter the sheet already has — the toolbar's
+    /// `sheet.filter`, `ui_sheet_gtk`'s `Grid::toggle_filter` mirrored.
+    ///
+    /// Over a sheet that already has one this clears it, so the command is the on/off switch
+    /// its name implies; otherwise the selection becomes the range, with its first row the
+    /// heading, which is what a person selecting a table with its titles means.
+    fn toggle_filter(&self) {
+        let sheet = self.sheet.get();
+        if self.filter().is_some() {
+            self.close_filter_menu();
+            if let Err(error) = self.app.set_filter(sheet, None) {
+                self.set_message(error.to_string());
+            }
+            return;
+        }
+        let (start, mut end) = self.selection.get().rect();
+        // A single cell is a click, not a range: filter the used table around it rather than
+        // one cell, which could never hide anything.
+        if start == end
+            && let Ok((rows, cols)) = self.app.used_extent(sheet)
+        {
+            end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+        }
+        if end.row <= start.row {
+            return self
+                .set_message("Select the rows to filter, including their headings".to_owned());
+        }
+        // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes the
+        // same one, so a document does not say which shell made it.
+        let filter = Filter::new("__Anonymous_Sheet_DB__0", start, end);
+        if let Err(error) = self.app.set_filter(sheet, Some(filter)) {
+            self.set_message(error.to_string());
+        }
+    }
+
+    /// Open the popover for one field, under the button that asked for it.
+    fn open_filter_menu(&self, field: u32, anchor: &Element) -> Result<(), JsValue> {
+        let Some(filter) = self.filter() else {
+            return Ok(());
+        };
+        // The whole filtered column, not the visible part: a value scrolled off screen is
+        // still one of the column's values.
+        let col = filter.column(field);
+        let cells = self
+            .app
+            .get_viewport(
+                self.sheet.get(),
+                filter.start.row..filter.end.row.saturating_add(1),
+                col..col.saturating_add(1),
+            )
+            .map_err(js)?;
+        let values = filter_ui::field_values(&cells, &filter, field);
+        self.filter_field.set(Some(field));
+        self.build_filter_list(&values, filter.keep.get(&field))?;
+
+        let at = anchor.get_bounding_client_rect();
+        let style = self.dom.filter_menu.style();
+        style.set_property("left", &format!("{}px", at.left()))?;
+        style.set_property("top", &format!("{}px", at.bottom() + 4.0))?;
+        self.dom.filter_menu.set_hidden(false);
+        Ok(())
+    }
+
+    /// Rebuild the popover's checkbox list. `kept` is the field's current condition — `None`
+    /// when it has none, which ticks everything, because a field nobody has filtered keeps
+    /// every value it has.
+    fn build_filter_list(
+        &self,
+        values: &[String],
+        kept: Option<&BTreeSet<String>>,
+    ) -> Result<(), JsValue> {
+        self.dom.filter_list.set_text_content(None);
+        let mut checks = Vec::with_capacity(values.len());
+        for value in values {
+            let row = self.dom.document.create_element("label")?;
+            row.set_class_name("filter-row");
+            let check: HtmlInputElement = self
+                .dom
+                .document
+                .create_element("input")?
+                .dyn_into()
+                .map_err(|_| JsValue::from_str("an input is not an input"))?;
+            check.set_type("checkbox");
+            check.set_checked(kept.is_none_or(|k| k.contains(value)));
+            row.append_child(&check)?;
+            let label = self.dom.document.create_element("span")?;
+            match value.is_empty() {
+                // Italic, so "(empty)" cannot be confused with a cell that literally says it.
+                true => {
+                    label.set_class_name("filter-empty");
+                    label.set_text_content(Some(filter_ui::EMPTY_LABEL));
+                }
+                false => label.set_text_content(Some(value)),
+            }
+            row.append_child(&label)?;
+            self.dom.filter_list.append_child(&row)?;
+            checks.push((value.clone(), check));
+        }
+        *self.filter_checks.borrow_mut() = checks;
+        self.sync_filter_all();
+        Ok(())
+    }
+
+    /// The "Select all" box reflects the rows rather than driving them: all, none, or the
+    /// inconsistent state in between.
+    fn sync_filter_all(&self) {
+        let checks = self.filter_checks.borrow();
+        let ticked = checks.iter().filter(|(_, c)| c.checked()).count();
+        self.dom
+            .filter_all
+            .set_indeterminate(ticked > 0 && ticked < checks.len());
+        self.dom
+            .filter_all
+            .set_checked(ticked == checks.len() && ticked > 0);
+    }
+
+    fn filter_ticked(&self) -> BTreeSet<String> {
+        self.filter_checks
+            .borrow()
+            .iter()
+            .filter(|(_, c)| c.checked())
+            .map(|(value, _)| value.clone())
+            .collect()
+    }
+
+    /// What the popover decided, as an undoable change. The whole filter is replaced because
+    /// that is the vocabulary `App::set_filter` has — one filter is one value
+    /// (`grind_sheet::model`), so a field's condition is edited by reading, changing and
+    /// writing it back.
+    fn apply_filter(&self, chosen: filter_ui::Chosen) {
+        let Some(field) = self.filter_field.get() else {
+            return;
+        };
+        let Some(mut filter) = self.filter() else {
+            return;
+        };
+        match chosen {
+            filter_ui::Chosen::Clear => {
+                filter.keep.remove(&field);
+            }
+            // Applying nothing would hide every row — a document that has apparently
+            // emptied itself. Refused rather than accepted, with the popover left open.
+            filter_ui::Chosen::Keep(values) if values.is_empty() => {
+                return self
+                    .set_message("Keep at least one value, or Clear to show every row".to_owned());
+            }
+            filter_ui::Chosen::Keep(values) => {
+                filter.keep.insert(field, values);
+            }
+        }
+        self.close_filter_menu();
+        if let Err(error) = self.app.set_filter(self.sheet.get(), Some(filter)) {
+            self.set_message(error.to_string());
+        }
+        let _ = self.dom.surface.focus();
+    }
+
     fn move_to(&self, motion: Motion, extend: bool) {
         let sheet = self.sheet.get();
         let extent = self.app.used_extent(sheet).unwrap_or((0, 0));
@@ -1312,6 +1540,18 @@ impl Ui {
         };
         if let Some(sheet) = closest_number(&target, "button.tab", "data-sheet") {
             return self.switch_to(sheet as usize);
+        }
+        // A filter button beats the cell under it, for the same reason the fill handle would:
+        // it sits over the corner of a cell that is also a click target for selecting it.
+        if let Some(button) = target.closest("button.filter-btn")? {
+            let field = attribute(&button, "data-field").unwrap_or(0);
+            self.dragging.set(false);
+            return self.open_filter_menu(field, &button);
+        }
+        // Clicking the grid while the popover is open is how every spreadsheet dismisses one
+        // — there is no backdrop here to catch it, so the ordinary click path does instead.
+        if self.is_filter_open() {
+            self.close_filter_menu();
         }
         // The DOM knows which box the pointer is in; the cell carries its address.
         let Some(cell) = target.closest("td.cell")? else {
@@ -1688,6 +1928,36 @@ fn wire_editor(ui: &Rc<Ui>) -> Result<(), JsValue> {
         if let Err(error) = clicked.refresh_assist() {
             web_sys::console::error_1(&error);
         }
+    })
+}
+
+/// The autofilter's popover (§9.4, `filter_ui.rs`): "Select all", a value ticked or
+/// unticked, and the two buttons that decide what sticks.
+fn wire_filter_menu(ui: &Rc<Ui>) -> Result<(), JsValue> {
+    let all = ui.clone();
+    listen(&ui.dom.filter_all, "change", move |_: Event| {
+        let checked = all.dom.filter_all.checked();
+        for (_, check) in all.filter_checks.borrow().iter() {
+            check.set_checked(checked);
+        }
+    })?;
+
+    // One listener for the whole list rather than one per checkbox, since the list is
+    // rebuilt every time the popover opens.
+    let list = ui.clone();
+    listen(&ui.dom.filter_list, "change", move |_: Event| {
+        list.sync_filter_all();
+    })?;
+
+    let clear = ui.clone();
+    listen(&ui.dom.filter_clear, "click", move |_: Event| {
+        clear.apply_filter(filter_ui::Chosen::Clear);
+    })?;
+
+    let apply = ui.clone();
+    listen(&ui.dom.filter_apply, "click", move |_: Event| {
+        let ticked = apply.filter_ticked();
+        apply.apply_filter(filter_ui::Chosen::Keep(ticked));
     })
 }
 

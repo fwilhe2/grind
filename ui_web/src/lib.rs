@@ -315,6 +315,7 @@ impl Shell {
 
     fn open_palette(&self) {
         self.swatches.close();
+        self.sheet.close_filter_menu();
         if let Err(error) = self.palette.open(self.entries("")) {
             web_sys::console::error_1(&error);
         }
@@ -881,6 +882,7 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         let keeps_focus = *keeps_focus;
         listen(&button, "click", move |_: Event| {
             shell.swatches.close();
+            shell.sheet.close_filter_menu();
             shell.run(&command);
             if !keeps_focus {
                 let _ = shell.show(shell.mode.get());
@@ -943,6 +945,7 @@ fn wire_palette(shell: &Rc<Shell>) -> Result<(), JsValue> {
                 keys.close_palette();
             }
             "Escape" if keys.swatches.is_open() => keys.swatches.close(),
+            "Escape" if keys.sheet.is_filter_open() => keys.sheet.close_filter_menu(),
             _ => {}
         }
     }) as Box<dyn FnMut(KeyboardEvent)>);

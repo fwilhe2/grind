@@ -140,6 +140,15 @@ pub const SHEET: &[Command] = &[
     cmd("sheet.unhide-rows", "Unhide row(s)", "Sheets", "", false),
     cmd("sheet.hide-cols", "Hide column(s)", "Sheets", "", false),
     cmd("sheet.unhide-cols", "Unhide column(s)", "Sheets", "", false),
+    // §9.4: filter the selection, or clear the filter the sheet already has. The same key
+    // both LibreOffice Calc and Excel use.
+    cmd(
+        "sheet.filter",
+        "Filter rows",
+        "Sheets",
+        "Ctrl+Shift+L",
+        false,
+    ),
 ];
 
 /// The word processor's verbs.

@@ -261,6 +261,23 @@ const CHART = `<?xml version="1.0" encoding="UTF-8"?>
     </table:table>
   </office:spreadsheet></office:body></office:document>`;
 
+// A small table, for the autofilter (§9.4) — a heading and two distinct values, one of
+// them repeated, so a filter over it has something to hide.
+const FILTER = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+  <office:body><office:spreadsheet>
+    <table:table table:name="Sheet1">
+      <table:table-row><table:table-cell office:value-type="string"><text:p>Fruit</text:p></table:table-cell></table:table-row>
+      <table:table-row><table:table-cell office:value-type="string"><text:p>Apple</text:p></table:table-cell></table:table-row>
+      <table:table-row><table:table-cell office:value-type="string"><text:p>Banana</text:p></table:table-cell></table:table-row>
+      <table:table-row><table:table-cell office:value-type="string"><text:p>Apple</text:p></table:table-cell></table:table-row>
+    </table:table>
+  </office:spreadsheet></office:body>
+</office:document>`;
+
 // A text document with formatting in it — a Title, and a bold run inside a paragraph.
 const RICH = `<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
@@ -512,6 +529,59 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await openFile("chart.fods", CHART);
   check("a chart in the file is drawn", document.querySelectorAll("#charts .chart svg").length, 1);
   check("with a mark per bar", document.querySelectorAll("#charts .chart rect").length, 2);
+
+  // --- the autofilter (§9.4) -------------------------------------------------
+  //
+  // A field's own dropdown, built by ui_web/src/sheet/filter_ui.rs and drawn under the
+  // header cell that opened it.
+  const goTo = async (address) => {
+    byId("address").value = address;
+    byId("address").dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    );
+    await frame();
+  };
+  const rowStyle = () => byId("body").querySelector("tr").getAttribute("style") || "";
+  const filterLabels = () =>
+    [...document.querySelectorAll("#filter-list .filter-row span")].map((s) => s.textContent);
+
+  await openFile("filter.fods", FILTER);
+  check("a fresh table has no filter button", document.querySelectorAll("button.filter-btn").length, 0);
+
+  await goTo("A1:A4");
+  press("l", { ctrlKey: true, shiftKey: true });
+  await frame();
+  check("Ctrl+Shift+L filters the selection", document.querySelectorAll("button.filter-btn").length, 1);
+
+  document
+    .querySelector("button.filter-btn")
+    .dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+  await frame();
+  check("clicking it opens the popover", byId("filter-menu").hidden, false);
+  check("offering every distinct value in the column", filterLabels(), ["Apple", "Banana"]);
+
+  const [appleBox, bananaBox] = document.querySelectorAll("#filter-list input[type=checkbox]");
+  check("every value starts ticked", [appleBox.checked, bananaBox.checked], [true, true]);
+  bananaBox.checked = false;
+  bananaBox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await press_button("filter-apply");
+  check("Apply closes the popover", byId("filter-menu").hidden, true);
+  check(
+    "and the button shows the field is filtered",
+    document.querySelector("button.filter-btn").classList.contains("on"),
+    true
+  );
+
+  await goTo("A3");
+  check("the row Banana was on is hidden", rowStyle().includes("display:none"), true);
+  await goTo("A2");
+  check("an Apple row still shows", shown(), "Apple");
+  check("with no display:none of its own", rowStyle().includes("display:none"), false);
+
+  await command("Filter rows");
+  check("running the command again clears the filter", document.querySelectorAll("button.filter-btn").length, 0);
+  await goTo("A3");
+  check("and the Banana row shows again", shown(), "Banana");
 
   // --- the document pane, again ---------------------------------------------
   await openFile("rich.fodt", RICH);

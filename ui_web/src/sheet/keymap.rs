@@ -100,6 +100,8 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
             "a" | "A" => Some(Action::Run("edit.select-all")),
             "d" | "D" => Some(Action::Run("edit.fill-down")),
             "r" | "R" => Some(Action::Run("edit.fill-right")),
+            // The filter key both LibreOffice Calc and Excel use.
+            "l" | "L" if chord.shift => Some(Action::Run("sheet.filter")),
             "Home" => Some(Action::Move {
                 motion: Motion::SheetStart,
                 extend: chord.shift,
@@ -274,6 +276,16 @@ mod tests {
         assert_eq!(
             action_for(&primary("b"), false),
             Some(Action::Run("style.bold"))
+        );
+        assert_eq!(
+            action_for(
+                &Chord {
+                    shift: true,
+                    ..primary("l")
+                },
+                false
+            ),
+            Some(Action::Run("sheet.filter"))
         );
         // And an unclaimed one is still the browser's — including the clipboard's three,
         // whose *events* are how this shell reaches it.

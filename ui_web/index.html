@@ -276,6 +276,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- The colour grid, moved under whichever swatch button opened it. -->
     <div id="swatches" class="swatches" hidden></div>
 
+    <!-- The autofilter's dropdown (§9.4): the list of values behind a header cell's button
+         (ui_web/src/sheet/filter_ui.rs). One popover, reused for every field and moved under
+         whichever button opened it, the same technique the colour grid above uses. -->
+    <div id="filter-menu" class="filter-menu" hidden>
+      <label class="filter-all">
+        <input id="filter-select-all" type="checkbox" />
+        Select all
+      </label>
+      <div id="filter-list" class="filter-list"></div>
+      <div class="filter-actions">
+        <button id="filter-clear" type="button" class="text">Clear</button>
+        <button id="filter-apply" type="button" class="text apply">Apply</button>
+      </div>
+    </div>
+
     <!-- Shown while a file is being dragged over the page. -->
     <div id="drop" class="drop" hidden><span>Drop to open</span></div>
 

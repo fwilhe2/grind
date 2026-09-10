@@ -292,6 +292,103 @@ input[type="text"] {
   font-size: 0.85em;
 }
 
+/* --- the autofilter's dropdown (§9.4, ui_web/src/sheet/filter_ui.rs) ----- */
+
+.filter-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 14rem;
+  padding: 0.5rem;
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 0.9em;
+}
+
+.filter-all {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.filter-empty {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.filter-actions .apply {
+  font-weight: 600;
+  border-color: color-mix(in srgb, AccentColor 45%, transparent);
+}
+
+/* The dropdown button itself: pinned to a heading cell's trailing edge, the way the swatch
+   bar pins itself to the bottom of its button. `.cell` needs `position: relative` for it to
+   anchor against. */
+.cell {
+  position: relative;
+}
+
+.filter-btn {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  min-width: 0;
+  border: none;
+  background: var(--head);
+  border-radius: 2px;
+  font-size: 0.65em;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.filter-btn:hover {
+  opacity: 1;
+}
+
+.filter-btn.on {
+  background: color-mix(in srgb, AccentColor 35%, var(--head));
+  opacity: 1;
+}
+
+.filter-btn::before {
+  content: "▾";
+}
+
 /* --- the formula bar ------------------------------------------------------ */
 
 .formula-bar {
