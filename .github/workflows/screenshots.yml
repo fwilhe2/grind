@@ -208,8 +208,17 @@ jobs:
           npx --prefix ui_web playwright install --with-deps chromium
           python3 -m http.server --directory ui_web/dist 8000 &
 
+      # `NODE_PATH`, because the two halves of this are in different directories. Playwright
+      # is installed into `ui_web/node_modules` — `ui_web/smoke.sh` puts jsdom there and says
+      # why: it is test scaffolding, not something the app ships, and `.gitignore` names that
+      # path and not the repository root. But `smoke.js` sits *in* `ui_web`, so Node's
+      # walk-up from the script's own directory finds it, and this script sits in
+      # `.github/scripts`, where the same walk goes to the repository root and stops.
+      # `NODE_PATH` is the one line that reconciles them without moving either.
       - name: Screenshot both browser panes
         if: ${{ !cancelled() }}
+        env:
+          NODE_PATH: ${{ github.workspace }}/ui_web/node_modules
         run: |
           node .github/scripts/web-screenshot.js http://localhost:8000 screenshots \
             web-sheet=sample.fods web-text=sample.fodt
@@ -225,6 +234,13 @@ jobs:
   # `artifacts.yml` already uses to prove two renders are byte-identical.
   windows:
     needs: [resolve, linux]
+    # It depends on `linux` for the sample documents and for nothing else, so a *shell* that
+    # failed to draw there must not skip this one — the same independence `!cancelled()` buys
+    # between the steps of that job, which does not extend across jobs on its own. `resolve`
+    # is the real precondition: with no run to take the executable from there is nothing to
+    # photograph. If `linux` failed early enough that the documents were never uploaded, this
+    # fails at the download, which is the right way round.
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
