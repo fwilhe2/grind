@@ -9,6 +9,8 @@
 //! shell, arriving in the cheapest shell first.
 
 pub mod app;
+pub mod assist;
+pub mod geom;
 pub mod keymap;
 
 /// The spreadsheet's own keys and commands — `--help` prints it, `:help` shows it.
@@ -16,17 +18,25 @@ pub const HELP: &str = "\
 Spreadsheet:
   i, a  edit the cell     c  edit from empty
   x, d  clear the cell, or everything selected
+  n, N  the next / previous match of the last :find
+  While typing a formula: Tab accepts a completion, Up/Down pick one, Esc dismisses
   :bold  :italic  :wrap  :border  :plain
   :align l|c|r            :color <name|#rrggbb>   :fill <name|#rrggbb>
   :format general|int|number [n]|percent|currency|date|time|datetime
   :general                :recalc
+  :find <text>            — every cell whose text or formula holds it; n / N step
+  :down  :right           — fill the selection from its first cell (references shift)
+  :eval <formula>         — what it would come to, storing nothing
+  :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers
+  :name <name>  :name!    — define a name over the selection, or drop the one on it
+  :csv-in <file>  :csv-out <file>
   :roles  :names          — what each cell is, and what it is called (a reading;
                             nothing is written, and the same word turns it off)
   :source                 — the document as its projection, read-only; j/k moves and
                             selects the cell that line is
   :lint  :lint hints      — what the document says about itself; Enter goes to a finding
   :sheet <name>  :sheet-new  :sheet-rename <name>  :sheet-delete
-  :<address>              — a cell or a range, e.g. B12 or Data.A1
+  :<address>              — a cell, a range or a defined name, e.g. B12, Data.A1, tax_rate
 ";
 
 /// What `:help` shows: what this shell shares with the other, then its own.

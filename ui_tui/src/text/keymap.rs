@@ -67,6 +67,10 @@ pub enum Action {
     Emphasise(grind_text::markdown::Emphasis),
     /// `-` over a selection: back to no formatting at all.
     Plain,
+    /// `n` / `N` — the next or previous match of the last `:find`. **The same two keys the
+    /// spreadsheet's map binds** (`crate::sheet::keymap`), because one suite should not have two
+    /// ways to say "the next one".
+    Next(bool),
     /// `Esc` — leave Visual mode without doing anything to what was selected.
     Escape,
 }
@@ -111,6 +115,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('x') | KeyCode::Char('d') => Some(Action::EraseChar),
         KeyCode::Char('X') => Some(Action::DeleteBlock),
         KeyCode::Char('J') => Some(Action::Join),
+        KeyCode::Char('n') => Some(Action::Next(true)),
+        KeyCode::Char('N') => Some(Action::Next(false)),
         KeyCode::Char('u') => Some(Action::Undo),
         KeyCode::Char('r') if ctrl => Some(Action::Redo),
         KeyCode::Char(':') => Some(Action::Command),
@@ -242,6 +248,19 @@ mod tests {
                 Some(Action::Escape)
             );
         }
+    }
+
+    /// The two keys that mean the same thing in both halves of this shell.
+    #[test]
+    fn n_and_shift_n_step_a_search() {
+        assert_eq!(
+            normal_action(KeyCode::Char('n'), KeyModifiers::NONE, false),
+            Some(Action::Next(true))
+        );
+        assert_eq!(
+            normal_action(KeyCode::Char('N'), KeyModifiers::NONE, false),
+            Some(Action::Next(false))
+        );
     }
 
     /// `i` and `a` are different here and the same in the spreadsheet's map, because a cell has

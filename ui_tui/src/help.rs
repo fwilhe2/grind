@@ -25,6 +25,7 @@ Normal mode, both document types (vi-style):
   g / G              start / end of the document
   v                  select — Visual mode, a rectangle or a run of text
   y / p              yank the selection / put it back
+  n / N              the next / previous match of the last :find
   u / Ctrl+r         undo / redo
   :                  command line          :help  this page
 
@@ -33,8 +34,18 @@ Visual mode — one notation for emphasis, whichever document it is:
   d / x  delete or clear what is selected   Esc  stop selecting
 
 Saving and leaving, both:
-  :w [file]   :q   :q!   :wq or :x
+  :w [file]   :q   :q!   :wq or :x       :about  which build this is
 ";
+
+/// Which build this is, for `:about` — the same stamp `--version` prints and every other shell
+/// in the suite shows in its About box, from `grind_core::build_info` rather than from a string
+/// this shell keeps of its own.
+pub fn about() -> String {
+    format!(
+        "grind-tui {}",
+        grind_core::build_info::describe_version(env!("CARGO_PKG_VERSION"))
+    )
+}
 
 /// A help pane's scroll position, and whether it is showing at all.
 ///
