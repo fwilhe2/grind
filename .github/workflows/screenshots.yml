@@ -8,27 +8,39 @@
 # honest about what the suite actually does rather than a hand-picked demo somebody
 # forgot to update.
 #
-# Four jobs, one per platform a shell runs on, because each needs a different way to get
-# a picture out of a UI with no test harness of its own:
+# **Two jobs, one per platform** — not one per shell. `artifacts.yml`'s rule applies here for
+# the same reason it applies there: a binary is built once per platform and every consumer of
+# that build is a later step in the same job. This workflow used to have four jobs, three of
+# them on Linux, so `grind-cli` was compiled three times on three runners that could not see
+# each other's `target/` — and none of them wrote a cache (`save-if: false` while borrowing
+# another workflow's key), so whatever the borrowed cache did not already hold was recompiled
+# on every run and thrown away. The `web` half was the worst case: a release wasm build
+# restoring `ci.yml`'s debug host cache is very nearly a total miss.
 #
-#   * `linux-gtk` — both GTK windows already have `--render-to <png>`, built for exactly
-#     this (`doc/windows-shell.md`'s decision 5 has the Windows twin). It still opens a
-#     real `adw::ApplicationWindow` and asks its own renderer for a frame, so it still
-#     needs a display — `xvfb-run` supplies one nothing else here does.
-#   * `tui` — `grind-tui` has no "draw one frame and exit" path; its own tests draw into
+# So `linux` builds the four native binaries and the wasm module once, and the six pictures
+# are six later steps reading what it produced. `windows` is separate because a PE has to be
+# linked on Windows, which is the only reason either job exists apart from the other.
+#
+# Each shell still needs its own way to get a picture out of a UI with no test harness:
+#
+#   * the two GTK windows already have `--render-to <png>`, built for exactly
+#     this (`doc/windows-shell.md`'s decision 5 has the Windows twin). They still open a
+#     real `adw::ApplicationWindow` and ask their own renderer for a frame, so they still
+#     need a display — `xvfb-run` supplies one nothing else here does.
+#   * `grind-tui` has no "draw one frame and exit" path; its own tests draw into
 #     ratatui's `TestBackend`, a cell buffer with no terminal. So this drives a real one:
 #     `xterm` under Xvfb, screenshotted from the outside with ImageMagick — the technique
 #     `doc/windows-shell.md` already names for the Wine window.
-#   * `web` — a headless Chromium (Playwright) against the built `ui_web/dist`, the
-#     browser half `ui_web/smoke.js` deliberately does not attempt (jsdom has no canvas
-#     and no layout engine).
-#   * `windows` — reuses `win32.yml`'s and `artifacts.yml`'s own `--render-to` path
+#   * the browser shell gets a headless Chromium (Playwright) against the built
+#     `ui_web/dist`, the half `ui_web/smoke.js` deliberately does not attempt (jsdom has no
+#     canvas and no layout engine).
+#   * `windows` reuses `win32.yml`'s and `artifacts.yml`'s own `--render-to` path
 #     (`.github/scripts/win32-render.ps1`), which already exists to prove two renders are
 #     byte-identical; this just keeps one of the frames instead of discarding it.
 #
 # Not gating anything — a shell that fails to screenshot here is not a broken build, so
-# this workflow reports and does not fail the others. `bundle` collects every job's PNGs
-# into one artifact so there is a single download rather than four.
+# this workflow reports and does not fail the others. `bundle` collects both jobs' PNGs
+# into one artifact so there is a single download rather than two.
 name: screenshots
 
 on:
@@ -60,23 +72,33 @@ env:
   CARGO_TERM_COLOR: never
 
 jobs:
-  # `grind-sheet-gtk` and `grind-text-gtk`, each on the sample document their own
-  # application opens.
-  linux-gtk:
+  # Every Linux shell: one build of the four native binaries, one build of the wasm
+  # module, then six pictures read what those produced.
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # Shares `gtk.yml`'s key: this job compiles the same two crates against the
-          # same gtk4-rs bindings, so its cache is that job's cache.
-          shared-key: linux-gtk
-          save-if: false
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb
+          # Its own key, and it writes one. No other job compiles this crate set — the two
+          # GTK shells, the terminal shell, the CLI and a *release* wasm module — so
+          # borrowing `gtk.yml`'s or `ci.yml`'s key (which is what the three jobs this
+          # replaced did) missed on most of it and, with `save-if: false`, missed again on
+          # every subsequent run. `save-if` is still `main`-only for the reason
+          # `artifacts.yml` gives: caches are scoped per branch and the repository has a
+          # 10 GB budget. This workflow only runs on `main` and by hand anyway.
+          shared-key: screenshots
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb xterm imagemagick
 
-      - run: cargo build -p grind-cli -p grind-sheet-gtk -p grind-text-gtk
+      # THE ONE LINUX BUILD for the native shells. Everything below reads `target/debug/`.
+      - name: Build every Linux binary
+        run: cargo build --locked -p grind-cli -p grind-tui -p grind-sheet-gtk -p grind-text-gtk
 
+      # Built once, opened by all four shells — the same documents `scripts/run.sh` uses.
       - name: Build the sample documents
         run: |
           GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
@@ -93,34 +115,7 @@ jobs:
       - name: Screenshot the word processor window
         run: xvfb-run -a target/debug/grind-text-gtk /tmp/demo/sample.fodt --render-to screenshots/text-gtk.png
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: screenshots-linux-gtk
-          path: screenshots/*.png
-          if-no-files-found: error
-
-  # `grind-tui`, on both document types, driven inside a real terminal.
-  tui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: linux-debug
-          save-if: false
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xterm imagemagick
-
-      - run: cargo build -p grind-cli -p grind-tui
-
-      - name: Build the sample documents
-        run: |
-          GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
-          GRIND="$PWD/target/debug/grind" examples/sample-text.sh /tmp/demo >/dev/null
-
-      - run: mkdir -p screenshots
-
-      - name: Screenshot both document types
+      - name: Screenshot the terminal shell, both document types
         run: |
           Xvfb :99 -screen 0 1200x820x24 &
           xvfb_pid=$!
@@ -130,26 +125,11 @@ jobs:
           .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fods screenshots/tui-sheet.png
           .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fodt screenshots/tui-text.png
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: screenshots-tui
-          path: screenshots/*.png
-          if-no-files-found: error
-
-  # The browser shell, one bundle holding both panes (`ui_web/build.sh`), each opened
-  # through its own `?doc=` the way `scripts/run.sh web` does by hand.
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: linux-debug
-          save-if: false
-
+      # The browser shell, one bundle holding both panes (`ui_web/build.sh`), each opened
+      # through its own `?doc=` the way `scripts/run.sh web` does by hand. This is a
+      # second compile, and unavoidably so — a different target triple and a different
+      # profile — but it is a second compile on the *same runner*, sharing the `target/`
+      # and the cache with everything above.
       - name: Install wasm-bindgen-cli
         run: |
           wanted="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
@@ -157,31 +137,21 @@ jobs:
 
       - run: ui_web/build.sh release
 
-      - name: Build the sample documents
+      - name: Serve the shell
         run: |
-          cargo build -p grind-cli
-          GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
-          GRIND="$PWD/target/debug/grind" examples/sample-text.sh /tmp/demo >/dev/null
           cp /tmp/demo/sample.fods /tmp/demo/sample.fodt ui_web/dist/
-
-      - name: Install Playwright
-        run: |
           npm install --silent --no-save --no-fund --no-audit --prefix ui_web playwright@1
           npx --prefix ui_web playwright install --with-deps chromium
+          python3 -m http.server --directory ui_web/dist 8000 &
 
-      - name: Serve the shell
-        run: python3 -m http.server --directory ui_web/dist 8000 &
-
-      - run: mkdir -p screenshots
-
-      - name: Screenshot both panes
+      - name: Screenshot both browser panes
         run: |
           node .github/scripts/web-screenshot.js http://localhost:8000 screenshots \
             web-sheet=sample.fods web-text=sample.fodt
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: screenshots-web
+          name: screenshots-linux
           path: screenshots/*.png
           if-no-files-found: error
 
@@ -195,11 +165,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          # This borrow is the one that works: `artifacts.yml`'s `windows` job is the same
+          # platform, the same profile and the same default key, and `grind-win32` is
+          # nearly all of what is built here. So `save-if: false` costs almost nothing —
+          # only `grind-cli`'s own crates are missed — and writing a second cache for them
+          # would cost the branch budget more than it saves.
           save-if: false
 
       # Default shell (pwsh) — never bash for anything that invokes cargo on this
       # runner. See `artifacts.yml`'s "Measure" step for the linker this avoids.
-      - run: cargo build --release -p grind-cli -p grind-win32
+      #
+      # THE ONE WINDOWS BUILD. The steps below read `target/release/`.
+      - run: cargo build --release --locked -p grind-cli -p grind-win32
 
       # `bash` here is safe for the same reason it is in `artifacts.yml`: this runs the
       # binary `cargo build` above already produced and links nothing. The output goes
@@ -232,10 +209,10 @@ jobs:
           path: screenshots/*.png
           if-no-files-found: error
 
-  # Everything above into one download, so "the current screenshots" is one artifact
-  # rather than four — and one place to look when these eventually feed the README.
+  # Both jobs into one download, so "the current screenshots" is one artifact rather than
+  # two — and one place to look when these eventually feed the README.
   bundle:
-    needs: [linux-gtk, tui, web, windows]
+    needs: [linux, windows]
     if: always()
     runs-on: ubuntu-latest
     steps:
