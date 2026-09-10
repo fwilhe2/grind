@@ -205,6 +205,27 @@ jobs:
           path: target/generate-rpm/*.rpm
           if-no-files-found: error
 
+      # The binaries themselves, unpackaged. `screenshots.yml` is what downloads them: it
+      # takes a picture of each shell and compiles nothing at all, which it can only do
+      # because this job's output leaves the runner. The Windows job's `grind-win32-x64` and
+      # the wasm job's `grind-web` are the other two thirds of the same arrangement, and both
+      # already existed for other reasons.
+      #
+      # **Before `cargo bloat`**, like every other consumer here — it rebuilds these four
+      # paths with debug information and leaves the result behind, so an upload after it
+      # would hand out a binary nearly half again the size of the one that ships. See the
+      # header.
+      - name: Upload the Linux binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-binaries
+          path: |
+            target/release/grind
+            target/release/grind-tui
+            target/release/grind-sheet-gtk
+            target/release/grind-text-gtk
+          if-no-files-found: error
+
       # Not in `install-action`'s manifest and no prebuilt releases; see the note on
       # `cargo-generate-rpm` above for why that is acceptable.
       - name: Install cargo-bloat

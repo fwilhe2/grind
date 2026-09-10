@@ -8,146 +8,198 @@
 # honest about what the suite actually does rather than a hand-picked demo somebody
 # forgot to update.
 #
-# **Two jobs, one per platform** — not one per shell. `artifacts.yml`'s rule applies here for
-# the same reason it applies there: a binary is built once per platform and every consumer of
-# that build is a later step in the same job. This workflow used to have four jobs, three of
-# them on Linux, so `grind-cli` was compiled three times on three runners that could not see
-# each other's `target/` — and none of them wrote a cache (`save-if: false` while borrowing
-# another workflow's key), so whatever the borrowed cache did not already hold was recompiled
-# on every run and thrown away. The `web` half was the worst case: a release wasm build
-# restoring `ci.yml`'s debug host cache is very nearly a total miss.
+# **This workflow compiles nothing.** Not "builds each binary once" — *nothing*. It runs
+# after `artifacts.yml` and downloads that run's own binaries: the four Linux executables,
+# `grind-win32.exe`, and `ui_web/dist` with its `wasm-bindgen` glue already written. There
+# is no toolchain action here, no `rust-cache`, no `cargo` invocation of any kind, and a
+# screenshot run costs a couple of minutes of downloading and drawing rather than a full
+# compile of the suite on two runners.
 #
-# So `linux` builds the four native binaries and the wasm module once, and the six pictures
-# are six later steps reading what it produced. `windows` is separate because a PE has to be
-# linked on Windows, which is the only reason either job exists apart from the other.
+# This is `artifacts.yml`'s own rule taken one step further than that file states it. Its
+# header says a binary is built once per platform and every consumer is a later step in the
+# same job; a consumer that *cannot* be a later step — these need Xvfb, xterm, ImageMagick
+# and a headless Chromium, none of which belong in the job that produces a release — becomes
+# a later **workflow** instead, reading the same artifacts rather than rebuilding their
+# inputs. The two intermediate arrangements were both wrong and are worth naming so they do
+# not come back: four jobs each compiling what they needed (`grind-cli` three times over, on
+# three runners that could not see each other's `target/`), and then one job per platform,
+# which is better arithmetic but still a full compile to take a picture of a binary that
+# already exists.
 #
 # Each shell still needs its own way to get a picture out of a UI with no test harness:
 #
-#   * the two GTK windows already have `--render-to <png>`, built for exactly
-#     this (`doc/windows-shell.md`'s decision 5 has the Windows twin). They still open a
-#     real `adw::ApplicationWindow` and ask their own renderer for a frame, so they still
-#     need a display — `xvfb-run` supplies one nothing else here does.
-#   * `grind-tui` has no "draw one frame and exit" path; its own tests draw into
-#     ratatui's `TestBackend`, a cell buffer with no terminal. So this drives a real one:
-#     `xterm` under Xvfb, screenshotted from the outside with ImageMagick — the technique
+#   * the two GTK windows already have `--render-to <png>`, built for exactly this
+#     (`doc/windows-shell.md`'s decision 5 has the Windows twin). They still open a real
+#     `adw::ApplicationWindow` and ask their own renderer for a frame, so they still need a
+#     display — `xvfb-run` supplies one nothing else here does.
+#   * `grind-tui` has no "draw one frame and exit" path; its own tests draw into ratatui's
+#     `TestBackend`, a cell buffer with no terminal. So this drives a real one: `xterm` under
+#     Xvfb, screenshotted from the outside with ImageMagick — the technique
 #     `doc/windows-shell.md` already names for the Wine window.
-#   * the browser shell gets a headless Chromium (Playwright) against the built
+#   * the browser shell gets a headless Chromium (Playwright) against the downloaded
 #     `ui_web/dist`, the half `ui_web/smoke.js` deliberately does not attempt (jsdom has no
 #     canvas and no layout engine).
-#   * `windows` reuses `win32.yml`'s and `artifacts.yml`'s own `--render-to` path
+#   * `windows` reuses `artifacts.yml`'s own `--render-to` path
 #     (`.github/scripts/win32-render.ps1`), which already exists to prove two renders are
 #     byte-identical; this just keeps one of the frames instead of discarding it.
 #
-# Not gating anything — a shell that fails to screenshot here is not a broken build, so
-# this workflow reports and does not fail the others. `bundle` collects both jobs' PNGs
-# into one artifact so there is a single download rather than two.
+# The **sample documents are built once too**, by the `linux` job, and handed to `windows` as
+# an artifact. A `.fods` is a `.fods` on either platform, so the alternative — downloading a
+# second copy of the CLI onto the Windows runner to generate the same bytes again — would be
+# the same duplication in a smaller place. It also means `artifacts.yml` need not upload a
+# `grind.exe` it has no other reason to keep.
+#
+# Not gating anything — a shell that fails to screenshot here is not a broken build, so this
+# workflow reports and does not fail the others. `bundle` collects both jobs' PNGs into one
+# artifact so there is a single download rather than two.
 name: screenshots
 
+# `workflow_run`, because the input to every job here is another workflow's output. It fires
+# on `artifacts` completing however that workflow was triggered — a push to `main`, a pull
+# request, or by hand — and the `if` on each job below is what keeps a failed one from being
+# screenshotted.
+#
+# `workflow_dispatch` still works and does not need an `artifacts` run of its own: `resolve`
+# falls back to the most recent successful one. That is what makes "take the pictures again"
+# a ten-second thing to ask for.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "core/**"
-      - "sheet/**"
-      - "text/**"
-      - "ui_sheet_gtk/**"
-      - "ui_text_gtk/**"
-      - "ui_tui/**"
-      - "ui_web/**"
-      - "ui_win32/**"
-      - "cli/**"
-      - "examples/sample-sheet.sh"
-      - "examples/sample-text.sh"
-      - ".github/workflows/screenshots.yml"
-      - ".github/scripts/tui-screenshot.sh"
-      - ".github/scripts/web-screenshot.js"
-      - ".github/scripts/win32-render.ps1"
+  workflow_run:
+    workflows: [artifacts]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: "artifacts run to take the binaries from (default: the latest successful one)"
+        required: false
+        type: string
+
+# `actions: read` is what `download-artifact` needs to reach **another run's** artifacts, and
+# what `gh run list` needs in `resolve`. Neither is the default, and without them the download
+# fails with a 403 that reads like a missing artifact.
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
-  group: screenshots-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-env:
-  CARGO_TERM_COLOR: never
+  group: screenshots-${{ github.event.workflow_run.head_sha || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # Every Linux shell: one build of the four native binaries, one build of the wasm
-  # module, then six pictures read what those produced.
+  # Which `artifacts` run the binaries come from, decided once so the two platform jobs
+  # cannot disagree about it — and so the answer appears in the log as a number somebody can
+  # click rather than being recomputed inside two `download-artifact` steps.
+  resolve:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      run_id: ${{ steps.pick.outputs.run_id }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_RUN: ${{ github.event.workflow_run.id }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_RUN: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          run_id="${INPUT_RUN:-${EVENT_RUN:-}}"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh run list --workflow artifacts.yml --status success \
+                        --limit 1 --json databaseId -q '.[0].databaseId')"
+          fi
+          [ -n "$run_id" ] || { echo "no successful artifacts run to take binaries from" >&2; exit 1; }
+          # The commit those binaries were built from, so this workflow checks out the
+          # scripts and sample-document generators that match them rather than whatever is
+          # on `main` now. `workflow_run` would otherwise hand us the default branch.
+          sha="${EVENT_SHA:-$(gh run view "$run_id" --json headSha -q .headSha)}"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Taking binaries from artifacts run $run_id ($sha)."
+
+  # Every Linux shell, from binaries somebody else compiled.
   linux:
+    needs: resolve
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      # Runtime libraries only — `libgtk-4-dev`/`libadwaita-1-dev` are what a *compile* needs
+      # and nothing here compiles. The binaries came off the same `ubuntu-latest` image, so
+      # these are the sonames they were linked against.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-1 libadwaita-1-0 xvfb xterm imagemagick
+
+      - name: Download the Linux binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          # Its own key, and it writes one. No other job compiles this crate set — the two
-          # GTK shells, the terminal shell, the CLI and a *release* wasm module — so
-          # borrowing `gtk.yml`'s or `ci.yml`'s key (which is what the three jobs this
-          # replaced did) missed on most of it and, with `save-if: false`, missed again on
-          # every subsequent run. `save-if` is still `main`-only for the reason
-          # `artifacts.yml` gives: caches are scoped per branch and the repository has a
-          # 10 GB budget. This workflow only runs on `main` and by hand anyway.
-          shared-key: screenshots
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb xterm imagemagick
+          name: linux-binaries
+          path: bin
+          run-id: ${{ needs.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
 
-      # THE ONE LINUX BUILD for the native shells. Everything below reads `target/debug/`.
-      - name: Build every Linux binary
-        run: cargo build --locked -p grind-cli -p grind-tui -p grind-sheet-gtk -p grind-text-gtk
+      - name: Download the browser shell
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: grind-web
+          path: ui_web/dist
+          run-id: ${{ needs.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
 
-      # Built once, opened by all four shells — the same documents `scripts/run.sh` uses.
+      # An artifact is a zip and a zip does not carry the executable bit.
+      - run: chmod +x bin/* && mkdir -p screenshots
+
+      # Built once, opened by all four shells — and uploaded below for the Windows job, which
+      # needs the same bytes and has no CLI of its own to make them with.
       - name: Build the sample documents
         run: |
-          GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
-          GRIND="$PWD/target/debug/grind" examples/sample-text.sh /tmp/demo >/dev/null
+          GRIND="$PWD/bin/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
+          GRIND="$PWD/bin/grind" examples/sample-text.sh /tmp/demo >/dev/null
 
-      - run: mkdir -p screenshots
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sample-documents
+          path: |
+            /tmp/demo/sample.fods
+            /tmp/demo/sample.fodt
+          if-no-files-found: error
 
-      # `--render-to` schedules its own frame 600ms after the window presents and closes
-      # the window itself once it has written the PNG (`ui_sheet_gtk/src/main.rs`), so
-      # each of these exits on its own.
+      # `!cancelled()` from the first picture down, and on the upload: one shell failing to
+      # draw must not skip the others or take the whole download with it. The job still
+      # fails — it just says which shells worked before it does.
+      #
+      # `--render-to` schedules its own frame 600ms after the window presents and closes the
+      # window itself once it has written the PNG (`ui_sheet_gtk/src/main.rs`), so each of
+      # these exits on its own.
       - name: Screenshot the spreadsheet window
         if: ${{ !cancelled() }}
-        run: xvfb-run -a target/debug/grind-sheet-gtk /tmp/demo/sample.fods --render-to screenshots/sheet-gtk.png
+        run: xvfb-run -a bin/grind-sheet-gtk /tmp/demo/sample.fods --render-to screenshots/sheet-gtk.png
 
       - name: Screenshot the word processor window
         if: ${{ !cancelled() }}
-        run: xvfb-run -a target/debug/grind-text-gtk /tmp/demo/sample.fodt --render-to screenshots/text-gtk.png
+        run: xvfb-run -a bin/grind-text-gtk /tmp/demo/sample.fodt --render-to screenshots/text-gtk.png
 
-      # `xvfb-run -a` rather than a hardcoded `Xvfb :99`, and that is not a tidy-up: the
-      # two steps above are also `xvfb-run -a`, which starts looking at display **99** and
-      # leaves `/tmp/.X99-lock` behind when its server exits. A literal `:99` here — which
-      # was safe while this ran in a job of its own — then fails with "Server is already
-      # active for display 99" against a server that is not running. `-a` asks for whatever
-      # is free instead, so no number in this file can collide with another step's.
-      #
-      # Both screenshots go inside one `xvfb-run`, since `tui-screenshot.sh` wants a
+      # `xvfb-run -a` rather than a hardcoded `Xvfb :99`, and that is not a tidy-up: the two
+      # steps above are also `xvfb-run -a`, which starts looking at display **99** and leaves
+      # `/tmp/.X99-lock` behind when its server exits. A literal `:99` here then fails with
+      # "Server is already active for display 99" against a server that is not running. `-a`
+      # asks for whatever is free instead, so no number in this file can collide with another
+      # step's. Both screenshots go inside one of them, since `tui-screenshot.sh` wants a
       # display that already exists and says so rather than starting one.
       - name: Screenshot the terminal shell, both document types
         if: ${{ !cancelled() }}
         run: |
           xvfb-run -a -s '-screen 0 1200x820x24' bash -euo pipefail -c '
-            .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fods screenshots/tui-sheet.png
-            .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fodt screenshots/tui-text.png
+            .github/scripts/tui-screenshot.sh bin/grind-tui /tmp/demo/sample.fods screenshots/tui-sheet.png
+            .github/scripts/tui-screenshot.sh bin/grind-tui /tmp/demo/sample.fodt screenshots/tui-text.png
           '
 
-      # The browser shell, one bundle holding both panes (`ui_web/build.sh`), each opened
-      # through its own `?doc=` the way `scripts/run.sh web` does by hand. This is a
-      # second compile, and unavoidably so — a different target triple and a different
-      # profile — but it is a second compile on the *same runner*, sharing the `target/`
-      # and the cache with everything above.
-      - name: Install wasm-bindgen-cli
-        if: ${{ !cancelled() }}
-        run: |
-          wanted="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
-          cargo install wasm-bindgen-cli --version "$wanted" --locked
-
-      - if: ${{ !cancelled() }}
-        run: ui_web/build.sh release
-
+      # The browser shell, one bundle holding both panes, each opened through its own `?doc=`
+      # the way `scripts/run.sh web` does by hand. `ui_web/dist` arrived built: the module and
+      # the `wasm-bindgen` glue that loads it, exactly the files `artifacts.yml` measured and
+      # the container image ships.
       - name: Serve the shell
         if: ${{ !cancelled() }}
         run: |
@@ -162,11 +214,6 @@ jobs:
           node .github/scripts/web-screenshot.js http://localhost:8000 screenshots \
             web-sheet=sample.fods web-text=sample.fodt
 
-      # `!cancelled()` on every step from the first picture down, and on this upload: with
-      # one job per platform, one shell failing to draw would otherwise skip the rest and
-      # take the whole download with it. Four jobs used to give that independence for free;
-      # this is what it costs to keep it. The job still *fails* — `!cancelled()` is not
-      # `always()` in the sense that matters — it just says which shells worked first.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
         with:
@@ -174,39 +221,33 @@ jobs:
           path: screenshots/*.png
           if-no-files-found: error
 
-  # `grind-win32`, on both document types, over the same `--render-to` path
+  # `grind-win32.exe`, on both document types, over the same `--render-to` path
   # `artifacts.yml` already uses to prove two renders are byte-identical.
   windows:
+    needs: [resolve, linux]
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # This borrow is the one that works: `artifacts.yml`'s `windows` job is the same
-          # platform, the same profile and the same default key, and `grind-win32` is
-          # nearly all of what is built here. So `save-if: false` costs almost nothing —
-          # only `grind-cli`'s own crates are missed — and writing a second cache for them
-          # would cost the branch budget more than it saves.
-          save-if: false
+          ref: ${{ needs.resolve.outputs.sha }}
 
-      # Default shell (pwsh) — never bash for anything that invokes cargo on this
-      # runner. See `artifacts.yml`'s "Measure" step for the linker this avoids.
-      #
-      # THE ONE WINDOWS BUILD. The steps below read `target/release/`.
-      - run: cargo build --release --locked -p grind-cli -p grind-win32
+      # Into `target/release/`, because that is where `win32-render.ps1` looks — it is
+      # `artifacts.yml`'s own script and this is the path its `Invoke-Render` builds.
+      - name: Download the executable
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: grind-win32-x64
+          path: target/release
+          run-id: ${{ needs.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
 
-      # `bash` here is safe for the same reason it is in `artifacts.yml`: this runs the
-      # binary `cargo build` above already produced and links nothing. The output goes
-      # to a plain relative directory rather than `/tmp` — Git Bash's `/tmp` is an MSYS
-      # path with no meaning to the pwsh step below, which shares this job's working
-      # directory but not its path conventions.
-      - name: Build the sample documents
-        shell: bash
-        run: |
-          GRIND="$PWD/target/release/grind.exe" examples/sample-sheet.sh demo >/dev/null
-          GRIND="$PWD/target/release/grind.exe" examples/sample-text.sh demo >/dev/null
+      # From the `linux` job of *this* run, so both platforms draw the same bytes.
+      - name: Download the sample documents
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sample-documents
+          path: demo
 
       - name: Screenshot both document types
         shell: pwsh
