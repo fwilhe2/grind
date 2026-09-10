@@ -59,7 +59,7 @@ decision · — not applicable to this client.
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● |
 | Go to an address | ● | ● | ● | ● | ● | ● |
 | Key list / help | ● | ● | ○ | ● | ◐ ᵈ | ● |
-| About / build stamp | ● | ● | ● | ○ | ○ | ● |
+| About / build stamp | ● | ● | ● | ● ʰ | ○ | ● |
 | Recent files | — | ● | ○ | ○ | ○ | ○ |
 | Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP |
@@ -80,6 +80,7 @@ the other binary.
 so it returns a document with no sheets in it and the window reports whatever the first read of
 sheet 0 says (`grind sheet view report.fodt` prints `no such sheet: 0`). `grind_core::kind` is
 the check it lacks, and its twin's banner is the shape of the answer.
+ʰ `:about`, on the status line — there is no dialog to put it in.
 ᵍ A pipe is the accessible surface, which is `doc/view-modes.md` §4.6's argument for why the
 CLI matters most exactly where a GUI's whole output is colour.
 
@@ -94,7 +95,7 @@ CLI matters most exactly where a GUI's whole output is colour.
 | Select whole rows / columns from a header | ● ᵃ | ● | ○ | ○ | ● |
 | Select the whole sheet | ● ᵃ | ● | ○ | ● | ● |
 | Name box / address field | ● | ● | ● | ● | ● |
-| Go to a defined name | ● | ● | ○ | ● | ● |
+| Go to a defined name | ● | ● | ● | ● | ● |
 | Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ○ | ● |
 | Sheet switching | address | tab strip | `:sheet` | tab strip | menu + Ctrl+PgUp/PgDn |
 | Zoom | — | ● | ○ | ○ | ○ |
@@ -102,7 +103,10 @@ CLI matters most exactly where a GUI's whole output is colour.
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
 so skipping means handing it the hidden set.
-ᶜ Rows folded away by a filter are gone from the view entirely, so there is nothing to step onto.
+ᶜ Every motion counts in tracks that are **drawn** (`ui_tui/src/sheet/keymap.rs`'s `walk`), on
+both axes and including a page. It was a bug until it was a feature: stepping onto a folded row
+put the cursor where nothing was on screen, which reads as a terminal dropping keystrokes rather
+than as a cursor on a hidden row.
 
 ## 4. Spreadsheet — editing and formulas
 
@@ -116,21 +120,22 @@ so skipping means handing it the hidden set.
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● |
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● |
 | Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ |
-| Fill down / fill right | ● | ● | ○ | ● | ○ |
-| Fill one cell across a rectangle (references shifted) | ● | ● | ○ | ○ | ○ |
+| Fill down / fill right | ● | ● | ● | ● | ○ |
+| Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ |
 | Recalculate | ● | ● | ● | ● | ● |
 | Stale-value warning | ● | ● | ● | ● | ● |
-| Evaluate a formula without storing it | ● | ● ᵈ | ○ | ○ | ○ |
-| Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ○ | ○ | ● |
-| Autocomplete while typing a formula | ● ᶜ | ● | ○ | ○ | ● |
-| Signature hint for the call the caret is in | ● ᶜ | ● | ○ | ○ | ● |
+| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ |
+| Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ○ | ● |
+| Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● |
+| Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● |
 | Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ○ | ○ | ● |
 | Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● |
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ |
 | Every calculated cell, searchable | ● | ● | ○ | ○ | ○ |
-| Find / replace over cells | ○ | ○ | ○ | ○ | ○ |
+| Find over cells | ○ | ○ | ● ᶠ | ○ | ○ |
+| Replace over cells | ○ | ○ | ○ | ○ | ○ |
 
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
@@ -139,8 +144,11 @@ host may not speak (`doc/tui-shell.md`).
 ᶜ `grind sheet functions --long` is the same four columns the Win32 dialog and the GNOME
 window's autocomplete read from; a completion popup is not a thing a pipe has.
 ᵈ As the live result of the formula being typed, before it is committed.
-ᵉ `grind sheet eval` over the range. Both status bars generate the three formulas and ask
+ᵉ `grind sheet eval` over the range. All three status bars generate the three formulas and ask
 `App::preview`, rather than keeping a second summing loop.
+ᶠ `:find`, then `n`/`N`, with every match marked in the grid. **Replace has no row anywhere** and
+that is the core rather than the clients: `App::replace` exists for text and has no spreadsheet
+twin, so a shell that offered one would be putting a capability where the CLI could not reach it.
 
 ## 5. Spreadsheet — formatting
 
@@ -177,31 +185,34 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 |---|---|---|---|---|---|
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● |
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● |
-| Set a column width or row height | ● | ● | ○ | ○ | ○ |
+| Set a column width or row height | ● | ● | ● | ○ | ○ |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ |
 | Autofit a column | ● | ● | ○ | ○ | ○ |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ○ |
-| **Honours** the document's widths and heights | ● | ● | ○ ᵃ | ● | ● |
-| Hide / unhide a row or column | ● | ● | ○ | ○ | ○ |
+| **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● |
+| Hide / unhide a row or column | ● | ● | ● | ○ | ○ |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ○ | ○ | ○ |
 | **Honours** a filter | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ○ | ○ | ○ |
+| Define, redefine or delete a name | ● | ● | ● | ○ | ○ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ |
-| Import CSV / TSV | ● | ○ | ○ | ○ | ○ |
-| Export CSV / TSV | ● | ○ | ○ | ○ | ○ |
+| Import CSV / TSV | ● | ○ | ● | ○ | ○ |
+| Export CSV / TSV | ● | ○ | ● | ○ | ○ |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● |
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● |
 | Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ |
 
-ᵃ Every column is ten cells wide; the widths are read and written back untouched.
+ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
+one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
+status line. Both are written back untouched either way.
 ᵇ Read, kept and written back untouched — a deliberate stop, not a stub.
 ᶜ A **Names…** dialog, and the name box resolves one — though only within the open sheet, since
 "navigating to another sheet is the sheet tabs' job".
-ᵈ The `:names` overlay, and the name plus the formula read through its names on the formula line.
-`:<address>` is `a1::parse` only, so it does **not** jump to a name.
+ᵈ The `:names` overlay, the name plus the formula read through its names on the formula line,
+and `:<address>` resolves a **name before an address** — it has to, since `tax_rate` parses
+perfectly well as a cell reference and naming a range would otherwise make it unreachable.
 ᵉ The palette offers each name as a place to go.
 ᶠ The name box offers them, and the overlay draws each anchor.
 ᵍ `grind sheet view --formulas`. Every GUI shows the *active* cell's formula in a formula bar or
@@ -219,9 +230,9 @@ on a status line; none has a whole-grid "show formulas" mode.
 | **Editing** | | | | | |
 | Type, Enter, Backspace, Delete | ● | ● | ● | ● | ● |
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● |
-| Insert / delete / move whole blocks by address | ● | ○ | ◐ ᵇ | ○ | ○ |
+| Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● |
-| Find | ● | ○ | ● | ○ | ○ |
+| Find | ● | ○ | ● ᶠ | ○ | ○ |
 | Replace | ● | ○ | ● | ○ | ○ |
 | Word count | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | |
@@ -243,20 +254,20 @@ on a status line; none has a whole-grid "show formulas" mode.
 | A named paragraph style | ● | ○ | ● | ○ | ○ |
 | **Addressing and navigation** | | | | | |
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● |
-| Outline, each row a jump | ● | ● | ◐ ᵏ | ● | ● |
-| Create a bookmark | ● | ○ | ○ | ○ | ○ |
+| Outline, each row a jump | ● | ● | ● | ● | ● |
+| Create a bookmark | ● | ○ | ● | ○ | ○ |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ |
 | **Pictures** | | | | | |
 | Insert an image | ● | ● | ○ | ○ | ○ |
 | **Draws** an image | — | ● | ○ | ● | ○ |
 | **Tables** | | | | | |
-| Insert a table | ● | ● | ○ | ○ | ○ |
+| Insert a table | ● | ● | ● | ○ | ○ |
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ |
-| **Draws** a table as a grid | — | ● | ○ ᵖ | ○ ᵖ | ○ ᵖ |
+| **Draws** a table as a grid | — | ● | ● ᵠ | ○ ᵖ | ○ ᵖ |
 | Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ |
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
-ᵇ `o` opens a paragraph below and `X` deletes the block; there is no move.
+ᵇ `o` opens a paragraph below, `X` deletes the block, `:move <address>` puts it elsewhere.
 ᶜ Cut/Copy/Paste over `gdk::Clipboard`, plain text both ways, a newline being a block boundary —
 the same two halves `grind-web` has. This used to be the one shell in the suite with neither a
 clipboard nor a register.
@@ -273,7 +284,6 @@ one parse feeding the measuring attribute, `Metrics::line_height` and the drawin
 per fragment, so honouring a size in the width and not in the height would measure a big word
 wide on a line too short to hold it.
 ʲ Heading 4 only.
-ᵏ Printed to the status line rather than opened as a pane.
 ˡ The name is drawn at the end of the line the anchor falls on rather than at its offset in it.
 Only `grind-text-gtk` puts a tick at the exact offset — it already has `x_at` for the caret.
 ᵐ `:li [depth]`. ⁿ Tab and Shift+Tab — in `grind-text-gtk`, Tab at the front of a paragraph
@@ -282,9 +292,15 @@ depths; there is no Tab.
 ᵖ **Free, and that is the point of the model.** A cell holds *blocks* and a block carries the
 coordinate of the cell it is in (`grind_text::Cell`), so `p12` is the twelfth block whether it is
 in a table or not — every caret motion, every formatting edit and every address already worked
-inside a cell before any client knew tables existed. What the three clients marked ○ do not do is
+inside a cell before any client knew tables existed. What the two clients marked ○ do not do is
 *draw the grid*: they stack a cell's blocks like any other, so the text is all there and the
 shape is not.
+ᵠ Box-drawing rules, every column the same width. `grind_text::Faces` is handed a block's kind
+and not its cell, so `grind-tui` builds a map of which block is in which cell once per frame and
+reads it back — the shape `ui_text_gtk/src/view.rs`'s `Column` has, and required rather than
+chosen: `Faces::of` is called while `App` holds its read lock. The map covers the view and a page
+either side of it, which is the `ponytail` `doc/tui-shell.md` records.
+ᶠ `:find`, then `n`/`N`, with every match marked in the line rather than only counted.
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**
 one, and no client sets a column width, because the model carries no table style
@@ -323,12 +339,18 @@ of a client's own job is missing.
 8. **Charts are CLI-and-GNOME to author, and only the browser joins them in drawing one.**
 9. **An image can be inserted from the CLI and from `grind-text-gtk`**, and only those two
    clients draw one.
-10. **Only `grind-text-gtk` draws a table.** Every client *edits* one correctly, because a cell
-    holds blocks and a block is addressed the way every other block is (§7 ᵖ) — so the terminal,
-    the browser and the Windows pane show a table's text as a run of paragraphs with no grid
-    round it. The same shape as row 8: the content is there and the drawing is not.
-11. **Find and replace exist for text on the CLI and in the terminal, and nowhere else** — and
-    for *cells* they exist nowhere at all.
+10. **Two clients out of five draw a table.** Every one of them *edits* one correctly, because a
+    cell holds blocks and a block is addressed the way every other block is (§7 ᵖ). Only
+    `grind-text-gtk` and `grind-tui` also draw the grid — in pixels and in box-drawing characters
+    respectively, from the same `Faces` seam — while the browser and the Windows pane show a
+    table's text as a run of paragraphs with nothing round it. The same shape as row 8: the
+    content is there and the drawing is not.
+11. **Find and replace are lopsided, and the lopsidedness moved.** Over *cells*, `grind-tui` is
+    now the only client that can find at all and **nobody** can replace — which makes it the one
+    row in this file where the gap is the *core's* rather than a client's: `App::replace` exists
+    for text and has no spreadsheet twin, so a shell offering one would be putting a capability
+    where the CLI could not reach it. Over *text*, find and replace exist on the CLI and in the
+    terminal, and nowhere else.
 12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
     it is a decision about `grind_text::Action` rather than about the CLI.
 13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
@@ -389,7 +411,10 @@ piece of work than the one thing it would buy: this file going stale is visible 
 somebody reads it beside a shell, where a broken ratchet is visible immediately. Until then it
 carries a date.
 
-**Read on 2026-09-08**, at `main`. The clients as of then: `grind sheet` complete through phase
+**Read on 2026-09-10**, at `main`. The clients as of then: `grind sheet` complete through phase
 9, `grind text` through S10, the GNOME spreadsheet through M10 plus charts, filters and the
-chrome rework, the Windows shell through W9, and `grind-text-gtk` through the showcase pass that
-gave it a formatting bar, a clipboard, block structure and Insert Picture (`doc/text-shell.md`).
+chrome rework, the Windows shell through W10, `grind-text-gtk` through the showcase pass that
+gave it a formatting bar, a clipboard, block structure and Insert Picture (`doc/text-shell.md`),
+and `grind-tui` through the pass that gave it chrome, column widths, a formula-completion band,
+cell search, the track and name verbs, CSV both ways, bookmarks, `:move`, an outline pane and a
+table drawn as a grid (`doc/tui-shell.md`).

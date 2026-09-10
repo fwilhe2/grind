@@ -22,6 +22,8 @@
 //! edit is staged because a half-typed formula is not a value; a half-typed sentence is a
 //! sentence.
 
+use std::collections::HashMap;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -33,15 +35,249 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use grind_text::style::CharStyle;
-use grind_text::{App as CoreApp, BlockKind, BlockView, Caret};
+use grind_text::{App as CoreApp, BlockKind, BlockView, Caret, Metrics};
 
 use super::Cells;
 use super::keymap::{self, Action, Motion};
 use crate::app::RedrawFlag;
+use crate::chrome;
 use grind_text::markdown::{self, Emphasis};
 
 /// Room for `p12 h1 ` down the left, so a reader can see the structure the outline is made of.
 const GUTTER: u16 = 8;
+
+/// How far one nesting level of a list indents its text, in terminal cells.
+///
+/// Two, which is exactly the width of the bullet that goes in it — so a depth-1 item's marker
+/// occupies the indent rather than sitting beside it, and a depth-2 item's is two cells further
+/// in. `ui_text_gtk/src/geom.rs`'s `INDENT` is the same idea in pixels.
+const INDENT: u16 = 2;
+
+/// How far a block's text starts from the left of the text column.
+///
+/// The only kind that has one is a list item, because it is the only kind whose *depth* is part
+/// of the model. A heading is not indented: outline structure is implied by the level alone
+/// (`text/src/model.rs`), and indenting it would be this shell inventing a hierarchy the
+/// document does not have.
+fn indent_of(kind: &BlockKind) -> u16 {
+    match kind {
+        // Bounded, because a document may legitimately carry a deeply nested list and a window
+        // is only so wide — past this the text would have nowhere left to go.
+        BlockKind::ListItem { depth } => INDENT * (*depth).clamp(1, 8) as u16,
+        _ => 0,
+    }
+}
+
+/// The bullet a list item's first line wears, sitting in the last two cells of its own indent.
+///
+/// One glyph per depth, cycling — the convention every word processor uses, and it is *drawn*
+/// rather than inserted: a marker in the text would be a character the core never measured, which
+/// puts every caret after it in the wrong column (`doc/tui-shell.md`, decision 2). This is
+/// outside the block's measure altogether, which is why it is allowed where `**` is not.
+fn bullet_of(depth: u32) -> &'static str {
+    match depth.max(1) % 3 {
+        1 => "\u{2022} ",
+        2 => "\u{25e6} ",
+        _ => "\u{2023} ",
+    }
+}
+
+/// How wide each block is measured, and in what — this shell's [`grind_text::Faces`].
+///
+/// Two things make a block narrower than the window: a **list item**'s own depth, which
+/// [`grind_text::Faces::of`] is handed directly as part of the kind, and a **table cell**, which
+/// it is not. So the cells are a map, built once per frame from the blocks in and around the view
+/// and read back here — which is the shape `ui_text_gtk/src/view.rs`'s `Column` has, and for the
+/// reason `grind_text::Faces`' own documentation gives: this is called while `App` holds its read
+/// lock, so it must not ask the document anything.
+///
+/// ponytail: the map covers the view and any table it touches, not the whole document. A caret
+/// motion that leaps out of the view into a table it has never drawn measures that table's first
+/// block at the full measure for one frame, and the frame after it is right. The upgrade is a
+/// flow over the whole document, which is what the GNOME window builds and what a terminal
+/// showing thirty lines of a thousand-block report should not.
+#[derive(Clone, Debug, Default)]
+struct Measures {
+    /// The text column, in terminal cells.
+    width: f32,
+    /// Every block in a table the view touches, and the measure its own cell gives it.
+    cells: HashMap<usize, f32>,
+    /// The tables the view touches, in document order.
+    tables: Vec<TableBox>,
+}
+
+/// One table, as this shell lays it out: which blocks it is made of, how big it is, and how wide
+/// one of its columns is drawn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TableBox {
+    blocks: Range<usize>,
+    rows: u32,
+    columns: u32,
+    /// The text inside one cell, in cells — the rules either side are not part of it.
+    cell_width: u16,
+}
+
+impl Measures {
+    fn measure(&self, index: usize, kind: &BlockKind) -> f32 {
+        match self.cells.get(&index) {
+            Some(width) => *width,
+            None => (self.width - f32::from(indent_of(kind))).max(1.0),
+        }
+    }
+
+    /// The table `index` is anywhere inside.
+    fn table_of(&self, index: usize) -> Option<&TableBox> {
+        self.tables
+            .iter()
+            .find(|table| table.blocks.contains(&index))
+    }
+}
+
+impl grind_text::Faces for Measures {
+    fn of(&self, index: usize, kind: &BlockKind, _style: Option<&str>) -> (f32, &dyn Metrics) {
+        // One font at one size, so the *provider* never varies — only the measure does. That is
+        // the whole of what a terminal contributes to layout, and the reason it was the sharpest
+        // test of `doc/text-layout.md`'s decision.
+        (self.measure(index, kind), &Cells)
+    }
+}
+
+/// One screen row of the document.
+///
+/// Three kinds, because a terminal draws three things: a line of an ordinary block, one line
+/// across a table's row, and a table's own rule. Everything else in this file is the first of
+/// those; the other two exist because a table's cells are placed by *coordinate* and not by what
+/// came before them, which is the one place a flat sequence of blocks stops being a stack of
+/// lines.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Row {
+    /// A line of an ordinary block: which block, which of its lines, the characters it covers,
+    /// and how far in its text starts.
+    Line {
+        block: usize,
+        line: usize,
+        range: Range<usize>,
+        indent: u16,
+    },
+    /// One line across a table's row: what each column contributes, if anything.
+    Cells {
+        pieces: Vec<Option<(usize, usize, Range<usize>)>>,
+        width: u16,
+    },
+    /// A table's own horizontal rule, and the block its address is spelled from.
+    Rule {
+        kind: RuleKind,
+        columns: usize,
+        width: u16,
+        at: usize,
+    },
+}
+
+/// Which of a table's three rules this is — they differ only in the corner and junction glyphs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RuleKind {
+    Top,
+    Between,
+    Bottom,
+}
+
+impl RuleKind {
+    /// The left end, the junction and the right end, in that order.
+    fn glyphs(self) -> (char, char, char) {
+        match self {
+            RuleKind::Top => ('\u{250c}', '\u{252c}', '\u{2510}'),
+            RuleKind::Between => ('\u{251c}', '\u{253c}', '\u{2524}'),
+            RuleKind::Bottom => ('\u{2514}', '\u{2534}', '\u{2518}'),
+        }
+    }
+}
+
+impl Row {
+    /// Whether this row draws line `line` of block `block` — what "is the caret on screen" means.
+    fn holds(&self, block: usize, line: usize) -> bool {
+        match self {
+            Row::Line {
+                block: at,
+                line: which,
+                ..
+            } => *at == block && *which == line,
+            Row::Cells { pieces, .. } => pieces
+                .iter()
+                .flatten()
+                .any(|(at, which, _)| *at == block && *which == line),
+            Row::Rule { .. } => false,
+        }
+    }
+
+    /// The first document line this row draws — where `top` goes when the view scrolls onto it.
+    /// `None` for a rule, which belongs to the table rather than to any one line of it.
+    fn first_line(&self) -> Option<(usize, usize)> {
+        match self {
+            Row::Line { block, line, .. } => Some((*block, *line)),
+            Row::Cells { pieces, .. } => pieces
+                .iter()
+                .flatten()
+                .map(|(block, line, _)| (*block, *line))
+                .min(),
+            Row::Rule { .. } => None,
+        }
+    }
+
+    /// Every block this row reads from, so one viewport call can cover the whole window.
+    fn blocks(&self) -> Vec<usize> {
+        match self {
+            Row::Line { block, .. } => vec![*block],
+            Row::Cells { pieces, .. } => pieces.iter().flatten().map(|(at, _, _)| *at).collect(),
+            Row::Rule { at, .. } => vec![*at],
+        }
+    }
+}
+
+/// Where the last `:find` matched, and which of those the caret is on.
+///
+/// A snapshot, like the spreadsheet half's — `App::find` walks every block, and re-running it per
+/// keystroke would make `j` the most expensive key in the shell.
+#[derive(Clone, Debug, Default)]
+struct Find {
+    needle: String,
+    /// Each hit as the block it is in and the character offset of its first character. Ordered,
+    /// because `n` and `N` are defined in terms of the order.
+    hits: Vec<(usize, usize)>,
+    /// The same hits, grouped by block. Two shapes of one list rather than one, because the two
+    /// questions asked of it are different: `n` wants *the next one*, and the renderer asks *what
+    /// does this block match at* once per drawn line — which a filter over every hit would make
+    /// the window's height times every match a common word has.
+    by_block: HashMap<usize, Vec<usize>>,
+    at: usize,
+}
+
+impl Find {
+    fn new(needle: &str, hits: Vec<(usize, usize)>, at: usize) -> Self {
+        let mut by_block: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (block, offset) in &hits {
+            by_block.entry(*block).or_default().push(*offset);
+        }
+        Find {
+            needle: needle.to_owned(),
+            hits,
+            by_block,
+            at,
+        }
+    }
+
+    fn is_on(&self) -> bool {
+        !self.needle.is_empty() && !self.hits.is_empty()
+    }
+
+    /// The character ranges this block's matches cover — what a line is marked over.
+    fn spans(&self, block: usize) -> Vec<Range<usize>> {
+        let len = self.needle.chars().count();
+        match self.by_block.get(&block) {
+            Some(offsets) => offsets.iter().map(|at| *at..at + len).collect(),
+            None => Vec::new(),
+        }
+    }
+}
 
 enum Mode {
     Normal,
@@ -66,7 +302,8 @@ pub struct App {
     /// `grind_text::App::caret_line`. Cleared by any horizontal move, which is what makes
     /// walking down through a short line and out the other side come back to where it started.
     goal_x: Option<f32>,
-    width: f32,
+    /// How wide each block is measured, rebuilt every frame — this shell's `Faces`.
+    measures: Measures,
     height: usize,
     mode: Mode,
     /// What [`grind_text::App::type_markdown`] said the next character must be set in — see
@@ -84,6 +321,10 @@ pub struct App {
     /// presentation state like everything else here, since it is a reading of the document
     /// rather than a change to it.
     names: bool,
+    /// The last `:find`, and where it matched.
+    find: Find,
+    /// The outline, when it is showing — one row per heading, each a jump.
+    outline: crate::pick::Pick,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
     /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
@@ -113,7 +354,10 @@ impl App {
             },
             top: (0, 0),
             goal_x: None,
-            width: 60.0,
+            measures: Measures {
+                width: 60.0,
+                ..Measures::default()
+            },
             height: 20,
             mode: Mode::Normal,
             resume: None,
@@ -121,6 +365,8 @@ impl App {
             register: String::new(),
             status: String::new(),
             names: false,
+            find: Find::default(),
+            outline: crate::pick::Pick::default(),
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
             source: None,
@@ -152,6 +398,13 @@ impl App {
         }
         if self.problems.is_open() {
             self.on_problems_key(key.code);
+            return;
+        }
+        if self.outline.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(address) = self.outline.on_key(key.code, height) {
+                self.cmd_jump(&address);
+            }
             return;
         }
         match self.mode {
@@ -193,8 +446,12 @@ impl App {
             Action::Put => self.put(),
             Action::Emphasise(emphasis) => self.emphasise_selection(emphasis),
             Action::Plain => self.set_selection_style(&CharStyle::default(), "plain"),
+            Action::Next(forward) => self.step_match(forward),
             Action::Escape => {
                 self.anchor = None;
+                // Escape puts the search away as well as the selection: a document still marked
+                // with yesterday's matches is a document lying about what is in it.
+                self.find = Find::default();
                 self.status.clear();
                 self.mode = Mode::Normal;
             }
@@ -388,12 +645,20 @@ impl App {
 
     /// How each block is set, for the motions that may cross out of one into another.
     ///
-    /// [`grind_text::Uniform`], because a terminal has one font at one size: every block is the
-    /// same measure and the same cell. The GUI shells answer this per block — a heading there
-    /// really is a different face — and the core cannot tell the two apart, which is the whole
-    /// of what the seam buys.
-    fn faces(&self) -> grind_text::Uniform<'_> {
-        grind_text::Uniform::new(self.width, &Cells)
+    /// One font at one size, because a terminal has one — but **not one measure any more**: a
+    /// list item is indented and a table cell is a column of its own, so this is [`Measures`]
+    /// rather than [`grind_text::Uniform`]. That is the seam earning its keep in the medium it
+    /// was hardest to fake: the GUI shells vary the *face* per block and this varies only the
+    /// width, and the engine above cannot tell which of the two it is being handed.
+    fn faces(&self) -> &Measures {
+        &self.measures
+    }
+
+    /// How wide the block at `index` is laid out — [`Measures::measure`] with the kind read for
+    /// it, which is what every layout call in this file needs before it can ask.
+    fn measure(&self, index: usize) -> f32 {
+        let kind = self.kind_at(index).unwrap_or(BlockKind::Paragraph);
+        self.measures.measure(index, &kind)
     }
 
     /// Every motion, routed to the core.
@@ -415,19 +680,19 @@ impl App {
                 // Remembered across a run of j/k, which is what `goal_x` is for.
                 let goal = match self.goal_x {
                     Some(x) => x,
-                    None => self.core.caret_x(self.caret, &self.faces()).unwrap_or(0.0),
+                    None => self.core.caret_x(self.caret, self.faces()).unwrap_or(0.0),
                 };
                 self.goal_x = Some(goal);
                 if let Ok(moved) =
                     self.core
-                        .caret_line(self.caret, delta as isize, goal, &self.faces())
+                        .caret_line(self.caret, delta as isize, goal, self.faces())
                 {
                     self.caret = moved;
                 }
             }
             Motion::LineStart | Motion::LineEnd => {
                 self.goal_x = None;
-                if let Ok((start, end)) = self.core.caret_line_bounds(self.caret, &self.faces()) {
+                if let Ok((start, end)) = self.core.caret_line_bounds(self.caret, self.faces()) {
                     self.caret = match motion {
                         Motion::LineStart => start,
                         _ => end,
@@ -690,6 +955,7 @@ impl App {
         }
         match cmd {
             "help" | "h?" => self.help.open(),
+            "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
             "q!" => self.cmd_quit(true),
             "w" => self.cmd_write(None),
@@ -714,6 +980,12 @@ impl App {
             }
             "words" => self.cmd_words(),
             "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
+            "find" => self.cmd_find(""),
+            "mark!" => self.cmd_unmark(),
+            "table" => self.cmd_table("2 2"),
+            _ if cmd.starts_with("mark ") => self.cmd_mark(cmd[5..].trim()),
+            _ if cmd.starts_with("table ") => self.cmd_table(cmd[6..].trim()),
+            _ if cmd.starts_with("move ") => self.cmd_move(cmd[5..].trim()),
             _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
             // vi's own substitution, and the one command here that is a *document* edit rather
             // than a caret move: `App::replace` changes every match, which is what `/g` means
@@ -754,16 +1026,136 @@ impl App {
         self.quit = true;
     }
 
+    /// `:outline` — every heading, indented by its level, each row a jump.
+    ///
+    /// A **pane** rather than a line of status text, which is what it used to be: an outline is a
+    /// list somebody reads and then acts on, and a list printed into a one-line bar is neither
+    /// readable past the third heading nor clickable at all. [`crate::pick`] is the widget, and it
+    /// opens on the section the caret is already in — the same courtesy the code view does.
     fn cmd_outline(&mut self) {
-        let outline = self.core.outline();
-        self.status = match outline.is_empty() {
-            true => "no headings".to_string(),
-            false => outline
-                .iter()
-                .map(|h| format!("{} {}", h.address(), h.text))
-                .collect::<Vec<_>>()
-                .join("   "),
+        let rows: Vec<crate::pick::Row> = self
+            .core
+            .outline()
+            .into_iter()
+            .map(|heading| crate::pick::Row {
+                address: heading.address(),
+                label: heading.text,
+                depth: heading.path.len().saturating_sub(1),
+            })
+            .collect();
+        // Which section the caret is in: the last heading at or before it.
+        let here = self
+            .core
+            .outline()
+            .into_iter()
+            .rfind(|heading| heading.index <= self.caret.block)
+            .map(|heading| heading.address());
+        self.outline.open("Outline", rows, here.as_deref());
+        self.status.clear();
+    }
+
+    /// `:mark <name>` — anchor a bookmark at the caret's block, which is the one thing `:names`
+    /// could *show* and this shell could not make.
+    ///
+    /// A bookmark is what makes `#intro` an address that survives an edit above it where `p12`
+    /// does not, and until now every client in the suite could read one and only the CLI could
+    /// write one (`doc/feature-matrix.md` §7).
+    fn cmd_mark(&mut self, name: &str) {
+        if name.is_empty() {
+            self.status = "usage: :mark <name>".to_string();
+            return;
+        }
+        match self.core.set_bookmark(name, Some(self.caret.block)) {
+            Ok(moved) => {
+                self.names = true;
+                self.status = match moved {
+                    true => format!("#{name} moved here \u{2014} :names shows where"),
+                    false => format!("#{name} anchored here \u{2014} :names shows where"),
+                };
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:mark!` — drop whichever bookmark anchors in the caret's block.
+    fn cmd_unmark(&mut self) {
+        let here = self
+            .core
+            .bookmarks()
+            .into_iter()
+            .find(|(_, index)| *index == self.caret.block);
+        match here {
+            Some((name, _)) => match self.core.set_bookmark(&name, None) {
+                Ok(_) => self.status = format!("dropped #{name} \u{2014} u brings it back"),
+                Err(e) => self.status = e.to_string(),
+            },
+            None => self.status = "no bookmark anchors here".to_string(),
+        }
+    }
+
+    /// `:table [rows cols]` — a table before the caret's block, and the grid this shell draws
+    /// round one.
+    ///
+    /// A cell holds *blocks* (`doc/text-core.md`), so every key here already worked inside one
+    /// before this verb existed; what it adds is the ability to make one at all.
+    fn cmd_table(&mut self, size: &str) {
+        let mut words = size.split_whitespace();
+        let rows = words
+            .next()
+            .and_then(|n| n.parse::<u32>().ok())
+            .unwrap_or(2);
+        let columns = words
+            .next()
+            .and_then(|n| n.parse::<u32>().ok())
+            .unwrap_or(2);
+        if rows == 0 || columns == 0 {
+            self.status = "usage: :table <rows> <columns>".to_string();
+            return;
+        }
+        let at = self.caret.block;
+        match self.core.insert_table(at, rows, columns, None) {
+            Ok(()) => {
+                self.caret = Caret {
+                    block: at,
+                    offset: 0,
+                };
+                self.goal_x = None;
+                self.status = format!("a {rows}\u{00d7}{columns} table \u{2014} u takes it back");
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:move <address>` — the caret's block, moved to sit before the block that address names.
+    ///
+    /// The one block operation this shell had no spelling for: `o` opens one and `X` deletes one,
+    /// and reordering meant deleting and retyping. `App::move_blocks` is one action, so it is one
+    /// press of `u`.
+    fn cmd_move(&mut self, address: &str) {
+        let to = match grind_text::loc::parse(address)
+            .map_err(|e| e.to_string())
+            .and_then(|loc| self.core.resolve(&loc).map_err(|e| e.to_string()))
+        {
+            Ok(index) => index,
+            Err(e) => {
+                self.status = format!("not an address: {e}");
+                return;
+            }
         };
+        let from = self.caret.block;
+        match self.core.move_blocks(from..from + 1, to) {
+            Ok(_) => {
+                // Follow the block rather than staying where it was: a move you cannot see the
+                // result of is a move you have to go looking for.
+                self.caret = Caret {
+                    block: to.min(self.core.block_count().saturating_sub(1)),
+                    offset: 0,
+                };
+                self.goal_x = None;
+                self.status = format!("moved to {}", grind_text::loc::format(self.caret.block));
+            }
+            Err(e) => self.status = e.to_string(),
+        }
     }
 
     fn cmd_words(&mut self) {
@@ -801,19 +1193,63 @@ impl App {
         }
     }
 
-    /// Where a piece of text is — the count, and the caret on the first one.
+    /// Where a piece of text is: **every** match marked on screen, and the caret on the first one
+    /// at or after where it already was.
+    ///
+    /// `n` and `N` step from there, which is vi's own pair of keys and the spreadsheet half's
+    /// (`crate::sheet::keymap`). It used to be one jump to the first match and a count — a search
+    /// you could not walk.
     fn cmd_find(&mut self, needle: &str) {
-        let found = self.core.find(needle);
-        match found.first() {
-            Some(first) => {
-                self.caret = Caret {
-                    block: first.index,
-                    offset: first.offset,
-                };
-                self.goal_x = None;
-                self.status = format!("{} match(es) — {}", found.len(), first.address());
+        if needle.is_empty() {
+            self.find = Find::default();
+            self.status = "find cleared".to_string();
+            return;
+        }
+        let hits: Vec<(usize, usize)> = self
+            .core
+            .find(needle)
+            .into_iter()
+            .map(|found| (found.index, found.offset))
+            .collect();
+        let here = (self.caret.block, self.caret.offset);
+        let at = hits.iter().position(|hit| *hit >= here).unwrap_or(0);
+        self.find = Find::new(needle, hits, at);
+        match self.find.hits.is_empty() {
+            true => self.status = format!("no match for {needle}"),
+            false => {
+                self.go_to_match();
+                self.status = format!(
+                    "{} of {} \u{00b7} n next, N previous",
+                    self.find.at + 1,
+                    self.find.hits.len()
+                );
             }
-            None => self.status = format!("no match for {needle}"),
+        }
+    }
+
+    /// `n` / `N` — the next or previous match, wrapping round the ends the way vi's do.
+    fn step_match(&mut self, forward: bool) {
+        if !self.find.is_on() {
+            self.status = match self.find.needle.is_empty() {
+                true => "nothing to step \u{2014} :find <text> first".to_string(),
+                false => format!("no match for {}", self.find.needle),
+            };
+            return;
+        }
+        let count = self.find.hits.len();
+        self.find.at = match forward {
+            true => (self.find.at + 1) % count,
+            false => (self.find.at + count - 1) % count,
+        };
+        self.go_to_match();
+        self.status = format!("{} of {count}", self.find.at + 1);
+    }
+
+    fn go_to_match(&mut self) {
+        if let Some((block, offset)) = self.find.hits.get(self.find.at).copied() {
+            self.caret = Caret { block, offset };
+            self.anchor = None;
+            self.goal_x = None;
         }
     }
 
@@ -977,24 +1413,71 @@ impl App {
 
     // --- Rendering ---
 
-    /// Every document line from `top`, as far as the window needs — the block it came from,
-    /// which line of that block it is, and the characters it covers.
+    /// Every screen row from `top`, as far as the window needs.
     ///
-    /// Offsets rather than a `String`, because what is drawn is not one piece of text: a run
-    /// of it may be bold, part of it may be selected, and the caret sits between two
-    /// characters. [`App::draw`] cuts it up; this only says where the line is.
-    fn visible(&self, height: usize) -> Vec<(usize, usize, std::ops::Range<usize>)> {
+    /// Offsets rather than a `String`, because what is drawn is not one piece of text: a run of it
+    /// may be bold, part of it may be selected, part of it may be a search match, and the caret
+    /// sits between two characters. [`App::draw`] cuts it up; this only says where each line goes.
+    ///
+    /// **A table is laid out here, and it is why this returns a [`Row`] rather than a triple.** A
+    /// document is a flat sequence of blocks and a terminal is a stack of lines, so everything
+    /// else in this file is one block per line and one line under the last. A table's cells are
+    /// side by side — its blocks are placed by coordinate, not by what came before them — and that
+    /// is the whole of the difference, expressed as one variant.
+    fn visible(&self, height: usize) -> Vec<Row> {
         let blocks = self.core.block_count();
-        let mut out = Vec::with_capacity(height);
+        let mut out: Vec<Row> = Vec::with_capacity(height);
         let mut block = self.top.0.min(blocks.saturating_sub(1));
         let mut skip = self.top.1;
+        // One viewport read for the whole walk rather than one per block: a block is at least one
+        // line tall, so `height` of them is the most a window of `height` rows can reach. The
+        // only thing wanted from it is each block's *kind*, which is what says how far its text
+        // is indented — a table's cells get their measure from `Measures` instead.
+        let kinds = self
+            .core
+            .get_viewport(block..(block + height + 1).min(blocks));
         while block < blocks && out.len() < height {
-            if let Ok(layout) = self.core.layout_block(block, self.width, &Cells) {
+            // A block in a table draws as part of the whole table, from its first cell — a grid
+            // cannot be entered halfway across.
+            if let Some(table) = self.measures.table_of(block) {
+                let rows = self.table_rows(table);
+                // Opening mid-table (scrolled into it from above) starts on the row the top of
+                // the window is actually on rather than at the table's own first rule.
+                let from = match out.is_empty() {
+                    true => rows
+                        .iter()
+                        .position(|row| row.holds(block, skip))
+                        .unwrap_or(0),
+                    // Reached from above, so the whole table is drawn — rule first.
+                    false => 0,
+                };
+                for row in rows.into_iter().skip(from) {
+                    if out.len() == height {
+                        break;
+                    }
+                    out.push(row);
+                }
+                block = table.blocks.end;
+                skip = 0;
+                continue;
+            }
+            let kind = kinds
+                .get(block)
+                .map(|view| view.kind.clone())
+                .unwrap_or(BlockKind::Paragraph);
+            let indent = indent_of(&kind);
+            let measure = self.measures.measure(block, &kind);
+            if let Ok(layout) = self.core.layout_block(block, measure, &Cells) {
                 for (n, line) in layout.lines().iter().enumerate().skip(skip) {
                     if out.len() == height {
                         break;
                     }
-                    out.push((block, n, line.start..line.end));
+                    out.push(Row::Line {
+                        block,
+                        line: n,
+                        range: line.start..line.end,
+                        indent,
+                    });
                 }
             }
             skip = 0;
@@ -1003,11 +1486,124 @@ impl App {
         out
     }
 
+    /// One table, as the rows a terminal draws it in: a rule, then each of its rows' lines side by
+    /// side, a rule between rows, and a rule under the last.
+    ///
+    /// Every cell is laid out at its **own** measure, which is what makes the caret land where the
+    /// ink is: `Measures` gave each of its blocks that width, so `App::layout_block`,
+    /// `App::caret_line` and this all break the same text at the same places.
+    fn table_rows(&self, table: &TableBox) -> Vec<Row> {
+        let views = self.core.get_viewport(table.blocks.clone());
+        let mut out = Vec::new();
+        for row in 0..table.rows {
+            // What each column contributes, as the lines of the blocks in that cell one after
+            // another — a cell holds blocks, and several of them stack inside it.
+            let mut columns: Vec<Vec<(usize, usize, Range<usize>)>> =
+                vec![Vec::new(); table.columns as usize];
+            for index in table.blocks.clone() {
+                let Some(view) = views.get(index) else {
+                    continue;
+                };
+                let Some(cell) = &view.cell else { continue };
+                if cell.row != row {
+                    continue;
+                }
+                let Some(column) = columns.get_mut(cell.column as usize) else {
+                    continue;
+                };
+                if let Ok(layout) =
+                    self.core
+                        .layout_block(index, f32::from(table.cell_width), &Cells)
+                {
+                    for (n, line) in layout.lines().iter().enumerate() {
+                        column.push((index, n, line.start..line.end));
+                    }
+                }
+            }
+            let tall = columns.iter().map(Vec::len).max().unwrap_or(1).max(1);
+            out.push(Row::Rule {
+                kind: match row {
+                    0 => RuleKind::Top,
+                    _ => RuleKind::Between,
+                },
+                columns: table.columns as usize,
+                width: table.cell_width,
+                at: table.blocks.start,
+            });
+            for line in 0..tall {
+                out.push(Row::Cells {
+                    pieces: columns
+                        .iter()
+                        .map(|column| column.get(line).cloned())
+                        .collect(),
+                    width: table.cell_width,
+                });
+            }
+        }
+        out.push(Row::Rule {
+            kind: RuleKind::Bottom,
+            columns: table.columns as usize,
+            width: table.cell_width,
+            at: table.blocks.start,
+        });
+        out
+    }
+
+    /// Where each block in and around the view is measured, rebuilt every frame.
+    ///
+    /// One viewport read for the window, and one `App::table` call per *table* rather than per
+    /// block — a table's extent is derived from its cells (`Document::table_extent`), and the core
+    /// is the one place that derivation lives.
+    fn measures_for(&self, width: f32, height: usize) -> Measures {
+        let blocks = self.core.block_count();
+        // A page either side of the view, so a `Ctrl+f` that lands in a table has already
+        // measured it. See the `ponytail` on `Measures` for what the bound costs.
+        let lo = self.top.0.saturating_sub(height);
+        let hi = (self.top.0 + 2 * height + 1).min(blocks);
+        let mut measures = Measures {
+            width,
+            ..Measures::default()
+        };
+        if lo >= hi {
+            return measures;
+        }
+        let views = self.core.get_viewport(lo..hi);
+        let mut index = lo;
+        while index < hi {
+            let in_a_table = views.get(index).is_some_and(|view| view.cell.is_some());
+            if !in_a_table {
+                index += 1;
+                continue;
+            }
+            let Some(table) = self.core.table(index) else {
+                index += 1;
+                continue;
+            };
+            // Every column the same width, which is what this build's model can say: a table
+            // carries no style of its own, so there are no column widths to honour
+            // (`doc/text-core.md`). One rule down each side of each column comes out first.
+            let columns = table.columns.max(1) as u16;
+            let cell_width = ((width as u16).saturating_sub(columns + 1) / columns).max(1);
+            for block in table.blocks.clone() {
+                measures.cells.insert(block, f32::from(cell_width));
+            }
+            let end = table.blocks.end;
+            measures.tables.push(TableBox {
+                blocks: table.blocks,
+                rows: table.rows,
+                columns: table.columns,
+                cell_width,
+            });
+            index = end.max(index + 1);
+        }
+        measures
+    }
+
     /// Slide `top` just far enough to keep the caret's line on screen.
     fn follow_caret(&mut self, height: usize) {
         let line = self
             .core
-            .layout_block(self.caret.block, self.width, &Cells)
+            .layout_block(self.caret.block, self.measure(self.caret.block), &Cells)
             .map(|l| l.line_at(self.caret.offset))
             .unwrap_or(0);
         let here = (self.caret.block, line);
@@ -1015,24 +1611,25 @@ impl App {
             self.top = here;
             return;
         }
-        // Walk the window forward one line at a time until the caret is inside it. Bounded by
-        // the document, and only ever a few steps in practice because the caret moves by one.
+        // Walk the window forward one row at a time until the caret is inside it. Bounded by the
+        // document, and only ever a few steps in practice because the caret moves by one.
         while !self
             .visible(height)
             .iter()
-            .any(|(b, n, _)| (*b, *n) == here)
+            .any(|row| row.holds(here.0, here.1))
         {
-            let blocks = self.core.block_count();
-            let lines = self
-                .core
-                .layout_block(self.top.0, self.width, &Cells)
-                .map(|l| l.lines().len())
-                .unwrap_or(1);
-            self.top = match self.top.1 + 1 < lines {
-                true => (self.top.0, self.top.1 + 1),
-                false if self.top.0 + 1 < blocks => (self.top.0 + 1, 0),
-                false => return,
+            let Some(next) = self
+                .visible(height)
+                .iter()
+                .skip(1)
+                .find_map(Row::first_line)
+            else {
+                return;
             };
+            if next <= self.top {
+                return;
+            }
+            self.top = next;
         }
     }
 
@@ -1050,10 +1647,11 @@ impl App {
     fn line_spans(
         &self,
         view: &BlockView,
-        line: std::ops::Range<usize>,
+        line: Range<usize>,
         selection: &Option<(Caret, Caret)>,
         caret: Option<usize>,
     ) -> Vec<Span<'static>> {
+        let marks = self.find.spans(view.index);
         let chars: Vec<char> = view.text.chars().collect();
         // The selection, clipped to this block — it may start pages above and end below.
         let within = selection.as_ref().and_then(|(from, to)| {
@@ -1088,6 +1686,10 @@ impl App {
             mark(caret);
             mark(caret + 1);
         }
+        for span in &marks {
+            mark(span.start);
+            mark(span.end);
+        }
         bounds.sort_unstable();
         bounds.dedup();
 
@@ -1121,6 +1723,17 @@ impl App {
             }
             if block_code {
                 style = style.add_modifier(Modifier::DIM);
+            }
+            // A `:find` match, and it **replaces** the run's own colours rather than adding to
+            // them — the same rule the spreadsheet half's marks follow, for the same reason: a
+            // match drawn over a run that was already yellow would be a mark nobody could tell
+            // from the document. It is transient, it is only drawn while a search is live, and
+            // `Esc` puts it away.
+            if marks
+                .iter()
+                .any(|span| span.start <= start && end <= span.end)
+            {
+                style = MATCH;
             }
             if selected || under_caret {
                 style = style.add_modifier(Modifier::REVERSED);
@@ -1159,105 +1772,313 @@ impl App {
             self.problems.draw(frame, area, &title);
             return;
         }
+        if self.outline.is_open() {
+            self.outline.draw(frame, area, "headings");
+            return;
+        }
         if let Some(projection) = self.source.take() {
-            let title = self
-                .path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "untitled".to_owned());
+            let title = self.document_name();
             self.code.draw(frame, area, &projection, &title);
             self.source = Some(projection);
             return;
         }
-        let [body, status_area] =
-            Rects::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+        let [title_area, body, status_area] = Rects::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .areas(area);
 
-        self.width = f32::from(body.width.saturating_sub(GUTTER)).max(1.0);
+        let width = f32::from(body.width.saturating_sub(GUTTER)).max(1.0);
         self.height = usize::from(body.height).max(1);
         self.clamp_caret();
+        // Twice, either side of following the caret: the first pass measures the window the view
+        // is on, the second the window it moved to — a `G` into a table would otherwise be drawn
+        // for one frame at the full measure. Both are one viewport read of three screenfuls.
+        self.measures = self.measures_for(width, self.height);
         self.follow_caret(self.height);
+        self.measures = self.measures_for(width, self.height);
 
         let caret_line = self
             .core
-            .layout_block(self.caret.block, self.width, &Cells)
-            .map(|l| (l.line_at(self.caret.offset), l.x_at(self.caret.offset)))
-            .unwrap_or((0, 0.0));
+            .layout_block(self.caret.block, self.measure(self.caret.block), &Cells)
+            .map(|layout| layout.line_at(self.caret.offset))
+            .unwrap_or(0);
 
+        // --- the title bar: which document, and which section of it the caret is in ---
+        let name = chrome::file_name(self.path.as_deref());
+        let mut left = vec![chrome::badge("TEXT")];
+        left.extend(chrome::document(&name, self.core.can_undo()));
+        let right = match self.section_here() {
+            Some(section) => vec![Span::styled(
+                format!("{section}  "),
+                chrome::title_style().fg(Color::Gray),
+            )],
+            None => Vec::new(),
+        };
+        frame.render_widget(
+            chrome::bar(title_area.width, chrome::title_style(), left, right),
+            title_area,
+        );
+
+        let rows = self.visible(self.height);
         let selection = self.selection();
-        let mut lines = Vec::with_capacity(self.height);
-        // One viewport read per *block* rather than per line: a wrapped paragraph is several
-        // rows and they all draw from the same runs.
-        let mut current: Option<(usize, BlockView)> = None;
-        for (block, n, range) in self.visible(self.height) {
-            if current.as_ref().is_none_or(|(at, _)| *at != block) {
-                current = self
-                    .core
-                    .get_viewport(block..block + 1)
-                    .get(block)
-                    .cloned()
-                    .map(|view| (block, view));
-            }
-            let Some((_, view)) = &current else { continue };
+        // **One viewport read for the whole window**, rather than one per block: every row says
+        // which blocks it draws, and the range between the first and the last is contiguous
+        // because the document is a sequence.
+        let touched: Vec<usize> = rows.iter().flat_map(Row::blocks).collect();
+        let views = match (touched.iter().min(), touched.iter().max()) {
+            (Some(lo), Some(hi)) => self.core.get_viewport(*lo..hi + 1),
+            _ => self.core.get_viewport(0..0),
+        };
 
-            // Only the first line of a block carries its mark, so a wrapped paragraph reads as
-            // one paragraph.
-            let mark = match n {
-                0 => format!(
-                    "{:<4}{:<3} ",
-                    grind_text::loc::format(block),
-                    describe_block(&view.kind, view.style.as_deref())
-                ),
-                _ => " ".repeat(GUTTER as usize),
-            };
-            let mut spans = vec![Span::styled(
-                mark,
-                Style::default().add_modifier(Modifier::DIM),
-            )];
-            let caret =
-                ((block, n) == (self.caret.block, caret_line.0)).then_some(self.caret.offset);
-            spans.extend(self.line_spans(view, range, &selection, caret));
-            // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it is the
-            // one part of a text document a reader cannot see at all — it contributes no
-            // characters. With `:names` on, the block that holds one says so, after its
-            // text rather than inside it, because an offset inside the line is an offset the
-            // caret counts and a mark drawn there would move it.
-            if self.names && n == 0 && !view.marks.is_empty() {
-                let marks: Vec<String> = view
-                    .marks
-                    .iter()
-                    .map(|(at, name)| format!("\u{2039}{name}\u{203a}+{at}"))
-                    .collect();
-                spans.push(Span::styled(
-                    format!("  {}", marks.join(" ")),
-                    Style::default().add_modifier(Modifier::DIM),
-                ));
-            }
-            lines.push(Line::from(spans));
+        let mut lines = Vec::with_capacity(self.height);
+        for row in &rows {
+            lines.push(match row {
+                Row::Line {
+                    block,
+                    line,
+                    range,
+                    indent,
+                } => {
+                    let Some(view) = views.get(*block) else {
+                        continue;
+                    };
+                    // Only the first line of a block carries its mark and its bullet, so a
+                    // wrapped paragraph reads as one paragraph.
+                    let first = *line == 0;
+                    let mut spans = vec![Span::styled(
+                        match first {
+                            true => format!(
+                                "{:<4}{:<3} ",
+                                grind_text::loc::format(*block),
+                                describe_block(&view.kind, view.style.as_deref())
+                            ),
+                            false => " ".repeat(GUTTER as usize),
+                        },
+                        gutter_style(&view.kind, view.style.as_deref()),
+                    )];
+                    if *indent > 0 {
+                        spans.push(Span::styled(
+                            indent_text(&view.kind, *indent, first),
+                            Style::default().add_modifier(Modifier::DIM),
+                        ));
+                    }
+                    let caret = ((*block, *line) == (self.caret.block, caret_line))
+                        .then_some(self.caret.offset);
+                    spans.extend(self.line_spans(view, range.clone(), &selection, caret));
+                    // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it is
+                    // the one part of a text document a reader cannot see at all — it contributes
+                    // no characters. With `:names` on, the block that holds one says so, after
+                    // its text rather than inside it, because an offset inside the line is an
+                    // offset the caret counts and a mark drawn there would move it.
+                    if self.names && first && !view.marks.is_empty() {
+                        let marks: Vec<String> = view
+                            .marks
+                            .iter()
+                            .map(|(at, name)| format!("\u{2039}{name}\u{203a}+{at}"))
+                            .collect();
+                        spans.push(Span::styled(
+                            format!("  {}", marks.join(" ")),
+                            Style::default().add_modifier(Modifier::DIM),
+                        ));
+                    }
+                    Line::from(spans)
+                }
+                Row::Cells { pieces, width } => {
+                    let mut spans = vec![Span::raw(" ".repeat(GUTTER as usize))];
+                    for piece in pieces {
+                        spans.push(Span::styled("\u{2502}", RULE));
+                        let cell = match piece {
+                            Some((block, line, range)) => match views.get(*block) {
+                                Some(view) => {
+                                    let caret = ((*block, *line) == (self.caret.block, caret_line))
+                                        .then_some(self.caret.offset);
+                                    self.line_spans(view, range.clone(), &selection, caret)
+                                }
+                                None => Vec::new(),
+                            },
+                            None => Vec::new(),
+                        };
+                        spans.extend(fit(cell, usize::from(*width)));
+                    }
+                    spans.push(Span::styled("\u{2502}", RULE));
+                    Line::from(spans)
+                }
+                Row::Rule {
+                    kind,
+                    columns,
+                    width,
+                    at,
+                } => {
+                    let (start, join, end) = kind.glyphs();
+                    let mut drawn = String::from(start);
+                    for column in 0..*columns {
+                        drawn.push_str(&"\u{2500}".repeat(usize::from(*width)));
+                        drawn.push(match column + 1 == *columns {
+                            true => end,
+                            false => join,
+                        });
+                    }
+                    Line::from(vec![
+                        Span::styled(
+                            match kind {
+                                RuleKind::Top => {
+                                    format!("{:<4}{:<3} ", grind_text::loc::format(*at), "tbl")
+                                }
+                                _ => " ".repeat(GUTTER as usize),
+                            },
+                            gutter_style(&BlockKind::Paragraph, None),
+                        ),
+                        Span::styled(drawn, RULE),
+                    ])
+                }
+            });
         }
         frame.render_widget(Paragraph::new(lines), body);
 
         let where_ = grind_text::loc::format_offset(self.caret.block, self.caret.offset);
-        let status_text = match &self.mode {
+        let mode = match &self.mode {
+            Mode::Normal => chrome::Mode::Normal,
+            Mode::Visual => chrome::Mode::Visual,
+            Mode::Insert => chrome::Mode::Insert,
+            Mode::Command { .. } => chrome::Mode::Command,
+        };
+        let says = match &self.mode {
             Mode::Command { buf } => format!(":{buf}"),
-            Mode::Insert => format!(
-                "-- INSERT --  {where_}  **bold** *italic* __under__ ~~struck~~  # heading  - list"
-            ),
-            Mode::Visual => format!(
-                "-- VISUAL --  {} selected  * bold  / italic  _ under  ~ struck  - plain  y yank  d delete",
-                self.selection()
-                    .map(|(from, to)| span_len(from, to))
-                    .unwrap_or(0)
-            ),
+            Mode::Insert => {
+                "**bold** *italic* __under__ ~~struck~~  `code`  # heading  - list".to_string()
+            }
+            Mode::Visual => {
+                "* bold  / italic  _ under  ~ struck  - plain  y yank  d delete".to_string()
+            }
             _ if !self.status.is_empty() => self.status.clone(),
-            _ => format!(
-                "{where_}  h j k l move  i/a/o insert  v select  x erase  X delete  J join  u undo  : command"
-            ),
+            _ => "hjkl move  i/a/o insert  v select  x erase  X delete  J join  u undo  :help"
+                .to_string(),
+        };
+        // The caret's own address at the far end, and how much is selected when something is —
+        // the two numbers a writer glances at, in the place they stay put.
+        let at = match self.selection() {
+            Some((from, to)) => format!("{} selected \u{00b7} {where_}", span_len(from, to)),
+            None => where_,
         };
         frame.render_widget(
-            Paragraph::new(status_text).style(Style::default().fg(Color::Black).bg(Color::Gray)),
+            Paragraph::new(chrome::bar(
+                status_area.width,
+                chrome::status_style(),
+                vec![
+                    mode.chip(),
+                    Span::styled(format!(" {says}"), chrome::status_style()),
+                ],
+                vec![Span::styled(format!("{at} "), chrome::muted())],
+            ))
+            .style(chrome::status_style()),
             status_area,
         );
     }
+
+    /// What the title bar calls this document.
+    fn document_name(&self) -> String {
+        self.path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "untitled".to_owned())
+    }
+
+    /// Which section the caret is in — the last heading at or before it, as `\u{a7}2.1 Costs`.
+    ///
+    /// The one thing on screen that says *where in a long document* the caret is, which is why it
+    /// earns the title bar's right-hand end. It walks the outline, which walks every block; that
+    /// is one pass per frame over a document a person is reading, and the same walk `:outline`
+    /// makes.
+    fn section_here(&self) -> Option<String> {
+        let heading = self
+            .core
+            .outline()
+            .into_iter()
+            .rfind(|heading| heading.index <= self.caret.block)?;
+        Some(format!("{} {}", heading.address(), heading.text))
+    }
+}
+
+/// A table's rules, and a `:find` match — the two grounds this pane paints that are not the
+/// document's own.
+///
+/// Named colours for `crate::chrome`'s reason. A rule is drawn quietly on purpose: it is the
+/// shape of the table, and a grid whose lines shouted would be a grid you read instead of the
+/// text in it.
+const RULE: Style = Style::new().fg(Color::DarkGray);
+const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
+
+/// The indent a block's line starts with, with the list bullet in the last two cells of the
+/// first one.
+fn indent_text(kind: &BlockKind, indent: u16, first: bool) -> String {
+    match (first, kind) {
+        (true, BlockKind::ListItem { depth }) => {
+            let bullet = bullet_of(*depth);
+            format!(
+                "{}{bullet}",
+                " ".repeat(usize::from(indent).saturating_sub(bullet.chars().count()))
+            )
+        }
+        _ => " ".repeat(usize::from(indent)),
+    }
+}
+
+/// What colour the gutter is drawn in — the shell's own space, so this is the one place a
+/// *structural* colour is allowed.
+///
+/// A run's own `fo:color` is the document's and is drawn as itself (`terminal_style`); a colour
+/// chosen here would be indistinguishable from one. The gutter has no document content in it at
+/// all — it holds an address and three letters this shell wrote — so the kind may be a hue there
+/// without ever being one in the text.
+fn gutter_style(kind: &BlockKind, style: Option<&str>) -> Style {
+    let color = match kind {
+        _ if style == Some(markdown::PREFORMATTED) => Color::Magenta,
+        BlockKind::Heading { .. } => Color::Cyan,
+        BlockKind::ListItem { .. } => Color::Green,
+        BlockKind::Paragraph => Color::DarkGray,
+    };
+    Style::default().fg(color)
+}
+
+/// Cut or pad a row of spans to exactly `width` terminal cells.
+///
+/// What a table cell needs and nothing else does: the rule after a cell has to land in the same
+/// column on every line of the table, so a cell that came out one cell wide — the caret sitting
+/// past the end of a full line does exactly that — would bend the grid.
+fn fit(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    let mut out = Vec::with_capacity(spans.len() + 1);
+    let mut used = 0usize;
+    for span in spans {
+        let span_width = span.width();
+        if used + span_width <= width {
+            used += span_width;
+            out.push(span);
+            continue;
+        }
+        let room = width - used;
+        let style = span.style;
+        let mut kept = String::new();
+        for c in span.content.chars() {
+            // Whole characters only: a wide one half-landing in the last cell would put the rule
+            // after it a column out.
+            if kept.width() + c.width().unwrap_or(0) > room {
+                break;
+            }
+            kept.push(c);
+        }
+        used += kept.width();
+        if !kept.is_empty() {
+            out.push(Span::styled(kept, style));
+        }
+        break;
+    }
+    if used < width {
+        out.push(Span::raw(" ".repeat(width - used)));
+    }
+    out
 }
 
 /// How many characters a selection covers, for the status line. Across blocks it counts the
@@ -1478,17 +2299,267 @@ mod tests {
     fn a_bookmark_is_invisible_until_the_name_mode_says_where_it_is() {
         let mut app = app(&["Introduction"]);
         app.core.set_bookmark("intro", Some(0)).unwrap();
+        // Row 0 is the title bar, so the document starts at 1.
         let plain = render(&mut app, 40, 6);
-        assert!(!plain[0].contains("intro"), "{:?}", plain[0]);
+        assert!(!plain[1].contains("intro"), "{:?}", plain[1]);
 
         app.run_command("names");
         let shown = render(&mut app, 40, 6);
-        assert!(shown[0].contains("intro"), "{:?}", shown[0]);
-        assert!(shown[0].contains("Introduction"), "the text yielded");
+        assert!(shown[1].contains("intro"), "{:?}", shown[1]);
+        assert!(shown[1].contains("Introduction"), "the text yielded");
         assert_eq!(text(&app), "Introduction", "a reading changed the document");
 
         app.run_command("names");
-        assert_eq!(render(&mut app, 40, 6)[0], plain[0]);
+        assert_eq!(render(&mut app, 40, 6)[1], plain[1]);
+    }
+
+    /// **The gap `doc/tui-shell.md` named, closed.** A table is drawn as a grid, with box rules
+    /// round cells that were already editable — and every cell is laid out at its *own* measure,
+    /// which is what makes the caret land where the ink is.
+    #[test]
+    fn a_table_is_drawn_as_a_grid_and_its_cells_are_measured_narrower() {
+        let mut app = app(&["before", "after"]);
+        app.core.insert_table(1, 2, 3, None).expect("a table");
+        for (index, text) in [(1, "Region"), (2, "Q1"), (3, "Q2"), (4, "North")] {
+            app.core.set_text(index, text).expect("fills a cell");
+        }
+        let lines = render(&mut app, 76, 14);
+        let shown = lines.join("\n");
+        assert!(
+            shown.contains('\u{250c}') && shown.contains('\u{252c}'),
+            "a top rule: {shown}"
+        );
+        assert!(
+            shown.contains('\u{251c}'),
+            "a rule between the rows: {shown}"
+        );
+        assert!(shown.contains('\u{2514}'), "a rule under it: {shown}");
+        // Three columns side by side on one line, which is the whole point.
+        let row = lines
+            .iter()
+            .find(|line| line.contains("Region"))
+            .expect("the header row");
+        assert!(row.contains("Q1") && row.contains("Q2"), "{row:?}");
+        assert!(
+            row.matches('\u{2502}').count() == 4,
+            "a rule either side of each: {row:?}"
+        );
+        // The table's own address is in the gutter, and the blocks after it are back to normal.
+        assert!(shown.contains("p2  tbl"), "{shown}");
+        assert!(
+            lines.iter().any(|line| line.starts_with("p8  p   after")),
+            "{lines:?}"
+        );
+
+        // A cell's blocks are measured at the cell's width, not the window's: this one wraps.
+        let measure = app.measure(1);
+        assert!(
+            measure < 30.0,
+            "a cell is far narrower than the window: {measure}"
+        );
+        assert_eq!(app.measure(0), 68.0, "and a block outside it is not");
+    }
+
+    /// Every caret motion already worked inside a cell before the grid was drawn — this is the
+    /// half that was missing, and it must keep working with the narrower measure.
+    #[test]
+    fn the_caret_moves_inside_a_table_cell_by_its_own_lines() {
+        let mut app = app(&["before"]);
+        app.core.insert_table(1, 1, 2, None).expect("a table");
+        app.core
+            .set_text(1, "the cat sat on the mat and then it slept again")
+            .expect("a long cell");
+        render(&mut app, 60, 12);
+        let lines = app
+            .core
+            .layout_block(1, app.measure(1), &Cells)
+            .expect("laid out")
+            .lines()
+            .len();
+        assert!(lines > 1, "the cell has to wrap or this proves nothing");
+
+        app.caret = Caret {
+            block: 1,
+            offset: 0,
+        };
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.caret.block, 1, "still in the same cell");
+        assert!(app.caret.offset > 0, "and further down it");
+        // And typing lands in the cell, not beside it.
+        press(&mut app, KeyCode::Char('i'));
+        type_str(&mut app, "X");
+        assert!(app.core.input_text(1).unwrap().contains('X'));
+    }
+
+    /// `:table` — the verb that makes one. Until now this shell could edit a cell and not create
+    /// a table to put one in.
+    #[test]
+    fn the_command_line_inserts_a_table_and_u_takes_it_back() {
+        let mut app = app(&["only"]);
+        app.run_command("table 2 3");
+        assert_eq!(app.core.block_count(), 7, "{}", app.status);
+        assert!(app.core.table(0).is_some(), "the caret's block is in it");
+        press(&mut app, KeyCode::Char('u'));
+        assert_eq!(app.core.block_count(), 1, "one action, one undo");
+
+        app.run_command("table 0 3");
+        assert!(app.status.starts_with("usage:"), "{}", app.status);
+    }
+
+    /// A list item is indented and wears a bullet, and the bullet is **drawn** rather than typed
+    /// — the text is untouched, so no caret after it moves.
+    #[test]
+    fn a_list_item_is_indented_and_wears_a_drawn_bullet() {
+        let mut app = app(&["shallow", "deeper"]);
+        app.core
+            .set_kind(0, BlockKind::ListItem { depth: 1 })
+            .expect("a list item");
+        app.core
+            .set_kind(1, BlockKind::ListItem { depth: 2 })
+            .expect("a nested one");
+        let lines = render(&mut app, 40, 8);
+        assert!(lines[1].contains("\u{2022} shallow"), "{lines:?}");
+        assert!(
+            lines[2].ends_with("  \u{25e6} deeper"),
+            "one level further in, with its own bullet: {:?}",
+            lines[2]
+        );
+        assert_eq!(text(&app), "shallow\ndeeper", "nothing was inserted");
+        // And the measure shrank by the indent, which is what puts the wrap in the right place.
+        assert_eq!(app.measure(0), 30.0);
+        assert_eq!(app.measure(1), 28.0);
+    }
+
+    /// `:find` marks every match and `n`/`N` walk them — vi's own two keys, and the same pair
+    /// the spreadsheet half binds.
+    #[test]
+    fn find_marks_every_match_and_n_steps_through_them() {
+        let mut app = app(&["one two", "two three", "and two more"]);
+        render(&mut app, 40, 8);
+        app.run_command("find two");
+        assert_eq!(app.find.hits.len(), 3, "{}", app.status);
+        assert_eq!(app.caret.block, 0);
+
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(app.caret.block, 1);
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(app.caret.block, 2);
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(app.caret.block, 0, "and it wraps");
+        press(&mut app, KeyCode::Char('N'));
+        assert_eq!(app.caret.block, 2, "backwards too");
+
+        // The matches are marked where they are, not just counted.
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let marked = buffer[(GUTTER + 4, 1)].style();
+        assert_eq!(
+            marked.bg,
+            Some(Color::LightYellow),
+            "the `two` in `one two`: {marked:?}"
+        );
+        let plain = buffer[(GUTTER, 1)].style();
+        assert_ne!(plain.bg, Some(Color::LightYellow), "and only the match");
+
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.find.is_on(), "Esc puts the search away");
+    }
+
+    /// `:mark` — the verb that makes a bookmark, which is what turns `#intro` into an address
+    /// that survives an edit above it.
+    #[test]
+    fn the_command_line_anchors_and_drops_a_bookmark() {
+        let mut app = app(&["Introduction", "body"]);
+        app.run_command("mark intro");
+        assert_eq!(app.core.bookmarks(), vec![("intro".to_owned(), 0)]);
+        // It turned the overlay on, so the reader can see what they just made.
+        assert!(render(&mut app, 40, 8)[1].contains("intro"));
+
+        // And it is an address like any other, straight away.
+        app.run_command("#intro");
+        assert_eq!(app.caret.block, 0);
+
+        app.run_command("mark!");
+        assert!(app.core.bookmarks().is_empty(), "{}", app.status);
+    }
+
+    /// `:move` — a block put somewhere else, in one action and so one press of `u`.
+    #[test]
+    fn the_command_line_moves_a_block() {
+        let mut app = app(&["first", "second", "third"]);
+        app.caret = Caret {
+            block: 2,
+            offset: 0,
+        };
+        app.run_command("move p1");
+        assert_eq!(text(&app), "third\nfirst\nsecond", "{}", app.status);
+        assert_eq!(app.caret.block, 0, "the caret followed it");
+        press(&mut app, KeyCode::Char('u'));
+        assert_eq!(text(&app), "first\nsecond\nthird");
+    }
+
+    /// `:outline` opens a pane rather than printing into the status bar, and every row is a jump.
+    #[test]
+    fn the_outline_is_a_pane_and_every_row_is_a_jump() {
+        let mut app = app(&["One", "under it", "Two"]);
+        app.core
+            .set_kind(0, BlockKind::Heading { level: 1 })
+            .unwrap();
+        app.core
+            .set_kind(2, BlockKind::Heading { level: 1 })
+            .unwrap();
+        app.run_command("outline");
+        assert!(app.outline.is_open());
+        let shown = render(&mut app, 44, 8).join("\n");
+        assert!(shown.contains("Outline"), "{shown}");
+        assert!(shown.contains("One") && shown.contains("Two"), "{shown}");
+
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.outline.is_open(), "going there closes it");
+        assert_eq!(app.caret.block, 2, "and it went there");
+    }
+
+    /// The title bar says which document is open, whether it has unsaved changes, and which
+    /// section of it the caret is in — the last of which nothing else on screen could say.
+    #[test]
+    fn the_title_bar_names_the_document_and_the_section_the_caret_is_in() {
+        let mut app = app(&["Costs", "some prose"]);
+        app.path = Some(PathBuf::from("report.fodt"));
+        app.core
+            .set_kind(0, BlockKind::Heading { level: 1 })
+            .unwrap();
+        app.caret = Caret {
+            block: 1,
+            offset: 0,
+        };
+        let title = render(&mut app, 60, 8).remove(0);
+        assert!(title.contains("TEXT"), "{title:?}");
+        assert!(title.contains("report.fodt"), "{title:?}");
+        assert!(title.contains("\u{a7}1 Costs"), "{title:?}");
+        assert!(title.contains('\u{25cf}'), "unsaved: {title:?}");
+    }
+
+    /// Exactly `width` cells, whatever is in them — what keeps a table's rules in one column.
+    #[test]
+    fn a_table_cell_is_cut_and_padded_to_its_own_width() {
+        use unicode_width::UnicodeWidthStr;
+        let width_of = |spans: &[Span<'static>]| -> usize {
+            spans.iter().map(|span| span.content.as_ref().width()).sum()
+        };
+        for text in [
+            "",
+            "short",
+            "far too long to fit in here",
+            "\u{4e16}\u{754c}\u{4e16}",
+        ] {
+            let fitted = fit(vec![Span::raw(text.to_owned())], 6);
+            assert_eq!(width_of(&fitted), 6, "{text:?}");
+        }
+        // A wide character is never left half in the last cell.
+        let fitted = fit(vec![Span::raw("\u{4e16}\u{754c}".to_owned())], 3);
+        assert_eq!(width_of(&fitted), 3);
     }
 
     #[test]
@@ -1543,7 +2614,7 @@ mod tests {
         render(&mut app, 28, 10);
         assert!(
             app.core
-                .layout_block(0, app.width, &Cells)
+                .layout_block(0, app.measure(0), &Cells)
                 .unwrap()
                 .lines()
                 .len()
@@ -1668,9 +2739,9 @@ mod tests {
     fn the_gutter_marks_where_a_block_starts_and_a_wrapped_line_is_not_one() {
         let mut app = app(&["the cat sat on the mat and then it slept", "next"]);
         let lines = render(&mut app, 28, 8);
-        assert!(lines[0].starts_with("p1  p"), "{lines:?}");
+        assert!(lines[1].starts_with("p1  p"), "{lines:?}");
         assert!(
-            lines[1].starts_with("        "),
+            lines[2].starts_with("        "),
             "a continuation line carries no mark: {lines:?}"
         );
     }
@@ -1895,18 +2966,18 @@ mod tests {
         terminal.draw(|frame| app.draw(frame)).unwrap();
         let buffer = terminal.backend().buffer().clone();
         let row: String = (0..40)
-            .map(|c| buffer[(c, 0)].symbol().to_string())
+            .map(|c| buffer[(c, 1)].symbol().to_string())
             .collect();
         assert!(row.contains("hello world"), "{row:?}");
         assert!(!row.contains('*'), "no markers on screen: {row:?}");
 
-        // The cell under "e" — past the gutter, past the caret's own reversed "h".
-        let bold = buffer[(GUTTER + 1, 0)].style();
+        // The cell under "e" — past the title bar, the gutter and the caret's reversed "h".
+        let bold = buffer[(GUTTER + 1, 1)].style();
         assert!(
             bold.add_modifier.contains(Modifier::BOLD),
             "the run draws bold: {bold:?}"
         );
-        let plain = buffer[(GUTTER + 7, 0)].style();
+        let plain = buffer[(GUTTER + 7, 1)].style();
         assert!(!plain.add_modifier.contains(Modifier::BOLD), "{plain:?}");
     }
 
@@ -1917,7 +2988,7 @@ mod tests {
         type_str(&mut app, "find two");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.caret.block, 0);
-        assert!(app.status.starts_with("2 match"), "{}", app.status);
+        assert!(app.status.starts_with("1 of 2"), "{}", app.status);
 
         press(&mut app, KeyCode::Char(':'));
         type_str(&mut app, "s/two/2/");

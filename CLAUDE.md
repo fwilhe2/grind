@@ -143,6 +143,21 @@ cargo run -p grind-tui -- --text          # a new document, empty
 cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
 ```
 
+**`doc/tui-shell.md` is normative for it, and it is built well past S8.** The grid honours the
+document's own **column widths** (`ui_tui/src/sheet/geom.rs` — whole terminal cells, derived from
+the suite's one-inch default column, and the `ponytail` that measured padding in `char`s is gone
+with it) and folds hidden tracks away on both axes; there is a formula **completion band** over
+`grind_sheet::formula::assist` (Tab accepts, Enter still commits), `:find` + `n`/`N` over cells
+with every match marked, `:down`/`:right`, `:eval`, `:width`/`:height`/`:hide`/`:show`, `:name`,
+CSV both ways, and selection arithmetic on the status bar through `App::preview`. The word
+processor half **draws a table as a grid** in box-drawing characters — `Measures` is its
+`grind_text::Faces`, building the block-to-cell map once per frame because `Faces::of` is called
+while `App` holds its read lock and so must not ask the document anything — indents list items
+with a *drawn* bullet, and gained `:mark`, `:table`, `:move`, `n`/`N` and an outline **pane**
+(`ui_tui/src/pick.rs`, a list widget that does not know what it is holding). Both halves wear two
+rows of chrome (`ui_tui/src/chrome.rs`): a title bar carrying the sheet strip or the heading path,
+and a status bar with a coloured mode chip.
+
 `grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W10**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
@@ -534,7 +549,7 @@ rather than a guest:
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell — the suite's **showcase** for this document type, and the client that gets a text feature first. Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` places blocks (a stack, and a grid where a table is), `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics` and honours all eight `CharStyle` properties, `format.rs` is the formatting bar, `view.rs` is the widget |
 | `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
-| `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`) |
+| `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`). `chrome.rs` is the title and status bars both halves wear, `pick.rs` the list pane the outline opens in, `sheet/geom.rs` the grid's arithmetic with no ratatui in it, `sheet/assist.rs` the formula-completion band over `grind_sheet::formula::assist`, and `text/app.rs`'s `Measures` is the `Faces` that gives a list item its indent and a table cell its column |
 | `grind-win32` | `ui_win32/` | The Windows shell — **built through W10: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, the formula assist, and the Fluent pass** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `artifacts.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette and the rest of `theme.rs`'s Fluent ramps (including the accent tinting, which is swept over every hue there), the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
 
 **R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,

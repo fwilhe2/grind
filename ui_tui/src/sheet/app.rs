@@ -12,7 +12,13 @@
 //! cell address to jump to. `Esc` always returns to Normal — cancelling Insert, since a
 //! spreadsheet's staged edit (unlike vi's document-resident text) has somewhere honest to go
 //! back to.
+//!
+//! **Six bands, top to bottom**: the title bar (`crate::chrome`), the column headers, the grid,
+//! the formula line, the completion band (`super::assist`, only while one is up) and the status
+//! bar. Two of those are chrome and one comes and goes, which is three rows out of twenty-four —
+//! paid for by what they carry that nothing else could, and argued in `doc/tui-shell.md`.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -26,14 +32,16 @@ use ratatui::widgets::Paragraph;
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::CellStyle;
-use grind_sheet::{App as CoreApp, Pos, RecalcMode};
+use grind_sheet::{App as CoreApp, CellValue, Pos, RecalcMode};
 
 use crate::app::RedrawFlag;
+use crate::chrome;
 
+use super::assist::Assist;
+use super::geom::{self, Align, Tracks};
 use super::keymap::{self, Action, Dir, Motion};
 
 const ROW_HEADER_WIDTH: u16 = 7;
-const COL_WIDTH: u16 = 10;
 
 enum Mode {
     Normal,
@@ -49,6 +57,47 @@ enum Mode {
     },
 }
 
+/// Where the last `:find` matched, and which of those matches the cursor is on.
+///
+/// Held rather than re-derived per frame, for the reason [`crate::problems`] holds its report:
+/// searching walks every used cell of every sheet, and a shell that did that once per keystroke
+/// would make `j` the most expensive key it has. It is a **snapshot** — an edit that changes a
+/// cell does not re-run it — and `n` says so by naming the count it was taken with.
+#[derive(Clone, Debug, Default)]
+struct Find {
+    needle: String,
+    /// Every hit, in reading order across the document: which sheet, and where in it. Ordered,
+    /// because `n` and `N` are defined in terms of the order.
+    hits: Vec<(usize, Pos)>,
+    /// The same hits, as a set. Two shapes of one list rather than one, because the two questions
+    /// asked of it are different: `n` wants *the next one* and the grid asks *is this cell one of
+    /// them* once per visible cell per frame, and a linear scan for the second would be the whole
+    /// window times every match a common word has.
+    marked: HashSet<(usize, Pos)>,
+    at: usize,
+}
+
+impl Find {
+    /// Build from the hits, in the order they were found.
+    fn new(needle: &str, hits: Vec<(usize, Pos)>, at: usize) -> Self {
+        Find {
+            needle: needle.to_owned(),
+            marked: hits.iter().copied().collect(),
+            hits,
+            at,
+        }
+    }
+
+    fn is_on(&self) -> bool {
+        !self.needle.is_empty() && !self.hits.is_empty()
+    }
+
+    /// Whether this cell is one of the matches — what the grid draws a mark on.
+    fn matched(&self, sheet: usize, pos: Pos) -> bool {
+        !self.needle.is_empty() && self.marked.contains(&(sheet, pos))
+    }
+}
+
 pub struct App {
     core: Arc<CoreApp>,
     redraw: Arc<RedrawFlag>,
@@ -57,7 +106,9 @@ pub struct App {
     active: Pos,
     top: Pos,
     visible_rows: u32,
-    visible_cols: u32,
+    /// How many cells across the grid has for columns, once the row header has taken its share.
+    /// The window's measure, in the unit [`super::geom`] does its arithmetic in.
+    grid_width: u16,
     mode: Mode,
     /// The other corner of a Visual-mode rectangle. The active cell is this one's opposite.
     anchor: Option<Pos>,
@@ -71,6 +122,10 @@ pub struct App {
     /// like everything else here, because a view mode is a reading of the document and
     /// never a change to it.
     overlays: grind_sheet::view::Overlays,
+    /// The last `:find`, and where it matched.
+    find: Find,
+    /// The completion band, while a formula is being typed (`super::assist`).
+    assist: Assist,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
     /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
@@ -100,12 +155,14 @@ impl App {
             active: Pos::new(0, 0),
             top: Pos::new(0, 0),
             visible_rows: 20,
-            visible_cols: 6,
+            grid_width: 60,
             mode: Mode::Normal,
             anchor: None,
             register: String::new(),
             status: String::new(),
             overlays: grind_sheet::view::Overlays::NONE,
+            find: Find::default(),
+            assist: Assist::default(),
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
             source: None,
@@ -154,10 +211,7 @@ impl App {
             return;
         };
         match action {
-            Action::Move(motion) => {
-                let extent = self.core.used_extent(self.sheet).unwrap_or((0, 0));
-                self.active = keymap::moved(self.active, motion, extent, self.visible_rows);
-            }
+            Action::Move(motion) => self.go(motion),
             Action::Insert => self.begin_edit(false),
             Action::Change => self.begin_edit(true),
             Action::Clear => self.clear_selection(),
@@ -170,12 +224,134 @@ impl App {
             Action::Bold => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
             Action::Italic => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
             Action::Plain => self.write_style(None, "plain"),
+            Action::Next(forward) => self.step_match(forward),
             Action::Escape => {
                 self.anchor = None;
+                // Escape puts the search away as well as the selection: a grid still marked with
+                // yesterday's matches is a grid lying about what is in it.
+                self.find = Find::default();
                 self.status.clear();
                 self.mode = Mode::Normal;
             }
         }
+    }
+
+    // --- find (`:find`, then `n` / `N`) ---
+
+    /// Every cell whose **input text** holds `needle`, across every sheet, in reading order.
+    ///
+    /// The input text and not the displayed value, which is the same choice `yank` makes and for
+    /// the same reason: searching for `SUM` should find `=SUM(B2:B9)`, and searching for `2026`
+    /// should find the date somebody typed rather than only the sheets whose format spells the
+    /// year out. Case is ignored, because nobody searching a spreadsheet means otherwise.
+    ///
+    /// Bounded by `used_extent`, which is the rectangle the document actually occupies — the ODF
+    /// sheet limit is a million rows and none of them is worth walking.
+    fn cmd_find(&mut self, needle: &str) {
+        if needle.is_empty() {
+            self.find = Find::default();
+            self.status = "find cleared".to_owned();
+            return;
+        }
+        let wanted = needle.to_lowercase();
+        let mut hits = Vec::new();
+        for sheet in 0..self.core.sheet_count() {
+            let (rows, cols) = self.core.used_extent(sheet).unwrap_or((0, 0));
+            for row in 0..rows {
+                for col in 0..cols {
+                    let pos = Pos::new(row, col);
+                    let text = self.core.input_text(sheet, pos).unwrap_or_default();
+                    if !text.is_empty() && text.to_lowercase().contains(&wanted) {
+                        hits.push((sheet, pos));
+                    }
+                }
+            }
+        }
+        // Start on the first hit at or after the cursor, so `:find` from halfway down a column
+        // goes forwards like every other search anybody has ever used.
+        let here = (self.sheet, self.active.row, self.active.col);
+        let at = hits
+            .iter()
+            .position(|(s, p)| (*s, p.row, p.col) >= here)
+            .unwrap_or(0);
+        self.find = Find::new(needle, hits, at);
+        match self.find.hits.is_empty() {
+            true => self.status = format!("no cell holds {needle}"),
+            false => {
+                self.go_to_match();
+                self.status = format!(
+                    "{} of {} \u{00b7} n next, N previous",
+                    self.find.at + 1,
+                    self.find.hits.len()
+                );
+            }
+        }
+    }
+
+    /// `n` / `N` — the next or previous match, wrapping round the ends the way vi's do.
+    fn step_match(&mut self, forward: bool) {
+        if !self.find.is_on() {
+            self.status = match self.find.needle.is_empty() {
+                true => "nothing to step \u{2014} :find <text> first".to_owned(),
+                false => format!("no cell holds {}", self.find.needle),
+            };
+            return;
+        }
+        let count = self.find.hits.len();
+        self.find.at = match forward {
+            true => (self.find.at + 1) % count,
+            false => (self.find.at + count - 1) % count,
+        };
+        self.go_to_match();
+        self.status = format!("{} of {count}", self.find.at + 1);
+    }
+
+    /// Put the cursor on the match the search is currently on.
+    fn go_to_match(&mut self) {
+        if let Some((sheet, pos)) = self.find.hits.get(self.find.at).copied() {
+            self.sheet = sheet;
+            self.active = pos;
+            self.anchor = None;
+        }
+    }
+
+    /// Every row the document does not show.
+    ///
+    /// **Two calls, not one.** `App::hidden_rows` is the *filter's* answer alone and
+    /// `App::manually_hidden_rows` is the other half; a shell that trusted either to be both would
+    /// draw rows `:hide rows` had just taken away, or fold away rows nothing had hidden. The
+    /// column axis has no filter, so `App::hidden_cols` really is the whole answer there.
+    fn folded_rows(&self) -> HashSet<u32> {
+        let filtered = self.core.hidden_rows(self.sheet).unwrap_or_default();
+        let by_hand = self
+            .core
+            .manually_hidden_rows(self.sheet)
+            .unwrap_or_default();
+        filtered.into_iter().chain(by_hand).collect()
+    }
+
+    fn folded_cols(&self) -> HashSet<u32> {
+        self.core
+            .hidden_cols(self.sheet)
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
+    }
+
+    /// Apply a motion, counted in the tracks the document actually shows.
+    ///
+    /// The hidden sets are read here, per keystroke, rather than kept: a filter can change under
+    /// the cursor (`:show`, an undo), and a remembered set would move the cursor by yesterday's
+    /// idea of what is on screen. This is the same "asked for fresh, never stored" rule every
+    /// paint in this file follows.
+    fn go(&mut self, motion: Motion) {
+        let extent = self.core.used_extent(self.sheet).unwrap_or((0, 0));
+        let (rows, cols) = (self.folded_rows(), self.folded_cols());
+        let folded = keymap::Folded {
+            rows: &rows,
+            cols: &cols,
+        };
+        self.active = keymap::moved(self.active, motion, extent, self.visible_rows, folded);
     }
 
     // --- the code view (doc/dsl.md §6, D9) ---
@@ -445,6 +621,7 @@ impl App {
         let cursor = buf.len();
         self.status.clear();
         self.mode = Mode::Insert { buf, cursor };
+        self.refresh_assist();
     }
 
     fn report(&mut self, when_nothing_happened: &str, changed: bool) {
@@ -457,6 +634,19 @@ impl App {
     // --- Insert mode ---
 
     fn on_insert_key(&mut self, code: KeyCode) {
+        // A list of offers claims four keys, and only while it is up: Tab would otherwise do
+        // nothing at all, Up/Down nothing, and Escape would throw the whole edit away when what
+        // was meant was "not that completion". **Enter is deliberately not claimed** — a formula
+        // finished by pressing Enter is the common case (`super::assist`).
+        if self.assist.is_offering() {
+            match code {
+                KeyCode::Tab => return self.accept_offer(),
+                KeyCode::Down => return self.assist.step(1),
+                KeyCode::Up => return self.assist.step(-1),
+                KeyCode::Esc => return self.assist.dismiss(),
+                _ => {}
+            }
+        }
         let Mode::Insert { buf, cursor } = &mut self.mode else {
             return;
         };
@@ -485,6 +675,55 @@ impl App {
             KeyCode::Enter => self.commit_edit(),
             _ => {}
         }
+        self.refresh_assist();
+    }
+
+    /// Ask [`Assist`] what to offer for the buffer as it now stands.
+    ///
+    /// Recomputed after every keystroke rather than updated in place: a remembered completion goes
+    /// stale the moment the caret moves, which is the same reason nothing else in this file caches
+    /// a read of the document.
+    fn refresh_assist(&mut self) {
+        let Mode::Insert { buf, cursor } = &self.mode else {
+            self.assist.clear();
+            return;
+        };
+        let text: String = buf.iter().collect();
+        // `assist` counts bytes and the buffer counts characters — one conversion, here.
+        let caret = text
+            .char_indices()
+            .nth(*cursor)
+            .map(|(at, _)| at)
+            .unwrap_or(text.len());
+        let names: Vec<String> = self
+            .core
+            .names()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        self.assist.refresh(&text, caret, &names);
+    }
+
+    /// Tab: put the highlighted offer into the buffer, with the caret where its first argument
+    /// goes.
+    fn accept_offer(&mut self) {
+        let Some((span, insert)) = self.assist.accept() else {
+            return;
+        };
+        if let Mode::Insert { buf, cursor } = &mut self.mode {
+            let text: String = buf.iter().collect();
+            if span.end > text.len()
+                || !text.is_char_boundary(span.start)
+                || !text.is_char_boundary(span.end)
+            {
+                return;
+            }
+            *cursor = text[..span.start].chars().count() + insert.chars().count();
+            *buf = format!("{}{}{}", &text[..span.start], insert, &text[span.end..])
+                .chars()
+                .collect();
+        }
+        self.refresh_assist();
     }
 
     /// Display form goes back to canonical here, exactly as `ui_sheet_gtk/src/grid.rs`'s `commit`
@@ -533,8 +772,9 @@ impl App {
             }
         }
         self.mode = Mode::Normal;
-        // Enter walks down, matching the habit typing into a spreadsheet already has.
-        self.active = keymap::moved(self.active, Motion::By(Dir::Down), (0, 0), 1);
+        // Enter walks down, matching the habit typing into a spreadsheet already has — down to
+        // the next row that is *drawn*, like every other downward motion here.
+        self.go(Motion::By(Dir::Down));
     }
 
     // --- Command mode ---
@@ -577,6 +817,7 @@ impl App {
         }
         match cmd {
             "help" | "h?" => self.help.open(),
+            "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
             "q!" => self.cmd_quit(true),
             "w" => self.cmd_write(None),
@@ -607,15 +848,324 @@ impl App {
             "general" => self.write_format(None, "general"),
             "sheet-new" | "sheet-add" => self.cmd_sheet_add(),
             "sheet-delete" => self.cmd_sheet_delete(),
+            // A fill in the two directions anybody means one in. `App::fill` replicates *one*
+            // cell, so a selection several lines across is one call per line.
+            "down" => self.cmd_fill(true),
+            "right" => self.cmd_fill(false),
+            "find" => self.cmd_find(""),
+            "hide" => self.cmd_hide(true, false),
+            "hide rows" => self.cmd_hide(true, true),
+            "show" => self.cmd_hide(false, false),
+            "show rows" => self.cmd_hide(false, true),
+            "width" | "width auto" => self.cmd_width(None),
+            "height" | "height auto" => self.cmd_height(None),
+            "name!" => self.cmd_unname(),
             _ if cmd.starts_with("align ") => self.cmd_align(cmd[6..].trim()),
             _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
             _ if cmd.starts_with("fill ") => self.cmd_color(cmd[5..].trim(), true),
+            _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
             _ if cmd.starts_with("format ") => self.cmd_format(cmd[7..].trim()),
+            _ if cmd.starts_with("eval ") => self.cmd_eval(cmd[5..].trim()),
+            _ if cmd.starts_with("width ") => self.cmd_width(Some(cmd[6..].trim())),
+            _ if cmd.starts_with("height ") => self.cmd_height(Some(cmd[7..].trim())),
+            _ if cmd.starts_with("name ") => self.cmd_name(cmd[5..].trim()),
+            _ if cmd.starts_with("csv-in ") => self.cmd_csv_in(cmd[7..].trim()),
+            _ if cmd.starts_with("csv-out ") => self.cmd_csv_out(cmd[8..].trim()),
             _ if cmd.starts_with("sheet-rename ") => self.cmd_sheet_rename(cmd[13..].trim()),
             _ if cmd.starts_with("w ") => self.cmd_write(Some(cmd[2..].trim())),
             _ if cmd.starts_with("sheet ") => self.cmd_sheet(cmd[6..].trim()),
-            // Anything else is a cell or range address, vi's `:{line}` counterpart.
+            // Anything else is a cell, a range or a defined name — vi's `:{line}` counterpart.
             _ => self.cmd_jump(cmd),
+        }
+    }
+
+    /// `:down` / `:right` — replicate the selection's leading line across the rest of it, with
+    /// every relative reference shifted (`App::fill`).
+    ///
+    /// ponytail: one `App::fill` call, and so one undo entry, **per line** — a fill down across
+    /// five columns is five undo steps rather than one. The same ceiling `ui_sheet_gtk/src/grid.rs`
+    /// records, and the same upgrade: a multi-source fill in the core. Nothing needs it until that
+    /// selection shape is a common one.
+    fn cmd_fill(&mut self, down: bool) {
+        let (start, end) = self.rect();
+        let (from, to) = match down {
+            true => (start.row, end.row),
+            false => (start.col, end.col),
+        };
+        if to <= from {
+            self.status = match down {
+                true => "select more than one row first".to_owned(),
+                false => "select more than one column first".to_owned(),
+            };
+            return;
+        }
+        let mut cells = 0;
+        let mut failed = None;
+        // The source is the leading line; the targets are everything after it.
+        let lines = match down {
+            true => start.col..=end.col,
+            false => start.row..=end.row,
+        };
+        for line in lines {
+            let (source, first, last) = match down {
+                true => (
+                    Pos::new(from, line),
+                    Pos::new(from + 1, line),
+                    Pos::new(to, line),
+                ),
+                false => (
+                    Pos::new(line, from),
+                    Pos::new(line, from + 1),
+                    Pos::new(line, to),
+                ),
+            };
+            match self
+                .core
+                .fill(self.sheet, source, first, last, RecalcMode::Document)
+            {
+                Ok(outcome) => cells += outcome.cells,
+                Err(e) => failed = Some(e.to_string()),
+            }
+        }
+        self.leave_visual();
+        self.status = match failed {
+            Some(e) => e,
+            None => format!("filled {cells} cell(s)"),
+        };
+    }
+
+    /// `:eval <formula>` — what it would come to, storing nothing and creating no undo entry.
+    ///
+    /// Typed in display syntax like every other formula in this shell, and evaluated **at the
+    /// active cell**, which is what its relative references are relative to — the same two
+    /// decisions `grind sheet eval` makes.
+    fn cmd_eval(&mut self, formula: &str) {
+        let canonical = match formula.starts_with('=') {
+            true => match display::from_display(formula) {
+                Ok(canonical) => canonical,
+                Err(e) => {
+                    self.status = format!("{} (at {})", e.message, e.at);
+                    return;
+                }
+            },
+            false => format!("={formula}"),
+        };
+        self.status = match self.core.preview(self.sheet, self.active, &canonical) {
+            Ok(value) => format!("{formula} \u{2192} {}", show_value(&value)),
+            Err(e) => e.to_string(),
+        };
+    }
+
+    /// `:width [n|auto]` — how many terminal cells wide the selection's columns are drawn.
+    ///
+    /// Written into the document as an **ODF length** (`super::geom::length`), not as a count of
+    /// cells: a width set here is a width every other shell honours, because it goes in in the
+    /// document's own unit rather than in this terminal's idea of one. `auto` takes the width away
+    /// again, leaving the column at whatever a renderer's default is.
+    fn cmd_width(&mut self, cells: Option<&str>) {
+        let width = match cells {
+            None => None,
+            Some("auto" | "default") => None,
+            Some(n) => match n.parse::<u16>() {
+                Ok(n) if n > 0 => Some(geom::length(n)),
+                _ => {
+                    self.status = format!("not a width in cells: {n}");
+                    return;
+                }
+            },
+        };
+        let (start, end) = self.rect();
+        match self
+            .core
+            .set_col_width(self.sheet, start.col..end.col + 1, width.clone())
+        {
+            Ok(changed) => {
+                self.leave_visual();
+                self.status = match width {
+                    Some(length) => format!("{changed} column(s) at {length}"),
+                    None => format!("{changed} column(s) back to the default width"),
+                };
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:height [n]` — the row twin of [`App::cmd_width`], in ODF's own unit.
+    ///
+    /// **Stored and not drawn**, and that is the medium rather than a gap: a row here is one line
+    /// of a terminal, so there is nothing for a height to change. Every other shell draws it, the
+    /// CLI reads it back, and a document that arrives with row heights keeps them.
+    fn cmd_height(&mut self, cells: Option<&str>) {
+        let height = match cells {
+            None | Some("auto" | "default") => None,
+            Some(n) => match n.parse::<u16>() {
+                Ok(n) if n > 0 => Some(geom::length(n)),
+                _ => {
+                    self.status = format!("not a height in cells: {n}");
+                    return;
+                }
+            },
+        };
+        let (start, end) = self.rect();
+        match self
+            .core
+            .set_row_height(self.sheet, start.row..end.row + 1, height.clone())
+        {
+            Ok(changed) => {
+                self.leave_visual();
+                self.status = match height {
+                    Some(length) => {
+                        format!("{changed} row(s) at {length} \u{2014} stored, not drawn here")
+                    }
+                    None => format!("{changed} row(s) back to the default height"),
+                };
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:hide` / `:show`, over the selection's columns — or its rows, with `rows` after the verb.
+    ///
+    /// Explicit rather than guessed from the shape of the selection: a rectangle covers both axes,
+    /// and a verb that hid a column when you meant a row is a verb you have to undo to find out
+    /// what it did.
+    fn cmd_hide(&mut self, hidden: bool, rows: bool) {
+        let (start, end) = self.rect();
+        let done = match rows {
+            true => self
+                .core
+                .set_row_hidden(self.sheet, start.row..end.row + 1, hidden),
+            false => self
+                .core
+                .set_col_hidden(self.sheet, start.col..end.col + 1, hidden),
+        };
+        let what = match rows {
+            true => "row",
+            false => "column",
+        };
+        let how = match hidden {
+            true => "hid",
+            false => "showed",
+        };
+        match done {
+            Ok(changed) => {
+                self.leave_visual();
+                // Hiding the track the cursor is on would leave it somewhere invisible, so it
+                // steps off — the same courtesy every spreadsheet's own Hide does, and onto the
+                // next one that is *shown* rather than onto whatever is one past the run, which
+                // may itself have been hidden earlier.
+                if hidden && !rows {
+                    let folded = self.folded_cols();
+                    let past = self.active.col.max(end.col + 1).min(super::MAX_COLS - 1);
+                    self.active.col = keymap::shown(past, &folded, super::MAX_COLS - 1);
+                }
+                if hidden && rows {
+                    let folded = self.folded_rows();
+                    let past = self.active.row.max(end.row + 1).min(super::MAX_ROWS - 1);
+                    self.active.row = keymap::shown(past, &folded, super::MAX_ROWS - 1);
+                }
+                self.status = format!("{how} {changed} {what}(s) \u{2014} u brings them back");
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:name <name>` — define a name over the selection, which is what makes `:tax_rate` a place
+    /// to go and `=tax_rate*subtotal` a formula somebody can read.
+    ///
+    /// The definition is `a1::as_definition`'s, so the expression stored is the absolute,
+    /// sheet-qualified form ODF wants rather than whatever the cursor happened to be spelled as.
+    fn cmd_name(&mut self, name: &str) {
+        if name.is_empty() {
+            self.status = "usage: :name <name>".to_owned();
+            return;
+        }
+        let (start, end) = self.rect();
+        let sheet = self.core.sheet_name(self.sheet).unwrap_or_default();
+        let reference = grind_sheet::a1::reference(Some(&sheet), start, end);
+        match grind_sheet::a1::as_definition(&self.core, &reference)
+            .and_then(|definition| self.core.set_name(name, &definition).map(|()| definition))
+        {
+            Ok(definition) => {
+                self.leave_visual();
+                self.status = format!("{name} = {definition}");
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:name!` — drop whichever name covers the selection exactly.
+    fn cmd_unname(&mut self) {
+        let (start, end) = self.rect();
+        let sheet = self.core.sheet_name(self.sheet).unwrap_or_default();
+        let reference = grind_sheet::a1::reference(Some(&sheet), start, end);
+        let Ok(wanted) = grind_sheet::a1::as_definition(&self.core, &reference) else {
+            self.status = "no name here".to_owned();
+            return;
+        };
+        // Exactly, not overlapping: a name is a handle on one range, and dropping one because the
+        // cursor happened to sit inside it would delete something nobody pointed at.
+        let found = self
+            .core
+            .names()
+            .into_iter()
+            .find(|(_, expression)| *expression == wanted);
+        match found {
+            Some((name, _)) => {
+                self.core.clear_name(&name);
+                self.status = format!("dropped {name} \u{2014} u brings it back");
+            }
+            None => self.status = "no name covers exactly this".to_owned(),
+        }
+    }
+
+    /// `:csv-in <file>` — a CSV or TSV read in at the cursor, delimiter sniffed from the file's
+    /// own content (`grind_sheet::csv`).
+    fn cmd_csv_in(&mut self, path: &str) {
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => {
+                self.status = format!("{path}: {e}");
+                return;
+            }
+        };
+        let options = grind_sheet::csv::Import::default();
+        match self.core.import_csv(
+            self.sheet,
+            self.active,
+            &text,
+            &options,
+            RecalcMode::Document,
+        ) {
+            Ok(outcome) => self.status = format!("read {} cell(s) from {path}", outcome.cells),
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:csv-out <file>` — the selection, or the whole used sheet when nothing is selected.
+    fn cmd_csv_out(&mut self, path: &str) {
+        let (start, end) = match self.anchor {
+            Some(_) => self.rect(),
+            None => {
+                let (rows, cols) = self.core.used_extent(self.sheet).unwrap_or((0, 0));
+                match rows == 0 || cols == 0 {
+                    true => (Pos::new(0, 0), Pos::new(0, 0)),
+                    false => (Pos::new(0, 0), Pos::new(rows - 1, cols - 1)),
+                }
+            }
+        };
+        let options = grind_sheet::csv::Export::default();
+        match self
+            .core
+            .export_csv(self.sheet, start, end, &options)
+            .map_err(|e| e.to_string())
+            .and_then(|text| std::fs::write(path, text).map_err(|e| e.to_string()))
+        {
+            Ok(()) => {
+                self.leave_visual();
+                self.status = format!("wrote {path}");
+            }
+            Err(e) => self.status = e,
         }
     }
 
@@ -803,7 +1353,28 @@ impl App {
         }
     }
 
+    /// `:{address}` — vi's `:{line}`, over the three things a place in a spreadsheet can be
+    /// called.
+    ///
+    /// **A defined name is tried first.** `tax_rate` parses perfectly well as a cell address
+    /// (column `TAX_RATE` does not exist, but `Sheet1` parses as column `SHEET`, row 1 — the same
+    /// trap `locate` documents for the code view), so a name has to win or naming a range would
+    /// make it unreachable by the name somebody gave it. The name box in every other shell offers
+    /// them for the same reason.
     fn cmd_jump(&mut self, addr: &str) {
+        if let Some((_, expression)) = self
+            .core
+            .names()
+            .into_iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(addr))
+            && let Ok((sheet, start, _end)) = grind_sheet::a1::parse_bracketed(&expression)
+                .and_then(|reference| grind_sheet::a1::resolve(&self.core, &reference))
+        {
+            self.sheet = sheet;
+            self.active = start;
+            self.status = format!("{addr} \u{2014} {expression}");
+            return;
+        }
         match grind_sheet::a1::parse(addr).and_then(|r| grind_sheet::a1::resolve(&self.core, &r)) {
             Ok((sheet, start, _end)) => {
                 self.sheet = sheet;
@@ -818,17 +1389,77 @@ impl App {
 
     /// Slide the scroll offset just far enough to keep the active cell on screen — the same
     /// rule `editor`'s `Editor::follow_cursor` applies to a line, one axis at a time here.
-    fn follow_cursor(&mut self, rows: u32, cols: u32) {
-        if self.active.row < self.top.row {
-            self.top.row = self.active.row;
-        } else if self.active.row >= self.top.row + rows {
-            self.top.row = self.active.row + 1 - rows;
+    ///
+    /// Both axes are [`super::geom`]'s arithmetic now rather than a division: columns are not all
+    /// the same width any more, and a hidden row is not a row, so neither question is "how many
+    /// fit" times "how big is one".
+    fn follow_cursor(&mut self, tracks: &Tracks, hidden: &HashSet<u32>, rows: u32, room: u16) {
+        self.top.row =
+            geom::follow_row(hidden, self.top.row, self.active.row, rows, super::MAX_ROWS);
+        self.top.col = geom::follow(tracks, self.top.col, self.active.col, room, super::MAX_COLS);
+    }
+
+    /// What the title bar calls this document.
+    fn document_name(&self) -> String {
+        self.path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "untitled".to_owned())
+    }
+
+    /// Where the selection is, and what it adds up to — the right-hand end of the status bar.
+    ///
+    /// The aggregates go through [`grind_sheet::App::preview`] over generated formulas rather than
+    /// through a summing loop of this shell's own, so what the bar says and what a cell holding
+    /// `=SUM(...)` would say cannot differ. A single cell says only where it is, deliberately:
+    /// it has nothing to add up, and every other spreadsheet stays quiet about it.
+    ///
+    /// ponytail: the third copy of a shape `ui_sheet_gtk/src/chrome.rs` and
+    /// `ui_win32/src/sheet/status.rs` already have. It is small enough that three of it is
+    /// cheaper than a fourth spelling in `grind-sheet`; a fourth caller is where it gets hoisted,
+    /// the way `formula::assist` and `grind_core::search::score` were.
+    fn selection_summary(&self) -> String {
+        use grind_sheet::a1::format as spell;
+        let (start, end) = self.rect();
+        if start == end {
+            return spell(None, start);
         }
-        if self.active.col < self.top.col {
-            self.top.col = self.active.col;
-        } else if self.active.col >= self.top.col + cols {
-            self.top.col = self.active.col + 1 - cols;
+        let address = format!("{}:{}", spell(None, start), spell(None, end));
+        let Ok((rows, cols)) = self.core.used_extent(self.sheet) else {
+            return address;
+        };
+        // Clamped to the used extent first: a selection reaching past what the sheet holds must
+        // not ask the evaluator to walk a million empty rows.
+        if rows == 0 || cols == 0 || start.row >= rows || start.col >= cols {
+            return address;
         }
+        let end = Pos::new(end.row.min(rows - 1), end.col.min(cols - 1));
+        if end.row < start.row || end.col < start.col {
+            return address;
+        }
+        let range = format!("[.{}:.{}]", spell(None, start), spell(None, end));
+        // Evaluated one row past the used extent: a formula is evaluated *as if* it sat somewhere,
+        // and anywhere inside the range would be a circular reference.
+        let at = Pos::new(rows, 0);
+        let of = |formula: String| match self.core.preview(self.sheet, at, &formula) {
+            Ok(CellValue::Number(n)) => Some(n),
+            _ => None,
+        };
+        // A status bar's Count is non-empty rather than numeric, which is `COUNTA`.
+        let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
+        if count == 0.0 {
+            return address;
+        }
+        let mut parts = vec![address, format!("Count {}", show(count))];
+        // Sum and Average of no numbers are not zero, they are nothing — `AVERAGE` says so with
+        // `#DIV/0!`, which is why both are read back as an optional number and offered together.
+        if let Some(sum) = of(format!("=SUM({range})"))
+            && let Some(average) = of(format!("=AVERAGE({range})"))
+        {
+            parts.insert(1, format!("Sum {}", show(sum)));
+            parts.push(format!("Avg {}", show(average)));
+        }
+        parts.join("  \u{00b7}  ")
     }
 
     /// How tall the help pane is, for the page keys — the whole window, which is what it
@@ -845,82 +1476,125 @@ impl App {
             return;
         }
         if self.problems.is_open() {
-            let title = self
-                .path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "untitled".to_owned());
+            let title = self.document_name();
             self.problems.draw(frame, area, &title);
             return;
         }
         if let Some(projection) = self.source.take() {
-            let title = self
-                .path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "untitled".to_owned());
+            let title = self.document_name();
             self.code.draw(frame, area, &projection, &title);
             self.source = Some(projection);
             return;
         }
-        let [col_header_area, grid_area, formula_area, status_area] = Layout::vertical([
+        // The completion band takes a row only while it has something to say, so a document
+        // being read is never a row shorter than one being edited.
+        let band = matches!(self.mode, Mode::Insert { .. }) && self.assist.is_showing();
+        let [
+            title_area,
+            col_header_area,
+            grid_area,
+            formula_area,
+            assist_area,
+            status_area,
+        ] = Layout::vertical([
+            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
+            Constraint::Length(u16::from(band)),
             Constraint::Length(1),
         ])
         .areas(area);
 
-        let visible_cols = (u32::from(grid_area.width.saturating_sub(ROW_HEADER_WIDTH))
-            / u32::from(COL_WIDTH))
-        .max(1);
+        // The document's own geometry, read fresh every frame like everything else here.
+        let tracks = Tracks::new(
+            self.core.col_widths(self.sheet).unwrap_or_default(),
+            self.core.hidden_cols(self.sheet).unwrap_or_default(),
+        );
+        // Filtered *and* manually hidden — `folded_rows` unions the two, because the core does
+        // not. A row the document says is not there is drawn as a fold rather than as a gap, and
+        // it is the same set the motions step over, so the cursor cannot land on one.
+        let hidden = self.folded_rows();
+
+        let room = grid_area.width.saturating_sub(ROW_HEADER_WIDTH);
         let visible_rows = u32::from(grid_area.height).max(1);
         self.visible_rows = visible_rows;
-        self.visible_cols = visible_cols;
-        self.follow_cursor(visible_rows, visible_cols);
+        self.grid_width = room;
+        self.follow_cursor(&tracks, &hidden, visible_rows, room);
+
+        let cols = geom::columns(&tracks, self.top.col, room, super::MAX_COLS);
+        let rows = geom::rows(&hidden, self.top.row, visible_rows, super::MAX_ROWS);
+        let last_col = cols.last().map_or(self.top.col + 1, |(col, _)| col + 1);
+        let last_row = rows.last().map_or(self.top.row + 1, |row| row + 1);
 
         let viewport = self
             .core
             .get_viewport_with(
                 self.sheet,
-                self.top.row..self.top.row + visible_rows,
-                self.top.col..self.top.col + visible_cols,
+                self.top.row..last_row,
+                self.top.col..last_col,
                 self.overlays,
             )
             .ok();
 
-        let mut header = vec![Span::raw(" ".repeat(ROW_HEADER_WIDTH as usize))];
-        for c in self.top.col..self.top.col + visible_cols {
+        // --- the title bar: which document, and which of its sheets ---
+        let name = chrome::file_name(self.path.as_deref());
+        let mut left = vec![chrome::badge("SHEET")];
+        left.extend(chrome::document(&name, self.core.can_undo()));
+        let sheets: Vec<String> = (0..self.core.sheet_count())
+            .map(|index| self.core.sheet_name(index).unwrap_or_default())
+            .collect();
+        let taken: usize = left.iter().map(Span::width).sum();
+        let right = chrome::tabs(
+            &sheets,
+            self.sheet,
+            usize::from(title_area.width).saturating_sub(taken + 2),
+        );
+        frame.render_widget(
+            chrome::bar(title_area.width, chrome::title_style(), left, right),
+            title_area,
+        );
+
+        // --- the column headers, with the cursor's own column picked out ---
+        let mut header = vec![Span::styled(" ".repeat(ROW_HEADER_WIDTH as usize), HEADER)];
+        let mut painted = 0u16;
+        for (col, width) in &cols {
             header.push(Span::styled(
-                padded(&lex::column_name(c), COL_WIDTH as usize),
-                Style::default().add_modifier(Modifier::BOLD),
+                geom::pad(&lex::column_name(*col), usize::from(*width), Align::Centre),
+                match *col == self.active.col {
+                    true => HEADER_ACTIVE,
+                    false => HEADER,
+                },
             ));
+            painted += width;
         }
+        // A sheet narrower than the window leaves the band short; it is a band, so it is filled.
+        header.push(Span::styled(
+            " ".repeat(usize::from(room.saturating_sub(painted))),
+            HEADER,
+        ));
         frame.render_widget(Line::from(header), col_header_area);
 
-        // Filtered *and* manually hidden, which is what `hidden_rows` already unions — a row
-        // the document says is not there is drawn as a fold rather than as a gap.
-        let hidden = self.core.hidden_rows(self.sheet).unwrap_or_default();
-
-        let mut lines = Vec::with_capacity(visible_rows as usize);
-        for r in self.top.row..self.top.row + visible_rows {
-            if hidden.contains(&r) {
-                continue;
-            }
+        let mut lines = Vec::with_capacity(rows.len());
+        for r in rows.iter().copied() {
             let mut spans = vec![Span::styled(
                 format!(
                     "{:>width$} ",
                     r + 1,
                     width = (ROW_HEADER_WIDTH - 1) as usize
                 ),
-                Style::default().add_modifier(Modifier::DIM),
+                match r == self.active.row {
+                    true => HEADER_ACTIVE,
+                    false => HEADER_ROW,
+                },
             )];
-            for c in self.top.col..self.top.col + visible_cols {
+            for (c, width) in &cols {
+                let (r, c) = (r, *c);
                 let text = viewport.as_ref().and_then(|v| v.text(r, c)).unwrap_or("");
                 let cell = viewport.as_ref().and_then(|v| v.style(r, c));
                 let numeric = matches!(
                     viewport.as_ref().and_then(|v| v.get(r, c)),
-                    Some(grind_sheet::CellValue::Number(_))
+                    Some(CellValue::Number(_))
                 );
                 let role = viewport.as_ref().and_then(|v| v.role(r, c));
                 // The document's own styling, then the shell's own marks over it: the active
@@ -932,31 +1606,40 @@ impl App {
                     Some(role) => Style::default().fg(role_color(role)),
                     None => terminal_style(cell),
                 };
-                // The name overlay, in the one channel a ten-column cell has to spare:
-                // *underlined* means this cell has a name, and the name itself is spelled
-                // out for the active cell on the formula line below. Drawing `sales` inside
-                // a ten-character column would be the value yielding to the hint, which
-                // §3.2 forbids in every shell.
+                // The name overlay, in the one channel a cell has to spare: *underlined* means
+                // this cell has a name, and the name itself is spelled out for the active cell
+                // on the formula line below. Drawing `sales` inside a ten-character column
+                // would be the value yielding to the hint, which §3.2 forbids in every shell.
                 if viewport.as_ref().and_then(|v| v.name_at(r, c)).is_some() {
                     style = style.add_modifier(Modifier::UNDERLINED);
                 }
                 let pos = Pos::new(r, c);
+                // A `:find` match, and it **replaces** the document's own colours rather than
+                // adding to them — the same rule the role overlay follows, for the same reason:
+                // a marked cell whose own background was already yellow would be a mark nobody
+                // could tell from the document. It is a transient reading, it is drawn only
+                // while a search is live, and `Esc` puts it away.
+                if self.find.matched(self.sheet, pos) {
+                    style = MATCH;
+                }
                 if pos == self.active || self.selected(pos) {
                     style = style.add_modifier(Modifier::REVERSED);
                 }
                 // §4.6's second channel, and a terminal needs it more than a window does:
                 // eight ANSI colours are what some of them have, and the glyph is what says
                 // the role where the colour cannot. It takes a column of the cell, which is
-                // the mode's price and is paid only while the mode is on.
-                if let Some(role) = role {
+                // the mode's price and is paid only while the mode is on — and a column
+                // clipped at the window's edge has none to give, so it keeps its text.
+                let marked = role.is_some() && *width >= 2;
+                if let (true, Some(role)) = (marked, role) {
                     spans.push(Span::styled(role.marker().to_string(), style));
                 }
-                let width = match role {
-                    Some(_) => COL_WIDTH as usize - 1,
-                    None => COL_WIDTH as usize,
+                let width = match marked {
+                    true => usize::from(*width) - 1,
+                    false => usize::from(*width),
                 };
                 spans.push(Span::styled(
-                    padded_as(text, width, alignment(cell, numeric)),
+                    geom::pad(text, width, alignment(cell, numeric)),
                     style,
                 ));
             }
@@ -964,7 +1647,6 @@ impl App {
         }
         frame.render_widget(Paragraph::new(lines), grid_area);
 
-        let sheet_name = self.core.sheet_name(self.sheet).unwrap_or_default();
         let addr = grind_sheet::a1::format(None, self.active);
         let content = match &self.mode {
             Mode::Insert { buf, .. } => buf.iter().collect::<String>(),
@@ -996,37 +1678,107 @@ impl App {
         {
             reading.push_str(&format!("  [{}]", role.name()));
         }
-        frame.render_widget(
-            Line::from(vec![
-                Span::styled(
-                    format!("{sheet_name}!{addr} "),
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(content),
-                Span::styled(reading, Style::default().add_modifier(Modifier::DIM)),
-            ]),
-            formula_area,
-        );
+        // The name box, then what the cell holds — an `fx` badge when that is a formula, which is
+        // the one thing a reader needs to know before reading the rest of the line.
+        let mut formula_line = vec![Span::styled(format!(" {addr} "), NAME_BOX)];
+        if content.starts_with('=') {
+            formula_line.push(Span::styled(
+                " fx ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            formula_line.push(Span::raw(" "));
+        }
+        formula_line.push(Span::raw(content));
+        formula_line.push(Span::styled(
+            reading,
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        frame.render_widget(Line::from(formula_line), formula_area);
 
-        let status_text = match &self.mode {
+        if band {
+            frame.render_widget(Line::from(self.assist.line(false)), assist_area);
+        }
+
+        let mode = match &self.mode {
+            Mode::Normal => chrome::Mode::Normal,
+            Mode::Visual => chrome::Mode::Visual,
+            Mode::Insert { .. } => chrome::Mode::Insert,
+            Mode::Command { .. } => chrome::Mode::Command,
+        };
+        let says = match &self.mode {
             Mode::Command { buf } => format!(":{buf}"),
-            Mode::Insert { .. } => "-- INSERT --  Enter commit, Esc cancel".to_string(),
+            Mode::Insert { .. } => "Enter commits, Esc cancels".to_string(),
+            // Short on purpose: the right-hand end of this bar is carrying the arithmetic, which
+            // is what a reader with a range selected is actually looking at. The rest of the
+            // Visual-mode keys are in `:help` and in `--help`, written once (`crate::help`).
             Mode::Visual => {
                 let (start, end) = self.rect();
                 format!(
-                    "-- VISUAL --  {}x{}  * bold  / italic  - plain  y yank  d clear  : command",
+                    "{}\u{00d7}{}  * bold  / italic  - plain",
                     end.row - start.row + 1,
                     end.col - start.col + 1
                 )
             }
             _ if !self.status.is_empty() => self.status.clone(),
-            _ => "h j k l move  i/a/c edit  v select  x clear  y/p yank put  u undo  : command  :q quit"
-                .to_string(),
+            _ => "hjkl move  i edit  v select  x clear  y/p yank put  u undo  :help".to_string(),
         };
         frame.render_widget(
-            Paragraph::new(status_text).style(Style::default().fg(Color::Black).bg(Color::Gray)),
+            Paragraph::new(chrome::bar(
+                status_area.width,
+                chrome::status_style(),
+                vec![
+                    mode.chip(),
+                    Span::styled(format!(" {says}"), chrome::status_style()),
+                ],
+                vec![Span::styled(
+                    format!("{} ", self.selection_summary()),
+                    chrome::muted(),
+                )],
+            ))
+            .style(chrome::status_style()),
             status_area,
         );
+    }
+}
+
+/// The header bands, the name box and a search mark — the four places this shell paints a ground
+/// of its own inside the document area.
+///
+/// Named colours for `crate::chrome`'s reason, and picked out rather than merely bold because a
+/// grid's own crosshair is the read-out a reader uses most: which column am I in, which row.
+const HEADER: Style = Style::new().bg(Color::DarkGray).fg(Color::Gray);
+const HEADER_ROW: Style = Style::new().fg(Color::DarkGray);
+const HEADER_ACTIVE: Style = Style::new()
+    .bg(Color::Cyan)
+    .fg(Color::Black)
+    .add_modifier(Modifier::BOLD);
+const NAME_BOX: Style = Style::new()
+    .bg(Color::Gray)
+    .fg(Color::Black)
+    .add_modifier(Modifier::BOLD);
+const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
+
+/// A number as a status bar says it: no trailing zeroes, and no exponent for anything a
+/// spreadsheet is likely to hold.
+fn show(n: f64) -> String {
+    if n == n.trunc() && n.abs() < 1e15 {
+        return format!("{n:.0}");
+    }
+    let text = format!("{n:.4}");
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// One evaluated value, spelled for a status line.
+fn show_value(value: &CellValue) -> String {
+    match value {
+        CellValue::Empty => "(empty)".to_owned(),
+        CellValue::Number(n) => show(*n),
+        CellValue::Text(text) => text.clone(),
+        CellValue::Bool(true) => "TRUE".to_owned(),
+        CellValue::Bool(false) => "FALSE".to_owned(),
     }
 }
 
@@ -1079,7 +1831,7 @@ fn role_color(role: grind_sheet::view::CellRole) -> Color {
 /// Four of `CellStyle`'s nine properties land here; a font size, a border and a wrap have no
 /// meaning in a grid of one font at one size and one row per row, and that is a limit of the
 /// medium rather than a gap in the shell — all of them are *stored*, and every other shell
-/// draws them. Alignment is [`padded`]'s, which is where the width is known.
+/// draws them. Alignment is [`geom::pad`]'s, which is where the width is known.
 fn terminal_style(style: Option<&CellStyle>) -> Style {
     let Some(style) = style else {
         return Style::default();
@@ -1120,43 +1872,6 @@ fn alignment(style: Option<&CellStyle>, numeric: bool) -> Align {
         None if numeric => Align::Right,
         None => Align::Left,
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Align {
-    Left,
-    Centre,
-    Right,
-}
-
-/// Pad or truncate to exactly `width` columns, one trailing space as a column separator.
-fn padded(text: &str, width: usize) -> String {
-    padded_as(text, width, Align::Left)
-}
-
-/// The same, with the text pushed to one side of its column — a number to the right, which is
-/// what a column of figures has to do to be read as one.
-///
-/// ponytail: measured in `char`s rather than in terminal cells, so a column of CJK text is
-/// padded one cell per character and sits a little wide. `Cells` (the word processor's own
-/// metrics) is the right answer and needs the grid to be laid out in cells throughout, which
-/// is the same change as honouring the document's column widths — both named in
-/// `doc/tui-shell.md`.
-fn padded_as(text: &str, width: usize, align: Align) -> String {
-    let room = width.saturating_sub(1);
-    let text: String = text.chars().take(room).collect();
-    let spare = room.saturating_sub(text.chars().count());
-    let (before, after) = match align {
-        Align::Left => (0, spare),
-        Align::Right => (spare, 0),
-        Align::Centre => (spare / 2, spare - spare / 2),
-    };
-    let mut out = " ".repeat(before);
-    out.push_str(&text);
-    out.push_str(&" ".repeat(after));
-    // The column separator, which every alignment keeps.
-    out.push(' ');
-    out
 }
 
 #[cfg(test)]
@@ -1287,7 +2002,8 @@ mod tests {
 
         app.run_command("roles");
         let with = screen(&mut app, 40, 8);
-        let row = &with[1];
+        // Row 0 is the title bar and row 1 the column headers, so the grid starts at 2.
+        let row = &with[2];
         // One glyph per cell, and the glyphs are the core's — a label, an input, a formula.
         assert!(row.contains('T'), "no label marker in {row:?}");
         assert!(row.contains('\u{25c7}'), "no input marker in {row:?}");
@@ -1297,7 +2013,7 @@ mod tests {
         assert!(with[6].contains("[label]"), "no role said: {:?}", with[6]);
 
         app.run_command("roles");
-        assert_eq!(screen(&mut app, 40, 8)[1], before[1]);
+        assert_eq!(screen(&mut app, 40, 8)[2], before[2]);
     }
 
     /// A named cell says so, and says *what* — the name in the formula line, since a
@@ -1432,7 +2148,10 @@ mod tests {
 
         press(&mut app, KeyCode::Char(':'));
         type_str(&mut app, "bogus");
-        assert_eq!(status_line(&mut app, 40, 6), ":bogus");
+        // The chip says which mode the keyboard is in, then what is being typed into it.
+        let status = status_line(&mut app, 40, 6);
+        assert!(status.starts_with(" COMMAND "), "{status:?}");
+        assert!(status.contains(":bogus"), "{status:?}");
     }
 
     /// Fill a few cells the way a reader would, so the styling tests have something to look at.
@@ -1569,27 +2288,426 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
         terminal.draw(|frame| app.draw(frame)).unwrap();
         let buffer = terminal.backend().buffer().clone();
-        // A1 is the first cell of the first row, past the row header.
-        let cell = buffer[(ROW_HEADER_WIDTH, 1)].style();
+        // A1 is the first cell of the first grid row, past the title bar, the column headers
+        // and the row header.
+        let cell = buffer[(ROW_HEADER_WIDTH, 2)].style();
         assert!(
             cell.add_modifier.contains(Modifier::BOLD),
             "A1 draws bold: {cell:?}"
         );
-        let plain = buffer[(ROW_HEADER_WIDTH, 2)].style();
+        let plain = buffer[(ROW_HEADER_WIDTH, 3)].style();
         assert!(!plain.add_modifier.contains(Modifier::BOLD), "{plain:?}");
     }
 
+    /// Which side of its column a cell's text sits on. The padding itself is
+    /// [`super::geom::pad`]'s and is tested there, in cells rather than in characters.
     #[test]
     fn a_number_sits_to_the_right_of_its_column_and_text_to_the_left() {
-        assert_eq!(padded_as("12", 6, Align::Right), "   12 ");
-        assert_eq!(padded_as("ab", 6, Align::Left), "ab    ");
-        assert_eq!(padded_as("ab", 7, Align::Centre), "  ab   ");
-        // Always exactly the column's width, whatever the alignment.
-        for align in [Align::Left, Align::Centre, Align::Right] {
-            assert_eq!(padded_as("overlong text", 6, align).chars().count(), 6);
-        }
         assert_eq!(alignment(None, true), Align::Right, "a number by default");
         assert_eq!(alignment(None, false), Align::Left);
+        let centred = CellStyle {
+            align: Some("center".to_owned()),
+            ..CellStyle::default()
+        };
+        assert_eq!(
+            alignment(Some(&centred), true),
+            Align::Centre,
+            "the document wins"
+        );
+    }
+
+    /// **The `ponytail` this shell carried since S8, gone.** A column is as wide as the document
+    /// says it is, so opening somebody's spreadsheet is opening theirs rather than an
+    /// approximation of it laid out ten cells at a time.
+    #[test]
+    fn the_document_s_own_column_widths_are_drawn() {
+        let mut app = filled();
+        app.core
+            .set_col_width(0, 0..1, Some("2in".to_owned()))
+            .expect("a width");
+        let header = screen(&mut app, 60, 8).remove(1);
+        // A is twenty cells wide now, so B's header sits at 7 + 20 rather than at 7 + 10.
+        assert_eq!(
+            header
+                .char_indices()
+                .find(|(_, c)| *c == 'B')
+                .map(|(i, _)| i),
+            Some(usize::from(ROW_HEADER_WIDTH) + 20 + 4),
+            "B is centred in its own column, past a twenty-cell A: {header:?}"
+        );
+
+        app.core
+            .set_col_width(0, 0..1, None)
+            .expect("back to the default");
+        let header = screen(&mut app, 60, 8).remove(1);
+        assert_eq!(
+            header
+                .char_indices()
+                .find(|(_, c)| *c == 'B')
+                .map(|(i, _)| i),
+            Some(usize::from(ROW_HEADER_WIDTH) + 10 + 4)
+        );
+    }
+
+    /// A hidden column is *absent*, exactly as a filtered row already was — the other axis of
+    /// the same rule.
+    #[test]
+    fn a_hidden_column_is_folded_away_and_show_brings_it_back() {
+        let mut app = filled();
+        press(&mut app, KeyCode::Char('l')); // onto B
+        app.run_command("hide");
+        let header = screen(&mut app, 60, 8).remove(1);
+        assert!(!header.contains('B'), "B is gone: {header:?}");
+        assert!(header.contains('A') && header.contains('C'), "{header:?}");
+        assert_eq!(
+            app.active.col, 2,
+            "the cursor stepped off the hidden column"
+        );
+
+        // `:show` needs the hidden column selected, which `:B1` is how you say.
+        app.run_command("B1");
+        app.run_command("show");
+        assert!(screen(&mut app, 60, 8).remove(1).contains('B'));
+    }
+
+    /// The title bar is this shell's only answer to "which sheets are there", which is why it
+    /// costs a row.
+    #[test]
+    fn the_title_bar_names_the_document_and_lists_its_sheets() {
+        let mut app = filled();
+        app.path = Some(PathBuf::from("book.fods"));
+        app.core.add_sheet("Data").expect("a second sheet");
+        let title = screen(&mut app, 60, 8).remove(0);
+        assert!(title.contains("SHEET"), "{title:?}");
+        assert!(title.contains("book.fods"), "{title:?}");
+        assert!(
+            title.contains("Sheet1") && title.contains("Data"),
+            "{title:?}"
+        );
+        assert!(
+            title.contains('\u{25cf}'),
+            "the fixture has unsaved changes and says so: {title:?}"
+        );
+    }
+
+    /// `:find`, then vi's own two keys — the first client in the suite that can search cells at
+    /// all (`doc/feature-matrix.md` §4 had a row of ○).
+    #[test]
+    fn find_marks_every_match_and_n_steps_through_them() {
+        let mut app = filled();
+        app.run_command("find 12");
+        // B2 holds 1200; the cursor went to the first match at or after A1.
+        assert_eq!(app.active, Pos::new(1, 1), "{}", app.status);
+        assert!(app.status.starts_with("1 of 1"), "{}", app.status);
+
+        app.core
+            .enter(0, Pos::new(3, 0), "12 apples", RecalcMode::No)
+            .expect("a second match");
+        app.run_command("find 12");
+        assert_eq!(app.find.hits.len(), 2);
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(app.active, Pos::new(3, 0));
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(app.active, Pos::new(1, 1), "and it wraps");
+        press(&mut app, KeyCode::Char('N'));
+        assert_eq!(app.active, Pos::new(3, 0), "backwards too");
+
+        // The matches are marked in the grid, and Esc puts the marks away.
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let marked = terminal.backend().buffer()[(ROW_HEADER_WIDTH, 5)].style();
+        assert_eq!(marked.bg, Some(Color::LightYellow), "{marked:?}");
+        press(&mut app, KeyCode::Esc);
+        assert!(
+            !app.find.is_on(),
+            "Esc puts the search away with the selection"
+        );
+    }
+
+    /// A search finds a formula by what was *typed*, not only by what it came to.
+    #[test]
+    fn a_formula_is_found_by_its_own_text() {
+        let mut app = app();
+        app.core
+            .enter(0, Pos::new(0, 0), "=SUM([.B1:.B4])", RecalcMode::Document)
+            .expect("a formula");
+        app.run_command("find sum");
+        assert_eq!(app.find.hits.len(), 1, "{}", app.status);
+        assert_eq!(app.active, Pos::new(0, 0));
+    }
+
+    /// Fill down, with the references shifting — `App::fill`, one call per line.
+    #[test]
+    fn filling_down_shifts_every_relative_reference() {
+        let mut app = app();
+        for (pos, text) in [
+            (Pos::new(0, 0), "2"),
+            (Pos::new(1, 0), "3"),
+            (Pos::new(2, 0), "4"),
+            (Pos::new(0, 1), "=[.A1]*10"),
+        ] {
+            app.core
+                .enter(0, pos, text, RecalcMode::Document)
+                .expect("enters");
+        }
+        // Select B1:B3 and fill down from B1.
+        app.active = Pos::new(0, 1);
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('j'));
+        app.run_command("down");
+        assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
+        assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
+        assert!(app.status.starts_with("filled"), "{}", app.status);
+    }
+
+    /// The status bar adds the selection up, through the evaluator rather than through a
+    /// summing loop of this shell's own.
+    #[test]
+    fn the_status_bar_says_what_the_selection_comes_to() {
+        let mut app = app();
+        for (row, value) in [(0u32, "10"), (1, "20"), (2, "30")] {
+            app.core
+                .enter(0, Pos::new(row, 0), value, RecalcMode::No)
+                .expect("enters");
+        }
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('j'));
+        let status = status_line(&mut app, 80, 8);
+        assert!(status.contains("A1:A3"), "{status:?}");
+        assert!(status.contains("Sum 60"), "{status:?}");
+        assert!(status.contains("Count 3"), "{status:?}");
+        assert!(status.contains("Avg 20"), "{status:?}");
+
+        // A single cell says only where it is: it has nothing to add up.
+        press(&mut app, KeyCode::Esc);
+        let status = status_line(&mut app, 80, 8);
+        assert!(status.ends_with("A3"), "{status:?}");
+        assert!(!status.contains("Sum"), "{status:?}");
+    }
+
+    /// Autocomplete while typing a formula, over `grind_sheet::formula::assist` — so an offer
+    /// here is a function the evaluator really has.
+    #[test]
+    fn typing_a_formula_offers_completions_and_tab_takes_one() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('i'));
+        type_str(&mut app, "=SU");
+        assert!(app.assist.is_offering(), "a half-typed name offers");
+        let band = screen(&mut app, 60, 10);
+        assert!(
+            band.iter().any(|line| line.contains("SUM")),
+            "the band is drawn: {band:?}"
+        );
+
+        let sum = app
+            .assist
+            .offers
+            .iter()
+            .position(|offer| offer.name == "SUM")
+            .expect("SUM is offered");
+        for _ in 0..sum {
+            press(&mut app, KeyCode::Down);
+        }
+        press(&mut app, KeyCode::Tab);
+        let Mode::Insert { buf, cursor } = &app.mode else {
+            panic!("still editing");
+        };
+        assert_eq!(buf.iter().collect::<String>(), "=SUM(");
+        assert_eq!(*cursor, 5, "the caret is where the first argument goes");
+
+        // Enter is not the list's key: it commits, as it always does.
+        type_str(&mut app, "1;2)");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), 3.0.into());
+    }
+
+    /// Escape with a list up is "not that completion", not "throw the edit away".
+    #[test]
+    fn escape_dismisses_the_offers_before_it_cancels_the_edit() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('i'));
+        type_str(&mut app, "=SU");
+        press(&mut app, KeyCode::Esc);
+        assert!(
+            matches!(app.mode, Mode::Insert { .. }),
+            "the edit is still open"
+        );
+        assert!(!app.assist.is_offering());
+        press(&mut app, KeyCode::Esc);
+        assert!(matches!(app.mode, Mode::Normal), "the second one cancels");
+    }
+
+    /// A name defined here is a name every other shell reads, and `:{name}` is a place to go.
+    #[test]
+    fn a_name_can_be_defined_over_the_selection_and_gone_to() {
+        let mut app = filled();
+        app.active = Pos::new(1, 1);
+        app.run_command("name votes");
+        assert_eq!(
+            app.core.names(),
+            vec![("votes".to_owned(), "[$Sheet1.$B$2]".to_owned())],
+            "{}",
+            app.status
+        );
+
+        app.active = Pos::new(0, 0);
+        app.run_command("votes");
+        assert_eq!(app.active, Pos::new(1, 1), "{}", app.status);
+
+        app.run_command("name!");
+        assert!(app.core.names().is_empty(), "{}", app.status);
+    }
+
+    /// The track verbs: a width in cells goes into the document as an ODF length, so a column
+    /// sized here is a column every other shell draws the same.
+    #[test]
+    fn the_width_verb_writes_an_odf_length_the_rest_of_the_suite_reads() {
+        let mut app = filled();
+        app.run_command("width 20");
+        let widths = app.core.col_widths(0).expect("widths");
+        assert_eq!(widths.len(), 1);
+        assert_eq!(geom::cells(&widths[0].1), Some(20));
+
+        app.run_command("width auto");
+        assert!(app.core.col_widths(0).expect("widths").is_empty());
+
+        app.run_command("width nonsense");
+        assert!(app.status.starts_with("not a width"), "{}", app.status);
+    }
+
+    /// A row height is *stored and not drawn* — the medium, not a gap, and the shell says so.
+    #[test]
+    fn a_row_height_is_stored_and_the_status_line_is_honest_about_it() {
+        let mut app = filled();
+        app.run_command("height 3");
+        assert_eq!(app.core.row_heights(0).expect("heights").len(), 1);
+        assert!(app.status.contains("not drawn here"), "{}", app.status);
+    }
+
+    /// `:eval` evaluates against the document and stores nothing — no cell changes, and there
+    /// is nothing to undo afterwards.
+    #[test]
+    fn eval_says_what_a_formula_would_come_to_and_writes_nothing() {
+        let mut app = filled();
+        app.run_command("eval =SUM(B2:B2)*2");
+        assert!(app.status.contains("2400"), "{}", app.status);
+        assert_eq!(app.core.input_text(0, Pos::new(0, 0)).unwrap(), "Party");
+
+        app.run_command("eval =SUM(");
+        assert!(
+            !app.status.contains("2400"),
+            "a bad formula says so instead"
+        );
+    }
+
+    /// CSV out and back in again, through the command line — the one non-ODF format
+    /// (`doc/not-doing.md` §2), and until now the CLI's alone.
+    #[test]
+    fn csv_goes_out_and_comes_back_in() {
+        let dir = std::env::temp_dir().join(format!("grind-tui-csv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let file = dir.join("out.csv");
+        let path = file.display().to_string();
+
+        let mut app = filled();
+        app.run_command(&format!("csv-out {path}"));
+        assert!(app.status.starts_with("wrote"), "{}", app.status);
+        let written = std::fs::read_to_string(&file).expect("the file");
+        assert!(written.contains("Party"), "{written:?}");
+
+        let mut back = App::new(
+            Arc::new(CoreApp::new()),
+            Arc::new(RedrawFlag::default()),
+            None,
+        );
+        back.active = Pos::new(0, 0);
+        back.run_command(&format!("csv-in {path}"));
+        assert_eq!(back.core.input_text(0, Pos::new(1, 1)).unwrap(), "1200");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **The bug this test exists for.** A filter folds rows away; `j` used to step onto them
+    /// anyway, so pressing it five times moved the cursor one row on screen and left it invisible
+    /// for the other four — which does not read as a cursor on a hidden row, it reads as a
+    /// terminal dropping keystrokes.
+    #[test]
+    fn every_press_of_j_lands_on_a_row_that_is_actually_drawn() {
+        let mut app = filled();
+        for row in 2..7u32 {
+            app.core
+                .enter(0, Pos::new(row, 0), "SPD", RecalcMode::No)
+                .expect("enters");
+        }
+        // A filter keeping only the CDU row, exactly as `examples/sample-sheet.sh` builds one.
+        let mut filter =
+            grind_sheet::Filter::new("__Anonymous_Sheet_DB__0", Pos::new(0, 0), Pos::new(6, 1));
+        filter.contains_header = true;
+        filter.keep.entry(0).or_default().insert("CDU".to_owned());
+        app.core.set_filter(0, Some(filter)).expect("a filter");
+
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Char('j'));
+            seen.push(app.active.row);
+            // Whatever row it landed on has to be one the frame really draws. The header is
+            // right-aligned, so the prefix cannot match a different row by accident.
+            let drawn = screen(&mut app, 40, 12);
+            let header = format!(
+                "{:>width$}",
+                app.active.row + 1,
+                width = usize::from(ROW_HEADER_WIDTH) - 1
+            );
+            assert!(
+                drawn.iter().any(|line| line.starts_with(&header)),
+                "row {} is not on screen: {drawn:?}",
+                app.active.row + 1
+            );
+        }
+        // One *drawn* row per press: 1, then straight over the folded run to 7.
+        assert_eq!(seen, vec![1, 7, 8, 9], "a folded run is one step, not five");
+
+        // And back up again, over the same run.
+        for _ in 0..3 {
+            press(&mut app, KeyCode::Char('k'));
+        }
+        assert_eq!(app.active.row, 1);
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.active.row, 0);
+    }
+
+    /// The other axis, which `:hide` made reachable: a folded column is stepped over too.
+    #[test]
+    fn a_hidden_column_is_stepped_over_rather_than_landed_on() {
+        let mut app = filled();
+        app.core
+            .set_col_hidden(0, 1..4, true)
+            .expect("three columns away");
+        app.active = Pos::new(0, 0);
+        press(&mut app, KeyCode::Char('l'));
+        assert_eq!(app.active.col, 4, "over B, C and D in one step");
+        press(&mut app, KeyCode::Char('h'));
+        assert_eq!(app.active.col, 0);
+    }
+
+    /// `App::hidden_rows` is the **filter's** answer alone, so a shell that trusted it to be both
+    /// halves drew rows `:hide rows` had just taken away — and stepped onto them.
+    #[test]
+    fn a_row_hidden_by_hand_folds_away_like_a_filtered_one() {
+        let mut app = filled();
+        press(&mut app, KeyCode::Char('j')); // onto row 2
+        app.run_command("hide rows");
+        let drawn = screen(&mut app, 40, 10);
+        assert!(
+            !drawn.iter().any(|line| line.contains("CDU")),
+            "row 2 is hidden and must not be drawn: {drawn:?}"
+        );
+        assert_eq!(app.active.row, 2, "the cursor stepped off it");
+
+        app.run_command("A2");
+        app.run_command("show rows");
+        assert!(screen(&mut app, 40, 10).iter().any(|l| l.contains("CDU")));
     }
 
     /// A sheet can be added, renamed and deleted without leaving the shell — the three verbs
