@@ -110,20 +110,29 @@ jobs:
       # the window itself once it has written the PNG (`ui_sheet_gtk/src/main.rs`), so
       # each of these exits on its own.
       - name: Screenshot the spreadsheet window
+        if: ${{ !cancelled() }}
         run: xvfb-run -a target/debug/grind-sheet-gtk /tmp/demo/sample.fods --render-to screenshots/sheet-gtk.png
 
       - name: Screenshot the word processor window
+        if: ${{ !cancelled() }}
         run: xvfb-run -a target/debug/grind-text-gtk /tmp/demo/sample.fodt --render-to screenshots/text-gtk.png
 
+      # `xvfb-run -a` rather than a hardcoded `Xvfb :99`, and that is not a tidy-up: the
+      # two steps above are also `xvfb-run -a`, which starts looking at display **99** and
+      # leaves `/tmp/.X99-lock` behind when its server exits. A literal `:99` here — which
+      # was safe while this ran in a job of its own — then fails with "Server is already
+      # active for display 99" against a server that is not running. `-a` asks for whatever
+      # is free instead, so no number in this file can collide with another step's.
+      #
+      # Both screenshots go inside one `xvfb-run`, since `tui-screenshot.sh` wants a
+      # display that already exists and says so rather than starting one.
       - name: Screenshot the terminal shell, both document types
+        if: ${{ !cancelled() }}
         run: |
-          Xvfb :99 -screen 0 1200x820x24 &
-          xvfb_pid=$!
-          trap 'kill $xvfb_pid' EXIT
-          export DISPLAY=:99
-          sleep 1
-          .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fods screenshots/tui-sheet.png
-          .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fodt screenshots/tui-text.png
+          xvfb-run -a -s '-screen 0 1200x820x24' bash -euo pipefail -c '
+            .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fods screenshots/tui-sheet.png
+            .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fodt screenshots/tui-text.png
+          '
 
       # The browser shell, one bundle holding both panes (`ui_web/build.sh`), each opened
       # through its own `?doc=` the way `scripts/run.sh web` does by hand. This is a
@@ -131,13 +140,16 @@ jobs:
       # profile — but it is a second compile on the *same runner*, sharing the `target/`
       # and the cache with everything above.
       - name: Install wasm-bindgen-cli
+        if: ${{ !cancelled() }}
         run: |
           wanted="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
           cargo install wasm-bindgen-cli --version "$wanted" --locked
 
-      - run: ui_web/build.sh release
+      - if: ${{ !cancelled() }}
+        run: ui_web/build.sh release
 
       - name: Serve the shell
+        if: ${{ !cancelled() }}
         run: |
           cp /tmp/demo/sample.fods /tmp/demo/sample.fodt ui_web/dist/
           npm install --silent --no-save --no-fund --no-audit --prefix ui_web playwright@1
@@ -145,11 +157,18 @@ jobs:
           python3 -m http.server --directory ui_web/dist 8000 &
 
       - name: Screenshot both browser panes
+        if: ${{ !cancelled() }}
         run: |
           node .github/scripts/web-screenshot.js http://localhost:8000 screenshots \
             web-sheet=sample.fods web-text=sample.fodt
 
+      # `!cancelled()` on every step from the first picture down, and on this upload: with
+      # one job per platform, one shell failing to draw would otherwise skip the rest and
+      # take the whole download with it. Four jobs used to give that independence for free;
+      # this is what it costs to keep it. The job still *fails* — `!cancelled()` is not
+      # `always()` in the sense that matters — it just says which shells worked first.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
         with:
           name: screenshots-linux
           path: screenshots/*.png
