@@ -1,0 +1,258 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# One screenshot of each shell, opened on a document that exercises every feature this
+# build supports — the same `examples/sample-sheet.sh`/`sample-text.sh` scripts
+# `scripts/run.sh` uses for "see it working" by hand, run here so the pictures stay
+# honest about what the suite actually does rather than a hand-picked demo somebody
+# forgot to update.
+#
+# Four jobs, one per platform a shell runs on, because each needs a different way to get
+# a picture out of a UI with no test harness of its own:
+#
+#   * `linux-gtk` — both GTK windows already have `--render-to <png>`, built for exactly
+#     this (`doc/windows-shell.md`'s decision 5 has the Windows twin). It still opens a
+#     real `adw::ApplicationWindow` and asks its own renderer for a frame, so it still
+#     needs a display — `xvfb-run` supplies one nothing else here does.
+#   * `tui` — `grind-tui` has no "draw one frame and exit" path; its own tests draw into
+#     ratatui's `TestBackend`, a cell buffer with no terminal. So this drives a real one:
+#     `xterm` under Xvfb, screenshotted from the outside with ImageMagick — the technique
+#     `doc/windows-shell.md` already names for the Wine window.
+#   * `web` — a headless Chromium (Playwright) against the built `ui_web/dist`, the
+#     browser half `ui_web/smoke.js` deliberately does not attempt (jsdom has no canvas
+#     and no layout engine).
+#   * `windows` — reuses `win32.yml`'s and `artifacts.yml`'s own `--render-to` path
+#     (`.github/scripts/win32-render.ps1`), which already exists to prove two renders are
+#     byte-identical; this just keeps one of the frames instead of discarding it.
+#
+# Not gating anything — a shell that fails to screenshot here is not a broken build, so
+# this workflow reports and does not fail the others. `bundle` collects every job's PNGs
+# into one artifact so there is a single download rather than four.
+name: screenshots
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "sheet/**"
+      - "text/**"
+      - "ui_sheet_gtk/**"
+      - "ui_text_gtk/**"
+      - "ui_tui/**"
+      - "ui_web/**"
+      - "ui_win32/**"
+      - "cli/**"
+      - "examples/sample-sheet.sh"
+      - "examples/sample-text.sh"
+      - ".github/workflows/screenshots.yml"
+      - ".github/scripts/tui-screenshot.sh"
+      - ".github/scripts/web-screenshot.js"
+      - ".github/scripts/win32-render.ps1"
+  workflow_dispatch:
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  # `grind-sheet-gtk` and `grind-text-gtk`, each on the sample document their own
+  # application opens.
+  linux-gtk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Shares `gtk.yml`'s key: this job compiles the same two crates against the
+          # same gtk4-rs bindings, so its cache is that job's cache.
+          shared-key: linux-gtk
+          save-if: false
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb
+
+      - run: cargo build -p grind-cli -p grind-sheet-gtk -p grind-text-gtk
+
+      - name: Build the sample documents
+        run: |
+          GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
+          GRIND="$PWD/target/debug/grind" examples/sample-text.sh /tmp/demo >/dev/null
+
+      - run: mkdir -p screenshots
+
+      # `--render-to` schedules its own frame 600ms after the window presents and closes
+      # the window itself once it has written the PNG (`ui_sheet_gtk/src/main.rs`), so
+      # each of these exits on its own.
+      - name: Screenshot the spreadsheet window
+        run: xvfb-run -a target/debug/grind-sheet-gtk /tmp/demo/sample.fods --render-to screenshots/sheet-gtk.png
+
+      - name: Screenshot the word processor window
+        run: xvfb-run -a target/debug/grind-text-gtk /tmp/demo/sample.fodt --render-to screenshots/text-gtk.png
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots-linux-gtk
+          path: screenshots/*.png
+          if-no-files-found: error
+
+  # `grind-tui`, on both document types, driven inside a real terminal.
+  tui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: false
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xterm imagemagick
+
+      - run: cargo build -p grind-cli -p grind-tui
+
+      - name: Build the sample documents
+        run: |
+          GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
+          GRIND="$PWD/target/debug/grind" examples/sample-text.sh /tmp/demo >/dev/null
+
+      - run: mkdir -p screenshots
+
+      - name: Screenshot both document types
+        run: |
+          Xvfb :99 -screen 0 1200x820x24 &
+          xvfb_pid=$!
+          trap 'kill $xvfb_pid' EXIT
+          export DISPLAY=:99
+          sleep 1
+          .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fods screenshots/tui-sheet.png
+          .github/scripts/tui-screenshot.sh target/debug/grind-tui /tmp/demo/sample.fodt screenshots/tui-text.png
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots-tui
+          path: screenshots/*.png
+          if-no-files-found: error
+
+  # The browser shell, one bundle holding both panes (`ui_web/build.sh`), each opened
+  # through its own `?doc=` the way `scripts/run.sh web` does by hand.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: false
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          wanted="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+          cargo install wasm-bindgen-cli --version "$wanted" --locked
+
+      - run: ui_web/build.sh release
+
+      - name: Build the sample documents
+        run: |
+          cargo build -p grind-cli
+          GRIND="$PWD/target/debug/grind" examples/sample-sheet.sh /tmp/demo >/dev/null
+          GRIND="$PWD/target/debug/grind" examples/sample-text.sh /tmp/demo >/dev/null
+          cp /tmp/demo/sample.fods /tmp/demo/sample.fodt ui_web/dist/
+
+      - name: Install Playwright
+        run: |
+          npm install --silent --no-save --no-fund --no-audit --prefix ui_web playwright@1
+          npx --prefix ui_web playwright install --with-deps chromium
+
+      - name: Serve the shell
+        run: python3 -m http.server --directory ui_web/dist 8000 &
+
+      - run: mkdir -p screenshots
+
+      - name: Screenshot both panes
+        run: |
+          node .github/scripts/web-screenshot.js http://localhost:8000 screenshots \
+            web-sheet=sample.fods web-text=sample.fodt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots-web
+          path: screenshots/*.png
+          if-no-files-found: error
+
+  # `grind-win32`, on both document types, over the same `--render-to` path
+  # `artifacts.yml` already uses to prove two renders are byte-identical.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+
+      # Default shell (pwsh) — never bash for anything that invokes cargo on this
+      # runner. See `artifacts.yml`'s "Measure" step for the linker this avoids.
+      - run: cargo build --release -p grind-cli -p grind-win32
+
+      # `bash` here is safe for the same reason it is in `artifacts.yml`: this runs the
+      # binary `cargo build` above already produced and links nothing. The output goes
+      # to a plain relative directory rather than `/tmp` — Git Bash's `/tmp` is an MSYS
+      # path with no meaning to the pwsh step below, which shares this job's working
+      # directory but not its path conventions.
+      - name: Build the sample documents
+        shell: bash
+        run: |
+          GRIND="$PWD/target/release/grind.exe" examples/sample-sheet.sh demo >/dev/null
+          GRIND="$PWD/target/release/grind.exe" examples/sample-text.sh demo >/dev/null
+
+      - name: Screenshot both document types
+        shell: pwsh
+        run: |
+          . .github/scripts/win32-render.ps1
+          New-Item -ItemType Directory -Force -Path screenshots | Out-Null
+          Invoke-Render "demo/sample.fods" "sheet.bmp"
+          Invoke-Render "demo/sample.fodt" "text.bmp"
+          Add-Type -AssemblyName System.Drawing
+          foreach ($pair in @(@("sheet.bmp", "win32-sheet.png"), @("text.bmp", "win32-text.png"))) {
+            $bitmap = [System.Drawing.Bitmap]::new($pair[0])
+            $bitmap.Save("screenshots/$($pair[1])", [System.Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+          }
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots-windows
+          path: screenshots/*.png
+          if-no-files-found: error
+
+  # Everything above into one download, so "the current screenshots" is one artifact
+  # rather than four — and one place to look when these eventually feed the README.
+  bundle:
+    needs: [linux-gtk, tui, web, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: screenshots-*
+          path: screenshots
+          merge-multiple: true
+      - name: List what came back
+        run: |
+          {
+            echo '### Screenshots'
+            echo
+            ls -1 screenshots | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
