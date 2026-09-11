@@ -611,6 +611,72 @@ jobs:
           Add-Content $s $bloat
           Add-Content $s '```'
 
+  # A way to get the Windows build onto a machine with no path to GitHub at all.
+  #
+  # The Windows VM this is tested on carries no credentials, so `actions/download-artifact`
+  # is not an option *inside the guest* — only on whatever machine drives its hypervisor, which
+  # can attach an ISO as a virtual CD-ROM with the guest's network untouched. This job is not a
+  # build: it takes the `.exe` the `windows` job above already built, tested and uploaded, adds
+  # a handful of sample documents already checked into this repo, and burns both onto one disc
+  # image. **No `cargo build` step here** — the whole point is reusing the binary that job just
+  # spent thirty minutes proving, not spending them again.
+  windows-test-iso:
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the executable the windows job already built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: grind-win32-x64
+          path: iso-root/
+
+      # A handful of documents that exercise both panes: spreadsheets with formulas,
+      # conditional formatting, a chart and a table, plus one Writer document. All of them
+      # already live in the repo as corpus/fixture files — nothing here is generated, so this
+      # step is a `cp`, not a build.
+      - name: Stage sample documents
+        run: |
+          set -eu
+          mkdir -p iso-root/samples
+          cp "sheet/tests/data/samples/Sales Dashboard.fods" iso-root/samples/
+          cp "sheet/tests/data/samples/Quarterly Sales Report.fods" iso-root/samples/
+          cp sheet/tests/data/samples/conditional-formatting.fods iso-root/samples/
+          cp sheet/tests/data/samples/table.fods iso-root/samples/
+          cp text/tests/data/edited-default-paragraph-style.fodt iso-root/samples/
+          cat > iso-root/README.txt <<'EOF'
+          Grind for Windows - test disc
+          ==============================
+
+          grind-win32.exe is the release build produced and verified by this workflow's
+          "windows" job (import table, stack reserve, version resource, and reproducible
+          renders in both light and dark). It is copied here unmodified - nothing on this
+          disc was rebuilt.
+
+          samples\ holds ready-to-open documents:
+            Sales Dashboard.fods              - charts and formulas
+            Quarterly Sales Report.fods       - a larger spreadsheet
+            conditional-formatting.fods       - conditional formatting rules
+            table.fods                        - a plain grid
+            edited-default-paragraph-style.fodt - a Writer document
+
+          Run grind-win32.exe with a sample's path as its one argument to open it.
+          EOF
+
+      - name: Install genisoimage
+        run: sudo apt-get update && sudo apt-get install -y genisoimage
+
+      - name: Build the ISO
+        run: |
+          genisoimage -o grind-win32-test.iso -V GRIND_WIN32_TEST -J -r iso-root/
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-win32-test-iso
+          path: grind-win32-test.iso
+          if-no-files-found: error
+
   # The browser bundle, which is the one artifact whose size a *user* feels directly: it is
   # downloaded before the application starts. So it is the only one measured compressed as
   # well, because `ui_web/Dockerfile` serves `dist/` over HTTP and the transfer size is
