@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Reaching ui_web/deploy/kubernetes.yaml's Service from outside the cluster, with the
+# **Ingress API** — the older of the two ways, kept for a cluster that already runs an
+# Ingress controller and has no Gateway. On a cluster built today, use
+# ui_web/deploy/httproute.yaml instead.
+#
+# The reason that is the recommendation, since it is easy to read it as fashion:
+# `kubernetes/ingress-nginx` — the controller more than 40% of clusters ran, and the
+# one every `nginx.ingress.kubernetes.io/…` annotation on the internet belongs to —
+# was retired by SIG Network. End of life 31 March 2026, repository archived, no
+# further releases and **no security fixes**, in a component that sits in the HTTP
+# data path. Its intended successor, InGate, was abandoned before it was usable.
+#
+# What is *not* affected, because the two are widely confused:
+#
+#   * **The Ingress API itself.** `networking.k8s.io/v1` Ingress is not deprecated and
+#     is not scheduled for removal. It is feature-frozen — new routing work goes to
+#     the Gateway API — and it is still served, still supported, and still implemented
+#     by maintained controllers. This file is fine. It is the *controller* that has to
+#     be one somebody still maintains.
+#   * **F5/NGINX's `nginxinc/kubernetes-ingress`**, which is a different codebase with
+#     a different annotation prefix and is still supported. Traefik, HAProxy, Kong and
+#     the cloud providers' own controllers likewise.
+#
+# Nothing in the Ingress below is any controller's dialect: an ingress class, a TLS
+# block and one rule, which every implementation takes. The one place that stops being
+# true is the subpath variant at the end, and that is commented as what it is.
+#
+# **Edit the three marked lines** — the ingress class and the host name, twice:
+#
+#   kubectl get ingressclass                      # what this cluster actually has
+#   kubectl apply -f ui_web/deploy/ingress.yaml
+#   kubectl -n grind get ingress grind-web
+#
+# Two things this application does *not* need, both of them the usual reason an ingress
+# for a web app grows annotations:
+#
+#   * **No SPA fallback rule.** There is no client-side router here — a document is
+#     opened through the browser's own file picker, or named in the query string
+#     (`?doc=…`), which a server never sees as a path. Every URL that should work is
+#     a real file in the image, so a 404 is a genuine 404 and no
+#     `try_files $uri /index.html` equivalent is wanted.
+#
+#   * **No body-size or upload configuration.** Nothing is ever posted to this
+#     server. The document a person opens is read by the browser and saved by the
+#     browser; the pod only ever hands out four static files.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grind-web
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/part-of: grind
+  annotations:
+    # cert-manager, if that is how this cluster gets certificates — this annotation is
+    # cert-manager's own and means the same thing to every ingress controller. Delete
+    # both it and the `tls:` block below if TLS is terminated further out (a cloud load
+    # balancer, a service mesh) — but then also turn SERVER_SECURITY_HEADERS off in
+    # kubernetes.yaml, since it sends an HSTS header a plain-HTTP host cannot honour.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+    # Nothing here configures compression, and that is deliberate rather than an
+    # omission: the pod already compresses (kubernetes.yaml's
+    # SERVER_COMPRESSION_LEVEL), and a proxy does not re-compress a response that
+    # arrives with a Content-Encoding. Where a controller does have gzip or brotli
+    # settings they are its own ConfigMap rather than a per-Ingress annotation, so a
+    # line here would be ignored rather than obeyed.
+spec:
+  # EDIT: the IngressClass this cluster actually has —
+  # `kubectl get ingressclass`. Whatever it is, it should be a controller that is
+  # still getting security fixes; see the note at the top of this file.
+  ingressClassName: traefik
+
+  tls:
+    - hosts:
+        # EDIT: your host, here and in `rules` below.
+        - grind.example.com
+      secretName: grind-web-tls
+
+  rules:
+    # EDIT: your host.
+    - host: grind.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grind-web
+                port:
+                  name: http
+# Serving it under a path of an existing host — https://example.com/grind/ — rather
+# than on a host of its own works too, and needs no change to the image: every asset
+# reference in the page is relative (`style.css`, `./grind_web.js`), so the page
+# loads from whatever prefix it was fetched under. Verified by serving the image's
+# own /public out of a `grind/` subdirectory and requesting all four files through
+# the prefix.
+#
+# This is the part the Ingress API has no word for. The pod knows nothing about the
+# prefix, so it has to be stripped on the way in, and stripping a prefix is every
+# controller's own extension: ingress-nginx spelt it `rewrite-target` with a capture
+# group, Traefik wants a `StripPrefix` middleware, HAProxy and the cloud controllers
+# each have their own. That annotation sprawl is the thing the Gateway API replaced
+# with a typed `URLRewrite` filter, and it is why httproute.yaml can write this out in
+# full and this file can only describe it.
+#
+# Whichever spelling: **enter it with the trailing slash**, https://example.com/grind/.
+# Both forms serve the page, but relative references are resolved by the browser
+# against the URL it was given, so from `/grind` (no slash) `./grind_web.js` resolves
+# to `/grind_web.js` — one level too high, past the prefix, and a 404. That is a
+# property of relative URLs rather than of any ingress, and no rewrite rule fixes it
+# after the fact; the bare form has to be redirected, which is again per-controller.

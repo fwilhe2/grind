@@ -1,0 +1,172 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Reaching ui_web/deploy/kubernetes.yaml's Service from outside the cluster, with the
+# **Gateway API** — the one to use on a cluster built today. `ingress.yaml` beside this
+# file is the same thing in the older Ingress API, for a cluster that already has an
+# Ingress controller and no Gateway.
+#
+# Why this is the default and that one is not: `kubernetes/ingress-nginx`, the
+# controller more than 40% of clusters ran and the one every `nginx.ingress…`
+# annotation belongs to, was retired by SIG Network — end of life 31 March 2026, the
+# repository archived, no further releases and **no security fixes**. Its intended
+# successor, InGate, was abandoned before it was usable. The Ingress *API* itself is
+# not deprecated — it is frozen, still served, and other controllers still implement
+# it — but new routing work went to the Gateway API, whose GatewayClass, Gateway and
+# HTTPRoute are GA.
+#
+# **Edit the three marked lines** — the gateway class and the host name, twice — then:
+#
+#   kubectl get gatewayclass                       # what this cluster actually has
+#   kubectl apply -f ui_web/deploy/httproute.yaml
+#   kubectl -n grind get gateway,httproute
+#
+# This file assumes the Gateway is yours to create. On a cluster where a platform team
+# runs a shared one, delete the Gateway below, point `parentRefs` at theirs (adding
+# `namespace:` if it is elsewhere — a Route attaches across namespaces when the
+# listener's `allowedRoutes` permits it, no ReferenceGrant involved) and keep the rest.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: grind
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/part-of: grind
+  annotations:
+    # cert-manager issues the listener's certificate from the hostname below and
+    # writes it to the Secret named in `certificateRefs`. On the Gateway, not on the
+    # HTTPRoute. Ungated since cert-manager 1.15, but still off until the install
+    # turns it on: `--set config.gatewayAPI.enabled=true`. Delete this and the `tls`
+    # block if TLS is terminated further out.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  # EDIT: `kubectl get gatewayclass`. There is no default name to guess at — it is
+  # whatever the installed controller registered (envoy-gateway, istio, nginx,
+  # cilium, traefik, or a cloud provider's own).
+  gatewayClassName: envoy-gateway
+
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      # EDIT: your host, here and in the two routes below.
+      hostname: grind.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: grind-web-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    # Port 80 exists only to send people to port 443; see the second route below.
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: grind.example.com
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grind-web
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/part-of: grind
+spec:
+  parentRefs:
+    - name: grind
+      sectionName: https
+  hostnames:
+    - grind.example.com
+  rules:
+    # No path match, no filter, no rewrite: the whole host goes to the Service, which
+    # is what a static bundle wants. Two things this application does *not* need,
+    # and they are the usual reason a route for a web app grows:
+    #
+    #   * **No SPA fallback.** There is no client-side router — a document is opened
+    #     through the browser's file picker or named in the query string (`?doc=`),
+    #     which never reaches the server as a path. Every URL that should work is a
+    #     real file in the image, so a 404 is a genuine 404.
+    #
+    #   * **No request-size or upload setting.** Nothing is ever posted here. The
+    #     document is read and written by the browser; the pod hands out four static
+    #     files and nothing else.
+    - backendRefs:
+        - name: grind-web
+          port: 80
+---
+# HTTP to HTTPS. A scheme redirect with a 301 is Core conformance, so every
+# implementation has it — unlike most of what the commented block at the end needs.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grind-web-https-redirect
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/part-of: grind
+spec:
+  parentRefs:
+    - name: grind
+      sectionName: http
+  hostnames:
+    - grind.example.com
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+# Serving it under a path of an existing host — https://example.com/grind/ — rather
+# than on a host of its own works, and needs no change to the image: every asset
+# reference in the page is relative (`style.css`, `./grind_web.js`), so the page loads
+# from whatever prefix it was fetched under. Verified by serving the image's own
+# /public out of a `grind/` subdirectory and requesting all four files through the
+# prefix. The pod knows nothing about the prefix, so strip it on the way in:
+#
+#   rules:
+#     - matches:
+#         - path:
+#             type: PathPrefix
+#             value: /grind
+#       filters:
+#         - type: URLRewrite
+#           urlRewrite:
+#             path:
+#               type: ReplacePrefixMatch
+#               replacePrefixMatch: /
+#       backendRefs:
+#         - name: grind-web
+#           port: 80
+#
+# **Enter it with the trailing slash**: https://example.com/grind/. Both forms serve
+# the page, but relative references are resolved by the browser against the URL it was
+# given, so from `/grind` (no slash) `./grind_web.js` resolves to `/grind_web.js` — one
+# level too high, past the prefix, and a 404. That is a property of relative URLs, not
+# of this route, and no rewrite fixes it after the fact. To make the bare form work,
+# redirect it, as a rule *before* the one above (an Exact match beats a prefix):
+#
+#     - matches:
+#         - path:
+#             type: Exact
+#             value: /grind
+#       filters:
+#         - type: RequestRedirect
+#           requestRedirect:
+#             path:
+#               type: ReplaceFullPath
+#               replaceFullPath: /grind/
+#             statusCode: 301
+#
+# Both of those are **Extended** conformance, not Core — `HTTPRoutePathRewrite` and
+# `HTTPRoutePathRedirect`. Widely implemented (Envoy Gateway, Istio, NGINX Gateway
+# Fabric, Traefik), but check the controller's conformance report before relying on
+# them, which is a check the host-of-its-own route above never needs.
