@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The browser shell, deployed with Docker Compose.
+#
+#   docker compose -f ui_web/deploy/compose.yaml up -d          # http://localhost:8080
+#   docker compose -f ui_web/deploy/compose.yaml logs -f
+#   docker compose -f ui_web/deploy/compose.yaml down
+#
+# and to serve the working tree rather than the published image — a full Rust
+# compile, several minutes the first time:
+#
+#   docker compose -f ui_web/deploy/compose.yaml --profile source up --build
+#
+# There is nothing else to deploy. `ui_web/dist` is static output: no server-side
+# state, no database, no volume, nothing to back up, and every document the user
+# opens is read and written by the browser itself. Two of these behind a load
+# balancer are two of the same thing; restarting one loses nothing.
+#
+# `podman compose` runs this file unchanged. Under SELinux (Fedora, RHEL) the one
+# bind mount here — the `source` profile's build context — is Docker's own, so no
+# `:z` is needed; the CLI image's `-v "$PWD:/work:z"` is the case that does.
+
+name: grind-web
+
+# The two services differ only in where the image comes from, so the rest of the
+# configuration is written once. Compose merges a YAML anchor exactly as the spec
+# says it does.
+x-web: &web
+  # Port 8080, not the image's own 80: `user:` below makes this an unprivileged
+  # process, and an unprivileged process cannot bind a port under 1024.
+  ports:
+    - "8080:8080"
+  environment:
+    SERVER_PORT: "8080"
+
+    # Exposes /health, which returns 200 and nothing else. Off by default — /health
+    # is a 404 without this — and there is no shell in the image to probe from, so
+    # this is for whatever is *outside* the container: a load balancer, Kubernetes'
+    # own probe (see kubernetes.yaml), or `curl` from the host.
+    SERVER_HEALTH: "true"
+
+    # The one setting here that is a judgement rather than a default, and it is
+    # about the WebAssembly module: it is ~3 MB, the server compresses on the fly,
+    # and the level decides what that costs. Measured against this image, 200
+    # concurrent cold loads:
+    #
+    #   level      brotli    gzip     zstd     peak RSS
+    #   default    759 KB    856 KB   776 KB   234 MiB
+    #   fastest   1275 KB   1069 KB   890 KB    18 MiB
+    #
+    # An order of magnitude of memory for a third off the wire. `fastest` is the
+    # safer default for a sample because the memory figure is what gets a container
+    # killed; if bandwidth matters more than memory here, drop this line and raise
+    # the limit below to 384M.
+    #
+    # The way to have both is to compress the files once at build time and set
+    # SERVER_COMPRESSION_STATIC=true, which serves a `.br` next to the `.wasm` and
+    # compresses nothing per request. This image ships no precompressed files, so
+    # that is an image change rather than a deployment one — named, not done.
+    SERVER_COMPRESSION_LEVEL: "fastest"
+
+    # HSTS, X-Frame-Options: DENY, X-Content-Type-Options: nosniff and a
+    # frame-ancestors CSP. Harmless behind plain HTTP; the HSTS header is the one
+    # to think about, since a browser that sees it will refuse http:// for this
+    # host for two years.
+    SERVER_SECURITY_HEADERS: "true"
+
+    # The default is `error`, which means a healthy server logs nothing at all and
+    # looks hung. `info` logs the startup banner and its settings.
+    SERVER_LOG_LEVEL: "info"
+
+  # Nothing in this container writes: no cache, no temp file, no pid file. Verified
+  # by running it exactly like this.
+  read_only: true
+  user: "65532:65532"
+  cap_drop:
+    - ALL
+  security_opt:
+    - "no-new-privileges:true"
+
+  # See the compression note above for where the memory figure comes from. The CPU
+  # limit is not only a limit: static-web-server reads the cgroup quota and sizes
+  # its worker pool to it (0.5 CPUs measured as one worker thread), so on a large
+  # host this is also what stops it starting a thread per core.
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 128M
+
+  restart: unless-stopped
+
+  # Deliberately no `healthcheck:`. The image is distroless — no shell, no curl,
+  # no wget — and a Compose health check is a command run *inside* the container,
+  # so there is nothing here that could make an HTTP request. SERVER_HEALTH above
+  # is the endpoint for anything that can.
+
+services:
+  # The image `.github/workflows/container.yml` publishes on every push to main:
+  # multi-arch, so this is the same line on amd64 and arm64.
+  web:
+    <<: *web
+    image: ghcr.io/fwilhe2/grind-web:latest
+
+  # The same thing built from this checkout. Under a profile because it is not what
+  # you usually want, and because both services bind 8080 and so cannot run at once.
+  # The context is the repository root: grind-web depends on grind-core, grind-sheet
+  # and grind-text, so ui_web/ alone would not build.
+  web-source:
+    <<: *web
+    profiles: ["source"]
+    image: grind-web:local
+    build:
+      context: ../..
+      dockerfile: ui_web/Dockerfile

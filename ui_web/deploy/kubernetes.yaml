@@ -1,0 +1,234 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The browser shell, deployed to Kubernetes. Applies as it stands:
+#
+#   kubectl apply -f ui_web/deploy/kubernetes.yaml
+#   kubectl -n grind rollout status deploy/grind-web
+#   kubectl -n grind port-forward svc/grind-web 8080:80   # http://localhost:8080
+#
+# and to reach it from outside the cluster, ui_web/deploy/ingress.yaml, which is a
+# separate file because it is the one part that cannot be written without knowing
+# the cluster's host name and ingress class.
+#
+#   kubectl delete -f ui_web/deploy/kubernetes.yaml
+#
+# What this deploys is a static file server and nothing else. There is no state, no
+# volume, no PersistentVolumeClaim, no database, no session and no leader: every
+# document is read, edited and written by the browser, and a pod that dies loses
+# nothing that was not already on somebody's laptop. That is why the pod below can
+# be read-only, unprivileged and replaceable, and why `replicas` is the only
+# scaling question there is.
+#
+# Namespace, Deployment, Service and PodDisruptionBudget, in that order.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    # The image is distroless and the pod below satisfies the `restricted` Pod
+    # Security Standard as written, so enforce it rather than leaving it to the
+    # cluster default. If this fails to admit, the pod spec regressed.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grind-web
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/component: browser-shell
+    app.kubernetes.io/part-of: grind
+spec:
+  # Two, so a node drain or a rolling update is not an outage. Nothing coordinates
+  # between them; ten would work the same way.
+  replicas: 2
+
+  # Stateless and small, so never go below the requested capacity while updating.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grind-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grind-web
+        app.kubernetes.io/component: browser-shell
+        app.kubernetes.io/part-of: grind
+    spec:
+      # It talks to no API server and to nothing else in the cluster.
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Spread across nodes where there is more than one, but schedule anyway when
+      # there is not — a single-node cluster (kind, k3s, minikube) must still run
+      # this file unedited.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grind-web
+
+      containers:
+        - name: grind-web
+          # Published by .github/workflows/container.yml on every push to main, as a
+          # multi-arch manifest, so this one line is amd64 and arm64 both.
+          #
+          # `latest` is a moving tag: `imagePullPolicy: Always` is what makes a
+          # restarted pod pick up a new build, and is also why a rollout is not
+          # reproducible. For anything you want to be able to roll back to, pin the
+          # digest instead and drop the pull policy:
+          #
+          #   docker buildx imagetools inspect ghcr.io/fwilhe2/grind-web:latest
+          #   image: ghcr.io/fwilhe2/grind-web@sha256:<digest>
+          image: ghcr.io/fwilhe2/grind-web:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          env:
+            # 8080 rather than the image's own 80, because `runAsNonRoot` above
+            # means nothing here may bind a privileged port.
+            - name: SERVER_PORT
+              value: "8080"
+
+            # Exposes /health for the two probes below. It is a 404 without this,
+            # and probing / instead would transfer the 13 KB page every few seconds
+            # per pod, forever.
+            - name: SERVER_HEALTH
+              value: "true"
+
+            # The WebAssembly module is ~3 MB and is compressed per request. What
+            # the level costs, measured on this image under 200 concurrent cold
+            # loads: `default` gives 759 KB of brotli and peaks at 234 MiB RSS,
+            # `fastest` gives 1275 KB and peaks at 18 MiB. Memory is what gets a
+            # container OOM-killed, so the sample takes the cheap one — with the
+            # limit below sized to it. Prefer the bandwidth? Delete these two lines
+            # and raise the memory limit to 384Mi.
+            #
+            # Better than either: precompress the files at build time and set
+            # SERVER_COMPRESSION_STATIC=true. That is a change to the image, not to
+            # this file, and this image does not ship precompressed files yet.
+            - name: SERVER_COMPRESSION_LEVEL
+              value: "fastest"
+
+            # HSTS, X-Frame-Options: DENY, nosniff, frame-ancestors 'self'. Leave
+            # this off until the Ingress terminates TLS: the HSTS header tells a
+            # browser to refuse http:// for this host for the next two years.
+            - name: SERVER_SECURITY_HEADERS
+              value: "true"
+
+            # The default is `error`, so a working server logs nothing and looks
+            # dead in `kubectl logs`.
+            - name: SERVER_LOG_LEVEL
+              value: "info"
+
+            # The server sends `cache-control: max-age=86400` for every file, and
+            # the file names carry no content hash — so a browser that loaded the
+            # page before a rollout can keep the old bundle for a day. Uncomment to
+            # turn that off while iterating; leave it on for a deployment that
+            # changes rarely.
+            # - name: SERVER_CACHE_CONTROL_HEADERS
+            #   value: "false"
+
+          # /health, which is the endpoint above and costs nothing to serve. There
+          # is no shell in this image, so an `exec` probe is not an option; httpGet
+          # is the kubelet making the request itself, which needs nothing inside the
+          # container. No startupProbe: the server binds its socket in well under a
+          # second.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              # Sized to the compression setting above, with room over the measured
+              # 18 MiB peak. Raise it with the level, or the first burst of cold
+              # clients after a deploy is an OOMKill.
+              memory: 128Mi
+              # A limit here is also a configuration, not only a ceiling:
+              # static-web-server reads the cgroup CPU quota and sizes its worker
+              # pool to it. Measured at 0.5 CPUs it starts one worker thread; with
+              # no limit at all it starts one per node core, which on a large node
+              # is a lot of threads for a pod that asked for 25 millicores.
+              cpu: "1"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+      # SIGTERM stops this server in about half a second (measured), so nothing
+      # here needs the 30-second default to shut down — but leave headroom for
+      # in-flight transfers of a 3 MB module on a slow connection.
+      terminationGracePeriodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grind-web
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/part-of: grind
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grind-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+# A node drain must not take both replicas at once. Cheap insurance for a
+# Deployment that is only ever two identical pods.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: grind-web
+  namespace: grind
+  labels:
+    app.kubernetes.io/name: grind-web
+    app.kubernetes.io/part-of: grind
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grind-web

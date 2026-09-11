@@ -188,6 +188,82 @@ static-web-server's own `SERVER_*` environment variables, documented on its site
 sets only `SERVER_ROOT` and `SERVER_PORT` because everything else is that server's sensible
 default.
 
+### The two samples, and what running them measured
+
+`ui_web/deploy/` holds a deployment of that image for each of the two things people actually run:
+`compose.yaml` for Docker Compose and `kubernetes.yaml` for Kubernetes. Reaching the Service from
+outside a cluster is a third file, because it is the part that cannot be written without knowing
+the cluster — and there are two of it, `httproute.yaml` for the Gateway API and `ingress.yaml` for
+the Ingress API. Everything here was run rather than drafted: the Compose file end to end, the
+Deployment's pod spec under `podman kube play`, and every manifest through `kubeconform -strict`.
+
+```sh
+docker compose -f ui_web/deploy/compose.yaml up -d                    # http://localhost:8080
+docker compose -f ui_web/deploy/compose.yaml --profile source up --build   # this checkout instead
+
+kubectl apply -f ui_web/deploy/kubernetes.yaml
+kubectl -n grind port-forward svc/grind-web 8080:80
+```
+
+**Which of the two routing files, and why there are two.** `httproute.yaml` is the default.
+`kubernetes/ingress-nginx` — the controller more than 40% of clusters ran, and the one every
+`nginx.ingress.kubernetes.io/…` annotation belongs to — was retired by SIG Network: end of life
+31 March 2026, archived, no further releases and no security fixes, in a component that sits in
+the HTTP data path. Its intended successor InGate was abandoned before it was usable. The Ingress
+*API* is a separate question and is **not** deprecated — frozen, still served, still implemented
+by maintained controllers — so `ingress.yaml` is kept and is written in no controller's dialect:
+a class, a TLS block, one rule. What it cannot write is the subpath case, since stripping a prefix
+was always a per-controller annotation, and that is precisely what the Gateway API replaced with a
+typed `URLRewrite` filter. The Gateway API file uses `gateway.networking.k8s.io/v1` throughout,
+keeps its one required redirect (HTTP→HTTPS, scheme plus 301) inside **Core** conformance, and
+marks the two filters in its commented subpath variant as **Extended** — `HTTPRoutePathRewrite`
+and `HTTPRoutePathRedirect` — because that is a conformance report somebody has to check before
+relying on them.
+
+Nothing in either is about spreadsheets or documents, because nothing about this deployment is:
+the samples exist to say what a *static* deployment of this bundle should be, and most of what is
+in them is the small list of things that are not obvious from the Dockerfile. Each was measured
+against the published image:
+
+- **The port is 8080, not the image's 80.** Both samples run the container as uid 65532, and an
+  unprivileged process cannot bind a port below 1024. Everything else in the file follows that one
+  number, which is why `cli/tests/deploy.rs` checks that the published port, the container port and
+  `SERVER_PORT` are still the same number in every file that names it.
+- **`/health` is a 404 unless `SERVER_HEALTH=true`.** Kubernetes' probes use it; Compose gets the
+  variable anyway for whatever is in front of it. There is no shell in a distroless image, so an
+  `exec` probe cannot work here and `docker compose`'s `healthcheck:` — a command run *inside* the
+  container — cannot be written at all. The kubelet's `httpGet` needs nothing inside it, which is
+  why Kubernetes can have a health check and Compose cannot.
+- **The pod needs nothing writable and no capability**: `readOnlyRootFilesystem`, `drop: [ALL]`,
+  `runAsNonRoot`, `RuntimeDefault` seccomp, and so the namespace enforces the `restricted` Pod
+  Security Standard rather than leaving it to the cluster's default. A spec that regresses stops
+  being admitted.
+- **Compression is the one real decision, and it is about the 3 MB WebAssembly module**, which the
+  server compresses per request. Measured under 200 concurrent cold loads: at the default level
+  that is 759 KB of brotli and a peak RSS of 234 MiB, at `SERVER_COMPRESSION_LEVEL=fastest` it is
+  1275 KB and 18 MiB. An order of magnitude of memory against a third of the transfer. The samples
+  take `fastest` and size the memory limit to it, because memory is what gets a container killed,
+  and both say in a comment what to change to trade the other way. **The way to have both is
+  `SERVER_COMPRESSION_STATIC=true` over files compressed once at build time** — a change to
+  `ui_web/Dockerfile` rather than to a deployment, and the named next step here.
+- **A CPU limit is a configuration, not only a ceiling.** static-web-server reads the cgroup quota
+  and sizes its worker pool to it — at 0.5 CPUs it starts one worker thread — so a pod with no CPU
+  limit on a large node starts one per core.
+- **`SIGTERM` stops it in about half a second**, so a rollout does not sit out a grace period.
+- **The cache is a day long and the file names carry no hash.** Every response is
+  `cache-control: max-age=86400`, and the bundle is always `grind_web_bg.wasm`, so a browser that
+  has been to the page can keep the previous build for up to a day after a rollout.
+  `SERVER_CACHE_CONTROL_HEADERS=false` is the switch, commented in the Kubernetes sample, and is
+  worth having while iterating.
+- **A subpath works, with the trailing slash.** Every asset reference in the page is relative
+  (`style.css`, `./grind_web.js`), so `https://example.com/grind/` serves correctly behind a
+  rewrite — verified by serving the image's own `/public` from a `grind/` subdirectory. Without the
+  trailing slash the browser resolves those references one level too high, which is a property of
+  relative URLs and not of any router: no rewrite rule fixes it after the fact, the bare form has
+  to be redirected, and `httproute.yaml` carries that redirect. What is *not* needed is an SPA
+  fallback: there is no client-side router, a document is named in the query string (`?doc=`), and
+  so every path that should work is a real file.
+
 `.github/workflows/container.yml`'s `web-image` job builds and pushes this image on every push to
 `main`, the same shape as `cli-image` does for the CLI's `Containerfile.distroless-cli`: one leg
 per architecture, each on a runner of *its own* architecture rather than under qemu (this image is

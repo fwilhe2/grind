@@ -274,6 +274,17 @@ docker build -f ui_web/Dockerfile -t grind-web .
 docker run --rm -p 8080:80 grind-web
 ```
 
+For a deployment rather than a `docker run`, `ui_web/deploy/` has a worked sample of each —
+`compose.yaml`, and `kubernetes.yaml` with `httproute.yaml` (Gateway API) or `ingress.yaml` beside
+it. All of them were run rather than drafted, and the comments in them are the measured parts: why
+the port is 8080 and not 80, why `/health` needs turning on, why a distroless image can have a
+Kubernetes probe but not a Compose health check, and what compression level costs in memory:
+
+```sh
+docker compose -f ui_web/deploy/compose.yaml up -d      # http://localhost:8080
+kubectl apply -f ui_web/deploy/kubernetes.yaml
+```
+
 It is a web page, not a window pretending to be one: one bar of verbs, one row of tools for
 whichever document is open, and **Ctrl+K** for everything else — a searchable list of every
 command, which doubles as the go-to box. Type `B12`, a sheet's name, a defined name or a heading
@@ -471,6 +482,15 @@ them and needs no volume at all:
 ```sh
 docker run --rm -p 8080:80 ghcr.io/fwilhe2/grind-web:latest   # http://localhost:8080/index.html
 ```
+
+`ui_web/deploy/` deploys that image properly rather than by hand — `compose.yaml`,
+`kubernetes.yaml`, and `httproute.yaml` or `ingress.yaml` to reach it from outside a cluster —
+unprivileged, read-only and health-checked, with every setting's reason in a comment beside it
+(`doc/web-shell.md`, "The two samples"). The Gateway API is the default of the two routing files
+and the retirement of `ingress-nginx` is why; the Ingress API itself is frozen rather than
+deprecated, so that file is kept and written in no controller's dialect. `cli/tests/deploy.rs`
+holds all of them to the image `container.yml` actually publishes, the way `cli/tests/packaging.rs`
+holds the workflow to the binaries.
 
 Both are small, and in both the base image is the larger half: about 13 MB to pull the command
 line, of which 3.6 MB is `grind` itself, and about 5 MB for the browser shell, of which 0.8 MB is
