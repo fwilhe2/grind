@@ -72,6 +72,10 @@ pub enum Command {
     /// Whether the formula bar shows that same reading in place of the text that would be typed
     /// back in — `friendly::explain_inline`, and the `fx` badge says which of the two is up.
     ToggleFriendly,
+    /// An autofilter, alternating row shading and a name over the selection, one undo step —
+    /// `App::format_table`. No dialog: fixed defaults (a header, no totals row), the same
+    /// zero-prompt shape `sheet.filter` already has in the web shell.
+    FormatTable,
     SheetAdd,
     SheetRename,
     SheetDelete,
@@ -169,6 +173,7 @@ impl Command {
         Command::FunctionList,
         Command::ExplainFormula,
         Command::ToggleFriendly,
+        Command::FormatTable,
         Command::SheetAdd,
         Command::SheetRename,
         Command::SheetDelete,
@@ -365,6 +370,11 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ExplainFormula,
                 label: "&Explain Formula…\tCtrl+Shift+E",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::FormatTable,
+                label: "F&ormat as Table",
             },
         ],
     },
@@ -595,6 +605,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FunctionList
         | Command::ExplainFormula
         | Command::ToggleFriendly
+        | Command::FormatTable
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleRoles => matches!(kind, Spreadsheet),

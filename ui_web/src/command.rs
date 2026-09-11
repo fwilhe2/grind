@@ -149,6 +149,10 @@ pub const SHEET: &[Command] = &[
         "Ctrl+Shift+L",
         false,
     ),
+    // §9.4's filter plus alternating row shading, an optional totals row and a name, one
+    // undo step — `App::format_table`. No dialog: like `sheet.filter`, the selection *is*
+    // the range, its first row is the heading, and the name auto-generates.
+    cmd("sheet.format-table", "Format as table", "Sheets", "", false),
 ];
 
 /// The word processor's verbs.

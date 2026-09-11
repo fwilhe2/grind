@@ -718,10 +718,13 @@ building a reference into a half-typed formula, and the last piece of `doc/sheet
 this shell does not have. ~~No autocomplete or signature hints~~ — **built in W9**, as a drawn
 band rather than a popup (`sheet/assist.rs` says why), over the pure half hoisted into
 `grind_sheet::formula::assist` so this window and the GNOME one cannot disagree about which
-argument the caret is in. No **filter UI**: a
-filter in a file folds its rows away and nothing here creates one. No **find/replace over
-cells**. No **conditional formatting UI**, which exists in no shell. No **command palette**, by
-decision 4.
+argument the caret is in. No *standalone* **filter UI**: a
+filter in a file folds its rows away and nothing here creates one on its own — Data ▸ *Format
+as Table* does, as one facet of the composite it applies (`App::format_table`, no dialog: fixed
+defaults, the same zero-prompt shape `sheet.filter` has in the web shell). No **find/replace
+over cells**. No **conditional formatting UI**, which exists in no shell — the banding *Format
+as Table* paints is static cell styling, applied once, not a live rule. No **command palette**,
+by decision 4.
 
 W3 adds three of its own, each smaller than it sounds. There is no **recent-files list**, where
 `ui_sheet_gtk` has `gtk::RecentManager`: Windows' equivalent is `SHAddToRecentDocs` plus a

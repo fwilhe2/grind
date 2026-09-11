@@ -83,7 +83,7 @@ shorter than one being edited.
 | Clipboard | `y`/`p` — a register of tab-separated text, the shape every other spreadsheet reads | `y`/`p` — plain text, a newline splits a block |
 | Format | `*`/`/`/`-` over a selection; `:bold :italic :wrap :border :align :color :fill :plain` | `*`/`/`/`_`/`~`/`-` over a selection; markdown while typing; `:color :highlight :plain` |
 | Number formats | `:format` over eight presets, `:general` | — |
-| Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete`; `:width`, `:height`, `:hide`, `:show`; `:name`, `:name!` | `:h <level>`, `:li [depth]`, `:style [name]`, `:table [rows cols]`, `:move <address>`, `:mark`, `:mark!`, `:words` |
+| Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete`; `:width`, `:height`, `:hide`, `:show`; `:name`, `:name!`; `:format-table [--no-header] [--totals] [--name NAME]` | `:h <level>`, `:li [depth]`, `:style [name]`, `:table [rows cols]`, `:move <address>`, `:mark`, `:mark!`, `:words` |
 | Fill | `:down`, `:right` — the selection's leading line replicated, references shifted | — |
 | Interchange | `:csv-in <file>`, `:csv-out <file>` | — |
 | Evaluate | `:eval <formula>` — what it would come to, storing nothing | — |
@@ -170,8 +170,12 @@ the same limit seen from the other side, and it is why `:wrap` is stored and not
 
 **The grid.** No point mode while typing a formula — the offers and the signature band are built
 (`ui_tui/src/sheet/assist.rs`), and arrow keys building a reference into a half-typed formula are
-not, because that is a third editing mode rather than a read-out. No filter UI: a filter in the
-file folds its rows away, and nothing creates one. No conditional formatting UI. `:find` searches
+not, because that is a third editing mode rather than a read-out. No *standalone* filter UI: a
+filter in the file folds its rows away, and nothing creates one on its own — `:format-table`
+does create one, as one facet of the composite it applies (`App::format_table`,
+`sheet/src/table_format.rs`), the same way the GTK shell's dialog does. No conditional
+formatting UI: the banding `:format-table` paints is static cell styling, applied once, not a
+live rule. `:find` searches
 cells and there is **no replace** over them, because the core has none — `App::replace` exists
 for text and has no spreadsheet twin, and inventing one in a shell would put a capability
 somewhere the CLI could not reach (rule 4). No charts, no autofit — a column's ideal width is

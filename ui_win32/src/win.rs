@@ -119,7 +119,7 @@ use crate::text;
 use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use grind_core::DocumentKind;
-use grind_sheet::{App, Pos, RecalcMode};
+use grind_sheet::{App, Pos, RecalcMode, TableOptions};
 use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
@@ -2935,6 +2935,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ClearCells => clear_cells(hwnd),
         Command::GoTo => open_name_box(hwnd),
         Command::Recalculate => recalculate(hwnd),
+        Command::FormatTable => format_table(hwnd),
         Command::SheetAdd => sheet_add(hwnd),
         Command::SheetRename => sheet_rename(hwnd),
         Command::SheetDelete => sheet_delete(hwnd),
@@ -3341,6 +3342,44 @@ fn recalculate(hwnd: HWND) {
                 Err(error) => error.to_string(),
             };
             state.say(Some(said));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Format the selection as a table — the Data menu's *Format as Table*.
+///
+/// No dialog: the selection is the range, its first row is the heading, and the name
+/// auto-generates (`Table1`, `Table2`, …), the same zero-prompt shape the web shell's
+/// `sheet.format-table` and the GTK grid's `Grid::toggle_filter` both use for the plain case.
+/// There is no "un-format" — ODF has nothing resembling a persisted table object to remove as
+/// a unit — so clearing the effects means Undo (one step, right after this) or clearing the
+/// filter, restyling the cells and dropping the name by hand later, same as after
+/// LibreOffice's own AutoFormat (`sheet/src/table_format.rs`).
+fn format_table(hwnd: HWND) {
+    // SAFETY: one borrow.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, mut end) = state.selection.rect();
+            // A single cell is a click, not a range — the same rule `sheet.filter` uses.
+            if start == end
+                && let Ok((rows, cols)) = state.app.used_extent(state.sheet)
+            {
+                end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+            }
+            if end.row <= start.row {
+                return state.say(Some(
+                    "Select the rows to format, including their headings".to_owned(),
+                ));
+            }
+            let options = TableOptions {
+                header: true,
+                totals: false,
+                name: None,
+            };
+            if let Err(error) = state.app.format_table(state.sheet, start, end, options) {
+                state.say(Some(error.to_string()));
+            }
         });
     }
     refresh(hwnd);
@@ -4333,6 +4372,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FunctionList
         | Command::ExplainFormula
         | Command::ToggleFriendly
+        | Command::FormatTable
         | Command::ToggleRoles => {}
     }
 }

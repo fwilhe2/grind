@@ -53,6 +53,7 @@ because a page has no icon theme to ask.
 | Clipboard | copy/cut/paste as TSV, so a range moves between this and any other spreadsheet | copy/cut/paste as plain text; a newline pasted splits a block |
 | The document's own layout | column widths, row heights, hidden and filtered rows, hidden columns — and now Ctrl+K → *Hide*/*Unhide row(s)/column(s)*, over `App::set_row_hidden`/`set_col_hidden` on the selection's own span, the same call the CLI's `sheet hide`/`--unhide` makes | the six heading faces, `Title` and `Subtitle`, list indents, **runs drawn as the document formatted them** — bold, italic, underline, strike, colour, highlight, links |
 | The autofilter (§9.4) | Ctrl+Shift+L / Ctrl+K → *Filter rows* sets the range over the selection or clears it, a dropdown button drawn on each field of the range's own heading row, and its popover — `ui_web/src/sheet/filter_ui.rs`'s `field_values`, over the same viewport the grid draws from — lists the column's distinct values with a checkbox each, so unticking one and pressing Apply writes `App::set_filter`'s `keep` the way `ui_sheet_gtk`'s own dropdown does | — |
+| Format as table | Ctrl+K → *Format as table* — the filter above plus alternating row shading, in one `App::format_table` undo step, over the selection with no dialog: its first row is the heading and the name auto-generates, the same zero-prompt shape `sheet.filter` already has. No totals-row toggle here — `grind sheet format-table --totals` and the GTK dialog's checkbox are the two places that reach it | — |
 | Pictures | — | decoded and drawn, as a `data:` URL |
 | Charts | **drawn as SVG** — bar, line and pie, scaled against `grind_sheet::axis_ticks` so the axis is the one the GTK shell draws | — |
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
@@ -92,7 +93,9 @@ No dragging a column edge to resize one (the document's own widths are *drawn*, 
 here. **The autofilter is built** — a dropdown per field of the range's own heading row and a
 popover over its distinct values, the same shape `ui_sheet_gtk`'s own dropdown has — one of
 the two gaps this line used to name.
-No conditional formatting UI. No find/replace. No freeze panes, no zoom. A chart is a picture:
+*Format as table* is built too, and is static styling applied once rather than a live rule, so
+it is not the conditional-formatting gap the next sentence names. No conditional formatting
+UI. No find/replace. No freeze panes, no zoom. A chart is a picture:
 it cannot be created, edited, moved or recoloured from this shell, which the GTK window can do
 and `grind sheet chart-*` can do everywhere.
 

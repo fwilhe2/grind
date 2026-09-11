@@ -29,6 +29,8 @@ Spreadsheet:
   :eval <formula>         — what it would come to, storing nothing
   :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers
   :name <name>  :name!    — define a name over the selection, or drop the one on it
+  :format-table [--no-header] [--totals] [--name NAME]
+                           — autofilter, banding, an optional totals row and a name
   :csv-in <file>  :csv-out <file>
   :roles  :names          — what each cell is, and what it is called (a reading;
                             nothing is written, and the same word turns it off)

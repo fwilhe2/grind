@@ -860,6 +860,7 @@ impl App {
             "width" | "width auto" => self.cmd_width(None),
             "height" | "height auto" => self.cmd_height(None),
             "name!" => self.cmd_unname(),
+            "format-table" => self.cmd_table(""),
             _ if cmd.starts_with("align ") => self.cmd_align(cmd[6..].trim()),
             _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
             _ if cmd.starts_with("fill ") => self.cmd_color(cmd[5..].trim(), true),
@@ -869,6 +870,7 @@ impl App {
             _ if cmd.starts_with("width ") => self.cmd_width(Some(cmd[6..].trim())),
             _ if cmd.starts_with("height ") => self.cmd_height(Some(cmd[7..].trim())),
             _ if cmd.starts_with("name ") => self.cmd_name(cmd[5..].trim()),
+            _ if cmd.starts_with("format-table ") => self.cmd_table(cmd[13..].trim()),
             _ if cmd.starts_with("csv-in ") => self.cmd_csv_in(cmd[7..].trim()),
             _ if cmd.starts_with("csv-out ") => self.cmd_csv_out(cmd[8..].trim()),
             _ if cmd.starts_with("sheet-rename ") => self.cmd_sheet_rename(cmd[13..].trim()),
@@ -1116,6 +1118,62 @@ impl App {
                 self.status = format!("dropped {name} \u{2014} u brings it back");
             }
             None => self.status = "no name covers exactly this".to_owned(),
+        }
+    }
+
+    /// `:format-table [--no-header] [--totals] [--name NAME]` — format the selection as a table:
+    /// autofilter, alternating row shading, an optional totals row and a named range, all in
+    /// one undo step (`App::format_table`). A single cell expands to the sheet's used extent,
+    /// the same rule `:csv-out` and the GTK shell's own filter toggle use. There is no
+    /// "un-table": ODF has nothing resembling a persisted table object to remove as a unit,
+    /// so clearing the effects means `:name!` on the name and restyling the cells by hand,
+    /// same as after LibreOffice's own AutoFormat.
+    fn cmd_table(&mut self, what: &str) {
+        let mut header = true;
+        let mut totals = false;
+        let mut name = None;
+        let mut words = what.split_whitespace();
+        while let Some(word) = words.next() {
+            match word {
+                "--no-header" => header = false,
+                "--totals" => totals = true,
+                "--name" => match words.next() {
+                    Some(n) => name = Some(n.to_owned()),
+                    None => {
+                        self.status = "usage: :format-table [--no-header] [--totals] [--name NAME]"
+                            .to_owned();
+                        return;
+                    }
+                },
+                _ => {
+                    self.status = format!(
+                        "{word}: unknown option \u{2014} usage: :format-table [--no-header] [--totals] [--name NAME]"
+                    );
+                    return;
+                }
+            }
+        }
+        let (start, mut end) = self.rect();
+        if start == end
+            && let Ok((rows, cols)) = self.core.used_extent(self.sheet)
+        {
+            end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+        }
+        if end.row <= start.row {
+            self.status = "select the rows to format, including their headings".to_owned();
+            return;
+        }
+        let options = grind_sheet::TableOptions {
+            header,
+            totals,
+            name,
+        };
+        match self.core.format_table(self.sheet, start, end, options) {
+            Ok(settled) => {
+                self.leave_visual();
+                self.status = format!("formatted as table {settled:?}");
+            }
+            Err(e) => self.status = e.to_string(),
         }
     }
 
@@ -2558,6 +2616,29 @@ mod tests {
 
         app.run_command("name!");
         assert!(app.core.names().is_empty(), "{}", app.status);
+    }
+
+    /// `:format-table` over a selection applies the filter, the banding, the totals row and
+    /// the name in one command — the same composite `App::format_table` builds for every
+    /// shell.
+    #[test]
+    fn format_table_applies_filter_banding_totals_and_a_name() {
+        let mut app = filled();
+        app.active = Pos::new(0, 0);
+        app.anchor = Some(Pos::new(1, 1));
+        app.run_command("format-table --totals");
+        assert!(app.core.filter(0).unwrap().is_some(), "{}", app.status);
+        assert_eq!(app.core.names().len(), 1, "{}", app.status);
+        assert_eq!(
+            app.core.get(0, Pos::new(2, 0)).unwrap(),
+            CellValue::Text("Total".to_owned()),
+            "the totals row lands right after the selection"
+        );
+        assert_eq!(
+            app.core.get(0, Pos::new(2, 1)).unwrap(),
+            CellValue::Number(1200.0),
+            "and sums the one numeric column"
+        );
     }
 
     /// The track verbs: a width in cells goes into the document as an ODF length, so a column

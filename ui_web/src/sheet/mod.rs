@@ -659,6 +659,7 @@ impl Ui {
             "sheet.hide-cols" => self.hide_cols(true),
             "sheet.unhide-cols" => self.hide_cols(false),
             "sheet.filter" => self.toggle_filter(),
+            "sheet.format-table" => self.format_table(),
 
             "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
             "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
@@ -1177,6 +1178,37 @@ impl Ui {
         let filter = Filter::new("__Anonymous_Sheet_DB__0", start, end);
         if let Err(error) = self.app.set_filter(sheet, Some(filter)) {
             self.set_message(error.to_string());
+        }
+    }
+
+    /// Format the selection as a table — the toolbar's `sheet.format-table`.
+    ///
+    /// No dialog: like [`Self::toggle_filter`], the selection is the range, its first row is
+    /// the heading, and the name auto-generates (`Table1`, `Table2`, …). There is no
+    /// "un-format" to match — ODF has nothing resembling a persisted table object, so this is
+    /// a one-shot composite the same way LibreOffice's own AutoFormat is
+    /// (`sheet/src/table_format.rs`).
+    fn format_table(&self) {
+        let sheet = self.sheet.get();
+        let (start, mut end) = self.selection.get().rect();
+        // A single cell is a click, not a range — the same rule `toggle_filter` uses.
+        if start == end
+            && let Ok((rows, cols)) = self.app.used_extent(sheet)
+        {
+            end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+        }
+        if end.row <= start.row {
+            return self
+                .set_message("Select the rows to format, including their headings".to_owned());
+        }
+        let options = grind_sheet::TableOptions {
+            header: true,
+            totals: false,
+            name: None,
+        };
+        match self.app.format_table(sheet, start, end, options) {
+            Ok(name) => self.set_message(format!("Formatted as table \u{201c}{name}\u{201d}")),
+            Err(error) => self.set_message(error.to_string()),
         }
     }
 
