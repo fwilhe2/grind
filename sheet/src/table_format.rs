@@ -55,8 +55,9 @@ pub struct TablePlan {
 }
 
 /// Build the batch of edits "format as table" is. Pure — it reads `sheet` and `names` and
-/// returns actions, applying none of them, so a caller can wrap the result in one
-/// [`crate::App::mutate`] alongside the undo bookkeeping every other multi-cell edit uses.
+/// returns actions, applying none of them, so a caller can wrap the result in one mutation
+/// alongside the undo bookkeeping every other multi-cell edit uses (see
+/// [`crate::App::format_table`]).
 pub fn plan(
     sheet_index: usize,
     start: Pos,

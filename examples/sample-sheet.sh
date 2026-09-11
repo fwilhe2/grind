@@ -243,14 +243,42 @@ run filter "$book" A1:H7 A=Groceries A=Transport
 # for the totals row, and a `table:named-expressions` entry. One undo step, and — since ODF
 # has nothing resembling a persisted table object — no "un-format" to match: clearing the
 # effects means clearing the filter, restyling the cells and deleting the name by hand, same
-# as after LibreOffice's own Table ▸ AutoFormat. Run on a copy so the filter this script leaves
-# on "$book" for the GTK shell to draw is not disturbed.
+# as after LibreOffice's own Table ▸ AutoFormat. Run on a copy, on a table big enough that the
+# banding and the totals row are actually visible — six rows barely alternates — rather than
+# on the eight-column budget above, so the filter it leaves on "$book" for the GTK shell to
+# draw is also not disturbed.
 
-say "format-table: autofilter, banding, a totals row and a name, in one command"
+say "format-table: autofilter, banding, a totals row and a name — over a table with some size"
 cp "$book" "$out/table.fods"
-run format-table "$out/table.fods" A1:H7 --totals
+run add "$out/table.fods" Inventory
+cat > "$out/inventory.csv" <<'CSV'
+SKU,Item,Category,Qty,Unit Price
+A-1001,Oak board 2m,Lumber,12,34.50
+A-1002,Oak board 3m,Lumber,8,49.90
+A-1003,Pine board 2m,Lumber,20,18.75
+A-1004,Pine board 3m,Lumber,15,26.40
+B-2010,Wood glue 750ml,Adhesives,24,11.25
+B-2011,Wood glue 5l,Adhesives,3,62.00
+B-2012,Epoxy resin kit,Adhesives,6,28.40
+C-3300,Sanding disc 120g,Abrasives,15,18.75
+C-3301,Sanding disc 240g,Abrasives,18,17.10
+C-3302,Sanding block,Abrasives,30,4.25
+D-4010,Router bit set,Tools,4,89.00
+D-4011,Chisel set,Tools,7,54.50
+D-4012,Hand plane,Tools,5,72.00
+D-4013,Clamp 300mm,Tools,16,9.80
+E-5001,Oak dowel 8mm,Lumber,50,0.65
+E-5002,Oak dowel 10mm,Lumber,40,0.85
+F-6000,Finish oil 1l,Finishing,10,15.20
+F-6001,Polyurethane 1l,Finishing,9,16.90
+F-6002,Wax paste,Finishing,14,7.40
+G-7000,Safety glasses,Safety,25,3.10
+CSV
+run import-csv "$out/table.fods" "$out/inventory.csv" --at Inventory.A1
+run format-table "$out/table.fods" Inventory.A1:E21 --totals
 sheet name "$out/table.fods" Table1
-sheet view "$out/table.fods" A1:H8 --raw
+sheet view "$out/table.fods" Inventory.A1:E22
+sheet view "$out/table.fods" Inventory.D22:E22 --formulas   # the totals row's SUM, over 20 rows
 
 # A second sheet, and a formula on it reaching across to the first. Renaming does **not**
 # rewrite the formulas that mention the old name — they go stale instead, which the warning
