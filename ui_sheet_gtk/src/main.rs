@@ -1255,6 +1255,79 @@ impl Ui {
         );
     }
 
+    /// Format the selection as a table: autofilter, alternating shading, an optional totals
+    /// row and a name, all in [`grind_sheet::App::format_table`]'s one undo step.
+    ///
+    /// There is no separate "table" object here to reopen and re-edit — see
+    /// `sheet/src/table_format.rs` for why — so this dialog is only ever the *apply* step,
+    /// the same way `sheet filter` is: run it again over a styled range and it restyles.
+    fn format_table_dialog(self: &Rc<Self>) {
+        let (start, mut end) = self.grid.selection().rect();
+        let sheet = self.grid.sheet();
+        // A single cell is a click, not a range: format the used table around it, the same
+        // rule `Grid::toggle_filter` uses.
+        if start == end
+            && let Ok((rows, cols)) = self.app.used_extent(sheet)
+        {
+            end = grind_sheet::Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+        }
+        if end.row <= start.row {
+            return self.toast("Select the rows to format, including their headings");
+        }
+
+        let header = gtk::CheckButton::builder()
+            .label("Has header row")
+            .active(true)
+            .build();
+        let totals = gtk::CheckButton::builder()
+            .label("Totals row")
+            .active(false)
+            .build();
+        let name = gtk::Entry::builder()
+            .placeholder_text("Table1")
+            .activates_default(true)
+            .build();
+        let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        name_row.append(&gtk::Label::new(Some("Name")));
+        name_row.append(&name);
+
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        body.append(&header);
+        body.append(&totals);
+        body.append(&name_row);
+
+        let dialog = adw::AlertDialog::new(Some("Format as Table"), None);
+        dialog.set_extra_child(Some(&body));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("format", "Format");
+        dialog.set_response_appearance("format", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("format"));
+        dialog.set_close_response("cancel");
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response != "format" {
+                        return;
+                    }
+                    let typed = name.text();
+                    let options = grind_sheet::TableOptions {
+                        header: header.is_active(),
+                        totals: totals.is_active(),
+                        name: (!typed.trim().is_empty()).then(|| typed.trim().to_owned()),
+                    };
+                    match ui.app.format_table(sheet, start, end, options) {
+                        Ok(settled) => ui.toast(&format!("Formatted as table “{settled}”")),
+                        Err(error) => ui.toast(&error.to_string()),
+                    }
+                }
+            ),
+        );
+    }
+
     /// Deleting is immediate, with an Undo toast — the inverse carries the whole sheet, so
     /// taking it back really does bring the cells with it.
     fn delete_sheet(self: &Rc<Self>) {
@@ -1843,6 +1916,13 @@ fn actions() -> Vec<Verb> {
         verb("chart-insert", &[], "Insert a Chart…", "Selection", |ui| {
             ui.chart_dialog(None)
         }),
+        verb(
+            "format-table",
+            &[],
+            "Format as Table…",
+            "Selection",
+            |ui| ui.format_table_dialog(),
+        ),
         verb(
             "explain-formula",
             &["<Control><Shift>e"],

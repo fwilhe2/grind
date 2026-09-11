@@ -238,6 +238,20 @@ run filter "$book" --clear
 # GTK shell draws a dropdown button in every heading cell of the range.
 run filter "$book" A1:H7 A=Groceries A=Transport
 
+# Format as table: Excel's own feature, built from constructs this build already writes on
+# their own — the filter above, alternating `style:style` shading, an ordinary `SUM` formula
+# for the totals row, and a `table:named-expressions` entry. One undo step, and — since ODF
+# has nothing resembling a persisted table object — no "un-format" to match: clearing the
+# effects means clearing the filter, restyling the cells and deleting the name by hand, same
+# as after LibreOffice's own Table ▸ AutoFormat. Run on a copy so the filter this script leaves
+# on "$book" for the GTK shell to draw is not disturbed.
+
+say "format-table: autofilter, banding, a totals row and a name, in one command"
+cp "$book" "$out/table.fods"
+run format-table "$out/table.fods" A1:H7 --totals
+sheet name "$out/table.fods" Table1
+sheet view "$out/table.fods" A1:H8 --raw
+
 # A second sheet, and a formula on it reaching across to the first. Renaming does **not**
 # rewrite the formulas that mention the old name — they go stale instead, which the warning
 # on stderr says out loud and `sheet recalc` turns into an error. Deleting is undoable: the

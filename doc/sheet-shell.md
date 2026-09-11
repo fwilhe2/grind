@@ -560,11 +560,16 @@ Stated as one sentence, which is the sentence to hold this window to:
   rather than a row of toggles because none of it is about the selection; the check marks are
   the actions' own state, so there is nothing to keep in step.
 - **Cell context menu** (`grid::cell_menu_model`): Cut · Copy · Copy Value · Paste — Clear
-  Contents · Fill Down · Fill Right — Name This Range… · Filter Rows · Insert Chart…. This
-  window had no context menu on its *content* at all, which was a plain HIG gap, and it is
-  where the Calculate page's selection verbs always belonged. A right-click outside the
-  selection moves the selection there first; a right-click during an edit stores it, exactly as
-  a left-click elsewhere does.
+  Contents · Fill Down · Fill Right — Name This Range… · Filter Rows · Format as Table… · Insert
+  Chart…. This window had no context menu on its *content* at all, which was a plain HIG gap,
+  and it is where the Calculate page's selection verbs always belonged. A right-click outside
+  the selection moves the selection there first; a right-click during an edit stores it,
+  exactly as a left-click elsewhere does.
+  **Format as Table…** (`Ui::format_table_dialog`, `App::format_table`) is a one-shot composite
+  over the range — an autofilter, alternating row shading, an optional totals row and a
+  `table:named-expressions` entry, one undo step — not a persisted object: ODF has nothing like
+  xlsx's `ListObject` to hold one as, so the dialog is only ever the *apply* step, the same way
+  `Filter Rows` is. See `sheet/src/table_format.rs`.
 - **Sheet tab context menu** (`chrome::tab_menu_model`): Rename… · Delete, on the tab, which is
   the only spelling that says *which* sheet.
 - **Primary menu**: the four file verbs, the four things done to a document as a whole

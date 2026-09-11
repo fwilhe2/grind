@@ -33,6 +33,7 @@ pub mod numfmt;
 pub mod odf;
 pub mod projection;
 pub mod style;
+pub mod table_format;
 pub mod view;
 
 /// What this crate takes from `grind-core` and hands on under its own name.
@@ -50,6 +51,7 @@ pub use chart::{
 };
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
+pub use table_format::TableOptions;
 
 /// What can go wrong with a **spreadsheet**.
 ///
@@ -1647,6 +1649,40 @@ impl App {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.hidden_rows(state.doc.null_date))
+    }
+
+    /// Format a rectangle as a table (Excel's own feature, read the ODF way): an autofilter,
+    /// alternating row shading, an optional totals row, and an automatically named range, all
+    /// in one [`Action::Batch`] so undo is one step. Returns the name it settled on.
+    ///
+    /// See [`table_format`] for why this is a one-shot composite rather than a persisted
+    /// object: ODF has nothing like xlsx's `ListObject` to persist one as, so the batch is
+    /// ordinary edits — the same ones `set_filter`/`set_style`/`set_formula`/`set_name` make
+    /// one at a time — and there is no "un-table" to match; clearing the effects means
+    /// clearing the filter, restyling the cells and deleting the name, same as it would after
+    /// LibreOffice's own AutoFormat.
+    ///
+    /// Bounded by [`MAX_FORMATTED_CELLS`], the same guard [`App::set_style`] uses, since
+    /// banding costs a style write per cell.
+    pub fn format_table(
+        &self,
+        sheet: usize,
+        start: Pos,
+        end: Pos,
+        options: table_format::TableOptions,
+    ) -> Result<String> {
+        let _ = self.rectangle(start, end)?;
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            let plan = table_format::plan(sheet, start, end, &options, s, &state.doc.names)?;
+            let inverse = state
+                .doc
+                .apply(Action::Batch(plan.actions))
+                .ok_or(Error::NoSuchSheet(sheet))?;
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(plan.name)
+        })
     }
 
     // --- charts ---

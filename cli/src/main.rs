@@ -1666,6 +1666,30 @@ enum Command {
         no_header: bool,
     },
 
+    /// Format a range as a table: autofilter, alternating row shading, an optional totals
+    /// row, and an automatically named range, all in one undo step
+    ///
+    /// `sheet format-table book.ods A1:D12` bands the range, adds dropdown buttons on row 1,
+    /// and names it `Table1` (or the next unused `TableN`). There is no un-format: this is a
+    /// one-shot composite over the filter, style and name mechanisms `sheet filter`,
+    /// `sheet style` and `sheet name` already expose — ODF has no persisted "table" object to
+    /// undo as a unit, the way LibreOffice's own AutoFormat has none either. Prints the name
+    /// it settled on.
+    FormatTable {
+        file: PathBuf,
+        /// The table's range, header row included: A1:D12, or Data.A1:D12
+        range: String,
+        /// The range's first row is data rather than a heading
+        #[arg(long)]
+        no_header: bool,
+        /// Append a totals row: SUM under every numeric column, "Total" in the first
+        #[arg(long)]
+        totals: bool,
+        /// The named range to create; default is the next unused Table1, Table2, …
+        #[arg(long)]
+        name: Option<String>,
+    },
+
     /// Append an empty sheet
     Add {
         file: PathBuf,
@@ -2694,6 +2718,25 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     .insert(value.to_owned());
             }
             app.set_filter(sheet, Some(filter)).say()?;
+            finish(&app, cli, file, true)
+        }
+
+        Command::FormatTable {
+            file,
+            range,
+            no_header,
+            totals,
+            name,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+            let options = grind_sheet::TableOptions {
+                header: !no_header,
+                totals: *totals,
+                name: name.clone(),
+            };
+            let settled = app.format_table(sheet, start, end, options).say()?;
+            eprintln!("grind: named {settled:?}");
             finish(&app, cli, file, true)
         }
 

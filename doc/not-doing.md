@@ -38,7 +38,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Extensions** | An extension API freezes the core's internals into a contract. The core is 18 months old and the shape is still moving. |
 | **OLE embedding** | Embedding another application's document means hosting another application. |
 | **Change tracking** | Per-cell revision history is a data model of its own, layered under every mutation. Version control over `.fods` covers the real need — see `doc/cli-recipes-sheet.md`. |
-| **Database ranges and data sources** | `table:database-range` is read past and dropped. A spreadsheet that is a database client is a different program. |
+| **External data sources** | A live connection to a database or another document — `office:database-source`-style live queries — is out of scope; a spreadsheet that is a database client is a different program. `table:database-range` itself is not this gap: it is the ODF element behind the autofilter (`grind_sheet::filter`) and "format as table" (`App::format_table`, `sheet/src/table_format.rs`), both read and written. |
 | **Scenarios, goal seek, solver** | Three separate optimisation UIs over the same evaluator. The evaluator is the asset; the UIs are not. |
 | **Sparklines** | A chart in a cell, with its own layout model, for a chart nobody reads. |
 
