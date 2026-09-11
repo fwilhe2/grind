@@ -12,7 +12,8 @@
 //! It is deliberately a *smaller* module than `ui_sheet_gtk/src/geom.rs`, whose shape it
 //! follows: the same prefix-sum axis, the same two coordinate spaces, and none of the parts
 //! that belong to features this shell does not have yet — no resize edges (W1 draws, it does
-//! not drag), no fill handle, no filter buttons, no name-hint placement.
+//! not drag), no fill handle, no name-hint placement. [`GridGeom::filter_button`] is the one
+//! exception, `ui_sheet_gtk`'s own `GridGeom::filter_button` mirrored.
 //!
 //! Two coordinate spaces, and mixing them is the bug this module exists to prevent:
 //!
@@ -37,6 +38,10 @@ pub use grind_sheet::{MAX_COLS, MAX_ROWS};
 /// The DPI of the monitor the window is on multiplies this — see [`scale`] — so a column set to
 /// 2.5cm is 2.5cm on a correctly configured screen and consistent everywhere else.
 pub const PX_PER_MM: f64 = 96.0 / 25.4;
+
+/// A filter dropdown button's (min, max) side length, in design units — `GridGeom::filter_button`
+/// clamps a cell's own height into this band, the same pair `ui_sheet_gtk/src/geom.rs` uses.
+const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
 
 /// A length at 100% scaling, in the pixels a display at `dpi` actually has.
 ///
@@ -485,6 +490,27 @@ impl GridGeom {
         }
     }
 
+    /// Where an autofilter's dropdown button sits inside one cell of its heading row — a
+    /// square anchored to the cell's right edge, the GTK grid's `filter_button` mirrored.
+    /// `None` when the cell is too small to hold a button and still show any of its text.
+    pub fn filter_button(&self, row: u32, col: u32) -> Option<Rect> {
+        let cell = self.cell_rect(row, col);
+        let (min, max) = (
+            scale(FILTER_BUTTON.0, self.dpi),
+            scale(FILTER_BUTTON.1, self.dpi),
+        );
+        let size = (cell.h - 2.0).clamp(min, max);
+        if cell.h < min || cell.w < size * 2.0 {
+            return None;
+        }
+        Some(Rect {
+            x: cell.x + cell.w - size - 1.0,
+            y: cell.y + (cell.h - size) / 2.0,
+            w: size,
+            h: size,
+        })
+    }
+
     /// One column's header button.
     pub fn col_header_rect(&self, col: u32) -> Rect {
         let cell = self.cell_rect(0, col);
@@ -694,6 +720,31 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_filter_button_sits_at_the_right_end_of_its_cell() {
+        let g = geom();
+        let cell = g.cell_rect(0, 1); // an 80x20 cell — column 1 carries no size of its own
+        let b = g.filter_button(0, 1).expect("an 80x20 cell has room");
+        assert!(
+            b.contains(cell.x + cell.w - 4.0, cell.y + cell.h / 2.0),
+            "inside"
+        );
+        assert!(
+            !b.contains(cell.x + 4.0, cell.y + cell.h / 2.0),
+            "not over the text"
+        );
+        assert!(
+            b.x >= cell.x && b.x + b.w <= cell.x + cell.w && b.y >= cell.y,
+            "within the cell: {b:?} in {cell:?}"
+        );
+
+        let narrow = GridGeom {
+            cols: Sizes::new(80.0, MAX_COLS, vec![(1, 12.0)]),
+            ..geom()
+        };
+        assert_eq!(narrow.filter_button(0, 1), None, "no room at all");
     }
 
     #[test]

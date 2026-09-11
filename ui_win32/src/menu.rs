@@ -72,6 +72,10 @@ pub enum Command {
     /// Whether the formula bar shows that same reading in place of the text that would be typed
     /// back in — `friendly::explain_inline`, and the `fx` badge says which of the two is up.
     ToggleFriendly,
+    /// An autofilter over the selection (§9.4), or clear the one the sheet already has —
+    /// `App::set_filter`. The on/off switch its name implies, the same shape `sheet.filter`
+    /// has in the web shell and `Grid::toggle_filter` in the GTK one.
+    ToggleFilter,
     /// An autofilter, alternating row shading and a name over the selection, one undo step —
     /// `App::format_table`. No dialog: fixed defaults (a header, no totals row), the same
     /// zero-prompt shape `sheet.filter` already has in the web shell.
@@ -173,6 +177,7 @@ impl Command {
         Command::FunctionList,
         Command::ExplainFormula,
         Command::ToggleFriendly,
+        Command::ToggleFilter,
         Command::FormatTable,
         Command::SheetAdd,
         Command::SheetRename,
@@ -372,6 +377,10 @@ pub const MENUS: &[Menu] = &[
                 label: "&Explain Formula…\tCtrl+Shift+E",
             },
             Item::Separator,
+            Item::Verb {
+                command: Command::ToggleFilter,
+                label: "&Autofilter\tCtrl+Shift+L",
+            },
             Item::Verb {
                 command: Command::FormatTable,
                 label: "F&ormat as Table",
@@ -575,6 +584,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('U'), true, true) => Some(Command::ShowSource),
         (Key::Char('F'), true, true) => Some(Command::FunctionList),
         (Key::Char('E'), true, true) => Some(Command::ExplainFormula),
+        (Key::Char('L'), true, true) => Some(Command::ToggleFilter),
         (Key::F8, false, false) => Some(Command::CheckDocument),
         _ => None,
     }
@@ -605,6 +615,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FunctionList
         | Command::ExplainFormula
         | Command::ToggleFriendly
+        | Command::ToggleFilter
         | Command::FormatTable
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
@@ -803,6 +814,7 @@ mod tests {
             (Key::Char('U'), ctrl_shift, Command::ShowSource),
             (Key::Char('F'), ctrl_shift, Command::FunctionList),
             (Key::Char('E'), ctrl_shift, Command::ExplainFormula),
+            (Key::Char('L'), ctrl_shift, Command::ToggleFilter),
             (Key::F8, Mods::default(), Command::CheckDocument),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");

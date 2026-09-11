@@ -305,11 +305,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow,
     DispatchMessageW, ES_AUTOHSCROLL, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, GetWindowRect,
     GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IsDialogMessageW, LB_ADDSTRING,
-    LB_GETCURSEL, LB_SETCURSEL, LBN_DBLCLK, LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage,
-    RegisterClassW, SW_SHOW, SendMessageW, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WM_COMMAND, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE,
-    WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    LB_GETCOUNT, LB_GETCURSEL, LB_GETSEL, LB_SETCURSEL, LB_SETSEL, LBN_DBLCLK, LBS_MULTIPLESEL,
+    LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage, RegisterClassW, SW_SHOW, SendMessageW,
+    SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_COMMAND, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT,
+    WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 
 use crate::gdi::{Brush, Font};
@@ -1006,6 +1007,352 @@ extern "system" fn chooser_proc(
             // SAFETY: the pointer came from `Box::into_raw`; reconstituting it once frees it.
             unsafe {
                 let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Chooser;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                if !raw.is_null() {
+                    drop(Box::from_raw(raw));
+                }
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        // SAFETY: the default handler with the arguments it was given.
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The filter menu — one field's distinct values, ticked
+// ---------------------------------------------------------------------------
+
+const FILTER_CLASS: &str = "GrindFilterClass";
+static FILTER_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+const ID_FILTER_LIST: usize = 10;
+const ID_FILTER_CLEAR: usize = 11;
+
+/// What a filter dropdown decided — [`choose_multi`]'s answer, `ui_sheet_gtk`'s own `Chosen`
+/// mirrored: *Clear* is a distinct button from *OK* rather than "every row ticked", because
+/// `grind_sheet::Filter::keep` naming every value is not the same document as no condition on
+/// that field at all, even though the two hide the same rows.
+pub enum FilterChoice {
+    /// Keep exactly these values, in the order `items` were given.
+    Keep(Vec<bool>),
+    /// Drop this field's condition — every value shows again.
+    Clear,
+}
+
+/// What the popup owns while it is up — [`Chooser`]'s shape, a multi-select list and a third
+/// button in place of one selection and two.
+struct FilterPopup {
+    list: HWND,
+    answer: Option<FilterChoice>,
+    finished: bool,
+    _font: Option<Font>,
+    theme: Theme,
+    ground: Brush,
+    field: Brush,
+}
+
+/// Ask which of a column's values stay visible — the autofilter dropdown, `App::set_filter`'s
+/// `keep` on the field a header cell's button was clicked for. `checked` is one bool per
+/// `items`, the field's current `keep` set (or every value, when the field carries no
+/// condition yet); `None` means cancelled.
+///
+/// `LBS_MULTIPLESEL` rather than an owner-drawn checkbox list — a plain click toggles a row's
+/// selection with no modifier key needed, which is the same gesture a checkbox click is, and
+/// costs no `WM_DRAWITEM`/`WM_MEASUREITEM` pair to get there.
+pub fn choose_multi(
+    owner: HWND,
+    title: &str,
+    items: &[String],
+    checked: &[bool],
+) -> Option<FilterChoice> {
+    if items.is_empty() {
+        return None;
+    }
+    let class = gdi::wide(FILTER_CLASS);
+    // SAFETY: the class name outlives every call below, and the boxed state is handed to the
+    // popup and taken back in `WM_NCDESTROY`.
+    unsafe {
+        let instance = GetModuleHandleW(None).ok()?;
+        if !FILTER_REGISTERED.swap(true, Ordering::SeqCst) {
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(filter_proc),
+                hInstance: instance.into(),
+                lpszClassName: PCWSTR(class.as_ptr()),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                ..Default::default()
+            };
+            if RegisterClassW(&wc) == 0 {
+                FILTER_REGISTERED.store(false, Ordering::SeqCst);
+                return None;
+            }
+        }
+
+        let dpi = GetDpiForWindow(owner).max(96);
+        let px = |value: f64| crate::sheet::geom::scale(value, dpi).round() as i32;
+        let (w, h) = (px(280.0), px(360.0));
+        let mut owner_rect = Default::default();
+        let _ = GetWindowRect(owner, &mut owner_rect);
+        let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
+        let y = owner_rect.top + ((owner_rect.bottom - owner_rect.top) - h) / 3;
+
+        let theme = theme();
+        let state = Box::new(FilterPopup {
+            list: HWND::default(),
+            answer: None,
+            finished: false,
+            _font: None,
+            theme,
+            ground: Brush::solid(theme.backdrop),
+            field: Brush::solid(theme.card),
+        });
+        let title = gdi::wide(title);
+        let Ok(popup) = CreateWindowExW(
+            Default::default(),
+            PCWSTR(class.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            WS_POPUP | WS_CAPTION | WS_SYSMENU,
+            x,
+            y,
+            w,
+            h,
+            Some(owner),
+            None::<HMENU>,
+            Some(instance.into()),
+            Some(Box::into_raw(state).cast()),
+        ) else {
+            return None;
+        };
+
+        let font = Font::new(crate::gdi::ui_face(), px(crate::theme::text::BODY), false);
+        let set_font = |control: HWND| {
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                Some(WPARAM(font.handle().0 as usize)),
+                Some(LPARAM(1)),
+            );
+        };
+        let child = |class: &str, text: &str, style, id: usize, cx, cy, cw, ch| -> HWND {
+            let class = gdi::wide(class);
+            let text = gdi::wide(text);
+            CreateWindowExW(
+                Default::default(),
+                PCWSTR(class.as_ptr()),
+                PCWSTR(text.as_ptr()),
+                style,
+                cx,
+                cy,
+                cw,
+                ch,
+                Some(popup),
+                Some(HMENU(id as *mut std::ffi::c_void)),
+                Some(instance.into()),
+                None,
+            )
+            .unwrap_or_default()
+        };
+
+        let pad = px(12.0);
+        let button = (px(76.0), px(26.0));
+        let inner = w - pad * 2;
+        let row = h - button.1 - px(24.0);
+        let list = child(
+            "LISTBOX",
+            "",
+            WS_CHILD
+                | WS_VISIBLE
+                | WS_BORDER
+                | WS_TABSTOP
+                | WS_VSCROLL
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(
+                    LBS_NOTIFY as u32 | LBS_MULTIPLESEL as u32,
+                ),
+            ID_FILTER_LIST,
+            pad,
+            pad,
+            inner,
+            row - pad * 2,
+        );
+        for item in items {
+            let item = gdi::wide(item);
+            SendMessageW(
+                list,
+                LB_ADDSTRING,
+                Some(WPARAM(0)),
+                Some(LPARAM(item.as_ptr() as isize)),
+            );
+        }
+        for (i, &ticked) in checked.iter().enumerate() {
+            if ticked {
+                SendMessageW(list, LB_SETSEL, Some(WPARAM(1)), Some(LPARAM(i as isize)));
+            }
+        }
+        // Left-aligned, and a plain button rather than the default/cancel pair's own
+        // conventions — clearing the condition is a different *kind* of answer from picking
+        // values, the same separation `ui_sheet_gtk`'s own dropdown draws between its Clear
+        // and Select all/Apply.
+        let clear = child(
+            "BUTTON",
+            "Clear",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            ID_FILTER_CLEAR,
+            pad,
+            row,
+            button.0,
+            button.1,
+        );
+        let ok = child(
+            "BUTTON",
+            "OK",
+            WS_CHILD
+                | WS_VISIBLE
+                | WS_TABSTOP
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
+            IDOK.0 as usize,
+            w - pad - button.0 * 2 - px(8.0),
+            row,
+            button.0,
+            button.1,
+        );
+        let cancel = child(
+            "BUTTON",
+            "Cancel",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            IDCANCEL.0 as usize,
+            w - pad - button.0,
+            row,
+            button.0,
+            button.1,
+        );
+        for control in [list, clear, ok, cancel] {
+            set_font(control);
+        }
+        with_filter_popup(popup, |state| {
+            state.list = list;
+            state._font = Some(font);
+        });
+
+        let _ = EnableWindow(owner, false);
+        let _ = ShowWindow(popup, SW_SHOW);
+        let _ = SetFocus(Some(list));
+
+        let mut message = MSG::default();
+        loop {
+            let finished = with_filter_popup(popup, |state| state.finished).unwrap_or(true);
+            if finished {
+                break;
+            }
+            let got = GetMessageW(&mut message, None, 0, 0).0;
+            if got <= 0 {
+                PostQuitMessage(0);
+                break;
+            }
+            if IsDialogMessageW(popup, &message).as_bool() {
+                continue;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+
+        let answer = with_filter_popup(popup, |state| state.answer.take()).flatten();
+        let _ = EnableWindow(owner, true);
+        let _ = SetActiveWindow(owner);
+        let _ = DestroyWindow(popup);
+        answer
+    }
+}
+
+/// Run `f` with the popup's state — [`with_chooser`]'s twin, over [`FilterPopup`].
+unsafe fn with_filter_popup<T>(hwnd: HWND, f: impl FnOnce(&mut FilterPopup) -> T) -> Option<T> {
+    // SAFETY: the slot holds either null or the pointer stored in `WM_NCCREATE`.
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut FilterPopup;
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: exclusive for the duration of this call.
+    Some(f(unsafe { &mut *raw }))
+}
+
+extern "system" fn filter_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match message {
+        WM_NCCREATE => {
+            // SAFETY: `lparam` is this message's `CREATESTRUCTW`.
+            unsafe {
+                let create = &*(lparam.0 as *const CREATESTRUCTW);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        WM_ERASEBKGND => {
+            // SAFETY: `wparam` is the `HDC` to erase with, live for this message.
+            let filled = unsafe {
+                with_filter_popup(hwnd, |state| {
+                    let dc = HDC(wparam.0 as *mut std::ffi::c_void);
+                    let rect = crate::gdi::client_rect(hwnd);
+                    windows::Win32::Graphics::Gdi::FillRect(dc, &rect, state.ground.handle());
+                })
+            };
+            LRESULT(i32::from(filled.is_some()) as isize)
+        }
+        WM_CTLCOLORSTATIC | WM_CTLCOLORLISTBOX => {
+            // SAFETY: one borrow; `control_colour` only writes to the message's own `HDC`.
+            let answered = unsafe {
+                with_filter_popup(hwnd, |state| match message == WM_CTLCOLORLISTBOX {
+                    true => control_colour(
+                        wparam,
+                        state.theme.text,
+                        state.theme.card,
+                        state.field.handle(),
+                    ),
+                    false => control_colour(
+                        wparam,
+                        state.theme.text,
+                        state.theme.backdrop,
+                        state.ground.handle(),
+                    ),
+                })
+            };
+            // SAFETY: the borrow is released; the default is what an unthemed popup would do.
+            answered.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, message, wparam, lparam) })
+        }
+        WM_COMMAND => {
+            let id = (wparam.0 & 0xffff) as i32;
+            // SAFETY: one borrow, and reading the selection does not dispatch.
+            unsafe {
+                if id == IDOK.0 {
+                    with_filter_popup(hwnd, |state| {
+                        let count = SendMessageW(state.list, LB_GETCOUNT, None, None).0.max(0);
+                        let checked = (0..count as usize)
+                            .map(|i| {
+                                SendMessageW(state.list, LB_GETSEL, Some(WPARAM(i)), None).0 > 0
+                            })
+                            .collect();
+                        state.answer = Some(FilterChoice::Keep(checked));
+                        state.finished = true;
+                    });
+                } else if id as usize == ID_FILTER_CLEAR {
+                    with_filter_popup(hwnd, |state| {
+                        state.answer = Some(FilterChoice::Clear);
+                        state.finished = true;
+                    });
+                } else if id == IDCANCEL.0 {
+                    with_filter_popup(hwnd, |state| {
+                        state.finished = true;
+                    });
+                }
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            // SAFETY: the pointer came from `Box::into_raw`; reconstituting it once frees it.
+            unsafe {
+                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut FilterPopup;
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 if !raw.is_null() {
                     drop(Box::from_raw(raw));

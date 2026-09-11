@@ -119,7 +119,7 @@ use crate::text;
 use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use grind_core::DocumentKind;
-use grind_sheet::{App, Pos, RecalcMode, TableOptions};
+use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions};
 use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
@@ -400,6 +400,16 @@ enum Strip {
     NameBox,
     FormulaBar,
     Neither,
+}
+
+/// What `button_down` found under the pointer, before it decides what a click means — the
+/// strip's own two fields, or an autofilter's dropdown button caught the same way, before the
+/// click would otherwise have become an ordinary cell selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Click {
+    Strip(Strip),
+    /// The button in this column of the filter's heading row.
+    FilterButton(u32),
 }
 
 /// Which child a relayed key belongs to, and — for the editor — the mode to read it in.
@@ -2412,17 +2422,32 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     // control hiding behind the drawing appears over it. Deciding that needs the geometry, so it
     // is read here and acted on below the borrow.
     // SAFETY: no nested loop inside.
-    let strip = unsafe {
+    let click = unsafe {
         with_sheet(hwnd, |state| {
             let hit = state.geom.hit(x, y);
             if hit == Hit::Chrome {
-                return if state.geom.name_box_rect().contains(x, y) {
+                return Click::Strip(if state.geom.name_box_rect().contains(x, y) {
                     Strip::NameBox
                 } else if state.geom.formula_rect().contains(x, y) {
                     Strip::FormulaBar
                 } else {
                     Strip::Neither
-                };
+                });
+            }
+            // The filter's dropdown button lives inside an ordinary cell of its heading row —
+            // caught here, before the click becomes a selection, the same way the strip's own
+            // two fields are caught above.
+            if let Hit::Cell { row, col } = hit
+                && let Ok(Some(filter)) = state.app.filter(state.sheet)
+                && filter.buttons
+                && row == filter.start.row
+                && (filter.start.col..=filter.end.col).contains(&col)
+                && state
+                    .geom
+                    .filter_button(row, col)
+                    .is_some_and(|b| b.contains(x, y))
+            {
+                return Click::FilterButton(col);
             }
             state.selection = match (hit, extend) {
                 // Shift keeps the anchor and moves the active cell, which is the same rule the
@@ -2450,17 +2475,21 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
             };
             state.reveal();
             sync_scrollbars(hwnd, state);
-            Strip::Neither
+            Click::Strip(Strip::Neither)
         })
     };
-    match strip {
-        Some(Strip::NameBox) => {
+    match click {
+        Some(Click::Strip(Strip::NameBox)) => {
             open_name_box(hwnd);
+            return;
+        }
+        Some(Click::FilterButton(col)) => {
+            open_filter_menu(hwnd, col);
             return;
         }
         // Clicking the bar edits the cell it is showing, which is the one place an edit begins
         // somewhere other than on the cell itself.
-        Some(Strip::FormulaBar) => {
+        Some(Click::Strip(Strip::FormulaBar)) => {
             begin_edit(hwnd, Seed::Cell, true);
             return;
         }
@@ -2935,6 +2964,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ClearCells => clear_cells(hwnd),
         Command::GoTo => open_name_box(hwnd),
         Command::Recalculate => recalculate(hwnd),
+        Command::ToggleFilter => toggle_filter(hwnd),
         Command::FormatTable => format_table(hwnd),
         Command::SheetAdd => sheet_add(hwnd),
         Command::SheetRename => sheet_rename(hwnd),
@@ -3347,6 +3377,132 @@ fn recalculate(hwnd: HWND) {
     refresh(hwnd);
 }
 
+/// An autofilter over the selection, or clear the one the sheet already has — the Data menu's
+/// *Autofilter*, `Grid::toggle_filter` in the GTK shell and `sheet.filter` in the web one
+/// mirrored.
+///
+/// Over a sheet that already has one this clears it, so the command is the on/off switch its
+/// name implies; otherwise the selection becomes the range, with its first row the heading.
+/// Drawing the dropdown buttons and folding the rows it hides is `sheet/draw.rs`/`relayout`'s
+/// (`win.rs:439-443` already merges `App::hidden_rows` into the hidden-row list every layout
+/// pass); this is only the on/off switch and the range it covers.
+fn toggle_filter(hwnd: HWND) {
+    // SAFETY: one borrow.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            if state.app.filter(state.sheet).unwrap_or(None).is_some() {
+                if let Err(error) = state.app.set_filter(state.sheet, None) {
+                    state.say(Some(error.to_string()));
+                }
+                return;
+            }
+            let (start, mut end) = state.selection.rect();
+            // A single cell is a click, not a range — the same rule `format_table` uses.
+            if start == end
+                && let Ok((rows, cols)) = state.app.used_extent(state.sheet)
+            {
+                end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+            }
+            if end.row <= start.row {
+                return state.say(Some(
+                    "Select the rows to filter, including their headings".to_owned(),
+                ));
+            }
+            // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes the
+            // same one, so a document does not say which shell made it.
+            let filter = Filter::new("__Anonymous_Sheet_DB__0", start, end);
+            if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
+                state.say(Some(error.to_string()));
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Open the dropdown for one field, under the button `button_down` caught —
+/// `Click::FilterButton`'s handler.
+///
+/// Values come from a fresh read, the same range `ui_sheet_gtk`'s own `field_values` and the
+/// web shell's build them from: the column's own cells from the filter's first data row to its
+/// last, deduplicated. No borrow is held across `dialog::choose_multi`'s nested loop (decision
+/// 7), so this is two separate `with_sheet` calls rather than one.
+fn open_filter_menu(hwnd: HWND, col: u32) {
+    // SAFETY: one borrow, released before the dialog.
+    let Some((field, title, values, checked)) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let filter = state.app.filter(state.sheet).ok()??;
+            let field = col - filter.start.col;
+            let first = filter.first_data_row();
+            let viewport = state
+                .app
+                .get_viewport(
+                    state.sheet,
+                    first..filter.end.row.saturating_add(1),
+                    col..col.saturating_add(1),
+                )
+                .ok()?;
+            let mut set = std::collections::BTreeSet::new();
+            for row in first..=filter.end.row {
+                if let Some(text) = viewport.text(row, col) {
+                    set.insert(text.to_owned());
+                }
+            }
+            let values: Vec<String> = set.into_iter().collect();
+            let checked: Vec<bool> = match filter.keep.get(&field) {
+                Some(keep) => values.iter().map(|v| keep.contains(v)).collect(),
+                None => vec![true; values.len()],
+            };
+            let title = state
+                .app
+                .get_viewport(
+                    state.sheet,
+                    filter.start.row..filter.start.row.saturating_add(1),
+                    col..col.saturating_add(1),
+                )
+                .ok()
+                .and_then(|v| v.text(filter.start.row, col).map(str::to_owned))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| format!("Column {}", field + 1));
+            Some((field, title, values, checked))
+        })
+    })
+    .flatten() else {
+        return;
+    };
+    if values.is_empty() {
+        return;
+    }
+    let Some(choice) = dialog::choose_multi(hwnd, &title, &values, &checked) else {
+        return;
+    };
+    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let Ok(Some(mut filter)) = state.app.filter(state.sheet) else {
+                return;
+            };
+            match choice {
+                dialog::FilterChoice::Clear => {
+                    filter.keep.remove(&field);
+                }
+                dialog::FilterChoice::Keep(chosen) => {
+                    let keep = values
+                        .iter()
+                        .zip(chosen)
+                        .filter(|(_, kept)| *kept)
+                        .map(|(v, _)| v.clone())
+                        .collect();
+                    filter.keep.insert(field, keep);
+                }
+            }
+            if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
+                state.say(Some(error.to_string()));
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
 /// Format the selection as a table — the Data menu's *Format as Table*.
 ///
 /// No dialog: the selection is the range, its first row is the heading, and the name
@@ -3712,6 +3868,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             banner: state.banner.as_deref(),
             hint: &state.hint,
             selection: state.selection,
+            filter: state.app.filter(state.sheet).ok().flatten(),
             used: state.app.used_extent(state.sheet).unwrap_or((0, 0)),
             font_px: scale(theme::text::CELL, state.geom.dpi).round() as i32,
             caption_px: scale(theme::text::CAPTION, state.geom.dpi).round() as i32,
@@ -4372,6 +4529,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FunctionList
         | Command::ExplainFormula
         | Command::ToggleFriendly
+        | Command::ToggleFilter
         | Command::FormatTable
         | Command::ToggleRoles => {}
     }

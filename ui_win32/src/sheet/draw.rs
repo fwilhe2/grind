@@ -233,6 +233,12 @@ mod windows_impl {
         pub hint: &'a [Piece],
         /// The selection, which is presentation state and never leaves the shell.
         pub selection: Selection,
+        /// The sheet's autofilter, if it has one — `App::filter`, drawn as one dropdown button
+        /// per cell of its heading row (`GridGeom::filter_button`), `ui_sheet_gtk`'s own
+        /// mirrored. Which rows it hides is not carried here: `relayout` already folded them
+        /// out of `geom.rows` before this frame was asked for, so there is nothing left to draw
+        /// differently about them.
+        pub filter: Option<grind_sheet::Filter>,
         /// How far the document's own content reaches — `App::used_extent`, the same answer the
         /// status bar reports. Past it the hairlines are drawn quieter (`Theme::grid_line_soft`).
         pub used: (u32, u32),
@@ -331,6 +337,15 @@ mod windows_impl {
                     };
                     gdi::fill(dc, right - 1, top, right, bottom, line);
                     gdi::fill(dc, left, bottom - 1, right, bottom, line);
+
+                    if let Some(filter) = &frame.filter
+                        && filter.buttons
+                        && row == filter.start.row
+                        && (filter.start.col..=filter.end.col).contains(&col)
+                        && let Some(button) = g.filter_button(row, col)
+                    {
+                        draw_filter_button(dc, button, theme);
+                    }
 
                     // The role overlay reserves a margin at the cell's leading edge for its own
                     // marker rather than drawing over whatever the cell already shows — a label
@@ -745,6 +760,28 @@ mod windows_impl {
     /// and none of them owns. Drawn as rows of a filled right triangle rather than with
     /// `Polygon`, because GDI would antialias neither and this needs no pen, no brush and no
     /// second code path for the DIB target.
+    /// One autofilter dropdown button — `GridGeom::filter_button`'s square, a downward
+    /// triangle inside it. The same stacked-fill idiom [`corner`] uses rather than a `Polygon`
+    /// call, so there is one way this shell draws a triangle and not two.
+    fn draw_filter_button(dc: HDC, rect: crate::sheet::geom::Rect, theme: Theme) {
+        let (left, top, right, bottom) = rect.edges();
+        gdi::fill(dc, left, top, right, bottom, theme.card);
+        let size = ((right - left) / 2).max(2);
+        let cx = (left + right) / 2;
+        let top2 = top + ((bottom - top) - size) / 2;
+        for step in 0..size {
+            let half = (size - step) / 2;
+            gdi::fill(
+                dc,
+                cx - half,
+                top2 + step,
+                cx + half + 1,
+                top2 + step + 1,
+                theme.text_tertiary,
+            );
+        }
+    }
+
     fn corner(dc: HDC, frame: &Frame) {
         let g = frame.geom;
         let size = crate::sheet::geom::scale(7.0, g.dpi).round().max(3.0) as i32;
