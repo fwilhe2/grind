@@ -1682,9 +1682,11 @@ enum Command {
         /// The range's first row is data rather than a heading
         #[arg(long)]
         no_header: bool,
-        /// Append a totals row: SUM under every numeric column, "Total" in the first
-        #[arg(long)]
-        totals: bool,
+        /// Append a totals row: the aggregate under every column it can answer for, its own
+        /// word in the first. Bare --totals is a sum; name one of sum, average, count,
+        /// count-numbers, min, max, stdev, var for the rest
+        #[arg(long, num_args = 0..=1, default_missing_value = "sum")]
+        totals: Option<grind_sheet::TotalsFunction>,
         /// The named range to create; default is the next unused Table1, Table2, …
         #[arg(long)]
         name: Option<String>,
@@ -2730,6 +2732,9 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         } => {
             let app = load(file, cli)?;
             let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+            // `--totals` with no value is a sum, `--totals average` names another aggregate,
+            // and no flag at all is no totals row — clap's `default_missing_value` doing the
+            // work that used to be a bool.
             let options = grind_sheet::TableOptions {
                 header: !no_header,
                 totals: *totals,

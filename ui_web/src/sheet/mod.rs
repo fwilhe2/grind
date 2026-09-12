@@ -659,7 +659,8 @@ impl Ui {
             "sheet.hide-cols" => self.hide_cols(true),
             "sheet.unhide-cols" => self.hide_cols(false),
             "sheet.filter" => self.toggle_filter(),
-            "sheet.format-table" => self.format_table(),
+            "sheet.format-table" => self.format_table(None),
+            "sheet.format-table-totals" => self.format_table_with_totals(),
 
             "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
             "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
@@ -1188,7 +1189,7 @@ impl Ui {
     /// "un-format" to match — ODF has nothing resembling a persisted table object, so this is
     /// a one-shot composite the same way LibreOffice's own AutoFormat is
     /// (`sheet/src/table_format.rs`).
-    fn format_table(&self) {
+    fn format_table(&self, totals: Option<grind_sheet::TotalsFunction>) {
         let sheet = self.sheet.get();
         let (start, mut end) = self.selection.get().rect();
         // A single cell is a click, not a range — the same rule `toggle_filter` uses.
@@ -1203,12 +1204,33 @@ impl Ui {
         }
         let options = grind_sheet::TableOptions {
             header: true,
-            totals: false,
+            totals,
             name: None,
         };
         match self.app.format_table(sheet, start, end, options) {
             Ok(name) => self.set_message(format!("Formatted as table \u{201c}{name}\u{201d}")),
             Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// *Format as table with totals…* — the same composite, having asked which aggregate the
+    /// totals row carries.
+    ///
+    /// `window.prompt` for the same reason [`Self::rename_sheet`] uses one: it is one word of
+    /// input and the browser already has a box for that. It is a *second* command rather than
+    /// a prompt bolted onto the first so that the plain one stays zero-prompt — the palette's
+    /// own way of offering two shapes of a verb, since there are no submenus here.
+    fn format_table_with_totals(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let ask = format!("Totals row: {}", grind_sheet::TotalsFunction::ids());
+        let Ok(Some(answer)) = window.prompt_with_message_and_default(&ask, "sum") else {
+            return;
+        };
+        match answer.parse::<grind_sheet::TotalsFunction>() {
+            Ok(function) => self.format_table(Some(function)),
+            Err(say) => self.set_message(say),
         }
     }
 

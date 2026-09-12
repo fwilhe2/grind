@@ -57,11 +57,14 @@ stops ratcheting.
 - `set_filter` — `grind sheet filter <range> COLUMN=VALUE…` (and `grind sheet filter --clear`)
 - `filter` — `grind sheet filter` with no range, which prints each sheet's filtered range
 - `hidden_rows` — the same listing's `hides` column, in 1-based row numbers
-- `format_table` — `grind sheet format-table <range> [--no-header] [--totals] [--name NAME]`:
+- `format_table` — `grind sheet format-table <range> [--no-header] [--totals [FUNC]] [--name NAME]`:
   a filter, alternating row shading, an optional totals row and a named range, one composite
   batch built entirely from the constructs `set_filter`/`set_style`/`set_formula`/`set_name`
   already write (see `sheet/src/table_format.rs`) — there is no persisted "table" object and so
-  no un-format command to match
+  no un-format command to match. `--totals` alone is a sum; `--totals FUNC` names the aggregate
+  (`TotalsFunction`: sum, average, count, count-numbers, min, max, stdev, var — Excel's own
+  totals-row list, every entry of which is a Small Group function), one for the whole row, and a
+  column the aggregate cannot answer for is left blank rather than given a cached error
 - `set_name` — `grind sheet name <name> <address-or-=expression>`
 - `clear_name` — `grind sheet name <name> --delete`
 - `add_sheet` — `grind sheet add <name>`

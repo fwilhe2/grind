@@ -51,7 +51,7 @@ pub use chart::{
 };
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
-pub use table_format::TableOptions;
+pub use table_format::{TableOptions, TotalsFunction};
 
 /// What can go wrong with a **spreadsheet**.
 ///

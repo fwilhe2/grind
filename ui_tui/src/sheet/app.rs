@@ -1121,34 +1121,50 @@ impl App {
         }
     }
 
-    /// `:format-table [--no-header] [--totals] [--name NAME]` — format the selection as a table:
-    /// autofilter, alternating row shading, an optional totals row and a named range, all in
-    /// one undo step (`App::format_table`). A single cell expands to the sheet's used extent,
+    /// `:format-table [--no-header] [--totals [FUNC]] [--name NAME]` — format the selection as a
+    /// table: autofilter, alternating row shading, an optional totals row and a named range, all
+    /// in one undo step (`App::format_table`). `--totals` alone is a sum; `--totals average` (or
+    /// any other `TotalsFunction` id) picks the aggregate, and the word offered when somebody
+    /// mistypes one is `TotalsFunction::ids()` rather than a second list kept here.
+    /// A single cell expands to the sheet's used extent,
     /// the same rule `:csv-out` and the GTK shell's own filter toggle use. There is no
     /// "un-table": ODF has nothing resembling a persisted table object to remove as a unit,
     /// so clearing the effects means `:name!` on the name and restyling the cells by hand,
     /// same as after LibreOffice's own AutoFormat.
     fn cmd_table(&mut self, what: &str) {
+        const USAGE: &str = "usage: :format-table [--no-header] [--totals [FUNC]] [--name NAME]";
         let mut header = true;
-        let mut totals = false;
+        let mut totals = None;
         let mut name = None;
-        let mut words = what.split_whitespace();
+        // Peekable because `--totals` takes an *optional* argument: the next word is its
+        // function only when it is not another option, so `--totals --name x` still means a
+        // sum, the same reading `grind sheet format-table --totals` has.
+        let mut words = what.split_whitespace().peekable();
         while let Some(word) = words.next() {
             match word {
                 "--no-header" => header = false,
-                "--totals" => totals = true,
+                "--totals" => {
+                    let named = words.next_if(|w| !w.starts_with("--"));
+                    totals = match named {
+                        Some(w) => match w.parse::<grind_sheet::TotalsFunction>() {
+                            Ok(function) => Some(function),
+                            Err(say) => {
+                                self.status = say;
+                                return;
+                            }
+                        },
+                        None => Some(grind_sheet::TotalsFunction::Sum),
+                    };
+                }
                 "--name" => match words.next() {
                     Some(n) => name = Some(n.to_owned()),
                     None => {
-                        self.status = "usage: :format-table [--no-header] [--totals] [--name NAME]"
-                            .to_owned();
+                        self.status = USAGE.to_owned();
                         return;
                     }
                 },
                 _ => {
-                    self.status = format!(
-                        "{word}: unknown option \u{2014} usage: :format-table [--no-header] [--totals] [--name NAME]"
-                    );
+                    self.status = format!("{word}: unknown option \u{2014} {USAGE}");
                     return;
                 }
             }
@@ -2639,6 +2655,35 @@ mod tests {
             CellValue::Number(1200.0),
             "and sums the one numeric column"
         );
+    }
+
+    /// `--totals` takes the aggregate's own name, and a word that is not one of them says so
+    /// rather than quietly summing.
+    #[test]
+    fn format_table_takes_the_aggregate_by_name() {
+        let mut app = filled();
+        app.active = Pos::new(0, 0);
+        app.anchor = Some(Pos::new(1, 1));
+        app.run_command("format-table --totals max");
+        assert_eq!(
+            app.core.get(0, Pos::new(2, 0)).unwrap(),
+            CellValue::Text("Maximum".to_owned()),
+            "{}",
+            app.status
+        );
+        assert_eq!(
+            app.core.input_text(0, Pos::new(2, 1)).unwrap(),
+            "=MAX(B2)",
+            "{}",
+            app.status
+        );
+
+        let mut app = filled();
+        app.active = Pos::new(0, 0);
+        app.anchor = Some(Pos::new(1, 1));
+        app.run_command("format-table --totals median");
+        assert!(app.status.contains("expected one of"), "{}", app.status);
+        assert!(app.core.filter(0).unwrap().is_none(), "and applies nothing");
     }
 
     /// The track verbs: a width in cells goes into the document as an ODF length, so a column

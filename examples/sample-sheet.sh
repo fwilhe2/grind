@@ -280,6 +280,20 @@ sheet name "$out/table.fods" Table1
 sheet view "$out/table.fods" Inventory.A1:E22
 sheet view "$out/table.fods" Inventory.D22:E22 --formulas   # the totals row's SUM, over 20 rows
 
+# The totals row is not only a sum: `--totals FUNC` picks any of Excel's own totals-row
+# aggregates, each of which is a Small Group function (`TotalsFunction`), one for the whole
+# row, with the function's own word in the leftmost column instead of "Total". A column the
+# aggregate has no answer for — `AVERAGE` over a column of SKUs — is left blank, rather than
+# given a formula whose cached value would have to be an error.
+
+say "format-table --totals average: the same composite, a different aggregate"
+cp "$book" "$out/averages.fods"
+run add "$out/averages.fods" Inventory
+run import-csv "$out/averages.fods" "$out/inventory.csv" --at Inventory.A1
+run format-table "$out/averages.fods" Inventory.A1:E21 --totals average --name Stock
+sheet view "$out/averages.fods" Inventory.A22:E22               # "Average", then the answers
+sheet view "$out/averages.fods" Inventory.D22:E22 --formulas    # AVERAGE, not SUM
+
 # A second sheet, and a formula on it reaching across to the first. Renaming does **not**
 # rewrite the formulas that mention the old name — they go stale instead, which the warning
 # on stderr says out loud and `sheet recalc` turns into an error. Deleting is undoable: the

@@ -80,6 +80,11 @@ pub enum Command {
     /// `App::format_table`. No dialog: fixed defaults (a header, no totals row), the same
     /// zero-prompt shape `sheet.filter` already has in the web shell.
     FormatTable,
+    /// The same composite with a totals row, having asked which aggregate it carries —
+    /// `dialog::choose` over `TotalsFunction::ALL`. A second verb rather than a prompt on the
+    /// first, so the plain one stays zero-prompt, which is the shape the web shell's palette
+    /// gives the pair too.
+    FormatTableTotals,
     SheetAdd,
     SheetRename,
     SheetDelete,
@@ -179,6 +184,7 @@ impl Command {
         Command::ToggleFriendly,
         Command::ToggleFilter,
         Command::FormatTable,
+        Command::FormatTableTotals,
         Command::SheetAdd,
         Command::SheetRename,
         Command::SheetDelete,
@@ -384,6 +390,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FormatTable,
                 label: "F&ormat as Table",
+            },
+            Item::Verb {
+                command: Command::FormatTableTotals,
+                label: "Format as Table with &Totals…",
             },
         ],
     },
@@ -617,6 +627,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ToggleFriendly
         | Command::ToggleFilter
         | Command::FormatTable
+        | Command::FormatTableTotals
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleRoles => matches!(kind, Spreadsheet),

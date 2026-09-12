@@ -7,7 +7,7 @@
 //! writes (`table:database-range`, `style:style`, an ordinary formula, `table:named-range`) is
 //! already loop-C-covered on its own, so this is the seam between them rather than a new one.
 
-use grind_sheet::{App, CellValue, Form, Pos, TableOptions};
+use grind_sheet::{App, CellValue, Form, Pos, TableOptions, TotalsFunction};
 
 fn sample() -> App {
     let app = App::new();
@@ -29,7 +29,7 @@ fn one_undo_step_covers_filter_banding_totals_and_the_name() {
     let app = sample();
     let options = TableOptions {
         header: true,
-        totals: true,
+        totals: Some(TotalsFunction::Sum),
         name: None,
     };
     let name = app
@@ -55,7 +55,7 @@ fn it_survives_our_own_round_trip() {
     let app = sample();
     let options = TableOptions {
         header: true,
-        totals: true,
+        totals: Some(TotalsFunction::Sum),
         name: Some("Sales".to_owned()),
     };
     app.format_table(0, Pos::new(0, 0), Pos::new(3, 1), options)
@@ -85,12 +85,55 @@ fn it_survives_our_own_round_trip() {
     );
 }
 
+/// The cached values `table_format::summarise` writes are computed *beside* the evaluator
+/// rather than by it (the plan is built with the write lock held), so this is the check that
+/// the two agree: format with each aggregate in turn, recalculate, and assert nothing moved.
+/// A `Recalc` that reports a changed cell is `summarise` disagreeing with `formula::funcs`.
+#[test]
+fn every_aggregate_caches_what_recalculating_would_have_computed() {
+    for function in TotalsFunction::ALL {
+        let app = sample();
+        let options = TableOptions {
+            header: true,
+            totals: Some(*function),
+            name: None,
+        };
+        app.format_table(0, Pos::new(0, 0), Pos::new(3, 1), options)
+            .unwrap();
+        let before = app.get_viewport(0, 4..5, 1..2).unwrap().get(4, 1).cloned();
+        let outcome = app.recalc().expect("recalculates");
+        let after = app.get_viewport(0, 4..5, 1..2).unwrap().get(4, 1).cloned();
+        assert_eq!(before, after, "{function}: the cached value was wrong");
+        assert_eq!(
+            outcome.changed, 0,
+            "{function}: recalculating moved a cell the plan had already answered"
+        );
+    }
+}
+
+#[test]
+fn a_totals_row_can_be_an_average_and_says_so_in_its_label() {
+    let app = sample();
+    let options = TableOptions {
+        header: true,
+        totals: Some(TotalsFunction::Average),
+        name: None,
+    };
+    app.format_table(0, Pos::new(0, 0), Pos::new(3, 1), options)
+        .unwrap();
+    let bytes = app.save_bytes(Form::Flat).expect("writes");
+    let back = grind_sheet::read_bytes("out.fods", &bytes).expect("reads back");
+    let sheet = back.sheet(0).expect("one sheet");
+    assert_eq!(sheet.get(Pos::new(4, 0)), CellValue::Text("Average".into()));
+    assert_eq!(sheet.formula(Pos::new(4, 1)), Some("AVERAGE([.B2:.B4])"));
+}
+
 #[test]
 fn without_a_header_row_zero_is_data_and_gets_banded_like_any_other() {
     let app = sample();
     let options = TableOptions {
         header: false,
-        totals: false,
+        totals: None,
         name: None,
     };
     app.format_table(0, Pos::new(1, 0), Pos::new(3, 1), options)

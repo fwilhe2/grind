@@ -2965,7 +2965,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::GoTo => open_name_box(hwnd),
         Command::Recalculate => recalculate(hwnd),
         Command::ToggleFilter => toggle_filter(hwnd),
-        Command::FormatTable => format_table(hwnd),
+        Command::FormatTable => format_table(hwnd, None),
+        Command::FormatTableTotals => format_table_totals(hwnd),
         Command::SheetAdd => sheet_add(hwnd),
         Command::SheetRename => sheet_rename(hwnd),
         Command::SheetDelete => sheet_delete(hwnd),
@@ -3512,7 +3513,7 @@ fn open_filter_menu(hwnd: HWND, col: u32) {
 /// a unit — so clearing the effects means Undo (one step, right after this) or clearing the
 /// filter, restyling the cells and dropping the name by hand later, same as after
 /// LibreOffice's own AutoFormat (`sheet/src/table_format.rs`).
-fn format_table(hwnd: HWND) {
+fn format_table(hwnd: HWND, totals: Option<grind_sheet::TotalsFunction>) {
     // SAFETY: one borrow.
     unsafe {
         with_sheet(hwnd, |state| {
@@ -3530,7 +3531,7 @@ fn format_table(hwnd: HWND) {
             }
             let options = TableOptions {
                 header: true,
-                totals: false,
+                totals,
                 name: None,
             };
             if let Err(error) = state.app.format_table(state.sheet, start, end, options) {
@@ -3539,6 +3540,29 @@ fn format_table(hwnd: HWND) {
         });
     }
     refresh(hwnd);
+}
+
+/// *Format as Table with Totals…* — [`format_table`], having asked which aggregate the totals
+/// row carries.
+///
+/// `dialog::choose` rather than a dropdown on a dialog of its own: this is one choice from a
+/// short list, which is exactly the listbox the outline, the block-kind picker and W6's two
+/// panes already open, and it costs this shell no new window class. The rows are
+/// `TotalsFunction::label`, so the Windows menu cannot call an aggregate something the GTK
+/// dropdown and the CLI do not. Chosen outside `with_sheet` because the chooser runs a nested
+/// message loop, and decision 7 is that no borrow is held across one.
+fn format_table_totals(hwnd: HWND) {
+    let rows: Vec<String> = grind_sheet::TotalsFunction::ALL
+        .iter()
+        .map(|f| f.label().to_owned())
+        .collect();
+    let Some(picked) = dialog::choose(hwnd, "Totals row", &rows, 0) else {
+        return;
+    };
+    let Some(function) = grind_sheet::TotalsFunction::ALL.get(picked).copied() else {
+        return;
+    };
+    format_table(hwnd, Some(function));
 }
 
 // --- sheets ---
@@ -4531,6 +4555,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ToggleFriendly
         | Command::ToggleFilter
         | Command::FormatTable
+        | Command::FormatTableTotals
         | Command::ToggleRoles => {}
     }
 }

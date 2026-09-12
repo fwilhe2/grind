@@ -1279,10 +1279,22 @@ impl Ui {
             .label("Has header row")
             .active(true)
             .build();
-        let totals = gtk::CheckButton::builder()
-            .label("Totals row")
-            .active(false)
-            .build();
+        // The totals row's aggregate, "None" first — one dropdown rather than a checkbox plus
+        // a second control, since "no totals row" is one more entry in the same list. The
+        // labels are `TotalsFunction::label`, so this window cannot call one of them something
+        // the terminal or the CLI does not.
+        let mut totals_labels = vec!["None".to_owned()];
+        totals_labels.extend(
+            grind_sheet::TotalsFunction::ALL
+                .iter()
+                .map(|f| f.label().to_owned()),
+        );
+        let totals = gtk::DropDown::from_strings(
+            &totals_labels.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        let totals_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        totals_row.append(&gtk::Label::new(Some("Totals row")));
+        totals_row.append(&totals);
         let name = gtk::Entry::builder()
             .placeholder_text("Table1")
             .activates_default(true)
@@ -1293,7 +1305,7 @@ impl Ui {
 
         let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
         body.append(&header);
-        body.append(&totals);
+        body.append(&totals_row);
         body.append(&name_row);
 
         let dialog = adw::AlertDialog::new(Some("Format as Table"), None);
@@ -1314,9 +1326,13 @@ impl Ui {
                         return;
                     }
                     let typed = name.text();
+                    // Row 0 is "None"; every row after it is `TotalsFunction::ALL` in order.
+                    let chosen = totals.selected() as usize;
                     let options = grind_sheet::TableOptions {
                         header: header.is_active(),
-                        totals: totals.is_active(),
+                        totals: chosen
+                            .checked_sub(1)
+                            .and_then(|i| grind_sheet::TotalsFunction::ALL.get(i).copied()),
                         name: (!typed.trim().is_empty()).then(|| typed.trim().to_owned()),
                     };
                     match ui.app.format_table(sheet, start, end, options) {

@@ -727,7 +727,11 @@ plain click toggles a row with no `WM_DRAWITEM` pair to get there — to pick wh
 column's values stay, with *Clear* as a third button dropping the condition entirely. Data ▸
 *Format as Table* still has no dialog of its own: fixed defaults (a header, no totals row),
 the same zero-prompt shape `sheet.filter` has in the web shell, but now applies a *real*
-filter rather than an empty one with buttons and no conditions. No **find/replace over cells**.
+filter rather than an empty one with buttons and no conditions. Beside it, *Format as Table
+with Totals…* is that composite having first asked which aggregate the totals row carries —
+`dialog::choose` over `TotalsFunction::ALL`, the listbox this shell already opens for every
+other one-of-a-short-list question, and a second verb rather than a prompt on the first so the
+plain one keeps its zero-prompt shape. No **find/replace over cells**.
 No **conditional formatting UI**, which exists in no shell — the banding *Format as Table*
 paints is static cell styling, applied once, not a live rule. No **command palette**, by
 decision 4.

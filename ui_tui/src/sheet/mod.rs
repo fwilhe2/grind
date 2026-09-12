@@ -29,8 +29,10 @@ Spreadsheet:
   :eval <formula>         — what it would come to, storing nothing
   :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers
   :name <name>  :name!    — define a name over the selection, or drop the one on it
-  :format-table [--no-header] [--totals] [--name NAME]
-                           — autofilter, banding, an optional totals row and a name
+  :format-table [--no-header] [--totals [FUNC]] [--name NAME]
+                           — autofilter, banding, an optional totals row and a name;
+                             FUNC is sum (the default), average, count, count-numbers,
+                             min, max, stdev or var
   :csv-in <file>  :csv-out <file>
   :roles  :names          — what each cell is, and what it is called (a reading;
                             nothing is written, and the same word turns it off)

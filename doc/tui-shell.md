@@ -83,7 +83,7 @@ shorter than one being edited.
 | Clipboard | `y`/`p` — a register of tab-separated text, the shape every other spreadsheet reads | `y`/`p` — plain text, a newline splits a block |
 | Format | `*`/`/`/`-` over a selection; `:bold :italic :wrap :border :align :color :fill :plain` | `*`/`/`/`_`/`~`/`-` over a selection; markdown while typing; `:color :highlight :plain` |
 | Number formats | `:format` over eight presets, `:general` | — |
-| Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete`; `:width`, `:height`, `:hide`, `:show`; `:name`, `:name!`; `:format-table [--no-header] [--totals] [--name NAME]` | `:h <level>`, `:li [depth]`, `:style [name]`, `:table [rows cols]`, `:move <address>`, `:mark`, `:mark!`, `:words` |
+| Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete`; `:width`, `:height`, `:hide`, `:show`; `:name`, `:name!`; `:format-table [--no-header] [--totals [FUNC]] [--name NAME]` (FUNC is a `TotalsFunction` id: sum, average, count, count-numbers, min, max, stdev, var) | `:h <level>`, `:li [depth]`, `:style [name]`, `:table [rows cols]`, `:move <address>`, `:mark`, `:mark!`, `:words` |
 | Fill | `:down`, `:right` — the selection's leading line replicated, references shifted | — |
 | Interchange | `:csv-in <file>`, `:csv-out <file>` | — |
 | Evaluate | `:eval <formula>` — what it would come to, storing nothing | — |

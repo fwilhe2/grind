@@ -153,6 +153,15 @@ pub const SHEET: &[Command] = &[
     // undo step — `App::format_table`. No dialog: like `sheet.filter`, the selection *is*
     // the range, its first row is the heading, and the name auto-generates.
     cmd("sheet.format-table", "Format as table", "Sheets", "", false),
+    // The same composite with a totals row, whose aggregate it asks for — a second row rather
+    // than a prompt on the first, so the plain one stays zero-prompt (`Ui::format_table`).
+    cmd(
+        "sheet.format-table-totals",
+        "Format as table with totals…",
+        "Sheets",
+        "",
+        false,
+    ),
 ];
 
 /// The word processor's verbs.

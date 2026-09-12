@@ -566,7 +566,9 @@ Stated as one sentence, which is the sentence to hold this window to:
   the selection moves the selection there first; a right-click during an edit stores it,
   exactly as a left-click elsewhere does.
   **Format as Table…** (`Ui::format_table_dialog`, `App::format_table`) is a one-shot composite
-  over the range — an autofilter, alternating row shading, an optional totals row and a
+  over the range — an autofilter, alternating row shading, an optional totals row whose
+  aggregate is a dropdown (None first, then `TotalsFunction::ALL` by its own labels, so this
+  window cannot name one of them something the CLI does not) and a
   `table:named-expressions` entry, one undo step — not a persisted object: ODF has nothing like
   xlsx's `ListObject` to hold one as, so the dialog is only ever the *apply* step, the same way
   `Filter Rows` is. See `sheet/src/table_format.rs`.
