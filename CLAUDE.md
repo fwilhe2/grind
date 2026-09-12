@@ -158,7 +158,7 @@ with a *drawn* bullet, and gained `:mark`, `:table`, `:move`, `n`/`N` and an out
 rows of chrome (`ui_tui/src/chrome.rs`): a title bar carrying the sheet strip or the heading path,
 and a status bar with a coloured mode chip.
 
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W10**: a window, the
+`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W11**: a window, the
 spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
 headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
 **selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
@@ -202,6 +202,21 @@ select-all triangle in the corner, an accent bar under a selected header button,
 the notice bar, a status bar with the document at one end and the selection's arithmetic at the
 other, and one accent that is the suite's own blue rather than the user's Windows accent
 (decision 9 — following the system accent is a named gap).
+
+**W11 is the welcome screen, and it is decision 1 finally applied to startup.** This shell used to
+open an empty spreadsheet when it was given no file — one binary holding two applications,
+guessing which was wanted. A window with no document is now neither: `Pane::Welcome` over
+`welcome.rs` draws three cards (New Spreadsheet, New Text Document, Open a Document…), answers the
+arrows, Tab and Enter as well as the pointer, and every card runs a `Command` so the menu bar and
+the pane cannot disagree about what a verb is. `Command::New` became the pair it always owed
+(`NewSheet`/`NewText`, Ctrl+N and Ctrl+Shift+N, either kind from either pane) and `File ▸ Welcome
+Screen` goes back. The menu bar now asks `menu::Surface` — `Welcome` or `Document(kind)` — rather
+than a `DocumentKind` it would have had to invent, so the bar over the welcome pane is **File and
+Help** by the same omission rule that already drops `&Sheet` over a text document. `--sheet` and
+`--text` still skip straight to an empty document, and `--render-to` with no file draws the pane,
+which is the only way it can be looked at from here. Its named gap is a recent-documents list:
+that is a *store* this shell does not have, and the answer when it is built is Windows' own
+(`SHAddToRecentDocs`), not a file of ours.
 
 **W10 is the Fluent pass, and it changed no capability at all** — everything this window could
 do before it, it does after. `theme.rs` is **Fluent 2's tokens**, composited to opaque values
@@ -622,7 +637,12 @@ before it can be answered.
   `text:outline-level` alone, and lists are flattened into the sequence with a depth. Blocks
   carry stable `BlockId`s because an index is invalidated by any insertion above it.
   `split_runs`/`coalesce` are the run surgery every caret edit is built on — the `grid.rs`
-  `normalize()` of this crate.
+  `normalize()` of this crate. **`Document::default()` is one empty paragraph, `Document::empty()`
+  is none** — the same split `sheet/src/odf/read.rs` already made for `Sheet1`: a *new* document
+  has somewhere for a caret to be, and a document read from a file has exactly the blocks the
+  file has. Getting that backwards is how `grind text new` shipped a document that could not be
+  typed into (`no block p1`, in every client at once); the readers use `empty`, everything else
+  wants `default`.
 - **`text/src/loc.rs`** — addressing, the `a1.rs` of that crate and its only 0↔1 conversion.
   A `Loc` is a `Target` (`p12`, `#bookmark`, `§2.1.3`) plus an optional character `offset`, and
   the offset is a separate axis *on purpose*: `#intro+5` and `§2.1+0` are addresses, not just
@@ -780,7 +800,12 @@ there is one bar of verbs, one tool row per document type, and **Ctrl+K** for ev
 a palette over `ui_web/src/command.rs`, which is every verb as data. A command id is the one
 vocabulary a button, a key and a palette row all speak. The palette is also the go-to box (an
 address, a sheet, a defined name, a heading, a bookmark), which is why this shell has no go-to
-or outline dialog. `doc/sheet-shell.md`'s "The gaps, written down" section is the up-to-date
+or outline dialog. A page with **no document open** shows a third mode — `Mode::Welcome`, three
+cards offering a new spreadsheet, a new text document or an existing file — rather than loading
+into an empty grid the way it used to; the cards are command ids like every other button, the two
+`doc.new-*` verbs are in both document tables as well (so a spreadsheet can start a text document
+without opening one), `doc.welcome` goes back, and replacing an edited document asks first.
+`doc/sheet-shell.md`'s "The gaps, written down" section is the up-to-date
 list of everything deferred by decision in phase 9 for the *GTK* window.
 
 **Phase 10 (the suite) is done through S10**, planned in `doc/suite.md` — every cell of R10's

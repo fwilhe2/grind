@@ -110,8 +110,9 @@ fn an_unedited_nested_frame_survives_byte_for_byte() {
 #[test]
 fn a_regenerated_document_writes_the_flat_shape_and_reads_it_back() {
     // No text-box, no nesting: R3's rule applied to a new element. Built directly rather
-    // than read, so this is the *regenerate* path (nothing to splice against).
-    let mut doc = Document::new();
+    // than read, so this is the *regenerate* path (nothing to splice against). `empty` rather
+    // than `new`, so the document is this one block and not it plus a new document's paragraph.
+    let mut doc = Document::empty();
     let id = doc.next_id();
     let mut block = Block::new(id, BlockKind::Paragraph);
     block.runs.push(Run::Image {

@@ -2228,8 +2228,14 @@ mod tests {
     /// the width, and a test that never draws would wrap at the default.
     fn app(paragraphs: &[&str]) -> App {
         let core = Arc::new(CoreApp::new());
+        // The first paragraph is typed into the one a new document already has: a new
+        // `grind_text` document is one empty paragraph rather than zero blocks, so that a caret
+        // has somewhere to be (`Document::default`).
         for (i, text) in paragraphs.iter().enumerate() {
-            core.insert(i, BlockKind::Paragraph, text).expect("inserts");
+            match i {
+                0 => core.set_text(0, text).expect("sets"),
+                _ => core.insert(i, BlockKind::Paragraph, text).expect("inserts"),
+            }
         }
         App::new(core, Arc::new(RedrawFlag::default()), None)
     }

@@ -38,7 +38,20 @@ use crate::sheet::keymap::{Key, Mods};
 /// alignment, a number format, bold — which is the format strip's admission test and W5's work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
-    New,
+    /// A new, empty spreadsheet — **in this window**, whichever kind it was showing.
+    ///
+    /// One of a pair where there used to be a single kind-locked `New`, which could only ever
+    /// make another document of the kind already open. That was a stop-gap with its own comment
+    /// saying so, and the welcome screen is what made it untenable: a window that offers the two
+    /// choices when it opens cannot then refuse to offer them from the File menu.
+    NewSheet,
+    NewText,
+    /// Back to the welcome screen — [`crate::welcome`], the pane a window with no document shows.
+    ///
+    /// Reachable rather than only initial, because a welcome screen you can never return to is a
+    /// splash screen. It asks the close question first, like every other verb that replaces what
+    /// the window is showing.
+    Welcome,
     Open,
     Save,
     SaveAs,
@@ -59,6 +72,14 @@ pub enum Command {
     /// Put the caret in the name box. A menu item as well as F5, because a verb nobody can
     /// find is a verb this shell does not have.
     GoTo,
+    /// Read a delimited file in at the cursor — a file dialog, then `App::import_csv` with
+    /// `csv::Import::sniffed`, one undo step. The grid's alone: a text document has no cells
+    /// for fields to land in.
+    ImportCsv,
+    /// Write the selection out as one — a save dialog whose **name** says which delimiter
+    /// (`csv::Dialect::for_name`, the two filters below it), then `App::export_csv`. Nothing is
+    /// stored, so the document is untouched by it.
+    ExportCsv,
     Recalculate,
     /// Every function this build implements, as a list to pick from — `sheet/assist.rs`'s
     /// `function_lines`, which is `grind sheet functions --long`'s four columns in a dialog.
@@ -166,7 +187,9 @@ impl Command {
     /// Adding one here and nowhere else fails two checks at once: the test below says it is in no
     /// menu, and `win.rs`'s exhaustive match says it has no handler.
     pub const ALL: &'static [Command] = &[
-        Command::New,
+        Command::NewSheet,
+        Command::NewText,
+        Command::Welcome,
         Command::Open,
         Command::Save,
         Command::SaveAs,
@@ -178,6 +201,8 @@ impl Command {
         Command::Paste,
         Command::ClearCells,
         Command::GoTo,
+        Command::ImportCsv,
+        Command::ExportCsv,
         Command::Recalculate,
         Command::FunctionList,
         Command::ExplainFormula,
@@ -277,12 +302,20 @@ pub const MENUS: &[Menu] = &[
         title: "&File",
         items: &[
             Item::Verb {
-                command: Command::New,
-                label: "&New\tCtrl+N",
+                command: Command::NewSheet,
+                label: "&New Spreadsheet\tCtrl+N",
+            },
+            Item::Verb {
+                command: Command::NewText,
+                label: "New &Text Document\tCtrl+Shift+N",
             },
             Item::Verb {
                 command: Command::Open,
                 label: "&Open…\tCtrl+O",
+            },
+            Item::Verb {
+                command: Command::Welcome,
+                label: "&Welcome Screen",
             },
             Item::Separator,
             Item::Verb {
@@ -292,6 +325,19 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::SaveAs,
                 label: "Save &As…\tCtrl+Shift+S",
+            },
+            Item::Separator,
+            // The one non-ODF format (`doc/not-doing.md` §2), and File is where Windows puts
+            // Import and Export. Its own section, because importing is not another way of
+            // saving the document — and over a text document [`applies_to`] leaves both out,
+            // so this menu is the four file verbs and Exit there.
+            Item::Verb {
+                command: Command::ImportCsv,
+                label: "&Import CSV…",
+            },
+            Item::Verb {
+                command: Command::ExportCsv,
+                label: "&Export CSV…",
             },
             Item::Separator,
             Item::Verb {
@@ -567,7 +613,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         return None;
     }
     match (key, mods.ctrl, mods.shift) {
-        (Key::Char('N'), true, false) => Some(Command::New),
+        (Key::Char('N'), true, false) => Some(Command::NewSheet),
+        (Key::Char('N'), true, true) => Some(Command::NewText),
         (Key::Char('O'), true, false) => Some(Command::Open),
         (Key::Char('S'), true, false) => Some(Command::Save),
         (Key::Char('S'), true, true) => Some(Command::SaveAs),
@@ -600,6 +647,46 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
     }
 }
 
+/// What the window is showing, for the one question the menu bar asks of it.
+///
+/// A document *kind* was enough until the welcome screen arrived, and then it was not: a window
+/// showing [`crate::welcome`] holds no document at all, and answering "which kind" with a guess
+/// is exactly the guess that pane exists to stop making. So the menus ask this instead, and
+/// `DocumentKind` is one of its two arms rather than the whole question.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Surface {
+    /// The welcome screen — no document, and so only the verbs that make or find one.
+    Welcome,
+    Document(grind_core::DocumentKind),
+}
+
+/// Whether this verb means anything on this surface. [`items_for`] and [`menu_has_items`] are
+/// the callers, and `win.rs`'s `build_menu` is theirs.
+pub fn applies(command: Command, surface: Surface) -> bool {
+    match surface {
+        Surface::Welcome => on_welcome(command),
+        Surface::Document(kind) => applies_to(command, kind),
+    }
+}
+
+/// Which verbs mean anything with **no document open**.
+///
+/// A short list, and short on purpose: everything else in this shell acts on a document, and a
+/// File menu offering Save over nothing would be the greying problem back again in its original
+/// form. `Command::Welcome` is absent because you are already on it — a menu item that does nothing
+/// but confirm where you are is noise.
+fn on_welcome(command: Command) -> bool {
+    matches!(
+        command,
+        Command::NewSheet
+            | Command::NewText
+            | Command::Open
+            | Command::Exit
+            | Command::Shortcuts
+            | Command::About
+    )
+}
+
 /// Whether this verb means anything for a document of this kind — the half of "the menus are
 /// finished" that can be answered with no window at all. `win.rs`'s `build_menu` is the caller,
 /// through [`items_for`]/[`menu_has_items`]: a `false` here is why `Recalculate` is missing from
@@ -628,6 +715,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        // CSV is cells: fields land in a grid and a range comes out of one, so both are the
+        // spreadsheet's even though they sit in the File menu with the universal verbs.
+        | Command::ImportCsv
+        | Command::ExportCsv
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleRoles => matches!(kind, Spreadsheet),
@@ -650,7 +741,12 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Outline
         | Command::BlockKindDialog
         | Command::InsertPicture => matches!(kind, Text),
-        Command::New
+        // The two New verbs and the way back to the welcome screen mean the same thing over either
+        // document: they replace what the window is showing, and what it is showing now does not
+        // change what they do.
+        Command::NewSheet
+        | Command::NewText
+        | Command::Welcome
         | Command::Open
         | Command::Save
         | Command::SaveAs
@@ -673,21 +769,23 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
     }
 }
 
-/// One menu's items for a document of this kind — a verb this pane has no answer for is
-/// **omitted**, not greyed, and a separator left with nothing either side of it (because
-/// everything around it was dropped) goes with it.
+/// One menu's items for this surface — a verb it has no answer for is **omitted**, not greyed,
+/// and a separator left with nothing either side of it (because everything around it was dropped)
+/// goes with it.
 ///
 /// This replaced greying: a menu bar with every verb visible and half of them unclickable read
 /// as a text pane that still thought it was a grid, since the sheet's own six verbs (`Sheet`'s
 /// whole menu, `Recalculate`, `Cell Roles`) so outnumbered the universal ones that the &View
 /// and &Sheet menus looked identical open on either pane. Two ends now: `Format` on the grid and
 /// `Sheet`/`Data` on the text pane can end up with nothing in them at all, which is
-/// [`menu_has_items`]'s question, asked before a menu is put in the bar at all.
-pub fn items_for(menu: &Menu, kind: grind_core::DocumentKind) -> Vec<Item> {
+/// [`menu_has_items`]'s question, asked before a menu is put in the bar at all. The welcome screen
+/// is the extreme case of the same rule: everything but `File` and `Help` empties out, and the
+/// bar over it is those two.
+pub fn items_for(menu: &Menu, surface: Surface) -> Vec<Item> {
     let mut items: Vec<Item> = Vec::with_capacity(menu.items.len());
     for item in menu.items {
         match item {
-            Item::Verb { command, .. } if !applies_to(*command, kind) => continue,
+            Item::Verb { command, .. } if !applies(*command, surface) => continue,
             Item::Separator if matches!(items.last(), None | Some(Item::Separator)) => continue,
             other => items.push(*other),
         }
@@ -698,11 +796,11 @@ pub fn items_for(menu: &Menu, kind: grind_core::DocumentKind) -> Vec<Item> {
     items
 }
 
-/// Whether a menu has anything left to show for a document of this kind — a menu whose every
-/// verb [`items_for`] dropped contributes nothing to the bar rather than an empty popup with
-/// only its title.
-pub fn menu_has_items(menu: &Menu, kind: grind_core::DocumentKind) -> bool {
-    items_for(menu, kind)
+/// Whether a menu has anything left to show on this surface — a menu whose every verb
+/// [`items_for`] dropped contributes nothing to the bar rather than an empty popup with only its
+/// title.
+pub fn menu_has_items(menu: &Menu, surface: Surface) -> bool {
+    items_for(menu, surface)
         .iter()
         .any(|item| matches!(item, Item::Verb { .. }))
 }
@@ -801,7 +899,8 @@ mod tests {
             ..Default::default()
         };
         for (key, mods, want) in [
-            (Key::Char('N'), ctrl, Command::New),
+            (Key::Char('N'), ctrl, Command::NewSheet),
+            (Key::Char('N'), ctrl_shift, Command::NewText),
             (Key::Char('O'), ctrl, Command::Open),
             (Key::Char('S'), ctrl, Command::Save),
             (Key::Char('S'), ctrl_shift, Command::SaveAs),
@@ -929,6 +1028,10 @@ mod tests {
             Command::SheetDelete,
             Command::SheetNext,
             Command::SheetPrevious,
+            // In the File menu beside the universal four, and still the grid's: a text
+            // document has no cells for fields to land in.
+            Command::ImportCsv,
+            Command::ExportCsv,
         ] {
             assert!(applies_to(command, Spreadsheet), "{command:?}");
             assert!(!applies_to(command, Text), "{command:?}");
@@ -1021,18 +1124,21 @@ mod tests {
     #[test]
     fn sheet_and_data_vanish_on_the_text_pane() {
         use grind_core::DocumentKind::Text;
-        assert!(!menu_has_items(menu("&Sheet"), Text));
-        assert!(!menu_has_items(menu("&Data"), Text));
-        assert!(items_for(menu("&Sheet"), Text).is_empty());
-        assert!(items_for(menu("&Data"), Text).is_empty());
+        assert!(!menu_has_items(menu("&Sheet"), Surface::Document(Text)));
+        assert!(!menu_has_items(menu("&Data"), Surface::Document(Text)));
+        assert!(items_for(menu("&Sheet"), Surface::Document(Text)).is_empty());
+        assert!(items_for(menu("&Data"), Surface::Document(Text)).is_empty());
     }
 
     /// `Format` is the text pane's alone, for the same reason in reverse.
     #[test]
     fn format_vanishes_on_the_grid() {
         use grind_core::DocumentKind::Spreadsheet;
-        assert!(!menu_has_items(menu("F&ormat"), Spreadsheet));
-        assert!(items_for(menu("F&ormat"), Spreadsheet).is_empty());
+        assert!(!menu_has_items(
+            menu("F&ormat"),
+            Surface::Document(Spreadsheet)
+        ));
+        assert!(items_for(menu("F&ormat"), Surface::Document(Spreadsheet)).is_empty());
     }
 
     /// `Edit` mixes universal verbs with `Outline`, which is the text pane's alone — so the
@@ -1041,8 +1147,11 @@ mod tests {
     #[test]
     fn edit_loses_only_outline_on_the_grid() {
         use grind_core::DocumentKind::Spreadsheet;
-        assert!(menu_has_items(menu("&Edit"), Spreadsheet));
-        let items = items_for(menu("&Edit"), Spreadsheet);
+        assert!(menu_has_items(
+            menu("&Edit"),
+            Surface::Document(Spreadsheet)
+        ));
+        let items = items_for(menu("&Edit"), Surface::Document(Spreadsheet));
         assert!(!items.iter().any(|item| matches!(
             item,
             Item::Verb {
@@ -1064,8 +1173,8 @@ mod tests {
     #[test]
     fn view_loses_only_cell_roles_on_the_text_pane() {
         use grind_core::DocumentKind::Text;
-        assert!(menu_has_items(menu("&View"), Text));
-        let items = items_for(menu("&View"), Text);
+        assert!(menu_has_items(menu("&View"), Surface::Document(Text)));
+        let items = items_for(menu("&View"), Surface::Document(Text));
         assert!(!items.iter().any(|item| matches!(
             item,
             Item::Verb {
@@ -1090,7 +1199,7 @@ mod tests {
         use grind_core::DocumentKind::{Spreadsheet, Text};
         for menu in MENUS {
             for kind in [Spreadsheet, Text] {
-                let items = items_for(menu, kind);
+                let items = items_for(menu, Surface::Document(kind));
                 assert_ne!(
                     items.first(),
                     Some(&Item::Separator),
@@ -1117,9 +1226,137 @@ mod tests {
     /// A menu that keeps every one of its items for a kind is unchanged, order included — the
     /// baseline `filtering_never_leaves_a_stray_separator` and the vanish/survive tests above
     /// all lean on.
+    ///
+    /// `Help` rather than `File`, which used to be the example here: File carries the two CSV
+    /// verbs now, and they are the grid's, so it is no longer a menu with nothing to drop over
+    /// a text document. Help is — both of its items are about the *window*.
     #[test]
     fn a_menu_with_nothing_to_drop_is_returned_whole() {
-        use grind_core::DocumentKind::Text;
-        assert_eq!(items_for(menu("&File"), Text), menu("&File").items.to_vec());
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for kind in [Spreadsheet, Text] {
+            assert_eq!(
+                items_for(menu("&Help"), Surface::Document(kind)),
+                menu("&Help").items.to_vec(),
+                "{kind:?}"
+            );
+        }
+    }
+
+    /// And the one File loses: importing fields into cells and writing a range out are both the
+    /// grid's, so a text document's File menu is the file verbs and Exit — with no stray
+    /// separator left where the pair was (`filtering_never_leaves_a_stray_separator` is the
+    /// general rule; this is the case that first exercised it in *this* menu).
+    #[test]
+    fn the_csv_pair_is_the_grids_and_leaves_the_file_menu_over_a_document_of_text() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        let over = |kind| {
+            items_for(menu("&File"), Surface::Document(kind))
+                .into_iter()
+                .filter_map(|item| match item {
+                    Item::Verb { command, .. } => Some(command),
+                    Item::Separator => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(over(Spreadsheet).contains(&Command::ImportCsv));
+        assert!(over(Spreadsheet).contains(&Command::ExportCsv));
+        assert!(!over(Text).contains(&Command::ImportCsv));
+        assert!(!over(Text).contains(&Command::ExportCsv));
+    }
+
+    /// The welcome screen's bar is `File` and `Help` and nothing else — every other menu is made
+    /// of verbs that act on a document, and there is none.
+    #[test]
+    fn the_start_screen_keeps_only_file_and_help() {
+        let kept: Vec<&str> = MENUS
+            .iter()
+            .filter(|menu| menu_has_items(menu, Surface::Welcome))
+            .map(|menu| menu.title)
+            .collect();
+        assert_eq!(kept, vec!["&File", "&Help"]);
+    }
+
+    /// What `File` offers with nothing open: make one of each, find one, leave. Save, Save As and
+    /// the way back to the screen you are already on are gone — `items_for` drops them, and the
+    /// separator that used to sit between Open and Save goes with them.
+    #[test]
+    fn file_offers_only_the_verbs_that_need_no_document() {
+        let items = items_for(menu("&File"), Surface::Welcome);
+        let verbs: Vec<Command> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Verb { command, .. } => Some(*command),
+                Item::Separator => None,
+            })
+            .collect();
+        assert_eq!(
+            verbs,
+            vec![
+                Command::NewSheet,
+                Command::NewText,
+                Command::Open,
+                Command::Exit
+            ]
+        );
+        assert_ne!(items.first(), Some(&Item::Separator));
+        assert_ne!(items.last(), Some(&Item::Separator));
+    }
+
+    /// Nothing that reads or writes a document is offered when there is none. The failure this
+    /// guards is the greying problem in its first form: a Save item on a window with nothing to
+    /// save, which W5b's own history says reads as a shell that has not noticed where it is.
+    #[test]
+    fn no_verb_that_needs_a_document_is_offered_without_one() {
+        for command in [
+            Command::Save,
+            Command::SaveAs,
+            Command::Undo,
+            Command::Redo,
+            Command::Cut,
+            Command::Copy,
+            Command::Paste,
+            Command::GoTo,
+            Command::Recalculate,
+            Command::ShowSource,
+            Command::CheckDocument,
+            Command::Welcome,
+        ] {
+            assert!(!applies(command, Surface::Welcome), "{command:?}");
+        }
+    }
+
+    /// And the four that do mean something are exactly the three the welcome screen draws as cards
+    /// plus the two a window always has. `welcome.rs` names the cards; this is the menu bar
+    /// agreeing with it.
+    #[test]
+    fn the_start_screens_own_verbs_are_offered() {
+        for command in [
+            Command::NewSheet,
+            Command::NewText,
+            Command::Open,
+            Command::Exit,
+            Command::Shortcuts,
+            Command::About,
+        ] {
+            assert!(applies(command, Surface::Welcome), "{command:?}");
+        }
+    }
+
+    /// The separator cleanup holds on the welcome screen too, where more items are dropped than on
+    /// either document — which is where a leading or doubled separator would show up first.
+    #[test]
+    fn the_start_screen_leaves_no_stray_separator() {
+        for menu in MENUS {
+            let items = items_for(menu, Surface::Welcome);
+            assert_ne!(items.first(), Some(&Item::Separator), "{}", menu.title);
+            assert_ne!(items.last(), Some(&Item::Separator), "{}", menu.title);
+            assert!(
+                !items
+                    .windows(2)
+                    .any(|pair| pair == [Item::Separator, Item::Separator]),
+                "{}",
+                menu.title
+            );
+        }
     }
 }

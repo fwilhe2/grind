@@ -57,6 +57,8 @@ mod surrogate;
 mod text;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod theme;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod welcome;
 
 #[cfg(windows)]
 mod clipboard;
@@ -103,8 +105,12 @@ fn sniff(path: &Path) -> Result<DocumentKind, String> {
 ///
 /// Which document, from where, and — when this invocation is a render rather than a window —
 /// where the frame goes and in which palette.
+///
+/// The kind is an `Option` because **"no document" is an answer**, not a missing one: with no
+/// file and no flag the window shows the welcome screen (`win::welcome`, `crate::welcome`) rather
+/// than guessing which of the suite's two applications was wanted.
 type Opening = (
-    DocumentKind,
+    Option<DocumentKind>,
     Option<std::path::PathBuf>,
     Option<(std::path::PathBuf, bool)>,
 );
@@ -126,11 +132,13 @@ fn resolve(command: Command) -> Result<Opening, String> {
         Some(file) => {
             let found = sniff(file)?;
             let kind = args::reconcile(kind, found, &file.display().to_string())?;
-            Ok((kind, path, render))
+            Ok((Some(kind), path, render))
         }
-        // Nothing to read, so the flag is the only opinion there is. A spreadsheet by default,
-        // matching `grind-tui`.
-        None => Ok((kind.unwrap_or(DocumentKind::Spreadsheet), None, render)),
+        // Nothing to read, so the flag is the only opinion there is — and when there is no flag
+        // either, **nobody has said**, which is the welcome screen rather than a spreadsheet. This
+        // used to default to one, and that is a binary holding two applications picking one of
+        // them on the user's behalf every time it is launched from a Start menu tile.
+        None => Ok((kind, None, render)),
     }
 }
 
@@ -269,13 +277,18 @@ fn main() -> std::process::ExitCode {
                 ExitCode::FAILURE
             }
             Ok((kind, path, _)) => {
-                let what = path
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "a new document".to_string());
                 eprintln!(
-                    "grind-win32 runs on Windows only. Here it would open {what} as a {}.",
-                    args::describe(kind)
+                    "grind-win32 runs on Windows only. Here it would {}.",
+                    match (kind, path.as_ref()) {
+                        (Some(kind), Some(path)) =>
+                            format!("open {} as a {}", path.display(), args::describe(kind)),
+                        (Some(kind), None) => {
+                            format!("start an empty {}", args::describe(kind))
+                        }
+                        // No file and no flag: the welcome screen, which is the whole of this
+                        // change visible from the one platform that cannot draw it.
+                        (None, _) => "show the welcome screen".to_owned(),
+                    }
                 );
                 ExitCode::FAILURE
             }
@@ -326,19 +339,22 @@ mod tests {
         );
     }
 
+    /// The welcome screen, and the only test that says so from here: no file and no flag is
+    /// **no document**, where it used to be a spreadsheet nobody asked for.
     #[test]
-    fn an_empty_invocation_opens_a_spreadsheet() {
-        assert_eq!(
-            resolve(open(None, None)).unwrap(),
-            (DocumentKind::Spreadsheet, None, None)
-        );
+    fn an_empty_invocation_names_no_document() {
+        assert_eq!(resolve(open(None, None)).unwrap(), (None, None, None));
     }
 
     #[test]
     fn the_flag_decides_when_there_is_no_file() {
         assert_eq!(
             resolve(open(None, Some(DocumentKind::Text))).unwrap(),
-            (DocumentKind::Text, None, None)
+            (Some(DocumentKind::Text), None, None)
+        );
+        assert_eq!(
+            resolve(open(None, Some(DocumentKind::Spreadsheet))).unwrap(),
+            (Some(DocumentKind::Spreadsheet), None, None)
         );
     }
 
@@ -358,7 +374,7 @@ mod tests {
         let (kind, ..) = resolve(open(Some(lying.to_str().unwrap()), None)).unwrap();
         assert_eq!(
             kind,
-            DocumentKind::Text,
+            Some(DocumentKind::Text),
             "the name says sheet, the bytes say text"
         );
 

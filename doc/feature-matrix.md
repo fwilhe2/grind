@@ -52,7 +52,9 @@ decision · — not applicable to this client.
 | Reads all three forms (`.ods`/`.fods`, `.odt`/`.fodt`, `.grind`) | ● | ● | ● | ● | ● | ● |
 | Writes all three forms | ● | ● | ● | ● | ● | ● |
 | Flat-first default (`doc/flat-first.md`) | ● | ● | ● | ● | ● | ● |
-| New, empty document | ● | ● | ● | ◐ ᵃ | ○ | ● |
+| New, empty document | ● | ● | ● | ◐ ᵃ | ● | ● |
+| A **welcome screen** with no document open | — | ○ | ○ | ○ | ● | ● |
+| New document of the *other* kind, in place | — ⁱ | ○ | ○ | ○ | ● | ● |
 | Undo / redo — spreadsheet | ◐ ᵇ | ● | — | ● | ● | ● |
 | Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● |
 | Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● |
@@ -67,6 +69,10 @@ decision · — not applicable to this client.
 | Accessibility floor | — ᵍ | announce | announce | terminal | ARIA labels | system caret |
 
 ᵃ `grind-tui --sheet` / `--text` starts an empty document; there is no in-session "new".
+ⁱ `grind sheet new` / `grind text new` make one, which is the same capability; "in place" is a
+question only a window with one document open at a time has. The two GTK shells are one document
+type each (`doc/suite.md`), so the row means nothing there; `grind-tui` has no "new" at all — see
+ᵃ — which makes it the one client where the welcome screens' verbs have no equivalent.
 ᵇ Only with `--session`, which carries `grind_sheet::Action` between invocations.
 ᶜ **Named**: `grind_text::Action` is not serialisable, so there is no text session
 (`doc/cli-parity-text.md`, "History"). Every shell can undo a text edit in process.
@@ -198,8 +204,9 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ |
-| Import CSV / TSV | ● | ○ | ● | ○ | ○ |
-| Export CSV / TSV | ● | ○ | ● | ○ | ○ |
+| Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ |
+| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ |
+| An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● |
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● |
 | Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ |
@@ -217,6 +224,18 @@ perfectly well as a cell reference and naming a range would otherwise make it un
 ᶠ The name box offers them, and the overlay draws each anchor.
 ᵍ `grind sheet view --formulas`. Every GUI shows the *active* cell's formula in a formula bar or
 on a status line; none has a whole-grid "show formulas" mode.
+ʰ **Zero-prompt, and the same behaviour in all four shells** — a file picker and nothing else.
+The delimiter is read out of the file's own content (`csv::Dialect::sniff`), the fields land at
+the **cursor** rather than at A1, and an export writes the selection, or everything the sheet
+uses when the selection is one cell. Which delimiter goes *out* is the name's to say
+(`csv::Dialect::for_name`: `.tsv` is tabs), which is what a save dialog's two filters are for.
+ⁱ A browser download names itself, so the choice that is a save-dialog filter elsewhere is two
+palette rows here: *Export as CSV* and *Export as TSV*.
+ʲ **Named, and it is the same gap in all four**: a window imports with `csv::Import::sniffed` —
+the sniffed delimiter plus `dates`, which is ISO-only and so cannot misread a field — and has no
+dialog for `--text`, `--formulas`, `--locale`, `--trim` or a delimiter the sniffer got wrong.
+`grind sheet import-csv` has all seven (R9), and `doc/not-doing.md`'s "a CSV column typed by
+hand" is the row this sits under.
 
 ## 7. Word processor
 
@@ -328,12 +347,19 @@ of a client's own job is missing.
 4. **Font family and size are a `grind-text-gtk`-and-CLI pair.** No other shell offers either
    control; the terminal has one font at one size by construction, and the browser and Windows
    panes both carry a family they cannot let anybody set.
-5. **No browser client has formula assist.** Autocomplete, signature hints and point mode are
-   `doc/web-shell.md`'s own "largest remaining gap", and the GNOME and Windows shells both have
-   the first two out of one shared `grind_sheet::formula::assist`.
-6. **CSV is CLI-only.** `import-csv` and `export-csv` appear in no shell. This is the widest
-   *row* in the matrix — five ○ against one ● — and the only interchange format the suite has
-   besides ODF.
+5. ~~**No browser client has formula assist.**~~ **Two thirds closed**, after this file was first
+   read: `ui_web/src/sheet/assist.rs` is autocomplete and signature hints over the same
+   `grind_sheet::formula::assist` the GNOME and Windows shells use. **Point mode** — arrow keys
+   building a reference into a half-typed formula — is still absent there and in `grind-win32`,
+   and that file says why for the browser: it edits in exactly one place.
+6. ~~**CSV is CLI-only.**~~ **Closed.** It was the widest *row* in this file — five ○ against one
+   ● — and every client has both directions now. What is left of it is a *narrower* row, and one
+   shape rather than five: no window offers the import's seven options (§6 ʲ). Each imports with
+   `csv::Import::sniffed` and exports at a name whose extension picks the delimiter, which put
+   the two answers a window cannot skip — which delimiter, which range — in the core where four
+   shells share them rather than in four shells that could differ. The decode rule moved with
+   them: `csv::decode` and `csv::NOT_UTF8` are why "this file is not UTF-8, run `iconv`" is one
+   sentence everywhere instead of five.
 7. **Column widths, row heights, hidden tracks, filters and defined names are CLI-and-GNOME
    only.** Every other client honours all five faithfully and can create none of them.
 8. **Charts are CLI-and-GNOME to author, and only the browser joins them in drawing one.**
@@ -410,6 +436,14 @@ tuples, a `&str` of help text, an HTML file, a `match`), and normalising all fiv
 piece of work than the one thing it would buy: this file going stale is visible the first time
 somebody reads it beside a shell, where a broken ratchet is visible immediately. Until then it
 carries a date.
+
+**Amended on 2026-09-12** for the CSV rows (§6, §8 row 6), which every GUI shell now has, and for
+§8 row 5, which the browser shell's formula assist narrowed to point mode after the first
+reading. Amended again the same day for §2's three start rows: the browser and Windows shells
+open on a **welcome screen** rather than on an empty spreadsheet, which turned "New, empty
+document" from a gap into a capability in the web column and added a way to start the *other*
+kind in place. Nothing else was re-derived that day, so everything below still carries the date
+it was read on.
 
 **Read on 2026-09-10**, at `main`. The clients as of then: `grind sheet` complete through phase
 9, `grind text` through S10, the GNOME spreadsheet through M10 plus charts, filters and the

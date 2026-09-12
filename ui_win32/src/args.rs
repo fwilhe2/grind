@@ -14,6 +14,11 @@
 //! file is the other is an error rather than a silent override. Opening a spreadsheet as a
 //! document would show an empty one, which is exactly the confusion `grind_core::kind` exists to
 //! prevent.
+//!
+//! What changed with the welcome screen is the case where **nobody said anything**: no file and no
+//! flag used to mean an empty spreadsheet, which is this binary guessing which of its two
+//! applications was wanted. It now means the welcome screen (`crate::welcome`), and the two flags
+//! are how a caller skips it — `grind-win32 --text` is still an empty document and nothing else.
 
 use std::path::PathBuf;
 
@@ -22,7 +27,9 @@ use grind_core::DocumentKind;
 /// What the process was asked to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
-    /// Open a window. `path` is `None` for an empty document of `kind`'s type.
+    /// Open a window. `path` is `None` for an empty document of `kind`'s type, and `kind` is
+    /// `None` when nobody named one — the welcome screen, which is what a window with no document
+    /// shows.
     Open {
         kind: Option<DocumentKind>,
         path: Option<PathBuf>,
@@ -49,10 +56,11 @@ pub enum Command {
 pub const USAGE: &str = "usage: grind-win32 [--sheet|--text] [file] [--render-to <bmp> [--dark]]
 
 One window, both document types. Which one opens is read out of the file, not guessed
-from its name; with no file, --sheet (the default) or --text says which to start empty.
+from its name; with no file and no flag the window shows the welcome screen, where a
+spreadsheet, a text document or an existing file can be chosen.
 
-  --sheet          start an empty spreadsheet
-  --text           start an empty text document
+  --sheet          start an empty spreadsheet, skipping the welcome screen
+  --text           start an empty text document, skipping the welcome screen
   --render-to <f>  draw one frame to a BMP and exit
   --dark           draw that frame in the dark palette
   -h, --help       this text
@@ -176,10 +184,11 @@ mod tests {
         ));
     }
 
+    /// `None` for both, and neither is a default waiting to be filled in: no path is the start
+    /// screen, and no kind is nobody having said which application they wanted. `main.rs`'s
+    /// `resolve` is where the two meet.
     #[test]
-    fn no_arguments_opens_an_empty_spreadsheet() {
-        // `None` rather than `Spreadsheet`: the default is applied after the file is
-        // consulted, so that a file can still decide for itself.
+    fn no_arguments_names_no_document_at_all() {
         assert_eq!(open(&[]), (None, None, None));
     }
 

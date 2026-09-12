@@ -34,6 +34,21 @@ menu conventions to honour, and no reason to pretend otherwise. So:
   is no separate go-to dialog and no outline dialog — `doc/text-shell.md` named both as this
   shell's next candidates, and one box answered both.
 
+**A page with no document open shows the choice, not a spreadsheet.** This shell used to load
+straight into an empty grid, on the reasoning that a page has to show *something* and the grid is
+what it was first. One bundle holds two applications, so that is a guess made before anybody has
+been asked, and it is wrong half the time. `Mode::Welcome` is the third mode — new spreadsheet,
+new text document, or open one that exists, as three cards — and it is a *mode* rather than a
+fourth surface like the code view, because it is the absence of a document rather than another
+way of looking at one: no tool row applies, Save and the history buttons leave the bar with
+nothing to act on, and Ctrl+K offers the same three verbs and nothing else (`command::WELCOME`).
+The cards are ordinary `<button>`s naming command ids, so each is one row of the palette and one
+implementation; `doc.new-sheet` and `doc.new-text` are in both document tables too, which is how a
+page that has opened a spreadsheet can start a text document without opening a file that already
+is one — something this shell could not do at all before. `doc.welcome` goes back, and
+`index.html` now *starts* in this state rather than in the grid's, so nothing flashes a grid
+while the wasm module loads.
+
 Everything else follows from being a page rather than a window: a file **dropped** on it opens,
 the **clipboard** is the browser's own (the `copy`/`cut`/`paste` events, which need no
 permission — the palette's own copy and paste commands use `navigator.clipboard` and say which
@@ -45,6 +60,7 @@ because a page has no icon theme to ask.
 
 | | The grid | The document |
 |---|---|---|
+| Start | the welcome pane, with no document open: **New spreadsheet**, **New text document**, **Open a document…**, and the same three in Ctrl+K. Either card is reachable from an open document too (`doc.new-sheet` / `doc.new-text`), and `doc.welcome` goes back | the same pane, the same three |
 | Open, save | File API in, download out — no path anywhere (rule 5); also drag-and-drop, and `?doc=<url>` | the same |
 | Draw | one element per visible cell, from `App::get_viewport` | one `<div>` per **laid-out line**, from `App::layout_block` |
 | Select | click, Shift+click, **drag**, Shift+arrow, Ctrl+A | caret, Shift+arrow, Shift+click, **drag**, Ctrl+A |
@@ -54,6 +70,7 @@ because a page has no icon theme to ask.
 | The document's own layout | column widths, row heights, hidden and filtered rows, hidden columns — and now Ctrl+K → *Hide*/*Unhide row(s)/column(s)*, over `App::set_row_hidden`/`set_col_hidden` on the selection's own span, the same call the CLI's `sheet hide`/`--unhide` makes | the six heading faces, `Title` and `Subtitle`, list indents, **runs drawn as the document formatted them** — bold, italic, underline, strike, colour, highlight, links |
 | The autofilter (§9.4) | Ctrl+Shift+L / Ctrl+K → *Filter rows* sets the range over the selection or clears it, a dropdown button drawn on each field of the range's own heading row, and its popover — `ui_web/src/sheet/filter_ui.rs`'s `field_values`, over the same viewport the grid draws from — lists the column's distinct values with a checkbox each, so unticking one and pressing Apply writes `App::set_filter`'s `keep` the way `ui_sheet_gtk`'s own dropdown does | — |
 | Format as table | Ctrl+K → *Format as table* — the filter above plus alternating row shading, in one `App::format_table` undo step, over the selection with no dialog: its first row is the heading and the name auto-generates, the same zero-prompt shape `sheet.filter` already has. Ctrl+K → *Format as table with totals…* is the same composite having asked which aggregate the totals row carries — a `window.prompt` over `TotalsFunction::ids()`, and a second command rather than a prompt on the first so the plain one stays zero-prompt | — |
+| CSV | Ctrl+K → *Import CSV…* raises the same file input the open verb does, with a different `accept` (`Pick` is which of the two a `change` event is about); the fields land at the **cursor**, with the delimiter read out of the file's own content. Out is two rows rather than one — *Export as CSV* and *Export as TSV* — because a download names itself, so the choice a save dialog carries as two filters has to be made before the file exists (`csv::Dialect::for_name` still reads it back off the name) | — |
 | Pictures | — | decoded and drawn, as a `data:` URL |
 | Charts | **drawn as SVG** — bar, line and pie, scaled against `grind_sheet::axis_ticks` so the axis is the one the GTK shell draws | — |
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
@@ -95,7 +112,10 @@ popover over its distinct values, the same shape `ui_sheet_gtk`'s own dropdown h
 the two gaps this line used to name.
 *Format as table* is built too, and is static styling applied once rather than a live rule, so
 it is not the conditional-formatting gap the next sentence names. No conditional formatting
-UI. No find/replace. No freeze panes, no zoom. A chart is a picture:
+UI. **CSV is built both ways** and carries the same named gap every other window does: no
+dialog for an import's seven options, so a file that needs `--text`, a locale or a delimiter
+the sniffer got wrong is `grind sheet import-csv`'s (R9). No find/replace. No freeze panes, no
+zoom. A chart is a picture:
 it cannot be created, edited, moved or recoloured from this shell, which the GTK window can do
 and `grind sheet chart-*` can do everywhere.
 
@@ -140,6 +160,20 @@ between two characters is lost (`ponytail` in `ui_web/src/text/mod.rs`). The col
 `grind_core::style::PALETTE` and not an arbitrary hex — a palette is a default a shell offers
 and never a limit, so a colour a *file* already had is drawn as it is and only a *new* colour
 is restricted to the table.
+
+**The welcome pane has no recent-documents list, and cannot have the usual one.** A page is
+handed a `File` by a picker and never a path, so there is nothing to remember that could be
+re-opened — the File System Access API's handles are the browser feature that would change that,
+and they are neither universal nor free (a stored handle needs permission again on the next
+visit). What this shell has instead is `?doc=<url>`, which is a link and therefore a bookmark.
+**Starting a new document replaces the one that pane is holding**, in the same tab, and asks
+first when there is anything to lose — `window.confirm`, over the same `can_undo` approximation
+`beforeunload` already uses, and asked of the pane being *replaced* rather than the one on
+screen. The three native shells offer Save / Don't Save / Cancel there; a page gets two buttons,
+because `confirm` is the only modal a page has without building one. A runtime that will not ask
+at all — a sandboxed frame without `allow-modals`, and every headless test harness — goes ahead:
+the `confirm` helper tells "answered no" from "did not ask" through `Reflect` rather than through
+the typed binding, which coerces the second into the first.
 
 ## How to see it
 

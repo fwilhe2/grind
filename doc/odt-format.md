@@ -329,13 +329,22 @@ either, so writing anything else would only be a lie about what a reader will se
 
 ### A Writer document cannot be empty
 
-The degenerate document — `grind text new` and nothing else — comes back holding **one empty
+The degenerate document — an `office:text` with nothing in it — comes back holding **one empty
 paragraph**. Writer's model has no body without a paragraph in it.
 
 Loop C allows for exactly that and nothing more, and
 `a_document_with_no_blocks_comes_back_holding_one` pins the fact, so the allowance goes red if
 LibreOffice ever stops doing it. An allowance that nothing checks is indistinguishable from a
 bug.
+
+**This suite now says the same thing about a *new* document, and it did not always.**
+`grind_text::Document::default()` — what `grind text new` writes and what every shell offers as
+an empty document — used to have **zero** blocks, and that made it a document nobody could type
+into: a caret lives *in* a block (`loc.rs`), so `p1` named nothing and the first keystroke failed
+with *no block p1*. The oracle had been giving the answer since this section was written. A new
+document is one empty paragraph now, and `Document::empty()` is the separate constructor the
+readers use, since a document read from a file has exactly the blocks the file has — including
+none, which is still the case this section is about and still what the test above writes.
 
 ### What Writer does with a table — VERIFIED
 

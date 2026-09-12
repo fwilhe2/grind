@@ -292,7 +292,9 @@ mod tests {
     use crate::model::{BlockId, BlockKind};
 
     fn empty() -> Document {
-        Document::new()
+        // The *empty* one: these tests append exactly the blocks they mean to check, and a
+        // new document's own paragraph would shift every index by one.
+        Document::empty()
     }
 
     fn push(doc: &mut Document, kind: BlockKind, runs: Vec<Run>) -> usize {

@@ -298,6 +298,30 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
 
 (async () => {
   await frame();
+
+  // The welcome pane: what a page with no document shows, which is what this one has
+  // just loaded as. Everything below needs a document, so the first thing done here is
+  // the first thing a reader does — pick one of the three cards.
+  check("the page opens on the welcome pane", byId("welcome").hidden, false);
+  check("with no grid behind it", byId("surface").hidden, true);
+  check("and no document pane either", byId("page").hidden, true);
+  check("the formula bar is not there yet", byId("formula-bar").hidden, true);
+  check("nor is Save, with nothing to save", byId("save").hidden, true);
+  check("it offers three ways to get a document",
+        document.querySelectorAll("#welcome .welcome-card").length, 3);
+
+  // The palette over it offers those three and nothing that needs a document.
+  palette("k", { ctrlKey: true });
+  check("the palette offers the three start verbs", paletteRows().length, 3);
+  check("and nothing that would need a document",
+        paletteRows().some((row) => row.startsWith("Bold") || row.startsWith("Recalculate")), false);
+  palette("Escape");
+
+  await press_button("welcome-sheet");
+  check("the first card opens a spreadsheet", byId("surface").hidden, false);
+  check("and puts the welcome pane away", byId("welcome").hidden, true);
+  check("the formula bar comes with it", byId("formula-bar").hidden, false);
+
   check("the grid is drawn from the core", document.querySelectorAll("td.cell").length > 0, true);
   check("the address follows the selection", byId("address").value, "A1");
 
@@ -672,6 +696,31 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   dom.window.dispatchEvent(new dom.window.Event("resize"));
   await frame();
   check("a resize repaints and keeps the message", byId("message").textContent, message);
+
+  // Starting a new document from a pane that already has one, and going back to the
+  // welcome pane — the two halves of "the choice is reachable, not only initial".
+  await command("New spreadsheet");
+  check("a new spreadsheet replaces the document", byId("surface").hidden, false);
+  check("and it is empty", document.querySelectorAll("td.cell.filled").length, 0);
+  check("with nothing to undo across the boundary", byId("undo").disabled, true);
+  check("named after its kind", byId("name").textContent, "untitled.fods");
+
+  await command("New text document");
+  check("and a new text document replaces that", byId("page").hidden, false);
+  check("with the grid away", byId("surface").hidden, true);
+  check("named after its own kind", byId("name").textContent, "untitled.fodt");
+
+  // A new document is one empty paragraph rather than zero blocks, because a caret lives *in*
+  // a block — with none, the first keystroke fails with `no block p1`, which is what it used
+  // to do in every shell.
+  check("a new document has a paragraph to type into", blocks().length, 1);
+  typeInDoc("hi");
+  await frame();
+  check("and typing into it reaches the core", blocks(), ["hi"]);
+
+  await command("Welcome screen");
+  check("the welcome pane is reachable again", byId("welcome").hidden, false);
+  check("with the document pane away", byId("page").hidden, true);
 
   console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);
   process.exit(failures === 0 ? 0 : 1);

@@ -24,41 +24,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <header class="bar app">
       <span class="brand" aria-hidden="true">grind</span>
       <button id="open" type="button" class="text">Open…</button>
-      <button id="save" type="button" class="text">Save</button>
-      <span class="rule"></span>
-      <button id="undo" type="button" class="icon" title="Undo (Ctrl+Z)" disabled>
+      <button id="save" type="button" class="text" hidden>Save</button>
+      <!-- The separator between the file verbs and the history ones. It carries an id
+           because it has to go with them: on the welcome pane there is nothing on
+           either side of it, and a rule with one neighbour is a loose mark. -->
+      <span id="verb-rule" class="rule" hidden></span>
+      <button id="undo" type="button" class="icon" title="Undo (Ctrl+Z)" disabled hidden>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M6 4 2.5 7.5 6 11" />
           <path d="M2.5 7.5H9a4 4 0 0 1 0 8H6" />
         </svg>
         <span class="sr">Undo</span>
       </button>
-      <button id="redo" type="button" class="icon" title="Redo (Ctrl+Shift+Z)" disabled>
+      <button id="redo" type="button" class="icon" title="Redo (Ctrl+Shift+Z)" disabled hidden>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M10 4 13.5 7.5 10 11" />
           <path d="M13.5 7.5H7a4 4 0 0 0 0 8h3" />
         </svg>
         <span class="sr">Redo</span>
       </button>
-      <button id="recalc" type="button" class="text" title="Recalculate (F9)">Recalc</button>
+      <button id="recalc" type="button" class="text" title="Recalculate (F9)" hidden>Recalc</button>
       <span class="gap"></span>
       <span id="name" class="name"></span>
       <button id="palette-open" type="button" class="text keyed">
         Commands<kbd>Ctrl K</kbd>
       </button>
       <!-- Hidden because the toolbar button is the affordance; the picker is the
-           browser's own, and the only way a page may read a file. -->
-      <input
-        id="file-input"
-        type="file"
-        accept=".fods,.ods,.fodt,.odt,.xml,.grind"
-        hidden
-      />
+           browser's own, and the only way a page may read a file. One input for both
+           things a file can be here — a document, or a CSV to import — with `accept`
+           set in Rust each time it is raised (`DOCUMENT_TYPES` / `CSV_TYPES`), so the
+           two lists are not half in this file. -->
+      <input id="file-input" type="file" hidden />
     </header>
 
     <!-- One tool row, two contents: whichever document is open shows its own. -->
-    <div id="tools" class="bar tools">
-      <div id="sheet-tools" class="tool-group">
+    <div id="tools" class="bar tools" hidden>
+      <div id="sheet-tools" class="tool-group" hidden>
         <button id="s-bold" type="button" class="icon toggle" title="Bold (Ctrl+B)">
           <span class="glyph bold">B</span><span class="sr">Bold</span>
         </button>
@@ -182,7 +183,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
 
-    <div id="formula-bar" class="bar formula-bar">
+    <div id="formula-bar" class="bar formula-bar" hidden>
       <!-- An input, not a label: typing an address here goes there, which is the
            one navigation a spreadsheet cannot do without. -->
       <input
@@ -210,7 +211,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- tabindex, because a div holds no keyboard otherwise and every key this
          shell claims arrives here. -->
-    <main id="surface" class="surface" tabindex="0">
+    <main id="surface" class="surface" tabindex="0" hidden>
       <table class="grid">
         <colgroup id="cols"></colgroup>
         <thead>
@@ -246,9 +247,44 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     -->
     <main id="problems" class="problems" tabindex="0" hidden></main>
 
+    <!--
+      The welcome pane: what the page shows with **no document open**, which is what it shows
+      when it is first loaded. The one surface here that is real markup rather than something
+      the shell fills in per frame — there is no core behind it to read a viewport from.
+
+      Every button names a command id, exactly like the toolbar's (wire_toolbar's BUTTONS),
+      so a card and a palette row run the one implementation.
+    -->
+    <main id="welcome" class="welcome" tabindex="-1">
+      <div class="welcome-inner">
+        <h1 class="welcome-title">grind</h1>
+        <p class="welcome-sub">An ODF-native office suite</p>
+        <div class="welcome-cards">
+          <button id="welcome-sheet" type="button" class="welcome-card">
+            <span class="welcome-card-title">New spreadsheet</span>
+            <span class="welcome-card-detail">An empty sheet of cells — .fods</span>
+          </button>
+          <button id="welcome-text" type="button" class="welcome-card">
+            <span class="welcome-card-title">New text document</span>
+            <span class="welcome-card-detail">An empty page to write on — .fodt</span>
+          </button>
+          <button id="welcome-open" type="button" class="welcome-card">
+            <span class="welcome-card-title">Open a document…</span>
+            <span class="welcome-card-detail">
+              A spreadsheet, a text document or a .grind projection
+            </span>
+          </button>
+        </div>
+        <p class="welcome-hint">
+          Or drop a file anywhere on this page. Nothing you open is uploaded: it is read,
+          edited and saved in this tab.
+        </p>
+      </div>
+    </main>
+
     <footer class="bar status">
-      <nav id="tabs" aria-label="Sheets"></nav>
-      <button id="sheet-add" type="button" class="icon tab-add" title="Add a sheet">
+      <nav id="tabs" aria-label="Sheets" hidden></nav>
+      <button id="sheet-add" type="button" class="icon tab-add" title="Add a sheet" hidden>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
         <span class="sr">Add a sheet</span>
       </button>

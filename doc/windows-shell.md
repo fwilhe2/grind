@@ -496,6 +496,43 @@ ignores the brush it is handed, a `LISTBOX` draws its own selection bar in the s
 the menu bar and the message boxes are Windows' own. Those are four small light rectangles in a
 dark window rather than the whole window, which is the trade this milestone makes.
 
+### 11. A window with no document shows the **choice**, not a spreadsheet — *decided in W11*
+
+Until W11, `grind-win32` with no file opened an empty spreadsheet, and `--text` was the only way
+to say otherwise. Decision 1 is what makes that wrong: **one binary, both document types**. A
+binary that holds two applications and picks one of them before being asked is wrong half the
+time, and it is wrong in the way that costs most — a person who launched it from a Start menu
+tile, with nothing to say which of the two they meant, gets a grid and has to work out that File ▸
+Open is not what they wanted either.
+
+So a window with nothing to show shows the *choice*: **New Spreadsheet**, **New Text Document**,
+**Open a Document…**, as three cards. `welcome.rs` is the pane, and the three things about it
+worth writing down:
+
+- **A pane, not a dialog.** `dialog::choose` was the cheap answer and the wrong one. A modal in
+  front of an empty grid is still a window that has already decided, and cancelling it leaves
+  that decision behind. `Pane` is this shell's existing shape — one window, one pane, decided by
+  what was opened — and `Pane::Welcome` extends it to "nothing was opened" with no new machinery:
+  every handler that belongs to one document type already asks `with_sheet`/`with_text` and
+  already gets `None` for the other.
+- **Every card is a `Command`.** Not a private verb — the card runs the menu item. That is
+  decision 4's rule holding at the one surface that could most easily have broken it, and
+  `welcome.rs`'s own test asserts each choice is in a menu and that the accelerator printed on the
+  card is the one the menu bar carries.
+- **The menu bar answers a `Surface`, not a `DocumentKind`.** W5b's `applies_to` asked which
+  document type a verb belonged to; with no document open that question has no answer, and
+  guessing one is the guess this whole decision removes. `menu::Surface` is `Welcome` or
+  `Document(kind)`, and over the welcome pane the bar is **File and Help** — Save, Undo, Go To
+  and the rest are omitted by the same rule that already omits `&Sheet` over a text document.
+
+Two verbs came with it, and both were owed. `Command::New` used to mean "another document of the
+kind already open", with a comment saying a New Spreadsheet / New Document *pair* was a menu
+question left open; it is now that pair (Ctrl+N and Ctrl+Shift+N). And `File ▸ Welcome Screen`
+goes back, because a welcome screen you can only ever see once is a splash screen.
+
+`--sheet` and `--text` still skip it, which is what keeps `grind-win32 --text` meaning exactly
+what it meant; `--render-to` with no file draws it, which is how it is looked at without Windows.
+
 ## The crate
 
 A `*` marks what W0 through W3 have built; everything else is the plan.
@@ -561,6 +598,9 @@ ui_win32/
                           form, over a modal `dialog::choose` rather than a drawn pane (W6)
     problems.rs       *   the "Check Document" list (D6) — every `App::lint` finding, worst
                           first, the same way (W6)
+    welcome.rs       [~]* W11: the welcome screen — the three choices and what each is called,
+                          where the cards go, which one a point is in and which one a key moves
+                          to, all portable; only putting pixels down is the [W] half
 ```
 
 `sheet/draw.rs` came out `[~]` rather than `[W]`, and that was worth the split: "a number is
@@ -614,6 +654,8 @@ Measured rather than argued, and measurable from Linux: compiling both spellings
 | **W9** | **Formula literacy, and the chrome that carries it** — *done* | `sheet/assist.rs` (portable): completion offers, the signature of the call the caret is in, and the band that shows either; `grind_sheet::formula::assist`, which is where the pure half of that came from; the friendly formula bar, the function list and Explain Formula; and a visual pass over every band this window draws | **Met.** Typing `=SU` offers `SUBSTITUTE SUM SUMIF` with the chosen one's summary beside them, Tab takes one, and `=SUM(` shows `Sum(Number…)` with the argument being typed in the accent; the formula bar reads `Sum(Number: B2:B7)` where the document stores `=SUM([.B2:.B7])`; Data ▸ Explain Formula unfolds `=ROUND(PMT(…);2)` into `Round(Value: Payment(Rate: …))`; Data ▸ Function List lists all 110 with their plain-English names and writes the call it is asked for. 197 tests on Linux. `--render-to` still byte-identical across two runs, on **both** panes. One bug found by *running* it — see below |
 
 | **W10** | **The Fluent pass** — *done* | `theme.rs` rebuilt on Fluent 2's tokens (three grounds, a type ramp, a spacing ramp, the accent read from the system and tinted until it reads); every band in both panes re-measured onto that; the notice bar and the assist band as inset cards; the text pane's page; a format strip of real buttons with hover and press; `automatic_ink`; the shell font asked for rather than assumed; the modals themed; `--dark` so the dark palette can be looked at at all | **Met.** Every capability is exactly what W9 left; 212 tests on Linux, of which the load-bearing new ones are the accent sweep (every hue at every lightness, both palettes, WCAG 3.0 on the page), `every_ink_reads_on_the_ground_it_is_drawn_on` over six palettes including the awkward accents, and `automatic_ink_reads_on_whatever_the_document_chose`. `--render-to` is still byte-identical across two runs on both panes, and `artifacts.yml` now also renders **dark** and asserts it is a different frame — which is what makes the dark table something other than untested code. Two bugs found by *running* it, and one of them was a bug this shell had shipped since W1 — see below |
+
+| **W11** | **The welcome screen** — *done* | `welcome.rs` (portable: the cards, the layout, the hit test, the keyboard) plus its GDI half; `Pane::Welcome`, so a window with no document is neither application rather than the spreadsheet one; `menu::Surface`, which is what the menu bar asks about now; `Command::NewSheet`/`NewText` replacing the kind-locked `New`, and `Command::Welcome` to go back; `main.rs`'s `resolve` answering `None` for "nobody said" | **Met.** `grind-win32` with no arguments opens on three cards — New Spreadsheet, New Text Document, Open a Document… — navigable by arrows, Tab and Enter as well as the pointer, with the menu bar reduced to File and Help; clicking a card turns the window into that document and the bar back into the full one; File ▸ Welcome Screen returns, asking about unsaved work on the way. `--sheet` and `--text` still skip it. 228 tests on Linux, and `--render-to` with no file draws the pane in both palettes, which is how it was looked at at all — the first frame had the bug below in it |
 
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
@@ -724,7 +766,17 @@ range), a dropdown button is drawn on every cell of the filter's heading row
 (`GridGeom::filter_button`, `ui_sheet_gtk`'s own mirrored), and clicking one opens
 `dialog::choose_multi` — a multi-select `LISTBOX` rather than an owner-drawn checkbox list, so a
 plain click toggles a row with no `WM_DRAWITEM` pair to get there — to pick which of the
-column's values stay, with *Clear* as a third button dropping the condition entirely. Data ▸
+column's values stay, with *Clear* as a third button dropping the condition entirely. **CSV is built, both directions**, and it is where this shell's File menu stops being universal:
+*Import CSV…* and *Export CSV…* sit in their own section there, and `applies_to` leaves both out
+over a text document, so that pane's File menu is the four file verbs and Exit. An import is a
+file dialog and nothing else — `csv::Import::sniffed`, the fields landing at the **cursor**, one
+undo step, and the notice bar saying how many cells and where (`notice::imported`); an export is
+a save dialog whose two filters are the whole of the delimiter question, since the *name* decides
+it (`csv::Dialect::for_name`), and it writes a file without touching the document, which is what
+its own notice says instead of naming a key (`notice::exported` is this file's one sentence with
+no way out in it, because there is nothing to undo). Both dialogs are opened with no borrow held
+across them, decision 7 as usual. The seven options `grind sheet import-csv` carries are a named
+gap here as in every window. Data ▸
 *Format as Table* still has no dialog of its own: fixed defaults (a header, no totals row),
 the same zero-prompt shape `sheet.filter` has in the web shell, but now applies a *real*
 filter rather than an empty one with buttons and no conditions. Beside it, *Format as Table
@@ -899,6 +951,18 @@ composition positioning is text-only. What that one message does **not** buy: no
 composition string drawn in the pane's own ink — the IME's default floating box does that
 instead — and nothing has been driven under a real IME, since Wine ships none to test against;
 `artifacts.yml`'s `windows-latest` runner is the first place this can be watched working for real.
+
+**The welcome screen has no recent-files list, and that is a decision rather than an omission.**
+LibreOffice's Start Center leads with one, and it is the obvious fourth thing to put under the
+three cards. It is also a *store* — a list of paths this application would have to write
+somewhere outside any document, read back at startup, prune when a file has moved, and answer
+privacy questions about — and this shell has no such store at all today (no settings, no session,
+no registry key of its own but the theme it reads). `ui_sheet_gtk` gets recent files for nothing
+because `gtk::RecentManager` is the desktop's list rather than the application's; Windows has an
+equivalent in `SHAddToRecentDocs` and the Jump List, and reaching it is the shape the answer
+should take when it is built — the system's list, not a file of our own. Until then the three
+cards and File ▸ Open are the whole of it. Templates are the same question one step further out
+and are gated with the rest of them in `doc/not-doing.md`.
 
 ## Verification
 
@@ -1356,6 +1420,19 @@ grey fill.
 Worth recording for what it says about the render loop rather than about the bug: this had been
 in every frame drawn since W1 and in none of them was it visible, because every frame was light.
 A palette that cannot be rendered is a palette nobody is looking at.
+
+### W11 found one, in the first frame it drew
+
+**Two of the three lines on the welcome screen sat in pale rectangles the width of their own
+text.** `sheet::draw::draw_text` sets the ink and nothing else; whether GDI fills a box behind a
+string is `SetBkMode`, whose default is `OPAQUE`, and both existing panes happen to set it
+`TRANSPARENT` once per frame at the top of their own painter. A third painter that does not is a
+third painter drawing every label on a ground of `SetBkColor`'s last value — which is white,
+which is why the *title* looked fine on a light backdrop and the subtitle and the hint did not.
+
+One line fixes it, and the reason it is recorded here is the reason `doc/windows-shell.md` keeps
+this list at all: it is invisible in review. Nothing in `welcome.rs` is wrong on its own, the
+missing call is in a file that does not exist, and the only way to see it is to look at a frame.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

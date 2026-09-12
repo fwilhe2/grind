@@ -30,7 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
-use grind_sheet::{App, CellValue, Filter, Form, Pos, RecalcMode, a1};
+use grind_sheet::{App, CellValue, Filter, Form, Pos, RecalcMode, a1, csv};
 use wasm_bindgen::prelude::*;
 use web_sys::{
     Document, Element, Event, HtmlButtonElement, HtmlElement, HtmlInputElement, KeyboardEvent,
@@ -1231,6 +1231,60 @@ impl Ui {
         match answer.parse::<grind_sheet::TotalsFunction>() {
             Ok(function) => self.format_table(Some(function)),
             Err(say) => self.set_message(say),
+        }
+    }
+
+    // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
+
+    /// A delimited file, read in **at the cursor**, in one undo step.
+    ///
+    /// The shell hands over the text because only it can reach a file (rule 5 — a browser has
+    /// no filesystem, and `App::import_csv` takes a `&str` rather than a path for exactly that
+    /// reason); what is this pane's is where the fields land and what they are read as, and
+    /// both come from what it already holds. `csv::Import::sniffed` is the same answer every
+    /// other window gives, so one file imports the same way in all four.
+    pub fn import_csv(&self, text: &str) {
+        let sheet = self.sheet.get();
+        let at = self.selection.get().active;
+        let options = csv::Import::sniffed(text);
+        match self
+            .app
+            .import_csv(sheet, at, text, &options, RecalcMode::Document)
+        {
+            Ok(outcome) => self.set_message(match outcome.cells {
+                1 => format!("1 cell imported at {}", a1::format(None, at)),
+                cells => format!("{cells} cells imported at {}", a1::format(None, at)),
+            }),
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// The selection as delimited text — or everything the sheet uses, when the selection is
+    /// one cell and therefore a cursor rather than a range (`format_table`'s own reading).
+    ///
+    /// `None` is "there is nothing to write", already said on the message line: a download of
+    /// an empty file is a worse answer than a sentence.
+    pub fn export_csv(&self, dialect: csv::Dialect) -> Option<String> {
+        let sheet = self.sheet.get();
+        let (mut start, mut end) = self.selection.get().rect();
+        if start == end {
+            let (rows, cols) = self.app.used_extent(sheet).ok()?;
+            if rows == 0 || cols == 0 {
+                self.set_message("There is nothing in this sheet to export".to_owned());
+                return None;
+            }
+            (start, end) = (Pos::new(0, 0), Pos::new(rows - 1, cols - 1));
+        }
+        let options = csv::Export {
+            dialect,
+            ..csv::Export::default()
+        };
+        match self.app.export_csv(sheet, start, end, &options) {
+            Ok(text) => Some(text),
+            Err(error) => {
+                self.set_message(error.to_string());
+                None
+            }
         }
     }
 

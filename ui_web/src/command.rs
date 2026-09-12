@@ -65,10 +65,27 @@ impl Entry {
 pub const SHEET: &[Command] = &[
     // --- what a document does ---
     cmd("doc.open", "Open document…", "Document", "Ctrl+O", true),
+    // The welcome pane's two cards, reachable while a document is open too: a page that had
+    // opened a spreadsheet used to have no way at all to start a text document.
+    cmd("doc.new-sheet", "New spreadsheet", "Document", "", false),
+    cmd("doc.new-text", "New text document", "Document", "", false),
+    // Back to the pane the page opened on. A welcome screen you can never return to is a
+    // splash screen — `ui_win32`'s File ▸ Welcome Screen is the same row in that shell's
+    // growable surface.
+    cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     cmd("sheet.recalc", "Recalculate", "Document", "F9", true),
+    // CSV, the one non-ODF format this suite reads and writes (`doc/not-doing.md` §2).
+    // **Three rows rather than two**: the delimiter a window writes comes from the name it is
+    // saved under (`csv::Dialect::for_name`), and a download names itself — so where the other
+    // shells offer two filters in a save dialog, this one offers two verbs, which is the same
+    // choice in the surface this shell has. Importing needs no such row: the delimiter is read
+    // out of the file's own content.
+    cmd("doc.import-csv", "Import CSV…", "Document", "", false),
+    cmd("doc.export-csv", "Export as CSV", "Document", "", false),
+    cmd("doc.export-tsv", "Export as TSV", "Document", "", false),
     // --- the selection ---
     cmd("edit.copy", "Copy", "Edit", "Ctrl+C", true),
     cmd("edit.cut", "Cut", "Edit", "Ctrl+X", false),
@@ -167,6 +184,9 @@ pub const SHEET: &[Command] = &[
 /// The word processor's verbs.
 pub const TEXT: &[Command] = &[
     cmd("doc.open", "Open document…", "Document", "Ctrl+O", true),
+    cmd("doc.new-sheet", "New spreadsheet", "Document", "", false),
+    cmd("doc.new-text", "New text document", "Document", "", false),
+    cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
@@ -212,6 +232,18 @@ pub const TEXT: &[Command] = &[
     cmd("view.names", "Show where bookmarks are", "View", "", false),
     cmd("view.source", "Show the source", "View", "", false),
     cmd("view.problems", "Check the document", "View", "", false),
+];
+
+/// The welcome pane's verbs — what Ctrl+K offers when **no document is open**.
+///
+/// Three rows, and they are the three cards the pane already draws. Everything else in this file
+/// acts on a document: offering Bold or Recalculate over nothing would be the palette listing
+/// verbs that cannot run, which is the same mistake `ui_win32`'s menu bar made once and stopped
+/// making (`menu::items_for`).
+pub const WELCOME: &[Command] = &[
+    cmd("doc.new-sheet", "New spreadsheet", "Start", "", true),
+    cmd("doc.new-text", "New text document", "Start", "", true),
+    cmd("doc.open", "Open document…", "Start", "Ctrl+O", true),
 ];
 
 /// `const fn` so the tables above stay readable — a struct literal per row is the same
@@ -327,6 +359,28 @@ mod tests {
         assert!(filter(SHEET, "zzzz").is_empty());
     }
 
+    /// CSV is cells in both directions, so all three rows are the grid's — and each is findable
+    /// by the word somebody would type, which is this shell's whole answer to having no menu
+    /// bar to put them in.
+    #[test]
+    fn the_csv_verbs_are_the_grids_alone_and_findable_by_name() {
+        for id in ["doc.import-csv", "doc.export-csv", "doc.export-tsv"] {
+            assert!(SHEET.iter().any(|command| command.id == id), "{id}");
+            assert!(
+                !TEXT.iter().any(|command| command.id == id),
+                "{id} is offered over a text document, which has no cells"
+            );
+        }
+        let found: Vec<String> = filter(SHEET, "csv").into_iter().map(|e| e.id).collect();
+        assert!(found.iter().any(|id| id == "doc.import-csv"), "{found:?}");
+        assert!(found.iter().any(|id| id == "doc.export-csv"), "{found:?}");
+        assert!(
+            filter(SHEET, "tsv")
+                .iter()
+                .any(|entry| entry.id == "doc.export-tsv")
+        );
+    }
+
     /// The ranking itself is `grind_core::search`'s and tested there; what is this crate's is
     /// the slicing that follows — a hit past the end of the title would panic the palette.
     #[test]
@@ -346,9 +400,33 @@ mod tests {
 
     /// Every id has to be unique, or two rows of the palette run the same thing — and the
     /// pane's own `run` match would silently pick one.
+    /// The welcome pane offers exactly the three things a page with no document can do, and
+    /// every one of them is `Shell::run`'s own id — so a row here and the card in `index.html`
+    /// cannot come to mean two different things.
+    #[test]
+    fn the_welcome_table_is_the_three_ways_to_get_a_document() {
+        let ids: Vec<&str> = WELCOME.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec!["doc.new-sheet", "doc.new-text", "doc.open"]);
+        // All common: with three of them, an empty query showing fewer than all three would be
+        // a list hiding a third of itself for no reason.
+        assert!(WELCOME.iter().all(|c| c.common));
+        assert_eq!(filter(WELCOME, "").len(), WELCOME.len());
+    }
+
+    /// The two New verbs are in both document tables as well, which is what makes "start a text
+    /// document from the spreadsheet" reachable without going back to the welcome pane first.
+    #[test]
+    fn both_panes_can_start_either_kind() {
+        for table in [SHEET, TEXT] {
+            let ids: Vec<&str> = table.iter().map(|c| c.id).collect();
+            assert!(ids.contains(&"doc.new-sheet"), "{ids:?}");
+            assert!(ids.contains(&"doc.new-text"), "{ids:?}");
+        }
+    }
+
     #[test]
     fn no_two_commands_share_an_id() {
-        for table in [SHEET, TEXT] {
+        for table in [SHEET, TEXT, WELCOME] {
             let mut ids: Vec<&str> = table.iter().map(|c| c.id).collect();
             ids.sort_unstable();
             let count = ids.len();

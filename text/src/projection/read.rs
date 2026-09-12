@@ -33,7 +33,9 @@ pub fn read(text: &str) -> Result<Document> {
     if kind != grind_core::DocumentKind::Text {
         return Err(grind_core::Error::UnsupportedKind(Some(kind)));
     }
-    let mut doc = Document::new();
+    // Empty rather than new: every block comes from the projection, including none of them
+    // (see `Document::empty`).
+    let mut doc = Document::empty();
     let mut source = Source::new(text);
     blocks(&mut doc, body.nodes(), 0, None, &mut source)?;
     doc.reindex_bookmarks();

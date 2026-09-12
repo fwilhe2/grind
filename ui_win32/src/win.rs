@@ -118,8 +118,9 @@ use crate::surrogate;
 use crate::text;
 use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
+use crate::welcome;
 use grind_core::DocumentKind;
-use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions};
+use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv};
 use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
@@ -189,20 +190,37 @@ const RENDER_H: i32 = 800;
 enum Pane {
     Sheet(Box<Sheet>),
     Text(Box<Text>),
+    /// **No document at all** — the welcome screen (`crate::welcome`), which is what a window
+    /// opened with no file shows.
+    ///
+    /// A third arm rather than an empty spreadsheet with a banner over it, and that is the whole
+    /// of the decision: a `Pane` says what the window *is*, and a window that has not been told
+    /// which application it is holding is neither of the two. Every handler below that belongs
+    /// to one pane already asks `with_sheet`/`with_text` and gets `None` for the other, so this
+    /// arm cost no arm anywhere those two are the question — which is why a third pane was
+    /// cheaper here than a modal in front of a grid nobody asked for.
+    Welcome(Box<Welcome>),
 }
 
 impl Pane {
     fn sheet_mut(&mut self) -> Option<&mut Sheet> {
         match self {
             Pane::Sheet(sheet) => Some(sheet),
-            Pane::Text(_) => None,
+            _ => None,
         }
     }
 
     fn text_mut(&mut self) -> Option<&mut Text> {
         match self {
             Pane::Text(text) => Some(text),
-            Pane::Sheet(_) => None,
+            _ => None,
+        }
+    }
+
+    fn welcome_mut(&mut self) -> Option<&mut Welcome> {
+        match self {
+            Pane::Welcome(welcome) => Some(welcome),
+            _ => None,
         }
     }
 
@@ -213,6 +231,8 @@ impl Pane {
         match self {
             Pane::Sheet(sheet) => &mut sheet.surrogate,
             Pane::Text(text) => &mut text.surrogate,
+            // The welcome screen takes no text at all, so nothing is ever left half-arrived on it.
+            Pane::Welcome(welcome) => &mut welcome.surrogate,
         }
     }
 
@@ -220,6 +240,7 @@ impl Pane {
         match self {
             Pane::Sheet(sheet) => sheet.theme,
             Pane::Text(text) => text.theme,
+            Pane::Welcome(welcome) => welcome.theme,
         }
     }
 
@@ -231,6 +252,7 @@ impl Pane {
                 sheet.field_brush = None;
             }
             Pane::Text(text) => text.theme = theme,
+            Pane::Welcome(welcome) => welcome.theme = theme,
         }
     }
 
@@ -238,16 +260,31 @@ impl Pane {
         match self {
             Pane::Sheet(sheet) => sheet.path.clone(),
             Pane::Text(text) => text.path.clone(),
+            Pane::Welcome(_) => None,
         }
     }
 
     /// Which document kind this pane is showing, for the Save dialog's filters and suggested
     /// name — `dialog::save_path` needs to know whether to offer `.fods`/`.ods` or
     /// `.fodt`/`.odt`.
-    fn kind(&self) -> DocumentKind {
+    ///
+    /// `None` on the welcome screen, which is not a coy way of saying spreadsheet: there is no
+    /// document, so every caller has to decide what that means rather than be handed a guess.
+    /// Both of them — the Save dialog and the menu bar — answer it by not being reachable there
+    /// at all (`menu::on_welcome`).
+    fn kind(&self) -> Option<DocumentKind> {
         match self {
-            Pane::Sheet(_) => DocumentKind::Spreadsheet,
-            Pane::Text(_) => DocumentKind::Text,
+            Pane::Sheet(_) => Some(DocumentKind::Spreadsheet),
+            Pane::Text(_) => Some(DocumentKind::Text),
+            Pane::Welcome(_) => None,
+        }
+    }
+
+    /// What the menu bar is being built for.
+    fn surface(&self) -> menu::Surface {
+        match self.kind() {
+            Some(kind) => menu::Surface::Document(kind),
+            None => menu::Surface::Welcome,
         }
     }
 
@@ -255,6 +292,9 @@ impl Pane {
         match self {
             Pane::Sheet(sheet) => sheet.dirty = dirty,
             Pane::Text(text) => text.dirty = dirty,
+            // Nothing to be dirty: the welcome screen holds no document, so there is nothing for
+            // the close question to ask about and nothing for a `*` to mark.
+            Pane::Welcome(_) => {}
         }
     }
 
@@ -262,11 +302,15 @@ impl Pane {
         match self {
             Pane::Sheet(sheet) => sheet.dirty,
             Pane::Text(text) => text.dirty,
+            Pane::Welcome(_) => false,
         }
     }
 
     /// What the document is called, for a title bar and for the close question.
     fn document_name(&self) -> String {
+        if matches!(self, Pane::Welcome(_)) {
+            return welcome::TITLE.to_owned();
+        }
         let path = self.path();
         match &path {
             Some(path) => path
@@ -278,6 +322,11 @@ impl Pane {
     }
 
     fn title(&self) -> String {
+        // The welcome screen is the application and not a document in it, so its caption is the
+        // application's name once rather than "Grind — Grind".
+        if matches!(self, Pane::Welcome(_)) {
+            return APP_NAME.to_owned();
+        }
         // A leading `*` for unsaved changes: Windows' own convention, and one that survives being
         // truncated in a taskbar button where a trailing marker would not.
         let mark = match self.dirty() {
@@ -295,12 +344,14 @@ impl Pane {
         let result = match self {
             Pane::Sheet(sheet) => sheet.app.save_file(path).map_err(|e| e.to_string()),
             Pane::Text(text) => text.app.save_file(path).map_err(|e| e.to_string()),
+            Pane::Welcome(_) => Err("There is no document to save yet.".to_owned()),
         };
         match result {
             Ok(()) => {
                 match self {
                     Pane::Sheet(sheet) => sheet.path = Some(path.to_owned()),
                     Pane::Text(text) => text.path = Some(path.to_owned()),
+                    Pane::Welcome(_) => {}
                 }
                 self.set_dirty(false);
                 Ok(())
@@ -316,6 +367,33 @@ const START: Caret = Caret {
     block: 0,
     offset: 0,
 };
+
+/// Everything the **welcome screen** owns, which is almost nothing — it has no document, so there
+/// is no viewport, no selection, no history and nothing to save.
+///
+/// What is left is where the cards are and which one is being pointed at, held for the same
+/// reason the text pane's format strip holds its own two: a press acts on *release*, so it can be
+/// taken back by moving off the card before letting go.
+struct Welcome {
+    theme: Theme,
+    page: welcome::Page,
+    /// Which card the pointer is over, and which one is held down.
+    hover: Option<usize>,
+    pressed: Option<usize>,
+    /// Which card the keyboard is on — always one, because there is nothing else here to focus
+    /// and Enter has to mean something the moment the window opens.
+    focus: usize,
+    /// Unused here, and present because [`Pane::surrogate_mut`] is asked for one whichever pane
+    /// the window is: a supplementary-plane `WM_CHAR` can arrive on any window, and this pane
+    /// drops it rather than being a special case in `typed_char`.
+    surrogate: Option<u16>,
+}
+
+impl Welcome {
+    fn relayout(&mut self, width: f64, height: f64, dpi: u32) {
+        self.page = welcome::Page { width, height, dpi };
+    }
+}
 
 /// Everything the *spreadsheet* pane owns.
 struct Sheet {
@@ -1077,7 +1155,13 @@ impl grind_core::Observer for Changed {
 /// **Which pane comes out is decided by the caller**, from `grind_core::kind` reading the file's
 /// bytes — never from its name, because a spreadsheet does not become a document by being called
 /// one. This function only obeys.
-fn opened(kind: DocumentKind, path: Option<PathBuf>, theme: Theme) -> Result<Pane, String> {
+///
+/// `None` is the welcome screen: nobody named a document, and this is the one place that is
+/// answered rather than guessed at.
+fn opened(kind: Option<DocumentKind>, path: Option<PathBuf>, theme: Theme) -> Result<Pane, String> {
+    let Some(kind) = kind else {
+        return Ok(Pane::Welcome(Box::new(opened_welcome(theme))));
+    };
     match kind {
         DocumentKind::Spreadsheet => Ok(Pane::Sheet(Box::new(opened_sheet(path, theme)?))),
         DocumentKind::Text => Ok(Pane::Text(Box::new(opened_text(path, theme)?))),
@@ -1087,6 +1171,21 @@ fn opened(kind: DocumentKind, path: Option<PathBuf>, theme: Theme) -> Result<Pan
         DocumentKind::Presentation => {
             Err("This is a presentation, and the suite has no application for one.".to_owned())
         }
+    }
+}
+
+/// The welcome screen. Infallible, unlike the other two: there is nothing to read.
+fn opened_welcome(theme: Theme) -> Welcome {
+    Welcome {
+        theme,
+        page: welcome::Page::default(),
+        hover: None,
+        pressed: None,
+        // The first card, so Enter on a freshly opened window makes a spreadsheet — the thing
+        // this shell used to do without asking, now as the *default answer* to a question that
+        // was at least put.
+        focus: 0,
+        surrogate: None,
     }
 }
 
@@ -1185,7 +1284,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
 /// because a screenshot compared against another one must not depend on what the machine
 /// running it has under `Themes\Personalize`.
 pub fn render(
-    kind: DocumentKind,
+    kind: Option<DocumentKind>,
     path: Option<PathBuf>,
     target: &std::path::Path,
     dark: bool,
@@ -1214,6 +1313,13 @@ pub fn render(
             text.relayout(w, h, 96);
             draw_text_frame(dib.dc(), text, false);
         }
+        // `grind-win32 --render-to shot.bmp` with no file draws the welcome screen, which is the
+        // only way to look at it without a Windows machine — the same argument `--dark` was added
+        // under in W10, and the reason that flag exists here too.
+        Pane::Welcome(state) => {
+            state.relayout(w, h, 96);
+            draw_welcome_frame(dib.dc(), state);
+        }
     }
     std::fs::write(target, dib.bmp()).map_err(|error| format!("{}: {error}", target.display()))
 }
@@ -1221,8 +1327,9 @@ pub fn render(
 /// Open a window on a document and pump messages until it closes.
 ///
 /// `path` is `None` for a new, empty document of `kind` — **both kinds**, since W5: one binary,
-/// one window class, and the pane decided by the bytes.
-pub fn run(kind: DocumentKind, path: Option<PathBuf>) -> Result<(), String> {
+/// one window class, and the pane decided by the bytes. `kind` is `None` when nobody named a
+/// document at all, which opens the welcome screen.
+pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), String> {
     // Before *any* window exists, which is the whole requirement: per-monitor v2 cannot be set
     // once a window has been created, and asking for it late fails silently and leaves the
     // process system-DPI-aware — a window that is bitmap-stretched and blurry on a 150% monitor.
@@ -1377,6 +1484,8 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                     match pane {
                         Pane::Sheet(sheet) => sheet.app.set_observer(observer),
                         Pane::Text(text) => text.app.set_observer(observer),
+                        // Nothing to observe: no document, so nothing can change under us.
+                        Pane::Welcome(_) => {}
                     }
                 });
             }
@@ -1636,6 +1745,10 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
 /// the child control sitting on it, and every one of those changes what the frame looks like and
 /// what the title says. Every path that touches the document ends here.
 fn refresh(hwnd: HWND) {
+    if is_welcome(hwnd) {
+        welcome_refresh(hwnd);
+        return;
+    }
     if is_text(hwnd) {
         text_refresh(hwnd);
         return;
@@ -1730,18 +1843,24 @@ fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
     // reads `false` there rather than a second flag nothing ever sets.
-    let (kind, roles_on, names_on, friendly_on) = unsafe {
-        with_pane(hwnd, |pane| match pane {
-            Pane::Sheet(sheet) => (
-                DocumentKind::Spreadsheet,
-                sheet.overlays.roles,
-                sheet.overlays.names,
-                sheet.friendly,
-            ),
-            Pane::Text(text) => (DocumentKind::Text, false, text.show_names, false),
+    let (surface, roles_on, names_on, friendly_on) = unsafe {
+        with_pane(hwnd, |pane| {
+            let surface = pane.surface();
+            match pane {
+                Pane::Sheet(sheet) => (
+                    surface,
+                    sheet.overlays.roles,
+                    sheet.overlays.names,
+                    sheet.friendly,
+                ),
+                Pane::Text(text) => (surface, false, text.show_names, false),
+                // No document, so none of the three checkmarks means anything — and `items_for`
+                // leaves every menu they live in out of the bar anyway.
+                Pane::Welcome(_) => (surface, false, false, false),
+            }
         })
     }
-    .unwrap_or((DocumentKind::Spreadsheet, false, false, false));
+    .unwrap_or((menu::Surface::Welcome, false, false, false));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -1750,13 +1869,13 @@ fn build_menu(hwnd: HWND) {
             // A menu with nothing this pane answers to — `Sheet`/`Data` on the text pane,
             // `Format` on the grid — is left out of the bar entirely rather than added with an
             // empty popup under its title.
-            if !menu::menu_has_items(menu, kind) {
+            if !menu::menu_has_items(menu, surface) {
                 continue;
             }
             let Ok(popup) = CreatePopupMenu() else {
                 continue;
             };
-            for item in menu::items_for(menu, kind) {
+            for item in menu::items_for(menu, surface) {
                 match item {
                     Item::Separator => {
                         let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
@@ -1806,24 +1925,30 @@ fn build_menu(hwnd: HWND) {
 /// and every entry is a real [`Command`] reused from [`menu::MENUS`] rather than a second
 /// vocabulary, so a click here reaches exactly the handler a click on the bar would.
 fn context_menu(hwnd: HWND, lparam: LPARAM) {
-    let commands: &[Command] = match is_text(hwnd) {
-        true => &[
-            Command::Cut,
-            Command::Copy,
-            Command::Paste,
-            Command::Bold,
-            Command::Italic,
-            Command::Underline,
-            Command::Strike,
-            Command::Code,
-            Command::ClearFormatting,
-        ],
-        false => &[
-            Command::Cut,
-            Command::Copy,
-            Command::Paste,
-            Command::ClearCells,
-        ],
+    // The welcome screen's own: the three cards, which is what a right click on a screen made of
+    // three choices can usefully offer. Clipboard verbs would be items over nothing.
+    let commands: &[Command] = if is_welcome(hwnd) {
+        &[Command::NewSheet, Command::NewText, Command::Open]
+    } else {
+        match is_text(hwnd) {
+            true => &[
+                Command::Cut,
+                Command::Copy,
+                Command::Paste,
+                Command::Bold,
+                Command::Italic,
+                Command::Underline,
+                Command::Strike,
+                Command::Code,
+                Command::ClearFormatting,
+            ],
+            false => &[
+                Command::Cut,
+                Command::Copy,
+                Command::Paste,
+                Command::ClearCells,
+            ],
+        }
     };
     // `(-1, -1)` is Windows' own spelling of "the keyboard asked, not the mouse" — Shift+F10 or
     // the Menu key carry no position, so the menu opens over a point of this window's choosing
@@ -2080,6 +2205,10 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
 /// because it arrives on every pixel of travel.
 fn mouse_move(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
+    if is_welcome(hwnd) {
+        welcome_mouse_move(hwnd, x, y);
+        return;
+    }
     if is_text(hwnd) {
         text_mouse_move(hwnd, x, y);
         return;
@@ -2138,6 +2267,9 @@ fn mods() -> keymap::Mods {
 /// One keystroke from the window itself. `false` hands it back to `DefWindowProc`, which is
 /// what leaves Alt+F4 and the system menu working.
 fn key_down(hwnd: HWND, vk: u32) -> bool {
+    if is_welcome(hwnd) {
+        return welcome_key(hwnd, vk);
+    }
     if is_text(hwnd) {
         return text_key(hwnd, vk);
     }
@@ -2408,6 +2540,11 @@ fn position_ime_composition(hwnd: HWND) {
 
 /// A press of the left button: what it selects, and what dragging will extend.
 fn button_down(hwnd: HWND, lparam: LPARAM) {
+    if is_welcome(hwnd) {
+        let (x, y) = point(lparam);
+        welcome_button_down(hwnd, x, y);
+        return;
+    }
     if is_text(hwnd) {
         text_button_down(hwnd, lparam);
         return;
@@ -2510,6 +2647,14 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
 /// answer. The plain `WM_LBUTTONDOWN` has already selected the cell and started a drag; the drag
 /// is cancelled here, because this gesture is not one.
 fn double_click(hwnd: HWND, lparam: LPARAM) {
+    // A double click on a card is the first click's verb, already run on the release in between —
+    // by the time the second arrives the window is showing the document it asked for. Treated as
+    // a plain press so that nothing is lost if the pane is somehow still up.
+    if is_welcome(hwnd) {
+        let (x, y) = point(lparam);
+        welcome_button_down(hwnd, x, y);
+        return;
+    }
     if is_text(hwnd) {
         text_double_click(hwnd, lparam);
         return;
@@ -2532,6 +2677,10 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
 }
 
 fn button_up(hwnd: HWND) {
+    if is_welcome(hwnd) {
+        welcome_button_up(hwnd);
+        return;
+    }
     if is_text(hwnd) {
         // A strip control that was pressed and is still under the pointer is *now* activated —
         // see `text_button_down`. Released before the verb runs, because three of the six open a
@@ -2926,6 +3075,10 @@ fn window_text(hwnd: HWND) -> String {
 /// — a command with no handler fails the build, where a command in no menu fails a test — and it
 /// is why neither of them needs a registry of ids.
 fn do_command(hwnd: HWND, command: Command) {
+    if is_welcome(hwnd) {
+        welcome_command(hwnd, command);
+        return;
+    }
     if is_text(hwnd) {
         text_command(hwnd, command);
         return;
@@ -2940,7 +3093,9 @@ fn do_command(hwnd: HWND, command: Command) {
     }
     commit_edit(hwnd, None);
     match command {
-        Command::New => new_document(hwnd),
+        Command::NewSheet => new_document(hwnd, DocumentKind::Spreadsheet),
+        Command::NewText => new_document(hwnd, DocumentKind::Text),
+        Command::Welcome => welcome_screen(hwnd),
         Command::Open => open_document(hwnd),
         Command::Save => {
             save(hwnd);
@@ -2963,6 +3118,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::Paste => paste(hwnd),
         Command::ClearCells => clear_cells(hwnd),
         Command::GoTo => open_name_box(hwnd),
+        Command::ImportCsv => import_csv(hwnd),
+        Command::ExportCsv => export_csv(hwnd),
         Command::Recalculate => recalculate(hwnd),
         Command::ToggleFilter => toggle_filter(hwnd),
         Command::FormatTable => format_table(hwnd, None),
@@ -3118,7 +3275,7 @@ fn clear_cells(hwnd: HWND) {
 /// a second way of doing what `dialog::choose` already does.
 fn show_source(hwnd: HWND) {
     // SAFETY: one borrow, released before the modal — which runs a nested message loop.
-    let Some(projection) = (unsafe { with_pane(hwnd, project) }) else {
+    let Some(projection) = (unsafe { with_pane(hwnd, project) }).flatten() else {
         return;
     };
     let rows = code::rows(&projection);
@@ -3141,7 +3298,7 @@ fn show_source(hwnd: HWND) {
 /// is already sorted), and every row a jump.
 fn check_document(hwnd: HWND) {
     // SAFETY: one borrow, released before the modal.
-    let Some(report) = (unsafe { with_pane(hwnd, lint) }) else {
+    let Some(report) = (unsafe { with_pane(hwnd, lint) }).flatten() else {
         return;
     };
     if report.is_empty() {
@@ -3269,20 +3426,24 @@ fn explain_formula(hwnd: HWND) {
 
 /// `Pane::project`, spelled so [`with_pane`] can be handed it directly rather than a closure that
 /// only repeats the match `Pane::sheet_mut`/`text_mut` already exist to avoid writing twice.
-fn project(pane: &mut Pane) -> grind_core::projection::Projection {
+fn project(pane: &mut Pane) -> Option<grind_core::projection::Projection> {
     match pane {
-        Pane::Sheet(sheet) => sheet.app.project(),
-        Pane::Text(text) => text.app.project(),
+        Pane::Sheet(sheet) => Some(sheet.app.project()),
+        Pane::Text(text) => Some(text.app.project()),
+        // No document, so nothing to project one into. Not reachable from the welcome screen's own
+        // menu bar (`menu::on_welcome`); answered rather than panicked on for a stale accelerator.
+        Pane::Welcome(_) => None,
     }
 }
 
 /// `Pane::lint`, over the default options — every rule, hints off, the same defaults `grind lint`
 /// runs with no flags.
-fn lint(pane: &mut Pane) -> grind_core::lint::Report {
+fn lint(pane: &mut Pane) -> Option<grind_core::lint::Report> {
     let options = grind_core::lint::Options::default();
     match pane {
-        Pane::Sheet(sheet) => sheet.app.lint(&options),
-        Pane::Text(text) => text.app.lint(&options),
+        Pane::Sheet(sheet) => Some(sheet.app.lint(&options)),
+        Pane::Text(text) => Some(text.app.lint(&options)),
+        Pane::Welcome(_) => None,
     }
 }
 
@@ -3565,6 +3726,125 @@ fn format_table_totals(hwnd: HWND) {
     format_table(hwnd, Some(function));
 }
 
+// --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
+
+/// File ▸ Import CSV… — a delimited file read in **at the cursor**, in one undo step.
+///
+/// A dialog for the file and nothing else, which is `format_table`'s own zero-prompt shape: the
+/// delimiter is read out of the file's own content and where the fields land is the selection,
+/// so the two questions an import cannot skip are already answered. Every other knob is
+/// `grind sheet import-csv`'s (R9), and `csv::Import::sniffed` is where the choice of which ones
+/// a window sets is written down.
+fn import_csv(hwnd: HWND) {
+    // The dialog runs a nested message loop, so nothing may be borrowed across it (decision 7).
+    let Some(path) = dialog::open_csv_path(hwnd) else {
+        return;
+    };
+    let text = match std::fs::read(&path)
+        .map_err(|error| error.to_string())
+        .and_then(|bytes| csv::decode(bytes).map_err(str::to_owned))
+    {
+        Ok(text) => text,
+        Err(why) => {
+            return dialog::error(
+                hwnd,
+                &format!("Could not read {}:\n\n{why}", path.display()),
+            );
+        }
+    };
+    // SAFETY: one borrow, taken after the dialog has closed.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let at = state.selection.active;
+            let options = csv::Import::sniffed(&text);
+            match state
+                .app
+                .import_csv(state.sheet, at, &text, &options, RecalcMode::Document)
+            {
+                Ok(outcome) => {
+                    let spoiled = outcome.recalc.map_or(0, |recalc| recalc.spoiled);
+                    state.say(match spoiled {
+                        0 => Some(notice::imported(outcome.cells, &a1::format(None, at))),
+                        n => Some(notice::recalc_skipped(n)),
+                    });
+                }
+                Err(error) => state.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// File ▸ Export CSV… — the selection, or everything the sheet uses when the selection is one
+/// cell and therefore a cursor rather than a range.
+///
+/// **Writes a file and changes nothing**, so there is no undo entry and no dirty flag: what
+/// comes out is what each cell *shows*, which is `App::export_csv`'s own answer.
+fn export_csv(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
+    let suggested = unsafe {
+        with_sheet(hwnd, |state| {
+            let stem = state
+                .path
+                .as_deref()
+                .and_then(std::path::Path::file_stem)
+                .map(|stem| stem.to_string_lossy().into_owned());
+            format!("{}.csv", stem.unwrap_or_else(|| "Untitled".to_owned()))
+        })
+    }
+    .unwrap_or_else(|| "Untitled.csv".to_owned());
+    let Some(path) = dialog::save_csv_path(hwnd, &suggested) else {
+        return;
+    };
+    let dialect = csv::Dialect::for_name(&path.file_name().unwrap_or_default().to_string_lossy());
+    // SAFETY: one borrow, taken after the dialog has closed.
+    let written = unsafe {
+        with_sheet(hwnd, |state| {
+            let (mut start, mut end) = state.selection.rect();
+            if start == end {
+                let (rows, cols) = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+                if rows == 0 || cols == 0 {
+                    return Err("There is nothing in this sheet to export".to_owned());
+                }
+                (start, end) = (Pos::new(0, 0), Pos::new(rows - 1, cols - 1));
+            }
+            let options = csv::Export {
+                dialect,
+                ..csv::Export::default()
+            };
+            state
+                .app
+                .export_csv(state.sheet, start, end, &options)
+                .map_err(|error| error.to_string())
+                .map(|text| (text, start, end))
+        })
+    };
+    let Some(written) = written else {
+        return;
+    };
+    let (text, start, end) = match written {
+        Ok(written) => written,
+        Err(why) => return dialog::error(hwnd, &why),
+    };
+    if let Err(error) = std::fs::write(&path, text) {
+        return dialog::error(
+            hwnd,
+            &format!("Could not write {}:\n\n{error}", path.display()),
+        );
+    }
+    // SAFETY: one borrow, and nothing inside it dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(notice::exported(
+                &a1::format(None, start),
+                &a1::format(None, end),
+                &path.file_name().unwrap_or_default().to_string_lossy(),
+            )));
+        });
+    }
+    refresh(hwnd);
+}
+
 // --- sheets ---
 
 /// Move to another sheet, keeping the selection and the view.
@@ -3701,8 +3981,14 @@ fn save(hwnd: HWND) -> bool {
 
 fn save_as(hwnd: HWND) -> bool {
     // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
-    let (suggested, kind) = unsafe { with_pane(hwnd, |pane| (pane.path(), pane.kind())) }
-        .unwrap_or((None, DocumentKind::Spreadsheet));
+    let (suggested, kind) =
+        unsafe { with_pane(hwnd, |pane| (pane.path(), pane.kind())) }.unwrap_or((None, None));
+    // Nothing to save: the welcome screen holds no document, and `menu::on_welcome` keeps this verb
+    // off its menu bar — so this is only reachable by a stale accelerator, and saying nothing is
+    // the right answer to one.
+    let Some(kind) = kind else {
+        return false;
+    };
     let Some(path) = dialog::save_path(hwnd, suggested.as_deref(), kind) else {
         return false;
     };
@@ -3752,35 +4038,124 @@ fn adopt(hwnd: HWND, pane: Pane) {
             match &pane {
                 Pane::Sheet(sheet) => sheet.app.set_observer(observer),
                 Pane::Text(text) => text.app.set_observer(observer),
+                // No document, so nothing to observe — and nothing that could mark a title.
+                Pane::Welcome(_) => {}
             }
             *slot = pane;
         });
     }
     // A window that has just become a spreadsheet needs the two `EDIT`s a spreadsheet edits
-    // through; one that has just become a document needs nothing and gets nothing.
+    // through; one that has just become a document or the welcome screen needs nothing and gets
+    // nothing.
     make_children(hwnd);
-    // The menu is greyed by pane kind (`build_menu`), and File ▸ Open or File ▸ New can change
-    // that kind in the same window — so it is rebuilt here rather than only once at `WM_CREATE`.
+    // The menu is built per surface (`build_menu`), and File ▸ Open, either New or the start
+    // screen can change that surface in the same window — so it is rebuilt here rather than only
+    // once at `WM_CREATE`.
     build_menu(hwnd);
     refresh(hwnd);
 }
 
-/// A new, empty document **of the kind the window is already showing**.
+/// A new, empty document of the kind the *caller* names — either kind, from either pane.
 ///
-/// Not a choice, and that is deliberate for now: a New Spreadsheet / New Document pair is a menu
-/// question, and W7 is where the menus are finished. `grind-win32 --text` and File ▸ Open reach
-/// the other kind today, which is the R9 answer in the meantime.
-fn new_document(hwnd: HWND) {
+/// This used to take no argument and make another document of whatever the window already held,
+/// with a comment saying that a New Spreadsheet / New Document pair was a menu question left
+/// open. The welcome screen answered it: a window that offers both when it opens cannot then refuse
+/// to offer them from the File menu, so there are two verbs and this takes the kind.
+fn new_document(hwnd: HWND, kind: DocumentKind) {
     if !offer_to_save(hwnd) {
         return;
     }
-    // SAFETY: one borrow, released before anything else happens.
-    let kind = unsafe { with_pane(hwnd, |pane| pane.kind()) };
-    let Some(kind) = kind else { return };
     // SAFETY: one borrow, for the theme the new pane starts in.
     let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
-    if let Ok(pane) = opened(kind, None, theme) {
+    if let Ok(pane) = opened(Some(kind), None, theme) {
         adopt(hwnd, pane);
+    }
+}
+
+/// Back to the welcome screen, closing whatever the window was showing.
+///
+/// The same shape as the two above — ask about unsaved work, then adopt a new pane — because it
+/// is the same operation with `None` for the kind. A welcome screen you can only ever see once
+/// would be a splash screen, which is a different and much less useful thing.
+fn welcome_screen(hwnd: HWND) {
+    if !offer_to_save(hwnd) {
+        return;
+    }
+    // SAFETY: one borrow, for the theme the new pane starts in.
+    let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
+    if let Ok(pane) = opened(None, None, theme) {
+        adopt(hwnd, pane);
+    }
+}
+
+/// The welcome screen's verbs. Everything that needs a document is a no-op here, and the match is
+/// exhaustive for `text_command`'s reason: a command with no handler fails the build.
+///
+/// The six that mean something are exactly `menu::on_welcome`'s list, which is what the menu bar
+/// offers on this pane — the two cannot drift apart without a test failing, since the cards name
+/// commands and `welcome.rs` checks that each is in a menu.
+fn welcome_command(hwnd: HWND, command: Command) {
+    match command {
+        Command::NewSheet => new_document(hwnd, DocumentKind::Spreadsheet),
+        Command::NewText => new_document(hwnd, DocumentKind::Text),
+        Command::Open => open_document(hwnd),
+        Command::Exit => {
+            // SAFETY: nothing is borrowed, and posting only queues the message.
+            unsafe {
+                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+        Command::Shortcuts => show_shortcuts(hwnd),
+        Command::About => dialog::about(hwnd),
+        // Everything else acts on a document, and there is none. `menu::items_for` keeps all of
+        // them off this pane's menu bar; these arms are what makes a stale accelerator harmless.
+        Command::Welcome
+        | Command::Save
+        | Command::SaveAs
+        | Command::Undo
+        | Command::Redo
+        | Command::Cut
+        | Command::Copy
+        | Command::Paste
+        | Command::ClearCells
+        | Command::GoTo
+        | Command::ImportCsv
+        | Command::ExportCsv
+        | Command::Recalculate
+        | Command::FunctionList
+        | Command::ExplainFormula
+        | Command::ToggleFriendly
+        | Command::ToggleFilter
+        | Command::FormatTable
+        | Command::FormatTableTotals
+        | Command::SheetAdd
+        | Command::SheetRename
+        | Command::SheetDelete
+        | Command::SheetNext
+        | Command::SheetPrevious
+        | Command::Bold
+        | Command::Italic
+        | Command::Underline
+        | Command::Strike
+        | Command::Code
+        | Command::PickFamily
+        | Command::PickSize
+        | Command::PickColor
+        | Command::PickHighlight
+        | Command::ClearFormatting
+        | Command::Title
+        | Command::Subtitle
+        | Command::Paragraph
+        | Command::Heading1
+        | Command::Heading2
+        | Command::Heading3
+        | Command::Outline
+        | Command::BlockKindDialog
+        | Command::InsertPicture
+        | Command::ShowSource
+        | Command::CheckDocument
+        | Command::ToggleRoles
+        | Command::ToggleNames => {}
     }
 }
 
@@ -3806,7 +4181,7 @@ fn open_document(hwnd: HWND) {
     let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
     // Read into a *new* pane rather than over the live one, so that a file that turns out to be
     // unreadable leaves the window showing what it was showing.
-    match opened(kind, Some(path.clone()), theme) {
+    match opened(Some(kind), Some(path.clone()), theme) {
         Ok(pane) => adopt(hwnd, pane),
         Err(error) => dialog::error(
             hwnd,
@@ -3927,6 +4302,7 @@ fn paint(hwnd: HWND) {
                 match pane {
                     Pane::Sheet(sheet) => draw_frame(buffer.dc(), sheet),
                     Pane::Text(text) => draw_text_frame(buffer.dc(), text, true),
+                    Pane::Welcome(state) => draw_welcome_frame(buffer.dc(), state),
                 }
             });
             buffer.present(dc);
@@ -3941,6 +4317,189 @@ fn paint(hwnd: HWND) {
         // caret at all (a resize, a theme change), which costs nothing next to a whole frame.
         place_system_caret(hwnd);
     }
+}
+
+// --- the welcome screen ---
+//
+// The third pane, and by far the smallest: no document, so no viewport, no history, no scrolling
+// and nothing to save. What it needs is the same four things the other two need — a refresh, a
+// frame that takes an `HDC` and no `HWND`, a hit test and a keymap — which is why it fits the
+// shape above rather than being a special case bolted onto it.
+
+/// Whether this window is showing the welcome screen rather than a document.
+fn is_welcome(hwnd: HWND) -> bool {
+    // SAFETY: one borrow, for one bit; nothing inside dispatches.
+    unsafe { with_pane(hwnd, |pane| matches!(pane, Pane::Welcome(_))) }.unwrap_or(false)
+}
+
+/// Run `f` with the welcome screen's state, or `None` when the window is showing a document.
+unsafe fn with_welcome<T>(hwnd: HWND, f: impl FnOnce(&mut Welcome) -> T) -> Option<T> {
+    // SAFETY: the caller's, unchanged — see [`with_pane`].
+    unsafe { with_pane(hwnd, |pane| pane.welcome_mut().map(f)) }.flatten()
+}
+
+/// The welcome screen's [`refresh`]: re-measure for the client area, retitle, repaint.
+///
+/// The scrollbars are flattened rather than left alone, because a window that was a spreadsheet a
+/// moment ago still has the thumbs it set — and a welcome screen with a scrollbar down its side is
+/// a window that looks like it is hiding something.
+fn welcome_refresh(hwnd: HWND) {
+    let rect = gdi::client_rect(hwnd);
+    // SAFETY: `hwnd` is this window's.
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+    // SAFETY: one borrow; `relayout` is arithmetic and dispatches nothing.
+    unsafe {
+        with_welcome(hwnd, |state| {
+            state.relayout(
+                f64::from(rect.right - rect.left),
+                f64::from(rect.bottom - rect.top),
+                dpi,
+            );
+        });
+    }
+    let flat = SCROLLINFO {
+        cbSize: u32::try_from(std::mem::size_of::<SCROLLINFO>()).expect("small"),
+        fMask: SCROLLINFO_MASK(SIF_RANGE.0 | SIF_PAGE.0 | SIF_POS.0),
+        nMin: 0,
+        nMax: 0,
+        nPage: 1,
+        nPos: 0,
+        nTrackPos: 0,
+    };
+    // SAFETY: the borrow above is released; `info` is a live local read for the length of each
+    // call, and `SetWindowTextW` dispatches, which is why it is out here.
+    let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
+    unsafe {
+        SetScrollInfo(hwnd, SB_VERT, &flat, true);
+        SetScrollInfo(hwnd, SB_HORZ, &flat, true);
+        if let Some(title) = title
+            && window_text(hwnd) != title
+        {
+            let wide = gdi::wide(&title);
+            let _ = SetWindowTextW(hwnd, PCWSTR(wide.as_ptr()));
+        }
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// One frame of the welcome screen. Takes an `HDC` and the state and nothing about the window,
+/// which is what makes [`render`] a second caller rather than a second drawing path.
+fn draw_welcome_frame(dc: HDC, state: &Welcome) {
+    welcome::paint(
+        dc,
+        &state.page,
+        &welcome::Frame {
+            theme: state.theme,
+            face: face(),
+            hover: state.hover,
+            pressed: state.pressed,
+            focus: state.focus,
+        },
+    );
+}
+
+/// The pointer moved over the welcome screen: which card it is on, repainted only when that changed.
+fn welcome_mouse_move(hwnd: HWND, x: f64, y: f64) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    let moved = unsafe {
+        with_welcome(hwnd, |state| {
+            let hover = state.page.hit(x, y);
+            let moved = hover != state.hover;
+            state.hover = hover;
+            moved
+        })
+    };
+    if moved == Some(true) {
+        // SAFETY: the borrow above is released.
+        unsafe {
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
+    }
+}
+
+/// A press on a card. It is *held*, not run — [`welcome_button_up`] acts on release, so moving
+/// off the card before letting go takes it back, which is what every button on this platform
+/// does and what the text pane's format strip already does here.
+fn welcome_button_down(hwnd: HWND, x: f64, y: f64) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_welcome(hwnd, |state| {
+            let hit = state.page.hit(x, y);
+            state.hover = hit;
+            state.pressed = hit;
+            // A click also moves the keyboard's focus onto the card, so Enter afterwards repeats
+            // what the pointer just did rather than whatever was focused before.
+            if let Some(at) = hit {
+                state.focus = at;
+            }
+        });
+    }
+    // SAFETY: the borrow is released. Both of these dispatch.
+    unsafe {
+        let _ = SetCapture(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+fn welcome_button_up(hwnd: HWND) {
+    // SAFETY: one borrow, released before the verb runs — two of the three open a nested message
+    // loop (a file dialog, a close question), which decision 7 forbids holding a borrow across.
+    let pressed = unsafe {
+        with_welcome(hwnd, |state| {
+            state.pressed.take().filter(|at| state.hover == Some(*at))
+        })
+    }
+    .flatten();
+    // SAFETY: the borrow above is released.
+    unsafe {
+        let _ = ReleaseCapture();
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+    if let Some(at) = pressed {
+        do_command(hwnd, welcome::Choice::ALL[at].command());
+    }
+}
+
+/// The welcome screen's keyboard: step through the cards, run one, and nothing else.
+///
+/// Tab is Down and Shift+Tab is Up, which is the Windows convention for a list of buttons with no
+/// dialog manager behind it. `false` hands the key back to `DefWindowProcW`, which is what leaves
+/// Alt+F4 and the menu bar's own Alt working.
+fn welcome_key(hwnd: HWND, vk: u32) -> bool {
+    use crate::sheet::keymap::Key;
+
+    let mods = mods();
+    if let Some(command) = menu::accelerator(keymap::key_for(vk), mods) {
+        do_command(hwnd, command);
+        return true;
+    }
+    let step = match keymap::key_for(vk) {
+        Key::Down => 1,
+        Key::Up => -1,
+        Key::Tab if mods.shift => -1,
+        Key::Tab => 1,
+        Key::Return => {
+            // SAFETY: one borrow, released before the verb — which may open a file dialog.
+            let focus = unsafe { with_welcome(hwnd, |state| state.focus) };
+            if let Some(at) = focus {
+                do_command(hwnd, welcome::Choice::ALL[at].command());
+            }
+            return true;
+        }
+        _ => return false,
+    };
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_welcome(hwnd, |state| {
+            state.focus = welcome::step(state.focus, step);
+            // The keyboard owns the highlight while it is being used: a hover left over from
+            // wherever the pointer happens to be resting would draw a second card as lit.
+            state.hover = None;
+        });
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+    true
 }
 
 // --- the text pane (W5) ---
@@ -4493,7 +5052,9 @@ fn trim_trailing_spaces(text: &str, start: usize, end: usize) -> usize {
 /// message box saying "this document has no sheets" would be worse than nothing happening.
 fn text_command(hwnd: HWND, command: Command) {
     match command {
-        Command::New => new_document(hwnd),
+        Command::NewSheet => new_document(hwnd, DocumentKind::Spreadsheet),
+        Command::NewText => new_document(hwnd, DocumentKind::Text),
+        Command::Welcome => welcome_screen(hwnd),
         Command::Open => open_document(hwnd),
         Command::Save => {
             save(hwnd);
@@ -4556,6 +5117,10 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        // CSV is cells in both directions, so neither means anything here — and `applies_to`
+        // keeps both out of this pane's File menu rather than leaving them to be no-ops.
+        | Command::ImportCsv
+        | Command::ExportCsv
         | Command::ToggleRoles => {}
     }
 }

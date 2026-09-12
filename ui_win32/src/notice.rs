@@ -80,6 +80,22 @@ pub fn bad_formula(message: &str) -> String {
     format!("Not a formula: {message}. Esc leaves the cell as it was.")
 }
 
+/// A CSV that landed. Says **where**, because an import goes to the cursor rather than to the
+/// top-left corner, and somebody who meant the other one needs to see that in one glance.
+pub fn imported(cells: usize, at: &str) -> String {
+    format!(
+        "{} imported at {at}. Ctrl+Z takes it back.",
+        counted(cells, "cell", "cells")
+    )
+}
+
+/// A range that went out as one. The odd sentence in this file: it names no way out because
+/// there is nothing to undo — exporting writes a *file* and leaves the document exactly as it
+/// was, which is the thing worth saying about it.
+pub fn exported(start: &str, end: &str, name: &str) -> String {
+    format!("{start}:{end} exported to {name}. The document is unchanged.")
+}
+
 /// Data ▸ Explain Formula, asked about a cell that holds no formula — or one this build cannot
 /// parse, which from the reader's side is the same thing: there is no reading to show.
 ///
@@ -105,6 +121,19 @@ mod tests {
         assert!(recalculated(9, 4).starts_with("4 cells became errors"));
         assert!(references_renamed(1).starts_with("1 reference rewritten"));
         assert!(references_renamed(9).starts_with("9 references rewritten"));
+        assert!(imported(1, "A1").starts_with("1 cell imported at A1."));
+        assert!(imported(84, "B3").starts_with("84 cells imported at B3."));
+    }
+
+    /// Exporting is the one verb here that writes a file and not the document, and the notice
+    /// is where that is said: there is nothing to undo, so the sentence that would name Ctrl+Z
+    /// names the absence instead. This is why the rule below has to allow it by name.
+    #[test]
+    fn an_export_says_the_document_was_not_touched() {
+        assert_eq!(
+            exported("A1", "D20", "budget.csv"),
+            "A1:D20 exported to budget.csv. The document is unchanged."
+        );
     }
 
     /// Nothing to report is still a sentence: F9 on an up-to-date document must not look like a
@@ -120,6 +149,9 @@ mod tests {
 
     /// Every notice names the key that resolves it, which is the rule this module exists to
     /// keep — a banner the reader can only stare at is one they learn to ignore.
+    ///
+    /// The two exceptions are above and each has a test of its own: a recalculation that
+    /// changed nothing, and an export, which leaves nothing behind to act on.
     #[test]
     fn every_notice_names_the_way_out() {
         for text in [
@@ -129,6 +161,7 @@ mod tests {
             bad_formula("unexpected end of input"),
             references_renamed(4),
             nothing_to_explain("B3"),
+            imported(12, "A1"),
         ] {
             assert!(
                 text.contains("F9")

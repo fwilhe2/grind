@@ -140,7 +140,11 @@ struct TextFamily {
 impl Builder {
     pub fn new() -> Self {
         Builder {
-            doc: Document::new(),
+            // Blocks come from the file. A document that declares none stays empty rather than
+            // inheriting the empty paragraph a *new* document gets — `Document::default`'s own
+            // comment is the other half of this, and `sheet/src/odf/read.rs` says the same thing
+            // about `Sheet1`.
+            doc: Document::empty(),
             spans: Vec::new(),
             props: Vec::new(),
             styles: HashMap::new(),

@@ -368,7 +368,7 @@ mod tests {
 
     fn doc(spec: &[(u32, &str)]) -> Document {
         // (0, text) is a paragraph; (n, text) is a heading at level n.
-        let mut d = Document::new();
+        let mut d = Document::empty();
         for (level, text) in spec {
             let id = d.next_id();
             let kind = match level {

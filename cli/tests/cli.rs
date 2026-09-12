@@ -1143,6 +1143,44 @@ fn convert_reaches_the_projection_and_comes_back() {
     );
 }
 
+/// **A new text document can be typed into**, which is not as obvious as it sounds and was
+/// broken for as long as `grind text new` existed.
+///
+/// A caret lives *in* a block (`loc.rs`), so a document with no blocks has nowhere to put one:
+/// `grind text new` wrote an empty `office:text`, and the very next `grind text type … p1` failed
+/// with *no block p1*. Every client had it — the four shells all ask the core for the same empty
+/// document, and the Windows shell's New Text Document was where somebody finally hit it.
+///
+/// A new document is therefore **one empty paragraph** (`grind_text::Document::default`), which
+/// is also what LibreOffice writes for a blank page and what it hands back for a document with no
+/// blocks at all (`text/tests/roundtrip.rs`'s `a_document_with_no_blocks_comes_back_holding_one`
+/// measures exactly that). This test is the product-level guard: the two commands a person runs
+/// first, in order.
+#[test]
+fn a_new_text_document_has_a_paragraph_to_type_into() {
+    let dir = Sandbox::new("text-new-typable");
+    let fodt = dir.path("notes.fodt");
+    succeeds(grind(&["text", "new", &s(&fodt)]), &["text", "new"]);
+
+    let counts = succeeds(grind(&["text", "words", &s(&fodt)]), &["text", "words"]);
+    assert!(
+        counts.contains("1 blocks"),
+        "one paragraph, not none: {counts}"
+    );
+
+    succeeds(
+        grind(&["text", "type", &s(&fodt), "p1", "hello"]),
+        &["text", "type"],
+    );
+    let view = succeeds(grind(&["text", "view", &s(&fodt)]), &["text", "view"]);
+    assert!(view.contains("hello"), "{view}");
+
+    // And the file it wrote says so in XML: one `text:p`, which is the shape every word
+    // processor writes for a blank page.
+    let xml = std::fs::read_to_string(&fodt).unwrap();
+    assert!(xml.contains("hello"), "{xml}");
+}
+
 /// The same verb, the other application. `grind convert` is suite level — it reads the kind out
 /// of the file — so a text document reaches the projection through exactly the same command,
 /// which is what makes the projection a *form* rather than a spreadsheet feature.

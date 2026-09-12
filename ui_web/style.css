@@ -1056,3 +1056,86 @@ input[type="text"] {
 .problem-hint .problem-mark {
   color: color-mix(in srgb, #0074d9 70%, CanvasText);
 }
+
+/* --- the welcome pane -----------------------------------------------------
+   What the page shows with no document open (ui_web/src/lib.rs, `Mode::Welcome`).
+   Three cards and nothing else: this is a *choice*, not a dashboard, and anything
+   more here would be a second thing to read before the first click.
+
+   The cards are ordinary `<button>`s, so they are in the tab order, answer Enter and
+   Space, and take the platform's own focus ring — none of which a `<div>` with a click
+   handler would do. */
+.welcome {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.welcome-inner {
+  width: min(34rem, 100%);
+  text-align: center;
+}
+
+.welcome-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.welcome-sub {
+  margin: 0.25rem 0 2rem;
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
+.welcome-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  /* Both, and neither is redundant: `align-items` places the two spans in the button's
+     own flex box, and `text-align` places the text inside each of them. A button
+     centres both by default, which is right for a word and wrong for two lines. */
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, CanvasText 3%, Canvas);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.welcome-card:hover {
+  background: var(--hover);
+  border-color: color-mix(in srgb, AccentColor 40%, var(--line));
+}
+
+.welcome-card:active {
+  background: var(--faint);
+}
+
+.welcome-card-title {
+  font-weight: 600;
+}
+
+.welcome-card-detail {
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+  font-size: 13px;
+}
+
+.welcome-hint {
+  margin: 2rem 0 0;
+  color: color-mix(in srgb, CanvasText 45%, Canvas);
+  font-size: 13px;
+}

@@ -42,7 +42,12 @@ say "a new document"
 run new "$doc" --force
 
 say "headings and paragraphs — the outline is implied by the levels, and nothing else"
-run insert "$doc" --heading 1 --text 'Field Notes'
+# A new document is **one empty paragraph**, not zero blocks — a caret has to have somewhere to
+# be, and LibreOffice writes the same thing for a blank page. So the first heading is *made out
+# of* the block that is already there rather than inserted in front of it, which is what typing
+# into a new document does; everything after it appends.
+run kind "$doc" p1 --heading 1
+run set "$doc" p1 'Field Notes'
 run insert "$doc" --text 'Written entirely from a shell, which is the point.'
 run insert "$doc" --heading 2 --text 'What a block is'
 run insert "$doc" --text 'A paragraph, a heading or a list item. The body is a flat sequence.'

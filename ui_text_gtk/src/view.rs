@@ -1847,9 +1847,16 @@ mod tests {
     /// [`the_widget`], which has already decided there is a display to build one on.
     fn shell(paragraphs: &[&str]) -> (Doc, Arc<App>) {
         let app = Arc::new(App::new());
+        // The **first** paragraph is typed into the one a new document already has rather than
+        // inserted in front of it: `grind_text::Document::default` is one empty paragraph, not
+        // zero blocks, because a caret has to have somewhere to be.
         for (index, text) in paragraphs.iter().enumerate() {
-            app.insert(index, BlockKind::Paragraph, text)
-                .expect("inserts");
+            match index {
+                0 => app.set_text(0, text).expect("sets"),
+                _ => app
+                    .insert(index, BlockKind::Paragraph, text)
+                    .expect("inserts"),
+            }
         }
         let doc = Doc::new(app.clone());
         // Unparented widgets have no size, and a caret motion measured at a width of zero

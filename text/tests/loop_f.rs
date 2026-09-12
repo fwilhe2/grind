@@ -194,7 +194,7 @@ fn the_corpus_projects() {
 /// this test fails, and the fix is to delete it and stop excluding images from `differences`.
 #[test]
 fn images_are_the_one_named_gap() {
-    let mut doc = Document::new();
+    let mut doc = Document::empty();
     let id = doc.next_id();
     let mut block = Block::new(id, grind_text::BlockKind::Paragraph);
     block.runs = vec![
@@ -526,7 +526,7 @@ fn spellable(block: &Block) -> Vec<Run> {
 #[test]
 fn a_literal_tab_and_a_tab_run_are_the_same_document() {
     let build = |runs: Vec<Run>| {
-        let mut doc = Document::new();
+        let mut doc = Document::empty();
         let id = doc.next_id();
         let mut block = Block::new(id, grind_text::BlockKind::Paragraph);
         block.runs = runs;

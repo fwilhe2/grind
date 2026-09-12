@@ -262,6 +262,59 @@ pub fn open_image_path(owner: HWND) -> Option<PathBuf> {
     }
 }
 
+/// What an import will open: both spellings of the one format, plus `.txt`, since that is what
+/// a great many exports are called and the delimiter is read from the content rather than from
+/// the name. The same list `ui_sheet_gtk`'s `csv_filters` offers.
+fn csv_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
+    vec![(
+        gdi::wide("Delimited text"),
+        gdi::wide("*.csv;*.tsv;*.tab;*.txt"),
+    )]
+}
+
+/// Ask for a delimited file to import. `None` means the user cancelled.
+pub fn open_csv_path(owner: HWND) -> Option<PathBuf> {
+    let filters = csv_filters();
+    let specs = specs(&filters);
+    // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
+    unsafe {
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let _ = dialog.SetFileTypes(&specs);
+        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Import CSV").as_ptr()));
+        dialog.Show(Some(owner)).ok()?;
+        item_path(&dialog.GetResult().ok()?)
+    }
+}
+
+/// Ask where to write one out.
+///
+/// The **name** is what says which delimiter (`csv::Dialect::for_name`), so these two entries
+/// are the whole of that choice — the same pair `ui_sheet_gtk`'s save dialog offers, and what
+/// the browser shell spends two palette rows on because a download names itself.
+pub fn save_csv_path(owner: HWND, suggested: &str) -> Option<PathBuf> {
+    let filters = vec![
+        (gdi::wide("Comma-separated values"), gdi::wide("*.csv")),
+        (gdi::wide("Tab-separated values"), gdi::wide("*.tsv")),
+    ];
+    let specs = specs(&filters);
+    let name = gdi::wide(suggested);
+    let extension = gdi::wide("csv");
+    // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
+    unsafe {
+        let dialog: IFileSaveDialog =
+            CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let _ = dialog.SetFileTypes(&specs);
+        // 1-based, and 1 is the comma — it is what the verb is called.
+        let _ = dialog.SetFileTypeIndex(1);
+        let _ = dialog.SetDefaultExtension(PCWSTR(extension.as_ptr()));
+        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Export CSV").as_ptr()));
+        let _ = dialog.SetFileName(PCWSTR(name.as_ptr()));
+        dialog.Show(Some(owner)).ok()?;
+        item_path(&dialog.GetResult().ok()?)
+    }
+}
+
 /// Ask where to save. `suggested` seeds the name and the folder; `kind` is which document type
 /// the open pane holds, so a text document suggests `.fodt` rather than always `.fods`.
 pub fn save_path(owner: HWND, suggested: Option<&Path>, kind: DocumentKind) -> Option<PathBuf> {

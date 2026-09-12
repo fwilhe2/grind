@@ -73,7 +73,9 @@ fn cell(table: &str, row: u32, column: u32, text: &str) -> (BlockKind, Option<Ce
 
 /// Build a document from `(kind, cell, runs)` triples — [`build`] with the table axis.
 fn build_cells(spec: Vec<(BlockKind, Option<Cell>, Vec<Run>)>) -> Document {
-    let mut doc = Document::new();
+    // `empty`: a built document is exactly its spec, where a *new* one would carry the paragraph
+    // `Document::default` starts with.
+    let mut doc = Document::empty();
     for (kind, cell, runs) in spec {
         let id = doc.next_id();
         let mut block = Block::new(id, kind);
@@ -87,7 +89,7 @@ fn build_cells(spec: Vec<(BlockKind, Option<Cell>, Vec<Run>)>) -> Document {
 
 /// Build a document from `(kind, runs)` pairs.
 fn build(spec: Vec<(BlockKind, Vec<Run>)>) -> Document {
-    let mut doc = Document::new();
+    let mut doc = Document::empty();
     for (kind, runs) in spec {
         let id = doc.next_id();
         let mut block = Block::new(id, kind);
@@ -634,7 +636,7 @@ fn cases() -> Vec<(String, Document)> {
     let mut all = vec![
         // The degenerate document. Legal, and the shape most likely to be written as something
         // LibreOffice rejects outright.
-        ("empty".to_owned(), Document::new()),
+        ("empty".to_owned(), Document::empty()),
         (
             "headings".to_owned(),
             build(vec![
@@ -932,7 +934,7 @@ fn a_document_with_no_blocks_comes_back_holding_one() {
         return;
     }
     let lab = Lab::new("empty");
-    let bytes = grind_text::write_bytes(&Document::new(), Form::Flat).expect("writes");
+    let bytes = grind_text::write_bytes(&Document::empty(), Form::Flat).expect("writes");
     let path = lab.input("empty.fodt", &bytes);
     let back = converted(&lab.convert(std::slice::from_ref(&path)), &path);
 

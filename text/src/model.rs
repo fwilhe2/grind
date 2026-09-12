@@ -531,7 +531,7 @@ impl Block {
 }
 
 /// A text document.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Document {
     pub blocks: Vec<Block>,
     /// Every `text:bookmark` in the document, name to the block holding it.
@@ -573,9 +573,50 @@ pub struct Document {
     pub edits: crate::odf::source::Edits,
 }
 
+/// A **new** document — one empty paragraph, which is not the same thing as no blocks at all.
+///
+/// The spreadsheet's own `Document::default()` has said this for as long as it has existed: a new
+/// one gets `Sheet1`, and `sheet/src/odf/read.rs`'s `Builder::new` clears it with a comment
+/// saying why, because sheets come from the file. This is that rule for the other application,
+/// and it was missing — a brand-new text document had *zero* blocks, so `p1` named nothing and
+/// the first keystroke into it failed with `no block p1`. Every client had the bug, because every
+/// client asks the core for the empty document: `grind text new` wrote a file that could not then
+/// be typed into, and the four shells offered a document with nowhere for the caret to be.
+///
+/// A caret lives *in* a block (`loc.rs`), so a document with no blocks is a document with nowhere
+/// to type. One empty paragraph is the least that is still a document, and it is what `<office:
+/// text><text:p/></office:text>` — what every word processor writes for a blank page — says.
+impl Default for Document {
+    fn default() -> Self {
+        let mut doc = Document::empty();
+        let id = doc.next_id();
+        doc.blocks.push(Block::new(id, BlockKind::Paragraph));
+        doc
+    }
+}
+
 impl Document {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A document with **no blocks at all** — what a reader fills in from a file.
+    ///
+    /// The counterpart to [`Document::default`] above and the reason that one can afford to carry
+    /// a paragraph: a document read from a file has exactly the blocks the file has, including
+    /// none, and must not inherit the one a *new* document starts with. `sheet/src/odf/read.rs`
+    /// makes the same distinction with a literal, which this crate cannot do outside this module
+    /// because `next_id` is private — hence a constructor rather than a struct expression.
+    pub fn empty() -> Self {
+        Document {
+            blocks: Vec::new(),
+            bookmarks: BTreeMap::new(),
+            styles: std::collections::BTreeSet::new(),
+            next_id: 0,
+            source: None,
+            projection_source: None,
+            edits: crate::odf::source::Edits::default(),
+        }
     }
 
     /// Mint an id. The only place one is made.
@@ -681,7 +722,7 @@ mod tests {
     use super::*;
 
     fn doc(spec: &[(BlockKind, &str)]) -> Document {
-        let mut d = Document::new();
+        let mut d = Document::empty();
         for (kind, text) in spec {
             let id = d.next_id();
             let mut block = Block::new(id, kind.clone());
@@ -698,7 +739,7 @@ mod tests {
 
     #[test]
     fn ids_are_never_reused() {
-        let mut d = Document::new();
+        let mut d = Document::empty();
         let a = d.next_id();
         let b = d.next_id();
         assert_ne!(a, b);

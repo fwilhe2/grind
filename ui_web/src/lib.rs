@@ -46,6 +46,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use grind_core::{DocumentKind, Form, Observer, kind};
+use grind_sheet::csv;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
@@ -64,18 +65,49 @@ use command::Entry;
 const UNTITLED_SHEET: &str = "untitled.fods";
 const UNTITLED_TEXT: &str = "untitled.fodt";
 
+/// What the file picker offers, per [`Pick`]. Set on the input each time it is raised, so the
+/// two lists live here rather than half in `index.html`.
+///
+/// Both document types and all three forms in one list, for `spreadsheet_filters`' reason in
+/// the GTK window: packaged, flat and projected are the same document to everyone but the
+/// writer, and the kind is read from the bytes (`grind_core::kind`) rather than the name.
+const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind";
+/// Delimited text, including `.txt`, which is what a great many exports are called — the
+/// delimiter is sniffed from the content, so the name never has to carry it.
+const CSV_TYPES: &str = ".csv,.tsv,.tab,.txt,text/csv";
+
 thread_local! {
     /// The live shell, so an animation-frame callback can find its way back. The page owns
     /// it until the tab closes; nothing ever takes it out again.
     static SHELL: RefCell<Option<Rc<Shell>>> = const { RefCell::new(None) };
 }
 
-/// Which document type is open. There is always exactly one — an empty spreadsheet at
-/// startup, because a page has to show something and a grid is what this shell was first.
+/// Which document type is open, or **neither**.
+///
+/// It used to be one of two, and the page opened on an empty spreadsheet "because a page has to
+/// show something and a grid is what this shell was first". That is a bundle holding two
+/// applications picking one of them before being asked, and it is wrong half the time — so a
+/// page nobody has handed a document shows [`Mode::Welcome`], which is where the choice is made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
+    /// No document: the welcome pane, offering a new spreadsheet, a new text document, or one
+    /// that already exists. The only mode with no `Ui` behind it — there is nothing to draw from
+    /// a core, so the pane is the markup in `index.html` and nothing else.
+    Welcome,
     Sheet,
     Text,
+}
+
+impl Mode {
+    /// The document type this mode edits, or `None` on the welcome pane. Every "which app is
+    /// this" question goes through here rather than matching on the mode a second time.
+    fn kind(self) -> Option<DocumentKind> {
+        match self {
+            Mode::Welcome => None,
+            Mode::Sheet => Some(DocumentKind::Spreadsheet),
+            Mode::Text => Some(DocumentKind::Text),
+        }
+    }
 }
 
 /// Called by the generated glue as soon as the module is instantiated.
@@ -104,10 +136,11 @@ pub fn start() -> Result<(), JsValue> {
         palette: palette::Palette::find(&document)?,
         swatches: Rc::new(swatch::Swatches::find(&document)?),
         pending,
-        mode: Cell::new(Mode::Sheet),
+        mode: Cell::new(Mode::Welcome),
         name: RefCell::new(String::new()),
         source: RefCell::new(None),
         problems: RefCell::new(None),
+        pick: Cell::new(Pick::Document),
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
@@ -125,7 +158,10 @@ pub fn start() -> Result<(), JsValue> {
 
     SHELL.with(|slot| *slot.borrow_mut() = Some(shell.clone()));
 
-    shell.show(Mode::Sheet)?;
+    // The welcome pane, which is what a page with no document shows. `?doc=` below replaces it
+    // as soon as the bytes arrive — a fetch is asynchronous, so this is on screen for the length
+    // of it either way, which is the honest thing for it to be.
+    shell.show(Mode::Welcome)?;
 
     // `?doc=<url>` opens that document at startup — the page's own address is the only way
     // to point this shell at a file without a picker.
@@ -156,6 +192,9 @@ struct Chrome {
     sheet_pane: HtmlElement,
     text_pane: HtmlElement,
     formula_bar: HtmlElement,
+    /// The bar the two tool rows live in, hidden whole when neither applies — an empty bar is
+    /// still a band of chrome, and the welcome pane is the one surface with no tools at all.
+    tools: HtmlElement,
     /// The two tool rows — one per document type, and only one of them ever on screen.
     sheet_tools: HtmlElement,
     text_tools: HtmlElement,
@@ -163,6 +202,9 @@ struct Chrome {
     tabs: HtmlElement,
     sheet_add: HtmlButtonElement,
     name: HtmlElement,
+    save: HtmlButtonElement,
+    /// The separator between the file verbs and the history ones, which goes with them.
+    verb_rule: HtmlElement,
     undo: HtmlButtonElement,
     redo: HtmlButtonElement,
     recalc: HtmlButtonElement,
@@ -173,6 +215,14 @@ struct Chrome {
     code_pane: HtmlElement,
     /// The problems pane — a fourth, and the same rule (`doc/dsl.md` §4.3, D6).
     problems_pane: HtmlElement,
+    /// The welcome pane — a fifth, and the one shown when there is **no** document: three
+    /// choices, and the page's whole content until one of them is made.
+    welcome_pane: HtmlElement,
+    /// The status bar's own line. Written straight to only on the welcome pane, which has no
+    /// `Ui` to hold a message and repaint it; both document panes write theirs in their render.
+    message: HtmlElement,
+    /// The selection's arithmetic, which is the grid's alone and empty on the other panes.
+    summary: HtmlElement,
     /// The overlay shown while a file is being dragged across the page.
     drop: HtmlElement,
 }
@@ -185,12 +235,18 @@ impl Chrome {
             text_pane: element(document, "page")?,
             code_pane: element(document, "code")?,
             problems_pane: element(document, "problems")?,
+            welcome_pane: element(document, "welcome")?,
+            message: element(document, "message")?,
+            summary: element(document, "summary")?,
             formula_bar: element(document, "formula-bar")?,
+            tools: element(document, "tools")?,
             sheet_tools: element(document, "sheet-tools")?,
             text_tools: element(document, "text-tools")?,
             tabs: element(document, "tabs")?,
             sheet_add: element(document, "sheet-add")?,
             name: element(document, "name")?,
+            save: element(document, "save")?,
+            verb_rule: element(document, "verb-rule")?,
             undo: element(document, "undo")?,
             redo: element(document, "redo")?,
             recalc: element(document, "recalc")?,
@@ -226,6 +282,23 @@ struct Shell {
     /// linting costs a recalculation, so re-running it on every repaint would make a document
     /// with the pane open the slowest one in the shell. `Some` *is* "the pane is open".
     problems: RefCell<Option<grind_core::lint::Report>>,
+    /// What the one file input was raised for, since the page has exactly one and the pick
+    /// comes back as a `change` event with no memory of the click that caused it.
+    pick: Cell<Pick>,
+}
+
+/// Which of the two things a picked file is.
+///
+/// One `<input type="file">` rather than two: the only difference between them is the `accept`
+/// list, which is an attribute rather than an element, and a second hidden input is a second
+/// thing to keep wired. The browser gives a `change` event no clue what it was for, so this is
+/// the clue.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    /// A document to open — the shell's own verb, either document type.
+    Document,
+    /// A delimited file to read into the open spreadsheet at the cursor.
+    Csv,
 }
 
 impl Shell {
@@ -235,6 +308,9 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.refresh(),
             Mode::Text => self.text.refresh(),
+            // Nothing to draw from a core: the welcome pane is markup, and the chrome below is
+            // the whole of what a repaint changes while it is up.
+            Mode::Welcome => {}
         }
         if self.source.borrow().is_some() {
             self.render_source();
@@ -252,13 +328,20 @@ impl Shell {
         let what = match self.mode.get() {
             Mode::Sheet => "sheet",
             Mode::Text => "text",
+            Mode::Welcome => "",
         };
-        self.dom.document.set_title(&format!("{name} — {what}"));
+        // The tab says the application's name on its own with nothing open, rather than the name
+        // of a document there isn't one of.
+        self.dom.document.set_title(&match what.is_empty() {
+            true => "grind".to_owned(),
+            false => format!("{name} — {what}"),
+        });
         // The tool row shows what the *selection* already is, so pressing Bold on bold text
         // reads as "this is bold" rather than as "make it bold again".
         match self.mode.get() {
             Mode::Sheet => self.sheet.refresh_tools(),
             Mode::Text => self.text.refresh_tools(),
+            Mode::Welcome => Ok(()),
         }
     }
 
@@ -270,31 +353,48 @@ impl Shell {
     fn show(&self, mode: Mode) -> Result<(), JsValue> {
         self.mode.set(mode);
         let sheet = mode == Mode::Sheet;
-        // **Three panes, one on screen.** The code view is not a fourth mode — the document is
+        let welcome = mode == Mode::Welcome;
+        // **Five panes, one on screen.** The code view is not a mode of its own — the document is
         // still a spreadsheet or a text document while its source is showing, and every verb in
         // the tool row still applies to it. So the *mode* decides which chrome, and the code view
         // decides which surface. Having one function answer both is what stops the two from
         // disagreeing: this used to be two, and closing the command palette closed the code view.
+        //
+        // The welcome pane is the one that *is* a mode, because it is the absence of a document
+        // rather than another way of looking at one: no tool row applies to it, and neither the
+        // source nor the problems pane can be open over nothing.
         let code = self.source.borrow().is_some();
         let problems = self.problems.borrow().is_some();
-        let document_pane = !code && !problems;
+        let document_pane = !code && !problems && !welcome;
         self.dom.sheet_pane.set_hidden(!sheet || !document_pane);
         self.dom.text_pane.set_hidden(sheet || !document_pane);
-        self.dom.code_pane.set_hidden(!code);
-        self.dom.problems_pane.set_hidden(!problems);
+        self.dom.code_pane.set_hidden(!code || welcome);
+        self.dom.problems_pane.set_hidden(!problems || welcome);
+        self.dom.welcome_pane.set_hidden(!welcome);
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
         self.dom.sheet_add.set_hidden(!sheet);
         self.dom.sheet_tools.set_hidden(!sheet);
-        self.dom.text_tools.set_hidden(sheet);
+        self.dom.text_tools.set_hidden(sheet || welcome);
+        self.dom.tools.set_hidden(welcome);
         // Recalculation is a spreadsheet's word. The button goes rather than greying out:
         // there is no such thing as an unrecalculated paragraph.
         self.dom.recalc.set_hidden(!sheet);
-        match (code, problems, sheet) {
-            (true, _, _) => self.dom.code_pane.focus(),
-            (_, true, _) => self.dom.problems_pane.focus(),
-            (false, false, true) => self.sheet.focus(),
-            (false, false, false) => self.text.focus(),
+        // Saving and the two history buttons need a document; with none they go the same way the
+        // sheet-only verbs do over a text document, rather than staying and doing nothing.
+        self.dom.save.set_hidden(welcome);
+        self.dom.verb_rule.set_hidden(welcome);
+        self.dom.undo.set_hidden(welcome);
+        self.dom.redo.set_hidden(welcome);
+        if welcome {
+            self.dom.summary.set_text_content(None);
+        }
+        match (welcome, code, problems, sheet) {
+            (true, ..) => self.dom.welcome_pane.focus(),
+            (_, true, _, _) => self.dom.code_pane.focus(),
+            (_, _, true, _) => self.dom.problems_pane.focus(),
+            (false, false, false, true) => self.sheet.focus(),
+            (false, false, false, false) => self.text.focus(),
         }
     }
 
@@ -308,6 +408,8 @@ impl Shell {
         let (table, mut entries) = match self.mode.get() {
             Mode::Sheet => (command::SHEET, self.sheet.targets(query)),
             Mode::Text => (command::TEXT, self.text.targets(query)),
+            // Three verbs and no targets: there is no document to go anywhere in.
+            Mode::Welcome => (command::WELCOME, Vec::new()),
         };
         entries.extend(command::filter(table, query));
         entries
@@ -334,7 +436,22 @@ impl Shell {
     fn run(self: &Rc<Self>, id: &str) {
         match id {
             "doc.open" => self.open_picker(),
+            // The welcome pane's two cards, and the palette's rows for them — reachable from
+            // every pane, because "start a new one of the other kind" is a verb this shell used
+            // not to have at all: a page that had opened a spreadsheet could only get a text
+            // document by opening a file that already was one.
+            "doc.new-sheet" => self.new_document(Mode::Sheet),
+            "doc.new-text" => self.new_document(Mode::Text),
+            "doc.welcome" => {
+                let _ = self.show(Mode::Welcome);
+            }
             "doc.save" => self.save(),
+            // Only in `command::SHEET`, so the text pane never offers them — but the ids are
+            // answered here rather than in the pane, because a file and a download are the
+            // chrome's and the pane has neither.
+            "doc.import-csv" => self.import_picker(),
+            "doc.export-csv" => self.export_csv("csv"),
+            "doc.export-tsv" => self.export_csv("tsv"),
             "doc.undo" => self.undo(),
             "doc.redo" => self.redo(),
             "edit.copy" => self.copy_out(false),
@@ -345,6 +462,9 @@ impl Shell {
             _ => match self.mode.get() {
                 Mode::Sheet => self.sheet.run(id),
                 Mode::Text => self.text.run(id),
+                // Everything else needs a document. Nothing offers these here — the palette's
+                // welcome table is three rows — so this is the answer to a stale id only.
+                Mode::Welcome => {}
             },
         }
     }
@@ -362,10 +482,13 @@ impl Shell {
         let open = self.source.borrow().is_some();
         *self.source.borrow_mut() = match open {
             true => None,
-            false => Some(match self.mode.get() {
-                Mode::Sheet => self.sheet.project(),
-                Mode::Text => self.text.project(),
-            }),
+            false => match self.mode.get() {
+                Mode::Sheet => Some(self.sheet.project()),
+                Mode::Text => Some(self.text.project()),
+                // Nothing to project. Unreachable — `command::WELCOME` has no such row — and
+                // answered rather than unwrapped, so a stale id leaves the pane as it was.
+                Mode::Welcome => None,
+            },
         };
         if !open {
             self.render_source();
@@ -399,10 +522,11 @@ impl Shell {
         let open = self.problems.borrow().is_some();
         *self.problems.borrow_mut() = match open {
             true => None,
-            false => Some(match self.mode.get() {
-                Mode::Sheet => self.sheet.lint(),
-                Mode::Text => self.text.lint(),
-            }),
+            false => match self.mode.get() {
+                Mode::Sheet => Some(self.sheet.lint()),
+                Mode::Text => Some(self.text.lint()),
+                Mode::Welcome => None,
+            },
         };
         if !open {
             self.render_problems();
@@ -429,6 +553,7 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.select_projected(address),
             Mode::Text => self.text.select_projected(address),
+            Mode::Welcome => {}
         }
         *self.problems.borrow_mut() = None;
         let _ = self.show(self.mode.get());
@@ -439,6 +564,7 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.projection_address(),
             Mode::Text => self.text.projection_address(),
+            Mode::Welcome => None,
         }
     }
 
@@ -462,6 +588,7 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.select_projected(address),
             Mode::Text => self.text.select_projected(address),
+            Mode::Welcome => {}
         }
         self.render_source();
     }
@@ -474,6 +601,9 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.clipboard_text(),
             Mode::Text => self.text.clipboard_text(),
+            // Nothing selected anywhere, so Ctrl+C on the welcome pane is the browser's own
+            // copy of whatever the page has selected rather than a document's.
+            Mode::Welcome => None,
         }
     }
 
@@ -481,6 +611,7 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.paste_text(text),
             Mode::Text => self.text.paste_text(text),
+            Mode::Welcome => {}
         }
     }
 
@@ -490,6 +621,7 @@ impl Shell {
             Mode::Text => {
                 self.text.erase_selection();
             }
+            Mode::Welcome => {}
         }
     }
 
@@ -535,6 +667,9 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.app.can_undo(),
             Mode::Text => self.text.app.can_undo(),
+            // No document, so nothing to take back — which is also what keeps the page from
+            // asking "are you sure?" on the way out of a welcome pane (`beforeunload`).
+            Mode::Welcome => false,
         }
     }
 
@@ -542,6 +677,7 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.app.can_redo(),
             Mode::Text => self.text.app.can_redo(),
+            Mode::Welcome => false,
         }
     }
 
@@ -549,6 +685,7 @@ impl Shell {
         let moved = match self.mode.get() {
             Mode::Sheet => self.sheet.app.undo(),
             Mode::Text => self.text.app.undo(),
+            Mode::Welcome => false,
         };
         if !moved {
             self.set_message("Nothing to undo".to_owned());
@@ -559,6 +696,7 @@ impl Shell {
         let moved = match self.mode.get() {
             Mode::Sheet => self.sheet.app.redo(),
             Mode::Text => self.text.app.redo(),
+            Mode::Welcome => false,
         };
         if !moved {
             self.set_message("Nothing to redo".to_owned());
@@ -569,12 +707,26 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => self.sheet.set_message(message),
             Mode::Text => self.text.set_message(message),
+            // Straight to the status bar: the welcome pane has no `Ui` holding a message and no
+            // render to put one there, so this is the one place the element is written directly.
+            Mode::Welcome => self.dom.message.set_text_content(Some(&message)),
         }
     }
 
     // --- documents ---
 
     fn open_picker(&self) {
+        self.raise_picker(Pick::Document, DOCUMENT_TYPES);
+    }
+
+    /// The same picker, raised for a delimited file instead.
+    fn import_picker(&self) {
+        self.raise_picker(Pick::Csv, CSV_TYPES);
+    }
+
+    fn raise_picker(&self, pick: Pick, accept: &str) {
+        self.pick.set(pick);
+        self.dom.file_input.set_accept(accept);
         // Cleared first, or picking the same file twice fires no change event and the second
         // open silently does nothing.
         self.dom.file_input.set_value("");
@@ -593,6 +745,43 @@ impl Shell {
             Err(_) => return self.set_message(format!("Could not read {name}")),
         };
         self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
+    }
+
+    /// The same read, for a file that is data rather than a document.
+    ///
+    /// Bytes again, and decoded by the core (`csv::decode`), because "this file is not UTF-8"
+    /// is a rule about CSV rather than about browsers — the CLI and the other three windows
+    /// say the same sentence from the same constant.
+    async fn load_csv(self: Rc<Self>, file: File) {
+        let name = file.name();
+        let buffer = match JsFuture::from(file.array_buffer()).await {
+            Ok(buffer) => buffer,
+            Err(_) => return self.set_message(format!("Could not read {name}")),
+        };
+        match csv::decode(js_sys::Uint8Array::new(&buffer).to_vec()) {
+            Ok(text) => self.sheet.import_csv(&text),
+            Err(why) => self.set_message(format!("{name}: {why}")),
+        }
+    }
+
+    /// Hand the selection to a download as delimited text.
+    ///
+    /// The name carries the dialect (`csv::Dialect::for_name`), which is why there are two
+    /// verbs here and two filters in the other windows' save dialogs: a download names itself,
+    /// so the choice has to be made before the file exists rather than in a dialog after.
+    fn export_csv(&self, extension: &str) {
+        let stem = std::path::Path::new(&self.document_name())
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_owned());
+        let name = format!("{stem}.{extension}");
+        let Some(text) = self.sheet.export_csv(csv::Dialect::for_name(&name)) else {
+            return;
+        };
+        match self.download(&name, text.as_bytes()) {
+            Ok(()) => self.set_message(format!("Saved {name} to your downloads")),
+            Err(_) => self.set_message(format!("The browser refused to download {name}")),
+        }
     }
 
     /// A document named in the page's own URL — `?doc=sample.fodt` — fetched and opened as if
@@ -676,6 +865,10 @@ impl Shell {
         let bytes = match self.mode.get() {
             Mode::Sheet => self.sheet.save_bytes(form),
             Mode::Text => self.text.save_bytes(form),
+            // Nothing open. The Save button is off the bar on this pane and the palette has no
+            // row for it, so this is only reachable by Ctrl+S — which gets a sentence rather
+            // than a download of an empty document nobody asked to make.
+            Mode::Welcome => Err("There is no document to save yet".to_owned()),
         };
         let bytes = match bytes {
             Ok(bytes) => bytes,
@@ -715,7 +908,72 @@ impl Shell {
         match self.mode.get() {
             Mode::Sheet => UNTITLED_SHEET.to_owned(),
             Mode::Text => UNTITLED_TEXT.to_owned(),
+            Mode::Welcome => String::new(),
         }
+    }
+
+    /// Start a new, empty document of one kind — the welcome pane's two cards, and the palette's
+    /// two rows for them.
+    ///
+    /// **Written and read back**, which looks roundabout and is the honest way to do it here: a
+    /// pane owns one `App` for the life of the page (its observer is registered once, and every
+    /// closure on the page holds an `Rc` to it), so "a new document" has to be a new document
+    /// *in* that app. `App::open_bytes` is the one door that replaces one — it clears the undo
+    /// history with it, which is exactly right across a document boundary — and an empty
+    /// document's flat XML is a few hundred bytes. The alternative is an `App::new_document` in
+    /// the core, which is a capability every other shell would then owe the CLI (rule 4) for a
+    /// case none of them has: the three native shells make a *window* per document.
+    fn new_document(&self, mode: Mode) {
+        let Some(kind) = mode.kind() else { return };
+        // **Asked about first**, because this is the one verb in the shell that throws a document
+        // away: the pane keeps one `App`, so a new document replaces what that app is holding.
+        // The question is asked of the pane being *replaced* rather than the one on screen — with
+        // a text document open, a new spreadsheet replaces the spreadsheet, which may be empty
+        // and untouched while the thing you are looking at is neither.
+        let replacing = match mode {
+            Mode::Sheet => self.sheet.app.can_undo(),
+            Mode::Text => self.text.app.can_undo(),
+            Mode::Welcome => false,
+        };
+        if replacing
+            && !confirm(&format!(
+                "Start a new {}? Unsaved changes to the one you have will be lost.",
+                match kind {
+                    DocumentKind::Spreadsheet => "spreadsheet",
+                    _ => "text document",
+                }
+            ))
+        {
+            return;
+        }
+        let (name, bytes) = match kind {
+            DocumentKind::Spreadsheet => (
+                UNTITLED_SHEET,
+                grind_sheet::write_bytes(&grind_sheet::Document::default(), Form::Flat)
+                    .map_err(|error| error.to_string()),
+            ),
+            _ => (
+                UNTITLED_TEXT,
+                grind_text::write_bytes(&grind_text::Document::default(), Form::Flat)
+                    .map_err(|error| error.to_string()),
+            ),
+        };
+        let opened = bytes.and_then(|bytes| match mode {
+            Mode::Sheet => self.sheet.open(name, &bytes),
+            _ => self.text.open(name, &bytes),
+        });
+        if let Err(error) = opened {
+            return self.set_message(error);
+        }
+        // Untitled, so a download names itself after the kind — `document_name`'s two constants.
+        self.name.borrow_mut().clear();
+        // Both readings close with the document they were of.
+        *self.source.borrow_mut() = None;
+        *self.problems.borrow_mut() = None;
+        if let Err(error) = self.show(mode) {
+            web_sys::console::error_1(&error);
+        }
+        self.set_message(String::new());
     }
 }
 
@@ -768,6 +1026,34 @@ pub(crate) fn request_frame() {
     // a per-frame allocation acceptable.
     let callback = Closure::once_into_js(move || with_shell(|shell| shell.refresh()));
     let _ = window.request_animation_frame(callback.unchecked_ref());
+}
+
+/// Ask the reader a yes/no question, the one modal a page is allowed without building one.
+///
+/// **`true` when the browser will not ask**, which is the uncomfortable half and is deliberate: a
+/// page in a sandboxed frame without `allow-modals`, and every headless runtime including the one
+/// `ui_web/smoke.js` runs in, answers `confirm` with nothing at all. Refusing the verb there
+/// would make a button that silently does nothing, which reads as broken and is the failure mode
+/// a reader cannot diagnose; going ahead does what was asked. The environments where this matters
+/// are the ones with no user in front of them.
+/// It is reached through `Reflect` rather than through `Window::confirm_with_message` for exactly
+/// that reason: a runtime with no real `confirm` returns `undefined`, and the typed binding
+/// coerces that to `false` — the same answer as a reader pressing Cancel, which is the one answer
+/// it must not be confused with. An answer that is not a boolean is nobody answering.
+fn confirm(question: &str) -> bool {
+    let Some(window) = web_sys::window() else {
+        return true;
+    };
+    let Ok(ask) = js_sys::Reflect::get(&window, &JsValue::from_str("confirm")) else {
+        return true;
+    };
+    let Some(ask) = ask.dyn_ref::<js_sys::Function>() else {
+        return true;
+    };
+    match ask.call1(&window, &JsValue::from_str(question)) {
+        Ok(answer) => answer.as_bool().unwrap_or(true),
+        Err(_) => true,
+    }
 }
 
 /// `navigator.clipboard`, if this browser has one.
@@ -852,6 +1138,12 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
     // straight back, or the next keystroke goes to a button instead of the document.
     const BUTTONS: &[(&str, &str, bool)] = &[
         ("open", "doc.open", true),
+        // The welcome pane's three cards. They are in this table rather than wired on their own
+        // for the rule the table exists to enforce: a button *says a verb*, and these three say
+        // the same three the palette does.
+        ("welcome-sheet", "doc.new-sheet", false),
+        ("welcome-text", "doc.new-text", false),
+        ("welcome-open", "doc.open", true),
         ("save", "doc.save", false),
         ("undo", "doc.undo", false),
         ("redo", "doc.redo", false),
@@ -1040,6 +1332,9 @@ fn wire_swatches(shell: &Rc<Shell>) -> Result<(), JsValue> {
         match owner.mode.get() {
             Mode::Sheet => owner.sheet.set_color(&target, hex),
             Mode::Text => owner.text.set_color(&target, hex),
+            // Both tool rows are off the bar on the welcome pane, so no swatch can be open over
+            // it — and nothing to colour if one somehow were.
+            Mode::Welcome => {}
         }
         let _ = owner.show(owner.mode.get());
     })?;
@@ -1177,7 +1472,10 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
             return;
         };
         // Reading a file is a promise; nothing else in this shell is async.
-        spawn_local(shell.clone().load(file));
+        match shell.pick.get() {
+            Pick::Document => spawn_local(shell.clone().load(file)),
+            Pick::Csv => spawn_local(shell.clone().load_csv(file)),
+        }
     })
 }
 

@@ -843,17 +843,45 @@ mod tests {
         assert_eq!(flow.slot(2).unwrap().indent, INDENT);
     }
 
-    /// An empty document has nothing to stack and must not be a special case anywhere above.
+    /// A document with **no blocks at all** has nothing to stack and must not be a special case
+    /// anywhere above.
+    ///
+    /// Written out of `Document::empty` and read back, because `App::new()` is no longer such a
+    /// document: a *new* one is one empty paragraph, so that a caret has somewhere to be. A file
+    /// with an empty `office:text` still is one, and this is that case.
     #[test]
-    fn an_empty_document_measures_to_its_own_margin() {
+    fn a_document_with_no_blocks_measures_to_its_own_margin() {
+        let app = grind_text::App::new();
+        let bytes = grind_text::write_bytes(&grind_text::Document::empty(), grind_core::Form::Flat)
+            .expect("writes");
+        app.open_bytes("empty.fodt", &bytes).expect("reads");
+        assert_eq!(app.block_count(), 0, "the file really has none");
+
         let flow = flow_of(
-            &grind_text::App::new(),
+            &app,
             &grind_text::Uniform::new(30.0, &grind_text::Fixed),
             96,
             &no_pictures,
         );
         assert_eq!(flow.at_y(0.0), None);
         assert_eq!(flow.limit(500.0), 0.0, "nothing to scroll");
+    }
+
+    /// And the document this shell's **New Text Document** actually opens: one empty paragraph,
+    /// with a slot for it, because the first keystroke lands in a block or it fails.
+    #[test]
+    fn a_new_document_has_one_block_to_type_into() {
+        let app = grind_text::App::new();
+        assert_eq!(app.block_count(), 1);
+        let flow = flow_of(
+            &app,
+            &grind_text::Uniform::new(30.0, &grind_text::Fixed),
+            96,
+            &no_pictures,
+        );
+        let slot = flow.slot(0).expect("the paragraph has a place on the page");
+        assert_eq!(slot.top, TOP, "the page's own top margin");
+        assert!(slot.height > 0.0, "an empty paragraph is still a line tall");
     }
 
     #[test]

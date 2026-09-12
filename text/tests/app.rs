@@ -11,10 +11,18 @@ use grind_text::{App, BlockKind, Caret, Form, Observer, loc};
 
 /// Build a document *through the App*, which means the setup is itself undoable — every
 /// helper below accounts for that rather than pretending history starts empty.
+///
+/// The **first** paragraph is typed into the one a new document already has rather than inserted
+/// in front of it (`Document::default` — a new document is one empty paragraph, not zero blocks,
+/// which is what gives a caret somewhere to be). One action either way, which is what the
+/// undo-counting tests below rest on.
 fn app(paragraphs: &[&str]) -> App {
     let app = App::new();
     for (i, text) in paragraphs.iter().enumerate() {
-        app.insert(i, BlockKind::Paragraph, text).expect("inserts");
+        match i {
+            0 => app.set_text(0, text).expect("sets"),
+            _ => app.insert(i, BlockKind::Paragraph, text).expect("inserts"),
+        }
     }
     app
 }
@@ -190,7 +198,9 @@ fn typed_text_takes_the_formatting_of_the_run_at_the_caret() {
     };
 
     // Build the two runs by writing and reading back, so the test drives the real path.
-    let mut d = grind_text::Document::new();
+    // `empty`, not `new`: this document is exactly the one block below, where a *new* one would
+    // carry the paragraph `Document::default` starts with.
+    let mut d = grind_text::Document::empty();
     let id = d.next_id();
     let mut block = grind_text::Block::new(id, BlockKind::Paragraph);
     block.runs = vec![styled("plain", None), styled("bold", Some("T1"))];

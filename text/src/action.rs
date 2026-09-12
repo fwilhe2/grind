@@ -113,7 +113,7 @@ mod tests {
     }
 
     fn doc(texts: &[&str]) -> Document {
-        let mut doc = Document::new();
+        let mut doc = Document::empty();
         for t in texts {
             let block = para(&mut doc, t);
             doc.blocks.push(block);
