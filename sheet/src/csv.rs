@@ -128,6 +128,46 @@ impl Dialect {
         }
         best.1
     }
+
+    /// The dialect a file *name* asks for — `.tsv` and `.tab` are tab-separated, everything
+    /// else is a comma.
+    ///
+    /// **For writing, where [`sniff`](Dialect::sniff) has nothing to read yet.** A save dialog
+    /// has no flags on it, so the one thing it can carry is the name the user typed into it,
+    /// and that is the same shape `Form::from_path` gives a document: the extension is how a
+    /// person says which of two forms they meant. Importing does not use this and must not —
+    /// there the *content* is available, and a `.csv` written by a German Excel is
+    /// semicolon-separated whatever it is called.
+    pub fn for_name(name: &str) -> Dialect {
+        let extension = name
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("tsv" | "tab") => Dialect::TAB,
+            _ => Dialect::COMMA,
+        }
+    }
+}
+
+/// What [`decode`] says when the bytes are not UTF-8, without a subject in front of it.
+///
+/// The caller puts the file's name there, because only the caller knows what to call it — a
+/// path on the CLI, a picked file's own name in a browser. It is a constant rather than four
+/// similar sentences for the same reason `view::CellRole::marker` is one: a rule that is stated
+/// in every client is a rule that is stated differently in every client.
+pub const NOT_UTF8: &str = "not UTF-8 — convert it first, e.g. iconv -f windows-1252 -t utf-8";
+
+/// A file's bytes as text, or [`NOT_UTF8`].
+///
+/// **The encoding rule, in one place** (`doc/not-doing.md`, "CSV encodings"). Guessing is the
+/// alternative and a wrong guess is silent: every cell of the import is mojibake and nothing
+/// says so. A byte-order mark is left alone here and stripped by [`parse`], because it is UTF-8
+/// that Excel marked rather than a different encoding.
+///
+/// Takes the `Vec` a caller already has — `std::fs::read` on three shells, a browser's own
+/// `ArrayBuffer` on the fourth — so nothing is copied to be checked.
+pub fn decode(bytes: Vec<u8>) -> Result<String, &'static str> {
+    String::from_utf8(bytes).map_err(|_| NOT_UTF8)
 }
 
 /// Read a delimited file into rows of fields. Never fails; see the module's tolerance rule.
@@ -311,6 +351,31 @@ impl Default for Import {
             formulas: false,
             dates: false,
             trim: false,
+        }
+    }
+}
+
+impl Import {
+    /// The options a **window** imports with, having asked nothing.
+    ///
+    /// A command line carries seven flags and a file picker carries none, so the shells settle
+    /// the two questions that cannot be skipped from what they have: the delimiter comes from
+    /// the file's own content ([`Dialect::sniff`]), and where the fields land comes from the
+    /// selection. Everything else is the default — except [`Import::dates`], which is **on**:
+    /// it is the one flag a person importing a file would always pass, and it is the one that
+    /// cannot misread anything, since [`dated`] reads ISO spellings only and leaves
+    /// `15/03/2026` as the text it cannot resolve.
+    ///
+    /// `text`, `formulas`, `locale` and `trim` stay off, each because it changes what a field
+    /// *means* in a way no window asked about: a whole file forced to text, a `=` arriving
+    /// from outside becoming a formula, a second set of number separators, and padding that
+    /// RFC 4180 says is part of the field. `grind sheet import-csv` has all four (R9), and
+    /// that is the answer for a file that needs one.
+    pub fn sniffed(text: &str) -> Import {
+        Import {
+            dialect: Dialect::sniff(text),
+            dates: true,
+            ..Import::default()
         }
     }
 }
@@ -794,5 +859,58 @@ mod tests {
         assert_eq!(input("  ", &trimmed), "");
         // Without it the space is content, which is what RFC 4180 says it is.
         assert_eq!(typed(" 42"), " 42");
+    }
+
+    /// Bytes in, and the one sentence that says why not.
+    #[test]
+    fn decoding_takes_utf8_and_names_the_fix_for_everything_else() {
+        assert_eq!(decode(b"a,b\n".to_vec()).as_deref(), Ok("a,b\n"));
+        // A BOM survives decoding and is `parse`'s to strip, so a file Excel marked is not
+        // refused for carrying the mark.
+        assert_eq!(
+            decode("\u{feff}a,b\n".as_bytes().to_vec()).as_deref(),
+            Ok("\u{feff}a,b\n")
+        );
+        // Windows-1252 "Müller" — the commonest way a real export is not UTF-8.
+        assert_eq!(
+            decode(vec![b'M', 0xfc, b'l', b'l', b'e', b'r']),
+            Err(NOT_UTF8)
+        );
+        assert!(NOT_UTF8.contains("iconv"), "the sentence names the fix");
+    }
+
+    /// What a window imports with, having asked nothing: the file's own delimiter, and the one
+    /// flag that cannot misread a field.
+    #[test]
+    fn the_sniffed_options_read_the_delimiter_and_nothing_else_a_window_did_not_ask_about() {
+        let german = "id;name;when\n1;a;2026-03-15\n2;b;2026-03-16\n";
+        let options = Import::sniffed(german);
+        assert_eq!(options.dialect, Dialect::SEMICOLON);
+        assert!(options.dates, "a date column is why anybody imports a CSV");
+        assert!(!options.text);
+        assert!(
+            !options.formulas,
+            "a leading = arriving from outside stays text"
+        );
+        assert!(!options.trim);
+        assert!(options.locale.is_none());
+        // The date flag is a precondition and not a guess: only ISO spellings are dated, so a
+        // file full of `15/03/2026` is unaffected by it (`dated`).
+        assert!(dated("2026-03-15", 0).is_some());
+        assert!(dated("15/03/2026", 0).is_none());
+    }
+
+    /// Writing has no content to sniff, so the *name* carries the dialect — the one thing a
+    /// save dialog can say.
+    #[test]
+    fn the_export_dialect_follows_the_name_it_is_saved_under() {
+        assert_eq!(Dialect::for_name("data.tsv"), Dialect::TAB);
+        assert_eq!(Dialect::for_name("DATA.TSV"), Dialect::TAB);
+        assert_eq!(Dialect::for_name("data.tab"), Dialect::TAB);
+        assert_eq!(Dialect::for_name("data.csv"), Dialect::COMMA);
+        // Anything else, a name with no extension included, is the format the verb is called
+        // after rather than an error: a save dialog has already accepted the name by then.
+        assert_eq!(Dialect::for_name("data"), Dialect::COMMA);
+        assert_eq!(Dialect::for_name("notes.txt"), Dialect::COMMA);
     }
 }

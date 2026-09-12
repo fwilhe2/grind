@@ -46,7 +46,7 @@ use libadwaita as adw;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use grind_sheet::{App, DocumentKind, Form, Observer, a1};
+use grind_sheet::{App, DocumentKind, Form, Observer, RecalcMode, a1, csv};
 use gtk::{gio, glib};
 
 use grid::{Grid, Notice};
@@ -668,6 +668,134 @@ impl Ui {
                 self.loading.set(false);
                 self.toast(&format!("Could not open: {error}"));
             }
+        }
+    }
+
+    // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
+
+    /// *Import CSV…* — a delimited file read in **at the cursor**, in one undo step.
+    ///
+    /// A picker and nothing else. The two questions an import cannot skip are answered from
+    /// what this window already has: which delimiter, from the file's own content, and where
+    /// the fields land, from the selection — so there is no dialog for a person to get wrong,
+    /// which is the shape `Filter Rows` and `Format as Table` already have here. Every other
+    /// knob is `grind sheet import-csv`'s, and `csv::Import::sniffed` is where the choice of
+    /// which ones a window sets is written down.
+    fn import_csv(self: &Rc<Self>) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Import CSV")
+            .filters(&csv_filters())
+            .build();
+        dialog.open(
+            Some(&self.window),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |result| {
+                    if let Some(path) = result.ok().and_then(|file| file.path()) {
+                        ui.read_csv(&path);
+                    }
+                }
+            ),
+        );
+    }
+
+    fn read_csv(self: &Rc<Self>, path: &Path) {
+        let text = match std::fs::read(path)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| csv::decode(bytes).map_err(str::to_owned))
+        {
+            Ok(text) => text,
+            // Both failures name the file, because the picker has closed by now and the
+            // sentence is all that is left of it.
+            Err(why) => return self.toast(&format!("{}: {why}", document_name(Some(path)))),
+        };
+        let sheet = self.grid.sheet();
+        let at = self.grid.selection().active;
+        let options = csv::Import::sniffed(&text);
+        match self
+            .app
+            .import_csv(sheet, at, &text, &options, RecalcMode::Document)
+        {
+            Ok(outcome) => {
+                if let Some(recalc) = outcome.recalc.filter(|recalc| recalc.spoiled > 0) {
+                    self.grid.report(Notice::RecalcSkipped(recalc.spoiled));
+                }
+                self.toast(&format!(
+                    "{} imported at {}",
+                    counted(outcome.cells, "cell", "cells"),
+                    a1::format(None, at)
+                ));
+            }
+            Err(error) => self.toast(&error.to_string()),
+        }
+    }
+
+    /// *Export CSV…* — the selection, or everything the sheet uses when the selection is one
+    /// cell, written as what each cell **shows**.
+    ///
+    /// The dialect follows the name: saving as `.tsv` writes tabs (`csv::Dialect::for_name`),
+    /// which is the only thing a save dialog can be asked with and the same rule the terminal's
+    /// `:csv-out` uses.
+    fn export_csv(self: &Rc<Self>) {
+        let suggested = match self.path.borrow().as_deref().and_then(Path::file_stem) {
+            Some(stem) => format!("{}.csv", stem.to_string_lossy()),
+            None => "Untitled.csv".to_owned(),
+        };
+        let dialog = gtk::FileDialog::builder()
+            .title("Export CSV")
+            .filters(&csv_save_filters())
+            .initial_name(suggested)
+            .build();
+        dialog.save(
+            Some(&self.window),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |result| {
+                    if let Some(path) = result.ok().and_then(|file| file.path()) {
+                        ui.write_csv(&path);
+                    }
+                }
+            ),
+        );
+    }
+
+    fn write_csv(self: &Rc<Self>, path: &Path) {
+        let sheet = self.grid.sheet();
+        let (mut start, mut end) = self.grid.selection().rect();
+        // One cell is a cursor, not a range — the same reading `Format as Table` gives it.
+        if start == end {
+            let Ok((rows, cols)) = self.app.used_extent(sheet) else {
+                return self.toast("No such sheet");
+            };
+            if rows == 0 || cols == 0 {
+                return self.toast("There is nothing in this sheet to export");
+            }
+            (start, end) = (
+                grind_sheet::Pos::new(0, 0),
+                grind_sheet::Pos::new(rows - 1, cols - 1),
+            );
+        }
+        let name = document_name(Some(path));
+        let options = csv::Export {
+            dialect: csv::Dialect::for_name(&name),
+            ..csv::Export::default()
+        };
+        match self
+            .app
+            .export_csv(sheet, start, end, &options)
+            .map_err(|error| error.to_string())
+            .and_then(|text| std::fs::write(path, text).map_err(|error| error.to_string()))
+        {
+            Ok(()) => self.toast(&format!(
+                "{}:{} exported to {name}",
+                a1::format(None, start),
+                a1::format(None, end)
+            )),
+            Err(why) => self.toast(&format!("Could not export: {why}")),
         }
     }
 
@@ -1863,6 +1991,15 @@ fn actions() -> Vec<Verb> {
             "Document",
             |ui| ui.save_as(),
         ),
+        // The one non-ODF format (`doc/not-doing.md` §2), and the only interchange this suite
+        // has. No accelerator: neither is a verb anybody presses twice a minute, and the
+        // palette is the growth valve this window put verbs in.
+        verb("csv-import", &[], "Import CSV…", "Document", |ui| {
+            ui.import_csv()
+        }),
+        verb("csv-export", &[], "Export CSV…", "Document", |ui| {
+            ui.export_csv()
+        }),
         verb("undo", &["<Control>z"], "Undo", "Document", |ui| {
             ui.app.undo();
         }),
@@ -2022,6 +2159,13 @@ fn primary_menu() -> gio::Menu {
     files.append(Some("Save As…"), Some("win.save-as"));
     menu.append_section(None, &files);
 
+    // CSV is a *file* verb and belongs in this menu for the same reason the four above do —
+    // its own section, because importing is not another way of saving the document.
+    let interchange = gio::Menu::new();
+    interchange.append(Some("Import CSV…"), Some("win.csv-import"));
+    interchange.append(Some("Export CSV…"), Some("win.csv-export"));
+    menu.append_section(None, &interchange);
+
     let document = gio::Menu::new();
     document.append(Some("Recalculate"), Some("win.recalc"));
     document.append(Some("Check the Document"), Some("win.lint"));
@@ -2065,6 +2209,38 @@ fn spreadsheet_filters() -> gio::ListStore {
 /// The projection is last on purpose. It diffs better than flat XML does, but it is this
 /// project's own spelling and nothing else reads it, whereas both ODF forms are a format other
 /// software opens — so it is offered rather than defaulted to.
+/// What an import will open. Both spellings of the one format, because the delimiter is a
+/// field of `csv::Dialect` and not a second format (`sheet/src/csv.rs`) — and `.txt`, since
+/// that is what a great many exports are called and the delimiter is sniffed from the content
+/// rather than from the name.
+fn csv_filters() -> gio::ListStore {
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Delimited text"));
+    for pattern in ["*.csv", "*.tsv", "*.tab", "*.txt"] {
+        filter.add_pattern(pattern);
+    }
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    filters
+}
+
+/// Exporting is the other direction, and here the two spellings **are** a choice: the name
+/// decides the delimiter (`csv::Dialect::for_name`), so this list is how a person says which
+/// one they meant. Comma first — it is what the verb is called.
+fn csv_save_filters() -> gio::ListStore {
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    for (name, pattern) in [
+        ("Comma-separated values", "*.csv"),
+        ("Tab-separated values", "*.tsv"),
+    ] {
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some(name));
+        filter.add_pattern(pattern);
+        filters.append(&filter);
+    }
+    filters
+}
+
 fn spreadsheet_save_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     for (name, pattern) in [

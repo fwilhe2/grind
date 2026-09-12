@@ -1194,16 +1194,23 @@ impl App {
     }
 
     /// `:csv-in <file>` — a CSV or TSV read in at the cursor, delimiter sniffed from the file's
-    /// own content (`grind_sheet::csv`).
+    /// own content (`csv::Import::sniffed`, which is what every shell imports with).
+    ///
+    /// It used to say that and pass `Import::default()`, which is the comma whatever the file
+    /// holds; the options a window uses are the core's now, so the four shells cannot read one
+    /// file four ways.
     fn cmd_csv_in(&mut self, path: &str) {
-        let text = match std::fs::read_to_string(path) {
+        let text = match std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| grind_sheet::csv::decode(bytes).map_err(str::to_owned))
+        {
             Ok(text) => text,
             Err(e) => {
                 self.status = format!("{path}: {e}");
                 return;
             }
         };
-        let options = grind_sheet::csv::Import::default();
+        let options = grind_sheet::csv::Import::sniffed(&text);
         match self.core.import_csv(
             self.sheet,
             self.active,
@@ -1217,6 +1224,10 @@ impl App {
     }
 
     /// `:csv-out <file>` — the selection, or the whole used sheet when nothing is selected.
+    ///
+    /// The **name** says which dialect, since there is no dialog and no flag to say it with:
+    /// `:csv-out data.tsv` writes tabs (`Dialect::for_name`, and the same rule in every window's
+    /// save dialog).
     fn cmd_csv_out(&mut self, path: &str) {
         let (start, end) = match self.anchor {
             Some(_) => self.rect(),
@@ -1228,7 +1239,10 @@ impl App {
                 }
             }
         };
-        let options = grind_sheet::csv::Export::default();
+        let options = grind_sheet::csv::Export {
+            dialect: grind_sheet::csv::Dialect::for_name(path),
+            ..grind_sheet::csv::Export::default()
+        };
         match self
             .core
             .export_csv(self.sheet, start, end, &options)

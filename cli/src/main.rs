@@ -3592,10 +3592,12 @@ fn delimiter(value: &str) -> Result<char, String> {
 
 /// A text file, or standard input for `-`.
 ///
-/// Read as **bytes** and decoded here, so a file in a legacy encoding — which is what an older
-/// Excel writes when it is not asked for UTF-8 — gets a sentence naming the fix rather than
-/// mojibake in a document. Guessing the encoding is the alternative, and a wrong guess is
-/// silent: `doc/not-doing.md`'s rule about semantics applies to text as much as to numbers.
+/// Read as **bytes** and decoded by `csv::decode`, so a file in a legacy encoding — which is
+/// what an older Excel writes when it is not asked for UTF-8 — gets a sentence naming the fix
+/// rather than mojibake in a document. Guessing the encoding is the alternative, and a wrong
+/// guess is silent: `doc/not-doing.md`'s rule about semantics applies to text as much as to
+/// numbers. The sentence is the core's (`csv::NOT_UTF8`) now that three windows say it too;
+/// what belongs here is the subject in front of it.
 fn read_text_file_or_stdin(source: &str) -> Result<String, String> {
     let bytes = match source {
         "-" => {
@@ -3607,9 +3609,7 @@ fn read_text_file_or_stdin(source: &str) -> Result<String, String> {
         }
         path => std::fs::read(path).map_err(|e| format!("{path}: {e}"))?,
     };
-    String::from_utf8(bytes).map_err(|_| {
-        format!("{source}: not UTF-8 — convert it first, e.g. iconv -f windows-1252 -t utf-8")
-    })
+    grind_sheet::csv::decode(bytes).map_err(|why| format!("{source}: {why}"))
 }
 
 fn read_stdin_if_dash(value: &str) -> Result<String, String> {

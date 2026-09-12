@@ -683,7 +683,8 @@ default is not 10pt · **moving over a filtered-out or manually hidden row**: th
 step onto a row that has no height, so the selection appears to stick until it passes the
 run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
 handing it the hidden set — worth doing the first time it annoys somebody, not before).
-CSV, sort, find/replace and print keep their existing not-doing rows and gates. The chart's
+Sort, find/replace and print keep their existing not-doing rows and gates; **CSV left that
+list** and has its own section below. The chart's
 own gaps moved again: creating one from the GUI, *editing* one (double-click, or right-click
 → Edit Chart…), deleting one from that same menu, assigning a colour by hand, and every part
 of an axis — its title, its tick labels, its gridlines — are now built
@@ -695,6 +696,19 @@ value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L — reach
 menu, since a filter is about a selection — to put a filter over the selection or clear it. Which rows that hides comes from the core and
 is never stored (`sheet/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
 draws those rows at zero height.
+
+**CSV is built, both directions, and it is deliberately a picker and nothing else.** *Import
+CSV…* and *Export CSV…* are two verbs in the primary menu's own section and two rows in the
+palette (`Ui::import_csv` / `Ui::export_csv`) — the growth valve, not the format bar, since
+neither reads or writes a property of the selection. An import lands at the **cursor**, in one
+undo step, with the delimiter read out of the file's own content; an export writes the selection,
+or everything the sheet uses when the selection is a single cell, and the **name** decides the
+delimiter — `.tsv` writes tabs, which is what the save dialog's two filters are for. The
+options a dialog would ask about (`--text`, `--formulas`, `--locale`, `--trim`, a delimiter the
+sniffer got wrong) are `grind sheet import-csv`'s and are **a named gap here**: this is the
+zero-prompt shape *Filter Rows* and *Format as Table* already have, and what a window settles
+without asking is `csv::Import::sniffed` in the core, so no shell can read one file its own way. `doc/not-doing.md`'s "a CSV column typed by
+hand" row is unchanged and is where the per-column question still lives.
 
 **Hiding rows and columns by hand is built** (§5.4, `table:visibility="collapse"`) — the
 persisted twin of the filter above, and orthogonal to it: `Sheet::hidden_cols`/

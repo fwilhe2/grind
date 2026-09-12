@@ -228,6 +228,99 @@ fn an_export_shows_what_a_cell_shows() {
     assert_eq!(export(&app, "A1", &Export::default()), "15.5%\n");
 }
 
+/// **What a window does**, end to end: bytes off a disk or a file picker, decoded, read with
+/// the options a shell has no dialog to ask about, landing at the cursor rather than at A1.
+///
+/// Every GUI shell is this sequence and nothing else (`ui_sheet_gtk::Ui::read_csv`,
+/// `ui_web::Shell::load_csv`, `ui_win32::win::import_csv`, `ui_tui`'s `:csv-in`), which is why
+/// it is worth one test here rather than four untestable ones in four shells.
+#[test]
+fn the_import_a_window_does_reads_a_picked_file_at_the_cursor() {
+    let app = empty();
+    // A German export: semicolons, and a date column. Neither is named anywhere — the
+    // delimiter comes out of the content and the date out of its ISO spelling.
+    let bytes = "when;what;how many\n2026-03-15;nails;120\n2026-03-16;screws;80\n"
+        .as_bytes()
+        .to_vec();
+    let text = grind_sheet::csv::decode(bytes).expect("UTF-8");
+    let options = Import::sniffed(&text);
+    assert_eq!(options.dialect, Dialect::SEMICOLON);
+
+    // The cursor, not the corner: an import lands where the selection is.
+    let (sheet, at, _) = resolve(&app, "B2");
+    app.import_csv(sheet, at, &text, &options, RecalcMode::Document)
+        .unwrap();
+
+    assert_eq!(value(&app, "B2"), CellValue::Text("when".to_owned()));
+    assert_eq!(value(&app, "D3"), CellValue::Number(120.0));
+    // The date column is a date, which is the whole of what `Import::sniffed` adds to the
+    // defaults — a number with a date format on it, showing as the day it says.
+    assert!(matches!(value(&app, "B3"), CellValue::Number(_)));
+    let viewport = app.get_viewport(sheet, 2..3, 1..2).unwrap();
+    assert_eq!(viewport.text(2, 1), Some("2026-03-15"));
+
+    // And it is one undo entry, whole, formats included.
+    assert!(app.undo());
+    assert_eq!(value(&app, "B2"), CellValue::Empty);
+    assert_eq!(value(&app, "D3"), CellValue::Empty);
+}
+
+/// The other direction: the name a save dialog came back with is what says whether the file is
+/// comma- or tab-separated, and nothing else does.
+#[test]
+fn the_export_a_window_does_takes_its_dialect_from_the_name() {
+    let app = empty();
+    app.enter_range(
+        0,
+        Pos::new(0, 0),
+        &[
+            vec!["item".to_owned(), "cost".to_owned()],
+            vec!["nails".to_owned(), "12.5".to_owned()],
+        ],
+        RecalcMode::No,
+    )
+    .unwrap();
+
+    let comma = Export {
+        dialect: Dialect::for_name("budget.csv"),
+        ..Export::default()
+    };
+    assert_eq!(export(&app, "A1:B2", &comma), "item,cost\nnails,12.5\n");
+
+    let tab = Export {
+        dialect: Dialect::for_name("budget.tsv"),
+        ..Export::default()
+    };
+    assert_eq!(export(&app, "A1:B2", &tab), "item\tcost\nnails\t12.5\n");
+
+    // A file exported and read back in is the same two rows, whichever of the two it was
+    // written as — the round trip a window offers as two menu items.
+    for (name, text) in [
+        ("budget.csv", export(&app, "A1:B2", &comma)),
+        ("budget.tsv", export(&app, "A1:B2", &tab)),
+    ] {
+        let back = empty();
+        let options = Import::sniffed(&text);
+        assert_eq!(options.dialect, Dialect::for_name(name), "{name}");
+        import(&back, &text, &options);
+        assert_eq!(value(&back, "B2"), CellValue::Number(12.5), "{name}");
+    }
+}
+
+/// A file that is not UTF-8 is refused with the sentence every client says, rather than read as
+/// mojibake — the encoding rule `doc/not-doing.md` states, now reached from four shells.
+#[test]
+fn a_file_that_is_not_utf8_is_refused_before_a_cell_is_touched() {
+    // Windows-1252 "Müller", which is what a spreadsheet exported without asking for UTF-8
+    // hands over.
+    let bytes = vec![
+        b'n', b'a', b'm', b'e', b'\n', b'M', 0xfc, b'l', b'l', b'e', b'r', b'\n',
+    ];
+    let why = grind_sheet::csv::decode(bytes).unwrap_err();
+    assert_eq!(why, grind_sheet::csv::NOT_UTF8);
+    assert!(why.contains("iconv"), "{why}");
+}
+
 #[test]
 fn a_file_bigger_than_one_paste_is_refused_by_name() {
     let app = empty();

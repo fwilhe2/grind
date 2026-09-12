@@ -85,7 +85,7 @@ shorter than one being edited.
 | Number formats | `:format` over eight presets, `:general` | — |
 | Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete`; `:width`, `:height`, `:hide`, `:show`; `:name`, `:name!`; `:format-table [--no-header] [--totals [FUNC]] [--name NAME]` (FUNC is a `TotalsFunction` id: sum, average, count, count-numbers, min, max, stdev, var) | `:h <level>`, `:li [depth]`, `:style [name]`, `:table [rows cols]`, `:move <address>`, `:mark`, `:mark!`, `:words` |
 | Fill | `:down`, `:right` — the selection's leading line replicated, references shifted | — |
-| Interchange | `:csv-in <file>`, `:csv-out <file>` | — |
+| Interchange | `:csv-in <file>` — at the cursor, delimiter sniffed from the file's own content (`csv::Import::sniffed`, the options every window imports with); `:csv-out <file>` — the selection or the whole used sheet, and `.tsv` writes tabs (`csv::Dialect::for_name`) | — |
 | Evaluate | `:eval <formula>` — what it would come to, storing nothing | — |
 | Find | `:find <text>`, then `n`/`N`; every match marked in the grid | `:find <text>`, then `n`/`N`; every match marked in the line; `:s/old/new/` |
 | Outline | — | `:outline` — a pane, one row per heading, indented; `Enter` goes to one |
