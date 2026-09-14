@@ -4,10 +4,17 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# The xlsx import filter — phase 10, planned
+# The xlsx import filter — phase 11, planned
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
 building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
+
+It was first written before phase 10 split the core in two, and **refreshed on 2026-09-14**
+against the workspace as it actually stands: `grind-core` + `grind-sheet` rather than one
+`core/`, the `grind <app> <verb>` CLI, `formula::shift` already built, M8's column widths
+already landed, and a model that has since grown charts, an autofilter and table formats. The
+same pass added "Transitional, and the real world", which is the section this plan was missing
+and the one that decides whether it can open other people's files at all.
 
 **The decision it records.** `doc/not-doing.md` §2 has carried one row since phase 7:
 *"Reading `.xlsx` — never scheduled, always allowed"*. It is now scheduled. The reason is
@@ -40,16 +47,20 @@ never out.
   exactly as it is for any other document.
 - **Our own reader, not `calamine`.** See the trade below; it is close, and the trigger that
   would flip it is named.
-- **Its own crate, behind a cargo feature.** `xlsx/` (crate `sheet-xlsx`), an optional
+- **Its own crate, behind a cargo feature.** `xlsx/` (crate `grind-xlsx`), an optional
   dependency of each shell that wants it. A build without the feature contains none of it.
+- **Transitional is the target, Strict is nearly free, and neither is a fork.** Real files are
+  ECMA-376 Transitional; the whole difference that reaches a reader is a namespace table and a
+  markup-compatibility rule. See "Transitional, and the real world" below — it is the section
+  that decides whether this filter opens other people's documents or only our own test files.
 - **The fidelity report is part of the output, not an afterthought.** What a conversion
   dropped is as important as what it carried, and a converter that lies about it is worse
   than one that refuses. `--strict` turns any loss into a non-zero exit, which is what a
   pipeline wants.
-- **The CLI's read commands stay ODF-only.** `sheet import in.xlsx out.ods` is the filter;
-  everything else operates on the result. A CLI can run two commands where a GUI cannot, so
-  the GUI's Open dialog imports transparently (X6) and `sheet view book.xlsx` deliberately
-  does not exist. One read path per format, chosen explicitly.
+- **The CLI's read commands stay ODF-only.** `grind sheet import in.xlsx out.ods` is the
+  filter; everything else operates on the result. A CLI can run two commands where a GUI
+  cannot, so the GUI's Open dialog imports transparently (X6) and `grind sheet view book.xlsx`
+  deliberately does not exist. One read path per format, chosen explicitly.
 - **ECMA-376 is the normative source.** Not LibreOffice's filter, not a blog post about it.
 
 ### Why not `calamine`
@@ -93,7 +104,7 @@ this phase as they bind every other. Where they say something specific:
 - **R6 — the diffable writer.** An imported document has no source bytes to splice, so it
   regenerates. That is already the documented behaviour for a document this program authored
   (`odf/source.rs`), and an import *is* authoring one.
-- **Rule 4 — whatever a GUI can do, the CLI can do.** The filter lands CLI-first: `sheet
+- **Rule 4 — whatever a GUI can do, the CLI can do.** The filter lands CLI-first: `grind sheet
   import` exists before any Open dialog learns the extension.
 - **Rule 5 — no filesystem assumptions.** `import_bytes` is the real function and
   `import_file` is a thin twin, because the browser has no filesystem and a cloud converter
@@ -112,15 +123,18 @@ this phase as they bind every other. Where they say something specific:
 ### Crate layout
 
 ```
-core/     document model, ODF I/O, formula engine       (unchanged, knows nothing of Excel)
-cli/      the `sheet` binary                            optional dep: sheet-xlsx
-ui_sheet_gtk/   the GNOME shell                                optional dep: sheet-xlsx
-xlsx/     the import filter — crate `sheet-xlsx`         depends on grind-sheet, zip, quick-xml
+core/     [GENERIC] container, namespaces, tolerant reading, styling primitives (untouched)
+sheet/    the spreadsheet: model, ODF I/O, formula engine   (untouched, knows nothing of Excel)
+cli/      the `grind` binary                                optional dep: grind-xlsx
+ui_*/     the five shells                                   optional dep: grind-xlsx
+xlsx/     the import filter — crate `grind-xlsx`            depends on grind-sheet, zip, quick-xml
 ```
 
 ```
 xlsx/src/
   lib.rs        import_bytes / import_file / sniff, the Report, the public surface
+  names.rs      the namespace and relationship-type tables — Transitional and Strict
+  mce.rs        markup compatibility: Ignorable, AlternateContent/Choice/Fallback
   package.rs    OPC: the zip, [Content_Types].xml, relationships, part lookup
   workbook.rs   xl/workbook.xml — sheets, order, visibility, date system, defined names
   strings.rs    xl/sharedStrings.xml — the string table, rich-text runs flattened
@@ -134,7 +148,18 @@ xlsx/src/
 
 Every file maps to one part of the format. `formula.rs` and `numfmt.rs` are the two that
 would otherwise be tempting to put in the core — and both are *Excel's* spelling of something
-the core already models in ODF's spelling, which is exactly why they live here.
+the core already models in ODF's spelling, which is exactly why they live here. `names.rs` and
+`mce.rs` are the two that did not exist in the first draft of this plan, and the section below
+is why.
+
+**The tolerant-reading shape is rebuilt here, not borrowed.** `core/src/odf/context.rs` has
+exactly the property this filter needs — *a context that does not recognise a child ignores
+its whole subtree* — but its dispatch key is `odf::names::Ns`, a closed enum of ODF namespace
+URIs, and R8 keeps it that way: OOXML's namespaces are no more generic than ODF's. So `xlsx/`
+grows its own, and it is the cheaper of the two because SpreadsheetML is shallow and regular
+where ODF's style tree is deep. What matters is that the *property* is the same one, because
+it is what makes Strict, markup compatibility, vendor extension namespaces and every future
+version of Excel inert by construction rather than one match arm at a time.
 
 ### The data flow, and what it may touch
 
@@ -159,7 +184,8 @@ date correction cannot be applied without knowing that.
 ### The public surface
 
 ```rust
-/// Whether these bytes are an OOXML spreadsheet — the zip magic plus `xl/workbook.xml`.
+/// Whether these bytes are an OOXML spreadsheet — the zip magic plus a workbook part reached
+/// by relationship. Sniffed from content, never from the name, as `grind_core::kind` is.
 pub fn sniff(bytes: &[u8]) -> bool;
 
 /// Read an Excel workbook. Never evaluates, never fails on a construct it cannot carry:
@@ -173,8 +199,18 @@ Everything else is a `Report` entry, because a conversion that refuses a whole d
 one unsupported chart is a conversion nobody can use. This is the same split
 `odf/read.rs` already makes between `Error::Xml` and silent tolerance.
 
+**A password-protected workbook is not a zip at all**, and getting this wrong makes loop A′
+report a failure for a file that is merely locked. Agile encryption (ECMA-376 Part 2 §3)
+wraps the whole package in a CFB/OLE container, so the bytes begin `D0 CF 11 E0` rather than
+`PK`. That signature is `Error::Encrypted` — the variant `grind_core` already has and loop A
+already tolerates for the same reason — and everything else that is not a readable zip is
+`Error::Package`. "This is locked" and "this is not a spreadsheet" are different sentences to
+put in front of a person.
+
 ```rust
 pub struct Report {
+    /// Transitional or Strict — a fact about the file, stated rather than branched on.
+    pub flavour: Flavour,
     pub sheets: usize,
     pub cells: usize,
     pub formulas: usize,
@@ -185,17 +221,38 @@ pub struct Report {
     pub unknown_functions: BTreeSet<String>,
     /// Cells whose formula could not be translated at all — the value was kept.
     pub untranslated: Vec<(usize, Pos)>,
+    /// Namespaces the file said a consumer must understand and this one does not
+    /// (`mc:MustUnderstand`). Not a refusal — see "Transitional, and the real world" §2.
+    pub must_understand: BTreeSet<String>,
 }
 
 pub enum Dropped {
     Chart, PivotTable, ConditionalFormat, DataValidation, Comment, Drawing, Macro,
     ArrayFormula, StructuredReference, ExternalLink, SheetLocalName, MergedCells,
-    RichText, HiddenSheet, ColumnWidth, RowHeight, ThemeColor, FontFamily, Protection,
+    RichText, HiddenSheet, ThemeColor, FontFamily, Protection,
 }
 ```
 
 `Dropped` is an enum rather than strings so the list is finite, greppable, and testable —
 and so a new kind of loss is a compile-time decision rather than a new string somewhere.
+
+**The list shrank when the model grew, and that is the point of keeping it honest.** Three
+entries the first draft of this plan carried are gone, because phase 9 and the two phases
+after it built homes for them:
+
+- `ColumnWidth` / `RowHeight` — M8 landed. `Sheet::set_col_width` / `set_row_height` take the
+  verbatim ODF length strings the model stores, so X4 converts instead of counting (§5 below).
+- `AutoFilter` was never in the list and should have been: `sheet/src/filter.rs` exists now,
+  and `<autoFilter ref="A1:D10"/>` → `Filter::new` is close to free. It is **carried**.
+- `Chart` stays in the list but is now a *decision* rather than a necessity. The model has
+  `sheet/src/chart.rs` and `doc/chart-format.md`, so there is somewhere to put one; what is
+  still missing is a reader for `xl/charts/chart1.xml`, which is DrawingML — a second
+  vocabulary the size of this whole filter. It is dropped and counted in this phase, and the
+  reason is cost rather than the absence of a home. `doc/xlsx-format.md` records that.
+
+The rule the shrinking illustrates: an entry in `Dropped` must name a construct the **model**
+cannot express, never one the filter simply has not got to yet. The second kind belongs in the
+milestone table, where it is work rather than a permanent property of a converted document.
 
 ### Compiling with and without each feature
 
@@ -204,9 +261,11 @@ Two mechanisms, and they are not the same one:
 - **The GUI is a separate crate.** It is already optional by construction: `cargo build -p
   grind-cli` never compiles a line of GTK, and neither does `cargo test -p grind-sheet`. The
   one gap is that bare `cargo build` / `cargo test` at the root walk every workspace member,
-  which is why CI names crates explicitly. **Fix: `default-members = ["core", "cli"]` in the
-  root manifest**, so the default commands skip the shells and `--workspace` still builds
-  everything on demand. One line, and it makes the common case need no flags.
+  which is why CI names crates explicitly. **Fix: `default-members` in the root manifest** —
+  `["core", "sheet", "text", "build", "cli", "xlsx"]`, the six that need no system packages —
+  so the default commands skip the shells and `--workspace` still builds everything on demand.
+  One line, and it makes the common case need no flags. (The GTK shells are already out of
+  `cargo build --workspace`'s practical path for want of `libgtk-4-dev`; this states it.)
 - **The import filter is a cargo feature**, because it belongs *inside* the CLI binary rather
   than beside it.
 
@@ -214,10 +273,10 @@ Two mechanisms, and they are not the same one:
 # cli/Cargo.toml
 [features]
 default = ["xlsx"]
-xlsx = ["dep:sheet-xlsx"]
+xlsx = ["dep:grind-xlsx"]
 
 [dependencies]
-sheet-xlsx = { path = "../xlsx", optional = true }
+grind-xlsx = { path = "../xlsx", optional = true }
 ```
 
 | Command | core | cli | xlsx | gtk |
@@ -236,6 +295,117 @@ importer is not one; the *parity document* gains a "Beyond `App`" row saying so.
 **CI** gains one job that builds the matrix above and runs `cargo test -p grind-cli
 --no-default-features`, because "it still compiles without the feature" is exactly the kind
 of claim that rots silently.
+
+---
+
+## Transitional, and the real world
+
+The first draft of this plan said "ECMA-376 is the normative source" and stopped there, which
+skipped the question that decides whether the filter can open anybody else's files. ECMA-376
+is not one format. ISO/IEC 29500 defines **Strict** and **Transitional**, and the second is
+what every real file is: Excel has written Transitional by default since 2007 and still does,
+Strict is an opt-in save format almost nothing produces, and every other generator in the wild
+— LibreOffice, Apache POI, ClosedXML, EPPlus, SheetJS, Google Sheets' export — writes
+Transitional too.
+
+So **Transitional is the target and Strict is a namespace table away**. That is the whole
+shape of it: the difference that reaches a reader built like this one is which URIs it
+recognises, plus one rule about markup compatibility. Neither is a fork, and building it as a
+fork would be the mistake.
+
+### 1. Which flavour is a table, not a branch
+
+Dispatch is on `(namespace-uri, local-name)` exactly as `core/src/odf/names.rs` does it, and
+for exactly the same reason — a prefix is a local choice and can be redeclared on any element.
+Two families of URI resolve to the same key:
+
+| | Transitional | Strict |
+|---|---|---|
+| SpreadsheetML | `http://schemas.openxmlformats.org/spreadsheetml/2006/main` | `http://purl.oclc.org/ooxml/spreadsheetml/main` |
+| `r:` attributes | `…/officeDocument/2006/relationships` | `http://purl.oclc.org/ooxml/officeDocument/relationships` |
+| Relationship `Type=` | `…/officeDocument/2006/relationships/worksheet` | `…/ooxml/officeDocument/relationships/worksheet` |
+| OPC package rels | `…/package/2006/relationships` | **the same** — OPC is Part 2 and does not vary |
+| Content types | `…/package/2006/content-types` | **the same** |
+| Markup compatibility | `…/markup-compatibility/2006` | **the same** — Part 3, likewise |
+
+The Transitional column is measured (see §4 below); **the Strict column is from memory and
+must be confirmed against ECMA-376 and recorded in `doc/xlsx-format.md` before it reaches
+code**, like every other fact here. A `Flavour` is then a fact the `Report` states rather than
+a branch the reader takes, and a file mixing the two — they exist — resolves per element and
+is reported as `Flavour::Mixed` rather than refused.
+
+Recognising Strict costs about ten lines. It is worth them not because anybody sends us Strict
+files, but because writing the table forces the reader to be namespace-driven, which is the
+property that makes the *next* namespace inert for free.
+
+### 2. Markup compatibility is the tax real files charge
+
+ECMA-376 Part 3 (MCE) is how a producer writes content a consumer may not understand, and
+every file written after about 2010 uses it. Three constructs matter:
+
+- **`mc:Ignorable="x14ac xr xr2"`** on a root element — a list of prefixes whose *attributes*
+  a consumer may skip. We skip unknown attributes already: an attribute in a namespace no
+  table knows simply misses every lookup. Nothing to build; it is listed here so nobody
+  builds something.
+- **`mc:AlternateContent` / `mc:Choice Requires="x14"` / `mc:Fallback`** — the one that needs
+  real handling. The rule: we `Requires` nothing, so **every `mc:Choice` is skipped and the
+  `mc:Fallback`, if there is one, is read in place of the whole `mc:AlternateContent`**. A
+  reader that does not know this either misses the fallback content entirely or — worse —
+  reads both the choice and the fallback and doubles whatever was inside.
+- **`mc:MustUnderstand`** — a producer asserting a consumer cannot proceed without a
+  namespace. It lands in `Report::must_understand` by name and **is not a refusal**: in a
+  spreadsheet it guards a feature rather than the cell values, and cell values are what an
+  import is for. Refusing a whole workbook because one slicer needs `x14` would be the same
+  mistake as refusing it over one chart.
+
+This lands in `mce.rs` as a rule in the element dispatcher, **once**, not as a match arm in
+every context that might contain one. `mc:AlternateContent` can appear around a sparkline
+group, a slicer, a data validation, a drawing, a `sheetPr` — anywhere — so per-site handling
+is per-site bugs.
+
+### 3. What real producers do that the spec permits and nobody expects
+
+Each of these is a one-line rule in the reader and a bug report each if it is not written down
+now. They are what "works with real-world documents" actually means:
+
+- **`<row>` and `<c>` with no `r` attribute.** Position is implicit — the next row, the next
+  column. The spec allows it; Excel always writes `r`; POI and SheetJS do not always. A reader
+  that unwraps `r` panics on a file half the ecosystem produces.
+- **`count` and `uniqueCount` on `sharedStrings`, and `dimension` on a sheet, are claims.**
+  Never preallocate from them and never trust `dimension` as a bound — `A1:XFD1048576` is a
+  claim a lot of generators make. Bound materialisation the way `odf/read.rs` does.
+- **`xml:space="preserve"`** on `<t>` — leading and trailing spaces in a shared string are
+  meaningful, and a reader that trims them corrupts text silently.
+- **Part names.** Resolve by relationship, never by path convention; then tolerate the
+  targets real producers write: a leading `/`, a `..` segment, a `\` separator, and percent
+  encoding. Normalise, and refuse anything that escapes the package.
+- **A BOM, or an XML declaration with `standalone="yes"`, on any part.** Both are common and
+  neither is a problem unless the reader assumes the first byte is `<`.
+- **`<f>` with no cached `<v>`.** A non-Excel writer that does not evaluate leaves the formula
+  with no value. Given the "nothing is evaluated on import" decision this is the only case
+  where an imported cell has a formula and no number — **carry the formula, leave the value
+  empty, count it**. Recalculating is still the user's call, and `grind sheet recalc` is
+  exactly the command that fills them in.
+- **`.xlsm` is the same XML.** The macro is a separate part, counted as `Dropped::Macro` and
+  never executed. A macro-enabled workbook imports its data like any other.
+
+### 4. The evidence
+
+Measured on 2026-09-14 by converting `sheet/tests/data/kb/formula.fods` with the pinned
+oracle (`soffice --headless --convert-to xlsx`) and reading the parts back. Even
+**LibreOffice's own** xlsx output — not Excel's, and about as plain a file as this project can
+produce — declares on its root elements:
+
+```
+xmlns    = http://schemas.openxmlformats.org/spreadsheetml/2006/main     (Transitional)
+xmlns:r  = http://schemas.openxmlformats.org/officeDocument/2006/relationships
+xmlns:mc = http://schemas.openxmlformats.org/markup-compatibility/2006
+xmlns:x14, x15, xr, xr2, xr6, xr10 = Microsoft extension namespaces
+```
+
+If the minimal case declares seven namespaces beyond the one it uses, the median real
+document is not going to be kinder. That is the argument for the tolerant shape rather than a
+schema-shaped reader, and it is why `names.rs` and `mce.rs` are in the file list at all.
 
 ---
 
@@ -323,9 +493,11 @@ translated formula is one our own parser could have produced, or it is not trans
 **Shared formulas.** `<f t="shared" ref="B2:B10" si="0">A2*2</f>` defines a group; the other
 cells carry `<f t="shared" si="0"/>` and mean *the same formula with its relative references
 shifted*. Shifting relative axes by (Δrow, Δcol) is a transform over `Expr` and is **ODF
-semantics, not Excel's** — §5.8 is where relative references are defined — so it lands in the
-core as `formula::shift`, with a test, and the GUI's fill and copy-with-formulas want exactly
-the same function next. The *grouping* stays in the importer, where Excel's spelling belongs.
+semantics, not Excel's** — §5.8 is where relative references are defined — so it belongs in
+the core, and **it is already there**: `sheet/src/formula/shift.rs`, built for the fill and
+drag that wanted the same function, and it turns a reference that would leave the sheet into
+`#REF!` the way a delete does. This phase adds no core function for it; it calls one. The
+*grouping* stays in the importer, where Excel's spelling belongs.
 
 **Array formulas** (`t="array"`) are out of scope by §2.3.2: the cell keeps its cached value,
 loses its formula, and is counted.
@@ -382,12 +554,14 @@ format. Each maps onto `style::CellStyle`, whose values are ODF's own strings.
 | `horizontal`, `vertical`, `wrapText` | `align`, `vertical_align`, `wrap` |
 | `<name val="Calibri"/>` | **dropped**, counted — `style.rs` deliberately does not carry a font family (§5.4) |
 
-**Column widths and row heights** are the one place this plan waits on another: the model
-gains them in phase 9's **M8**, and until that lands they are counted as
-`Dropped::ColumnWidth` / `Dropped::RowHeight`. When it lands, `<col width="8.43"/>` needs
-ECMA-376 §18.3.1.13's character-width conversion (through the Normal font's maximum digit
-width) and `<row ht="15"/>` is points. Both convert into the verbatim length strings the
-model stores.
+**Column widths and row heights** were the one place this plan waited on another, and the wait
+is over: phase 9's **M8** landed them, so `Sheet::set_col_width` / `set_row_height` exist and
+X4 converts rather than counting. `<col width="8.43"/>` needs ECMA-376 §18.3.1.13's
+character-width conversion (through the Normal font's maximum digit width) and `<row ht="15"/>`
+is points; both become the verbatim ODF length strings the model stores, and the conversion
+constant is measured against the oracle and recorded in `doc/xlsx-format.md` rather than
+taken from the spec's prose alone. `<col hidden="1"/>` and `<row hidden="1"/>` map onto
+`set_col_hidden` / `set_row_hidden`, which the model also has now.
 
 ### 6. The document level (X5)
 
@@ -400,6 +574,10 @@ model stores.
   A name Excel allows and ODF does not is renamed deterministically and reported.
 - **Merged cells.** `<mergeCell ref="B2:D4"/>` → counted, because the model carries no spans
   (`doc/not-doing.md` §3). The values are kept where they are; nothing is moved.
+- **Autofilters.** `<autoFilter ref="A1:D10"/>` → `Filter::new`, which the model gained after
+  this plan was first written. Carried, not counted. The filter's *criteria*
+  (`<filterColumn>`) are a second question and follow `sheet/src/filter.rs`'s own vocabulary
+  where they fit, counted where they do not.
 - **Everything else in the part list** — charts, pivot tables, conditional formatting, data
   validation, comments, drawings, protection — is counted by kind and dropped. Recognising
   them costs a match on the content type and buys an honest report.
@@ -413,12 +591,12 @@ feature matrix.
 
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
-| X0 | **The seam** | `xlsx/` crate, feature flags, `default-members`, CI matrix job, `package.rs` + `workbook.xml` sheet list, `sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i` |
-| X1 | **Values** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits |
-| X2 | **Formulas** | the Excel expression translator, shared-formula groups, `formula::shift` in the core, `_xlfn.`, 3-D refs, the exclusion classes | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class; the scoreboard prints like loop B's |
+| X0 | **The seam** | `xlsx/` crate, feature flags, `default-members`, CI matrix job, `names.rs` + `mce.rs`, `package.rs` + `workbook.xml` sheet list, `grind sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i`; **loop A′ green** — every corpus file reaches a sheet list without an `Err` or a panic |
+| X1 | **Values** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits |
+| X2 | **Formulas** | the Excel expression translator, shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class; the scoreboard prints like loop B's |
 | X3 | **Number formats** | built-ins by meaning, the code parser, sections → `style:map` | loop D compares **displayed text** per cell, which is loop C's rule for the same reason |
-| X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; widths and heights **iff M8 has landed** | loop D compares styles the way loop C does — borders numerically, everything else exactly |
-| X5 | **The document level** | defined names, sheet order and visibility, merges, the report as JSON, `--strict` | `sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
+| X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks, all of which the model now has | loop D compares styles the way loop C does — borders numerically, everything else exactly |
+| X5 | **The document level** | defined names, sheet order and visibility, merges, autofilters, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
 | X6 | **The shells** | the GTK Open dialog learns `.xlsx` (import → a new unsaved document, retitled `.ods`), file filters, the wasm shell's note | open an `.xlsx` in the GUI, edit it, save it as `.ods` |
 
 **Order.** Values before formulas before formats is not arbitrary: a formula's *cached value*
@@ -434,14 +612,14 @@ this phase adds the loop that does it for import.
 
 | Loop | Asserts | Corpus |
 |---|---|---|
-| **A′** — read tolerance | every `.xlsx` in the corpus imports without an `Err` and without a panic | **352 files** in `sc/qa/unit/data/xlsx/`, plus `xlsm/` |
+| **A′** — read tolerance | every `.xlsx` in the corpus imports without an `Err` and without a panic | `sc/qa/unit/data/xlsx/`, plus `xlsm/` — the count this plan first claimed (352) is **unverified**; X0 measures it and writes the real `FLOOR`, which then only goes up |
 | **D** — import fidelity | our conversion and the oracle's conversion of the same file agree, semantically | the same 352, minus a named exclusion list |
 | **R2** | every imported document validates against the ODF schema (`jing -i`) | the same |
 
 Loop D, concretely:
 
 ```
-ours   = sheet_xlsx::import_bytes(bytes)              → Document
+ours   = grind_xlsx::import_bytes(bytes)              → Document
 theirs = soffice --headless --convert-to ods <file>   → read with our own reader → Document
 compare(ours, theirs)
 ```
@@ -451,8 +629,10 @@ The comparison is `sheet/tests/roundtrip.rs`'s existing semantic comparator, reu
 formulas as canonical text, formats as **the text the cell displays**. The oracle's output is
 cached by content hash so a full run is one conversion per file, ever.
 
-**Loop A′ runs in CI** — it needs no oracle and no display, only the corpus. Loop D needs
-`soffice` and skips with a notice without it, exactly as loop C does. Neither may be
+**Loop A′ runs in CI and costs nothing to get there** — it needs no oracle and no display,
+only the corpus, and `ci.yml`'s `corpus` job already sparse-checks out `sc/qa/unit/data`,
+which is the directory `xlsx/` sits in. The loop is a test file and no workflow change. Loop D
+needs `soffice` and skips with a notice without it, exactly as loop C does. Neither may be
 special-cased per file: an exclusion is a *construct* with a name, never a file name
 (`CLAUDE.md`).
 
@@ -467,7 +647,19 @@ Three more checks, each cheap and each catching a different class of mistake:
    quietly stops counting is worse than no report.
 3. **Hand-built fixtures for the boundaries** that no corpus reliably contains: serial 59/60/61
    in both date systems, a shared-formula group crossing a sheet edge, a four-section format
-   code, a grind sheet name Excel allows and ODF does not.
+   code, a sheet name Excel allows and ODF does not.
+4. **Fixtures for the real-world section**, which is the half a LibreOffice corpus is least
+   likely to cover, since its files are minimal bug reproductions rather than things Excel
+   wrote: an `mc:AlternateContent` whose `mc:Choice` and `mc:Fallback` hold *different* cell
+   values (a reader that takes the wrong one, or both, fails visibly rather than subtly),
+   rows and cells with no `r` attribute, a shared string with `xml:space="preserve"`, a
+   `<f>` with no `<v>`, a `dimension` claiming `A1:XFD1048576` over four cells, a part target
+   with a leading `/`, and a CFB-wrapped encrypted workbook that must come back
+   `Error::Encrypted` rather than `Error::Package`. Each is small enough to write by hand and
+   each is a class of file the wild contains.
+5. **A Strict fixture**, one file, asserting only that it imports and reports
+   `Flavour::Strict`. Not a supported configuration — a proof that the namespace table is a
+   table.
 
 ---
 
@@ -477,6 +669,13 @@ Named here so nobody has to ask, and mirrored into `doc/not-doing.md` when the p
 
 - **Writing `.xlsx`.** Unchanged, §1, never. One way in.
 - **`.xls` and `.xlsb`.** Binary formats; see the `calamine` trigger above. Not scheduled.
+- **SpreadsheetML 2003** — Excel's *other* XML format, a bare `.xml` file in
+  `urn:schemas-microsoft-com:office:spreadsheet`. It is XML and it is Excel's, so "we read
+  the XML one" does not exclude it and this line has to. A different vocabulary with a
+  different data model that Excel stopped writing by default in 2007; not scheduled.
+- **Strict as a supported configuration.** The namespace table recognises it and one fixture
+  proves it, which is a different claim from being tested against Strict files in anger.
+  `Flavour` is in the report so a bug report can say which it was.
 - **Executing anything.** Macros are data to be counted, never to be run. An `.xlsm` imports
   its cells and reports its macros.
 - **Fetching anything.** External workbook links and web queries are dropped, never followed.
@@ -506,6 +705,8 @@ Named here so nobody has to ask, and mirrored into `doc/not-doing.md` when the p
 5. **Untrusted input.** A headless converter is a program that eats files from strangers. The
    hardening list in Part II §1 is the answer, and it is a test with a hostile fixture rather
    than a paragraph.
-6. **`formula::shift` in the core.** The one core addition, and it must be justified in ODF's
-   own terms (§5.8 relative references) rather than as "the importer needs it". If it cannot
-   be, it stays in the importer.
+6. ~~**`formula::shift` in the core.**~~ Retired: it was built for fill and drag before this
+   phase started, justified in ODF's own terms (§5.8) by a caller that is not an import
+   filter. **This phase now plans to add nothing to the core at all**, which is the stronger
+   position and the one to defend — a "the importer needs it" core change is the first sign
+   that Excel's semantics are leaking inward, and R1 is what it would be leaking past.
