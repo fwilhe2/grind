@@ -70,11 +70,15 @@ const PACKAGED: [Packaged; 4] = [
 
 /// The members that ship no binary, each with the reason. A crate here is *not* a package that
 /// was forgotten.
-const UNPACKAGED: [(&str, &str); 6] = [
+const UNPACKAGED: [(&str, &str); 7] = [
     ("core", "a library"),
     ("sheet", "a library"),
     ("text", "a library"),
     ("build", "a library"),
+    (
+        "xlsx",
+        "a library, and an optional dependency of the binaries that want it",
+    ),
     (
         "ui_web",
         "a wasm bundle served as files, not installed from a repository",

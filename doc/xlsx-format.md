@@ -69,18 +69,39 @@ namespaces it makes no use of*, six of them Microsoft extensions. A reader that 
 tolerant of unknown namespaces by construction has no chance on a document somebody actually
 worked in.
 
-### 1.2 The Strict URIs — `UNVERIFIED`
+### 1.2 The Strict URIs — `MEASURED`
 
-ISO/IEC 29500 Strict is believed to replace the `schemas.openxmlformats.org` families with
-`purl.oclc.org/ooxml` ones — `http://purl.oclc.org/ooxml/spreadsheetml/main` for
-SpreadsheetML and `http://purl.oclc.org/ooxml/officeDocument/relationships` for the `r:`
-attributes and the relationship `Type` values — while leaving the OPC package namespaces
-(content types, package relationships) and the markup-compatibility namespace alone, since
-those are Parts 2 and 3 rather than Part 1.
+Written from memory first and then measured, which is the order this document exists to make
+visible. The corpus turned out to contain three Strict workbooks:
 
-**Written from memory and not to be implemented from this paragraph.** Confirm each URI
-against ECMA-376 and against one Strict file before `xlsx/src/names.rs` gets a Strict column.
-`doc/xlsx-import.md` says why recognising Strict is worth ten lines anyway.
+```sh
+for f in sc/qa/unit/data/xlsx/*.xlsx; do
+    unzip -p "$f" xl/workbook.xml | head -c 2000 | grep -ql 'purl.oclc.org' && echo "$f"
+done
+# XlStartupExternal.xlsx, universal-content-strict.xlsx, user_defined_function.xlsx
+```
+
+From `universal-content-strict.xlsx`, measured 2026-09-14:
+
+| | Strict |
+|---|---|
+| SpreadsheetML | `http://purl.oclc.org/ooxml/spreadsheetml/main` |
+| `r:` attributes | `http://purl.oclc.org/ooxml/officeDocument/relationships` |
+| Relationship `Type=` | `http://purl.oclc.org/ooxml/officeDocument/relationships/{officeDocument,worksheet,styles,theme,sharedStrings,calcChain,extendedProperties}` |
+| OPC package rels | `http://schemas.openxmlformats.org/package/2006/relationships` — **unchanged**, confirming Part 2 does not vary |
+| Markup compatibility | `http://schemas.openxmlformats.org/markup-compatibility/2006` — **unchanged**, Part 3 likewise |
+
+Every URI written from memory was right, and two things were found that had not been guessed:
+
+1. **`<workbook conformance="strict">`** — the workbook says so itself, as well as through its
+   namespaces. Corroboration rather than the decision, since a Strict file need not carry it.
+2. **One file carries both families at once.** The same `_rels/.rels` holds Strict types
+   beside the OPC ones, plus a fourth relationship typed
+   `http://schemas.openxmlformats.org/officedocument/2006/relationships/metadata/core-properties`
+   — note the lower-case `officedocument`, which matches nothing in either family. So
+   `Flavour::Mixed` is a real answer rather than a hypothetical one, and a misspelt type must
+   come back "unrecognised, therefore ignored" rather than be guessed at. Both are tests in
+   `xlsx/src/names.rs`.
 
 ### 1.3 Markup compatibility — `SPEC`
 
@@ -89,9 +110,33 @@ one `mc:Fallback`; a consumer takes the first `mc:Choice` whose required namespa
 understands, and otherwise the `mc:Fallback`. We understand no extension namespace, so **every
 `mc:Choice` is skipped and the `mc:Fallback` is read in its place**.
 
-Not yet confirmed against a file that exercises it, which is what fixture 4 in
-`doc/xlsx-import.md`'s verification section is for: a `Choice` and a `Fallback` holding
-*different* cell values, so taking the wrong one is a visible failure rather than a subtle one.
+**How common — `MEASURED`.** 15 of the corpus's 360 workbooks carry an `mc:AlternateContent`
+in a worksheet part (2026-09-14, scanning `xl/worksheets/sheet*.xml` of every file under
+`sc/qa/unit/data/{xlsx,xlsm}`). That is a floor rather than a rate: the count ignores
+`xl/workbook.xml`, which `universal-content-strict.xlsx` shows also carries them, and the
+corpus is minimal bug reproductions rather than documents somebody worked in.
+
+The rule itself is exercised by fixtures rather than by the corpus — a `Choice` and a
+`Fallback` holding *different* sheet lists, so taking the wrong one, or both, is a visible
+failure rather than a subtle one (`xlsx/tests/fixtures.rs`).
+
+### 1.4 What real producers write — `MEASURED`
+
+Scanned across all 360 corpus workbooks on 2026-09-14. Each is one rule in the reader, and
+each would otherwise have arrived as a bug report:
+
+| Quirk | Files |
+|---|---|
+| a `<row>` with no `r` attribute | 1 (`tdf121887.xlsx`) |
+| a `<c>` with no `r` attribute | 2 (`row-index-1-based.xlsx`, `tdf121887.xlsx`) |
+| `xml:space` in `sharedStrings.xml` | **51** |
+| `mc:AlternateContent` in a worksheet | 15 |
+
+The `xml:space` figure is the one worth sitting with: **one workbook in seven** has a shared
+string whose leading or trailing space is meaningful, so a reader that trims text by default
+corrupts a seventh of this corpus silently. `xlsx/src/xml.rs` turns quick-xml's `trim_text`
+off for exactly that reason, which is a decision that would have looked like a detail without
+the number beside it.
 
 ---
 

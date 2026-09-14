@@ -40,6 +40,73 @@ pub enum Report {
     TextDocument(TextDocumentReport),
     /// What `grind lint` found (`doc/dsl.md` §4.3, D6).
     Lint(LintReport),
+    /// What `grind sheet import` carried, and what it did not (`doc/xlsx-import.md`).
+    #[cfg(feature = "xlsx")]
+    Import(ImportReport),
+}
+
+/// The fidelity report, which is **part of the output rather than an afterthought**: what a
+/// conversion dropped is as important as what it carried, and a converter that lies about it
+/// is worse than one that refuses.
+#[cfg(feature = "xlsx")]
+#[derive(Debug, Serialize)]
+pub struct ImportReport {
+    pub input: String,
+    pub output: String,
+    pub written: bool,
+    /// `transitional`, `strict` or `mixed` — a fact about the file the reader stated rather
+    /// than branched on.
+    pub flavour: &'static str,
+    pub sheets: usize,
+    pub cells: usize,
+    pub formulas: usize,
+    /// Every construct the model has no home for, by name and count.
+    pub dropped: Vec<DroppedCount>,
+    /// Namespaces the workbook said a consumer must understand and this one does not. Never
+    /// a refusal — in a spreadsheet such a namespace guards a feature rather than the cell
+    /// values, and cell values are what an import is for.
+    pub must_understand: Vec<String>,
+}
+
+#[cfg(feature = "xlsx")]
+#[derive(Debug, Serialize)]
+pub struct DroppedCount {
+    pub what: String,
+    pub count: usize,
+}
+
+#[cfg(feature = "xlsx")]
+impl ImportReport {
+    pub fn new(
+        input: &str,
+        output: &str,
+        document: &grind_sheet::model::Document,
+        report: &grind_xlsx::Report,
+        written: bool,
+    ) -> Self {
+        Self {
+            input: input.to_owned(),
+            output: output.to_owned(),
+            written,
+            flavour: match report.flavour {
+                grind_xlsx::Flavour::Transitional => "transitional",
+                grind_xlsx::Flavour::Strict => "strict",
+                grind_xlsx::Flavour::Mixed => "mixed",
+            },
+            sheets: document.sheets.len(),
+            cells: report.cells,
+            formulas: report.formulas,
+            dropped: report
+                .dropped
+                .iter()
+                .map(|(what, count)| DroppedCount {
+                    what: what.label().to_owned(),
+                    count: *count,
+                })
+                .collect(),
+            must_understand: report.must_understand.iter().cloned().collect(),
+        }
+    }
 }
 
 /// `get` and `view`.
@@ -303,6 +370,30 @@ impl Report {
                 for line in &text.lines {
                     println!("{line}");
                 }
+            }
+            // The losses first and the counts last, because what a conversion dropped is the
+            // half a person has to decide about.
+            #[cfg(feature = "xlsx")]
+            Report::Import(import) => {
+                for dropped in &import.dropped {
+                    println!("dropped\t{}\t{}", dropped.count, dropped.what);
+                }
+                for namespace in &import.must_understand {
+                    println!("not understood\t{namespace}");
+                }
+                println!(
+                    "{} -> {}{}",
+                    import.input,
+                    import.output,
+                    match import.written {
+                        true => "",
+                        false => " (dry run, nothing written)",
+                    }
+                );
+                println!(
+                    "{} sheets\t{} cells\t{} formulas\t{}",
+                    import.sheets, import.cells, import.formulas, import.flavour
+                );
             }
             // One diagnostic per line, in the shape every compiler prints — so an editor's
             // error parser and a person reading a terminal both already understand it.

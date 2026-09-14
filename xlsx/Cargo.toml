@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-xlsx"
+version = "0.0.0"
+description = "Reading Excel workbooks — an import filter that produces an ODF document"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The filter *produces* a `grind_sheet::Document` and reaches it through the model's public
+# API only. Nothing goes the other way: no Excel vocabulary is added to that crate (R1), and
+# this phase plans to add nothing to it at all — see doc/xlsx-import.md's risk 6.
+grind-sheet = { path = "../sheet" }
+# Zero new dependencies: both of these are already `grind-core`'s. That is half the argument
+# against `calamine` in doc/xlsx-import.md, so it is worth keeping true.
+quick-xml = "0.42"
+zip = { version = "8", default-features = false, features = ["deflate"] }

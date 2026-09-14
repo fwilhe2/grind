@@ -193,6 +193,14 @@ stops ratcheting.
 
 Reachable from the CLI, but not `App` methods, so the test does not track them:
 
+- `grind sheet import` — `grind_xlsx::import_file` plus `grind_sheet::write_file`
+  (`doc/xlsx-import.md`). Deliberately **not** an `App` method and deliberately not an
+  `open_*` path: an import is a **file-to-file translation** producing a new ODF document,
+  not an edit to one that is open, and every other command then operates on the result. That
+  is also why `grind sheet view book.xlsx` does not exist — one read path per format, chosen
+  explicitly. Compiled out with the `xlsx` feature, so a build without it advertises no
+  command it would only apologise for.
+
 - `grind sheet fmt` — `formula::parse` plus the AST's `Display`; `--display` / `--from-display`
   are `formula::display`, checked against the whole corpus by loop B's third half.
   `--friendly` is `formula::friendly::explain` — a read-only, multi-line, aliased,

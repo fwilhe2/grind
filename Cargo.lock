@@ -953,6 +953,7 @@ dependencies = [
  "grind-core",
  "grind-sheet",
  "grind-text",
+ "grind-xlsx",
  "serde",
  "serde_json",
 ]
@@ -1043,6 +1044,15 @@ dependencies = [
  "grind-sheet",
  "grind-text",
  "windows",
+]
+
+[[package]]
+name = "grind-xlsx"
+version = "0.0.0"
+dependencies = [
+ "grind-sheet",
+ "quick-xml",
+ "zip",
 ]
 
 [[package]]

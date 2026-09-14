@@ -1248,6 +1248,27 @@ enum TextCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Convert an Excel workbook into an ODF document
+    ///
+    /// One way in: reading `.xlsx` and `.xlsm` produces an ODF document, and writing Excel is
+    /// `doc/not-doing.md` §1 and stays there. Nothing is evaluated — Excel's cached values
+    /// are carried verbatim, and recalculating is your decision (`grind sheet recalc`).
+    ///
+    /// The result is an ordinary document: every other command operates on *that*, which is
+    /// why `grind sheet view book.xlsx` deliberately does not exist. One read path per
+    /// format, chosen explicitly.
+    #[cfg(feature = "xlsx")]
+    Import {
+        /// The workbook to read
+        input: PathBuf,
+        /// Where to write the ODF document. The form comes from the extension, flat by
+        /// default (`doc/flat-first.md`).
+        output: PathBuf,
+        /// Overwrite the output if it already exists
+        #[arg(long)]
+        force: bool,
+    },
+
     // The flat default is `doc/flat-first.md`'s.
     /// Create an empty document
     ///
@@ -2190,6 +2211,32 @@ fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, String> 
 
 fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
     match command {
+        #[cfg(feature = "xlsx")]
+        Command::Import {
+            input,
+            output,
+            force,
+        } => {
+            if output.exists() && !force {
+                return Err(format!("{} exists; pass --force", output.display()));
+            }
+            let (document, report) = grind_xlsx::import_file(input).map_err(|e| e.to_string())?;
+            if !cli.dry_run {
+                // Written by *our* writer, so R2 applies to the result unchanged: an imported
+                // document validates against the ODF schema like any other. There is no `App`
+                // in this path — an import is a file-to-file translation, not an edit — which
+                // is also why `cli/tests/parity.rs` is undisturbed by it.
+                grind_sheet::write_file(&document, output).map_err(|e| e.to_string())?;
+            }
+            Ok(Report::Import(report::ImportReport::new(
+                &show_path(input),
+                &show_path(output),
+                &document,
+                &report,
+                !cli.dry_run,
+            )))
+        }
+
         Command::New { file, force } => {
             if file.exists() && !force {
                 return Err(format!("{} exists; pass --force", file.display()));

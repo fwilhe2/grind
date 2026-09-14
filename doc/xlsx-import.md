@@ -591,13 +591,36 @@ feature matrix.
 
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
-| X0 | **The seam** | `xlsx/` crate, feature flags, `default-members`, CI matrix job, `names.rs` + `mce.rs`, `package.rs` + `workbook.xml` sheet list, `grind sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i`; **loop A′ green** — every corpus file reaches a sheet list without an `Err` or a panic |
+| X0 | **The seam** — **DONE (2026-09-14)** | `xlsx/` crate, feature flags, `default-members`, CI matrix steps, `names.rs` + `mce.rs` + `xml.rs`, `package.rs` + `workbook.xml` sheet list, `grind sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i`; **loop A′ green** — every corpus file reaches a sheet list without an `Err` or a panic |
 | X1 | **Values** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits |
 | X2 | **Formulas** | the Excel expression translator, shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class; the scoreboard prints like loop B's |
 | X3 | **Number formats** | built-ins by meaning, the code parser, sections → `style:map` | loop D compares **displayed text** per cell, which is loop C's rule for the same reason |
 | X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks, all of which the model now has | loop D compares styles the way loop C does — borders numerically, everything else exactly |
 | X5 | **The document level** | defined names, sheet order and visibility, merges, autofilters, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
 | X6 | **The shells** | the GTK Open dialog learns `.xlsx` (import → a new unsaved document, retitled `.ods`), file filters, the wasm shell's note | open an `.xlsx` in the GUI, edit it, save it as `.ods` |
+
+### What X0 found
+
+Four things the plan did not predict, recorded here rather than absorbed silently:
+
+1. **`xml.rs` is a fourth file.** The plan's file list had `names.rs` and `mce.rs` but no
+   walker, as though the tolerant shape came from somewhere. It does not: `context.rs`
+   dispatches on a closed enum of *ODF* namespace URIs and R8 keeps it that way, so the
+   ignore-the-subtree property is rebuilt here. It is cheaper than the original — SpreadsheetML
+   is shallow, so a visitor per element beats a context object per element — and markup
+   compatibility lives inside it, in one place, which is the whole reason MCE is tractable.
+2. **`--format json` landed in X0, not X5.** A command has to return a `Report`, and the CLI
+   has no other way to print one; building the variant was unavoidable, so the JSON came with
+   it. `--strict` is still X5, because a flag nobody has tested is worse than no flag.
+3. **The corpus keeps three files in a wrapper.** `sc/qa/unit/data/README` says files with
+   `CVE` in the name are RC4-encrypted so that virus scanners leave the repository alone, and
+   gives the key. They are not malformed and excluding them would have excused the wrong
+   thing; loop A′ undoes the wrapper in fifteen lines and imports them like anything else,
+   which turns three skips into three genuinely hostile inputs. **360/360.**
+4. **Strict was measurable after all.** Three corpus workbooks use it, so §1.2 of
+   `doc/xlsx-format.md` went from `UNVERIFIED` to `MEASURED` before a line of `names.rs` was
+   written — and measuring found two things guessing had missed: a `conformance="strict"`
+   attribute, and a file carrying both families at once.
 
 **Order.** Values before formulas before formats is not arbitrary: a formula's *cached value*
 is what makes X1's oracle comparison meaningful, and a date is only a date once its format is

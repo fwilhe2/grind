@@ -533,6 +533,25 @@ say "build: the numbers in a JSON file, the shape in the script"
 sheet view "$out/prices.fods" A1:F9
 sheet view "$out/prices.fods" F7:F9 --formulas
 
+# Reading Excel (doc/xlsx-import.md, phase 11). One way in and never out — which is why this
+# is the one step that cannot build its own input: nothing in this suite writes `.xlsx`, so
+# the workbook is vendored at `xlsx/tests/data/sample.xlsx` (made with the oracle; REUSE.toml
+# has the command). Built through **X0**, so what arrives is the sheet list; cells are X1.
+#
+# The filter is a cargo feature, so a `grind` built with `--no-default-features` has no
+# `import` verb at all — hence the check rather than a bare call. A missing verb here is a
+# build configuration, not a failure.
+if "$GRIND" sheet import --help >/dev/null 2>&1; then
+    say "import: an Excel workbook becomes an ODF document"
+    "$GRIND" sheet import "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
+    "$GRIND" --format json info "$out/imported.fods"
+    # And it is an ODF document from that moment on: every other verb takes it, and the
+    # workbook is never consulted again.
+    "$GRIND" lint "$out/imported.fods"
+else
+    say "import: not in this build (compiled without the xlsx feature)"
+fi
+
 # It is an ordinary document from here on: it lints, it projects, every verb takes it.
 say "the generated document is a document like any other"
 "$GRIND" lint "$out/generated.fods"

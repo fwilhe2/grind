@@ -86,6 +86,25 @@ path = "text/tests/data/**"
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "CC0-1.0"
 
+# The one vendored Excel workbook, and the only binary fixture in this repository that could
+# not be avoided: `doc/xlsx-import.md` is "one way in, never out", so nothing in this suite
+# can write the format its own import filter reads, and `examples/sample-sheet.sh` therefore
+# cannot build its own input the way it builds everything else. Every *other* xlsx fixture is
+# assembled from XML in `xlsx/tests/fixtures.rs`, where a reviewer can read it.
+#
+# Made with the pinned oracle, so it is a real producer's output rather than our idea of one,
+# and reproducible:
+#
+#   grind sheet new sample.fods && grind sheet set sample.fods A1 Region  (…see the script)
+#   soffice --headless --convert-to xlsx sample.fods
+#
+# CC0 for the same reason as the fixtures above: the point of one is that it can be copied
+# into a bug report or into somebody else's test suite.
+[[annotations]]
+path = "xlsx/tests/data/**"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "CC0-1.0"
+
 # Vendored OASIS specifications. Their terms forbid modifying the documents at all,
 # so these are marked by .license sidecars rather than by headers; the entries here
 # exist so the constraint is stated in one place a reader will find.

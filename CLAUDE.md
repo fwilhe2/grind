@@ -117,6 +117,16 @@ cargo run -p grind-cli -- --format json info book.ods    # suite level: reads th
 cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
 cargo run -p grind-cli -- build examples/timesheet.rhai -o month.fods  # four sheets that agree
 cargo run -p grind-cli -- lint examples/quote.grind       # a hand-written projection
+cargo run -p grind-cli -- sheet import book.xlsx book.fods  # phase 11; one way in, never out
+```
+
+The import filter is a **cargo feature**, on by default. Both halves are built by CI, because
+"it still compiles without it" rots silently:
+
+```sh
+cargo build -p grind-cli --no-default-features   # a `grind` with no Excel code in it
+cargo test  -p grind-cli --no-default-features
+GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test -p grind-xlsx   # loop A′
 ```
 
 The two GTK shells need `libgtk-4-dev` + `libadwaita-1-dev`, and are **not** in
@@ -448,6 +458,7 @@ against exactly what CI uses.
 | **C** — round-trip differential, text | the same, both directions, over `sw/qa` | `text/tests/roundtrip.rs` |
 | **E** — generated differential | formulas generated from the catalog's signatures, evaluated by us and by LO | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 | **F** — projection differential | project → read back → the two models are identical, both directions | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`, `doc/dsl.md` §8 |
+| **A′** — import tolerance | every `.xlsx`/`.xlsm` in `sc/qa/unit/data` imports without an `Err` or a panic, and every imported document survives our own writer and reader | `xlsx/tests/corpus_read.rs`, `doc/xlsx-import.md` |
 
 `sheet/tests/kb.rs` is the fourth check and never skips: R7's vendored documents. It also
 validates the writer against the schema (`jing -i`) and measures R3/R6.
@@ -562,6 +573,7 @@ rather than a guest:
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
 | `grind-text` | `text/` | The word processor (phase 10): the block model — flat, with two axes: a block's *kind* (paragraph, heading, list item) and the `Cell` coordinate that says which table cell it is in, since a cell holds blocks rather than a value — `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-build` | `build/` | **The generator** (`doc/dsl.md` layer 1, D7): a Rhai script that *returns* a document, and the sandbox it runs in. `sheet.rs` and `text.rs` are the two host vocabularies — the projection's own nouns — `engine.rs` is every restriction §2 promises, in one screen, and `data.rs` is the one exception to them: `json(…)`, which reads **data and never code** from one directory a person named, with `..`, absolute paths and symlinks out all refused. **Nothing that opens a document may depend on this crate** (R11), which `build/tests/manifest.rs` reads the manifests to enforce |
+| `grind-xlsx` | `xlsx/` | **The Excel import filter** (`doc/xlsx-import.md`, phase 11, built through **X0**): OPC, the Transitional/Strict namespace table, markup compatibility, and the workbook's sheet list. Depends on `grind-sheet` and adds **no new dependency** — `zip` and `quick-xml` are already the core's, which is half the argument against `calamine`. An **optional** dependency of `grind-cli` behind the `xlsx` feature, on by default; `--no-default-features` builds a `grind` with no Excel code in it, and CI builds both. Produces a `Document` through the model's public API and nothing goes the other way: no Excel vocabulary reaches `grind-sheet` (R1), and this phase plans to add nothing to it at all. `xml.rs` is `core/src/odf/context.rs`'s ignore-the-subtree property **rebuilt rather than borrowed** — that file's dispatch key is a closed enum of ODF namespace URIs and R8 keeps it that way — and it is the one place `mc:AlternateContent` is handled, because it can wrap anything and per-site handling is per-site bugs |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell — the suite's **showcase** for this document type, and the client that gets a text feature first. Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` places blocks (a stack, and a grid where a table is), `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics` and honours all eight `CharStyle` properties, `format.rs` is the formatting bar, `view.rs` is the widget |

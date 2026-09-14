@@ -51,7 +51,7 @@ jobs:
           # populates what the rest restore on the next run.
           shared-key: linux-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo clippy --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32 --all-targets -- -D warnings
+      - run: cargo clippy --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-xlsx -p grind-tui -p grind-web -p grind-win32 --all-targets -- -D warnings
 
   docs:
     # The doc comments are this project's design record — `CLAUDE.md` sends a reader to them
@@ -67,7 +67,7 @@ jobs:
         with:
           shared-key: linux-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo doc --no-deps --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
+      - run: cargo doc --no-deps --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-xlsx -p grind-tui -p grind-web -p grind-win32
 
   build:
     runs-on: ubuntu-latest
@@ -83,10 +83,16 @@ jobs:
       # workflow does.
       # `--locked`: `Cargo.lock` is committed, and a build that quietly updates it is a
       # build of something other than what the commit says.
-      - run: cargo build --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
+      - run: cargo build --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-xlsx -p grind-tui -p grind-web -p grind-win32
       # Loops A and B need a LibreOffice *checkout* for its corpus and skip without
       # one, so this job is the unit tests plus whatever else runs everywhere.
-      - run: cargo test --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-tui -p grind-web -p grind-win32
+      - run: cargo test --locked -p grind-core -p grind-sheet -p grind-text -p grind-build -p grind-cli -p grind-xlsx -p grind-tui -p grind-web -p grind-win32
+      # The Excel filter is a cargo feature, so "it still compiles without it" is a claim
+      # that rots silently unless something builds it. Both halves: the binary, and its
+      # tests — a `#[cfg]`-ed command whose *test* still names it fails here and nowhere
+      # else. `doc/xlsx-import.md`'s matrix is these two lines plus the default build above.
+      - run: cargo build --locked -p grind-cli --no-default-features
+      - run: cargo test --locked -p grind-cli --no-default-features
 
   oracle:
     # Loops C ("out") and E, which are one job because they want exactly the same thing: the
@@ -157,5 +163,13 @@ jobs:
       # and a `soffice`. See the note in the `oracle` job for why that half probes the
       # oracle's capability before using it.
       - run: cargo test --locked -p grind-text --test corpus_read --test roundtrip -- --nocapture
+        env:
+          GRIND_LO_CORPUS: /tmp/lo-core
+      # Loop A′ — the Excel import filter's read tolerance, plus the identity check that an
+      # imported document survives our own writer and reader. It costs no clone of its own:
+      # `sc/qa/unit/data/xlsx` and `xlsm` are directories inside the sparse checkout above,
+      # so this is one more step on a corpus that is already here. No oracle either — loop D
+      # is the one that needs `soffice`, and it is X1's.
+      - run: cargo test --locked -p grind-xlsx -- --nocapture
         env:
           GRIND_LO_CORPUS: /tmp/lo-core

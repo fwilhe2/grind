@@ -25,10 +25,14 @@
 const WORKSPACE: &str = include_str!("../../Cargo.toml");
 
 /// Every crate that must **not** name the generator, with its manifest.
-const READERS: [(&str, &str); 8] = [
+const READERS: [(&str, &str); 9] = [
     ("core", include_str!("../../core/Cargo.toml")),
     ("sheet", include_str!("../../sheet/Cargo.toml")),
     ("text", include_str!("../../text/Cargo.toml")),
+    // An import filter is a read path like any other, and a pointed one: the files it opens
+    // come from strangers. `doc/xlsx-import.md` bans fetching and executing for the same
+    // reason R11 bans linking an evaluator.
+    ("xlsx", include_str!("../../xlsx/Cargo.toml")),
     (
         "ui_sheet_gtk",
         include_str!("../../ui_sheet_gtk/Cargo.toml"),

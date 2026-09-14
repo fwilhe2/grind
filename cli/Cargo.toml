@@ -14,6 +14,14 @@ repository.workspace = true
 name = "grind"
 path = "src/main.rs"
 
+[features]
+# On by default, because a converter you have to opt into is one nobody has when they need
+# it. Off is a real configuration all the same: `--no-default-features` builds a `grind` with
+# no Excel code in it at all, and `win32.yml`-style "it still compiles without the feature"
+# claims rot silently unless something builds them.
+default = ["xlsx"]
+xlsx = ["dep:grind-xlsx"]
+
 [dependencies]
 # The suite-level half: `kind`, `Form`, and what a lint diagnostic is — the vocabulary a
 # command has to speak *before* it knows which application it is talking to.
@@ -24,6 +32,9 @@ grind-text = { path = "../text" }
 # it** — R11, checked by `build/tests/manifest.rs`: no code path that opens a document
 # evaluates anything, and `grind build` is a verb a person types.
 grind-build = { path = "../build" }
+# The Excel import filter (doc/xlsx-import.md), optional by cargo feature rather than by
+# being a separate binary: it belongs *inside* `grind` rather than beside it.
+grind-xlsx = { path = "../xlsx", optional = true }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

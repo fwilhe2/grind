@@ -9,12 +9,18 @@ members = [
     "text",
     "build",
     "cli",
+    "xlsx",
     "ui_sheet_gtk",
     "ui_text_gtk",
     "ui_tui",
     "ui_web",
     "ui_win32",
 ]
+# What bare `cargo build` / `cargo test` walk: everything that needs no system package.
+# Without this, the default commands try to compile the GTK shells and fail on a machine with
+# no `libgtk-4-dev`, which is why CI has always named crates explicitly. `--workspace` still
+# builds every member on demand.
+default-members = ["core", "sheet", "text", "build", "cli", "xlsx"]
 resolver = "3"
 
 [workspace.package]
