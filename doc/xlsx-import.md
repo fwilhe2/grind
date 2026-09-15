@@ -638,6 +638,7 @@ this phase adds the loop that does it for import.
 | **A′** — read tolerance | every `.xlsx` in the corpus imports without an `Err` and without a panic | `sc/qa/unit/data/xlsx/`, plus `xlsm/` — the count this plan first claimed (352) is **unverified**; X0 measures it and writes the real `FLOOR`, which then only goes up |
 | **D** — import fidelity | our conversion and the oracle's conversion of the same file agree, semantically | the same 352, minus a named exclusion list |
 | **R2** | every imported document validates against the ODF schema (`jing -i`) | the same |
+| **the generated corpus** | every claim a manifest makes about a fixture is satisfied, or named in one of two tables | `xlsx/tests/data/corpus/`, vendored — **never skips**. See below |
 
 Loop D, concretely:
 
@@ -659,7 +660,7 @@ needs `soffice` and skips with a notice without it, exactly as loop C does. Neit
 special-cased per file: an exclusion is a *construct* with a name, never a file name
 (`CLAUDE.md`).
 
-Three more checks, each cheap and each catching a different class of mistake:
+Five more checks, each cheap and each catching a different class of mistake:
 
 1. **Every imported document survives our own writer and reader unchanged.** Import → write →
    read → compare. It is the same identity check phase 3 already owns, and it proves the
@@ -683,6 +684,81 @@ Three more checks, each cheap and each catching a different class of mistake:
 5. **A Strict fixture**, one file, asserting only that it imports and reports
    `Flavour::Strict`. Not a supported configuration — a proof that the namespace table is a
    table.
+
+### The generated corpus — `xlsx/tests/ooxmlgen.rs`
+
+Checks 3, 4 and 5 above were a plan to write fixtures by hand, and hand-assembly stops where
+hand-assembly stops: nobody writes a four-section number format, eighteen fill patterns and
+500,000 cells into a test file. So they are **generated** instead, by
+[ooxmlgen](https://github.com/fwilhe2/ooxmlgen), from the Open XML SDK — which means the bytes
+are a real producer's rather than our idea of one, and which answers risk 3 without waiting
+for a dozen real documents to be collected. `xlsx/tests/fixtures.rs` stays exactly as it is:
+its packages are readable *in the source*, which is a different and still necessary property.
+
+**76 fixtures, 5.4 MB, vendored** at `xlsx/tests/data/corpus/` from run
+[34999727235](https://github.com/fwilhe2/ooxmlgen/actions/runs/34999727235) (ooxmlgen 0.2.0,
+2026-09-15) — R7's rule, so the check cannot skip, and no workflow change: `grind-xlsx` is a
+default member and the whole corpus imports in 1.2 s. Eight families, one per thing that can
+go wrong: `values/`, `formulas/`, `numfmt/`, `styles/`, `geometry/`, `document/`, `scale/`,
+`realworld/` and `hostile/`.
+
+What earns it its size is `manifest.json`, which is not an index but **the expectation**,
+machine-readable and written in this crate's own vocabulary: the `Dropped` variants by name,
+`Flavour` by name, the `Error` variant a hostile file must produce, the sheet list in workbook
+order, every fixture's SHA-256, and for each of 1341 cells both what the file literally
+contains and what a conversion of it should produce. That is loop D's oracle, travelling with
+the corpus instead of waiting for `soffice` — and where a conversion is genuinely ambiguous a
+cell carries an `oracle` field, so the two can be told apart.
+
+Since this build is X0, most of that oracle is about a later milestone. Two tables carry the
+difference and both are checked in **both directions**:
+
+- **`PENDING`** — a claim this build does not satisfy yet, with the milestone that will and
+  the reason it cannot from here. A claim that starts passing **fails the test**, so the entry
+  has to be deleted when its milestone lands. It is loop F's "a test that fails the day it is
+  projected" applied to a roadmap, and it is what stops a milestone table from quietly
+  becoming a list of things that already work. 21 entries.
+- **`DECIDED_OTHERWISE`** — a claim this build answers differently *on purpose*. 2 entries.
+
+Everything else is asserted: **138 of 161 claims**, with the cell-level half held by one
+assertion that `report.cells == 0`, written to fail the day X1 begins rather than as 1341
+lines of pending.
+
+### What the generated corpus found
+
+1. **Two corpus expectations are wrong about this filter, not the other way round**, and both
+   are in `hostile/`. `no-workbook-part.xlsx` expects `Error::Package`; a package that opened
+   perfectly and contains no workbook is `Error::NotSpreadsheet`, which is the sentence that
+   variant exists to say. `zip-slip.xlsx` expects a refusal; this filter imports the one
+   legitimate workbook in it and both escape attempts fail *structurally* — a zip entry name
+   is a key in a package that is never extracted, and the two relationship targets that climb
+   out resolve to no part. Refusing the file would throw away a readable workbook over an
+   attack that already missed. The property that actually matters is now asserted directly:
+   nothing outside the package is touched, checked against the `/tmp` marker path the fixture
+   carries for exactly that purpose.
+2. **`Flavour::Mixed` needs X1 to be detectable in the ordinary case.** `mixed-flavour.xlsx`
+   is a Transitional workbook with a Strict *worksheet*, and X0 opens no worksheet, so the
+   Strict namespace is never seen. The three Mixed files in LibreOffice's corpus all declare
+   both families in `_rels/.rels`, which is why X0 could measure `Mixed` at all (§1.2) —
+   a second spelling of the same fact was not visible until now.
+3. **`mc:MustUnderstand` has a spelling question waiting at X1.** The manifest expects the
+   namespace **URI**; `mce::must_understand` deliberately yields the **prefix**, and says why.
+   The URI is the stronger spelling — a prefix is a local alias and a report that prints one
+   tells a bug report nothing — but resolving it needs the declaring element's namespace
+   scope, which `xml.rs` does not keep. Decide it when X1 opens the part the attribute is on.
+4. **"A sheet name Excel allows and ODF does not" has no milestone.** It is check 3 in the
+   list above and appears in no row of Part III's table. `sheets.xlsx` has ten names, eight of
+   which — spaces, an apostrophe, CJK, 31 characters — already come through exactly;
+   `Has[Brackets]` and `Has/Slash` are carried verbatim where the manifest wants
+   `Has_Brackets_` and `Has_Slash`. They survive our own writer and reader, so what is lost is
+   *addressability* rather than the name: `[.Has/Slash.A1]` is not a reference. Parked in
+   `PENDING` against X5 until the table says otherwise.
+
+Nothing else disagreed: 69 fixtures import, 6 refuse with exactly the named error, 75 of 76
+sheet lists match name for name and in order, and the whole `hostile/` family — entity
+expansion, fifty thousand levels of nesting, a DTD naming a remote URL, a quarter-gigabyte
+part in a 263 KB archive, ten thousand parts — returns in 0.5 s with no panic and nothing
+fetched, which is risk 5 answered by a test rather than by a paragraph.
 
 ---
 
@@ -721,7 +797,13 @@ Named here so nobody has to ask, and mirrored into `doc/not-doing.md` when the p
 3. **The corpus is a regression suite, not a sample of the world.** LibreOffice's xlsx files
    are minimal reproductions of bugs, so they over-represent the strange. A dozen real
    documents — the ones that motivated this phase — belong in `xlsx/tests/data/` under R7's
-   rule: vendored, so the requirement cannot skip.
+   rule: vendored, so the requirement cannot skip. **Answered, in the shape that scales**: 76
+   workbooks from the Open XML SDK are vendored at `xlsx/tests/data/corpus/` with a manifest
+   saying what each one should convert to (`xlsx/tests/ooxmlgen.rs`, above). Generated by a
+   real producer beats a dozen collected by hand, and it keeps growing without a licensing
+   question attached to somebody's actual spreadsheet. The dozen real documents are still
+   worth having for the things a generator does not think of — they are no longer what the
+   phase is waiting on.
 4. **Large sheets.** Excel files with a million rows exist. The reader streams (quick-xml
    already does) and bounds materialisation the way `odf/read.rs` does; the check is a
    generated 500k-cell file in the timing test, not an assumption.

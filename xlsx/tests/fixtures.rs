@@ -13,6 +13,14 @@
 //! Every package here is assembled from XML written out in full, rather than vendored as a
 //! binary. That is the point: a fixture you can read in the source is one a reviewer can
 //! check, and a `.xlsx` in git is eight files nobody will ever open.
+//!
+//! `ooxmlgen.rs` is the third corpus and does **not** replace this one: it has the breadth
+//! hand-assembly cannot reach — 76 workbooks from the Open XML SDK, with a manifest of what
+//! each should convert to — and this file has the property it cannot have, which is that
+//! every byte under test is visible in the source. Where both cover a boundary, both assert
+//! it: `NotSpreadsheet` for a package with no workbook, and a relationship climbing out of
+//! the package reaching nothing, are each pinned here *and* in the corpus's
+//! `DECIDED_OTHERWISE` table.
 
 use std::io::{Cursor, Write};
 

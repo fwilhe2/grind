@@ -10,7 +10,10 @@
 //! ever needs special-casing to pass, the walker is wrong. **Fix the architecture, not the
 //! file** — an exclusion is a *construct* with a name, never a file name.
 //!
-//! It needs no oracle and no display, only the corpus:
+//! It needs no oracle and no display, only the corpus — and a corpus is the one thing it
+//! *does* need, so on a machine with no LibreOffice checkout this file is silent.
+//! `ooxmlgen.rs` is the one that never is: 76 vendored workbooks with an oracle beside them,
+//! which is the same tolerance property plus the fidelity one, on every machine.
 //!
 //!     GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test -p grind-xlsx
 //!
