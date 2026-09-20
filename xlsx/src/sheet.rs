@@ -18,8 +18,18 @@
 //! | `e` | `#DIV/0!` … | `Text`, the error's name — how the evaluator stores one already |
 //! | `d` | an ISO 8601 date | `Number`, date kind |
 //!
-//! **Formulas are X2's.** A formula cell carries its cached value here and nothing else, which
-//! is the value Excel computed and the one a reader of the document sees.
+//! **A formula cell carries both**: Excel's cached value, which is the one a reader of the
+//! document sees until something recalculates, and the expression, translated by
+//! [`crate::formula`]. A cell whose formula falls in one of that module's named classes keeps
+//! the value and loses the formula, and is counted.
+//!
+//! **Shared formulas** (`<f t="shared" ref="B2:B10" si="0">A2*2</f>`, with the rest of the group
+//! carrying `<f t="shared" si="0"/>`) are resolved once the whole sheet has been read rather
+//! than as they arrive, because a group's master is not always above its followers —
+//! `formulas/shared-groups.xlsx` has one at F2 whose follower is F1. The shift itself is
+//! `grind_sheet::formula::shift`, the core function a fill already uses: §5.8's relative
+//! references are ODF's semantics, not Excel's, and a reference that leaves the sheet becomes
+//! `#REF!` exactly as it does when a row is deleted.
 //!
 //! Position is **implicit** when `r` is absent — the next row, the next column — because the
 //! spec allows it and Apache POI and SheetJS both write it (`realworld/implicit-refs.xlsx`).
@@ -27,12 +37,16 @@
 //! explicit address rather than from the number of cells seen. `dimension` and `spans` are
 //! claims and are never read.
 
-use grind_sheet::formula::date;
+use std::collections::HashMap;
+
+use grind_sheet::formula::parse::Expr;
+use grind_sheet::formula::{date, funcs, shift};
 use grind_sheet::model::{CellValue, NumberKind, Pos, Sheet};
 use grind_sheet::{MAX_COLS, MAX_ROWS};
 
 use crate::address;
 use crate::dates;
+use crate::formula::{self, Refusal};
 use crate::report::{Dropped, Report};
 use crate::strings::{self, Item};
 use crate::styles::Styles;
@@ -68,30 +82,64 @@ pub struct Context<'a> {
 pub fn read(
     bytes: &[u8],
     context: &Context<'_>,
+    index: usize,
     sheet: &mut Sheet,
     report: &mut Report,
     seen: &mut crate::names::Seen,
 ) {
     let mut reader = Reader::new(bytes);
+    let mut shared = Shared::default();
     if matches!(reader.root(), Ok(Some((ref root, _))) if root.is("worksheet")) {
         let _ = reader.children(|reader, name, _| {
             if !name.is("sheetData") {
                 return Ok(Handled::No);
             }
-            rows(reader, context, sheet, report)?;
+            rows(reader, context, index, sheet, report, &mut shared)?;
             Ok(Handled::Yes)
         });
     }
+    shared.resolve(index, sheet, report);
     report.must_understand.append(&mut reader.must_understand);
     seen.transitional |= reader.seen.transitional;
     seen.strict |= reader.seen.strict;
 }
 
+/// The shared-formula groups of one worksheet, and the cells still waiting on one.
+///
+/// Resolution is deferred to the end of the sheet because document order says nothing about
+/// which cell of a group is its master.
+#[derive(Default)]
+struct Shared {
+    /// `si` → where the master sits, and what it says.
+    masters: HashMap<u32, (Pos, Expr)>,
+    followers: Vec<(Pos, u32)>,
+}
+
+impl Shared {
+    fn resolve(&self, index: usize, sheet: &mut Sheet, report: &mut Report) {
+        for &(at, si) in &self.followers {
+            let Some((base, expr)) = self.masters.get(&si) else {
+                // A group whose master was never seen, or whose master was itself refused.
+                refuse(Refusal::Syntax, at, index, report);
+                continue;
+            };
+            let moved = shift::shift(
+                expr,
+                i64::from(at.row) - i64::from(base.row),
+                i64::from(at.col) - i64::from(base.col),
+            );
+            store_formula(sheet, at, &moved, report);
+        }
+    }
+}
+
 fn rows(
     reader: &mut Reader<'_>,
     context: &Context<'_>,
+    index: usize,
     sheet: &mut Sheet,
     report: &mut Report,
+    shared: &mut Shared,
 ) -> crate::Result<()> {
     // The row the *next* implicit `<row>` lands on.
     let mut next_row: u32 = 0;
@@ -122,7 +170,10 @@ fn rows(
                 t: attrs.plain("t").unwrap_or("n").to_owned(),
                 s: attrs.plain("s").and_then(|s| s.parse().ok()).unwrap_or(0),
             };
-            let value = cell(reader)?;
+            let mut value = cell(reader)?;
+            if let Some(f) = value.f.take() {
+                take_formula(&f, at, index, sheet, report, shared);
+            }
             store(sheet, at, &raw, value, context, report);
             next_row = next_row.max(at.row + 1);
             at.col += 1;
@@ -148,11 +199,23 @@ struct Held {
     v: Option<String>,
     /// `<is>`, for `t="inlineStr"`.
     inline: Option<Item>,
+    /// `<f>`, which every kind of formula cell has — including the followers of a shared
+    /// group, whose element is empty and carries only the group's number.
+    f: Option<RawFormula>,
+}
+
+/// What a `<f>` said about itself, owned for the same reason [`RawCell`] is.
+struct RawFormula {
+    /// `normal` (the default), `shared`, `array` or `dataTable` (ECMA-376 §18.18.6).
+    t: String,
+    /// The shared group this cell belongs to.
+    si: Option<u32>,
+    text: String,
 }
 
 fn cell(reader: &mut Reader<'_>) -> crate::Result<Held> {
     let mut held = Held::default();
-    reader.children(|reader, name, _| {
+    reader.children(|reader, name, attrs| {
         if name.is("v") {
             held.v = Some(reader.text()?);
             return Ok(Handled::Yes);
@@ -161,10 +224,86 @@ fn cell(reader: &mut Reader<'_>) -> crate::Result<Held> {
             held.inline = Some(strings::item(reader)?);
             return Ok(Handled::Yes);
         }
-        // `<f>` is X2's; `<extLst>` is nobody's.
+        if name.is("f") {
+            let t = attrs.plain("t").unwrap_or("normal").to_owned();
+            let si = attrs.plain("si").and_then(|s| s.parse().ok());
+            // `ref` is the group's own range and is never read: a follower names its group by
+            // number, so the range would be a second way to say the same thing.
+            held.f = Some(RawFormula {
+                t,
+                si,
+                text: reader.text()?,
+            });
+            return Ok(Handled::Yes);
+        }
+        // `<extLst>` is nobody's.
         Ok(Handled::No)
     })?;
     Ok(held)
+}
+
+/// One `<f>`: translated and stored, joined to its group, or refused by class.
+fn take_formula(
+    f: &RawFormula,
+    at: Pos,
+    index: usize,
+    sheet: &mut Sheet,
+    report: &mut Report,
+    shared: &mut Shared,
+) {
+    // An array formula is §2.3.2's exclusion rather than a translation failure: the cell keeps
+    // the value Excel cached for it and the expression goes, whatever it says.
+    if f.t == "array" {
+        refuse(Refusal::Array, at, index, report);
+        return;
+    }
+    // A follower carries the group's number and nothing else. Its master may not have been
+    // read yet, so it waits.
+    if f.t == "shared" && f.text.trim().is_empty() {
+        match f.si {
+            Some(si) => shared.followers.push((at, si)),
+            // A follower that names no group has nothing to be shifted from.
+            None => refuse(Refusal::Syntax, at, index, report),
+        }
+        return;
+    }
+    // `dataTable` has no expression at all — it is a what-if table described by attributes —
+    // so it lands here with empty text and is refused as syntax, which is the truth.
+    match formula::translate(&f.text) {
+        Ok(expr) => {
+            if f.t == "shared"
+                && let Some(si) = f.si
+            {
+                shared.masters.insert(si, (at, expr.clone()));
+            }
+            store_formula(sheet, at, &expr, report);
+        }
+        Err(refusal) => refuse(refusal, at, index, report),
+    }
+}
+
+/// The formula, in ODF's own syntax, and the functions it names.
+fn store_formula(sheet: &mut Sheet, at: Pos, expr: &Expr, report: &mut Report) {
+    // `=` rather than `of:=`: both are legal (§5.2) and this is the spelling everything else
+    // in the workspace stores, so an imported formula and a typed one are the same string.
+    let text = format!("={expr}");
+    // Asked of the text rather than of the tree, so that what is reported is what the document
+    // now says — one walker, the core's, and no second idea of what a call is.
+    for name in funcs::used(&text).unwrap_or_default() {
+        if !funcs::implemented().contains(&name.as_str()) {
+            report.unknown_functions.insert(name);
+        }
+    }
+    sheet.set_formula(at, text);
+    report.formulas += 1;
+}
+
+fn refuse(refusal: Refusal, at: Pos, index: usize, report: &mut Report) {
+    if let Some(kind) = refusal.dropped() {
+        report.drop_one(kind);
+    }
+    *report.refused.entry(refusal).or_default() += 1;
+    report.untranslated.push((index, at));
 }
 
 fn store(
@@ -267,6 +406,7 @@ mod tests {
         read(
             xml.as_bytes(),
             &context,
+            0,
             &mut sheet,
             &mut report,
             &mut Default::default(),
@@ -442,6 +582,141 @@ mod tests {
             CellValue::Text("INF".into()),
             "not a number a cell can hold"
         );
+    }
+
+    /// What is stored is ODF's syntax, and the cached value is untouched beside it.
+    #[test]
+    fn a_formula_cell_carries_both_halves() {
+        let (sheet, report) = sheet_of(
+            r#"<row r="1"><c r="A1"><v>3</v></c><c r="B1"><f>A1*2</f><v>6</v></c></row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        assert_eq!(sheet.formula(at("B1")), Some("=[.A1]*2"));
+        assert_eq!(sheet.get(at("B1")), CellValue::Number(6.0));
+        assert_eq!(report.formulas, 1);
+        assert!(report.untranslated.is_empty());
+    }
+
+    /// Apache POI and SheetJS do not evaluate, so they write this by default.
+    #[test]
+    fn a_formula_with_no_cached_value_is_still_a_formula() {
+        let (sheet, report) = sheet_of(
+            r#"<row r="1"><c r="B1"><f>SUM(A1:A2)</f></c></row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        assert_eq!(sheet.formula(at("B1")), Some("=SUM([.A1:.A2])"));
+        assert_eq!(sheet.get(at("B1")), CellValue::Empty);
+        assert_eq!(report.formulas, 1);
+    }
+
+    /// The group's master is at B1; every follower is it, shifted. The second group's master
+    /// is *below* its follower, which is why resolution waits for the whole sheet.
+    #[test]
+    fn a_shared_group_is_its_master_shifted() {
+        let (sheet, report) = sheet_of(
+            r#"<row r="1">
+                 <c r="B1"><f t="shared" ref="B1:B3" si="0">A1*2</f><v>2</v></c>
+                 <c r="F1"><f t="shared" si="2"/></c>
+               </row>
+               <row r="2">
+                 <c r="B2"><f t="shared" si="0"/><v>4</v></c>
+                 <c r="F2"><f t="shared" ref="F1:F2" si="2">A1*10</f><v>10</v></c>
+               </row>
+               <row r="3"><c r="B3"><f t="shared" si="0"/><v>6</v></c></row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        assert_eq!(sheet.formula(at("B1")), Some("=[.A1]*2"));
+        assert_eq!(sheet.formula(at("B2")), Some("=[.A2]*2"));
+        assert_eq!(sheet.formula(at("B3")), Some("=[.A3]*2"));
+        assert_eq!(sheet.formula(at("F2")), Some("=[.A1]*10"));
+        // Shifted up off the sheet: the same `#REF!` a delete produces.
+        assert_eq!(sheet.formula(at("F1")), Some("=#REF!*10"));
+        assert_eq!(report.formulas, 5);
+    }
+
+    /// An absolute axis does not move with the group, which is the entire reason `$` exists.
+    #[test]
+    fn a_shared_group_moves_only_its_relative_axes() {
+        let (sheet, _) = sheet_of(
+            r#"<row r="1"><c r="G1"><f t="shared" ref="G1:G2" si="3">$A$1+A1</f><v>2</v></c></row>
+               <row r="2"><c r="G2"><f t="shared" si="3"/><v>3</v></c></row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        assert_eq!(sheet.formula(at("G2")), Some("=[.$A$1]+[.A2]"));
+    }
+
+    /// The cell keeps Excel's value and loses the expression, and the loss is counted — by
+    /// kind where the model has one, and in `untranslated` always.
+    #[test]
+    fn a_refused_formula_keeps_its_value_and_is_counted() {
+        let (sheet, report) = sheet_of(
+            r#"<row r="1">
+                 <c r="A1"><f t="array" ref="A1:A1">B1:B3*2</f><v>2</v></c>
+                 <c r="B1"><f>SUM(Sales[Amount])</f><v>7</v></c>
+                 <c r="C1"><f>[1]Sheet1!$A$1</f><v>9</v></c>
+                 <c r="D1"><f>SUM(A1:B2 B1:B3)</f><v>4</v></c>
+               </row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        for addr in ["A1", "B1", "C1", "D1"] {
+            assert_eq!(sheet.formula(at(addr)), None, "{addr}");
+        }
+        assert_eq!(sheet.get(at("B1")), CellValue::Number(7.0));
+        assert_eq!(report.dropped[&Dropped::ArrayFormula], 1);
+        assert_eq!(report.dropped[&Dropped::StructuredReference], 1);
+        assert_eq!(report.dropped[&Dropped::ExternalLink], 1);
+        // The intersection operator is expressible in ODF and outside the Small Group, so it
+        // is a lost formula and not a dropped construct.
+        assert_eq!(report.untranslated.len(), 4);
+        assert_eq!(report.formulas, 0);
+        assert!(!report.lossless());
+        // Where and why are the same four cells counted twice, which is the invariant that
+        // keeps the scoreboard honest.
+        assert_eq!(
+            report.refused.values().sum::<usize>(),
+            report.untranslated.len()
+        );
+        assert_eq!(report.refused[&Refusal::Array], 1);
+        assert_eq!(report.refused[&Refusal::Intersection], 1);
+    }
+
+    /// A name this build cannot evaluate is reported and the formula is carried anyway —
+    /// which is the difference between a fact about this build and a conversion loss.
+    #[test]
+    fn an_unimplemented_function_is_named_rather_than_refused() {
+        let (sheet, report) = sheet_of(
+            r#"<row r="1">
+                 <c r="A1"><f>NOSUCHFUNCTION(B1)</f><v>1</v></c>
+                 <c r="B1"><f>_xlfn.XLOOKUP(3,C1:C2,D1:D2)</f><v>2</v></c>
+                 <c r="C1"><f>SUM(D1:D2)</f><v>3</v></c>
+               </row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        assert_eq!(sheet.formula(at("A1")), Some("=NOSUCHFUNCTION([.B1])"));
+        assert_eq!(
+            sheet.formula(at("B1")),
+            Some("=XLOOKUP(3;[.C1:.C2];[.D1:.D2])")
+        );
+        assert_eq!(
+            report.unknown_functions,
+            ["NOSUCHFUNCTION", "XLOOKUP"]
+                .map(str::to_owned)
+                .into_iter()
+                .collect()
+        );
+        assert!(report.lossless(), "an unknown name loses nothing");
     }
 
     #[test]

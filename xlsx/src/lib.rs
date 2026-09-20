@@ -26,11 +26,12 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: milestone X1.** The seam (X0) — the package, the flavour and markup
-//! compatibility machinery, the workbook's sheet list — and every cell's **value**: shared and
+//! **State of the build: milestone X2.** The seam (X0) — the package, the flavour and markup
+//! compatibility machinery, the workbook's sheet list — every cell's **value** (X1): shared and
 //! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
-//! rule. A formula cell carries its cached value and not yet its formula (X2), and a number
-//! format is read only far enough to know whether a number is a date (X3).
+//! rule — and every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
+//! shared groups resolved through the core's own `formula::shift`. A number format is read only
+//! far enough to know whether a number is a date (X3), and a cell carries no style yet (X4).
 
 use std::fmt;
 use std::path::Path;
@@ -39,6 +40,7 @@ use grind_sheet::model::Document;
 
 pub mod address;
 pub mod dates;
+pub mod formula;
 pub mod mce;
 pub mod names;
 pub mod numfmt;
@@ -167,11 +169,16 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     };
     // `document` has exactly one sheet per entry — or one invented `Sheet1` for a workbook
     // with none, which has no part — so the indices agree.
-    for (entry, target) in book.sheets.iter().zip(document.sheets.iter_mut()) {
+    for (index, (entry, target)) in book
+        .sheets
+        .iter()
+        .zip(document.sheets.iter_mut())
+        .enumerate()
+    {
         let Some(bytes) = entry.part.as_deref().and_then(|part| package.part(part)) else {
             continue;
         };
-        sheet::read(&bytes, &context, target, &mut report, &mut seen);
+        sheet::read(&bytes, &context, index, target, &mut report, &mut seen);
     }
     // The flavour is whatever the *whole* read saw, not only what the workbook part did: a
     // Strict relationship type in `_rels/.rels` is evidence before any part is opened.

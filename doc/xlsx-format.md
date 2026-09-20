@@ -194,8 +194,9 @@ and each is asserted to still occur, so the list cannot go stale silently:
 
 - **It recalculates.** A formula's cached `<v>` is replaced by the oracle's own evaluation on
   load: `formulas/shared-groups.xlsx` caches C2 = 4 and the oracle writes 6 (= A2+B2). Why it
-  recalculates these files is not measured and not needed; that it does is. So a formula cell's
-  *value* is only comparable with the oracle once X2 carries the formula as well.
+  recalculates these files is not measured and not needed; that it does is. X2 carries the
+  formula and this does not change: the oracle still evaluates on load, so the two numbers
+  still come from two evaluators and a formula cell's *value* stays out of loop D.
 - **An empty string is dropped.** `<t/>` is a string cell with no text; the oracle writes an
   empty cell.
 - **A sheet name it does not allow drops the sheet**, cells and all — `Has[Brackets]` and
@@ -203,6 +204,27 @@ and each is asserted to still occur, so the list cannot go stale silently:
 - **An external link's cache becomes a sheet**, named `'file:///…'#Sheet1`.
 - **A part reached through `\` is not found**; the sheet arrives, empty.
 - **A pivot table's output is regenerated**, with the oracle's own labels (`Total Result`).
+
+### 2.4 Formula text: the three spellings the oracle differs in — `MEASURED`
+
+Read out of `manifest.json`'s own `oracle` fields and confirmed against the pinned oracle's
+output on 2026-09-20. Each is a difference in *spelling*, not in meaning, and each is why loop D
+compares values and the generated corpus's manifest is the oracle for formula text:
+
+| ours | the oracle's | what it is |
+|---|---|---|
+| `[Data.A1]` | `[$Data.A1]` | Excel has no sheet-relative form to distinguish, so both readings are defensible |
+| `#REF!` | `[#REF!]` | §5.8's bracketed reference error and §5.12's constant error are one `Expr::Error` in this core, and its serialiser writes the name |
+| `NOSUCHFUNCTION(…)` | `nosuchfunction(…)` | the oracle lower-cases a name it does not know |
+| `XLOOKUP(…)` | `COM.MICROSOFT.XLOOKUP(…)` | it namespaces a function that is not OpenFormula's; this filter takes the `_xlfn.` marker off and leaves the name |
+
+### 2.5 What producers write where a string delimiter belongs — `MEASURED`
+
+`sc/qa/unit/data/xlsx/tdf165886.xlsx` writes `OR(D1=0,D1<>““)` — typographic quotation marks,
+four spellings of them, where `"` belongs. They are not string delimiters in Excel's grammar
+either, and the file is a LibreOffice bug reproduction rather than something a spreadsheet
+produced. Twelve of the fifteen expressions X2's translator refuses as unreadable across the
+whole 362-workbook corpus are in this one file.
 
 ---
 
@@ -277,6 +299,12 @@ Known candidates, all `UNVERIFIED` until each is run against the oracle: `CEILIN
 with a negative significand, `MOD` with operands of opposite sign, `ROUND`'s tie rule, and the
 error produced by `x^y` for a negative `x` and a fractional `y`. Loop E's machinery already
 generates and compares exactly this shape of case, and is the cheap way to build the list.
+
+One thing X2 did settle: of that list, **`CEILING`, `FLOOR`, `ROUNDDOWN` and `ROUNDUP` are not
+in the Small Group at all**, so an imported workbook that calls them reports them as unknown
+functions and recalculating replaces the value with `#NAME?` rather than with a differently
+rounded number. `MOD`, `ROUND`, `INT` and `TRUNC` *are* implemented, and are where the divergence
+this section is about actually bites.
 
 ---
 

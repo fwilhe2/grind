@@ -20,7 +20,10 @@
 //! CI gets it free: `ci.yml`'s `corpus` job already sparse-checks out `sc/qa/unit/data`, and
 //! `xlsx/` is a directory inside it.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+use grind_xlsx::formula::Refusal;
 
 const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
 
@@ -35,6 +38,16 @@ const DIRS: [&str; 2] = ["xlsx", "xlsm"];
 /// of which imports. **Raise it, never lower it** — a corpus that grew and a reader that
 /// broke look identical from here otherwise.
 const FLOOR: usize = 360;
+
+/// X2's ratchet: the share of this corpus's `<f>` elements that became a formula rather than
+/// falling in a named class. **Raise it, never lower it.**
+///
+/// A *share* where [`FLOOR`] is a count, and deliberately so: the count moves whenever the
+/// corpus does — 12681 of 13039 on 2026-09-20, against master at `fe40f0393` — and what is
+/// being ratcheted here is the translator rather than the fixtures. The remainder is not
+/// slack: every one of it is counted by class in the scoreboard below, and three of those
+/// classes are §2.3.2 exclusions that will never translate.
+const TRANSLATED_FLOOR: f64 = 0.97;
 
 /// The corpus stores some files as ciphertext, and says so.
 ///
@@ -127,6 +140,8 @@ fn every_corpus_workbook_imports() {
     let mut strict = 0usize;
     let mut sheets = 0usize;
     let mut failures = Vec::new();
+    let mut carried = 0usize;
+    let mut refused: BTreeMap<Refusal, usize> = BTreeMap::new();
 
     for path in &files {
         let Some(bytes) = workbook_bytes(path) else {
@@ -137,6 +152,10 @@ fn every_corpus_workbook_imports() {
                 sheets += document.sheets.len();
                 if report.flavour != grind_xlsx::Flavour::Transitional {
                     strict += 1;
+                }
+                carried += report.formulas;
+                for (class, count) in &report.refused {
+                    *refused.entry(*class).or_default() += count;
                 }
             }
             Err(e) if e.is_encrypted() => encrypted += 1,
@@ -154,6 +173,19 @@ fn every_corpus_workbook_imports() {
         sheets,
         strict,
     );
+
+    // X2's scoreboard, in loop B's shape: every `<f>` the corpus holds either became a formula
+    // our own parser produces, or fell in a class with a name. There is no third outcome, and
+    // the classes are what makes that a statement rather than a percentage.
+    let lost: usize = refused.values().sum();
+    eprintln!(
+        "loop A′ formulas: {carried}/{} translated ({:.1}%), {lost} in a named class",
+        carried + lost,
+        100.0 * carried as f64 / (carried + lost).max(1) as f64,
+    );
+    for (class, count) in &refused {
+        eprintln!("  {:24} {count}", class.label());
+    }
     for (path, err) in failures.iter().take(10) {
         eprintln!("  {}: {err}", path.display());
     }
@@ -166,6 +198,15 @@ fn every_corpus_workbook_imports() {
         "loop A′: {}/{} workbooks failed to import",
         failures.len(),
         files.len()
+    );
+    let share = carried as f64 / (carried + lost).max(1) as f64;
+    assert!(
+        share >= TRANSLATED_FLOOR,
+        "loop A′ translated {carried} of {} formulas ({:.1}%), under the {:.0}% this \
+         translator reached when the ratchet was set",
+        carried + lost,
+        100.0 * share,
+        100.0 * TRANSLATED_FLOOR,
     );
     assert!(
         files.len() >= FLOOR,

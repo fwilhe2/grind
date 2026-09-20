@@ -64,6 +64,13 @@ pub struct ImportReport {
     /// dropped *construct*, since the model could hold them, but a loss all the same.
     pub over_budget: usize,
     pub formulas: usize,
+    /// Formulas read and not carried, by the class that stopped each one. The cell kept the
+    /// value Excel cached for it, so the document is not wrong — it no longer recalculates
+    /// there, which is what this says.
+    pub untranslated: Vec<DroppedCount>,
+    /// Functions a carried formula names that this build cannot evaluate. Not a loss: the
+    /// formula came through intact, and this is a fact about the evaluator.
+    pub unknown_functions: Vec<String>,
     /// Every construct the model has no home for, by name and count.
     pub dropped: Vec<DroppedCount>,
     /// Namespaces the workbook said a consumer must understand and this one does not. Never
@@ -101,6 +108,15 @@ impl ImportReport {
             cells: report.cells,
             over_budget: report.over_budget,
             formulas: report.formulas,
+            untranslated: report
+                .refused
+                .iter()
+                .map(|(class, count)| DroppedCount {
+                    what: class.label().to_owned(),
+                    count: *count,
+                })
+                .collect(),
+            unknown_functions: report.unknown_functions.iter().cloned().collect(),
             dropped: report
                 .dropped
                 .iter()
@@ -383,8 +399,14 @@ impl Report {
                 for dropped in &import.dropped {
                     println!("dropped\t{}\t{}", dropped.count, dropped.what);
                 }
+                for class in &import.untranslated {
+                    println!("untranslated\t{}\t{}", class.count, class.what);
+                }
                 if import.over_budget > 0 {
                     println!("over budget\t{}\tcells", import.over_budget);
+                }
+                for name in &import.unknown_functions {
+                    println!("unknown function\t{name}");
                 }
                 for namespace in &import.must_understand {
                     println!("not understood\t{namespace}");

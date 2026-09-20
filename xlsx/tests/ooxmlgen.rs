@@ -27,18 +27,21 @@
 //! contains and what a conversion of it should produce. A corpus with an oracle travelling
 //! beside it is the thing loop D needs and does not have until `soffice` is on `PATH`.
 //!
-//! **This build is X1**: every cell's value and kind is asserted against the manifest, one
-//! claim per cell, and the rest of the oracle — formulas, formats, styles, the document level —
-//! is about a later milestone. Two tables carry the difference and they are checked in *both*
-//! directions, which is the only arrangement that survives contact with a growing filter:
+//! **This build is X2**: every cell's value and kind is asserted against the manifest, one
+//! claim per cell, and so is every cell's **formula** — the text where the manifest states one,
+//! and *the absence of one* where it states an `excel` and no translation, which is how the
+//! exclusion classes are held to rather than merely described. The rest of the oracle — formats,
+//! styles, the document level — is about a later milestone. Two tables carry the difference and
+//! they are checked in *both* directions, which is the only arrangement that survives contact
+//! with a growing filter:
 //!
 //! - [`PENDING`] — a claim this build does not satisfy yet, with the milestone that will.
 //!   A claim that starts passing **fails this test**, and the entry must then be deleted. It
 //!   is the loop-F idiom (`a test that fails the day it is projected`) applied to a roadmap.
 //! - [`DECIDED_OTHERWISE`] — a claim this build will never satisfy because it answers the
-//!   question differently *on purpose*. Three entries — two about hostile files and one a
-//!   manifest that disagrees with its own fixture's bytes — and each is a place where the
-//!   corpus should change rather than the code.
+//!   question differently *on purpose*. Two are about hostile files, three are manifests that
+//!   disagree with their own fixture's bytes, and two are spellings where ours is as true as
+//!   the one asked for. Each is a place where the corpus should change rather than the code.
 //!
 //! Everything not in either table is asserted. Run it like anything else:
 //!
@@ -103,11 +106,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "X5 — `<definedNames>` is read at X5",
     ),
     (
-        "document/external-link.xlsx",
-        "dropped:ExternalLink",
-        "X5 — the link is already never followed (`fixtures.rs`); counting it is X5",
-    ),
-    (
         "document/merged-cells.xlsx",
         "dropped:MergedCells",
         "X5 — `<mergeCells>` lives in the worksheet part",
@@ -123,16 +121,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "X5 — `<sheetProtection>` and `<workbookProtection>`",
     ),
     (
-        "document/tables.xlsx",
-        "dropped:StructuredReference",
-        "X2 — a structured reference is a formula this build does not translate yet",
-    ),
-    (
-        "formulas/excluded-classes.xlsx",
-        "dropped:ArrayFormula",
-        "X2 — `t=\"array\"` is one of that milestone's named exclusion classes",
-    ),
-    (
         "styles/colors.xlsx",
         "dropped:ThemeColor",
         "X4 — the theme part is not read yet",
@@ -142,23 +130,16 @@ const PENDING: &[(&str, &str, &str)] = &[
         "dropped:FontFamily",
         "X4 — `<fonts>` is not read yet",
     ),
-    // X2 is the expression translator, so nothing knows a function's name yet.
+    // The sheet-local names of `document/defined-names.xlsx` are dropped, and D3 is the cell
+    // that names one. Its formula therefore loses its referent, which is why the manifest
+    // states no translation for it.
     (
-        "formulas/errors.xlsx",
-        "unknown-functions",
-        "X2 — `NOSUCHFUNCTION` is only unknown once a formula has been translated",
-    ),
-    (
-        "formulas/semantics-differ.xlsx",
-        "unknown-functions",
-        "X2 — CEILING, FLOOR, ROUNDDOWN and ROUNDUP: same name, different rule. The corpus \
-         calls them unknown because Excel's reading is not ODF's, which is the divergence \
-         `doc/xlsx-import.md`'s opening argument is about.",
-    ),
-    (
-        "formulas/xlfn.xlsx",
-        "unknown-functions",
-        "X2 — the six `_xlfn.` functions, none of which is in the Small Group",
+        "document/defined-names.xlsx",
+        "formula:Data!D3",
+        "X5 — `Rate` is a sheet-local name, and nothing knows that until `<definedNames>` is \
+         read. This build translates the formula to `Rate` like any other name; once X5 drops \
+         the name it has to stop, since carrying a reference to a name the document does not \
+         define is the one outcome worse than carrying neither.",
     ),
 ];
 
@@ -191,6 +172,45 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
          broken file being readable beats none of it` is the rule `package.rs` is built on. \
          The property that actually matters is asserted directly, by \
          `nothing_outside_the_package_is_touched`.",
+    ),
+    (
+        "document/tables.xlsx",
+        "dropped:StructuredReference",
+        "The manifest expects four; the fixture holds seven. `xl/worksheets/sheet1.xml` has \
+         seven `<f>` elements naming the table — C2:C5's `Sales[[#This Row],[Amount]]` and \
+         E1:E3's `SUM(Sales[Amount])`, `COUNTA(Sales[#Headers])` and `ROWS(Sales[#All])`, read \
+         on 2026-09-20. Four is the number of *distinct* forms among them. Every other kind in \
+         this report is counted once per cell that lost something — `RichText` and \
+         `ExternalLink` both are — and a person reading `structured reference ×4` over seven \
+         emptied cells would be owed three more.",
+    ),
+    (
+        "formulas/semantics-differ.xlsx",
+        "unknown-functions",
+        "The manifest expects CEILING, FLOOR, ROUNDDOWN and ROUNDUP; the fixture calls only \
+         the first two. Its thirteen formulas are MOD×3, ROUND×5, CEILING×2, FLOOR, INT and \
+         TRUNC, read out of `xl/worksheets/sheet1.xml` on 2026-09-20 — ROUNDDOWN and ROUNDUP \
+         appear in the file's prose and nowhere in its cells. Reporting a name no formula \
+         mentions is the one thing this field must never do.",
+    ),
+    (
+        "formulas/references.xlsx",
+        "formula:Refs!B11",
+        "The manifest states no translation for `SUM(Data:Sheet3!A1:A2)` because grind's own \
+         table did not cover a sheet span over a *range*. It does now: the cuboid is \
+         `[Data.A1:Sheet3.A2]`, the same rule B10 already follows one cell at a time \
+         (`doc/xlsx-import.md` Part II §3). The fixture should carry the claim rather than \
+         decline it.",
+    ),
+    (
+        "formulas/shared-groups.xlsx",
+        "formula:Shared!F1",
+        "The manifest expects `[#REF!]*10`; this build writes `#REF!*10`. The group's master \
+         is at F2 and refers to A1, so the follower above it shifts off the sheet — both \
+         spellings say exactly that. §5.8's bracketed form and §5.12's name are one value in \
+         the core's AST (`Expr::Error`), and its serialiser writes the name; the oracle writes \
+         the brackets. Changing that is a decision about ODF's own printer, not about this \
+         filter, and it would move every formula in the workspace.",
     ),
     (
         "realworld/xml-space-preserve.xlsx",
@@ -314,14 +334,47 @@ struct Cell {
     /// `None` where the manifest declines to assert one — serial 60 in the 1900 system, the day
     /// that does not exist, is the case it exists for.
     value: Option<String>,
+    /// The OpenFormula text a conversion should produce, where the manifest states one.
+    formula: Option<String>,
+    /// What the cell's `<f>` says. Present on every formula cell, so a cell with an `excel`
+    /// and no `formula` is one whose expression the conversion is expected **not** to carry —
+    /// which is how the exclusion classes are asserted rather than merely described.
+    excel: Option<String>,
 }
 
 impl Cell {
     fn from_json(c: &serde_json::Value) -> Self {
+        let text = |key: &str| c.get(key).and_then(|v| v.as_str()).map(str::to_owned);
         Cell {
             address: c["ref"].as_str().expect("a cell ref").to_owned(),
             kind: c["kind"].as_str().expect("a cell kind").to_owned(),
-            value: c.get("value").and_then(|v| v.as_str()).map(str::to_owned),
+            value: text("value"),
+            formula: text("formula"),
+            excel: text("excel"),
+        }
+    }
+
+    /// The formula claim, or `None` where the cell makes none.
+    ///
+    /// The stored formula keeps the `=` every formula in this workspace is stored with
+    /// (§5.2's intro), and the manifest states the expression alone, so the intro is taken off
+    /// with the core's own function rather than by trimming a character.
+    fn check_formula(&self, sheet: &Sheet) -> Option<Result<(), String>> {
+        let pos = grind_xlsx::address::cell(&self.address).expect("a manifest address");
+        let got = sheet
+            .formula(pos)
+            .map(|stored| stored[grind_sheet::formula::parse::intro(stored).len()..].to_owned());
+        match (&self.formula, &self.excel) {
+            (Some(want), _) => Some(match got.as_deref() == Some(want.as_str()) {
+                true => Ok(()),
+                false => Err(format!("{got:?}")),
+            }),
+            // An `<f>` the manifest states no translation for is one this build must refuse.
+            (None, Some(_)) => Some(match got {
+                None => Ok(()),
+                Some(got) => Err(format!("{got:?}")),
+            }),
+            (None, None) => None,
         }
     }
 
@@ -615,6 +668,8 @@ fn every_claim_is_satisfied_or_named() {
     let mut cells_carried = 0usize;
     let mut cell_claims = 0usize;
     let mut cells_matching = 0usize;
+    let mut formula_claims = 0usize;
+    let mut formulas_matching = 0usize;
 
     for fixture in &fixtures {
         let file = fixture.file.as_str();
@@ -676,6 +731,28 @@ fn every_claim_is_satisfied_or_named() {
                     cell.value.as_deref().unwrap_or("")
                 ));
             }
+
+            // 6b. And its formula — X2's half. A cell with an `excel` and no `formula` claims
+            // the opposite: that this build carries no formula for it at all.
+            let claim = format!("formula:{}!{}", fixture.sheets[*sheet].0, cell.address);
+            let Some(outcome) = document
+                .sheets
+                .get(*sheet)
+                .and_then(|s| cell.check_formula(s))
+            else {
+                continue;
+            };
+            formula_claims += 1;
+            formulas_matching += usize::from(outcome.is_ok());
+            reached.check(file, &claim, outcome.is_ok());
+            if let Err(held) = outcome
+                && !excused(file, &claim)
+            {
+                failures.push(format!(
+                    "{file}: {claim} should be {:?}, the import holds {held}",
+                    cell.formula.as_deref().unwrap_or("nothing"),
+                ));
+            }
         }
 
         // 2. The sheet list, in workbook order.
@@ -701,9 +778,11 @@ fn every_claim_is_satisfied_or_named() {
             ));
         }
 
-        // 4. The report, per kind. Pending is for a kind that is *under*-counted; there is no
-        // table for over-counting, because claiming to have dropped something the file does
-        // not contain is a bug at every milestone.
+        // 4. The report, per kind. Over-counting is a bug at every milestone — claiming to
+        // have dropped something the file does not contain is worse than not counting — so it
+        // fails on its own, outside the under-count claim, and only a named table entry
+        // excuses it. One does: `tables.xlsx` expects four structured references where the
+        // fixture holds seven.
         for (name, want) in &fixture.expect_dropped {
             let kind = dropped_by_name(name).expect("checked by its own test");
             let got = report.dropped.get(&kind).copied().unwrap_or(0);
@@ -718,7 +797,7 @@ fn every_claim_is_satisfied_or_named() {
         for (kind, got) in &report.dropped {
             let name = format!("{kind:?}");
             let want = fixture.expect_dropped.get(&name).copied().unwrap_or(0);
-            if *got > want {
+            if *got > want && !excused(file, &format!("dropped:{name}")) {
                 failures.push(format!(
                     "{file}: dropped {name}×{got} — the manifest expects ×{want}, and a \
                      report that over-counts is worse than one that stops counting"
@@ -797,6 +876,7 @@ fn every_claim_is_satisfied_or_named() {
     eprintln!(
         "  cells: {cells_matching}/{cell_claims} claims hold, {cells_carried} cells carried in all"
     );
+    eprintln!("  formulas: {formulas_matching}/{formula_claims} claims hold");
     for failure in failures.iter().take(200) {
         eprintln!("  {failure}");
     }

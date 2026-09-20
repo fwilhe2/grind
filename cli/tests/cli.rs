@@ -1673,9 +1673,10 @@ fn renaming_a_sheet_rewrites_the_formulas_that_named_it() {
     );
 }
 
-/// `grind sheet import` carries values (X1), and the result is an ODF document every other
-/// verb reads — the workbook is never consulted again. The vendored sample is the oracle's own
-/// conversion of a small budget, so what it holds is known without opening it.
+/// `grind sheet import` carries values (X1) and formulas (X2), and the result is an ODF
+/// document every other verb reads — the workbook is never consulted again. The vendored sample
+/// is the oracle's own conversion of a small budget, so what it holds is known without opening
+/// it.
 #[cfg(feature = "xlsx")]
 #[test]
 fn an_imported_workbook_arrives_with_its_values() {
@@ -1692,7 +1693,12 @@ fn an_imported_workbook_arrives_with_its_values() {
     );
     assert_eq!(field(&json, "cells"), "6");
     assert_eq!(field(&json, "over_budget"), "0");
+    assert_eq!(field(&json, "formulas"), "1");
 
     assert_eq!(ok(&["get", &book, "A1"]).trim(), "Region");
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "120");
+    // Excel's `B2*2`, in ODF's own syntax — and Excel's cached answer beside it, because
+    // nothing is evaluated on import.
+    assert_eq!(ok(&["get", &book, "B3", "--formula"]).trim(), "=[.B2]*2");
+    assert_eq!(ok(&["get", &book, "B3", "--raw"]).trim(), "240");
 }

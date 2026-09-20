@@ -222,6 +222,8 @@ pub struct Report {
     pub unknown_functions: BTreeSet<String>,
     /// Cells whose formula could not be translated at all — the value was kept.
     pub untranslated: Vec<(usize, Pos)>,
+    /// The same losses by class: which kind of expression stopped each one (added at X2).
+    pub refused: BTreeMap<formula::Refusal, usize>,
     /// Cells past the materialisation bound, read and not carried (added at X1).
     pub over_budget: usize,
     /// Namespaces the file said a consumer must understand and this one does not
@@ -233,6 +235,13 @@ pub enum Dropped {
     Chart, PivotTable, ConditionalFormat, DataValidation, Comment, Drawing, Macro,
     ArrayFormula, StructuredReference, ExternalLink, SheetLocalName, MergedCells,
     RichText, HiddenSheet, ThemeColor, FontFamily, Protection,
+}
+
+// X2's, and a different question: `Dropped` is what the *model* cannot express, this is what
+// the *translator* would not carry. Three of these are also a `Dropped` kind; the other four
+// are expressions ODF could hold and §2.3.2 leaves out.
+pub enum Refusal {
+    Array, InlineArray, StructuredReference, ExternalLink, Intersection, Union, Syntax,
 }
 ```
 
@@ -486,6 +495,8 @@ translated formula is one our own parser could have produced, or it is not trans
 | `Sheet1!A1` | `[Sheet1.A1]` | `!` → `.` |
 | `'My Sheet'!A1` | `['My Sheet'.A1]` | both double an inner `'` |
 | `Sheet1:Sheet3!A1` | `[Sheet1.A1:Sheet3.A1]` | 3-D reference → §4.8's cuboid |
+| `Sheet1:Sheet3!A1:A2` | `[Sheet1.A1:Sheet3.A2]` | the same rule where the body is a range, rather than a cell |
+| `H2:INDIRECT(…)` | `[.H2]:INDIRECT(…)` | a range whose far end is computed: `:` as §5.8's operator, since it cannot be one `Reference` |
 | `A:A`, `1:1` | `[.A:.A]`, `[.1:.1]` | whole column/row |
 | `,` between arguments | `;` | §5.6 |
 | `TRUE`, `FALSE` | `TRUE()`, `FALSE()` | §6.15; `display.rs` already does this |
@@ -506,6 +517,11 @@ the core, and **it is already there**: `sheet/src/formula/shift.rs`, built for t
 drag that wanted the same function, and it turns a reference that would leave the sheet into
 `#REF!` the way a delete does. This phase adds no core function for it; it calls one. The
 *grouping* stays in the importer, where Excel's spelling belongs.
+
+A group is resolved **once the whole sheet has been read**, not as each follower arrives:
+document order says nothing about where a master sits, and `formulas/shared-groups.xlsx` has one
+at F2 whose only follower is F1, above it. That file is also where the `#REF!` case comes from —
+the follower shifts a reference to A1 up by a row, off the sheet.
 
 **Array formulas** (`t="array"`) are out of scope by §2.3.2: the cell keeps its cached value,
 loses its formula, and is counted.
@@ -601,7 +617,7 @@ feature matrix.
 |---|---|---|---|
 | X0 | **The seam** — **DONE (2026-09-14)** | `xlsx/` crate, feature flags, `default-members`, CI matrix steps, `names.rs` + `mce.rs` + `xml.rs`, `package.rs` + `workbook.xml` sheet list, `grind sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i`; **loop A′ green** — every corpus file reaches a sheet list without an `Err` or a panic |
 | X1 | **Values** — **DONE (2026-09-19)** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits — **68 workbooks, 501,335 cells, 0 disagreements**, against the pinned oracle, with eight named divergences where the oracle is the one that differs (below) |
-| X2 | **Formulas** | the Excel expression translator, shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class; the scoreboard prints like loop B's |
+| X2 | **Formulas** — **DONE (2026-09-20)** | the Excel expression translator (`formula.rs`), shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes as a `Refusal` enum, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class — **12681 of 13039 translated (97.3%) over 362 workbooks, and every one of the other 358 counted by class**; the generated corpus asserts formula *text* per cell, 122 of 125 claims, 3 named |
 | X3 | **Number formats** | built-ins by meaning, the code parser, sections → `style:map` | loop D compares **displayed text** per cell, which is loop C's rule for the same reason |
 | X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks, all of which the model now has | loop D compares styles the way loop C does — borders numerically, everything else exactly |
 | X5 | **The document level** | defined names, sheet order and visibility, merges, autofilters, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
@@ -667,6 +683,47 @@ Seven things, the first three of them outside this crate:
    minutes, against a second and a half in release — the one test in the suite whose cost is a
    corpus file's size. quick-xml, zip, zlib-rs and memchr are now optimised in the dev profile,
    which took the import alone from 14 s to 5; the rest is the debug ODF reader, left as it is.
+
+### What X2 found
+
+Six things, and the first is the one that changed the shape of the milestone:
+
+1. **A refusal needed a class, and the class needed to reach the report.** The plan said an
+   untranslatable formula is counted; it did not say *by what*. `Report::untranslated` gives
+   the addresses and `Dropped` covers exactly two of the classes — a structured reference and
+   an external link are constructs the model has no home for, where an inline array or an
+   intersection is an expression ODF could hold perfectly well and this build chooses not to
+   evaluate. So `formula::Refusal` is the vocabulary and `Report::refused` counts by it: where
+   and why are different questions, and "four formulas lost" is a number where "four structured
+   references" is something a person can act on. It is also what makes X2's exit criterion a
+   scoreboard rather than a percentage.
+2. **`Refusal::Array` is a class the parser never returns.** `t="array"` is a fact about the
+   *cell*, decided before the expression is read, and giving it a variant anyway is what keeps
+   `refused` summing to `untranslated` — a report whose two halves disagree is worse than one
+   half.
+3. **The range operator is not only a reference.** `SUM(H2:INDIRECT(ADDRESS(ROW()-1,COLUMN())))`
+   appears once in the corpus, and a scanner that only knows `A1:B2` refuses it. ODF has the
+   operator (§5.8), the core's own parser reads `[.H2]:INDIRECT(1)` and prints it back
+   unchanged, so refusing it would have made this filter narrower than the format it writes.
+   The scan-a-whole-reference path stays, because `A1:B2` must be *one* `Reference` rather than
+   two operands and an operator; the operator is what is left when that path cannot.
+4. **15 formulas in 362 workbooks land in `Syntax`, and 12 of them are one file.**
+   `tdf165886.xlsx` writes `OR(D1=0,D1<>““)` with typographic quotes where string delimiters
+   belong — the file behind a LibreOffice bug about exactly that. The remainder is noise of the
+   same kind. The open-ended class is doing its job: it is 0.1% of the corpus and every other
+   loss has a name.
+5. **The manifest and its fixtures disagree three times, not once.** X1 found one
+   (`xml-space-preserve.xlsx`'s indentation); X2 found `semantics-differ.xlsx` expecting
+   ROUNDDOWN and ROUNDUP to be reported as unknown when the workbook calls neither, and
+   `tables.xlsx` expecting four structured references where its worksheet holds seven — four is
+   the number of *distinct forms*, and every other kind in the report is counted once per cell
+   that lost something. Both are now `DECIDED_OTHERWISE` entries citing the bytes.
+6. **Two spellings are ours rather than the oracle's, and both are the core's.** A reference
+   error prints as `#REF!` where LibreOffice writes `[#REF!]` — §5.8's bracketed form and
+   §5.12's name are one value in `Expr`, and its serialiser writes the name — and a cross-sheet
+   reference prints as `[Data.A1]` where the oracle writes `[$Data.A1]`. Neither is this
+   filter's decision to take, which is why loop D compares values and the *manifest* is the
+   oracle for formula text.
 
 **Order.** Values before formulas before formats is not arbitrary: a date is only a date once
 its format is known, so X3 closes a gap X1 opened rather than adding a new one — X1 took the one

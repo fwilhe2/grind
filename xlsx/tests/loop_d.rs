@@ -24,9 +24,15 @@
 //! manifest already carries — and the oracle's own version string, so a second run costs no
 //! conversion and a different LibreOffice never reuses another one's answer.
 //!
-//! **What is compared at X1: every cell's value and kind.** Formulas are X2's, number formats
-//! X3's and styles X4's; each milestone widens [`differences`] rather than adding a loop. The
-//! value rule is loop C's — equal at 15 significant digits, since that is all LibreOffice
+//! **What is compared: every cell's value and kind.** Number formats are X3's and styles X4's;
+//! each milestone widens [`differences`] rather than adding a loop. **Formula text is not
+//! compared even now that X2 carries it**, and that is a decision rather than an omission: the
+//! oracle spells the same expression differently in at least three ways this corpus already
+//! records in `manifest.json`'s own `oracle` fields — `[$Data.A1]` for our `[Data.A1]`,
+//! `com.microsoft.xlookup` for `XLOOKUP`, an unknown name lower-cased — so the comparison would
+//! be of two spellings rather than of two conversions. The manifest is the oracle for formula
+//! *text* (`ooxmlgen.rs`, 125 claims), and it is the better one because it was written to state
+//! the difference rather than to hide it. The value rule is loop C's — equal at 15 significant digits, since that is all LibreOffice
 //! writes — and a kind (date, time) must match exactly.
 //!
 //! **Where the oracle is wrong**, the disagreement is a named [`Divergence`] — a *construct*,
@@ -87,8 +93,9 @@ const DIVERGENCES: &[Divergence] = &[
               cached `<v>`: `formulas/shared-groups.xlsx` caches C2 = 4 and the oracle writes \
               6, which is A2+B2. So for a formula cell this loop would compare two evaluators \
               rather than two importers. The cached values are not unchecked — `ooxmlgen.rs` \
-              holds every one of them to the manifest, C2 = 4 included — and X2, which carries \
-              the formula as well, is when these cells become comparable here.",
+              holds every one of them to the manifest, C2 = 4 included. X2 carries the formula \
+              as well and does not change this: the oracle still recalculates on load, so the \
+              two numbers still come from two evaluators.",
         scope: Scope::Cell(|_, theirs| theirs.formula),
     },
     Divergence {
@@ -158,8 +165,10 @@ const DIVERGENCES: &[Divergence] = &[
 struct Cell {
     value: CellValue,
     kind: Option<NumberKind>,
-    /// Whether the cell holds a formula. Ours never does at X1; the oracle's does wherever the
-    /// workbook's did.
+    /// Whether the cell holds a formula. Both sides carry one since X2 — ours except where a
+    /// named class stopped it, the oracle's wherever the workbook had one — and it is read
+    /// here to *exclude* those cells from the value comparison, for the reason the divergence
+    /// below gives: the oracle recalculates them and this import does not.
     formula: bool,
 }
 

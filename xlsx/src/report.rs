@@ -85,6 +85,13 @@ pub struct Report {
     pub unknown_functions: BTreeSet<String>,
     /// Cells whose formula could not be translated at all — the value was kept.
     pub untranslated: Vec<(usize, Pos)>,
+    /// The same losses by **class**: which kind of expression stopped each one.
+    ///
+    /// [`Report::untranslated`] says where and this says why, which are different questions
+    /// and both worth answering — "four formulas lost" is a number, "four structured
+    /// references" is something a person can act on. It is also the scoreboard loop A′ prints
+    /// over LibreOffice's corpus.
+    pub refused: BTreeMap<crate::formula::Refusal, usize>,
     /// Cells past `sheet::MAX_CELLS`, read and not carried.
     ///
     /// Not a [`Dropped`] kind, because the model can hold these cells perfectly well and
