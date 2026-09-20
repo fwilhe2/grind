@@ -26,20 +26,27 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: milestone X0.** The seam — the package, the flavour and markup
-//! compatibility machinery, and the workbook's sheet list. Cells, formulas, number formats
-//! and styles are X1 through X4, and a document imported by this build has the right sheets
-//! with nothing in them.
+//! **State of the build: milestone X1.** The seam (X0) — the package, the flavour and markup
+//! compatibility machinery, the workbook's sheet list — and every cell's **value**: shared and
+//! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
+//! rule. A formula cell carries its cached value and not yet its formula (X2), and a number
+//! format is read only far enough to know whether a number is a date (X3).
 
 use std::fmt;
 use std::path::Path;
 
 use grind_sheet::model::Document;
 
+pub mod address;
+pub mod dates;
 pub mod mce;
 pub mod names;
+pub mod numfmt;
 pub mod package;
 pub mod report;
+pub mod sheet;
+pub mod strings;
+pub mod styles;
 pub mod workbook;
 pub mod xml;
 
@@ -135,7 +142,37 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         report.drop_one(Dropped::Macro);
     }
 
-    let document = workbook::document(&book, &mut report);
+    let mut document = workbook::document(&book, &mut report);
+
+    // Styles before sheets, as `odf/read.rs` reads `styles.xml` before `content.xml`: a serial
+    // is not a date until its format says so. Both parts are optional, and a workbook without
+    // them reads every cell as a plain value.
+    let styles = book
+        .styles_part
+        .as_deref()
+        .and_then(|part| package.part(part))
+        .map(|bytes| styles::read(&bytes))
+        .unwrap_or_default();
+    let strings = book
+        .strings_part
+        .as_deref()
+        .and_then(|part| package.part(part))
+        .map(|bytes| strings::read(&bytes))
+        .unwrap_or_default();
+    let context = sheet::Context {
+        strings: &strings,
+        styles: &styles,
+        date_1904: book.date_1904,
+        null_date: document.null_date,
+    };
+    // `document` has exactly one sheet per entry — or one invented `Sheet1` for a workbook
+    // with none, which has no part — so the indices agree.
+    for (entry, target) in book.sheets.iter().zip(document.sheets.iter_mut()) {
+        let Some(bytes) = entry.part.as_deref().and_then(|part| package.part(part)) else {
+            continue;
+        };
+        sheet::read(&bytes, &context, target, &mut report, &mut seen);
+    }
     // The flavour is whatever the *whole* read saw, not only what the workbook part did: a
     // Strict relationship type in `_rels/.rels` is evidence before any part is opened.
     if seen.strict {

@@ -536,7 +536,8 @@ sheet view "$out/prices.fods" F7:F9 --formulas
 # Reading Excel (doc/xlsx-import.md, phase 11). One way in and never out — which is why this
 # is the one step that cannot build its own input: nothing in this suite writes `.xlsx`, so
 # the workbook is vendored at `xlsx/tests/data/sample.xlsx` (made with the oracle; REUSE.toml
-# has the command). Built through **X0**, so what arrives is the sheet list; cells are X1.
+# has the command). Built through **X1**, so what arrives is the sheet list and every cell's
+# value — Excel's cached value for a formula cell, whose formula is X2's.
 #
 # The filter is a cargo feature, so a `grind` built with `--no-default-features` has no
 # `import` verb at all — hence the check rather than a bare call. A missing verb here is a
@@ -545,6 +546,7 @@ if "$GRIND" sheet import --help >/dev/null 2>&1; then
     say "import: an Excel workbook becomes an ODF document"
     "$GRIND" sheet import "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
     "$GRIND" --format json info "$out/imported.fods"
+    sheet view "$out/imported.fods" A1:B3
     # And it is an ODF document from that moment on: every other verb takes it, and the
     # workbook is never consulted again.
     "$GRIND" lint "$out/imported.fods"

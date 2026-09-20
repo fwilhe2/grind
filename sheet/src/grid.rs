@@ -129,6 +129,20 @@ impl Column {
         self.blocks.is_empty()
     }
 
+    /// The rows holding a value, as ranges — one per non-empty block, in order.
+    ///
+    /// What a caller wanting "which rows are not blank" should ask instead of calling
+    /// [`Column::get`] down the column: this costs one step per *block*, and an empty run of a
+    /// million rows is one block.
+    pub fn occupied(&self) -> impl Iterator<Item = std::ops::Range<u32>> + '_ {
+        let mut at = 0;
+        self.blocks.iter().filter_map(move |block| {
+            let start = at;
+            at += block.len();
+            (block.kind() != Kind::Empty).then_some(start..at)
+        })
+    }
+
     pub fn get(&self, row: u32) -> CellValue {
         match self.find(row) {
             Some((bi, off)) => self.blocks[bi].get(off),

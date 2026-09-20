@@ -36,7 +36,7 @@ use std::collections::BTreeSet;
 use quick_xml::NsReader;
 use quick_xml::XmlVersion;
 use quick_xml::events::{BytesStart, Event};
-use quick_xml::name::ResolveResult;
+use quick_xml::name::{QName, ResolveResult};
 
 use crate::mce::{self, Alternative};
 use crate::names::{self, Ns, Seen};
@@ -129,6 +129,14 @@ pub struct Reader<'a> {
     buf: Vec<u8>,
     /// Open elements. The walker's whole bookkeeping is this number.
     depth: usize,
+    /// Whether the element most recently opened was self-closed (`<t/>`, `<c r="A11"/>`).
+    ///
+    /// A visitor is handed both kinds through one signature, and [`Reader::children`] and
+    /// [`Reader::text`] must know which they are looking at: an empty element *has* no end
+    /// tag, so walking to one would consume the parent's and every sibling after it. X0 got
+    /// away without this because its one self-closed container (`<sheets/>`) was also the last
+    /// thing in its part; X1's `<t/>`, `<sheetData/>` and `<c r="A11"/>` are not.
+    empty: bool,
     /// Which flavour's URIs have been seen, for the report.
     pub seen: Seen,
     /// Namespace prefixes the file said we must understand (`mc:MustUnderstand`).
@@ -146,6 +154,7 @@ impl<'a> Reader<'a> {
             inner,
             buf: Vec::new(),
             depth: 0,
+            empty: false,
             seen: Seen::default(),
             must_understand: BTreeSet::new(),
         }
@@ -170,6 +179,9 @@ impl<'a> Reader<'a> {
     where
         F: FnMut(&mut Reader<'a>, &Name, &Attrs) -> Result<Handled>,
     {
+        if std::mem::take(&mut self.empty) {
+            return Ok(());
+        }
         self.walk(&mut visit)
     }
 
@@ -182,6 +194,9 @@ impl<'a> Reader<'a> {
     /// `sharedStrings` or `sheetData`, and anything that might be indented is walked with
     /// [`Reader::children`] instead.
     pub fn text(&mut self) -> Result<String> {
+        if std::mem::take(&mut self.empty) {
+            return Ok(String::new());
+        }
         let base = self.depth;
         let mut out = String::new();
         loop {
@@ -279,6 +294,7 @@ impl<'a> Reader<'a> {
             inner,
             buf,
             depth,
+            empty,
             seen,
             must_understand,
         } = self;
@@ -289,6 +305,7 @@ impl<'a> Reader<'a> {
         Ok(match event {
             Event::Start(e) => {
                 *depth += 1;
+                *empty = false;
                 if *depth > MAX_DEPTH {
                     return Err(Error::Xml(format!(
                         "element nesting deeper than {MAX_DEPTH}"
@@ -299,6 +316,7 @@ impl<'a> Reader<'a> {
                 Ev::Start(name, attrs)
             }
             Event::Empty(e) => {
+                *empty = true;
                 let name = resolved_name(inner, &e, seen);
                 let attrs = collect_attrs(inner, &e, seen, must_understand);
                 Ev::Empty(name, attrs)
@@ -361,6 +379,21 @@ fn resolved_name(reader: &NsReader<&[u8]>, e: &BytesStart, seen: &mut Seen) -> N
     }
 }
 
+/// The namespace URI a prefix is bound to *here* — or the prefix itself, if nothing binds it.
+///
+/// This is `mce::must_understand`'s open question from X0, answered: the report carries the
+/// URI, because a prefix is a local alias and a report that prints `x15` tells a bug report
+/// nothing. It can be resolved only while the declaring element is the one being read, which
+/// is exactly when attributes are collected, so this is the one place it can be done. An
+/// unbound prefix is a malformed file and is reported as written rather than dropped.
+fn uri_of(reader: &NsReader<&[u8]>, prefix: &str) -> String {
+    let probe = format!("{prefix}:_");
+    match reader.resolver().resolve_element(QName(&probe)).0 {
+        ResolveResult::Bound(uri) => uri.as_ref().to_owned(),
+        _ => prefix.to_owned(),
+    }
+}
+
 fn collect_attrs(
     reader: &NsReader<&[u8]>,
     e: &BytesStart,
@@ -386,7 +419,8 @@ fn collect_attrs(
         };
         let local = local.as_ref().to_owned();
         if ns == Ns::Mce && local == "MustUnderstand" {
-            must_understand.extend(mce::must_understand(&value).map(str::to_owned));
+            must_understand
+                .extend(mce::must_understand(&value).map(|prefix| uri_of(reader, prefix)));
         }
         items.push((ns, local, value.into_owned()));
     }
@@ -457,6 +491,30 @@ mod tests {
         assert!(matches!(err, Err(Error::Xml(_))), "got {err:?}");
     }
 
+    /// A self-closed element has no end tag, so asking for its children or its text must not
+    /// go looking for one — that would eat the parent's end and every sibling after it.
+    #[test]
+    fn a_self_closed_element_has_no_children_and_no_text() {
+        let xml = format!(r#"<root xmlns="{MAIN}"><a/><t/><b><c/></b><d/></root>"#);
+        let mut reader = Reader::new(xml.as_bytes());
+        reader.root().unwrap();
+        let mut seen = Vec::new();
+        reader
+            .children(|r, name, _| {
+                seen.push(name.local.clone());
+                match name.local.as_str() {
+                    "t" => assert_eq!(r.text()?, ""),
+                    _ => r.children(|_, name, _| {
+                        seen.push(format!("  {}", name.local));
+                        Ok(Handled::Yes)
+                    })?,
+                }
+                Ok(Handled::Yes)
+            })
+            .unwrap();
+        assert_eq!(seen, ["a", "t", "b", "  c", "d"]);
+    }
+
     // ---- markup compatibility ----
 
     /// The fixture `doc/xlsx-import.md`'s verification section asks for: the choice and the
@@ -512,16 +570,21 @@ mod tests {
 
     #[test]
     fn must_understand_is_collected_and_is_not_a_refusal() {
-        let xml = format!(r#"<root xmlns="{MAIN}" xmlns:mc="{MCE}" mc:MustUnderstand="x14 xr"/>"#);
+        let xml = format!(
+            r#"<root xmlns="{MAIN}" xmlns:mc="{MCE}" xmlns:x14="http://example.invalid/x14"
+                     mc:MustUnderstand="x14 xr"/>"#
+        );
         let mut reader = Reader::new(xml.as_bytes());
         reader.root().unwrap().expect("a root");
+        // `x14` is bound, so it is reported by what it *means*; `xr` is bound nowhere, which
+        // is a malformed file, and is reported as written rather than lost.
         assert_eq!(
             reader
                 .must_understand
                 .iter()
                 .map(String::as_str)
                 .collect::<Vec<_>>(),
-            ["x14", "xr"]
+            ["http://example.invalid/x14", "xr"]
         );
     }
 

@@ -59,6 +59,10 @@ pub struct ImportReport {
     pub flavour: &'static str,
     pub sheets: usize,
     pub cells: usize,
+    /// Cells read and not carried, because the import's materialisation bound was reached
+    /// (`grind_xlsx::sheet::MAX_CELLS`). Zero for every document that is not enormous; not a
+    /// dropped *construct*, since the model could hold them, but a loss all the same.
+    pub over_budget: usize,
     pub formulas: usize,
     /// Every construct the model has no home for, by name and count.
     pub dropped: Vec<DroppedCount>,
@@ -95,6 +99,7 @@ impl ImportReport {
             },
             sheets: document.sheets.len(),
             cells: report.cells,
+            over_budget: report.over_budget,
             formulas: report.formulas,
             dropped: report
                 .dropped
@@ -377,6 +382,9 @@ impl Report {
             Report::Import(import) => {
                 for dropped in &import.dropped {
                     println!("dropped\t{}\t{}", dropped.count, dropped.what);
+                }
+                if import.over_budget > 0 {
+                    println!("over budget\t{}\tcells", import.over_budget);
                 }
                 for namespace in &import.must_understand {
                     println!("not understood\t{namespace}");

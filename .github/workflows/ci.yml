@@ -95,7 +95,7 @@ jobs:
       - run: cargo test --locked -p grind-cli --no-default-features
 
   oracle:
-    # Loops C ("out") and E, which are one job because they want exactly the same thing: the
+    # Loops C ("out"), D and E, which are one job because they want exactly the same thing: the
     # `soffice` binary, no corpus, and the same debug compile of `grind-sheet` and
     # `grind-text`. They were two jobs on two runners that pulled the same image and
     # compiled the same test binaries to run one target each.
@@ -118,8 +118,8 @@ jobs:
     # (`oracle_ready` in `text/tests/roundtrip.rs`); the image now carries Writer, so the probe
     # passes and the tests run — which happened with no change to this file.
     #
-    # The two are separate `run:` steps rather than one `--test roundtrip --test loop_e`, so
-    # that a red loop C and a red loop E are still two different lines in the log.
+    # The three are separate `run:` steps rather than one `--test roundtrip --test loop_e`, so
+    # that a red loop C, a red loop D and a red loop E are three different lines in the log.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -133,6 +133,11 @@ jobs:
         run: cargo test --locked --test roundtrip -- --nocapture
       - name: Loop E
         run: cargo test --locked --test loop_e -- --nocapture
+      # Loop D is the import filter's: our conversion of the vendored generated corpus against
+      # the oracle's, cell by cell (`xlsx/tests/loop_d.rs`). It wants this job's `soffice` and
+      # no checkout, so it is here rather than in `corpus`.
+      - name: Loop D
+        run: cargo test --locked -p grind-xlsx --test loop_d -- --nocapture
 
   corpus:
     # Loops A and B, and loop C's "back" direction, want LibreOffice's own test-fixture

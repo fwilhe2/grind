@@ -24,8 +24,9 @@ cd "$(dirname "$0")/.."
 
 args=("$@")
 if [ ${#args[@]} -eq 0 ]; then
-    # No `-p`: loop C belongs to both applications, and loop E only exists in `grind-sheet`.
-    args=(--test roundtrip --test loop_e)
+    # No `-p`: loop C belongs to both applications, loop E only exists in `grind-sheet` and
+    # loop D only in `grind-xlsx`, and `--test` finds each wherever it is.
+    args=(--test roundtrip --test loop_e --test loop_d)
 fi
 
 docker pull -q "$(cat ci/libreoffice-image)"

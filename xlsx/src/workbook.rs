@@ -6,8 +6,8 @@
 //!
 //! Reached by relationship from `_rels/.rels`, never by its conventional path. What X0 takes
 //! from it is the document's skeleton: one [`grind_sheet::model::Sheet`] per `<sheet>`, in
-//! document order, and the epoch every serial date will be counted from. Defined names are
-//! X5's and cells are X1's.
+//! document order, and the epoch every serial date will be counted from; X1 adds where the
+//! string table and the styles are. Defined names are X5's.
 
 use grind_sheet::formula::date;
 use grind_sheet::model::{Document, Sheet};
@@ -38,6 +38,11 @@ pub struct Workbook {
     pub sheets: Vec<SheetEntry>,
     /// `workbookPr/@date1904`.
     pub date_1904: bool,
+    /// `xl/sharedStrings.xml`, when the workbook has one — found by relationship, and optional:
+    /// a workbook whose strings are all inline has none.
+    pub strings_part: Option<String>,
+    /// `xl/styles.xml`, likewise.
+    pub styles_part: Option<String>,
     /// The `conformance="strict"` attribute, when the workbook carries one. Corroborates the
     /// namespace evidence rather than replacing it — a file can be Strict without saying so.
     pub declares_strict: bool,
@@ -46,8 +51,8 @@ pub struct Workbook {
 /// ODF's epoch for a 1904-system workbook, as days from 1970-01-01.
 ///
 /// The 1900 system needs no constant: ODF's own default epoch is 1899-12-30, and the
-/// correction that makes Excel's serials agree with it is a *value* question (X1), not a
-/// document-level one.
+/// correction that makes Excel's serials agree with it is a *value* question
+/// (`dates::correct`), not a document-level one.
 fn null_date_1904() -> i64 {
     date::days_from_civil(1904, 1, 1)
 }
@@ -121,7 +126,8 @@ pub fn read(bytes: &[u8], report: &mut Report) -> Result<Workbook> {
     Ok(out)
 }
 
-/// Resolve each sheet's `r:id` against the workbook's own relationships.
+/// Resolve each sheet's `r:id`, and find the string table and the styles, against the
+/// workbook's own relationships.
 pub fn resolve_parts(
     workbook: &mut Workbook,
     package: &mut Package,
@@ -129,6 +135,13 @@ pub fn resolve_parts(
     seen: &mut Seen,
 ) {
     let rels = package.rels(workbook_part, seen);
+    let first = |kind: RelType| {
+        rels.iter()
+            .find(|rel| rel.kind == kind && !rel.external)
+            .map(|rel| rel.target.clone())
+    };
+    workbook.strings_part = first(RelType::SharedStrings);
+    workbook.styles_part = first(RelType::Styles);
     for sheet in &mut workbook.sheets {
         let Some(id) = &sheet.rel_id else { continue };
         sheet.part = rels

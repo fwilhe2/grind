@@ -27,17 +27,18 @@
 //! contains and what a conversion of it should produce. A corpus with an oracle travelling
 //! beside it is the thing loop D needs and does not have until `soffice` is on `PATH`.
 //!
-//! **This build is X0**, so most of that oracle is about a future milestone. Two tables carry
-//! the difference and they are checked in *both* directions, which is the only arrangement
-//! that survives contact with a growing filter:
+//! **This build is X1**: every cell's value and kind is asserted against the manifest, one
+//! claim per cell, and the rest of the oracle — formulas, formats, styles, the document level —
+//! is about a later milestone. Two tables carry the difference and they are checked in *both*
+//! directions, which is the only arrangement that survives contact with a growing filter:
 //!
 //! - [`PENDING`] — a claim this build does not satisfy yet, with the milestone that will.
 //!   A claim that starts passing **fails this test**, and the entry must then be deleted. It
 //!   is the loop-F idiom (`a test that fails the day it is projected`) applied to a roadmap.
 //! - [`DECIDED_OTHERWISE`] — a claim this build will never satisfy because it answers the
-//!   question differently *on purpose*. Two entries, both about hostile files, and each one
-//!   is a place where our answer is the better one and the corpus should change rather than
-//!   the code. Reported upstream rather than worked around.
+//!   question differently *on purpose*. Three entries — two about hostile files and one a
+//!   manifest that disagrees with its own fixture's bytes — and each is a place where the
+//!   corpus should change rather than the code.
 //!
 //! Everything not in either table is asserted. Run it like anything else:
 //!
@@ -46,6 +47,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use grind_sheet::formula::date;
+use grind_sheet::model::{CellValue, NumberKind, Pos, Sheet};
 use grind_xlsx::{Dropped, Error, Flavour};
 
 /// The ratchet, and the only number here that is about the corpus rather than about the
@@ -59,24 +62,6 @@ const FLOOR: usize = 76;
 /// will insist on it, which is the point: a roadmap nobody checks becomes a list of things
 /// that quietly already work.
 const PENDING: &[(&str, &str, &str)] = &[
-    // X1 opens worksheet parts. Both of these are facts *about* a worksheet, and X0 reads the
-    // workbook part and the relationship graph only, so neither is reachable from here.
-    (
-        "realworld/mixed-flavour.xlsx",
-        "flavour",
-        "X1 — Transitional workbook, Strict worksheet. `seen.strict` is fed by relationship \
-         types and by the workbook part's own namespace; the Strict namespace in this file is \
-         on `xl/worksheets/sheet2.xml`, which X0 never opens. Measured, not assumed.",
-    ),
-    (
-        "realworld/mce-ignorable.xlsx",
-        "must-understand",
-        "X1 — the `mc:MustUnderstand=\"x15\"` is on the worksheet element. When X1 opens it \
-         there is a second question waiting: the manifest expects the namespace **URI**, and \
-         `mce::must_understand` deliberately yields the **prefix** (its own doc comment says \
-         why). The URI is the stronger spelling and resolving it needs the declaring \
-         element's scope, which `xml.rs` does not keep. Decide it there, at X1.",
-    ),
     // X5 is sheet order and visibility. The *name* question is `doc/xlsx-import.md`'s
     // Verification item 3 — "a sheet name Excel allows and ODF does not" — which no milestone
     // in the table actually owns; this entry is where it waits.
@@ -157,11 +142,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "dropped:FontFamily",
         "X4 — `<fonts>` is not read yet",
     ),
-    (
-        "values/rich-text.xlsx",
-        "dropped:RichText",
-        "X1 — a multi-run shared string flattens, and the flattening is what is counted",
-    ),
     // X2 is the expression translator, so nothing knows a function's name yet.
     (
         "formulas/errors.xlsx",
@@ -184,9 +164,10 @@ const PENDING: &[(&str, &str, &str)] = &[
 
 /// Claims this build answers differently **on purpose**: `(fixture, claim, why ours stands)`.
 ///
-/// Not a pending list and not an excuse: each of these is a place where the corpus encodes a
-/// policy this project deliberately does not have, and where the fixture should change rather
-/// than the filter. Both are in `hostile/`, which is where a policy difference would be.
+/// Not a pending list and not an excuse: each of these is a place where the fixture should
+/// change rather than the filter. The two in `hostile/` encode a policy this project
+/// deliberately does not have; the third is a manifest that disagrees with its own fixture's
+/// bytes, which is the one kind of claim no filter could satisfy.
 const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     (
         "hostile/no-workbook-part.xlsx",
@@ -211,6 +192,16 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
          The property that actually matters is asserted directly, by \
          `nothing_outside_the_package_is_touched`.",
     ),
+    (
+        "realworld/xml-space-preserve.xlsx",
+        "cell:Sheet1!A5",
+        "The manifest wants `a\\ttab and a\\n` followed by twenty spaces and `newline`; the \
+         fixture's own `xl/sharedStrings.xml` holds `<t xml:space=\"preserve\">a\\ttab and \
+         a\\nnewline</t>` — no indentation at all, read with `unzip -p` on 2026-09-19. The \
+         import carries exactly what the file says, and whitespace is never trimmed \
+         (`xml.rs`), so the claim is the generator's source indentation leaking into its \
+         expectation rather than anything the workbook contains.",
+    ),
 ];
 
 // ---- the vendored corpus, and the manifest that travels with it ----
@@ -232,9 +223,8 @@ struct Fixture {
     expect_dropped: BTreeMap<String, usize>,
     expect_unknown_functions: BTreeSet<String>,
     expect_must_understand: BTreeSet<String>,
-    /// How many cells the manifest makes a claim about. X1's work, counted here so the size
-    /// of what is still owed is a number rather than an impression.
-    cell_claims: usize,
+    /// Every cell the manifest makes a claim about, with the index of the sheet it is on.
+    cells: Vec<(usize, Cell)>,
     bytes: usize,
     sha256: String,
 }
@@ -276,12 +266,19 @@ fn manifest() -> Vec<Fixture> {
                     )
                 })
                 .collect::<Vec<_>>();
-            let cell_claims = f["sheets"]
+            let cells = f["sheets"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|s| s["cells"].as_array().map_or(0, Vec::len))
-                .sum();
+                .enumerate()
+                .flat_map(|(i, s)| {
+                    s["cells"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(move |c| (i, Cell::from_json(c)))
+                })
+                .collect();
             Fixture {
                 file: f["file"].as_str().expect("a file name").to_owned(),
                 milestone: f["milestone"].as_str().unwrap_or_default().to_owned(),
@@ -301,12 +298,105 @@ fn manifest() -> Vec<Fixture> {
                     .collect(),
                 expect_unknown_functions: strings(&f["expectUnknownFunctions"]),
                 expect_must_understand: strings(&f["expectMustUnderstand"]),
-                cell_claims,
+                cells,
                 bytes: f["bytes"].as_u64().expect("a byte count") as usize,
                 sha256: f["sha256"].as_str().expect("a digest").to_owned(),
             }
         })
         .collect()
+}
+
+/// One cell's claim: where it is, what kind of value it holds, and the value — in the
+/// manifest's own spelling, which is ODF's (`office:date-value`, `office:time-value`).
+struct Cell {
+    address: String,
+    kind: String,
+    /// `None` where the manifest declines to assert one — serial 60 in the 1900 system, the day
+    /// that does not exist, is the case it exists for.
+    value: Option<String>,
+}
+
+impl Cell {
+    fn from_json(c: &serde_json::Value) -> Self {
+        Cell {
+            address: c["ref"].as_str().expect("a cell ref").to_owned(),
+            kind: c["kind"].as_str().expect("a cell kind").to_owned(),
+            value: c.get("value").and_then(|v| v.as_str()).map(str::to_owned),
+        }
+    }
+
+    /// Does the imported sheet hold what this claim says? `Err` carries what it held instead.
+    ///
+    /// Numbers compare at 15 significant digits — loop C's one loosening, because that is all
+    /// LibreOffice writes and the manifest's figures are the oracle's. Dates and times compare
+    /// to the second, which is the resolution both of their spellings carry.
+    fn check(&self, sheet: &Sheet, null_date: i64) -> Result<(), String> {
+        let pos = grind_xlsx::address::cell(&self.address).expect("a manifest address");
+        let got = sheet.get(pos);
+        let kind = sheet.kind(pos);
+        let Some(want) = &self.value else {
+            return Ok(());
+        };
+        let held = || format!("{got:?} kind {kind:?}");
+        let number = |n: f64| match got {
+            CellValue::Number(g) if close(g, n) => Ok(()),
+            _ => Err(held()),
+        };
+        match self.kind.as_str() {
+            "Empty" => match got {
+                CellValue::Empty => Ok(()),
+                _ => Err(held()),
+            },
+            "Text" | "Error" => match &got {
+                CellValue::Text(t) if t == want => Ok(()),
+                _ => Err(held()),
+            },
+            "Bool" => match got {
+                CellValue::Bool(b) if b.to_string() == *want => Ok(()),
+                _ => Err(held()),
+            },
+            // Currency and percentage are a *format*'s business in this model (X3); the value
+            // underneath is a plain number either way.
+            "Number" | "Currency" | "Percentage" => {
+                number(want.parse().expect("a manifest number"))
+            }
+            // `numfmt/` spells a date's value as its serial rather than in ISO, because what
+            // those fixtures are about is the display. Every such serial is past 61, where the
+            // 1900 system and ODF's epoch agree, so it compares as the number it is.
+            "Date" | "Time" if want.parse::<f64>().is_ok() => {
+                let wanted = match self.kind.as_str() {
+                    "Date" => NumberKind::Date,
+                    _ => NumberKind::Time,
+                };
+                match kind == Some(wanted) {
+                    true => number(want.parse().expect("checked")),
+                    false => Err(held()),
+                }
+            }
+            "Date" => match (kind, date::parse_date(want, null_date)) {
+                (Some(NumberKind::Date), Some(serial)) => second(&got, serial).ok_or_else(held),
+                _ => Err(held()),
+            },
+            "Time" => match (kind, date::parse_time(want)) {
+                (Some(NumberKind::Time), Some(fraction)) => second(&got, fraction).ok_or_else(held),
+                _ => Err(held()),
+            },
+            other => Err(format!("a kind this test does not know: {other}")),
+        }
+    }
+}
+
+/// Equal to 15 significant digits.
+fn close(a: f64, b: f64) -> bool {
+    a == b || (a - b).abs() <= 1e-15 * a.abs().max(b.abs())
+}
+
+/// The same instant, to the second.
+fn second(got: &CellValue, want: f64) -> Option<()> {
+    match got {
+        &CellValue::Number(g) if (g - want).abs() * 86_400.0 < 0.5 => Some(()),
+        _ => None,
+    }
 }
 
 fn strings(value: &serde_json::Value) -> BTreeSet<String> {
@@ -511,7 +601,8 @@ fn collect(dir: &Path, base: &Path, out: &mut Vec<String>) {
 
 // ---- what the filter does with it ----
 
-/// The whole corpus, every claim X0 can answer, and the two tables held in both directions.
+/// The whole corpus, every claim this build can answer, and the two tables held in both
+/// directions.
 ///
 /// One test rather than six, because the tables are what is being checked and they are one
 /// thing: a claim is satisfied, or it is excused by name, and no third outcome exists.
@@ -523,10 +614,10 @@ fn every_claim_is_satisfied_or_named() {
     let mut imported = 0usize;
     let mut cells_carried = 0usize;
     let mut cell_claims = 0usize;
+    let mut cells_matching = 0usize;
 
     for fixture in &fixtures {
         let file = fixture.file.as_str();
-        cell_claims += fixture.cell_claims;
         let bytes = std::fs::read(fixture.path()).expect("a vendored fixture");
 
         let result = grind_xlsx::import_bytes(&bytes);
@@ -562,6 +653,30 @@ fn every_claim_is_satisfied_or_named() {
         };
         imported += 1;
         cells_carried += report.cells;
+
+        // 6. Every cell the manifest names — X1's half of the oracle, and the reason the
+        // manifest exists. One claim per cell, spelled `cell:<sheet>!<address>` so a PENDING
+        // entry can name exactly the cell it excuses.
+        for (sheet, cell) in &fixture.cells {
+            let claim = format!("cell:{}!{}", fixture.sheets[*sheet].0, cell.address);
+            let outcome = document
+                .sheets
+                .get(*sheet)
+                .ok_or_else(|| "no such sheet".to_owned())
+                .and_then(|s| cell.check(s, document.null_date));
+            cell_claims += 1;
+            cells_matching += usize::from(outcome.is_ok());
+            reached.check(file, &claim, outcome.is_ok());
+            if let Err(held) = outcome
+                && !excused(file, &claim)
+            {
+                failures.push(format!(
+                    "{file}: {claim} is {} {:?}, the import holds {held}",
+                    cell.kind,
+                    cell.value.as_deref().unwrap_or("")
+                ));
+            }
+        }
 
         // 2. The sheet list, in workbook order.
         //
@@ -613,7 +728,9 @@ fn every_claim_is_satisfied_or_named() {
 
         // 5. `mc:MustUnderstand`, and the functions a translated formula names.
         if !fixture.expect_must_understand.is_empty() {
-            let satisfied = !report.must_understand.is_empty();
+            // By URI, exactly: `xml.rs` resolves each prefix while its declaration is in scope,
+            // which is the spelling the manifest uses and the one a bug report can act on.
+            let satisfied = report.must_understand == fixture.expect_must_understand;
             reached.check(file, "must-understand", satisfied);
             if !satisfied && !excused(file, "must-understand") {
                 failures.push(format!(
@@ -678,30 +795,18 @@ fn every_claim_is_satisfied_or_named() {
         DECIDED_OTHERWISE.len(),
     );
     eprintln!(
-        "  cell-level claims: {cell_claims} in the manifest, {cells_carried} cells carried \
-         (X1's work)"
+        "  cells: {cells_matching}/{cell_claims} claims hold, {cells_carried} cells carried in all"
     );
-    for failure in failures.iter().take(20) {
+    for failure in failures.iter().take(200) {
         eprintln!("  {failure}");
     }
-    if failures.len() > 20 {
-        eprintln!("  ... and {} more", failures.len() - 20);
+    if failures.len() > 200 {
+        eprintln!("  ... and {} more", failures.len() - 200);
     }
     assert!(
         failures.is_empty(),
         "{} claims are neither satisfied nor named",
         failures.len()
-    );
-
-    // X0 carries no cells at all, which is why the whole cell half of the manifest sits in
-    // neither table: listing 1341 pending claims would be noise where one sentence does. This
-    // assertion is that sentence, and it is written to **fail the day X1 begins** — at which
-    // point the manifest's `kind`, `value`, `display` and `formula` fields become the oracle
-    // loop D compares against, and this line is replaced by that comparison.
-    assert_eq!(
-        cells_carried, 0,
-        "cells are being carried, so X1 has begun: the manifest's {cell_claims} cell claims \
-         are now assertable and this marker should become the comparison that asserts them"
     );
 }
 
@@ -783,7 +888,13 @@ fn nothing_outside_the_package_is_touched() {
 /// The same identity check `corpus_read.rs` runs over LibreOffice's corpus and phase 3 owns
 /// for ODF: import → write → read → compare. It proves the importer produced something **ODF
 /// can actually express** rather than something that only lives in memory, and it is the
-/// cheapest test in this file to keep honest as X1–X5 add content to carry.
+/// cheapest test in this file to keep honest as X1–X5 add content to carry. Since X1 that is
+/// every cell's value and kind as well as the sheet list.
+///
+/// And no longer the cheapest to run: `scale/large-sheet.xlsx` makes it a 47 MB ODF write and
+/// read, which takes about two minutes in a debug build against a second and a half in a
+/// release one. Nothing here is wrong — the debug ODF reader is simply slow on half a million
+/// cells — but it is the one test in the suite whose cost is a corpus file's size.
 ///
 /// Flat, because `doc/flat-first.md` says so and because a package would only add a zip round
 /// trip to a question about the content model.
@@ -809,6 +920,28 @@ fn every_imported_document_survives_a_write_and_a_read() {
         let theirs: Vec<&str> = back.sheets.iter().map(|s| s.name.as_str()).collect();
         if ours != theirs {
             differences.push(format!("{}: {ours:?} became {theirs:?}", fixture.file));
+        }
+        // Every carried cell, value and kind — X1's contribution to this check. Walked over
+        // the rows that carry anything rather than the used rectangle, which for
+        // `scale/wide-and-sparse.xlsx` is the whole grid.
+        for (sheet, read) in document.sheets.iter().zip(&back.sheets) {
+            let cols = sheet.used_cols();
+            let rows = sheet.rows_carrying().into_iter().flatten();
+            let changed = rows
+                .flat_map(|row| (0..cols).map(move |col| Pos::new(row, col)))
+                .find(|&pos| (sheet.get(pos), sheet.kind(pos)) != (read.get(pos), read.kind(pos)));
+            if let Some(pos) = changed {
+                differences.push(format!(
+                    "{}: {}!{} was {:?} {:?}, read back as {:?} {:?}",
+                    fixture.file,
+                    sheet.name,
+                    grind_sheet::a1::format(None, pos),
+                    sheet.get(pos),
+                    sheet.kind(pos),
+                    read.get(pos),
+                    read.kind(pos)
+                ));
+            }
         }
         checked += 1;
     }

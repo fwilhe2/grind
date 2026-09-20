@@ -440,14 +440,14 @@ GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
 ## The loops
 
 Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
-for loops C and E; loops A and B want a LibreOffice source checkout (`GRIND_LO_CORPUS`, the
+for loops C, D and E; loops A and B want a LibreOffice source checkout (`GRIND_LO_CORPUS`, the
 **checkout root** — Calc's corpus is at `sc/qa/unit/data` and Writer's at `sw/qa`, and one
 clone serves both). CI's `corpus` job gets that with a blobless sparse clone of just those two
 directories rather than the whole tree. The oracle is pinned to a container
 image by digest (`ci/libreoffice-image`, "Pinning LibreOffice" in `doc/differential-fuzz.md`)
 — loop E's `FLOOR` is a fact about one `soffice` build. `scripts/soffice-docker/soffice` is a
 shim that runs that image, so putting it first on `PATH` pins the oracle without any test
-knowing about Docker; `scripts/soffice-tests.sh` does that and runs loops C and E locally
+knowing about Docker; `scripts/soffice-tests.sh` does that and runs loops C, D and E locally
 against exactly what CI uses.
 
 | Loop | Asserts | Where |
@@ -460,6 +460,7 @@ against exactly what CI uses.
 | **E** — generated differential | formulas generated from the catalog's signatures, evaluated by us and by LO | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 | **F** — projection differential | project → read back → the two models are identical, both directions | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`, `doc/dsl.md` §8 |
 | **A′** — import tolerance | every `.xlsx`/`.xlsm` in `sc/qa/unit/data` imports without an `Err` or a panic, and every imported document survives our own writer and reader | `xlsx/tests/corpus_read.rs`, `doc/xlsx-import.md` |
+| **D** — import fidelity | our import of a workbook against LibreOffice's conversion of it, cell by cell — value and kind at X1, over the vendored generated corpus, so it needs `soffice` and no checkout; where the *oracle* differs it is a named divergence, asserted to still occur | `xlsx/tests/loop_d.rs`, `doc/xlsx-format.md` §2.3 |
 
 `sheet/tests/kb.rs` is the fourth check and never skips: R7's vendored documents. It also
 validates the writer against the schema (`jing -i`) and measures R3/R6.
@@ -482,13 +483,15 @@ workbook order, every fixture's SHA-256, and for each of 1341 cells both what th
 literally contains and what a conversion should produce. It is loop D's oracle travelling with
 the corpus instead of waiting for `soffice`, and it is the answer to `doc/xlsx-import.md`'s
 risk 3 (LibreOffice's corpus over-represents the strange, and needs a checkout nobody has).
-Since the build is X0, the gap between claim and capability lives in **two tables checked in
-both directions**: `PENDING` (21 — a claim that starts passing *fails the test*, so the entry
-must be deleted when its milestone lands) and `DECIDED_OTHERWISE` (2 — where the corpus
-expects a refusal this filter deliberately does not make, both in `hostile/`, both reported
-upstream rather than worked around). 138 of 161 claims asserted, the cell-level half held by
-one `report.cells == 0` written to fail the day X1 begins. `fixtures.rs` keeps its own job:
-packages assembled from XML **a reviewer can read in the source**.
+Since the build is X1, every cell's value and kind is asserted — one claim per cell — and the
+gap between claim and capability lives in **two tables checked in both directions**: `PENDING`
+(18 — a claim that starts passing *fails the test*, so the entry must be deleted when its
+milestone lands; X1 deleted three) and `DECIDED_OTHERWISE` (3 — two refusals this filter
+deliberately does not make, both in `hostile/`, and one manifest that disagrees with its own
+fixture's bytes). 1481 of 1502 claims hold, 1340 of 1341 cells. `fixtures.rs` keeps its own job:
+packages assembled from XML **a reviewer can read in the source**. The corpus's 500,000-cell
+sheet makes `ooxmlgen.rs` the slowest test file in a debug build — about two minutes, nearly all
+of it `grind-sheet`'s debug ODF reader reading that sheet back.
 
 Current scoreboard (see each test's own comments for what each column means and why):
 loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
@@ -518,10 +521,13 @@ application — charts for the sheet, images for text — each with a test that 
 projected. The text half compares runs after the normalisation `text/src/odf/write.rs` already
 performs (a literal tab in a run *is* a `text:tab`), and proves that equivalence directly rather
 than assuming it.
+Loop D is green on the pinned image: 68 workbooks, 501,335 cells, 0 disagreements, and eight
+named divergences where the oracle is the one that differs (it recalculates on load, applies no
+1900 correction, drops an empty string, …; `doc/xlsx-format.md` §2.3).
 Loop E is at 913/1000 on the pinned
 image at its default seed (same binary locally and in CI, so the figure should match), with
-the untriaged disagreements classified in `doc/differential-fuzz.md`. All four
-loops now run in CI (`build`, `oracle`, `corpus` jobs — `oracle` is loops C-out and E, which
+the untriaged disagreements classified in `doc/differential-fuzz.md`. All the
+loops now run in CI (`build`, `oracle`, `corpus` jobs — `oracle` is loops C-out, D and E, which
 want the same `soffice` and the same compile) rather than only where a
 developer's machine happens to have a LibreOffice checkout.
 
@@ -591,7 +597,7 @@ rather than a guest:
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
 | `grind-text` | `text/` | The word processor (phase 10): the block model — flat, with two axes: a block's *kind* (paragraph, heading, list item) and the `Cell` coordinate that says which table cell it is in, since a cell holds blocks rather than a value — `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-build` | `build/` | **The generator** (`doc/dsl.md` layer 1, D7): a Rhai script that *returns* a document, and the sandbox it runs in. `sheet.rs` and `text.rs` are the two host vocabularies — the projection's own nouns — `engine.rs` is every restriction §2 promises, in one screen, and `data.rs` is the one exception to them: `json(…)`, which reads **data and never code** from one directory a person named, with `..`, absolute paths and symlinks out all refused. **Nothing that opens a document may depend on this crate** (R11), which `build/tests/manifest.rs` reads the manifests to enforce |
-| `grind-xlsx` | `xlsx/` | **The Excel import filter** (`doc/xlsx-import.md`, phase 11, built through **X0**): OPC, the Transitional/Strict namespace table, markup compatibility, and the workbook's sheet list. Depends on `grind-sheet` and adds **no new dependency** — `zip` and `quick-xml` are already the core's, which is half the argument against `calamine`. An **optional** dependency of `grind-cli` behind the `xlsx` feature, on by default; `--no-default-features` builds a `grind` with no Excel code in it, and CI builds both. Produces a `Document` through the model's public API and nothing goes the other way: no Excel vocabulary reaches `grind-sheet` (R1), and this phase plans to add nothing to it at all. `xml.rs` is `core/src/odf/context.rs`'s ignore-the-subtree property **rebuilt rather than borrowed** — that file's dispatch key is a closed enum of ODF namespace URIs and R8 keeps it that way — and it is the one place `mc:AlternateContent` is handled, because it can wrap anything and per-site handling is per-site bugs. Held to **three** corpora rather than one: loop A′ over LibreOffice's (`corpus_read.rs`, skips without a checkout), packages assembled from readable XML (`fixtures.rs`), and **76 Open XML SDK workbooks vendored with a manifest of what each should convert to** (`ooxmlgen.rs`, never skips) |
+| `grind-xlsx` | `xlsx/` | **The Excel import filter** (`doc/xlsx-import.md`, phase 11, built through **X1**): OPC, the Transitional/Strict namespace table, markup compatibility, the workbook's sheet list, and every cell's **value** — shared and inline strings, all seven cell types, and the two date systems with the 1900 leap-year rule (`dates.rs`), which needs `styles.rs` + `numfmt.rs` to say whether a format makes a number a date and nothing more yet. A formula cell carries Excel's cached value; its formula is X2's. Depends on `grind-sheet` and adds **no new dependency** — `zip` and `quick-xml` are already the core's, which is half the argument against `calamine`. An **optional** dependency of `grind-cli` behind the `xlsx` feature, on by default; `--no-default-features` builds a `grind` with no Excel code in it, and CI builds both. Produces a `Document` through the model's public API and nothing goes the other way: no Excel vocabulary reaches `grind-sheet` (R1), and this phase plans to add nothing to it at all — X1's one change there, `Sheet::rows_carrying`, fixed a writer that could not write a sheet with a cell in each far corner, which no import was needed to reach. `xml.rs` is `core/src/odf/context.rs`'s ignore-the-subtree property **rebuilt rather than borrowed** — that file's dispatch key is a closed enum of ODF namespace URIs and R8 keeps it that way — and it is the one place `mc:AlternateContent` is handled, because it can wrap anything and per-site handling is per-site bugs. Held to **three** corpora rather than one: loop A′ over LibreOffice's (`corpus_read.rs`, skips without a checkout), packages assembled from readable XML (`fixtures.rs`), and **76 Open XML SDK workbooks vendored with a manifest of what each should convert to** (`ooxmlgen.rs`, never skips) |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
 | `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell — the suite's **showcase** for this document type, and the client that gets a text feature first. Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` places blocks (a stack, and a grid where a table is), `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics` and honours all eight `CharStyle` properties, `format.rs` is the formatting bar, `view.rs` is the widget |

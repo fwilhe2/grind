@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# The xlsx import filter — phase 11, planned
+# The xlsx import filter — phase 11, built through X1
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
 building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
@@ -133,6 +133,7 @@ xlsx/     the import filter — crate `grind-xlsx`            depends on grind-s
 ```
 xlsx/src/
   lib.rs        import_bytes / import_file / sniff, the Report, the public surface
+  address.rs    Excel's spelling of a cell address (`B2`) — X1; X2's lexer is the second caller
   names.rs      the namespace and relationship-type tables — Transitional and Strict
   mce.rs        markup compatibility: Ignorable, AlternateContent/Choice/Fallback
   package.rs    OPC: the zip, [Content_Types].xml, relationships, part lookup
@@ -221,6 +222,8 @@ pub struct Report {
     pub unknown_functions: BTreeSet<String>,
     /// Cells whose formula could not be translated at all — the value was kept.
     pub untranslated: Vec<(usize, Pos)>,
+    /// Cells past the materialisation bound, read and not carried (added at X1).
+    pub over_budget: usize,
     /// Namespaces the file said a consumer must understand and this one does not
     /// (`mc:MustUnderstand`). Not a refusal — see "Transitional, and the real world" §2.
     pub must_understand: BTreeSet<String>,
@@ -249,6 +252,11 @@ after it built homes for them:
   still missing is a reader for `xl/charts/chart1.xml`, which is DrawingML — a second
   vocabulary the size of this whole filter. It is dropped and counted in this phase, and the
   reason is cost rather than the absence of a home. `doc/xlsx-format.md` records that.
+
+**One more field since X1: `over_budget`**, the cells past the materialisation bound
+(`sheet::MAX_CELLS`, four million — `odf/read.rs`'s number). It is not a `Dropped` kind, because
+the model could hold those cells and the admission rule below is about what it *cannot* express,
+but a bound somebody hit is a loss all the same and `lossless()` says so.
 
 The rule the shrinking illustrates: an entry in `Dropped` must name a construct the **model**
 cannot express, never one the filter simply has not got to yet. The second kind belongs in the
@@ -592,7 +600,7 @@ feature matrix.
 | # | Milestone | Contents | Exit criterion |
 |---|---|---|---|
 | X0 | **The seam** — **DONE (2026-09-14)** | `xlsx/` crate, feature flags, `default-members`, CI matrix steps, `names.rs` + `mce.rs` + `xml.rs`, `package.rs` + `workbook.xml` sheet list, `grind sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i`; **loop A′ green** — every corpus file reaches a sheet list without an `Err` or a panic |
-| X1 | **Values** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits |
+| X1 | **Values** — **DONE (2026-09-19)** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits — **68 workbooks, 501,335 cells, 0 disagreements**, against the pinned oracle, with eight named divergences where the oracle is the one that differs (below) |
 | X2 | **Formulas** | the Excel expression translator, shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class; the scoreboard prints like loop B's |
 | X3 | **Number formats** | built-ins by meaning, the code parser, sections → `style:map` | loop D compares **displayed text** per cell, which is loop C's rule for the same reason |
 | X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks, all of which the model now has | loop D compares styles the way loop C does — borders numerically, everything else exactly |
@@ -622,9 +630,47 @@ Four things the plan did not predict, recorded here rather than absorbed silentl
    written — and measuring found two things guessing had missed: a `conformance="strict"`
    attribute, and a file carrying both families at once.
 
-**Order.** Values before formulas before formats is not arbitrary: a formula's *cached value*
-is what makes X1's oracle comparison meaningful, and a date is only a date once its format is
-known, so X3 closes a gap X1 opened rather than adding a new one.
+### What X1 found
+
+Seven things, the first three of them outside this crate:
+
+1. **`grind-sheet`'s own writer could not write a sheet with a cell in each far corner.**
+   `scale/wide-and-sparse.xlsx` has six cells, at A1 and at `XFD1048576`; its used rectangle is
+   the whole grid, and the ODF writer asked every one of its seventeen billion cells whether it
+   was blank. It never finished. Nothing about that is Excel's — a projection written by hand
+   says the same thing in two lines — and the fix is in ODF's terms: `Sheet::rows_carrying`
+   answers "which rows hold anything" from the column store's runs and the side tables, once,
+   and the writer asks it (23 ms for that file now). A test holds it to the per-cell rule it
+   replaces. **Risk 6's "add nothing to the core" held for the import** — the filter needed no
+   capability it did not have — and was broken by a bug the import happened to be first to reach.
+2. **`xml.rs` read past a self-closed element.** `children()` and `text()` on `<t/>` or
+   `<c r="A11"/>` went looking for an end tag that does not exist and consumed the parent's. X0
+   survived it only because its one self-closed container, `<sheets/>`, was last in its part.
+3. **The oracle recalculates.** This section used to say a formula's cached value "is what
+   makes X1's oracle comparison meaningful"; loop D found the oracle replaces cached values with
+   its own evaluation on load (`formulas/shared-groups.xlsx` caches C2 = 4 and the oracle writes
+   6). So a formula cell's value is compared with the oracle only from X2 on, and meanwhile
+   `ooxmlgen.rs` holds every cached value to the manifest instead. `doc/xlsx-format.md` §2.3 has
+   this and the oracle's five other divergences — an empty string dropped, a sheet dropped for
+   its name, an external link turned into a sheet, a `\` target not followed, a pivot table
+   regenerated — plus §2.1's phantom day and §2.2's `#REF!`.
+4. **A bare `m` is a month.** `numfmt::classify` first read `m` with no year or day beside it as
+   minutes; it is minutes only after an hour or before a second (`doc/xlsx-format.md` §3.2).
+   `numfmt/datetime-codes.xlsx` caught it, one cell per spelling.
+5. **X1 needed a sliver of X3.** A serial is not a date until its format says so, so styles are
+   read before sheets and `numfmt.rs` answers *date, time or number* for a format — nothing
+   else. The translation of a format onto `numfmt::Format` is still X3's.
+6. **`mc:MustUnderstand` is reported by URI**, X0's open question 3 below. The prefix is
+   resolved while its declaration is in scope, which is the only moment it can be.
+7. **The generated corpus got expensive.** Its 500,000-cell sheet is imported, written and
+   read back by `every_imported_document_survives_a_write_and_a_read` in a debug build: about two
+   minutes, against a second and a half in release — the one test in the suite whose cost is a
+   corpus file's size. quick-xml, zip, zlib-rs and memchr are now optimised in the dev profile,
+   which took the import alone from 14 s to 5; the rest is the debug ODF reader, left as it is.
+
+**Order.** Values before formulas before formats is not arbitrary: a date is only a date once
+its format is known, so X3 closes a gap X1 opened rather than adding a new one — X1 took the one
+question it could not do without (finding 5) and nothing more.
 
 ---
 
@@ -636,7 +682,7 @@ this phase adds the loop that does it for import.
 | Loop | Asserts | Corpus |
 |---|---|---|
 | **A′** — read tolerance | every `.xlsx` in the corpus imports without an `Err` and without a panic | `sc/qa/unit/data/xlsx/`, plus `xlsm/` — the count this plan first claimed (352) is **unverified**; X0 measures it and writes the real `FLOOR`, which then only goes up |
-| **D** — import fidelity | our conversion and the oracle's conversion of the same file agree, semantically | the same 352, minus a named exclusion list |
+| **D** — import fidelity | our conversion and the oracle's conversion of the same file agree, semantically | **built at X1** over the vendored generated corpus (`xlsx/tests/loop_d.rs`), so it needs `soffice` and no checkout; LibreOffice's own 352 are still to come |
 | **R2** | every imported document validates against the ODF schema (`jing -i`) | the same |
 | **the generated corpus** | every claim a manifest makes about a fixture is satisfied, or named in one of two tables | `xlsx/tests/data/corpus/`, vendored — **never skips**. See below |
 
@@ -648,10 +694,18 @@ theirs = soffice --headless --convert-to ods <file>   → read with our own read
 compare(ours, theirs)
 ```
 
-The comparison is `sheet/tests/roundtrip.rs`'s existing semantic comparator, reused: values at
+The comparison is `sheet/tests/roundtrip.rs`'s existing semantic comparator's rule, restated: values at
 15 significant digits (because that is all LibreOffice writes — `doc/ods-format.md` §3.4),
 formulas as canonical text, formats as **the text the cell displays**. The oracle's output is
 cached by content hash so a full run is one conversion per file, ever.
+
+**As built at X1** it compares every cell's value and kind, sheets matched by name. Where the
+oracle is the one that differs the disagreement is a named **divergence** — a construct, never
+a file, each written only after the oracle's own output was read for that cell — asserted to
+still occur, so that one LibreOffice stops having fails the loop and has to be deleted. The
+cache is keyed by the manifest's SHA-256 and the oracle's version string, and lives in the temp
+directory because that is what the pinned oracle's shim mounts. It runs in CI's `oracle` job
+beside loops C and E, and in `scripts/soffice-tests.sh`.
 
 **Loop A′ runs in CI and costs nothing to get there** — it needs no oracle and no display,
 only the corpus, and `ci.yml`'s `corpus` job already sparse-checks out `sc/qa/unit/data`,
@@ -717,12 +771,17 @@ difference and both are checked in **both directions**:
   the reason it cannot from here. A claim that starts passing **fails the test**, so the entry
   has to be deleted when its milestone lands. It is loop F's "a test that fails the day it is
   projected" applied to a roadmap, and it is what stops a milestone table from quietly
-  becoming a list of things that already work. 21 entries.
-- **`DECIDED_OTHERWISE`** — a claim this build answers differently *on purpose*. 2 entries.
+  becoming a list of things that already work. 21 entries at X0; **18 since X1**, which
+  satisfied three and had to delete them.
+- **`DECIDED_OTHERWISE`** — a claim this build answers differently *on purpose*. 2 entries at
+  X0, **3 since X1**: the third is `realworld/xml-space-preserve.xlsx`'s A5, whose manifest
+  wants twenty spaces of indentation the fixture's own `sharedStrings.xml` does not contain.
 
-Everything else is asserted: **138 of 161 claims**, with the cell-level half held by one
-assertion that `report.cells == 0`, written to fail the day X1 begins rather than as 1341
-lines of pending.
+Everything else is asserted. At X0 that was 138 of 161 claims, with the cell-level half held by
+one assertion that `report.cells == 0`, written to fail the day X1 began. It did, and was
+replaced by the comparison it promised: **1481 of 1502 claims now, and 1340 of 1341 cells** —
+every cell's value and kind, one claim per cell (`cell:Sheet!A1`), so a table entry can name
+exactly the cell it excuses.
 
 ### What the generated corpus found
 
@@ -736,12 +795,12 @@ lines of pending.
    attack that already missed. The property that actually matters is now asserted directly:
    nothing outside the package is touched, checked against the `/tmp` marker path the fixture
    carries for exactly that purpose.
-2. **`Flavour::Mixed` needs X1 to be detectable in the ordinary case.** `mixed-flavour.xlsx`
+2. **`Flavour::Mixed` needs X1 to be detectable in the ordinary case** — and X1 detects it. `mixed-flavour.xlsx`
    is a Transitional workbook with a Strict *worksheet*, and X0 opens no worksheet, so the
    Strict namespace is never seen. The three Mixed files in LibreOffice's corpus all declare
    both families in `_rels/.rels`, which is why X0 could measure `Mixed` at all (§1.2) —
    a second spelling of the same fact was not visible until now.
-3. **`mc:MustUnderstand` has a spelling question waiting at X1.** The manifest expects the
+3. **`mc:MustUnderstand` has a spelling question waiting at X1** — answered there: the URI. The manifest expects the
    namespace **URI**; `mce::must_understand` deliberately yields the **prefix**, and says why.
    The URI is the stronger spelling — a prefix is a local alias and a report that prints one
    tells a bug report nothing — but resolving it needs the declaring element's namespace

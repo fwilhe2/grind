@@ -85,6 +85,12 @@ pub struct Report {
     pub unknown_functions: BTreeSet<String>,
     /// Cells whose formula could not be translated at all — the value was kept.
     pub untranslated: Vec<(usize, Pos)>,
+    /// Cells past `sheet::MAX_CELLS`, read and not carried.
+    ///
+    /// Not a [`Dropped`] kind, because the model can hold these cells perfectly well and
+    /// `Dropped`'s admission rule is *what the model cannot express*. It is a bound this filter
+    /// chose, and a bound somebody hit is still a loss: [`Report::lossless`] says so.
+    pub over_budget: usize,
     /// Namespaces the file said a consumer must understand and this one does not
     /// (`mc:MustUnderstand`). Recorded, never a refusal.
     pub must_understand: BTreeSet<String>,
@@ -108,7 +114,7 @@ impl Report {
     /// An *unknown function* does not — the formula came through intact, and whether this
     /// build can evaluate it is a fact about this build rather than about the conversion.
     pub fn lossless(&self) -> bool {
-        self.dropped.is_empty() && self.untranslated.is_empty()
+        self.dropped.is_empty() && self.untranslated.is_empty() && self.over_budget == 0
     }
 }
 

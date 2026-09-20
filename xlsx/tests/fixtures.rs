@@ -137,8 +137,8 @@ fn must_understand_is_reported_and_the_workbook_still_imports() {
     assert_eq!(document.sheets[0].name, "Sparklines");
     assert_eq!(
         report.must_understand.iter().cloned().collect::<Vec<_>>(),
-        ["x14"],
-        "reported, because refusing a workbook over one slicer is the same mistake as \
+        ["http://example.invalid/x14"],
+        "reported — by what the prefix means rather than by the prefix — because refusing a workbook over one slicer is the same mistake as \
          refusing it over one chart"
     );
 }

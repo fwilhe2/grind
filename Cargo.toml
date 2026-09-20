@@ -27,3 +27,17 @@ resolver = "3"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/fwilhe2/grind"
+
+# The XML parser, the zip reader, the inflater and the byte scanner under them, optimised even
+# in a debug build. Every reader in the suite spends its time in these four and none of them
+# is ever debugged from here, so an unoptimised copy only makes `cargo test` slow: the
+# generated xlsx corpus's 500,000-cell sheet imported in 14 s without this and in 5 s with it.
+# Our own crates stay at the dev profile's level, so a backtrace into them is still a good one.
+[profile.dev.package.quick-xml]
+opt-level = 3
+[profile.dev.package.zip]
+opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3
+[profile.dev.package.memchr]
+opt-level = 3

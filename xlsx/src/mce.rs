@@ -62,8 +62,9 @@ pub fn satisfies(requires: &str) -> bool {
 
 /// The namespace prefixes a `mc:MustUnderstand="x14 x15"` names, in order.
 ///
-/// Prefixes, not URIs — resolving them would mean holding the declaring element's namespace
-/// scope, and what this is for is a sentence in a report rather than a decision.
+/// Prefixes, because that is what the attribute holds. The *report* carries URIs: `xml.rs`
+/// resolves each one while the declaring element's scope is still live, which is the only
+/// moment it can be done (`xml::uri_of`).
 pub fn must_understand(value: &str) -> impl Iterator<Item = &str> {
     value.split_whitespace()
 }

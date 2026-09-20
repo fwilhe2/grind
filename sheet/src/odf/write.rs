@@ -935,6 +935,14 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
         }
     };
 
+    // Which rows carry anything, asked once of the sheet's sparse storage rather than of every
+    // cell in the used rectangle — see `Sheet::rows_carrying` for the sheet that never finished.
+    let carrying = sheet.rows_carrying();
+    let is_blank = |row: u32| {
+        let i = carrying.partition_point(|range| range.end <= row);
+        carrying.get(i).is_none_or(|range| range.start > row)
+    };
+
     let mut row = 0;
     while row < rows {
         let height = sheet.row_height(row);
@@ -945,9 +953,7 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
         // A hidden row stops the run too, for the same reason a differently sized one does.
         let blank = (row..rows)
             .take_while(|r| {
-                is_blank(sheet, *r, cols)
-                    && sheet.row_height(*r) == height
-                    && visibility(*r) == visibility(row)
+                is_blank(*r) && sheet.row_height(*r) == height && visibility(*r) == visibility(row)
             })
             .count() as u32;
         if blank > 0 {
@@ -991,21 +997,20 @@ fn last_index(indices: impl Iterator<Item = u32>) -> u32 {
 /// Whether a cell carries anything the file has to spell.
 ///
 /// **Five things, not two.** It used to be a value or a formula, and a cell holding only a
-/// number format or a cell style was therefore "blank" — dropped by [`is_blank`] below when its
+/// number format or a cell style was therefore "blank" — dropped as a blank row when its
 /// whole row was, and cut off by `write_row`'s trailing-cell trim when it was at the end of one.
 /// `Sheet::used_rows` has the same story and the same three ways in; a hand-written projection
 /// is the one that found it, because `cell B5 "=SUM([.B2:.B4])"` with no cached value is the
 /// *normal* way to write a spreadsheet you have not done the arithmetic for.
+///
+/// `Sheet::rows_carrying` is the same five questions asked row-wise of the sparse storage, and
+/// `rows_carrying_is_carries_asked_row_by_row` holds the two to one answer.
 fn carries(sheet: &Sheet, pos: Pos) -> bool {
     !sheet.get(pos).is_empty()
         || sheet.formula(pos).is_some()
         || sheet.kind(pos).is_some()
         || sheet.format(pos).is_some()
         || sheet.style(pos).is_some()
-}
-
-fn is_blank(sheet: &Sheet, row: u32, cols: u32) -> bool {
-    (0..cols).all(|col| !carries(sheet, Pos::new(row, col)))
 }
 
 /// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
@@ -1238,6 +1243,62 @@ mod tests {
             xml.contains("<table:table-row><table:table-cell/></table:table-row>"),
             "{xml}"
         );
+    }
+
+    /// The used rectangle here is the whole grid — seventeen billion cells — and a writer that
+    /// asked each one whether it was blank never finished. Four cells in, four cells out, and
+    /// the rows between are two repeats.
+    #[test]
+    fn the_far_corners_of_the_grid_are_four_cells_not_the_rectangle_between() {
+        let mut doc = Document::default();
+        let sheet = doc.sheet_mut(0).unwrap();
+        let (last_row, last_col) = (crate::MAX_ROWS - 1, crate::MAX_COLS - 1);
+        for (row, col) in [(0, 0), (0, last_col), (last_row, 0), (last_row, last_col)] {
+            sheet.set(Pos::new(row, col), CellValue::Number(1.0));
+        }
+        let start = std::time::Instant::now();
+        let xml = flat(&doc);
+        assert!(
+            xml.contains(&format!("table:number-rows-repeated=\"{}\"", last_row - 1)),
+            "{xml}"
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "{:?}",
+            start.elapsed()
+        );
+    }
+
+    /// `Sheet::rows_carrying` and [`carries`] are one rule spelled twice — once row-wise over
+    /// the sparse storage, once per cell — and a row the two disagreed about would be written
+    /// blank with something in it, or the reverse.
+    #[test]
+    fn rows_carrying_is_carries_asked_row_by_row() {
+        let mut doc = Document::default();
+        let sheet = doc.sheet_mut(0).unwrap();
+        sheet.set(Pos::new(0, 0), CellValue::Number(1.0));
+        sheet.set(Pos::new(1, 2), CellValue::Text("t".into()));
+        sheet.set(Pos::new(2, 2), CellValue::Number(2.0));
+        sheet.set_formula(Pos::new(5, 1), "=1".into());
+        sheet.set_kind(Pos::new(7, 0), crate::model::NumberKind::Date);
+        sheet.set_format(Pos::new(9, 3), money());
+        sheet.set_style(
+            Pos::new(12, 0),
+            crate::style::CellStyle {
+                font_weight: Some("bold".into()),
+                ..Default::default()
+            },
+        );
+        sheet.set(Pos::new(20, 1), CellValue::Bool(true));
+        sheet.set(Pos::new(21, 1), CellValue::Bool(false));
+
+        let ranges = sheet.rows_carrying();
+        let (rows, cols) = (sheet.used_rows(), sheet.used_cols());
+        for row in 0..rows + 2 {
+            let by_cell = (0..cols).any(|col| carries(sheet, Pos::new(row, col)));
+            let by_range = ranges.iter().any(|range| range.contains(&row));
+            assert_eq!(by_cell, by_range, "row {row}: {ranges:?}");
+        }
     }
 
     #[test]

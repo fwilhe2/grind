@@ -477,6 +477,41 @@ impl Sheet {
         (self.cols.len() as u32).max(extra)
     }
 
+    /// Every row holding **anything** — [`Sheet::used_rows`]'s five things — as sorted,
+    /// disjoint ranges.
+    ///
+    /// The writer asks this instead of looking at every cell of every row, and that was not a
+    /// micro-optimisation: a sheet with one cell at `A1` and one at `XFD1048576` has a used
+    /// rectangle of seventeen billion cells, and asking each whether it is blank never finished.
+    /// The first document to have that shape was an imported one (`scale/wide-and-sparse.xlsx`
+    /// in `grind-xlsx`'s corpus), but nothing about it is Excel's — a projection written by
+    /// hand says the same thing in two lines. This costs one step per value *block* and one per
+    /// side-table entry, which is the size of what the sheet holds rather than of where it is.
+    pub fn rows_carrying(&self) -> Vec<std::ops::Range<u32>> {
+        let mut ranges: Vec<std::ops::Range<u32>> = self
+            .cols
+            .iter()
+            .flat_map(Column::occupied)
+            .chain(
+                self.formulas
+                    .keys()
+                    .chain(self.kinds.keys())
+                    .chain(self.formats.keys())
+                    .chain(self.styles.keys())
+                    .map(|pos| pos.row..pos.row + 1),
+            )
+            .collect();
+        ranges.sort_unstable_by_key(|range| range.start);
+        let mut merged: Vec<std::ops::Range<u32>> = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            match merged.last_mut() {
+                Some(last) if range.start <= last.end => last.end = last.end.max(range.end),
+                _ => merged.push(range),
+            }
+        }
+        merged
+    }
+
     /// The last `Pos` of each cell-keyed side table, which is its last *row* — a `BTreeMap<Pos,
     /// _>` orders by row and then by column.
     fn side_tables(&self) -> impl Iterator<Item = Option<Pos>> {

@@ -132,6 +132,12 @@ each would otherwise have arrived as a bug report:
 | `xml:space` in `sharedStrings.xml` | **51** |
 | `mc:AlternateContent` in a worksheet | 15 |
 
+**`mc:MustUnderstand` is reported by URI — decided at X1.** The attribute holds prefixes, and a
+prefix is a local alias that tells a bug report nothing, so `xlsx/src/xml.rs` resolves each one
+while the declaring element's namespace scope is still live — the only moment it can be — and
+the report carries `http://schemas.microsoft.com/office/spreadsheetml/2010/11/main` where the
+file wrote `x15`. An unbound prefix is a malformed file and is reported as written.
+
 The `xml:space` figure is the one worth sitting with: **one workbook in seven** has a shared
 string whose leading or trailing space is meaningful, so a reader that trims text by default
 corrupts a seventh of this corpus silently. `xlsx/src/xml.rs` turns quick-xml's `trim_text`
@@ -142,35 +148,100 @@ the number beside it.
 
 ## 2. Values and dates
 
-### 2.1 The 1900 leap-year bug — `SPEC`, to be measured
+### 2.1 The 1900 leap-year bug — `MEASURED`
 
-The correction table is in `doc/xlsx-import.md` Part II §2, and serial 60 — the day Excel
-believes existed and no calendar does — is deliberately left open there. **X1 measures it
-against the oracle**: convert a workbook whose A1 is the literal 60 formatted as a date, read
-what LibreOffice made of it, and record the answer here with the command. Three tests at 59,
-60 and 61, because that boundary is where every implementation of this gets it wrong once.
+ECMA-376 Part 1 §18.17.4: in the 1900 system serial 1 is 1900-01-01 **and** 1900 is treated as a
+leap year, so serial 60 is 1900-02-29. ODF's default epoch is 1899-12-30, so the two agree from
+serial 61 (1900-03-01) onwards and are one day apart below it. `xlsx/src/dates.rs` holds the
+table and applies it: a **date** cell in a 1900 workbook with a serial in `[0, 60)` gains one
+day; everything else is carried unchanged.
 
-### 2.2 Cell types — `SPEC`
+Measured on 2026-09-19 with loop D (`xlsx/tests/loop_d.rs`) against the pinned oracle
+(LibreOffice 26.2.5.2, `ci/libreoffice-image`) over `values/dates-1900.xlsx`:
 
-ECMA-376 §18.18.11 (`ST_CellType`); the mapping onto `CellValue` is tabulated in
-`doc/xlsx-import.md` Part II §2 and is spec-derived. `t` defaults to `n`.
+| Excel serial | Excel means | this import | the oracle |
+|---|---|---|---|
+| 1 | 1900-01-01 | 1900-01-01 | **1899-12-31** |
+| 2 | 1900-01-02 | 1900-01-02 | **1900-01-01** |
+| 59 | 1900-02-28 | 1900-02-28 | **1900-02-27** |
+| 60 | 1900-02-29, which does not exist | 1900-02-28 | 1900-02-28 |
+| 61 | 1900-03-01 | 1900-03-01 | 1900-03-01 |
+
+The oracle applies **no** correction, so everything before 1900-03-01 arrives a day early; the
+generated corpus's manifest had already recorded the same in an `oracle` field (measured
+2026-09-14), and loop D names it as a divergence rather than a failure. Serial 60 has no right
+answer, and this import leaves it where the oracle does — on the same day as 59 — which keeps
+the mapping monotone and puts a real date beside the one that was meant.
+
+**Only a date is corrected.** A *time* format makes the whole serial a duration — 1 under
+`[h]:mm:ss` is `PT24H` in either system, with no epoch in it (`values/times.xlsx`) — and a
+number under a numeric format is a number (`values/date-vs-number.xlsx`, where one `<v>` is
+four different things under four formats).
+
+### 2.2 Cell types — `MEASURED`
+
+ECMA-376 §18.18.11 (`ST_CellType`), mapped onto `CellValue` as `doc/xlsx-import.md` Part II §2
+tabulates it, and held there by the generated corpus: `values/types.xlsx` has one cell of each of
+the seven, and loop D agrees with the oracle about all of them but one — `t="e"` holding `#REF!`,
+which the oracle turns into the formula `of:=#ref!` and evaluates to `#NAME?` (the other five
+error values survive). `t` defaults to `n`, and `t="d"` (ISO 8601, 2nd edition) is written by
+producers other than Excel.
+
+### 2.3 What the oracle does with values that this import does not — `MEASURED`
+
+Everything loop D's pinned run named on 2026-09-19, beside the two above. Each is a construct,
+and each is asserted to still occur, so the list cannot go stale silently:
+
+- **It recalculates.** A formula's cached `<v>` is replaced by the oracle's own evaluation on
+  load: `formulas/shared-groups.xlsx` caches C2 = 4 and the oracle writes 6 (= A2+B2). Why it
+  recalculates these files is not measured and not needed; that it does is. So a formula cell's
+  *value* is only comparable with the oracle once X2 carries the formula as well.
+- **An empty string is dropped.** `<t/>` is a string cell with no text; the oracle writes an
+  empty cell.
+- **A sheet name it does not allow drops the sheet**, cells and all — `Has[Brackets]` and
+  `Has/Slash` in `document/sheets.xlsx`.
+- **An external link's cache becomes a sheet**, named `'file:///…'#Sheet1`.
+- **A part reached through `\` is not found**; the sheet arrives, empty.
+- **A pivot table's output is regenerated**, with the oracle's own labels (`Total Result`).
 
 ---
 
 ## 3. Number formats
 
-### 3.1 Built-in ids 0–49 — `SPEC` (§18.8.30), to be measured
+### 3.1 Built-in ids 0–49 — `SPEC` (§18.8.30), partly measured
 
 The spec lists literal codes; Excel renders several of them in the user's locale, so the
-mapping this filter wants is **by meaning onto `numfmt::preset`**, not by code. The table is
-X3's work and belongs here with the oracle output that produced it — including which ids have
-no `preset` equivalent and are therefore dropped and counted.
+mapping this filter wants is **by meaning onto `numfmt::preset`**, not by code. That table is
+X3's work and belongs here with the oracle output that produced it.
 
-### 3.2 Format code grammar — `SPEC`
+What X1 needs from it is smaller and is built (`xlsx/src/numfmt.rs`): **which ids make a
+number a date or a time.** 14–17 and 22 are dates, 18–21 and 45–47 are times, and every other id
+is a number. Measured by `numfmt/builtins.xlsx` (one cell per id) against both the manifest and
+the pinned oracle, 2026-09-19. The East Asian date ids (27–36, 50–58) are **not** counted:
+§18.8.30 does not define them, and a cell using one keeps its serial as a plain number, which is
+visible and recoverable rather than a wrong date. `UNVERIFIED` which of them Excel writes.
+
+### 3.2 Format code grammar — `SPEC`, and one rule `MEASURED`
 
 §18.8.31. The pieces the parser must handle are listed in `doc/xlsx-import.md` Part II §4.
 What is *not* spec is how Excel resolves a four-section code against ODF's two-branch
 `style:map`; that is a measurement and goes here.
+
+**`m` is a month or minutes by position — `MEASURED`.** `m` and `mm` are minutes when the
+nearest date/time token before them is an hour (`h:mm`, `[h]:mm`) or the nearest after is a
+second (`mm:ss`), and a month everywhere else; three or more `m` are always a month.
+`numfmt/datetime-codes.xlsx` has one cell per spelling and the manifest and the oracle agree:
+`m`, `mm`, `mmm`, `mmmm` and `mmmmm` alone are months, so the cell is a **date**. The first
+version of `numfmt::classify` read a lone `m` as minutes — "no year or day beside it, so no
+month for it to be" — and was caught by that fixture on 2026-09-19. The same rule makes
+`[$-407]TT.MM.JJJJ` (German letters for day and year, which are not tokens) a date, because
+what is left is a lone `MM`.
+
+### 3.3 `applyNumberFormat` — `SPEC`
+
+On a `<cellXfs>` entry it says whether the cell format overrides its parent cell style; the
+`numFmtId` it carries is the one in effect either way (§18.8.45), and `xlsx/src/styles.rs`
+does not consult it. Not yet asked of the corpus whether any producer disagrees.
 
 ---
 

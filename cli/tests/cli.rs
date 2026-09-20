@@ -1672,3 +1672,27 @@ fn renaming_a_sheet_rewrites_the_formulas_that_named_it() {
         "one undo took the whole rename back, references and all"
     );
 }
+
+/// `grind sheet import` carries values (X1), and the result is an ODF document every other
+/// verb reads — the workbook is never consulted again. The vendored sample is the oracle's own
+/// conversion of a small budget, so what it holds is known without opening it.
+#[cfg(feature = "xlsx")]
+#[test]
+fn an_imported_workbook_arrives_with_its_values() {
+    let dir = Sandbox::new("import-xlsx");
+    let book = s(&dir.path("imported.fods"));
+    let sample = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../xlsx/tests/data/sample.xlsx"
+    );
+
+    let json = succeeds(
+        grind(&["--format", "json", "sheet", "import", sample, &book]),
+        &[],
+    );
+    assert_eq!(field(&json, "cells"), "6");
+    assert_eq!(field(&json, "over_budget"), "0");
+
+    assert_eq!(ok(&["get", &book, "A1"]).trim(), "Region");
+    assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "120");
+}
