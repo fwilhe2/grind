@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The VM Claude Code runs in — see scripts/claude-vm.sh, which is the only thing that reads
+# this file. Declarative half only: what the machine *is*. What has to happen inside it
+# (installing the agent, handing it a credential) is the script's, because it is idempotent
+# work that wants a shell and an exit code rather than a TOML list.
+
+# Rust 1.98 + LibreOffice 26.8 + git + curl + jing, Debian 13. Everything this workspace's
+# tests ask of a machine: `cargo test` needs the toolchain, loops C/D/E need `soffice` on
+# PATH, and R2's schema validation needs `jing` — which the host has not got, so the VM is
+# the *better* place to run `cargo test -p grind-sheet --test kb` rather than merely a safer one.
+image = "ghcr.io/fwilhe2/rust-libreoffice:latest"
+
+# This workspace is large and the tests are the point of the machine; anything less and the
+# VM is slower than the host it is protecting. Both are elastic (virtio balloon), so the host
+# only commits what the guest actually touches.
+cpus = 8
+memory = 12288
+
+# 20 GiB of storage disk is the default and is where /workspace lives — the VM's own
+# CARGO_TARGET_DIR. A debug build of this workspace plus the corpus fixtures fits; a release
+# build beside it is why this is not smaller.
+storage = 40
+
+# Outbound networking, unfiltered. It has to reach api.anthropic.com (the agent), and the
+# moment it builds anything it also wants static.crates.io, index.crates.io and github.com.
+# The narrower form is [network] allow_hosts, and it is deliberately not used: cargo's fetch
+# path resolves more names than a list stays true to, and a filter that has to be widened
+# after every failure teaches people to widen it without reading. Isolation here is the
+# *filesystem* boundary — the VM sees this repository and nothing else of the host's home.
+net = true
+
+# The image sets CARGO_HOME and RUSTUP_HOME but smolvm hands the workload its own PATH, so
+# the toolchain has to be put back on it. /root/.local/bin is where claude.ai/install.sh
+# puts the agent.
+env = [
+    "PATH=/root/.local/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "CARGO_HOME=/usr/local/cargo",
+    "RUSTUP_HOME=/usr/local/rustup",
+    # The VM's own target directory, on the storage disk rather than in the mounted
+    # repository: host and guest do not share a glibc or a rustc, and one target/ serving
+    # both is a full rebuild every time the machine changes. It survives stop/start, so the
+    # second `cargo test` in there is as fast as the host's.
+    "CARGO_TARGET_DIR=/workspace/target",
+    # Claude Code checks this and refuses to auto-update when it is set. The agent in here
+    # is installed by scripts/claude-vm.sh and pinned to whatever it installed; a VM that
+    # rewrote its own binary mid-session would be a different machine than the one that was
+    # provisioned.
+    "DISABLE_AUTOUPDATER=1",
+]
+
+[dev]
+# The repository, read-write, at /work. This is the whole point and the whole exposure: an
+# agent running in here can change these files and can change nothing else of the host's.
+# The path is relative to the directory scripts/claude-vm.sh runs smolvm from, which is the
+# repository root.
+volumes = ["./:/work"]
+workdir = "/work"

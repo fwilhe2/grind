@@ -431,6 +431,21 @@ cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
 this build supports**, through the CLI only, and `cli/tests/cli.rs` runs both — a feature
 without a line there is invisible. Add one when adding a capability.
 
+`scripts/claude-vm.sh` runs **Claude Code itself in a microVM** whose only host path is this
+repository — `doc/claude-vm.md` is normative for it, including the two measured smolvm quirks
+it works around. It is also this workspace's **best test machine**, which was not the reason
+it was built: `ghcr.io/fwilhe2/rust-libreoffice:latest` carries `jing`, so R2's schema
+validation actually runs there instead of skipping the way it does on a host without one, and
+`soffice` too, so loops C, D and E need no `scripts/soffice-docker`. Needs `smolvm` and
+`/dev/kvm`; the VM keeps its own `CARGO_TARGET_DIR`, so it never fights the host's `target/`.
+
+```sh
+scripts/claude-vm.sh up                 # create + boot + provision (idempotent)
+scripts/claude-vm.sh yolo               # the agent, no permission prompts, one directory of world
+scripts/claude-vm.sh exec cargo test -p grind-sheet --test kb   # jing included
+scripts/claude-vm.sh shell | status | stop | down
+```
+
 The corpus tests need a LibreOffice checkout and skip with a notice without one:
 
 ```sh
