@@ -27,17 +27,23 @@
 //! contains and what a conversion of it should produce. A corpus with an oracle travelling
 //! beside it is the thing loop D needs and does not have until `soffice` is on `PATH`.
 //!
-//! **This build is X2**: every cell's value and kind is asserted against the manifest, one
-//! claim per cell, and so is every cell's **formula** — the text where the manifest states one,
+//! **This build is X3**: every cell's value and kind is asserted against the manifest, one
+//! claim per cell; so is every cell's **formula** — the text where the manifest states one,
 //! and *the absence of one* where it states an `excel` and no translation, which is how the
-//! exclusion classes are held to rather than merely described. The rest of the oracle — formats,
-//! styles, the document level — is about a later milestone. Two tables carry the difference and
+//! exclusion classes are held to rather than merely described; and so is every **display** the
+//! manifest states, which is the claim about a number *format*. The rest of the oracle — styles,
+//! the document level — is about a later milestone. Three tables carry the difference and
 //! they are checked in *both* directions, which is the only arrangement that survives contact
 //! with a growing filter:
 //!
 //! - [`PENDING`] — a claim this build does not satisfy yet, with the milestone that will.
 //!   A claim that starts passing **fails this test**, and the entry must then be deleted. It
 //!   is the loop-F idiom (`a test that fails the day it is projected`) applied to a roadmap.
+//! - [`UNSPELLABLE`] — a claim the **model** cannot satisfy, because the piece of format it is
+//!   about has no `Part` in `grind_sheet::numfmt`: a fraction, an exponent, an elapsed hour
+//!   count. Not pending, since no milestone of this phase lands them — adding a part is a
+//!   decision about the core's format model — and not decided otherwise, since the manifest is
+//!   right and this build is the one that cannot say it.
 //! - [`DECIDED_OTHERWISE`] — a claim this build will never satisfy because it answers the
 //!   question differently *on purpose*. Two are about hostile files, three are manifests that
 //!   disagree with their own fixture's bytes, and two are spellings where ours is as true as
@@ -224,6 +230,127 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Claims the **model** cannot satisfy: `(fixture, claim, the class and what is missing)`.
+///
+/// X3's own table, and a third one because neither of the others fits. These are not
+/// pending — no milestone of this phase lands them, since what is missing is a piece of
+/// `grind_sheet::numfmt` and adding one is a decision about the core's format model rather
+/// than about an import filter (`doc/xlsx-import.md` Part II §4 says so, and
+/// `grind_xlsx::numfmt::Unspellable` is the same list in code). They are not decided
+/// otherwise either: the manifest is *right* about what Excel shows, and this build is the
+/// one that cannot say it.
+///
+/// Every entry names its class, and is asserted to still fail exactly like [`PENDING`]: the
+/// day `numfmt` grows a fraction part, these fail for passing and the table shrinks.
+const UNSPELLABLE: &[(&str, &str, &str)] = &[
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B6",
+        "Scaling — `#,##0,` divides the displayed number by a thousand \
+         (`number:display-factor`). The format is refused whole, so the cell shows its plain \
+         value: a number shown a thousand times too large is worse than an unformatted one.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B7",
+        "Scaling — `#,##0,,\" M\"`, the same class twice over.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B10",
+        "Scientific — `0.00E+00`. `number:scientific-number` is an element this model has no \
+         `Part` for, and dropping the exponent would show 12345.678 as `12345.68`.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B11",
+        "Scientific — `##0.0E+0`, the engineering spelling, whose exponent moves in threes.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B12",
+        "Fraction — `# ?/?`. `number:fraction` has no `Part` either; 3.75 shown as `4` is the \
+         alternative, and it is worse than `3.75`.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B13",
+        "Fraction — `# ??/??`, two denominator digits.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B14",
+        "Fraction — `# ?/8`, a fixed denominator.",
+    ),
+    (
+        "numfmt/custom-numeric.xlsx",
+        "display:Numeric!B17",
+        "BlankWidth — `_)` is a blank as wide as `)`, which is how Excel lines a bracketed \
+         negative up under a positive one. LibreOffice carries it as \
+         `loext:blank-width-char`, an extension attribute rather than ODF; this build drops \
+         the trailing space and keeps the rest of the format, since everything else about \
+         the cell is right.",
+    ),
+    (
+        "numfmt/datetime-codes.xlsx",
+        "display:DateTime!B8",
+        "NarrowMonth — `mmmmm` is the month's initial. `number:month` is long, short or \
+         numeric and has no fourth spelling, so this shows `Mar`. **The oracle loses it the \
+         same way**, measured from its own conversion of this fixture on 2026-09-20.",
+    ),
+    (
+        "numfmt/datetime-codes.xlsx",
+        "display:DateTime!B20",
+        "NarrowAmPm — `A/P` is the one-letter meridiem marker and `number:am-pm` has one \
+         spelling. The oracle renders a marker here too, in its own case.",
+    ),
+    (
+        "numfmt/datetime-codes.xlsx",
+        "display:DateTime!B23",
+        "Elapsed — `[h]:mm` counts hours past 24. The core names the attribute that would \
+         carry it (`number:truncate-on-overflow=\"false\"`) and deliberately does not model \
+         it, so the format is refused and the cell shows the clock reading its value is.",
+    ),
+    (
+        "numfmt/datetime-codes.xlsx",
+        "display:DateTime!B24",
+        "Elapsed — `[m]`, elapsed minutes.",
+    ),
+    (
+        "numfmt/datetime-codes.xlsx",
+        "display:DateTime!B25",
+        "Elapsed — `[s]`, elapsed seconds.",
+    ),
+    (
+        "values/times.xlsx",
+        "display:Times!C2",
+        "Elapsed — the whole `C` column of this fixture is `[h]:mm:ss` over the same serials \
+         column `B` shows as a clock, which is exactly the distinction the class is about. \
+         Two of its seven cells (C4, C5) are under a day and read the same either way; these \
+         five are where it shows.",
+    ),
+    (
+        "values/times.xlsx",
+        "display:Times!C3",
+        "Elapsed — as above.",
+    ),
+    (
+        "values/times.xlsx",
+        "display:Times!C6",
+        "Elapsed — as above, and the first where the hours pass 24.",
+    ),
+    (
+        "values/times.xlsx",
+        "display:Times!C7",
+        "Elapsed — as above.",
+    ),
+    (
+        "values/times.xlsx",
+        "display:Times!C8",
+        "Elapsed — as above.",
+    ),
+];
+
 // ---- the vendored corpus, and the manifest that travels with it ----
 
 fn root() -> PathBuf {
@@ -340,6 +467,9 @@ struct Cell {
     /// and no `formula` is one whose expression the conversion is expected **not** to carry —
     /// which is how the exclusion classes are asserted rather than merely described.
     excel: Option<String>,
+    /// The text Excel shows in the cell, where the manifest states one — X3's claim, and the
+    /// only one about a *format* rather than a value.
+    display: Option<String>,
 }
 
 impl Cell {
@@ -351,7 +481,24 @@ impl Cell {
             value: text("value"),
             formula: text("formula"),
             excel: text("excel"),
+            display: text("display"),
         }
+    }
+
+    /// The display claim: what one cell reads as, asked through the core's own
+    /// `grind_sheet::render` so that this test cannot answer it differently from a viewport.
+    ///
+    /// A cell whose format this build refuses shows its plain value, which is a *different*
+    /// string from the one Excel shows — that is the whole point of refusing, and it is why
+    /// the misses here are named in [`UNSPELLABLE`] rather than waved through.
+    fn check_display(&self, sheet: &Sheet, null_date: i64) -> Option<Result<(), String>> {
+        let want = self.display.as_ref()?;
+        let pos = grind_xlsx::address::cell(&self.address).expect("a manifest address");
+        let got = grind_sheet::render(sheet, pos, null_date);
+        Some(match got == *want {
+            true => Ok(()),
+            false => Err(format!("{got:?}")),
+        })
     }
 
     /// The formula claim, or `None` where the cell makes none.
@@ -514,9 +661,15 @@ fn decided_otherwise(file: &str, claim: &str) -> bool {
         .any(|(f, c, _)| *f == file && *c == claim)
 }
 
-/// Every claim this build is *not* held to, by either table.
+fn unspellable(file: &str, claim: &str) -> bool {
+    UNSPELLABLE
+        .iter()
+        .any(|(f, c, _)| *f == file && *c == claim)
+}
+
+/// Every claim this build is *not* held to, by any of the three tables.
 fn excused(file: &str, claim: &str) -> bool {
-    pending(file, claim) || decided_otherwise(file, claim)
+    pending(file, claim) || decided_otherwise(file, claim) || unspellable(file, claim)
 }
 
 /// Record that a claim was reached, so the tables can be checked in the other direction:
@@ -670,6 +823,8 @@ fn every_claim_is_satisfied_or_named() {
     let mut cells_matching = 0usize;
     let mut formula_claims = 0usize;
     let mut formulas_matching = 0usize;
+    let mut display_claims = 0usize;
+    let mut displays_matching = 0usize;
 
     for fixture in &fixtures {
         let file = fixture.file.as_str();
@@ -730,6 +885,27 @@ fn every_claim_is_satisfied_or_named() {
                     cell.kind,
                     cell.value.as_deref().unwrap_or("")
                 ));
+            }
+
+            // 6c. And what it displays — X3's half, stated for the cells whose fixture is
+            // about a format rather than a value.
+            let claim = format!("display:{}!{}", fixture.sheets[*sheet].0, cell.address);
+            if let Some(outcome) = document
+                .sheets
+                .get(*sheet)
+                .and_then(|s| cell.check_display(s, document.null_date))
+            {
+                display_claims += 1;
+                displays_matching += usize::from(outcome.is_ok());
+                reached.check(file, &claim, outcome.is_ok());
+                if let Err(held) = outcome
+                    && !excused(file, &claim)
+                {
+                    failures.push(format!(
+                        "{file}: {claim} should show {:?}, the import shows {held}",
+                        cell.display.as_deref().unwrap_or(""),
+                    ));
+                }
             }
 
             // 6b. And its formula — X2's half. A cell with an `excel` and no `formula` claims
@@ -832,20 +1008,21 @@ fn every_claim_is_satisfied_or_named() {
 
     // The other direction. An entry that names a claim which now passes has to go, and one
     // that names a claim nothing ever evaluated is a typo excusing nothing.
-    for (file, claim, why) in PENDING {
+    for (file, claim, why) in PENDING.iter().chain(UNSPELLABLE) {
         if reached
             .satisfied
             .contains(&((*file).to_owned(), (*claim).to_owned()))
         {
             failures.push(format!(
-                "{file}: `{claim}` now passes — delete its PENDING entry ({why})"
+                "{file}: `{claim}` now passes — delete its PENDING/UNSPELLABLE entry ({why})"
             ));
         } else if !reached
             .unsatisfied
             .contains(&((*file).to_owned(), (*claim).to_owned()))
         {
             failures.push(format!(
-                "{file}: PENDING names `{claim}`, which no fixture makes a claim about"
+                "{file}: PENDING/UNSPELLABLE names `{claim}`, which no fixture makes a claim \
+                 about"
             ));
         }
     }
@@ -866,17 +1043,19 @@ fn every_claim_is_satisfied_or_named() {
     let total = reached.satisfied.len() + reached.unsatisfied.len();
     eprintln!(
         "ooxmlgen corpus: {} fixtures, {imported} imported, {} refused as named; \
-         {}/{total} claims satisfied, {} pending, {} decided otherwise",
+         {}/{total} claims satisfied, {} pending, {} unspellable, {} decided otherwise",
         fixtures.len(),
         fixtures.len() - imported,
         reached.satisfied.len(),
         PENDING.len(),
+        UNSPELLABLE.len(),
         DECIDED_OTHERWISE.len(),
     );
     eprintln!(
         "  cells: {cells_matching}/{cell_claims} claims hold, {cells_carried} cells carried in all"
     );
     eprintln!("  formulas: {formulas_matching}/{formula_claims} claims hold");
+    eprintln!("  displays: {displays_matching}/{display_claims} claims hold");
     for failure in failures.iter().take(200) {
         eprintln!("  {failure}");
     }

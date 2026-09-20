@@ -92,6 +92,15 @@ pub struct Report {
     /// references" is something a person can act on. It is also the scoreboard loop A′ prints
     /// over LibreOffice's corpus.
     pub refused: BTreeMap<crate::formula::Refusal, usize>,
+    /// Cells carrying a number format of their own.
+    pub formatted: usize,
+    /// Cells whose number format lost something, by class — counted once per **cell**, the
+    /// way [`Report::refused`] counts a formula, because what a person wants to know is how
+    /// much of the document displays differently.
+    ///
+    /// A class that [`crate::numfmt::Unspellable::refuses`] cost the cell its whole format
+    /// and it shows its plain value; every other class cost it a piece and no more.
+    pub formats_lost: BTreeMap<crate::numfmt::Unspellable, usize>,
     /// Cells past `sheet::MAX_CELLS`, read and not carried.
     ///
     /// Not a [`Dropped`] kind, because the model can hold these cells perfectly well and
@@ -121,7 +130,10 @@ impl Report {
     /// An *unknown function* does not — the formula came through intact, and whether this
     /// build can evaluate it is a fact about this build rather than about the conversion.
     pub fn lossless(&self) -> bool {
-        self.dropped.is_empty() && self.untranslated.is_empty() && self.over_budget == 0
+        self.dropped.is_empty()
+            && self.untranslated.is_empty()
+            && self.formats_lost.is_empty()
+            && self.over_budget == 0
     }
 }
 

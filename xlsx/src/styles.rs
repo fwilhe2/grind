@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `xl/styles.xml` — at X1, the one thing a *value* depends on: which cell formats are dates.
+//! `xl/styles.xml` — through X3, the **number formats**: which cell formats are dates, and
+//! what each one displays.
 //!
 //! A cell's `s="12"` indexes `<cellXfs>`, whose twelfth `<xf>` names a `numFmtId`, which is
 //! either one of ECMA-376's built-ins or a code in `<numFmts>`. Styles are read **before**
@@ -10,21 +11,25 @@
 //! `content.xml` — because a serial cannot be corrected, or given its date kind, until its
 //! format is known.
 //!
+//! Each `<xf>` is translated **once** ([`numfmt::of_code`] / [`numfmt::of_builtin`]) and every
+//! cell that names it clones the result, rather than each cell parsing the same code again.
+//!
 //! Fonts, fills, borders and alignment are X4's and are skipped whole here by the walker's
 //! ordinary tolerance; nothing in this file has to know they exist.
 
 use std::collections::BTreeMap;
 
 use grind_sheet::model::NumberKind;
+use grind_sheet::numfmt::Format;
 
-use crate::numfmt;
+use crate::numfmt::{self, Translation, Unspellable};
 use crate::xml::{Handled, Reader};
 
-/// What the styles part says, as far as X1 asks.
+/// What the styles part says, as far as X3 asks.
 #[derive(Debug, Default)]
 pub struct Styles {
-    /// Per `<cellXfs>` entry, in order: the kind of number its format makes a cell.
-    kinds: Vec<Option<NumberKind>>,
+    /// Per `<cellXfs>` entry, in order: what its number format translated to.
+    xfs: Vec<Translation>,
 }
 
 impl Styles {
@@ -32,7 +37,18 @@ impl Styles {
     /// the part does not have. An out-of-range `s` is a claim about a style nobody wrote, and
     /// reading it as "no format" is what every consumer does.
     pub fn kind(&self, index: usize) -> Option<NumberKind> {
-        self.kinds.get(index).copied().flatten()
+        self.xfs.get(index).and_then(|xf| xf.kind)
+    }
+
+    /// The format a cell with `s="index"` displays through, where one could be spelled.
+    pub fn format(&self, index: usize) -> Option<&Format> {
+        self.xfs.get(index).and_then(|xf| xf.format.as_ref())
+    }
+
+    /// What that cell's format lost on the way — empty where nothing did.
+    pub fn lost(&self, index: usize) -> &[Unspellable] {
+        static NONE: &[Unspellable] = &[];
+        self.xfs.get(index).map_or(NONE, |xf| &xf.lost)
     }
 }
 
@@ -83,19 +99,21 @@ pub fn read(bytes: &[u8]) -> Styles {
         Ok(Handled::No)
     });
 
-    let kinds = xfs
+    let xfs = xfs
         .into_iter()
         .map(|id| {
-            let id = id?;
+            let Some(id) = id else {
+                return Translation::default();
+            };
             // A file's own code wins over the built-in table, including for an id below 164:
             // the spec reserves those, and producers redefine them anyway.
             match codes.get(&id) {
-                Some(code) => numfmt::classify(code),
-                None => numfmt::builtin(id),
+                Some(code) => numfmt::of_code(code),
+                None => numfmt::of_builtin(id),
             }
         })
         .collect();
-    Styles { kinds }
+    Styles { xfs }
 }
 
 #[cfg(test)]

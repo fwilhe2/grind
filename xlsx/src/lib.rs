@@ -26,12 +26,14 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: milestone X2.** The seam (X0) — the package, the flavour and markup
+//! **State of the build: milestone X3.** The seam (X0) — the package, the flavour and markup
 //! compatibility machinery, the workbook's sheet list — every cell's **value** (X1): shared and
 //! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
-//! rule — and every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
-//! shared groups resolved through the core's own `formula::shift`. A number format is read only
-//! far enough to know whether a number is a date (X3), and a cell carries no style yet (X4).
+//! rule — every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
+//! shared groups resolved through the core's own `formula::shift` — and every cell's **number
+//! format** (X3), parsed out of Excel's code string by [`numfmt`] into the model's ordered parts,
+//! with the sections becoming a style and its `style:map` branches. What no `Part` can spell is
+//! named, counted and *not approximated*. A cell carries no font, fill or border yet (X4).
 
 use std::fmt;
 use std::path::Path;

@@ -230,18 +230,36 @@ whole 362-workbook corpus are in this one file.
 
 ## 3. Number formats
 
-### 3.1 Built-in ids 0–49 — `SPEC` (§18.8.30), partly measured
+### 3.1 Built-in ids 0–49 — `SPEC` (§18.8.30), `MEASURED` against the oracle
 
 The spec lists literal codes; Excel renders several of them in the user's locale, so the
-mapping this filter wants is **by meaning onto `numfmt::preset`**, not by code. That table is
-X3's work and belongs here with the oracle output that produced it.
+mapping this filter wants is **by meaning**, not by code.
 
-What X1 needs from it is smaller and is built (`xlsx/src/numfmt.rs`): **which ids make a
-number a date or a time.** 14–17 and 22 are dates, 18–21 and 45–47 are times, and every other id
-is a number. Measured by `numfmt/builtins.xlsx` (one cell per id) against both the manifest and
-the pinned oracle, 2026-09-19. The East Asian date ids (27–36, 50–58) are **not** counted:
-§18.8.30 does not define them, and a cell using one keeps its serial as a plain number, which is
-visible and recoverable rather than a wrong date. `UNVERIFIED` which of them Excel writes.
+**Which ids make a number a date or a time** (X1's half): 14–17 and 22 are dates, 18–21 and
+45–47 are times, and every other id is a number. Measured by `numfmt/builtins.xlsx` (one cell
+per id) against both the manifest and the pinned oracle, 2026-09-19. The East Asian date ids
+(27–36, 50–58) are **not** counted: §18.8.30 does not define them, and a cell using one keeps
+its serial as a plain number, which is visible and recoverable rather than a wrong date.
+`UNVERIFIED` which of them Excel writes.
+
+**What each id becomes** (X3's half). Measured by converting `numfmt/builtins.xlsx` with the
+oracle and reading the `number:*-style` each cell's style points at, 2026-09-20. The oracle
+translates a built-in by **interpreting its literal code**, with the locale applied to the date
+ones: id 14 (`mm-dd-yy`) comes out as `m/d/yyyy` from an en-US machine, and would come out
+differently from a German one. So `xlsx/src/numfmt.rs` keeps a code per id and runs the ordinary
+parser over it, with three departures, each of which is a decision rather than a measurement:
+
+| id(s) | the table's code | what this filter uses | why |
+|---|---|---|---|
+| 14, 22 | `mm-dd-yy`, `m/d/yy h:mm` | `yyyy-mm-dd`, `yyyy-mm-dd hh:mm` | the oracle's answer is a fact about the converting machine; ISO means the same day everywhere, which is `date.rs`'s own reason. Loop D names the difference |
+| 47 | `mmss.0` | `mm:ss.0` | minutes and seconds run together are a spelling this model does not produce; the oracle inserts the same separator |
+| 5–8, 41–44 | `"$"#,##0_);("$"#,##0)` … | **nothing** | the symbol is the *reader's* locale and appears nowhere in the file. `Unspellable::LocaleCurrency`, counted |
+
+Ids 11, 12, 13, 46 and 48 are carried by the oracle as `number:scientific-number`,
+`number:fraction` and `number:truncate-on-overflow="false"`, none of which this model has a
+`Part` for; they are refused and counted (§3.6). Everything else — 1–4, 9, 10, 15–21, 37–40, 45,
+49 — comes through as the oracle spells it, checked cell by cell by converting both sides to CSV
+and diffing them.
 
 ### 3.2 Format code grammar — `SPEC`, and one rule `MEASURED`
 
@@ -264,6 +282,70 @@ what is left is a lone `MM`.
 On a `<cellXfs>` entry it says whether the cell format overrides its parent cell style; the
 `numFmtId` it carries is the one in effect either way (§18.8.45), and `xlsx/src/styles.rs`
 does not consult it. Not yet asked of the corpus whether any producer disagrees.
+
+### 3.4 Sections, and which one becomes the style — `MEASURED`
+
+Excel's code has up to four sections (`positive;negative;zero;text`) plus optional conditions;
+ODF has one style with `style:map` branches, first match wins (§16.3). How the two meet is not
+in either spec. Measured by converting `numfmt/sections.xlsx` and `numfmt/conditions.xlsx` with
+the oracle and reading what it wrote, 2026-09-20 — the style is always the **fallback**, the
+section that applies when no condition holds:
+
+| sections | the style | the maps |
+|---|---|---|
+| `pos` | `pos` | — |
+| `pos;neg` | `neg` | `value()>=0` → `pos` |
+| `pos;neg;zero` | `zero` | `value()>0` → `pos`, `value()<0` → `neg` |
+| `pos;neg;zero;text` | `text`, as a `number:text-style` | the three above |
+| any with `[>=100]`-style conditions | the last section carrying no condition | each conditioned section, in order |
+
+Two consequences worth writing down, both measured by converting the oracle's own output to
+CSV and reading the rendered text:
+
+- **A condition is not a loss.** `doc/xlsx-import.md` Part II §4 expected to drop `[>=100]`;
+  §16.3's `style:condition` is the same six operators, so every condition in
+  `numfmt/conditions.xlsx` comes through exactly.
+- **An empty section hides what it covers.** `0.0;;` becomes a style with no parts at all and
+  two maps, which renders as nothing — the oracle writes `<number:text/>` and means the same.
+
+**Where ODF's renderers differ from Excel — `MEASURED`.** For `[>=100]#,##0;0.00` at −50 the
+oracle renders `50.00`, unsigned: a style carrying any `style:map` spells its own sign, and the
+fallback of a *conditional* code carries none. Excel signs it. This build agrees with the
+oracle, because the rule is ODF's rather than this filter's (`doc/ods-format.md` §5.2).
+
+### 3.5 Date and time pieces — `MEASURED`
+
+From the same conversion of `numfmt/datetime-codes.xlsx`, one cell per spelling. The lengths are
+§18.8.31's and the parts are the oracle's:
+
+| code | `Part` | note |
+|---|---|---|
+| `yy`, `yyyy` | `Year { long }` | three or more `y` is long |
+| `m`, `mm` | `Month { long }` | numeric; and see §3.2 for when it is minutes instead |
+| `mmm`, `mmmm` | `Month { textual, long }` | `Mar`, `March` |
+| `mmmmm` | `Month { textual, short }` | the month's **initial** in Excel; neither ODF nor the oracle has it, and both render `Mar` |
+| `d`, `dd` | `Day { long }` | |
+| `ddd`, `dddd` | `DayOfWeek { long }` | a weekday, not a wider day |
+| `h`, `hh` | `Hours { long }` | |
+| `s`, `ss` | `Seconds { long }` | |
+| `ss.0`, `ss.000` | `Seconds { decimals }` | the point and the zeros belong to the seconds, not to a literal |
+| `AM/PM` | `AmPm` | and it is what makes the hours a 12-hour clock |
+| `A/P` | `AmPm` | the one-letter marker has no ODF spelling |
+| `[$€-407]` | `Currency("€")` | the symbol carries; the LCID does not |
+
+### 3.6 What has no `Part` at all — `MEASURED`
+
+The oracle writes `number:fraction`, `number:scientific-number`, `number:display-factor`,
+`number:fill-character`, `number:truncate-on-overflow="false"` and its own
+`loext:blank-width-char`; `grind_sheet::numfmt::Part` has none of these, and inventing one is a
+decision about the core's format model rather than about an import filter.
+`grind_xlsx::numfmt::Unspellable` is the list, and it is split in two by one question — *would
+losing this piece misstate the number?* A fraction, an exponent, an elapsed hour count, a ×1000
+factor and a `General` section beside others all would, so the cell's **whole** format is
+dropped and it shows its plain value; a fill character, a blank-width pad, a colour, the
+one-letter month and meridiem markers and a format's LCID would not, so the format is carried
+without them. Either way the class is counted per cell in the report, and
+`xlsx/tests/ooxmlgen.rs`'s `UNSPELLABLE` table holds each one to a fixture that still fails.
 
 ---
 

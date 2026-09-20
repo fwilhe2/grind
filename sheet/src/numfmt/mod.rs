@@ -127,6 +127,14 @@ pub struct Map {
 }
 
 impl Map {
+    /// Whether this condition says by itself that the value is negative — `value()<0` and
+    /// `value()<=0`, the spelling a negative branch is written in. The branch it points at
+    /// then spells the sign, or chooses not to (see [`Format::render_as`]).
+    fn negative(&self) -> bool {
+        matches!(self.op, Op::Lt | Op::Le)
+            && self.value.trim().parse::<f64>().is_ok_and(|v| v <= 0.0)
+    }
+
     fn holds(&self, n: f64) -> bool {
         let Ok(against) = self.value.trim().parse::<f64>() else {
             return false;
@@ -283,43 +291,53 @@ impl Format {
         self.parts.contains(&Part::AmPm)
     }
 
-    /// The branch that applies to `n` — the first `style:map` whose condition holds, or
-    /// this format itself.
+    /// The branch that applies to `n` — the first `style:map` whose condition holds.
     ///
     /// One level deep on purpose: a branch of a branch is not something LibreOffice writes,
     /// and following it would need a cycle guard for a case that does not exist.
-    fn branch(&self, n: f64) -> &Format {
-        self.maps
-            .iter()
-            .find(|map| map.holds(n))
-            .map_or(self, |map| &map.format)
+    fn branch(&self, n: f64) -> Option<&Map> {
+        self.maps.iter().find(|map| map.holds(n))
     }
 
     /// The display text for `value`. Never fails: a format that does not fit the value it
     /// meets falls back to the value's plain spelling, because a cell whose style says
     /// `date` and whose value is a string is a real document, not an error.
     pub fn render(&self, value: &CellValue, null_date: i64) -> String {
-        if !self.maps.is_empty()
-            && let CellValue::Number(n) = value
-        {
-            let branch = self.branch(*n);
+        self.render_as(value, null_date, false)
+    }
+
+    /// [`Format::render`], plus whether this format was reached through a **negative**
+    /// `style:map` — one whose condition says on its own that the value is not positive.
+    ///
+    /// Such a branch supplies no sign: `value()<0` has already said so, and the branch spells
+    /// whatever it wants to show in its place — a literal `-`, a pair of brackets, or nothing
+    /// at all. Measured rather than assumed (`doc/ods-format.md` §5.2): converting Excel's
+    /// `#,##0.00;[Red](#,##0.00);"—"`, LibreOffice writes the *zero* section as the style and
+    /// maps `value()>0` and `value()<0` onto the other two, and renders −1234.5 through the
+    /// second of them as `(1,234.50)`. A renderer that also prepended the minus would write
+    /// `-(1,234.50)`. A branch reached by any other condition keeps its sign, which is the
+    /// same measurement the other way round: `[<50][Red]0;[>500][Blue]0;[Green]0` renders
+    /// −50 as `-50`, because `value()<50` does not say the value is negative.
+    fn render_as(&self, value: &CellValue, null_date: i64, branch: bool) -> String {
+        if let CellValue::Number(n) = value
+            && let Some(map) = self.branch(*n)
             // Guard against a document mapping a style to itself: one level, then stop.
-            if !std::ptr::eq(branch, self) {
-                return branch.render(value, null_date);
-            }
+            && !std::ptr::eq(&map.format, self)
+        {
+            return map.format.render_as(value, null_date, map.negative());
         }
         match (self.kind, value) {
             (_, CellValue::Empty) => String::new(),
-            (Kind::Text, _) => self.render_parts(value, null_date),
+            (Kind::Text, _) => self.render_parts(value, null_date, branch),
             (_, CellValue::Text(s)) => s.clone(),
             (Kind::Boolean, CellValue::Bool(_)) | (_, CellValue::Number(_)) => {
-                self.render_parts(value, null_date)
+                self.render_parts(value, null_date, branch)
             }
             (_, CellValue::Bool(b)) => if *b { "TRUE" } else { "FALSE" }.to_owned(),
         }
     }
 
-    fn render_parts(&self, value: &CellValue, null_date: i64) -> String {
+    fn render_parts(&self, value: &CellValue, null_date: i64, branch: bool) -> String {
         let n = match value {
             CellValue::Number(n) => *n,
             CellValue::Bool(b) => f64::from(u8::from(*b)),
@@ -331,11 +349,13 @@ impl Format {
             Kind::Percentage => n * 100.0,
             _ => n,
         };
-        // The minus is supplied here only for a format that has no branches. A style with a
-        // `style:map` spells its own sign — §5.1's red-negative currency carries a literal
-        // `-` in the negative branch — and adding one on top renders `--19.99`.
+        // The minus is supplied here only for a format that decides the sign itself: one
+        // with no branches, reached directly. A style with a `style:map` spells its own sign
+        // — §5.1's red-negative currency carries a literal `-` in the negative branch — and
+        // adding one on top renders `--19.99`; a style reached *as* a branch has had its sign
+        // decided by the condition that chose it (see [`Format::render_as`]).
         let mut out = String::new();
-        let signed = self.maps.is_empty() && sign_carrying(&self.parts);
+        let signed = !branch && self.maps.is_empty() && sign_carrying(&self.parts);
         if scaled < 0.0 && signed && !matches!(self.kind, Kind::Date | Kind::Time | Kind::Boolean) {
             out.push('-');
         }
@@ -428,11 +448,15 @@ impl Format {
                     true => "TRUE",
                     false => "FALSE",
                 }),
-                Part::Content => {
-                    if let CellValue::Text(s) = value {
-                        out.push_str(s);
-                    }
-                }
+                // §16.27.28's text content is *the cell's own text*, and a number has one:
+                // a cell holding 1234.5678 under a `number:text-style` shows 1234.5678, not
+                // nothing. Measured against the oracle's rendering of a cell formatted `@`
+                // (`doc/ods-format.md` §5.2) — a text style is what Excel's fourth section
+                // becomes, and a number can land under one.
+                Part::Content => match value {
+                    CellValue::Text(s) => out.push_str(s),
+                    other => out.push_str(&general(other, None, null_date)),
+                },
             }
         }
         out
@@ -796,6 +820,61 @@ mod tests {
             grouping: false,
         });
         assert_eq!(render(&bare, -5.0), "-5");
+    }
+
+    /// The three-branch shape, which is the one that proves a *negative* branch does not sign:
+    /// the base is the **zero** style and both the positive and the negative one are reached
+    /// through a map, so the negative branch's brackets are all the sign there is.
+    ///
+    /// LibreOffice's own spelling of Excel's `#,##0.00;[Red](#,##0.00);"—"`, read out of its
+    /// conversion of `xlsx/tests/data/corpus/numfmt/sections.xlsx` and rendered by converting
+    /// that to CSV, on 2026-09-20 (`doc/ods-format.md` §5.2). The bug it pins is
+    /// `-(1,234.50)`.
+    #[test]
+    fn a_negative_branch_supplies_no_sign_of_its_own() {
+        let mut bracketed = Format::new(Kind::Number);
+        bracketed.push(Part::Text("(".into()));
+        bracketed.push(Part::Number {
+            decimals: 2,
+            min_decimals: 2,
+            min_int: 1,
+            grouping: true,
+        });
+        bracketed.push(Part::Text(")".into()));
+
+        let mut zero = Format::new(Kind::Number);
+        zero.push(Part::Text("—".into()));
+        zero.maps.push(Map {
+            op: Op::Gt,
+            value: "0".into(),
+            format: number(2, 2, true),
+        });
+        zero.maps.push(Map {
+            op: Op::Lt,
+            value: "0".into(),
+            format: bracketed,
+        });
+
+        assert_eq!(render(&zero, 1234.5), "1,234.50");
+        assert_eq!(render(&zero, -1234.5), "(1,234.50)");
+        assert_eq!(render(&zero, 0.0), "—");
+    }
+
+    /// The same measurement the other way round: a branch whose condition is not about the
+    /// sign keeps it. `[<50][Red]0;[>500][Blue]0;[Green]0` converted and rendered shows −50
+    /// as `-50` — `value()<50` says nothing about zero, so the minus is information.
+    #[test]
+    fn a_branch_reached_by_any_other_condition_keeps_its_sign() {
+        let mut format = number(0, 0, false);
+        format.maps.push(Map {
+            op: Op::Lt,
+            value: "50".into(),
+            format: number(0, 0, false),
+        });
+        assert_eq!(render(&format, -50.0), "-50");
+        // And the style itself, reached because no condition held, does not sign: it is the
+        // branch its own maps left over.
+        assert_eq!(render(&format, 500.0), "500");
     }
 
     #[test]

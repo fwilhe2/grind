@@ -142,6 +142,9 @@ fn every_corpus_workbook_imports() {
     let mut failures = Vec::new();
     let mut carried = 0usize;
     let mut refused: BTreeMap<Refusal, usize> = BTreeMap::new();
+    let mut cells = 0usize;
+    let mut formatted = 0usize;
+    let mut formats_lost: BTreeMap<grind_xlsx::numfmt::Unspellable, usize> = BTreeMap::new();
 
     for path in &files {
         let Some(bytes) = workbook_bytes(path) else {
@@ -156,6 +159,11 @@ fn every_corpus_workbook_imports() {
                 carried += report.formulas;
                 for (class, count) in &report.refused {
                     *refused.entry(*class).or_default() += count;
+                }
+                cells += report.cells;
+                formatted += report.formatted;
+                for (class, count) in &report.formats_lost {
+                    *formats_lost.entry(*class).or_default() += count;
                 }
             }
             Err(e) if e.is_encrypted() => encrypted += 1,
@@ -185,6 +193,22 @@ fn every_corpus_workbook_imports() {
     );
     for (class, count) in &refused {
         eprintln!("  {:24} {count}", class.label());
+    }
+    // X3's, in the same shape: how many cells came out of the corpus with a number format on
+    // them, and every piece of a format that did not, by the class that stopped it. No
+    // ratchet — unlike a formula, a cell with no format is the *ordinary* case (`General` is
+    // most of every workbook), so a share here would measure the corpus rather than the
+    // filter. The classes are the statement.
+    eprintln!("loop A′ formats: {formatted}/{cells} cells carry one");
+    for (class, count) in &formats_lost {
+        eprintln!(
+            "  {:32} {count}{}",
+            class.label(),
+            match class.refuses() {
+                true => "  (the cell shows its plain value)",
+                false => "",
+            }
+        );
     }
     for (path, err) in failures.iter().take(10) {
         eprintln!("  {}: {err}", path.display());

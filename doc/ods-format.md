@@ -353,6 +353,26 @@ Keep these consistent (a `percentage` value-typed cell should point at a
 `number:percentage-style`, etc.) even though the schema doesn't cross-check it — LO will
 still render inconsistent pairings, just confusingly.
 
+**Three rendering rules nothing in the spec states, measured against LibreOffice** on
+2026-09-20 by converting `xlsx/tests/data/corpus/numfmt/*.xlsx` to `.fods`, then converting the
+oracle's own output to CSV and reading the text it renders for every cell. Excel's four-section
+number formats are what made all three reachable (`doc/xlsx-format.md` §3.4), and all three were
+wrong here before:
+
+1. **A style carrying a `style:map` supplies no minus sign of its own.** It is the fallback its
+   own branches left over, and it spells whatever sign it wants — `#,##0.00;[Red](#,##0.00)`
+   converts to a *bracketed* style with a `value()>=0` map onto the plain one, and renders
+   −1234.5 as `(1,234.50)`. This rule was already in the code.
+2. **A branch reached through a `value()<0` or `value()<=0` map supplies none either** — the
+   condition has already said the value is negative, so a minus would say it twice. A branch
+   reached through any *other* condition keeps its sign: `[<50][Red]0;[>500][Blue]0;[Green]0`
+   renders −50 as `-50`, because `value()<50` says nothing about zero. The bug this fixed was
+   `-(1,234.50)` for a three-section format, whose negative branch is reached by a map rather
+   than being the style itself.
+3. **`number:text-content` renders a number's own spelling**, not nothing: a cell holding
+   1234.5678 under a `number:text-style` shows `1234.5678`. §16.27.28 is "the text of the cell",
+   and a number has one. The bug this fixed was an empty cell for every number formatted `@`.
+
 ### 5.3 Style pooling (minimality + correctness)
 
 Define each distinct formatting/number-format combination exactly once as a named

@@ -64,6 +64,12 @@ pub struct ImportReport {
     /// dropped *construct*, since the model could hold them, but a loss all the same.
     pub over_budget: usize,
     pub formulas: usize,
+    /// Cells carrying a number format of their own.
+    pub formatted: usize,
+    /// Number formats that could not be spelled in full, by class and by the number of cells
+    /// each class cost. A class that would have misstated the number took the cell's whole
+    /// format with it and the cell shows its plain value; the rest took a piece.
+    pub formats_lost: Vec<DroppedCount>,
     /// Formulas read and not carried, by the class that stopped each one. The cell kept the
     /// value Excel cached for it, so the document is not wrong — it no longer recalculates
     /// there, which is what this says.
@@ -108,6 +114,15 @@ impl ImportReport {
             cells: report.cells,
             over_budget: report.over_budget,
             formulas: report.formulas,
+            formatted: report.formatted,
+            formats_lost: report
+                .formats_lost
+                .iter()
+                .map(|(class, count)| DroppedCount {
+                    what: class.label().to_owned(),
+                    count: *count,
+                })
+                .collect(),
             untranslated: report
                 .refused
                 .iter()
@@ -399,6 +414,9 @@ impl Report {
                 for dropped in &import.dropped {
                     println!("dropped\t{}\t{}", dropped.count, dropped.what);
                 }
+                for class in &import.formats_lost {
+                    println!("format\t{}\t{}", class.count, class.what);
+                }
                 for class in &import.untranslated {
                     println!("untranslated\t{}\t{}", class.count, class.what);
                 }
@@ -421,8 +439,8 @@ impl Report {
                     }
                 );
                 println!(
-                    "{} sheets\t{} cells\t{} formulas\t{}",
-                    import.sheets, import.cells, import.formulas, import.flavour
+                    "{} sheets\t{} cells\t{} formulas\t{} formatted\t{}",
+                    import.sheets, import.cells, import.formulas, import.formatted, import.flavour
                 );
             }
             // One diagnostic per line, in the shape every compiler prints — so an editor's

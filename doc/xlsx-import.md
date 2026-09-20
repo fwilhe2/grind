@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# The xlsx import filter — phase 11, built through X1
+# The xlsx import filter — phase 11, built through X3
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
 building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
@@ -535,31 +535,39 @@ values it replaced, and `App::stale` already reports how many disagree. No new m
 `doc/xlsx-format.md` gets the list of names whose semantics differ so the warning can name
 them later.
 
-### 4. Number formats (X3)
+### 4. Number formats (X3) — **built**
 
 Excel spells a format as a **code string** — `#,##0.00;[Red]-#,##0.00;"—";@` — and
 `CLAUDE.md` says, correctly, that no such string may exist in the core. So the parser for it
-lives here, and its output is a `numfmt::Format`: an ordered sequence of `Part`s, which is
-ODF's model and the only one the core has.
+lives here (`xlsx/src/numfmt.rs`), and its output is a `numfmt::Format`: an ordered sequence of
+`Part`s, which is ODF's model and the only one the core has. One reading of a code answers both
+questions — *is this a date?* (X1's) and *what does it display?* — so the two cannot disagree.
 
-- **Sections.** Up to four (`positive;negative;zero;text`) → the base format plus
-  `style:map` branches, which is exactly how §5.1 spells a two-branch format and what
-  `numfmt`'s `maps` already carry. More than two branches is followed one level, as the
-  renderer already does, and the rest is dropped and counted.
+- **Sections.** Up to four (`positive;negative;zero;text`) → one style plus `style:map`
+  branches. Which section becomes the style is **measured** rather than chosen:
+  `doc/xlsx-format.md` §3.4 has the table, read out of the oracle's own conversion, and the
+  answer is always *the fallback* — the section that applies when no condition holds.
+- **Conditions are not a loss.** This plan expected to drop `[>=100]`; §16.3's
+  `style:condition` turns out to be the same six operators, so a conditional code becomes maps
+  like any other and every condition in `numfmt/conditions.xlsx` comes through exactly.
 - **Built-in ids 0–49** are mapped **by meaning, not by their literal code**: ECMA-376
-  §18.8.30 lists id 14 as `mm-dd-yy`, and Excel renders it in the user's locale. Mapping them
-  onto `numfmt::preset`'s vocabulary keeps a converted document looking like what the author
-  saw rather than like a US date in Germany. The mapping table is measured against the oracle
-  and recorded.
+  §18.8.30 lists id 14 as `mm-dd-yy`, and Excel renders it in the user's locale — as does the
+  oracle, in the *converting machine's*, which is what makes that answer unusable. 14 and 22 get
+  the ISO spelling, for `date.rs`'s reason; the rest are their own code, run through the same
+  parser. `doc/xlsx-format.md` §3.1 is the table and the three departures from it.
 - **Custom ids ≥ 164** carry a code, parsed here: digits (`0`, `#`, `?`), the decimal point,
   grouping (`,`), literals (quoted, escaped with `\`, and the `_`/`*` width tricks — the
   first consumes its argument, the second is dropped), `%`, `@`, currency (`[$€-407]`),
   date/time pieces (`yyyy`, `mmm`, `hh`, `[h]` elapsed, `AM/PM`), scientific (`0.00E+00`) and
   fractions (`# ?/?`).
-- **Not carried, counted:** conditions beyond the section rule (`[>=100]`), colours other
-  than through the section a `style:map` already models, elapsed-time formats (`[h]`) if they
-  turn out to have no ODF spelling we already emit, and fractions — `numfmt` has no `Part`
-  for either, and inventing one is a phase 5 decision rather than an import decision.
+- **What no `Part` can spell is named and counted, never approximated.**
+  `numfmt::Unspellable` is the vocabulary, `Report::formats_lost` counts it per cell, and one
+  question splits it in two: *would losing this piece misstate the number?* A fraction, an
+  exponent, an elapsed hour count, a ×1000 display factor and a `General` section beside others
+  all would, so the cell loses its **whole** format and shows its plain value — `3.75` is a
+  better answer than `4`. A fill character, a blank-width pad, a colour, the one-letter month
+  and meridiem markers and a format's LCID would not, so the format is carried without them.
+  Inventing a `Part` for a fraction remains a phase 5 decision rather than an import decision.
 
 ### 5. Styles and geometry (X4)
 
@@ -618,7 +626,7 @@ feature matrix.
 | X0 | **The seam** — **DONE (2026-09-14)** | `xlsx/` crate, feature flags, `default-members`, CI matrix steps, `names.rs` + `mce.rs` + `xml.rs`, `package.rs` + `workbook.xml` sheet list, `grind sheet import` writing an empty document with the right sheets | the matrix builds; `cargo test -p grind-cli --no-default-features` passes; the output validates with `jing -i`; **loop A′ green** — every corpus file reaches a sheet list without an `Err` or a panic |
 | X1 | **Values** — **DONE (2026-09-19)** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits — **68 workbooks, 501,335 cells, 0 disagreements**, against the pinned oracle, with eight named divergences where the oracle is the one that differs (below) |
 | X2 | **Formulas** — **DONE (2026-09-20)** | the Excel expression translator (`formula.rs`), shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes as a `Refusal` enum, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class — **12681 of 13039 translated (97.3%) over 362 workbooks, and every one of the other 358 counted by class**; the generated corpus asserts formula *text* per cell, 122 of 125 claims, 3 named |
-| X3 | **Number formats** | built-ins by meaning, the code parser, sections → `style:map` | loop D compares **displayed text** per cell, which is loop C's rule for the same reason |
+| X3 | **Number formats** — **DONE (2026-09-20)** | built-ins by meaning, the code parser, sections → `style:map`, `Unspellable` and its two severities, three measured rules in the core's renderer | loop D compares **displayed text** per cell wherever both sides formatted it — **68 workbooks, 501,335 cells, 0 disagreements, ten named divergences** — and the generated corpus asserts every `display` the manifest states: **89 of 107**, with the other 18 named in `UNSPELLABLE` by the `Part` that does not exist |
 | X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks, all of which the model now has | loop D compares styles the way loop C does — borders numerically, everything else exactly |
 | X5 | **The document level** | defined names, sheet order and visibility, merges, autofilters, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
 | X6 | **The shells** | the GTK Open dialog learns `.xlsx` (import → a new unsaved document, retitled `.ods`), file filters, the wasm shell's note | open an `.xlsx` in the GUI, edit it, save it as `.ods` |
@@ -725,6 +733,53 @@ Six things, and the first is the one that changed the shape of the milestone:
    filter's decision to take, which is why loop D compares values and the *manifest* is the
    oracle for formula text.
 
+### What X3 found
+
+**The number first.** Over LibreOffice's 362 workbooks, 42,970 of 123,424 cells come out
+carrying a number format, and **fourteen cells in the whole corpus lose one entirely** — eleven
+fractions, two scientific codes and one elapsed time. Everything else that could not be spelled
+is cosmetic and was carried without the piece: 385 blank-width pads, 382 fill characters, 295
+blank-padded digits, 211 colours and 42 format locales. `corpus_read.rs` prints that scoreboard
+beside X2's and deliberately sets **no ratchet on it**: unlike a formula, a cell with no format
+is the ordinary case — `General` is most of every workbook — so a share would measure the corpus
+rather than the filter, and the classes are the statement.
+
+Five things it found on the way, three of them in the core rather than here:
+
+1. **The core's renderer had three bugs, and only a four-section format could reach them.**
+   ODF spells Excel's `positive;negative;zero;text` as one style with `style:map` branches, and
+   this build had never met one: LibreOffice's own two-branch idiom puts the *negative* section
+   in the style, where the sign logic happened to be right. With three sections the negative one
+   becomes a **branch**, and a branch that also supplied the minus rendered `-(1,234.50)`. The
+   fix is a rule, not a special case — *a branch reached through `value()<0` supplies no sign,
+   because its condition already said so* — and its converse had to be measured too: a branch
+   reached through `value()<50` **keeps** its sign, since that condition says nothing about
+   zero. The third was `number:text-content`, which rendered a number as nothing where §16.27.28
+   means *the text of the cell*; a cell formatted `@` came out empty. All three are measured
+   against the oracle's own rendering of its own conversion (`doc/ods-format.md` §5.2), and all
+   three were wrong for ordinary ODF documents too — this import is simply the first thing to
+   open one.
+2. **The oracle is a rendering engine, not only a converter.** `soffice --convert-to csv` writes
+   *displayed text*, so the whole of X3 could be checked the way a person would check it: convert
+   the fixture to `.fods` for the style shapes, convert that to CSV for what they render, and
+   diff both against ours. That is where §3.4's section table, §3.5's part table and §3.1's
+   built-in departures all came from, and it is a better oracle than the manifest for this
+   milestone because a format is only ever an opinion about a string.
+3. **A third exclusion table was needed, and its rule is different from both the others.** A
+   fraction format is not `PENDING` — no milestone of this phase lands it, because what is
+   missing is a `Part` in `grind_sheet::numfmt` — and not `DECIDED_OTHERWISE` either, because
+   the manifest is right and this build is the one that cannot say it. `UNSPELLABLE` is that
+   third thing, checked in both directions exactly like the others: 18 entries, each naming its
+   class, and the day the core grows a fraction part they fail for passing.
+4. **Conditions cost nothing.** Part II §4 planned to drop `[>=100]`; §16.3's `style:condition`
+   is the same six operators `numfmt::Op` already has, so every conditional code in the corpus
+   comes through whole. The plan was pessimistic because it was written against §5.1's
+   *two-branch* example rather than against the model.
+5. **`grind_sheet::render` became public.** "What does this cell display" had exactly one answer
+   in the workspace and a test outside the crate needed to ask it; the alternative was for
+   `ooxmlgen.rs` to reimplement *format-or-general* in two lines, which is the one thing that
+   function's doc comment exists to forbid.
+
 **Order.** Values before formulas before formats is not arbitrary: a date is only a date once
 its format is known, so X3 closes a gap X1 opened rather than adding a new one — X1 took the one
 question it could not do without (finding 5) and nothing more.
@@ -756,8 +811,13 @@ The comparison is `sheet/tests/roundtrip.rs`'s existing semantic comparator's ru
 formulas as canonical text, formats as **the text the cell displays**. The oracle's output is
 cached by content hash so a full run is one conversion per file, ever.
 
-**As built at X1** it compares every cell's value and kind, sheets matched by name. Where the
-oracle is the one that differs the disagreement is a named **divergence** — a construct, never
+**As built at X3** it compares every cell's value, its kind and — wherever both sides put a
+format on the cell — the text it displays, sheets matched by name. A cell this build left
+unformatted is one whose code it refused by name, and those classes are counted in the report
+and asserted one at a time in `ooxmlgen.rs`; asking the oracle about them here would say the
+same thing again in a worse vocabulary. Where the two conversions differ on purpose — usually
+because the oracle is wrong, twice because this build is the one that chose differently — the
+disagreement is a named **divergence** — a construct, never
 a file, each written only after the oracle's own output was read for that cell — asserted to
 still occur, so that one LibreOffice stops having fails the loop and has to be deleted. The
 cache is keyed by the manifest's SHA-256 and the oracle's version string, and lives in the temp
@@ -821,24 +881,32 @@ contains and what a conversion of it should produce. That is loop D's oracle, tr
 the corpus instead of waiting for `soffice` — and where a conversion is genuinely ambiguous a
 cell carries an `oracle` field, so the two can be told apart.
 
-Since this build is X0, most of that oracle is about a later milestone. Two tables carry the
-difference and both are checked in **both directions**:
+Since this build is X3, part of that oracle is still about a later milestone. **Three** tables
+carry the difference and all three are checked in **both directions**:
 
 - **`PENDING`** — a claim this build does not satisfy yet, with the milestone that will and
   the reason it cannot from here. A claim that starts passing **fails the test**, so the entry
   has to be deleted when its milestone lands. It is loop F's "a test that fails the day it is
   projected" applied to a roadmap, and it is what stops a milestone table from quietly
-  becoming a list of things that already work. 21 entries at X0; **18 since X1**, which
-  satisfied three and had to delete them.
+  becoming a list of things that already work. 21 entries at X0; 18 after X1, which satisfied
+  three and had to delete them; **13 since X2**, which satisfied five more.
+- **`UNSPELLABLE`** — X3's, and a third table because neither of the others fits: a claim the
+  **model** cannot satisfy, because the piece of format it is about has no `Part` in
+  `grind_sheet::numfmt`. Not pending, since no milestone of this phase lands it; not decided
+  otherwise, since the manifest is right and this build is the one that cannot say it. 18
+  entries, each naming its class — and asserted to still fail, so the day the core grows a
+  fraction part they fail for passing.
 - **`DECIDED_OTHERWISE`** — a claim this build answers differently *on purpose*. 2 entries at
-  X0, **3 since X1**: the third is `realworld/xml-space-preserve.xlsx`'s A5, whose manifest
-  wants twenty spaces of indentation the fixture's own `sharedStrings.xml` does not contain.
+  X0, 3 after X1 — the third is `realworld/xml-space-preserve.xlsx`'s A5, whose manifest wants
+  twenty spaces of indentation the fixture's own `sharedStrings.xml` does not contain — and
+  **7 since X2**.
 
 Everything else is asserted. At X0 that was 138 of 161 claims, with the cell-level half held by
 one assertion that `report.cells == 0`, written to fail the day X1 began. It did, and was
-replaced by the comparison it promised: **1481 of 1502 claims now, and 1340 of 1341 cells** —
-every cell's value and kind, one claim per cell (`cell:Sheet!A1`), so a table entry can name
-exactly the cell it excuses.
+replaced by the comparison it promised; X2 added a formula claim per formula cell and X3 a
+display claim per formatted one. **1696 of 1734 claims now** — 1340 of 1341 cells, 122 of 125
+formulas and 89 of 107 displays — one claim per cell per question (`cell:Sheet!A1`,
+`formula:Sheet!A1`, `display:Sheet!A1`), so a table entry can name exactly the cell it excuses.
 
 ### What the generated corpus found
 

@@ -1982,8 +1982,9 @@ pub struct EnterOutcome {
 /// What one cell displays: its own number format applied, or the general one (§5.2).
 ///
 /// One function because a viewport and a list of calculations must not disagree about what
-/// a cell reads as.
-pub(crate) fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
+/// a cell reads as — and **public** for the same reason: `grind-xlsx`'s corpus tests ask what
+/// an imported cell displays, and the one thing they must not do is answer it themselves.
+pub fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
     let value = sheet.get(pos);
     match sheet.format(pos) {
         Some(format) => format.render(&value, null_date),

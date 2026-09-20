@@ -377,6 +377,23 @@ fn store(
     if let Some(kind) = kind {
         sheet.set_kind(at, kind);
     }
+    format(sheet, at, raw.s, context, report);
+}
+
+/// Put the cell's number format on it, and count whatever its code could not say (X3).
+///
+/// The translation happened once, when the styles part was read; this clones it. A format
+/// whose code carries a piece that would **misstate** the number is not there to clone — the
+/// cell displays its plain value instead — and either way the loss is counted per cell, since
+/// what a person wants to know is how much of the document reads differently.
+fn format(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mut Report) {
+    if let Some(format) = context.styles.format(s) {
+        report.formatted += 1;
+        sheet.set_format(at, format.clone());
+    }
+    for lost in context.styles.lost(s) {
+        *report.formats_lost.entry(*lost).or_default() += 1;
+    }
 }
 
 /// `<v>` as a number. `xsd:double`'s spellings — exponents, a leading `+` — plus the one real

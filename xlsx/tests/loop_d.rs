@@ -24,8 +24,12 @@
 //! manifest already carries — and the oracle's own version string, so a second run costs no
 //! conversion and a different LibreOffice never reuses another one's answer.
 //!
-//! **What is compared: every cell's value and kind.** Number formats are X3's and styles X4's;
-//! each milestone widens [`differences`] rather than adding a loop. **Formula text is not
+//! **What is compared: every cell's value, its kind, and — since X3 — what it displays.**
+//! Styles are X4's; each milestone widens [`differences`] rather than adding a loop. The
+//! display is compared where **both** sides put a format on the cell, since a cell this build
+//! left unformatted is one whose code it refused by name, and those classes are counted in the
+//! report and asserted one at a time in `ooxmlgen.rs` — asking the oracle about them here would
+//! say the same thing again in a worse vocabulary. **Formula text is not
 //! compared even now that X2 carries it**, and that is a decision rather than an omission: the
 //! oracle spells the same expression differently in at least three ways this corpus already
 //! records in `manifest.json`'s own `oracle` fields — `[$Data.A1]` for our `[Data.A1]`,
@@ -35,7 +39,9 @@
 //! the difference rather than to hide it. The value rule is loop C's — equal at 15 significant digits, since that is all LibreOffice
 //! writes — and a kind (date, time) must match exactly.
 //!
-//! **Where the oracle is wrong**, the disagreement is a named [`Divergence`] — a *construct*,
+//! **Where the two conversions differ on purpose** — usually because the oracle is wrong, twice
+//! because this build is the one that chose differently — the disagreement is a named
+//! [`Divergence`] — a *construct*,
 //! never a file name (`CLAUDE.md`'s rule for every loop) — asserted to still occur, so that a
 //! divergence LibreOffice stops having fails this test and has to be deleted.
 //!
@@ -136,6 +142,33 @@ const DIVERGENCES: &[Divergence] = &[
         }),
     },
     Divergence {
+        name: "a built-in date id is spelled in the reader's locale",
+        why: "ECMA-376 §18.8.30 prints id 14 as `mm-dd-yy` and id 22 as `m/d/yy h:mm`, and \
+              Excel renders both in the *reader's* locale rather than in that US order. The \
+              oracle does the same with its own — `3/17/2024` from an en-US machine, and \
+              something else from a German one, which makes its answer a fact about the \
+              converting machine. This import maps the two ids onto `numfmt::preset`'s ISO \
+              spelling (`doc/xlsx-import.md` Part II §4, *by meaning, not by their literal \
+              code*), which means the same day in every country. The corpus agrees that this \
+              is unclaimable: `numfmt/builtins.xlsx` states a `display` for no cell at all.",
+        scope: Scope::Cell(|ours, theirs| {
+            ours.kind == Some(NumberKind::Date)
+                && ours.value == theirs.value
+                && iso_for(&theirs.display) == ours.display
+        }),
+    },
+    Divergence {
+        name: "a blank-width pad has no ODF spelling",
+        why: "`0.00_);(0.00)` — `_)` is a blank as wide as `)`, which lines a bracketed \
+              negative up under a positive one. LibreOffice carries it as \
+              `loext:blank-width-char`, its own extension rather than ODF, and renders the \
+              space; this build counts `Unspellable::BlankWidth` and keeps the rest of the \
+              format. One cell, `numfmt/custom-numeric.xlsx` B17.",
+        scope: Scope::Cell(|ours, theirs| {
+            ours.value == theirs.value && theirs.display.trim_end() == ours.display
+        }),
+    },
+    Divergence {
         name: "a sheet whose name the oracle does not allow is dropped",
         why: "`document/sheets.xlsx` has ten sheets and the oracle's conversion has eight: \
               `Has[Brackets]` and `Has/Slash` are gone, cells and all. This import keeps both, \
@@ -170,13 +203,17 @@ struct Cell {
     /// here to *exclude* those cells from the value comparison, for the reason the divergence
     /// below gives: the oracle recalculates them and this import does not.
     formula: bool,
+    formatted: bool,
+    display: String,
 }
 
-fn cell(sheet: &Sheet, pos: Pos) -> Cell {
+fn cell(sheet: &Sheet, pos: Pos, null_date: i64) -> Cell {
     Cell {
         value: sheet.get(pos),
         kind: sheet.kind(pos),
         formula: sheet.formula(pos).is_some(),
+        formatted: sheet.format(pos).is_some(),
+        display: grind_sheet::render(sheet, pos, null_date),
     }
 }
 
@@ -189,7 +226,13 @@ fn same(a: &Cell, b: &Cell) -> bool {
         }
         (x, y) => x == y,
     };
-    values && a.kind == b.kind
+    // The display is compared only where **both** sides put a format on the cell. A cell
+    // this build left unformatted is one whose code it refused, and the classes it refuses
+    // are named and counted in the report and asserted one by one in `ooxmlgen.rs`; asking
+    // the oracle about them here would say the same thing a second time and in a worse
+    // vocabulary — `"3.75" vs "3 3/4"` rather than `Fraction`.
+    let display = !(a.formatted && b.formatted) || a.display == b.display;
+    values && a.kind == b.kind && display
 }
 
 /// One way the two conversions differ.
@@ -263,7 +306,10 @@ fn differences(ours: &Document, theirs: &Document) -> Vec<Difference> {
         for row in rows {
             for col in 0..cols {
                 let pos = Pos::new(row, col);
-                let (a, b) = (cell(mine, pos), cell(other, pos));
+                let (a, b) = (
+                    cell(mine, pos, ours.null_date),
+                    cell(other, pos, theirs.null_date),
+                );
                 if !same(&a, &b) {
                     out.push(Difference::Cell(mine.name.clone(), pos, a, b));
                 }
@@ -271,6 +317,29 @@ fn differences(ours: &Document, theirs: &Document) -> Vec<Difference> {
         }
     }
     out
+}
+
+/// `3/17/2024 18:00` as `2024-03-17 18:00` — the oracle's en-US date spelling in the ISO one,
+/// so that the divergence above can say *this is the same day* rather than merely *these are
+/// two strings*. Anything that is not month/day/year comes back unchanged and so matches
+/// nothing.
+fn iso_for(display: &str) -> String {
+    let (date, rest) = match display.split_once(' ') {
+        Some((date, rest)) => (date, format!(" {rest}")),
+        None => (display, String::new()),
+    };
+    let parts: Vec<&str> = date.split('/').collect();
+    let [month, day, year] = parts[..] else {
+        return display.to_owned();
+    };
+    match (
+        month.parse::<u32>(),
+        day.parse::<u32>(),
+        year.parse::<i32>(),
+    ) {
+        (Ok(m), Ok(d), Ok(y)) => format!("{y:04}-{m:02}-{d:02}{rest}"),
+        _ => display.to_owned(),
+    }
 }
 
 // ---- the oracle ----
