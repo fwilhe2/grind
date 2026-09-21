@@ -3422,6 +3422,14 @@ mod imp {
                 }
                 Err(_) => address,
             };
+            // GTK's fallback accessibility context — the one it uses when there is no AT-SPI
+            // bus, as in a container, a VM or a minimal session — has no `announce` hook, and
+            // `gtk_accessible_announce` calls it anyway: a jump to address zero on every move
+            // (measured on GTK 4.18 under Xvfb, with and without a session bus). With nothing
+            // listening there is nobody to announce to, so skipping it loses nothing.
+            if self.obj().at_context().type_().name() == "GtkTestATContext" {
+                return;
+            }
             self.obj()
                 .announce(&message, gtk::AccessibleAnnouncementPriority::Medium);
         }
