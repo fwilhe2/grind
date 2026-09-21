@@ -1313,18 +1313,14 @@ impl Context<Builder> for Cell {
             });
         }
 
-        // TODO: a *styled* empty cell is dropped here, so `grind sheet style book.fods A5
-        // --bold` on a cell with nothing in it survives the save — `odf::write::carries` spells
-        // it out now — and is lost on the next read. Already checked: the write side is right,
-        // and the model holds it happily. What that check did *not* cover is the cost of
-        // recording it, and measuring settled the question: keeping a style for every empty cell
-        // whose element covers at most `MAX_TRACK_RUN` columns took `corpus_eval` from 77
-        // seconds to over twelve minutes and 15% of the machine's memory, because a corpus
-        // document's background formatting is millions of styled blanks.
+        // An empty cell is kept only when it carries a style **of its own** — `grind sheet
+        // style book.fods A5 --bold` on a blank, a bordered empty cell in a table — and only
+        // under two bounds, the column repeat and the row repeat, each `MAX_TRACK_RUN`.
         //
-        // **Where those blanks come from has since been measured, and it is not where the cost
-        // was assumed to be.** Instrumenting this branch over the 888 spreadsheets in
-        // `sc/qa/unit/data`, splitting a styled blank by *which* style reaches it:
+        // This used to drop every styled blank, and the reason was measured rather than
+        // assumed. Keeping a style for *every* empty cell took `corpus_eval` from 77 seconds to
+        // over twelve minutes, and instrumenting this branch over the 888 spreadsheets in
+        // `sc/qa/unit/data` found where the cost was, split by which style reached the blank:
         //
         // | reached by | elements | addresses |
         // |---|---|---|
@@ -1332,31 +1328,29 @@ impl Context<Builder> for Cell {
         // | a **row** default | 0 | 0 |
         // | a **column** default | 103,324 | **125,887,678,033** |
         //
-        // So the explosion is entirely the column default — one `<table:table-cell>` inheriting
-        // a column style and repeating across a whole sheet, 17.2 billion addresses in
-        // `ods/value-in-column-2000.ods` alone — and the row default does not exist in practice
-        // at all. Materialising a column's formatting per cell is what cost twelve minutes; it
-        // is also exactly what a `col_styles` side table (`style:default-cell-style-name`, the
-        // way `col_widths` is one) would *stop* doing, which promotes that suspect over
-        // interning. Interning makes each of 125.9 billion entries smaller; the side table means
-        // there are none.
-        //
-        // And a cell's **own** style on an empty cell — the thing the bug is actually about — is
-        // cheap once it is separated out. Under a bound of `row_repeat == 1` it is 309,094
-        // addresses across the whole corpus, worst single document 76,085; at `row_repeat <=
-        // 1024` it is 1,113,459 and 86,685. Either is nothing. **The remaining work is
-        // therefore: a `col_styles` side table so a column default is never expanded, plus this
-        // branch keeping a cell's own style under a `row_repeat` bound.** Note that a new side
-        // table on `Sheet` owes the projection a spelling — `sheet/tests/projection_scope.rs`
-        // fails until `doc/projection-sheet.md` has its node — and that the twelve-minute figure
-        // must be re-measured after, because it was taken with the column defaults expanded and
-        // no longer describes the proposed fix.
-        if value.is_empty() && formula.is_none() {
+        // The explosion is entirely the column default — one element inheriting a column's
+        // style and repeating across a sheet, 17.2 billion addresses in
+        // `ods/value-in-column-2000.ods` alone — and a cell's own style is cheap once separated
+        // out: 1,113,459 addresses across the whole corpus under these bounds, 86,685 in the
+        // worst document. So a column default on a blank is **still dropped**: carrying it
+        // needs a per-column side table (`style:default-cell-style-name`, the way `col_widths`
+        // is one) rather than a style per address, and that table owes the writer and the
+        // projection a spelling of their own. Re-measured with this change: loop A 2.9 → 3.7
+        // seconds, and loop B's evaluation unchanged once an open reference stopped counting
+        // styled blanks as part of the sheet (`Sheet::cell_extent`, `doc/ods-format.md` §5.1).
+        let own_style =
+            self.style.is_some() && self.repeat <= MAX_TRACK_RUN && b.row_repeat <= MAX_TRACK_RUN;
+        if value.is_empty() && formula.is_none() && !own_style {
             return; // Nothing to write; the columns were claimed at start.
         }
+
         // §5.1's indirection, resolved once per cell rather than once per repeat.
         let format = b.resolve_format(self.style.as_deref(), self.start);
         let style = b.resolve_style(self.style.as_deref(), self.start);
+        // A blank whose own style says nothing — LibreOffice's plain `Default` — is no cell.
+        if value.is_empty() && formula.is_none() && style.is_none() && format.is_none() {
+            return;
+        }
         for i in 0..self.repeat {
             let col = self.start.saturating_add(i);
             if col >= MAX_COLS {

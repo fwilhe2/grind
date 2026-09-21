@@ -433,7 +433,7 @@ mod tests {
 
     #[test]
     fn a_whole_column_reference_stops_at_what_the_sheet_uses() {
-        // The evaluator bounds the open axis by `used_rows`, so the index does too — this is
+        // The evaluator bounds the open axis by `cell_extent`, so the index does too — this is
         // the reason it resolves through `Engine::area` rather than reading the text.
         let d = doc(
             &[(

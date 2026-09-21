@@ -297,6 +297,20 @@ display format — this is the link between "how it looks" and "how the number r
 `style:master-page-name` (on a `table` style: page-setup/printing; omit for on-screen-only
 documents).
 
+**A styled empty cell, and what it costs to keep one** — measured 2026-09-21 over
+`sc/qa/unit/data`. An empty `table:table-cell` carrying its **own** `table:style-name` is a
+real statement (a bordered blank inside a table, a bold header cell not yet typed into) and
+the reader keeps it, under a column repeat and a row repeat each of at most `MAX_TRACK_RUN`:
+about 1.1 million addresses over the whole corpus, 86,685 in the worst document. An empty cell
+reached only by a column's `table:default-cell-style-name` is **not** kept — that is where the
+125.9 billion addresses are, one element repeating a column style across a sheet — and carrying
+it needs a per-column side table rather than a style per address. With the change, loop A
+reads the corpus in 3.7 s against 2.9 s before. Loop B's evaluation first went from 18 s to
+29 s, because an open reference (`A:A`) was bounded by the extent the *writer* uses, which
+counts styles, so a bordered blank far below the data stretched every `A:A`. Evaluation now
+bounds it by values and formulas alone (`Sheet::cell_extent`), which is the premise the bound
+always had, and it is back at 16–18 s with the scoreboard unchanged.
+
 Common `style:table-cell-properties` attributes actually present in the schema:
 `style:vertical-align` (`top|middle|bottom|automatic`), `fo:wrap-option` (`wrap|no-wrap`),
 `fo:background-color`, `fo:border` / `fo:border-{left,right,top,bottom}` (shorthand:

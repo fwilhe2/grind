@@ -524,9 +524,9 @@ Loop A′ also prints X3's own scoreboard: **42,970 of 123,424 cells come out fo
 fourteen in the whole corpus lose their format** (eleven fractions, two scientific codes, one
 elapsed time) — every other loss being a cosmetic piece the format was carried without. And
 X4's: **32,428 cells come out styled**, and the losses are named `Appearance` classes rather
-than approximations — 19,813 styled *empty* cells first (a border or a fill on a blank, which
-the ODF reader drops — its `TODO:`), then 2,394 font families, 249 indents, 90 underlines and
-so on down.
+than approximations — 2,394 font families, 249 indents, 90 underlines and so on down. The
+19,813 bordered and filled *blanks* that used to head that list are carried now (52,241 styled
+cells in all), since the ODF reader keeps an empty cell's own style.
 
 Current scoreboard (see each test's own comments for what each column means and why):
 loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
@@ -674,8 +674,11 @@ before it can be answered.
   cell style all count. `odf::write` emits exactly that rectangle (`carries` is the same five
   questions on the way out), so a narrower answer is silent data loss — regenerating
   `kb/fizzbuzz.fods`, eighteen formulas with no cached values, used to write a sheet with no rows
-  in it. A `TODO:` in `odf/read.rs` holds the remaining half: a *styled empty* cell is still
-  dropped on read, and the measurement that says why is with it.
+  in it. The reader half is closed too: an empty cell's **own** style is kept on read, under
+  the row and column bounds `odf/read.rs` measured, and only a *column default* on a blank is
+  still dropped — that is where the 125.9 billion addresses were, and carrying it needs a
+  per-column side table. `Sheet::cell_extent` is the narrower extent, values and formulas only,
+  that bounds an open reference (`A:A`) in evaluation: a styled blank is still empty.
 - **`sheet/src/grid.rs`** — the column store: a run-length sequence of typed blocks
   (LibreOffice's `mdds` shape). Invariants restored by `normalize()`, asserted by `check()`.
 - **`sheet/src/numfmt/`** — number formats (§5.2). Display only, never touches the value. No

@@ -1009,3 +1009,34 @@ fn a_style_reads_back_and_rides_in_the_viewport() {
     assert_eq!(app.get_viewport(0, 0..1, 0..1).unwrap().style(0, 0), None);
     assert!(app.style_at(9, p(0, 0)).is_err() && app.format_at(9, p(0, 0)).is_err());
 }
+
+/// A style on a cell with nothing in it survives a save **and the next read** — both forms.
+/// The write half always worked; the reader used to drop every styled blank, so a bordered empty
+/// cell or `grind sheet style book.fods A5 --bold` on a blank was gone after one reopen. The
+/// reader now keeps a blank's *own* style (`odf/read.rs`, where the bound and its measurement
+/// are), and still drops a column default on a blank, which is where the cost would be.
+#[test]
+fn a_styled_empty_cell_survives_a_save_and_a_read() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    let boxed = grind_sheet::style::CellStyle {
+        font_weight: Some("bold".into()),
+        borders: std::array::from_fn(|_| Some("0.74pt solid #000000".into())),
+        ..Default::default()
+    };
+    app.set_style(0, p(4, 0), p(5, 1), Some(boxed.clone()))
+        .unwrap();
+    for form in [grind_sheet::Form::Flat, grind_sheet::Form::Package] {
+        let bytes = app.save_bytes(form).unwrap();
+        let back = App::new();
+        back.open_bytes("book", &bytes).unwrap();
+        for (row, col) in [(4, 0), (4, 1), (5, 0), (5, 1)] {
+            assert_eq!(
+                back.style_at(0, p(row, col)).unwrap().as_ref(),
+                Some(&boxed),
+                "{form:?} r{row}c{col}"
+            );
+        }
+        assert_eq!(back.style_at(0, p(3, 0)).unwrap(), None, "{form:?}");
+    }
+}

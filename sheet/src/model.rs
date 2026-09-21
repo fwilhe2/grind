@@ -477,6 +477,35 @@ impl Sheet {
         (self.cols.len() as u32).max(extra)
     }
 
+    /// One past the last row and column holding a **value or a formula** — the extent that
+    /// matters to evaluation, and the one `Engine::area` bounds an open reference (`A:A`) by.
+    ///
+    /// Narrower than [`Sheet::used_rows`]/[`Sheet::used_cols`] on purpose. Those are what the
+    /// *writer* needs, and count a style, a format or a date kind on an empty cell; an empty
+    /// cell contributes nothing to any Small Group function however it looks, so bounding
+    /// `A:A` by a bordered blank far below the data made every whole-column reference read
+    /// thousands of cells that could not change its answer. Measured when the ODF reader
+    /// started keeping styled blanks: `sc/qa/unit/data`'s `fdo67682-2.ods` has 94,868 of them
+    /// past its data, and its recalculation went from 1.8 to 8.3 seconds until evaluation
+    /// stopped counting them.
+    pub fn cell_extent(&self) -> (u32, u32) {
+        let values = self.cols.iter().map(Column::len).max().unwrap_or(0);
+        let rows = self
+            .formulas
+            .keys()
+            .next_back()
+            .map_or(0, |pos| pos.row + 1)
+            .max(values);
+        let cols = self
+            .formulas
+            .keys()
+            .map(|pos| pos.col + 1)
+            .max()
+            .unwrap_or(0)
+            .max(self.cols.len() as u32);
+        (rows, cols)
+    }
+
     /// Every row holding **anything** — [`Sheet::used_rows`]'s five things — as sorted,
     /// disjoint ranges.
     ///

@@ -597,9 +597,12 @@ Three decisions the table does not show:
   cell style (`odf/read.rs`'s ponytail), so a property equal to what cell format 0 says — a
   size, a colour, an alignment — is written nowhere rather than onto every cell. A workbook in
   11pt Calibri therefore produces cells with no size at all, and a shell draws them in its own.
-- **A look is carried on a cell with a value only.** `odf::read` drops a styled *empty* cell
-  (its `TODO:`), so a bordered blank would be lost on the first save and reopen; it is counted
-  (`Appearance::StyledBlank`) until that half is fixed.
+- **A blank carries a look that shows on one** — a border or a fill, a table's frame — and
+  nothing else: a bold font on an empty cell shows nothing and is not written. Until
+  2026-09-21 even that was counted rather than carried, because `odf::read` dropped a styled
+  empty cell and an imported one would have vanished on the first save and reopen; the reader
+  keeps a blank's own style now (`doc/ods-format.md` §5.1), and the corpus's 19,813 bordered and
+  filled blanks come through.
 
 What the model has no slot for is **`Appearance`**, one class per piece, counted in
 `Report::appearance_lost` the way `Report::formats_lost` counts a number format: per cell for a
@@ -870,13 +873,18 @@ Seven things it found on the way:
    style on every cell to say what the workbook already said. A property equal to cell format
    0's is now written nowhere, which is the rule the default *font* needed anyway — 11pt on a
    million cells is a million styles saying nothing.
-7. **A styled empty cell is the largest loss, and it is the core's.** 19,813 of them across the
+7. **A styled empty cell was the largest loss, and it was the core's** — since fixed there (the
+   note below). At X4: 19,813 of them across the
    corpus, a border or a fill on a blank — a table's frame, mostly. (Counting every styled
    blank said 73,232; a bold font on an empty cell shows nothing, and is not a loss.) The
    model holds them and the ODF writer writes them; the ODF reader drops them (its `TODO:`,
    which has measured why), so an imported one would vanish on the first save and reopen, and
    `ooxmlgen.rs`'s identity check would fail. They are counted until that `TODO:` is closed,
    which is a change to `grind-sheet` rather than here.
+   **Closed the same day**: the ODF reader keeps an empty cell's own style under the bounds its
+   measurement set, evaluation stopped counting styled blanks as part of an open reference's
+   extent (`Sheet::cell_extent`), and the import carries all 19,813 — loop A′'s identity
+   check holds over the corpus with every one of them written and read back.
 
 ### What X5 found
 

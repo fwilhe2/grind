@@ -348,8 +348,8 @@ impl<'a> Engine<'a> {
         // sheet actually uses. Cells past that are empty, and an empty cell contributes
         // nothing to any Small Group function — so this is the same answer as iterating to
         // the evaluator's limit, minus a million reads.
-        let used = self.doc.sheet(sheet)?;
-        let (used_rows, used_cols) = (used.used_rows(), used.used_cols());
+        // Values and formulas only (`Sheet::cell_extent`): a styled blank is still empty.
+        let (used_rows, used_cols) = self.doc.sheet(sheet)?.cell_extent();
         let axis = |a: Option<u32>, b: Option<u32>, used: u32| match (a, b) {
             (Some(a), Some(b)) => a.min(b)..a.max(b) + 1,
             _ => 0..used,

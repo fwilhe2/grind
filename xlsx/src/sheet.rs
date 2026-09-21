@@ -761,12 +761,21 @@ fn store(
         _ => CellValue::Empty,
     };
     if value.is_empty() {
-        if context
+        // A blank with a look that shows on one — a border, a fill — is a table's frame, and is
+        // carried; a bold font on an empty cell shows nothing and is not written. Only what
+        // would have shown is counted as lost: an underline on nothing loses nothing.
+        if let Some(look) = context
             .styles
             .look(raw.s)
-            .is_some_and(|look| look.shows_when_empty())
+            .filter(|look| look.shows_when_empty())
         {
-            report.lose(Appearance::StyledBlank);
+            if let Some(style) = &look.style {
+                report.styled += 1;
+                sheet.set_style(at, style.clone());
+            }
+            for lost in look.lost.iter().filter(|lost| lost.shows_when_empty()) {
+                report.lose(*lost);
+            }
         }
         return;
     }
@@ -1290,7 +1299,7 @@ mod tests {
     }
 
     /// A row's `s` reaches the cells in it that name none, under `customFormat` only; a cell's
-    /// own `s` wins; and a styled cell with no value is counted rather than carried.
+    /// own `s` wins; and a bordered cell with no value is carried, border and all.
     #[test]
     fn a_rows_style_reaches_its_unstyled_cells() {
         let xml = format!(
@@ -1312,9 +1321,12 @@ mod tests {
         assert_eq!(weight("A1"), Some("bold".into()), "the row's");
         assert_eq!(weight("B1"), None, "its own, which is italic");
         assert_eq!(weight("A2"), None, "no customFormat, no row style");
-        assert_eq!(sheet.style(at("C1")), None);
-        assert_eq!(report.appearance_lost[&Appearance::StyledBlank], 1);
-        assert_eq!(report.styled, 2);
+        // A bordered blank is carried: the ODF reader keeps a blank's own style now.
+        assert_eq!(
+            sheet.style(at("C1")).and_then(|s| s.borders[0].clone()),
+            Some("0.74pt solid #000000".into())
+        );
+        assert_eq!(report.styled, 3);
     }
 
     #[test]

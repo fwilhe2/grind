@@ -96,12 +96,6 @@ pub enum Appearance {
     Rotation,
     /// An `indexed` colour past the workbook's palette.
     UnknownColour,
-    /// A cell with no value and a look that shows on one — a border or a fill, which is nearly
-    /// always a table's frame; a bold font on an empty cell shows nothing and is not counted. The model could hold it and
-    /// `odf::write` writes it, but `odf::read` drops a styled empty cell (its `TODO:`), so an
-    /// imported one would be gone on the first save and reopen; counted rather than carried
-    /// until that half is fixed.
-    StyledBlank,
     /// A row with `ht="0"` or a column with `width="0"`: invisible, and not hidden. ODF's
     /// sizes are positive lengths, so the track is carried **hidden** instead — which unhides
     /// to the default size rather than to nothing. Per track.
@@ -124,6 +118,15 @@ pub enum Appearance {
 }
 
 impl Appearance {
+    /// Whether this piece would show on a cell with nothing in it — a fill or a diagonal does,
+    /// an underline or an indent does not.
+    pub fn shows_when_empty(self) -> bool {
+        matches!(
+            self,
+            Appearance::PatternFill | Appearance::GradientFill | Appearance::Diagonal
+        )
+    }
+
     /// A plain-English name, for a report a person reads.
     pub fn label(self) -> &'static str {
         match self {
@@ -142,7 +145,6 @@ impl Appearance {
             Appearance::Indent => "indent",
             Appearance::Rotation => "text rotation",
             Appearance::UnknownColour => "colour outside the palette",
-            Appearance::StyledBlank => "styled empty cell",
             Appearance::ZeroSize => "zero-size row or column (carried hidden)",
             Appearance::Outline => "row or column outline (per sheet)",
             Appearance::Pane => "frozen or split panes (per sheet)",
@@ -174,13 +176,7 @@ impl Look {
         let carried = self.style.as_ref().is_some_and(|style| {
             style.background.is_some() || style.borders.iter().any(Option::is_some)
         });
-        carried
-            || self.lost.iter().any(|lost| {
-                matches!(
-                    lost,
-                    Appearance::PatternFill | Appearance::GradientFill | Appearance::Diagonal
-                )
-            })
+        carried || self.lost.iter().any(|lost| lost.shows_when_empty())
     }
 }
 
