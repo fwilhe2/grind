@@ -112,6 +112,10 @@ struct Desktop {
     entry: &'static str,
     /// The media types this application claims, both forms of its one document type.
     mime: [&'static str; 2],
+    /// The media types it opens by importing (`doc/xlsx-import.md`, X6): listed so a file
+    /// manager offers it for them, and never made their default — no package here writes a
+    /// `mimeapps.list`.
+    imports: &'static [&'static str],
 }
 
 const DESKTOPS: [Desktop; 2] = [
@@ -124,6 +128,10 @@ const DESKTOPS: [Desktop; 2] = [
             "application/vnd.oasis.opendocument.spreadsheet",
             "application/vnd.oasis.opendocument.spreadsheet-flat-xml",
         ],
+        imports: &[
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel.sheet.macroEnabled.12",
+        ],
     },
     Desktop {
         package: "grind-text-gtk",
@@ -134,6 +142,9 @@ const DESKTOPS: [Desktop; 2] = [
             "application/vnd.oasis.opendocument.text",
             "application/vnd.oasis.opendocument.text-flat-xml",
         ],
+        // A workbook is a spreadsheet: the word processor's window hands one to Sheet rather
+        // than claiming it.
+        imports: &[],
     },
 ];
 
@@ -304,6 +315,24 @@ fn each_gui_shell_declares_itself_to_the_desktop() {
                 app.entry.contains(media),
                 "{id}.desktop does not claim {media}, so double-clicking one of those files \
                  does not open {package} (doc/suite.md, \"Mime types\")"
+            );
+        }
+        for media in app.imports {
+            assert!(
+                app.entry.contains(media),
+                "{id}.desktop does not list {media}, so a file manager does not offer \
+                 {package} for a workbook it can import (doc/xlsx-import.md, X6)"
+            );
+        }
+        let listed = app
+            .entry
+            .lines()
+            .find_map(|line| line.strip_prefix("MimeType="))
+            .expect("a MimeType= line");
+        for media in listed.split(';').filter(|m| !m.is_empty()) {
+            assert!(
+                app.mime.contains(&media) || app.imports.contains(&media),
+                "{id}.desktop lists {media}, which this test does not know it opens"
             );
         }
         // The entry names an icon and an AppStream component; the package has to actually

@@ -641,6 +641,29 @@ The flat-XML types are the ones distributions most often get wrong, and `.fods`/
 forms this project cares about most. `shared-mime-info` already knows all four; the `.desktop`
 `MimeType=` lines just have to name them, and `StartupWMClass` has to match what GTK sets.
 
+**The Excel workbooks Sheet imports** (`doc/xlsx-import.md`, X6) are listed too —
+`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and
+`application/vnd.ms-excel.sheet.macroEnabled.12`, the two GIO reports for `.xlsx` and `.xlsm`
+(measured with `gio info`; `xdg-mime query filetype` falls back to `file` and calls both the
+first) — with `Keywords=Excel;xlsx` and an AppStream `<provides>` block, so a file manager's *Open
+With* and a software centre both say it can. The word processor lists neither: it hands a
+workbook to Sheet. **Listing is the whole of it**: no package here writes a `mimeapps.list`, runs
+`xdg-mime default`, or otherwise names a default, because which program a double-click opens is
+the user's or the distribution's to say.
+
+What that does and does not guarantee is **measured**, with GIO against scratch
+`XDG_DATA_DIRS` holding Sheet's real entry and LibreOffice's: where a `mimeapps.list` names a
+default for `.xlsx` — the user's own after any "always open with", or a distribution's — that
+default keeps the double-click and Sheet appears under *Recommended*. Where **nothing** names one,
+the freedesktop fallback is the first entry in `mimeinfo.cache`, which `update-desktop-database`
+writes in **alphabetical order of desktop-file ID** — so `io.github.fwilhe2.Sheet` is picked over
+`libreoffice-calc`, for `.xlsx` exactly as it already was for `.ods`. There is no desktop-entry
+field that lowers an application's rank for GIO (KDE's `InitialPreference` is per entry, not per
+type, and GIO ignores it), so the only ways to change that would be to write a default after all
+or to stop listing the type. Stock Debian ships no default list for either; distributions that
+ship one (a `gnome-mimeapps.list` or a `mimeapps.list` under `/usr/share/applications`) keep their
+choice.
+
 **Verify the media type strings against the source of truth at implementation time**, exactly as
 `doc/ods-format.md` §10 instructs — grep LibreOffice's
 `filter/source/config/fragments/types/*.xcu` for `MediaType` rather than copying the four lines

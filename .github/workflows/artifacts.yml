@@ -681,6 +681,13 @@ jobs:
           .fods, and nothing is ever written back over the Excel file.
 
           Run grind-win32.exe with a sample's path as its one argument to open it.
+
+          Starting grind-win32.exe once also offers it for .ods, .fods, .odt, .fodt,
+          .grind, .xlsx and .xlsm - in Explorer's "Open with" menu and in Settings >
+          Apps > Default apps. It never changes which program a double-click opens:
+          pick Grind there if you want it. Running from this disc offers the copy on
+          the disc; run a copy from elsewhere and it offers that one instead.
+          grind-win32.exe --unregister withdraws the offer.
           EOF
 
       - name: Install genisoimage

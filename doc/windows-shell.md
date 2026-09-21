@@ -645,11 +645,11 @@ anything depends on it. Every milestone lands green — `cargo test`, clippy cle
 | **W5b** | **The rest of the text pane** | ~~the surrogate pair `WM_CHAR` cannot carry~~ (done, `surrogate.rs`) and ~~`WM_IME_STARTCOMPOSITION` positioning the candidate window at the caret~~ (done; no inline composition string, and untested under a real IME); ~~a real `CreateCaret` caret~~ (done, verified under Wine — `place_system_caret`, hidden and shown around the back buffer's blit, destroyed on `WM_KILLFOCUS`); ~~`App::type_markdown`, so `**bold**` is read as it is typed~~ (done); ~~a drawn format strip over `char_style` / `set_char_style`~~ (done — three buttons under the banner, pressed in when the selection, or with none the style the next character would carry, already agrees; Ctrl+B/I/U and the Format menu reached the same toggle first and still do); ~~block kinds~~ (done — the common three as Ctrl+0/1/2/3 matching `ui_text_gtk`'s own keys, and every kind including levels past 3 and list items as Ctrl+Shift+K's dialog, the suite's first UI for making a list item) and ~~an outline dialog~~ (done, Ctrl+Shift+O over a `LISTBOX`); ~~go-to for `p12` / `#intro` / `§2.1.3`~~ (done, as a modal prompt over F5/Ctrl+G); and ~~a menu that knows which pane it is over~~ (done for pane kind — `menu::applies_to` decides, and `menu::items_for`/`menu_has_items` **omit** every item and every menu the current document type has no answer for rather than showing them greyed, which greying itself did not survive; state *within* a kind, Undo with nothing to undo and the like, is still open) | every feature `examples/sample-text.sh` builds is not only visible but *reachable*: a heading can be made one, a run can be made bold, and `§2.1.3` can be gone to |
 | **W6** | **The three shared panes** — *done* | the code view (D9, read-only, over `Projection`'s four line questions, with the line the selection is on marked); the lint pane (D6, every row a jump); the view-mode overlays (V7, `CellRole::marker` and `NameAnchor`, and `:names`' equivalent for the text pane) | **Met.** Ctrl+Shift+U (Show Source) and F8 (Check Document) open `dialog::choose`'s listbox — this shell's existing dialog-for-a-list idiom, already `text_outline`'s and `text_block_kind_dialog`'s, rather than a fourth embedded text-view widget — pre-selected on the line the pane's own selection or caret projects to and, for the lint list, jumping either pane (and, for the grid, either **sheet**) to the row picked; a new **View** menu's Cell Roles and Names toggles read `App::get_viewport_with`'s overlay, drawn as a leading-edge marker plus a muted outline round a name's range on the grid and as a muted `‹name›` beside each bookmark on the text pane. Nothing here writes: `code.rs`/`problems.rs` are portable and tested, and the two overlays are asked for fresh on every paint exactly as `Viewport::role`/`Viewport::names` already are — a stored classification goes stale and a derived one cannot |
 | **W7** | **Chrome and the accessibility floor** — *done* | the menus final, as data; context menus on cells, headers and text; the accelerator table; About with `grind_core::build_info`; the key list; `WM_SETTINGCHANGE` following the user's theme; `WM_DPICHANGED` rebuilding fonts and taking the suggested rectangle | **Met.** `WM_CONTEXTMENU` answers a right click, Shift+F10 **and** the keyboard's Menu key in one handler — Windows sends all three the same message, with `(-1, -1)` telling the keyboard's two apart from the mouse's real point — and builds its popup from `menu::label_for`, so a context-menu row and a menu-bar row can never say two different things about one `Command`; `TrackPopupMenuEx`'s `TPM_RETURNCMD` hands the picked id straight to the same `do_command` a menu click reaches. The grid's cells and headers share one menu (Cut/Copy/Paste/Delete — this build has no header-only verb to add to it) and the text pane its own plus the three format toggles. The "key list" is `menu::shortcuts()`: every accelerator `MENUS`' own labels already carry, read once rather than kept as a second table, shown in `dialog::choose`'s read-only listbox from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` were already built (W1/W3) and needed nothing further. `accesskit_windows` remains **named and deferred**, and the system caret is the floor |
-| **W8** | **Packaging** — *done* | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down | **Met.** The release artifact and the import-table gate were both built in W0 (`win32.yml`'s `build` job); what W8 added is `ui_win32/build.rs`, which compiles `ui_win32/data/grind.rc` with `embed_resource` and links in the icon (`grind.ico`, generated from `grind.svg` — the two existing app icons' navy-square-and-white-outline language, with a grid corner and a document's lines in one mark, a placeholder until S11's suite mark exists) and a version block (`ProductName` "Grind", `FileDescription`, a copyright year) — attempted only when `CARGO_CFG_TARGET_OS` is `windows`. Whether it then *does* anything from Linux is a property of the machine rather than of this crate, and the original claim here that it is "a no-op everywhere this crate is checked from Linux" is **wrong**: `embed_resource` finds `llvm-windres` when one is installed and compiles the resource happily, which is harmless (`cargo check` does not link) and, with `cargo xwin`, is what makes the whole path verifiable here. `win32.yml` gained a step reading `FileVersionInfo` and extracting the icon back off the linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine where it must not — fails the build rather than shipping unnoticed.
+| **W8** | **Packaging** — *done* | the release artifact off `windows-latest`; the import-table check as a gate; an icon and version resource; the answer to file associations written down (since built — "File associations" below) | **Met.** The release artifact and the import-table gate were both built in W0 (`win32.yml`'s `build` job); what W8 added is `ui_win32/build.rs`, which compiles `ui_win32/data/grind.rc` with `embed_resource` and links in the icon (`grind.ico`, generated from `grind.svg` — the two existing app icons' navy-square-and-white-outline language, with a grid corner and a document's lines in one mark, a placeholder until S11's suite mark exists) and a version block (`ProductName` "Grind", `FileDescription`, a copyright year) — attempted only when `CARGO_CFG_TARGET_OS` is `windows`. Whether it then *does* anything from Linux is a property of the machine rather than of this crate, and the original claim here that it is "a no-op everywhere this crate is checked from Linux" is **wrong**: `embed_resource` finds `llvm-windres` when one is installed and compiles the resource happily, which is harmless (`cargo check` does not link) and, with `cargo xwin`, is what makes the whole path verifiable here. `win32.yml` gained a step reading `FileVersionInfo` and extracting the icon back off the linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine where it must not — fails the build rather than shipping unnoticed.
 
 **The name of the version block is the literal `1`, and that is the whole of W8's one real bug.** `grind.rc` first spelled it `VS_VERSION_INFO`, which is how every example that has `#include <windows.h>` above it spells the same number — `VS_VERSION_INFO` is a `#define` for `1` in `winver.h` and nothing else. This file includes no headers on purpose, so `rc.exe` needs nothing but the two files in `data/`; and an undefined identifier in a resource's *name* position is not an error to `rc.exe`, it is a **string name**. Every stage therefore succeeded — `rc.exe` exited 0, `embed_resource` reported `Ok`, the linker embedded it — and the executable carried `RT_VERSION`/"VS_VERSION_INFO" while `GetFileVersionInfo`, Explorer's Properties dialog and the check above all ask for `RT_VERSION`/1. `FileVersionInfo` returned empty strings for a resource that was demonstrably in the binary, and the icon was untouched because `1 ICON` was already a literal — so the symptom read as "nothing embedded" and pointed at the resource compiler, which was the one part working.
 
-Measured rather than argued, and measurable from Linux: compiling both spellings and parsing the `.res` shows a string name against an ordinal `1`, and doing the same to the `.rsrc` directory of an executable linked by `cargo xwin` shows `RT_VERSION STRING-NAMED` against `RT_VERSION name=1`. `the_version_block_is_named_with_the_literal_one` in `main.rs` is the cheap half of that measurement — it reads `grind.rc` as text, so it runs on every host — and the check in `win32.yml` now scans the binary for the UTF-16 `ProductName`/`Grind` strings when it fails, so a future failure says which of the two things went wrong (never linked, or linked under the wrong name) instead of costing a round trip to find out. The file-associations answer is below, and is deliberately **written down rather than built**: nothing registers a ProgID yet, because doing that is an installer's job and this milestone has none |
+Measured rather than argued, and measurable from Linux: compiling both spellings and parsing the `.res` shows a string name against an ordinal `1`, and doing the same to the `.rsrc` directory of an executable linked by `cargo xwin` shows `RT_VERSION STRING-NAMED` against `RT_VERSION name=1`. `the_version_block_is_named_with_the_literal_one` in `main.rs` is the cheap half of that measurement — it reads `grind.rc` as text, so it runs on every host — and the check in `win32.yml` now scans the binary for the UTF-16 `ProductName`/`Grind` strings when it fails, so a future failure says which of the two things went wrong (never linked, or linked under the wrong name) instead of costing a round trip to find out. The file-associations answer is below. It was first written down rather than built, as an installer's job; with no installer in sight and Excel workbooks to offer, the window now registers itself — per-user, offered and never taken |
 
 | **W9** | **Formula literacy, and the chrome that carries it** — *done* | `sheet/assist.rs` (portable): completion offers, the signature of the call the caret is in, and the band that shows either; `grind_sheet::formula::assist`, which is where the pure half of that came from; the friendly formula bar, the function list and Explain Formula; and a visual pass over every band this window draws | **Met.** Typing `=SU` offers `SUBSTITUTE SUM SUMIF` with the chosen one's summary beside them, Tab takes one, and `=SUM(` shows `Sum(Number…)` with the argument being typed in the accent; the formula bar reads `Sum(Number: B2:B7)` where the document stores `=SUM([.B2:.B7])`; Data ▸ Explain Formula unfolds `=ROUND(PMT(…);2)` into `Round(Value: Payment(Rate: …))`; Data ▸ Function List lists all 110 with their plain-English names and writes the call it is asked for. 197 tests on Linux. `--render-to` still byte-identical across two runs, on **both** panes. One bug found by *running* it — see below |
 
@@ -672,39 +672,61 @@ each side is placed at the x the **core** measured rather than at wherever the p
 which is decision 3's own rule applied one level down, and the reason a tab is a *width* here and
 never a tab stop.
 
-## File associations — the answer, not yet the machinery
+## File associations — offered, never taken
 
-W8 asks for this **written down**, and decision 1 already gives half of it: Windows associates
+W8 asked for this **written down**, and decision 1 already gives half of it: Windows associates
 files by ProgID rather than by MIME type, and one executable registers as many ProgIDs as it
 likes, each with its own icon, description and verb — which is why `grind-win32.exe` is one
-binary for both document types where the two GTK shells are two processes. What decision 1 does
-not say is *which* ProgIDs, and that is the rest of the answer:
+binary for both document types where the two GTK shells are two processes. The rest of the
+answer is which ProgIDs, and — since X6 made this shell open Excel workbooks — **how hard to
+claim them**. `assoc.rs` is both, as data:
 
 | ProgID | Extension | Verb | Icon |
 |---|---|---|---|
-| `Grind.Spreadsheet` | `.fods` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
-| `Grind.SpreadsheetPackage` | `.ods` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
-| `Grind.Document` | `.fodt` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
-| `Grind.DocumentPackage` | `.odt` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
-| `Grind.Projection` | `.grind` | `grind-win32.exe "%1"` | `grind.ico`, index 0 |
+| `Grind.Spreadsheet` | `.fods` | `"…\grind-win32.exe" "%1"` | the executable's, index 0 |
+| `Grind.SpreadsheetPackage` | `.ods` | the same | the same |
+| `Grind.Document` | `.fodt` | the same | the same |
+| `Grind.DocumentPackage` | `.odt` | the same | the same |
+| `Grind.Projection` | `.grind` | the same | the same |
+| `Grind.Workbook` | `.xlsx` | the same — imported as a new, unsaved ODF document | the same |
+| `Grind.MacroWorkbook` | `.xlsm` | the same — the macro counted, never run | the same |
 
-Six extensions and one icon: `doc/flat-first.md`'s rule (the flat form is the default) does not
-reach *which* forms a shell opens — this shell opens all three forms of both document types, the
-same as `Form::from_path` already does when reading — so the flat and the package form of each
-get their own ProgID rather than sharing one, which is what lets a future icon distinguish them
-if S11's suite mark ever wants to. `Form::Projection` is one ProgID for both applications, because
-`.grind`'s own first line is what says which document it is (`doc/dsl.md`, the same sniff
-`read_bytes` already does), not the extension.
+The flat and the package form of each ODF type get their own ProgID rather than sharing one,
+which is what lets a future icon tell them apart; `.grind` is one ProgID for both applications,
+because its own first line says which document it is. The two Excel rows are compiled out with
+the crate's `xlsx` feature — offering a type the binary then refuses is worse than not offering
+it — and `.xls`/`.xlsb` are absent because the filter does not read them.
 
-**Registering them is an installer's job, and this milestone has none.** The registry keys are
-`HKEY_CLASSES_ROOT\.fods` → `Grind.Spreadsheet`, `HKEY_CLASSES_ROOT\Grind.Spreadsheet\shell\open\command`
-→ `"C:\...\grind-win32.exe" "%1"`, one block per row above — five minutes of `reg add` or an MSI's
-`<Extension>` table, whichever W8's eventual installer turns out to be. `SHChangeNotify` after
-writing them is what makes Explorer pick the icon up without a sign-out, and per-user
-(`HKEY_CURRENT_USER\Software\Classes`) rather than machine-wide is the polite default for
-anything that is not also an elevated installer. None of that is code this crate carries: the
-`.exe` opens whatever it is handed regardless of how it got handed it, which is the same
-`args.rs` behaviour a double-click and a command line both already exercise.
+**Offered, never taken.** Per extension, the ProgID is added under `.ext\OpenWithProgids`, which
+puts Grind in Explorer's *Open with* menu and in the "How do you want to open this file?"
+chooser; `Applications\grind-win32.exe\SupportedTypes` says the same from the executable's
+side; and the set is published as `Software\Grind\Capabilities` under
+`RegisteredApplications`, which lists Grind with every type it opens in Settings > Apps > Default
+apps. **The extension's own default value is never written**, and nothing under `UserChoice`
+ever is — a test holds the first for every type. So whatever opens a double-clicked `.xlsx` today
+(Excel, LibreOffice, nothing) still does after Grind has run, and making Grind the handler is the
+user's one click in a dialog Windows owns. Where nothing handles a type at all — a `.fods` or a
+`.grind`, usually — Windows asks on the first double-click and Grind is in the list.
+
+**No installer, so the window registers itself.** Everything is per-user
+(`HKEY_CURRENT_USER\Software\…`: no elevation, nothing another account sees), and every start of
+the window checks each ProgID's command against this executable's own path and writes the offer
+only when one is missing or names another copy (`assoc::needed`) — so an ordinary launch touches
+no key, and an `.exe` run from the test disc, copied out of a download or moved is re-offered
+from where it now is rather than leaving a double-click that fails. `SHChangeNotify` follows
+each write so Explorer's menus catch up without a sign-out. `--render-to` never registers: a
+frame is a CI step, not a person. `--register` does it and exits, for a script;
+`--unregister` removes exactly what `--register` writes — whole keys where the key is ours, one
+value where it is shared (`.xlsx\OpenWithProgids` belongs to everybody who opens one) — which a
+second test holds in both directions.
+
+**Measured under Wine**, with the caveat that matters: every value lands where the table says,
+a pre-existing `.xlsx` default (`Excel.Sheet.12`) survives registration and `--unregister`, a
+hand-deleted ProgID is repaired on the next start, and the registered command line opens a
+workbook whose path has a space in it straight into the import. That last step needed the same
+keys copied into `HKEY_CLASSES_ROOT` by hand, because **Wine does not merge
+`HKCU\Software\Classes` into `HKCR`** the way Windows does — a Wine limitation, not this shell's,
+and the reason the per-user half is only provable on a real Windows.
 
 **An Excel workbook opens** (`doc/xlsx-import.md`, X6) from File ▸ Open — an *Excel Workbook* filter beside the ODF one — or the command line: the caption is `*budget.fods`, the notice bar carries the report, and Save opens Save As in the workbook's folder — sniffed from the bytes,
 imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
@@ -797,7 +819,7 @@ decision 4.
 
 W3 adds three of its own, each smaller than it sounds. There is no **recent-files list**, where
 `ui_sheet_gtk` has `gtk::RecentManager`: Windows' equivalent is `SHAddToRecentDocs` plus a
-registered ProgID, so it belongs with W8's file associations rather than in front of them. There
+registered ProgID — which now exists ("File associations"), so this is the next thing that can be built on it. There
 is no **greying of unavailable verbs** — Undo is enabled with nothing to undo, and pressing it
 does nothing rather than something wrong — because `MF_GRAYED` means tracking menu state on
 every change, and W7 is where the menus are finished. And the **sheet is chosen from a menu

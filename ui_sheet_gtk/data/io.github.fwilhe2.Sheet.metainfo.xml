@@ -21,7 +21,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       the OASIS ODF specification rather than through a translation layer. It is not a port
       of LibreOffice and shares no code with it.
     </p>
+    <p>
+      It also opens Excel workbooks (.xlsx, .xlsm) by importing them: a workbook comes up as a
+      new, unsaved ODF spreadsheet, with a sentence saying what — if anything — had nowhere to
+      go. It never writes an Excel file, and it never makes itself the default for one.
+    </p>
   </description>
+  <provides>
+    <mediatype>application/vnd.oasis.opendocument.spreadsheet</mediatype>
+    <mediatype>application/vnd.oasis.opendocument.spreadsheet-flat-xml</mediatype>
+    <mediatype>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</mediatype>
+    <mediatype>application/vnd.ms-excel.sheet.macroEnabled.12</mediatype>
+  </provides>
   <launchable type="desktop-id">io.github.fwilhe2.Sheet.desktop</launchable>
   <url type="homepage">https://github.com/fwilhe2/sheet</url>
   <url type="vcs-browser">https://github.com/fwilhe2/sheet</url>

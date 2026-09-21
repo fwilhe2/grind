@@ -237,8 +237,9 @@ What it does **not** have is written down rather than left to be discovered: no 
 row auto-height, no point mode, no filter or find/replace UI, no recent-files list, no greying of
 verbs that are unavailable right now, message boxes in the system's light colours under a dark
 theme, and no text shaping — GDI measures and draws, which keeps the caret and the ink in one
-engine at the cost of ligatures and the complex scripts. No installer, and therefore no registered
-file associations. `doc/windows-shell.md`'s "What it will not do" is the full list.
+engine at the cost of ligatures and the complex scripts. No installer: the window offers itself in
+*Open with* for ODF and Excel files the first time it runs, per user, and never changes which
+program a double-click opens. `doc/windows-shell.md`'s "What it will not do" is the full list.
 
 Everything here is developed on Linux, which is unusual and deliberate: the portable half — the
 geometry, the key tables, the selection and editing models, the menus, the status bar and every

@@ -40,6 +40,8 @@
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod args;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod assoc;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod code;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod import;
@@ -181,6 +183,26 @@ fn main() -> std::process::ExitCode {
             say(&version(), false);
             ExitCode::SUCCESS
         }
+        Command::Register => match assoc::register_self() {
+            Ok(()) => {
+                say(&assoc::registered_message(), false);
+                ExitCode::SUCCESS
+            }
+            Err(message) => {
+                say(&message, true);
+                ExitCode::FAILURE
+            }
+        },
+        Command::Unregister => match assoc::unregister_self() {
+            Ok(()) => {
+                say(assoc::UNREGISTERED_MESSAGE, false);
+                ExitCode::SUCCESS
+            }
+            Err(message) => {
+                say(&message, true);
+                ExitCode::FAILURE
+            }
+        },
         Command::Error(message) => {
             say(&format!("{message}\n\n{}", args::USAGE), true);
             ExitCode::from(2)
@@ -203,13 +225,20 @@ fn main() -> std::process::ExitCode {
                     }
                 }
             }
-            Ok((kind, path, None)) => match win::run(kind, path) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(message) => {
-                    say(&message, true);
-                    ExitCode::FAILURE
+            // A window, so somebody is in front of it: offer this executable for the types it
+            // opens, when that is not already true of this copy (`assoc.rs` — offered in
+            // "Open with", never made the default). A render is left alone: it is a CI step,
+            // and a frame is not a reason to touch the registry.
+            Ok((kind, path, None)) => {
+                assoc::offer();
+                match win::run(kind, path) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(message) => {
+                        say(&message, true);
+                        ExitCode::FAILURE
+                    }
                 }
-            },
+            }
         },
     }
 }
@@ -273,6 +302,10 @@ fn main() -> std::process::ExitCode {
         Command::Version => {
             println!("{}", version());
             ExitCode::SUCCESS
+        }
+        Command::Register | Command::Unregister => {
+            eprintln!("grind-win32: file associations are a Windows registry matter");
+            ExitCode::FAILURE
         }
         Command::Error(message) => {
             eprintln!("grind-win32: {message}\n\n{}", args::USAGE);

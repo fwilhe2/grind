@@ -48,12 +48,19 @@ pub enum Command {
     },
     Help,
     Version,
+    /// `--register`: offer this executable for every type it opens, and exit. The window does
+    /// the same on start (`crate::assoc`), so this is for a script that wants it done without
+    /// one.
+    Register,
+    /// `--unregister`: withdraw every offer `--register` makes, and exit.
+    Unregister,
     /// Something was wrong with the arguments. The string is the whole message.
     Error(String),
 }
 
 /// What `--help` prints, and what the message box shows when there is no console.
 pub const USAGE: &str = "usage: grind-win32 [--sheet|--text] [file] [--render-to <bmp> [--dark]]
+       grind-win32 --register | --unregister
 
 One window, both document types. Which one opens is read out of the file, not guessed
 from its name; with no file and no flag the window shows the welcome screen, where a
@@ -63,6 +70,10 @@ spreadsheet, a text document or an existing file can be chosen.
   --text           start an empty text document, skipping the welcome screen
   --render-to <f>  draw one frame to a BMP and exit
   --dark           draw that frame in the dark palette
+  --register       offer Grind in \"Open with\" for ODF and Excel files, and exit;
+                   the window does this itself when it starts, and never changes
+                   which program a double-click opens
+  --unregister     withdraw that offer, and exit
   -h, --help       this text
   -V, --version    version and build stamp
 ";
@@ -79,6 +90,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         match arg.as_str() {
             "-h" | "--help" => return Command::Help,
             "-V" | "--version" => return Command::Version,
+            "--register" => return Command::Register,
+            "--unregister" => return Command::Unregister,
             "--sheet" => kind = Some(DocumentKind::Spreadsheet),
             "--text" => kind = Some(DocumentKind::Text),
             "--render-to" => match args.next() {
@@ -182,6 +195,12 @@ mod tests {
             parse_str(&["book.fods", "--dark"]),
             Command::Error(message) if message.contains("--render-to")
         ));
+    }
+
+    #[test]
+    fn registering_is_a_command_of_its_own() {
+        assert_eq!(parse_str(&["--register"]), Command::Register);
+        assert_eq!(parse_str(&["--unregister"]), Command::Unregister);
     }
 
     /// `None` for both, and neither is a default waiting to be filled in: no path is the start

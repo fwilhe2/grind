@@ -372,10 +372,13 @@ resource compiler there and says so without failing the build, which is exactly 
 that keeps `cargo check -p grind-win32 --target x86_64-pc-windows-msvc` examinable with no
 Windows at all. `win32.yml` gained a step reading `FileVersionInfo` and the icon back off the
 linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine
-where that would be a real bug rather than an expected gap — fails the build. The file
-associations question is answered in `doc/windows-shell.md` (six ProgIDs, one per form of each
-document type, all pointing at `grind-win32.exe "%1"`) rather than built: registering them is an
-installer's job, and this milestone still has none. What is unusual about the whole thing is
+where that would be a real bug rather than an expected gap — fails the build. File
+associations were answered in `doc/windows-shell.md` and are **now built** (`assoc.rs`), with no
+installer: seven ProgIDs — the three ODF forms of each type plus `.xlsx`/`.xlsm` — written
+per-user by the window on start whenever one is missing or names another copy of the `.exe`,
+and **offered, never taken**: `OpenWithProgids` and a `RegisteredApplications` capability, never
+an extension's own default value or `UserChoice`, so Excel or LibreOffice keeps a double-click
+until the user picks Grind. `--register`/`--unregister` do it and exit. What is unusual about the whole thing is
 that it is examinable from Linux, because `cargo check` does not link:
 
 ```sh
