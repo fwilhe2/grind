@@ -871,7 +871,10 @@ of the four release builds this workspace used to do per push. A shell that is n
 invisible in exactly the way a feature with no line in `examples/sample-*.sh` is: adding one
 means adding its two manifest blocks, its `data/` (`.desktop`, metainfo, icon under its own app
 ID) and its two lines in that workflow — held to it by `cli/tests/packaging.rs`, which reads the
-workflow. The **meta-package** is what S11 still owes.
+workflow. The **meta-package** is `suite/` (crate and package `grind`): a stub crate with no
+code, because both packagers build *from* a crate, whose `.deb` and `.rpm` install a README and
+depend on the four at exactly their own version — `cli/tests/packaging.rs` fails the day a fifth
+packaged binary is missing from it.
 
 `ui_web/` is the wasm shell — rule 5's honest test, and it needed no core change: a document
 arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download
@@ -1084,6 +1087,11 @@ is a free function precisely so it is testable with no Pango context or display,
 code (`scale_of`) rather than each retyping "ODF points over the default", so a cell can no
 longer be drawn at one size and measured at another.
 
-Then S11 — packaging the suite. Its per-app half is done (`grind-text-gtk` has its `.desktop`
-file, metainfo, icon and packages beside the spreadsheet's); what remains is the meta-package
-that depends on the four, the container, and the README as a suite pitch.
+**S11 — packaging the suite — is done.** The per-app half was already (both GTK apps' `.desktop`
+files, metainfo, icons and packages, and the `grind` CLI container); the meta-package closed it.
+Its exit criterion was checked on packages rather than on paper: all five `.deb`s built in
+release, installed with `apt install ./grind_*.deb …` so apt resolved the four through the
+meta-package, and `gio open note.fodt` — what a file manager's double-click calls — started the
+installed `grind-text-gtk` on the document, with GIO resolving all four media types to the
+right window both on a machine with LibreOffice installed and on a data directory holding only
+grind's entries. R10's matrix, which S11 called `doc/shell-matrix.md`, is `doc/feature-matrix.md`.

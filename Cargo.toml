@@ -15,6 +15,7 @@ members = [
     "ui_tui",
     "ui_web",
     "ui_win32",
+    "suite",
 ]
 # What bare `cargo build` / `cargo test` walk: everything that needs no system package.
 # Without this, the default commands try to compile the GTK shells and fail on a machine with

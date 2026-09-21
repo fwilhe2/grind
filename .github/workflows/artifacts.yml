@@ -187,6 +187,9 @@ jobs:
           cargo deb -p grind-sheet-gtk --no-build
           cargo deb -p grind-text-gtk --no-build
           cargo deb -p grind-tui --no-build
+          # The suite's meta-package (`suite/`, S11): installs nothing, depends on the four.
+          # `--no-build` as ever — it has no binary, and its library target is never built.
+          cargo deb -p grind --no-build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deb-packages
@@ -199,6 +202,9 @@ jobs:
           cargo generate-rpm -p ui_sheet_gtk
           cargo generate-rpm -p ui_text_gtk
           cargo generate-rpm -p ui_tui
+          # `noarch`: it holds no machine code. `cargo deb` has no equivalent switch, so the
+          # .deb says amd64 — `suite/Cargo.toml` has the note.
+          cargo generate-rpm -p suite -a noarch
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rpm-packages

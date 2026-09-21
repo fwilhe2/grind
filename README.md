@@ -89,9 +89,18 @@ instead of becoming 7, `NaN` stays somebody's name, and a leading `=` stays text
 for a formula. Dates are ISO only and behind a flag, because `15/03/2026` and `03/15/2026` are
 the same characters meaning two different days.
 
+**Excel workbooks open**, because that is where other people's documents come from. Open one
+in any of the windows — or `grind sheet import book.xlsx book.fods` — and it arrives as a new
+OpenDocument file: values, formulas translated into OpenFormula, number formats, fonts, fills,
+borders, column widths, defined names and filters. Nothing is recalculated on the way in; the
+numbers are the ones Excel saved. What has no home here — a chart, a pivot table, a pattern
+fill, a comment — is **counted and named, never approximated**, and every window says so in one
+sentence; `--strict` fails a conversion that lost anything. It is one way in: a workbook comes up
+as a new, unsaved document, so nothing can write back over the `.xlsx`, and *writing* Excel
+never will be a feature.
+
 Not there yet: sort (it needs a locale-collation decision first), find/replace, freeze panes,
-printing. Reading `.xlsx` is planned; *writing* it never is. Fonts are a named gap — nothing
-here picks a typeface for you yet.
+printing. Fonts are a named gap — nothing here picks a typeface for you yet.
 
 ## What the word processor can do
 
@@ -401,6 +410,10 @@ homework:
 - Whatever this writes, **LibreOffice reads back unchanged — and the reverse.**
 - Formulas generated from the function catalogue are **evaluated by both** and compared, against a
   LibreOffice pinned by digest so the result means something.
+- Every Excel workbook in that corpus **imports**, and survives being written and read back
+  unchanged; 76 workbooks written by the Open XML SDK carry a manifest of what each should
+  become, cell by cell; and the import is compared with **LibreOffice's own conversion** of the
+  same files — values, what each cell displays, its style, every column width.
 
 Plus a set of documents that must always load, a set LibreOffice Writer wrote — in both forms of
 the same file, so the zipped reader and the flat reader are held to one answer — and a check that
@@ -442,7 +455,15 @@ cargo test  -p grind-win32                                   # its portable half
 ```
 
 `.deb` and `.rpm` packages for all four Linux binaries are built on every push and kept as workflow
-artifacts, as is a `grind-win32.exe` built and tested on Windows itself.
+artifacts, together with **`grind`, the suite's meta-package**, which installs nothing itself and
+depends on the four — so installing the downloaded packages is one line, and `.fods`, `.ods`,
+`.fodt` and `.odt` then open in the right window on a double-click:
+
+```sh
+sudo apt install ./grind_*.deb ./grind-*.deb
+```
+
+A `grind-win32.exe`, built and tested on Windows itself, is kept beside them.
 
 ### Containers
 

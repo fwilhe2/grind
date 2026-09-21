@@ -68,9 +68,17 @@ const PACKAGED: [Packaged; 4] = [
     },
 ];
 
+/// The suite's meta-package (`suite/`, S11): a package of its own, depending on every packaged
+/// binary's package and shipping none.
+const META: &str = include_str!("../../suite/Cargo.toml");
+
 /// The members that ship no binary, each with the reason. A crate here is *not* a package that
 /// was forgotten.
-const UNPACKAGED: [(&str, &str); 7] = [
+const UNPACKAGED: [(&str, &str); 8] = [
+    (
+        "suite",
+        "the meta-package: no binary, and its own test below holds it to the other four",
+    ),
     ("core", "a library"),
     ("sheet", "a library"),
     ("text", "a library"),
@@ -201,6 +209,41 @@ fn every_binary_is_built_by_the_packaging_workflow() {
             "artifacts.yml's linux job does not build {package} in release, so neither \
              `cargo deb --no-build` nor `cargo generate-rpm -p {dir}` would find a binary. \
              That one line is what both packagers read, which is why it exists at all"
+        );
+    }
+}
+
+/// `apt install grind` installs the suite: the meta-package is built in both formats by the
+/// workflow, and depends on **every** packaged binary's package, at exactly its own version —
+/// a fifth application added to [`PACKAGED`] and forgotten here would install everything but it.
+#[test]
+fn the_meta_package_installs_every_application() {
+    assert!(
+        WORKFLOW.contains("cargo deb -p grind --no-build"),
+        "artifacts.yml does not build the meta-package's .deb"
+    );
+    assert!(
+        WORKFLOW.contains("cargo generate-rpm -p suite"),
+        "artifacts.yml does not build the meta-package's .rpm"
+    );
+    let depends = META
+        .lines()
+        .find(|line| line.starts_with("depends = "))
+        .expect("the .deb's depends line");
+    let requires = META
+        .split_once("[package.metadata.generate-rpm.requires]")
+        .expect("the .rpm's requires block")
+        .1;
+    for crate_ in PACKAGED {
+        assert!(
+            depends.contains(&format!("{} (= ", crate_.package)),
+            "the meta-package's .deb does not depend on {} at its version",
+            crate_.package
+        );
+        assert!(
+            requires.contains(&format!("{} = \"= ", crate_.package)),
+            "the meta-package's .rpm does not require {} at its version",
+            crate_.package
         );
     }
 }

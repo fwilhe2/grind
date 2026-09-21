@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The suite's meta-package (`doc/suite.md`, "Packaging", S11): `apt install grind` installs
+# every application. A crate only because both packagers build *from* one — `cargo deb` and
+# `cargo generate-rpm` have no other input — so this is the stub crate that document
+# recommends over a hand-written control stanza in a workflow: one mechanism for all five
+# packages, checked by the same test (`cli/tests/packaging.rs`).
+#
+# It contains no code and ships no binary; `src/lib.rs` exists because a crate must have a
+# target, and says so.
+[package]
+name = "grind"
+version = "0.0.0"
+description = "An ODF-native office suite — the spreadsheet, the word processor, the terminal shell and the CLI"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Read by `cargo deb` (artifacts.yml). The dependencies are the four real packages, **exactly
+# at this version**: every package here is built from one commit by one job, and a suite whose
+# parts come from different commits is the thing a meta-package exists to prevent. The only
+# asset is its own note, because a package that installs nothing at all is one `dpkg -L` cannot
+# explain.
+[package.metadata.deb]
+name = "grind"
+maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+section = "metapackages"
+# ponytail: `Architecture: amd64` rather than the `all` a meta-package would normally carry,
+# because `cargo deb` takes the architecture from the build target and has no key to override
+# it. Harmless in practice — the four it depends on are `amd64` too, from the same job — and
+# the fix is an arm64 leg in `artifacts.yml`, which would produce its own.
+extended-description = """\
+Installs the four applications of grind, an office suite whose native format is \
+OpenDocument: the grind command line, the grind-tui terminal shell, and the spreadsheet \
+and word processor windows. This package contains nothing itself."""
+depends = "grind-cli (= 0.0.0-1), grind-tui (= 0.0.0-1), grind-sheet-gtk (= 0.0.0-1), grind-text-gtk (= 0.0.0-1)"
+assets = [["README.md", "usr/share/doc/grind/README.md", "644"]]
+
+# Read by `cargo generate-rpm` (artifacts.yml). No `$auto` exists there, so the `requires`
+# block is the whole of this package, spelled out.
+[package.metadata.generate-rpm]
+name = "grind"
+assets = [{ source = "README.md", dest = "/usr/share/doc/grind/README.md", mode = "644", doc = true }]
+[package.metadata.generate-rpm.requires]
+grind-cli = "= 0.0.0"
+grind-tui = "= 0.0.0"
+grind-sheet-gtk = "= 0.0.0"
+grind-text-gtk = "= 0.0.0"
