@@ -72,6 +72,12 @@ pub enum Refusal {
     Union,
     /// Nothing this grammar recognises.
     Syntax,
+    /// A name that is sheet-local where the formula stands (`<definedName localSheetId>`). The
+    /// model's names are document-wide, so the name is dropped (`Dropped::SheetLocalName`) —
+    /// and a formula still naming it would name nothing, or worse, a global name of the same
+    /// spelling that means something else. Like [`Refusal::Array`], a fact the translator
+    /// cannot see; decided by the sheet reader, which knows where the formula is.
+    SheetLocalName,
 }
 
 impl Refusal {
@@ -86,7 +92,11 @@ impl Refusal {
             Refusal::Array => Some(Dropped::ArrayFormula),
             Refusal::StructuredReference => Some(Dropped::StructuredReference),
             Refusal::ExternalLink => Some(Dropped::ExternalLink),
-            Refusal::InlineArray | Refusal::Intersection | Refusal::Union | Refusal::Syntax => None,
+            Refusal::InlineArray
+            | Refusal::Intersection
+            | Refusal::Union
+            | Refusal::Syntax
+            | Refusal::SheetLocalName => None,
         }
     }
 
@@ -99,6 +109,7 @@ impl Refusal {
             Refusal::Intersection => "intersection operator",
             Refusal::Union => "union operator",
             Refusal::Syntax => "unreadable expression",
+            Refusal::SheetLocalName => "sheet-local name",
         }
     }
 }

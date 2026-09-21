@@ -148,6 +148,8 @@ fn every_corpus_workbook_imports() {
     let mut styled = 0usize;
     let mut appearance_lost: BTreeMap<grind_xlsx::Appearance, usize> = BTreeMap::new();
     let mut style_drops: BTreeMap<grind_xlsx::Dropped, usize> = BTreeMap::new();
+    let (mut names, mut names_lost, mut renamed) = (0usize, 0usize, 0usize);
+    let mut dropped: BTreeMap<grind_xlsx::Dropped, usize> = BTreeMap::new();
 
     for path in &files {
         let Some(bytes) = workbook_bytes(path) else {
@@ -169,6 +171,12 @@ fn every_corpus_workbook_imports() {
                     *formats_lost.entry(*class).or_default() += count;
                 }
                 styled += report.styled;
+                names += report.names;
+                names_lost += report.names_lost.len();
+                renamed += report.renamed.len();
+                for (kind, count) in &report.dropped {
+                    *dropped.entry(*kind).or_default() += count;
+                }
                 for (class, count) in &report.appearance_lost {
                     *appearance_lost.entry(*class).or_default() += count;
                 }
@@ -234,6 +242,14 @@ fn every_corpus_workbook_imports() {
     }
     for (class, count) in &appearance_lost {
         eprintln!("  {:40} {count}", class.label());
+    }
+    // X5's: the document level. Every construct the model has no home for, by kind — the
+    // report's own vocabulary, summed — and the names and sheet spellings that did not survive.
+    eprintln!(
+        "loop A′ document: {names} names carried, {names_lost} lost, {renamed} sheets renamed"
+    );
+    for (kind, count) in &dropped {
+        eprintln!("  {:40} {count}", kind.label());
     }
     for (path, err) in failures.iter().take(10) {
         eprintln!("  {}: {err}", path.display());

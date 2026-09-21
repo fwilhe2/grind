@@ -81,7 +81,8 @@ enum Scope {
     Style(fn(ours: &CellStyle, theirs: &CellStyle) -> bool),
     /// One column or row of a sheet both sides have (X4).
     Track(fn(&Track) -> bool),
-    /// A sheet of ours, by name, that the oracle's conversion does not have.
+    /// A sheet of ours that the oracle's conversion does not have, by the name **the workbook**
+    /// gave it — this import may have renamed it (X5), and the construct is the spelling.
     OnlyOurs(fn(name: &str) -> bool),
     /// A sheet of the oracle's, by name, that ours does not have.
     OnlyTheirs(fn(name: &str) -> bool),
@@ -364,9 +365,11 @@ const DIVERGENCES: &[Divergence] = &[
     },
     Divergence {
         name: "a sheet whose name the oracle does not allow is dropped",
-        why: "`document/sheets.xlsx` has ten sheets and the oracle's conversion has eight: \
-              `Has[Brackets]` and `Has/Slash` are gone, cells and all. This import keeps both, \
-              and renaming them to something ODF can address is X5's (`ooxmlgen.rs` PENDING).",
+        why: "`document/sheets.xlsx` has ten sheets and the pinned oracle's conversion has \
+              eight: `Has[Brackets]` and `Has/Slash` are gone, cells and all (LibreOffice 26.8 \
+              keeps them as `Sheet9` and `Sheet10` instead, with their cells). This import keeps \
+              both, renamed `Has_Brackets_` and `Has_Slash` with every reference following \
+              (X5), so the sheet is matched here by the workbook's own spelling.",
         scope: Scope::OnlyOurs(|name| name.contains(['[', ']', '/', '\\', '?', '*', ':'])),
     },
     Divergence {
@@ -646,7 +649,12 @@ impl Difference {
 ///
 /// Cells are walked over the rows either side *carries* rather than over the used rectangle,
 /// which for `scale/wide-and-sparse.xlsx` is the whole grid — seventeen billion cells.
-fn differences(ours: &Document, theirs: &Document, defaults: &Defaults) -> Vec<Difference> {
+fn differences(
+    ours: &Document,
+    theirs: &Document,
+    defaults: &Defaults,
+    renamed: &[(String, String)],
+) -> Vec<Difference> {
     let mut out = Vec::new();
     for other in &theirs.sheets {
         if !ours.sheets.iter().any(|s| s.name == other.name) {
@@ -655,7 +663,11 @@ fn differences(ours: &Document, theirs: &Document, defaults: &Defaults) -> Vec<D
     }
     for mine in &ours.sheets {
         let Some(other) = theirs.sheets.iter().find(|s| s.name == mine.name) else {
-            out.push(Difference::OnlyOurs(mine.name.clone()));
+            let original = renamed
+                .iter()
+                .find(|(_, to)| *to == mine.name)
+                .map_or(&mine.name, |(from, _)| from);
+            out.push(Difference::OnlyOurs(original.clone()));
             continue;
         };
         if other.rows_carrying().is_empty() && !mine.rows_carrying().is_empty() {
@@ -914,7 +926,7 @@ fn our_import_agrees_with_the_oracles() {
         cells += report.cells;
 
         let defaults = Defaults::of(&std::fs::read_to_string(&theirs_path).unwrap_or_default());
-        for difference in differences(&ours, &theirs, &defaults) {
+        for difference in differences(&ours, &theirs, &defaults, &report.renamed) {
             match DIVERGENCES.iter().find(|d| difference.explained_by(d)) {
                 Some(d) => *matched.entry(d.name).or_default() += 1,
                 None => failures.push(format!("{}: {}", fixture.file, difference.describe())),

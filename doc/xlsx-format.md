@@ -572,3 +572,39 @@ this section is about actually bites.
   anything the spec leaves room in. Every measurement records the command and the date.
 - LibreOffice's `sc/source/filter/oox/`, read and cited by `file:line`, never copied — and
   only after the specification has been consulted first.
+
+---
+
+## 7. The document level
+
+### 7.1 Sheet names LibreOffice will not keep — `MEASURED`
+
+`document/sheets.xlsx` carries `Has[Brackets]` and `Has/Slash`. The pinned oracle (26.2.5.2)
+**drops both sheets, cells and all** (loop D, 2026-09-19); LibreOffice 26.8.0.3 keeps them as
+`Sheet9` and `Sheet10`, cells included (2026-09-21). Neither keeps the name. This model can
+address both when quoted — `=['Has/Slash'.A1]+1` evaluates, measured with `grind sheet set` —
+so the restriction is LibreOffice's, not ODF's: the schema types `table:name` as a `string`.
+This filter renames them by the corpus's own suggestion (each of `[ ] * ? : / \` to `_`, and an
+apostrophe at either end), and the character list is the manifest's, `SPEC` for LibreOffice's
+behaviour rather than read out of its source.
+
+### 7.2 Protection that locks nothing — `MEASURED`
+
+LibreOffice's own `.xlsx` export writes `<workbookProtection/>` with no attributes
+(`xlsx/tests/data/sample.xlsx`, read 2026-09-21). ECMA-376 §18.2.29 defaults every lock
+(`lockStructure`, `lockWindows`, `lockRevision`) to false, and §18.3.1.85 defaults
+`<sheetProtection sheet>` to false, so neither element protects anything unless a lock is set.
+Only a set lock is counted as `Dropped::Protection`.
+
+### 7.3 Filtered rows — `SPEC`
+
+Excel writes `hidden="1"` on every row an autofilter excludes (§18.3.1.73 does not distinguish
+the reason), so a row hidden by the filter and a row hidden by hand are one spelling. This
+filter gives a row to the carried filter when the filter hides it, and keeps it hidden by hand
+otherwise — which is right unless a row was both, a case the file cannot express either.
+
+### 7.4 A comma at the top of a defined name — `SPEC`
+
+In a `<definedName>` a top-level `,` is the union operator (`Data!$A$1:$A$2,Data!$B$4:$B$5`,
+`document/defined-names.xlsx`'s `Multi_Area`); in a cell's formula a comma only ever separates
+arguments. Refused as `Refusal::Union`, as the same union inside parentheses already is.

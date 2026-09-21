@@ -27,14 +27,14 @@
 //! contains and what a conversion of it should produce. A corpus with an oracle travelling
 //! beside it is the thing loop D needs and does not have until `soffice` is on `PATH`.
 //!
-//! **This build is X4**: every cell's value and kind is asserted against the manifest, one
+//! **This build is X5**: every cell's value and kind is asserted against the manifest, one
 //! claim per cell; so is every cell's **formula** — the text where the manifest states one,
 //! and *the absence of one* where it states an `excel` and no translation, which is how the
 //! exclusion classes are held to rather than merely described; and so is every **display** the
 //! manifest states, which is the claim about a number *format*. X4's claims — what a style or a
 //! track should become — are in the manifest's prose rather than its fields, so three tests
-//! below write them out one assertion per note. The rest of the oracle, the document level, is
-//! about a later milestone. Three tables carry the difference and
+//! below write them out one assertion per note, and a fourth does the same for X5's names,
+//! filters and renames. Nothing in the oracle is about a later milestone any more. Three tables carry the difference and
 //! they are checked in *both* directions, which is the only arrangement that survives contact
 //! with a growing filter:
 //!
@@ -74,72 +74,9 @@ const FLOOR: usize = 76;
 /// will insist on it, which is the point: a roadmap nobody checks becomes a list of things
 /// that quietly already work.
 const PENDING: &[(&str, &str, &str)] = &[
-    // X5 is sheet order and visibility. The *name* question is `doc/xlsx-import.md`'s
-    // Verification item 3 — "a sheet name Excel allows and ODF does not" — which no milestone
-    // in the table actually owns; this entry is where it waits.
-    (
-        "document/sheets.xlsx",
-        "sheet-names",
-        "X5 — `Has[Brackets]` and `Has/Slash` are names Excel allows and ODF cannot address. \
-         The manifest wants `Has_Brackets_` and `Has_Slash`; this build carries both \
-         verbatim. The other eight names in that file — spaces, an apostrophe, CJK, 31 \
-         characters — already come through exactly.",
-    ),
-    // The report's remaining kinds. `Macro`, `HiddenSheet`, `FontFamily` and `ThemeColor` are
-    // already counted, so these are the nine (file, kind) pairs left, each behind the milestone
-    // that reads the part the construct lives in.
-    (
-        "document/chart.xlsx",
-        "dropped:Chart",
-        "X5 — the drawing and chart parts are not opened yet",
-    ),
-    ("document/chart.xlsx", "dropped:Drawing", "X5 — as above"),
-    (
-        "document/comments.xlsx",
-        "dropped:Comment",
-        "X5 — the comments part is not opened yet",
-    ),
-    (
-        "document/conditional-format.xlsx",
-        "dropped:ConditionalFormat",
-        "X5 — `<conditionalFormatting>` lives in the worksheet part",
-    ),
-    (
-        "document/data-validation.xlsx",
-        "dropped:DataValidation",
-        "X5 — `<dataValidations>` lives in the worksheet part",
-    ),
-    (
-        "document/defined-names.xlsx",
-        "dropped:SheetLocalName",
-        "X5 — `<definedNames>` is read at X5",
-    ),
-    (
-        "document/merged-cells.xlsx",
-        "dropped:MergedCells",
-        "X5 — `<mergeCells>` lives in the worksheet part",
-    ),
-    (
-        "document/pivot-table.xlsx",
-        "dropped:PivotTable",
-        "X5 — the pivot parts are not opened yet",
-    ),
-    (
-        "document/protection.xlsx",
-        "dropped:Protection",
-        "X5 — `<sheetProtection>` and `<workbookProtection>`",
-    ),
-    // The sheet-local names of `document/defined-names.xlsx` are dropped, and D3 is the cell
-    // that names one. Its formula therefore loses its referent, which is why the manifest
-    // states no translation for it.
-    (
-        "document/defined-names.xlsx",
-        "formula:Data!D3",
-        "X5 — `Rate` is a sheet-local name, and nothing knows that until `<definedNames>` is \
-         read. This build translates the formula to `Rate` like any other name; once X5 drops \
-         the name it has to stop, since carrying a reference to a name the document does not \
-         define is the one outcome worse than carrying neither.",
-    ),
+    // Empty since X5, which satisfied the last eleven: every claim the manifest makes is now
+    // either held or named in one of the two tables below. Kept, and still checked in both
+    // directions, because the corpus grows and X6 is still to come.
 ];
 
 /// Claims this build answers differently **on purpose**: `(fixture, claim, why ours stands)`.
@@ -1394,6 +1331,97 @@ fn the_geometry_fixtures_size_and_hide_what_their_notes_say() {
         Some(&3),
         "two frozen and one split; the gridlines and the zoom are view state"
     );
+}
+
+/// The document fixtures, by their notes (X5): what `Document::names` holds, what the
+/// autofilter keeps, which sheets were renamed, and that a merge moves nothing.
+#[test]
+fn the_document_fixtures_carry_what_their_notes_say() {
+    use grind_xlsx::Appearance;
+    use grind_xlsx::formula::Refusal;
+
+    let (document, report) = import("document/defined-names.xlsx");
+    let names = &document.names;
+    assert_eq!(
+        names.get("singlecell").map(String::as_str),
+        Some("[Data.$A$1]")
+    );
+    assert_eq!(
+        names.get("range").map(String::as_str),
+        Some("[Data.$A$1:.$B$5]")
+    );
+    assert_eq!(names.get("constant").map(String::as_str), Some("42"));
+    assert_eq!(
+        names.get("crosssheet").map(String::as_str),
+        Some("[Other.$A$1]")
+    );
+    assert!(
+        !names.contains_key("rate"),
+        "sheet-local: dropped, not flattened"
+    );
+    assert!(
+        !names.keys().any(|k| k.starts_with("_xlnm")),
+        "print settings are not the author's names: {names:?}"
+    );
+    // `Multi_Area` is two ranges joined by a comma — a union, which the Small Group leaves out.
+    assert_eq!(
+        report.names_lost,
+        [("Multi_Area".to_owned(), Refusal::Union)]
+    );
+    assert_eq!(report.refused.get(&Refusal::SheetLocalName), Some(&1), "D3");
+
+    let (document, report) = import("document/autofilter.xlsx");
+    let filter = |i: usize| document.sheets[i].filter().expect("a filter").clone();
+    let plain = filter(0);
+    assert_eq!((plain.start, plain.end), (Pos::new(0, 0), Pos::new(8, 2)));
+    assert!(plain.keep.is_empty(), "a range with no criteria");
+    let criteria = filter(1);
+    assert_eq!(
+        criteria
+            .keep
+            .get(&0)
+            .map(|v| v.iter().map(String::as_str).collect::<Vec<_>>()),
+        Some(vec!["north", "south"]),
+        "the dropdown's checkboxes are the model's own vocabulary"
+    );
+    assert!(
+        !criteria.keep.contains_key(&1),
+        "a custom comparison is not"
+    );
+    assert_eq!(
+        report.appearance_lost[&Appearance::FilterCriterion],
+        2,
+        "B's range, the top ten"
+    );
+    // The rows the carried filter hides are its to hide, not hidden by hand as well.
+    let sheet = &document.sheets[1];
+    let null = document.null_date;
+    for row in sheet.hidden_rows(null) {
+        assert!(!sheet.row_manually_hidden(row), "row {}", row + 1);
+    }
+
+    let (document, report) = import("document/sheets.xlsx");
+    assert_eq!(
+        report.renamed,
+        [
+            ("Has[Brackets]".to_owned(), "Has_Brackets_".to_owned()),
+            ("Has/Slash".to_owned(), "Has_Slash".to_owned()),
+        ]
+    );
+    assert!(!report.lossless(), "a rename is reported");
+    assert_eq!(document.sheets.len(), 10);
+
+    // A5:A7's top-left is empty, and stays empty: dropping a merge moves nothing.
+    let (document, _) = import("document/merged-cells.xlsx");
+    let sheet = &document.sheets[0];
+    for row in 4..7 {
+        assert_eq!(
+            sheet.get(Pos::new(row, 0)),
+            CellValue::Empty,
+            "A{}",
+            row + 1
+        );
+    }
 }
 
 /// Every imported document survives our own writer and reader.

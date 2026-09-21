@@ -536,18 +536,21 @@ sheet view "$out/prices.fods" F7:F9 --formulas
 # Reading Excel (doc/xlsx-import.md, phase 11). One way in and never out — which is why this
 # is the one step that cannot build its own input: nothing in this suite writes `.xlsx`, so
 # the workbook is vendored at `xlsx/tests/data/sample.xlsx` (made with the oracle; REUSE.toml
-# has the command). Built through **X4**, so what arrives is the sheet list, every cell's value
+# has the command). Built through **X5**, so what arrives is the sheet list, every cell's value
 # — Excel's cached value, since nothing is evaluated on import — every cell's formula,
 # translated into OpenFormula (`B2*2` is stored as `[.B2]*2`, brackets, leading dot and all),
-# its number format, its look, and the sheet's column widths — this one's stated default,
-# carried onto the columns it uses.
+# its number format, its look, the sheet's column widths — this one's stated default,
+# carried onto the columns it uses — and the document level: defined names, autofilters, and a
+# report counting every construct that had nowhere to go.
 #
 # The filter is a cargo feature, so a `grind` built with `--no-default-features` has no
 # `import` verb at all — hence the check rather than a bare call. A missing verb here is a
 # build configuration, not a failure.
 if "$GRIND" sheet import --help >/dev/null 2>&1; then
     say "import: an Excel workbook becomes an ODF document"
-    "$GRIND" sheet import "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
+    # `--strict` fails, and writes nothing, if anything at all was lost. This workbook loses
+    # nothing, which is the claim the flag makes on its behalf.
+    "$GRIND" sheet import --strict "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
     "$GRIND" --format json info "$out/imported.fods"
     sheet view "$out/imported.fods" A1:B3
     sheet view "$out/imported.fods" B3 --formulas

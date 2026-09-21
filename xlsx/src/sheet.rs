@@ -82,6 +82,10 @@ pub struct Context<'a> {
     pub date_1904: bool,
     /// The document's null date, for `t="d"`'s ISO spelling.
     pub null_date: i64,
+    /// Which names are sheet-local where (X5): a formula naming one on that sheet is refused.
+    pub names: &'a crate::workbook::Names,
+    /// Sheets renamed on the way in, `(from, to)`; every formula follows them.
+    pub renames: &'a [(String, String)],
 }
 
 /// Read one worksheet part into `sheet`.
@@ -102,6 +106,7 @@ pub fn read(
     let mut reader = Reader::new(bytes);
     let mut shared = Shared::default();
     let mut tracks = Tracks::default();
+    let mut filter = None;
     if matches!(reader.root(), Ok(Some((ref root, _))) if root.is("worksheet")) {
         let _ = reader.children(|reader, name, attrs| {
             if name.is("sheetData") {
@@ -132,17 +137,148 @@ pub fn read(
                     && number("baseColWidth").is_some_and(|base| (base - 8.0).abs() > 1e-9);
             } else if name.is("sheetViews") {
                 tracks.pane |= panes(reader)?;
+            } else if name.is("mergeCells") {
+                // The model carries no spans (`doc/not-doing.md` §3). Excel keeps a merged
+                // range's value in its top-left cell and leaves the rest empty, which is
+                // already what an unmerged sheet looks like: nothing moves, nothing is filled.
+                let merges = count(reader, "mergeCell")?;
+                report.drop_many(Dropped::MergedCells, merges);
+            } else if name.is("conditionalFormatting") {
+                // A rule, not a style: what the cell looks like depends on its value when it
+                // is drawn, and the model has no rule engine. One per `<cfRule>`.
+                let rules = count(reader, "cfRule")?;
+                report.drop_many(Dropped::ConditionalFormat, rules);
+            } else if name.is("dataValidations") {
+                let rules = count(reader, "dataValidation")?;
+                report.drop_many(Dropped::DataValidation, rules);
+            } else if name.is("sheetProtection") {
+                // A UI lock with a hash beside it, not encryption: every value is readable.
+                // `sheet` is what switches it on, and it defaults to off (§18.3.1.85).
+                if attrs.flag("sheet") {
+                    report.drop_one(Dropped::Protection);
+                }
+            } else if name.is("autoFilter") {
+                filter = autofilter(reader, attrs, report)?;
             } else {
                 return Ok(Handled::No);
             }
             Ok(Handled::Yes)
         });
     }
-    shared.resolve(index, sheet, report);
+    shared.resolve(index, context, sheet, report);
     tracks.finish(sheet, report);
+    if let Some(filter) = filter {
+        apply_filter(sheet, filter, context.null_date);
+    }
     report.must_understand.append(&mut reader.must_understand);
     seen.transitional |= reader.seen.transitional;
     seen.strict |= reader.seen.strict;
+}
+
+/// Every name an expression uses, in any position.
+fn names_in(expr: &Expr) -> Box<dyn Iterator<Item = &str> + '_> {
+    match expr {
+        Expr::Name(name) => Box::new(std::iter::once(name.as_str())),
+        Expr::Call { args, .. } => Box::new(args.iter().flat_map(names_in)),
+        Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => names_in(e),
+        Expr::Binary(_, a, b) => Box::new(names_in(a).chain(names_in(b))),
+        _ => Box::new(std::iter::empty()),
+    }
+}
+
+/// How many `<local>` children the current element has — every one of them skipped whole.
+fn count(reader: &mut Reader<'_>, local: &str) -> crate::Result<usize> {
+    let mut n = 0;
+    reader.children(|_, name, _| {
+        n += usize::from(name.is(local));
+        Ok(Handled::No)
+    })?;
+    Ok(n)
+}
+
+/// `<autoFilter ref="A1:C9">` and its `<filterColumn>`s, as the model's filter.
+///
+/// The model's vocabulary is a **set of values per column** (`grind_sheet::filter`), which is
+/// exactly `<filters><filter val="…"/>` — Excel's dropdown checkboxes, matched on the displayed
+/// text as both sides do. A blank checkbox is `blank="1"`, the empty string in the set. Every
+/// other criterion — a custom comparison, a top-ten rule, a dynamic date band, a colour, a
+/// date group — is left out of the filter and counted as `Appearance::FilterCriterion`, one
+/// per column: a filter that quietly kept the wrong rows would be worse than a visible gap.
+fn autofilter(
+    reader: &mut Reader<'_>,
+    attrs: &crate::xml::Attrs,
+    report: &mut Report,
+) -> crate::Result<Option<grind_sheet::Filter>> {
+    let range = attrs.plain("ref").and_then(|r| {
+        let (a, b) = r.split_once(':').unwrap_or((r, r));
+        Some((address::cell(a)?, address::cell(b)?))
+    });
+    let mut keep = std::collections::BTreeMap::new();
+    let mut lost = 0;
+    reader.children(|reader, name, attrs| {
+        if !name.is("filterColumn") {
+            return Ok(Handled::No);
+        }
+        let Some(field) = attrs
+            .plain("colId")
+            .and_then(|c| c.trim().parse::<u32>().ok())
+        else {
+            return Ok(Handled::Yes);
+        };
+        let mut values = std::collections::BTreeSet::new();
+        let mut carried = false;
+        let mut other = false;
+        reader.children(|reader, name, attrs| {
+            if !name.is("filters") {
+                other |= name.ns == crate::names::Ns::Spreadsheet;
+                return Ok(Handled::No);
+            }
+            carried = true;
+            if attrs.flag("blank") {
+                values.insert(String::new());
+            }
+            reader.children(|_, name, attrs| {
+                if name.is("filter") {
+                    values.insert(attrs.plain("val").unwrap_or_default().to_owned());
+                } else if name.is("dateGroupItem") {
+                    other = true;
+                }
+                Ok(Handled::No)
+            })?;
+            Ok(Handled::Yes)
+        })?;
+        if carried && !other {
+            keep.insert(field, values);
+        } else if carried || other {
+            lost += 1;
+        }
+        Ok(Handled::Yes)
+    })?;
+    for _ in 0..lost {
+        report.lose(Appearance::FilterCriterion);
+    }
+    let Some((start, end)) = range else {
+        return Ok(None);
+    };
+    // The name LibreOffice gives an autofilter nobody named, as `grind sheet filter` does.
+    let mut filter = grind_sheet::Filter::new("__Anonymous_Sheet_DB__0", start, end);
+    filter.keep = keep;
+    Ok(Some(filter))
+}
+
+/// Put the filter on the sheet, and un-hide the rows **it** hides.
+///
+/// Excel writes `hidden="1"` on every row a filter excludes, which the geometry pass carried
+/// as rows hidden by hand. The model derives filtered rows from the filter instead (and two
+/// copies of one fact is how they come to disagree — `grind_sheet::filter`), so a row the
+/// carried filter accounts for is left to it. A row it does not account for — excluded by a
+/// criterion this build could not carry, or hidden by hand as well — stays hidden by hand, so
+/// the sheet shows what Excel showed.
+fn apply_filter(sheet: &mut Sheet, filter: grind_sheet::Filter, null_date: i64) {
+    sheet.set_filter(Some(filter));
+    for row in sheet.hidden_rows(null_date) {
+        sheet.set_row_hidden(row, false);
+    }
 }
 
 /// ECMA-376 §18.3.1.13's unit for a column width: the **maximum digit width** of the
@@ -347,7 +483,7 @@ struct Shared {
 }
 
 impl Shared {
-    fn resolve(&self, index: usize, sheet: &mut Sheet, report: &mut Report) {
+    fn resolve(&self, index: usize, context: &Context<'_>, sheet: &mut Sheet, report: &mut Report) {
         for &(at, si) in &self.followers {
             let Some((base, expr)) = self.masters.get(&si) else {
                 // A group whose master was never seen, or whose master was itself refused.
@@ -359,7 +495,7 @@ impl Shared {
                 i64::from(at.row) - i64::from(base.row),
                 i64::from(at.col) - i64::from(base.col),
             );
-            store_formula(sheet, at, &moved, report);
+            store_formula(sheet, at, &moved, index, context, report);
         }
     }
 }
@@ -417,7 +553,7 @@ fn rows(
             };
             let mut value = cell(reader)?;
             if let Some(f) = value.f.take() {
-                take_formula(&f, at, index, sheet, report, shared);
+                take_formula(&f, at, index, context, sheet, report, shared);
             }
             store(sheet, at, &raw, value, context, report);
             next_row = next_row.max(at.row + 1);
@@ -492,6 +628,7 @@ fn take_formula(
     f: &RawFormula,
     at: Pos,
     index: usize,
+    context: &Context<'_>,
     sheet: &mut Sheet,
     report: &mut Report,
     shared: &mut Shared,
@@ -521,14 +658,27 @@ fn take_formula(
             {
                 shared.masters.insert(si, (at, expr.clone()));
             }
-            store_formula(sheet, at, &expr, report);
+            store_formula(sheet, at, &expr, index, context, report);
         }
         Err(refusal) => refuse(refusal, at, index, report),
     }
 }
 
-/// The formula, in ODF's own syntax, and the functions it names.
-fn store_formula(sheet: &mut Sheet, at: Pos, expr: &Expr, report: &mut Report) {
+/// The formula, in ODF's own syntax, and the functions it names — or its refusal, when it
+/// names a name that is sheet-local here (X5). Renamed sheets are followed first.
+fn store_formula(
+    sheet: &mut Sheet,
+    at: Pos,
+    expr: &Expr,
+    index: usize,
+    context: &Context<'_>,
+    report: &mut Report,
+) {
+    if names_in(expr).any(|name| context.names.is_local(index, name)) {
+        refuse(Refusal::SheetLocalName, at, index, report);
+        return;
+    }
+    let expr = &crate::workbook::renamed(expr, context.renames);
     // `=` rather than `of:=`: both are legal (§5.2) and this is the spelling everything else
     // in the workspace stores, so an imported formula and a typed one are the same string.
     let text = format!("={expr}");
@@ -691,6 +841,8 @@ mod tests {
             styles,
             date_1904,
             null_date: date::DEFAULT_NULL_DATE,
+            names: &Default::default(),
+            renames: &[],
         };
         let mut sheet = Sheet::new("S");
         let mut report = Report::default();
@@ -1018,6 +1170,8 @@ mod tests {
             styles,
             date_1904: false,
             null_date: date::DEFAULT_NULL_DATE,
+            names: &Default::default(),
+            renames: &[],
         };
         let mut sheet = Sheet::new("S");
         let mut report = Report::default();

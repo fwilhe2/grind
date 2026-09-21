@@ -1267,6 +1267,11 @@ enum Command {
         /// Overwrite the output if it already exists
         #[arg(long)]
         force: bool,
+        /// Fail, and write nothing, if the conversion lost anything at all — a construct, a
+        /// formula, a piece of a format or a look, a defined name, a sheet's spelling. The
+        /// report is printed either way, so it says what.
+        #[arg(long)]
+        strict: bool,
     },
 
     // The flat default is `doc/flat-first.md`'s.
@@ -2216,25 +2221,30 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             input,
             output,
             force,
+            strict,
         } => {
             if output.exists() && !force {
                 return Err(format!("{} exists; pass --force", output.display()));
             }
             let (document, report) = grind_xlsx::import_file(input).map_err(|e| e.to_string())?;
-            if !cli.dry_run {
+            // A strict import that lost something writes nothing: a pipeline told to fail on a
+            // loss should not find a lossy file where it asked for one.
+            let refused = *strict && !report.lossless();
+            if !cli.dry_run && !refused {
                 // Written by *our* writer, so R2 applies to the result unchanged: an imported
                 // document validates against the ODF schema like any other. There is no `App`
                 // in this path — an import is a file-to-file translation, not an edit — which
                 // is also why `cli/tests/parity.rs` is undisturbed by it.
                 grind_sheet::write_file(&document, output).map_err(|e| e.to_string())?;
             }
-            Ok(Report::Import(report::ImportReport::new(
+            Ok(Report::Import(Box::new(report::ImportReport::new(
                 &show_path(input),
                 &show_path(output),
                 &document,
                 &report,
-                !cli.dry_run,
-            )))
+                !cli.dry_run && !refused,
+                *strict,
+            ))))
         }
 
         Command::New { file, force } => {

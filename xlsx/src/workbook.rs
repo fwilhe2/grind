@@ -7,11 +7,25 @@
 //! Reached by relationship from `_rels/.rels`, never by its conventional path. What X0 takes
 //! from it is the document's skeleton: one [`grind_sheet::model::Sheet`] per `<sheet>`, in
 //! document order, and the epoch every serial date will be counted from; X1 adds where the
-//! string table, the styles and the theme are. Defined names are X5's.
+//! string table, the styles and the theme are; X5 the defined names, workbook protection, and
+//! the sheet names ODF cannot keep.
+//!
+//! **A sheet name is renamed, deterministically, when LibreOffice would not keep it.** Excel
+//! allows `[`, `]` and a leading apostrophe; ODF's schema says only `string`, but LibreOffice
+//! refuses `[ ] * ? : / \` and an apostrophe at either end, and the pinned oracle drops such a
+//! sheet with every cell on it (`doc/xlsx-format.md` §2.3). This model can address one —
+//! `['Has/Slash'.A1]` evaluates — so the rename is not for grind's sake; it is so that the
+//! document this import writes survives the round trip every feature is held to (rule 6). Each
+//! offending character becomes `_`, which is the corpus's own suggestion, and a clash with an
+//! existing name gets `unique_name`'s suffix.
 
-use grind_sheet::formula::date;
+use std::collections::BTreeSet;
+
+use grind_sheet::formula::parse::Expr;
+use grind_sheet::formula::{date, lex, rename};
 use grind_sheet::model::{Document, Sheet};
 
+use crate::formula::{self, Refusal};
 use crate::names::{RelType, Seen};
 use crate::package::Package;
 use crate::report::{Dropped, Report};
@@ -32,6 +46,16 @@ pub struct SheetEntry {
     pub part: Option<String>,
 }
 
+/// One `<definedName>`.
+#[derive(Clone, Debug)]
+pub struct DefinedName {
+    pub name: String,
+    /// The expression, in Excel's syntax.
+    pub text: String,
+    /// `localSheetId` — the index of the only sheet the name is visible from.
+    pub local: Option<usize>,
+}
+
 /// What `xl/workbook.xml` said.
 #[derive(Debug, Default)]
 pub struct Workbook {
@@ -46,6 +70,10 @@ pub struct Workbook {
     /// `xl/theme/theme1.xml`, which a `<color theme="4"/>` indexes into. Optional as well: a
     /// workbook with no theme has theme colours nothing can resolve, and the report counts them.
     pub theme_part: Option<String>,
+    /// `<definedNames>`, in document order.
+    pub names: Vec<DefinedName>,
+    /// `<workbookProtection>` — a lock on the sheet structure, never on the data.
+    pub protected: bool,
     /// The `conformance="strict"` attribute, when the workbook carries one. Corroborates the
     /// namespace evidence rather than replacing it — a file can be Strict without saying so.
     pub declares_strict: bool,
@@ -94,6 +122,36 @@ pub fn read(bytes: &[u8], report: &mut Report) -> Result<Workbook> {
     reader.children(|reader, name, attrs| {
         if name.is("workbookPr") {
             out.date_1904 = attrs.flag("date1904");
+            return Ok(Handled::Yes);
+        }
+        if name.is("workbookProtection") {
+            // Every lock defaults to off (§18.2.29), and LibreOffice's own `.xlsx` writes an
+            // empty `<workbookProtection/>` that locks nothing — which is not protection.
+            out.protected |= ["lockStructure", "lockWindows", "lockRevision"]
+                .iter()
+                .any(|lock| attrs.flag(lock));
+            return Ok(Handled::Yes);
+        }
+        if name.is("definedNames") {
+            reader.children(|reader, name, attrs| {
+                if !name.is("definedName") {
+                    return Ok(Handled::No);
+                }
+                let (Some(defined), local) = (
+                    attrs.plain("name").map(str::to_owned),
+                    attrs
+                        .plain("localSheetId")
+                        .and_then(|i| i.trim().parse().ok()),
+                ) else {
+                    return Ok(Handled::Yes);
+                };
+                out.names.push(DefinedName {
+                    name: defined,
+                    text: reader.text()?,
+                    local,
+                });
+                Ok(Handled::Yes)
+            })?;
             return Ok(Handled::Yes);
         }
         if !name.is("sheets") {
@@ -169,7 +227,14 @@ pub fn document(workbook: &Workbook, report: &mut Report) -> Document {
         if entry.hidden {
             report.drop_one(Dropped::HiddenSheet);
         }
-        sheets.push(Sheet::new(unique_name(&entry.name, &sheets)));
+        let name = unique_name(&keepable(&entry.name), &sheets);
+        if name != entry.name {
+            report.renamed.push((entry.name.clone(), name.clone()));
+        }
+        sheets.push(Sheet::new(name));
+    }
+    if workbook.protected {
+        report.drop_one(Dropped::Protection);
     }
     // `Document::default()` is one sheet called `Sheet1`; a workbook with no sheets at all is
     // not a document anybody wants, and an empty grid to type into is the better answer than
@@ -190,9 +255,116 @@ pub fn document(workbook: &Workbook, report: &mut Report) -> Document {
     }
 }
 
+/// The names a formula may use, and the ones it may not.
+#[derive(Debug, Default)]
+pub struct Names {
+    /// Per sheet index, the names that are sheet-local there — lower-case, since names match
+    /// case-insensitively (ODF §5.11, and Excel). A formula on that sheet naming one is refused.
+    pub local: Vec<BTreeSet<String>>,
+}
+
+impl Names {
+    pub fn is_local(&self, sheet: usize, name: &str) -> bool {
+        self.local
+            .get(sheet)
+            .is_some_and(|names| names.contains(&name.to_lowercase()))
+    }
+}
+
+/// Carry `<definedNames>` into `document.names`, and say which names are sheet-local where.
+///
+/// - `_xlnm.` names are Excel's own — `Print_Area`, `Print_Titles`, `_FilterDatabase` (an
+///   autofilter's range, which `<autoFilter>` states again) — print settings and bookkeeping
+///   wearing a name's clothes. They are not the author's names and do not arrive as if they
+///   were; print is not a feature here, and a filter is read from the sheet.
+/// - A name with `localSheetId` that is **the only definition of its name** is carried like a
+///   global one. The model's names are document-wide, and `odf/read.rs` already flattens
+///   ODF's own sheet-local names into the one map (the ponytail on `Document::names`); with
+///   one definition there is nothing to pick between. The cost is that the name becomes
+///   visible from other sheets too, where Excel would have said `#NAME?`. Loop A′ is why this
+///   is not the stricter rule: 40 of the corpus's 54 sheet-local names are unique, and
+///   dropping them refused 2,506 formulas that meant exactly one thing.
+/// - A sheet-local name that **collides** — two sheets' `Rate`, or a local `Rate` beside a
+///   global one — is dropped and counted: flattening would silently pick one. A global
+///   definition of the same name is kept, and a formula on a sheet where the local one
+///   applied is refused rather than pointed at the global.
+/// - Everything else is translated by [`crate::formula`] like a cell's formula, with renamed
+///   sheets rewritten, and stored the way `odf/read.rs` stores one: lower-case key, OpenFormula
+///   text with no `=`. A name whose expression will not translate, or whose spelling is not
+///   one identifier to the core's lexer (§5.11), is lost and listed in `Report::names_lost`.
+pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) -> Names {
+    let mut out = Names {
+        local: vec![BTreeSet::new(); document.sheets.len()],
+    };
+    let mut definitions: std::collections::HashMap<String, usize> = Default::default();
+    for defined in &workbook.names {
+        *definitions.entry(defined.name.to_lowercase()).or_default() += 1;
+    }
+    for defined in &workbook.names {
+        if defined.name.starts_with("_xlnm.") {
+            continue;
+        }
+        let collides = definitions[&defined.name.to_lowercase()] > 1;
+        if let Some(sheet) = defined.local.filter(|_| collides) {
+            report.drop_one(Dropped::SheetLocalName);
+            if let Some(set) = out.local.get_mut(sheet) {
+                set.insert(defined.name.to_lowercase());
+            }
+            continue;
+        }
+        let spelled = matches!(
+            lex::lex(&defined.name).as_deref(),
+            Ok([lex::Token::Name(n)]) if *n == defined.name
+        );
+        let translated = match spelled {
+            false => Err(Refusal::Syntax),
+            // Parenthesised, then unwrapped: in a cell a comma belongs to a function call, but
+            // at the top of a name it is Excel's union operator (`A1:A2,B4:B5`), and inside
+            // parentheses is where the translator reads it as one — refused by *class*, not as
+            // unreadable. `(expr)` is otherwise the same expression.
+            true => formula::translate(&format!("({})", defined.text)).map(|expr| match expr {
+                Expr::Paren(inner) => *inner,
+                other => other,
+            }),
+        };
+        match translated {
+            Ok(expr) => {
+                let expr = renamed(&expr, &report.renamed);
+                document
+                    .names
+                    .insert(defined.name.to_lowercase(), expr.to_string());
+                report.names += 1;
+            }
+            Err(refusal) => report.names_lost.push((defined.name.clone(), refusal)),
+        }
+    }
+    out
+}
+
+/// `expr` with every renamed sheet's references following it — `formula::rename`, the core's
+/// AST substitution that a sheet rename already uses, so no string surgery happens here.
+pub fn renamed(expr: &Expr, renames: &[(String, String)]) -> Expr {
+    renames.iter().fold(expr.clone(), |expr, (from, to)| {
+        rename::rename(&expr, from, to)
+    })
+}
+
+/// A sheet name LibreOffice will keep: each of `[ ] * ? : / \` becomes `_`, and so does an
+/// apostrophe at either end. Everything else — spaces, CJK, 31 characters — is left alone.
+pub fn keepable(name: &str) -> String {
+    let last = name.chars().count().saturating_sub(1);
+    name.chars()
+        .enumerate()
+        .map(|(i, c)| match c {
+            '[' | ']' | '*' | '?' | ':' | '/' | '\\' => '_',
+            '\'' if i == 0 || i == last => '_',
+            c => c,
+        })
+        .collect()
+}
+
 /// Excel permits sheet names this model would then have two of. Deterministic rather than
-/// clever: the second `Sheet1` becomes `Sheet1 (2)`, and a report entry is owed once X5 has
-/// somewhere to put it.
+/// clever: the second `Sheet1` becomes `Sheet1 (2)`, and [`Report::renamed`] says so.
 fn unique_name(name: &str, taken: &[Sheet]) -> String {
     let clashes = |candidate: &str| {
         taken
@@ -331,5 +503,75 @@ mod tests {
             .map(|s| s.name.clone())
             .collect();
         assert_eq!(names, ["Data", "data (2)", "Sheet"]);
+    }
+
+    #[test]
+    fn a_name_libreoffice_would_not_keep_is_renamed_and_nothing_else_is() {
+        assert_eq!(keepable("Has[Brackets]"), "Has_Brackets_");
+        assert_eq!(keepable("Has/Slash"), "Has_Slash");
+        assert_eq!(keepable("a*b?c:d\\e"), "a_b_c_d_e");
+        assert_eq!(keepable("'quoted'"), "_quoted_");
+        assert_eq!(
+            keepable("O'Brien"),
+            "O'Brien",
+            "an inner apostrophe is fine"
+        );
+        assert_eq!(keepable("Ünïcødé Ω 日本"), "Ünïcødé Ω 日本");
+        // A rename that lands on an existing name takes the usual suffix.
+        let xml = format!(
+            r#"<workbook xmlns="{MAIN}"><sheets><sheet name="A_B"/><sheet name="A/B"/></sheets></workbook>"#
+        );
+        let (workbook, mut report) = parse(&xml);
+        let document = document(&workbook, &mut report);
+        assert_eq!(document.sheets[1].name, "A_B (2)");
+        assert_eq!(report.renamed, [("A/B".to_owned(), "A_B (2)".to_owned())]);
+    }
+
+    /// Global names carry, translated and following a renamed sheet; `_xlnm.` names are not
+    /// the author's; a sheet-local one carries when it is the only one of its name, and is
+    /// dropped and remembered where it is local when it collides.
+    #[test]
+    fn defined_names_are_carried_dropped_or_skipped() {
+        let xml = format!(
+            r#"<workbook xmlns="{MAIN}"><sheets><sheet name="Data"/><sheet name="Odd/One"/></sheets>
+                 <definedNames>
+                   <definedName name="Total">SUM(Data!$A$1:$A$9)</definedName>
+                   <definedName name="Elsewhere">'Odd/One'!$B$2</definedName>
+                   <definedName name="Rate" localSheetId="1">Data!$C$1</definedName>
+                   <definedName name="Rate">Data!$C$2</definedName>
+                   <definedName name="Alone" localSheetId="0">Data!$D$1</definedName>
+                   <definedName name="_xlnm.Print_Area" localSheetId="0">Data!$A$1:$B$5</definedName>
+                   <definedName name="_xlnm._FilterDatabase" hidden="1">Data!$A$1:$C$9</definedName>
+                   <definedName name="Two">Data!$A$1,Data!$B$2</definedName>
+                 </definedNames></workbook>"#
+        );
+        let (workbook, mut report) = parse(&xml);
+        let mut doc = document(&workbook, &mut report);
+        let names = names(&workbook, &mut doc, &mut report);
+        assert_eq!(doc.names["total"], "SUM([Data.$A$1:.$A$9])");
+        assert_eq!(doc.names["elsewhere"], "[Odd_One.$B$2]");
+        // The global `Rate` stays; the local one beside it cannot, and on its sheet a formula
+        // naming `Rate` means the one that is gone.
+        assert_eq!(doc.names["rate"], "[Data.$C$2]");
+        assert_eq!(
+            doc.names["alone"], "[Data.$D$1]",
+            "the only `Alone`: nothing to pick"
+        );
+        assert_eq!(doc.names.len(), 4);
+        assert_eq!(report.names, 4);
+        assert_eq!(report.dropped[&Dropped::SheetLocalName], 1);
+        assert!(names.is_local(1, "RATE") && !names.is_local(0, "rate"));
+        assert_eq!(report.names_lost, [("Two".to_owned(), Refusal::Union)]);
+    }
+
+    #[test]
+    fn protection_that_locks_nothing_is_not_protection() {
+        let empty =
+            format!(r#"<workbook xmlns="{MAIN}"><workbookProtection/><sheets/></workbook>"#);
+        assert!(!parse(&empty).0.protected);
+        let locked = format!(
+            r#"<workbook xmlns="{MAIN}"><workbookProtection lockStructure="1"/><sheets/></workbook>"#
+        );
+        assert!(parse(&locked).0.protected);
     }
 }

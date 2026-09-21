@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# The xlsx import filter — phase 11, built through X4
+# The xlsx import filter — phase 11, built through X5
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
 building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
@@ -619,24 +619,42 @@ carried onto the used columns nothing else sized, as an ODF column run is (`MAX_
 A size of zero cannot be written — ODF's sizes are positive lengths — so such a track is hidden
 and counted.
 
-### 6. The document level (X5)
+### 6. The document level (X5) — **built**
 
 - **Defined names.** `<definedName name="X">Sheet1!$A$1:$B$2</definedName>` → `Document.names`,
-  the expression translated by `formula.rs` like any other. A name with a `localSheetId` is
-  sheet-local, which our model has no home for → dropped and counted. `_xlnm.Print_Area` and
-  friends are print settings, and print is not a feature here.
-- **Sheets.** Order and names carry; `state="hidden"` imports the data and loses the
-  visibility, counted — a hidden sheet's data is the last thing to throw away silently.
-  A name Excel allows and ODF does not is renamed deterministically and reported.
-- **Merged cells.** `<mergeCell ref="B2:D4"/>` → counted, because the model carries no spans
-  (`doc/not-doing.md` §3). The values are kept where they are; nothing is moved.
-- **Autofilters.** `<autoFilter ref="A1:D10"/>` → `Filter::new`, which the model gained after
-  this plan was first written. Carried, not counted. The filter's *criteria*
-  (`<filterColumn>`) are a second question and follow `sheet/src/filter.rs`'s own vocabulary
-  where they fit, counted where they do not.
-- **Everything else in the part list** — charts, pivot tables, conditional formatting, data
-  validation, comments, drawings, protection — is counted by kind and dropped. Recognising
-  them costs a match on the content type and buys an honest report.
+  translated by `formula.rs` like any cell's formula and stored the way `odf/read.rs` stores
+  one — lower-case key, OpenFormula text. A name the core's lexer would not read as one
+  identifier, or whose expression will not translate (a union, `A1:A2,B4:B5`, the commonest),
+  is lost and listed in `Report::names_lost` by class. A name with a `localSheetId` that is the
+  **only** definition of its name is carried like a global one — `odf/read.rs` flattens ODF's
+  own sheet-local names into the same one map, and with one definition there is nothing to
+  pick between. One that **collides** (two sheets' `Rate`, or a local `Rate` beside a global
+  one) is dropped and counted, and **a formula on its sheet naming it is refused**
+  (`Refusal::SheetLocalName`) rather than pointed at nothing, or at the other `Rate`. `_xlnm.Print_Area`, `_xlnm._FilterDatabase` and
+  the rest are Excel's own bookkeeping, and are skipped rather than arriving as the author's.
+- **Sheets.** Order carries; `state="hidden"` imports the data and loses the visibility,
+  counted. A name LibreOffice would not keep — `[ ] * ? : / \`, or an apostrophe at either
+  end — is renamed, each offending character to `_`, every formula and name following it
+  through the core's `formula::rename`, and listed in `Report::renamed`. Not because this model
+  cannot address one (`['Has/Slash'.A1]` evaluates) but because the pinned oracle **drops such
+  a sheet, cells and all**, and a document this import writes has to survive that round trip.
+- **Merged cells.** `<mergeCell ref="B2:D4"/>` → counted, one per merge. Nothing moves:
+  Excel keeps the value top-left and leaves the rest empty, which is what an unmerged sheet
+  already looks like.
+- **Autofilters.** `<autoFilter ref="A1:C9"/>` → `Filter::new`, carried. A `<filterColumn>`
+  holding `<filters>` — the dropdown's checkboxes — is the model's own vocabulary, a set of
+  displayed values, and is carried too. Every other criterion (a custom comparison, top ten, a
+  date band, a colour) is counted as `Appearance::FilterCriterion` and left out. Excel marks
+  each filtered row `hidden="1"`; a row the carried filter hides is left to the filter, and a
+  row it does not account for stays hidden by hand, so the sheet shows what Excel showed.
+- **Everything else** — charts, drawings, pivot tables, comments, conditional formatting, data
+  validation, protection — is counted by kind and dropped, found by relationship from the
+  worksheet part (`xlsx/src/parts.rs`) or by element in it: one per drawing part, per chart
+  part, per `<comment>`, per `<cfRule>`, per `<dataValidation>`, per pivot table, per sheet or
+  workbook that is **actually** locked (an empty `<workbookProtection/>`, which LibreOffice's
+  own `.xlsx` writes, locks nothing).
+- **`--strict`.** `grind sheet import --strict` fails when `Report::lossless` is false, writes
+  nothing, and prints the report anyway, so a pipeline hears *that* and a person reads *what*.
 
 ---
 
@@ -652,7 +670,7 @@ feature matrix.
 | X2 | **Formulas** — **DONE (2026-09-20)** | the Excel expression translator (`formula.rs`), shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes as a `Refusal` enum, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class — **12681 of 13039 translated (97.3%) over 362 workbooks, and every one of the other 358 counted by class**; the generated corpus asserts formula *text* per cell, 122 of 125 claims, 3 named |
 | X3 | **Number formats** — **DONE (2026-09-20)** | built-ins by meaning, the code parser, sections → `style:map`, `Unspellable` and its two severities, three measured rules in the core's renderer | loop D compares **displayed text** per cell wherever both sides formatted it — **68 workbooks, 501,335 cells, 0 disagreements, ten named divergences** — and the generated corpus asserts every `display` the manifest states: **89 of 107**, with the other 18 named in `UNSPELLABLE` by the `Part` that does not exist |
 | X4 | **Styles and geometry** — **DONE (2026-09-21)** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks; `Appearance` for what has no slot | loop D compares every carried cell's **style** the way loop C does — borders numerically, everything else exactly — and every column's width, row's height and track's hidden-ness: **68 workbooks, 0 style or track disagreements, eleven named divergences** of X4's own, every one the oracle approximating or guessing where this build counts (below); loop A′ imports all 362 of LibreOffice's workbooks with the identity check extended to styles and tracks |
-| X5 | **The document level** | defined names, sheet order and visibility, merges, autofilters, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
+| X5 | **The document level** — **DONE (2026-09-21)** | defined names, sheet order, visibility and renames, merges, autofilters, the parts beside a worksheet, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct — **every `dropped:` claim in the generated corpus holds, and `PENDING` is empty**; `--strict` exits non-zero and writes nothing when anything was lost (`cli/tests/cli.rs`) |
 | X6 | **The shells** | the GTK Open dialog learns `.xlsx` (import → a new unsaved document, retitled `.ods`), file filters, the wasm shell's note | open an `.xlsx` in the GUI, edit it, save it as `.ods` |
 
 ### What X0 found
@@ -860,6 +878,46 @@ Seven things it found on the way:
    `ooxmlgen.rs`'s identity check would fail. They are counted until that `TODO:` is closed,
    which is a change to `grind-sheet` rather than here.
 
+### What X5 found
+
+**`PENDING` is empty.** X5 satisfied its last eleven entries — nine report kinds, the sheet
+names, and D3's formula naming a sheet-local name — and every claim the generated corpus makes
+is now either held or named in `UNSPELLABLE` or `DECIDED_OTHERWISE`. The table stays, checked in
+both directions, because the corpus grows and X6 is still to come.
+
+Five things on the way:
+
+1. **The sheet names were addressable all along.** The `PENDING` entry said `Has[Brackets]`
+   and `Has/Slash` are names ODF cannot address; this model addresses both, quoted
+   (`['Has/Slash'.A1]` evaluates). What cannot keep them is LibreOffice: the pinned oracle drops
+   the sheet with its cells, and 26.8 renames it `Sheet9`. So the rename is for the round trip
+   every feature owes (rule 6), with the corpus's own suggested spelling, and reported.
+2. **A top-level comma in a name is a union.** Inside a cell, `,` belongs to a function call;
+   at the top of `<definedName>` it is Excel's union operator, and the translator read it as
+   unreadable. Parenthesising the expression — a union's other spelling — before translating
+   gives the loss its right class, and costs nothing for anything else.
+3. **Protection that locks nothing.** LibreOffice's own `.xlsx` writes `<workbookProtection/>`
+   with every lock at its default of off, and the first `--strict` test failed on the vendored
+   sample because of it. ECMA-376 says a lock is off unless set, and a sheet's `sheet="1"` is
+   what switches its protection on; only real locks are counted now.
+4. **A filtered row was hidden twice.** Excel writes `hidden="1"` on every row its filter
+   excludes, and X4 had carried those as rows hidden by hand — so clearing the filter would
+   have left them hidden. The carried filter now owns the rows it hides.
+5. **Loop A′'s ratchet caught the plan's own rule.** "Sheet-local → dropped" refused 2,506 of
+   the corpus's formulas at once, and 97.3% fell to 78%: 40 of its 54 sheet-local names are the
+   only definition of their name, so dropping them threw away formulas that meant exactly one
+   thing. The corpus's reason for dropping — flattening "would silently pick one of the two" —
+   only applies to a *collision*, so a collision is what is dropped now (four formulas refused,
+   97.2%), and a unique local name is carried as the core already carries ODF's. Carrying the
+   formula once its name was dropped would name nothing, or silently the other `Rate`, so
+   `Refusal::SheetLocalName` is the class; like `Refusal::Array` the translator never returns
+   it, since only the sheet reader knows where the formula stands.
+
+**The corpus, at X5**: 279 defined names carried and 46 lost — 19 into another workbook, 20
+unreadable (mostly `Sheet!#REF!`), four structured references, two inline arrays, one union —
+and every construct counted by kind: 741 merges, 152 conditional-format rules, 96 pivot tables,
+72 drawings, 40 validations, 28 comments, 14 protections, ten charts.
+
 ---
 
 ## Verification
@@ -959,7 +1017,7 @@ contains and what a conversion of it should produce. That is loop D's oracle, tr
 the corpus instead of waiting for `soffice` — and where a conversion is genuinely ambiguous a
 cell carries an `oracle` field, so the two can be told apart.
 
-Since this build is X4, part of that oracle is still about a later milestone. **Three** tables
+Since X5, none of that oracle is about a later milestone any more — `PENDING` is empty. **Three** tables
 carry the difference and all three are checked in **both directions**:
 
 - **`PENDING`** — a claim this build does not satisfy yet, with the milestone that will and
@@ -968,7 +1026,8 @@ carry the difference and all three are checked in **both directions**:
   projected" applied to a roadmap, and it is what stops a milestone table from quietly
   becoming a list of things that already work. 21 entries at X0; 18 after X1, which satisfied
   three and had to delete them; 13 after X2, which satisfied five more; **11 since X4**, which
-  satisfied `FontFamily` and moved `ThemeColor` to the next table but one.
+  satisfied `FontFamily` and moved `ThemeColor` to the next table but one; **none since X5**,
+  which satisfied the last eleven.
 - **`UNSPELLABLE`** — X3's, and a third table because neither of the others fits: a claim the
   **model** cannot satisfy, because the piece of format it is about has no `Part` in
   `grind_sheet::numfmt`. Not pending, since no milestone of this phase lands it; not decided
@@ -984,7 +1043,7 @@ carry the difference and all three are checked in **both directions**:
 Everything else is asserted. At X0 that was 138 of 161 claims, with the cell-level half held by
 one assertion that `report.cells == 0`, written to fail the day X1 began. It did, and was
 replaced by the comparison it promised; X2 added a formula claim per formula cell and X3 a
-display claim per formatted one. **1697 of 1735 claims now** — 1340 of 1341 cells, 122 of 125
+display claim per formatted one. **1708 of 1735 claims now** — 1340 of 1341 cells, 123 of 125
 formulas and 89 of 107 displays — one claim per cell per question (`cell:Sheet!A1`,
 `formula:Sheet!A1`, `display:Sheet!A1`), so a table entry can name exactly the cell it excuses.
 

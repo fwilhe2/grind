@@ -1702,3 +1702,34 @@ fn an_imported_workbook_arrives_with_its_values() {
     assert_eq!(ok(&["get", &book, "B3", "--formula"]).trim(), "=[.B2]*2");
     assert_eq!(ok(&["get", &book, "B3", "--raw"]).trim(), "240");
 }
+
+/// `--strict` fails a conversion that lost anything, writes nothing, and still says what was
+/// lost (X5). The vendored sample loses nothing; a corpus workbook with a merge does.
+#[cfg(feature = "xlsx")]
+#[test]
+fn a_strict_import_refuses_a_lossy_conversion() {
+    let dir = Sandbox::new("import-strict");
+    let data = concat!(env!("CARGO_MANIFEST_DIR"), "/../xlsx/tests/data");
+
+    let clean = s(&dir.path("clean.fods"));
+    let sample = format!("{data}/sample.xlsx");
+    let json = succeeds(
+        grind(&[
+            "--format", "json", "sheet", "import", &sample, &clean, "--strict",
+        ]),
+        &[],
+    );
+    assert_eq!(field(&json, "lossless"), "true");
+    assert!(std::path::Path::new(&clean).exists());
+
+    let lossy = s(&dir.path("merged.fods"));
+    let merged = format!("{data}/corpus/document/merged-cells.xlsx");
+    let output = grind(&[
+        "--format", "json", "sheet", "import", &merged, &lossy, "--strict",
+    ]);
+    assert!(!output.status.success(), "a lossy strict import fails");
+    let json = String::from_utf8(output.stdout).expect("utf-8");
+    assert_eq!(field(&json, "written"), "false");
+    assert!(json.contains("merged range"), "and says why: {json}");
+    assert!(!std::path::Path::new(&lossy).exists(), "and writes nothing");
+}

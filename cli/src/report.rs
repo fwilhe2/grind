@@ -41,8 +41,9 @@ pub enum Report {
     /// What `grind lint` found (`doc/dsl.md` §4.3, D6).
     Lint(LintReport),
     /// What `grind sheet import` carried, and what it did not (`doc/xlsx-import.md`).
+    /// Boxed for the reason `CellStyle` is: the fidelity report outgrew every other variant.
     #[cfg(feature = "xlsx")]
-    Import(ImportReport),
+    Import(Box<ImportReport>),
 }
 
 /// The fidelity report, which is **part of the output rather than an afterthought**: what a
@@ -54,6 +55,10 @@ pub struct ImportReport {
     pub input: String,
     pub output: String,
     pub written: bool,
+    /// Whether the conversion lost nothing at all — `grind_xlsx::Report::lossless`.
+    pub lossless: bool,
+    /// `--strict`: a conversion that is not lossless fails, and is not written.
+    pub strict: bool,
     /// `transitional`, `strict` or `mixed` — a fact about the file the reader stated rather
     /// than branched on.
     pub flavour: &'static str,
@@ -86,10 +91,30 @@ pub struct ImportReport {
     pub unknown_functions: Vec<String>,
     /// Every construct the model has no home for, by name and count.
     pub dropped: Vec<DroppedCount>,
+    /// Defined names carried into the document.
+    pub names: usize,
+    /// Defined names that were not, each with the class that stopped it.
+    pub names_lost: Vec<NameLost>,
+    /// Sheets whose name changed, and to what. Every reference followed.
+    pub renamed: Vec<Renamed>,
     /// Namespaces the workbook said a consumer must understand and this one does not. Never
     /// a refusal — in a spreadsheet such a namespace guards a feature rather than the cell
     /// values, and cell values are what an import is for.
     pub must_understand: Vec<String>,
+}
+
+#[cfg(feature = "xlsx")]
+#[derive(Debug, Serialize)]
+pub struct NameLost {
+    pub name: String,
+    pub why: String,
+}
+
+#[cfg(feature = "xlsx")]
+#[derive(Debug, Serialize)]
+pub struct Renamed {
+    pub from: String,
+    pub to: String,
 }
 
 #[cfg(feature = "xlsx")]
@@ -107,11 +132,14 @@ impl ImportReport {
         document: &grind_sheet::model::Document,
         report: &grind_xlsx::Report,
         written: bool,
+        strict: bool,
     ) -> Self {
         Self {
             input: input.to_owned(),
             output: output.to_owned(),
             written,
+            lossless: report.lossless(),
+            strict,
             flavour: match report.flavour {
                 grind_xlsx::Flavour::Transitional => "transitional",
                 grind_xlsx::Flavour::Strict => "strict",
@@ -154,6 +182,23 @@ impl ImportReport {
                 .map(|(what, count)| DroppedCount {
                     what: what.label().to_owned(),
                     count: *count,
+                })
+                .collect(),
+            names: report.names,
+            names_lost: report
+                .names_lost
+                .iter()
+                .map(|(name, why)| NameLost {
+                    name: name.clone(),
+                    why: why.label().to_owned(),
+                })
+                .collect(),
+            renamed: report
+                .renamed
+                .iter()
+                .map(|(from, to)| Renamed {
+                    from: from.clone(),
+                    to: to.clone(),
                 })
                 .collect(),
             must_understand: report.must_understand.iter().cloned().collect(),
@@ -349,11 +394,22 @@ impl LintReport {
 }
 
 impl Report {
-    /// Whether the command found something that should fail a script. Only `lint` ever does:
-    /// every other report here is the result of an operation that either worked or returned an
-    /// `Err`, and a no-op is a success.
+    /// Whether the command found something that should fail a script. `lint` does on an
+    /// error-severity finding, and `sheet import --strict` on any loss; every other report here
+    /// is the result of an operation that either worked or returned an `Err`, and a no-op is a
+    /// success.
     pub fn failed(&self) -> bool {
-        matches!(self, Report::Lint(lint) if lint.failed())
+        matches!(self, Report::Lint(lint) if lint.failed()) || self.import_refused()
+    }
+
+    #[cfg(feature = "xlsx")]
+    fn import_refused(&self) -> bool {
+        matches!(self, Report::Import(import) if import.strict && !import.lossless)
+    }
+
+    #[cfg(not(feature = "xlsx"))]
+    fn import_refused(&self) -> bool {
+        false
     }
 
     pub fn print(&self, format: Format) {
@@ -439,6 +495,12 @@ impl Report {
                 for class in &import.untranslated {
                     println!("untranslated\t{}\t{}", class.count, class.what);
                 }
+                for lost in &import.names_lost {
+                    println!("name lost\t{}\t{}", lost.name, lost.why);
+                }
+                for renamed in &import.renamed {
+                    println!("renamed\t{}\t{}", renamed.from, renamed.to);
+                }
                 if import.over_budget > 0 {
                     println!("over budget\t{}\tcells", import.over_budget);
                 }
@@ -452,9 +514,10 @@ impl Report {
                     "{} -> {}{}",
                     import.input,
                     import.output,
-                    match import.written {
-                        true => "",
-                        false => " (dry run, nothing written)",
+                    match (import.written, import.strict && !import.lossless) {
+                        (true, _) => "",
+                        (false, true) => " (--strict: something was lost, nothing written)",
+                        (false, false) => " (dry run, nothing written)",
                     }
                 );
                 println!(

@@ -144,6 +144,14 @@ pub enum RelType {
     SharedStrings,
     Styles,
     Theme,
+    /// A worksheet's DrawingML drawing, which is where its charts and pictures hang (X5).
+    Drawing,
+    /// A drawing's chart part.
+    Chart,
+    /// A worksheet's comments part (X5). Its VML anchor (`vmlDrawing`) is not a `Drawing`.
+    Comments,
+    /// A worksheet's pivot table definition (X5).
+    PivotTable,
     /// Recognised so it can be *ignored* cheaply: a calculation chain is Excel's evaluation
     /// order cache and says nothing this filter wants.
     CalcChain,
@@ -168,6 +176,10 @@ impl RelType {
             Some("sharedStrings") => RelType::SharedStrings,
             Some("styles") => RelType::Styles,
             Some("theme") => RelType::Theme,
+            Some("drawing") => RelType::Drawing,
+            Some("chart") => RelType::Chart,
+            Some("comments") => RelType::Comments,
+            Some("pivotTable") => RelType::PivotTable,
             Some("calcChain") => RelType::CalcChain,
             _ => RelType::Other,
         }

@@ -112,6 +112,10 @@ pub enum Appearance {
     /// Frozen or split panes. Per sheet. The selection, the zoom and whether gridlines and
     /// headers show are view state rather than document content, and are not counted.
     Pane,
+    /// An autofilter criterion other than a set of values — a custom comparison, a top-ten
+    /// rule, a dynamic date band, a colour. The rows Excel hid for it stay hidden; the rule
+    /// that hid them is gone. Per filtered column.
+    FilterCriterion,
     /// A sheet default width derived from `baseColWidth` with no `defaultColWidth` stated
     /// beside it — arithmetic this build has not measured — or a hidden or author-sized
     /// `<col>` run to the sheet's edge, which is carried only as far as the sheet's content
@@ -142,6 +146,7 @@ impl Appearance {
             Appearance::ZeroSize => "zero-size row or column (carried hidden)",
             Appearance::Outline => "row or column outline (per sheet)",
             Appearance::Pane => "frozen or split panes (per sheet)",
+            Appearance::FilterCriterion => "autofilter criterion (per column)",
             Appearance::SheetDefaultWidth => "sheet default column width (per sheet)",
         }
     }

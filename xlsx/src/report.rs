@@ -122,6 +122,16 @@ pub struct Report {
     /// Namespaces the file said a consumer must understand and this one does not
     /// (`mc:MustUnderstand`). Recorded, never a refusal.
     pub must_understand: BTreeSet<String>,
+    /// Defined names carried into `Document::names` (X5).
+    pub names: usize,
+    /// Workbook-wide defined names whose expression could not be carried, with the class that
+    /// stopped each — a union of two ranges, say, or a spelling ODF has no name for. The name
+    /// is gone, and every formula that uses it recalculates to `#NAME?`.
+    pub names_lost: Vec<(String, crate::formula::Refusal)>,
+    /// Sheets whose name had to change, `(as the workbook spelled it, as the document does)`.
+    /// Every reference to one was rewritten with it, so nothing *points* anywhere different;
+    /// what is lost is the spelling, and a pipeline that finds sheets by name wants to know.
+    pub renamed: Vec<(String, String)>,
 }
 
 impl Report {
@@ -151,6 +161,8 @@ impl Report {
             && self.untranslated.is_empty()
             && self.formats_lost.is_empty()
             && self.appearance_lost.is_empty()
+            && self.names_lost.is_empty()
+            && self.renamed.is_empty()
             && self.over_budget == 0
     }
 }

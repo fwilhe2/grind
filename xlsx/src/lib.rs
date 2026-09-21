@@ -26,7 +26,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: milestone X4.** The seam (X0) — the package, the flavour and markup
+//! **State of the build: milestone X5.** The seam (X0) — the package, the flavour and markup
 //! compatibility machinery, the workbook's sheet list — every cell's **value** (X1): shared and
 //! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
 //! rule — every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
@@ -36,7 +36,9 @@
 //! named, counted and *not approximated*. And every cell's **look** (X4) — font, fill, border
 //! and alignment, through [`styles`], [`color`] and [`theme`] — with every column's width, row's
 //! height and track's hidden-ness; what the model has no slot for is an [`Appearance`], counted
-//! the same way. Defined names, merges and the rest of the document level are X5's.
+//! the same way. And the document level (X5): defined names, sheet names LibreOffice would not
+//! keep, autofilters, and every construct beside the cells — merges, charts, comments, pivot
+//! tables, rules — counted by kind ([`parts`]). The GUI shells opening a workbook are X6's.
 
 use std::fmt;
 use std::path::Path;
@@ -51,6 +53,7 @@ pub mod mce;
 pub mod names;
 pub mod numfmt;
 pub mod package;
+pub mod parts;
 pub mod report;
 pub mod sheet;
 pub mod strings;
@@ -153,6 +156,7 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     }
 
     let mut document = workbook::document(&book, &mut report);
+    let names = workbook::names(&book, &mut document, &mut report);
 
     // Styles before sheets, as `odf/read.rs` reads `styles.xml` before `content.xml`: a serial
     // is not a date until its format says so. Both parts are optional, and a workbook without
@@ -175,11 +179,14 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         .and_then(|part| package.part(part))
         .map(|bytes| strings::read(&bytes))
         .unwrap_or_default();
+    let renames = report.renamed.clone();
     let context = sheet::Context {
         strings: &strings,
         styles: &styles,
         date_1904: book.date_1904,
         null_date: document.null_date,
+        names: &names,
+        renames: &renames,
     };
     // `document` has exactly one sheet per entry — or one invented `Sheet1` for a workbook
     // with none, which has no part — so the indices agree.
@@ -189,10 +196,14 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         .zip(document.sheets.iter_mut())
         .enumerate()
     {
-        let Some(bytes) = entry.part.as_deref().and_then(|part| package.part(part)) else {
+        let Some(part) = entry.part.as_deref() else {
+            continue;
+        };
+        let Some(bytes) = package.part(part) else {
             continue;
         };
         sheet::read(&bytes, &context, index, target, &mut report, &mut seen);
+        parts::count(&mut package, part, &mut report, &mut seen);
     }
     // The flavour is whatever the *whole* read saw, not only what the workbook part did: a
     // Strict relationship type in `_rels/.rels` is evidence before any part is opened.
