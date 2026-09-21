@@ -25,7 +25,7 @@
 const WORKSPACE: &str = include_str!("../../Cargo.toml");
 
 /// Every crate that must **not** name the generator, with its manifest.
-const READERS: [(&str, &str); 9] = [
+const READERS: [(&str, &str); 10] = [
     ("core", include_str!("../../core/Cargo.toml")),
     ("sheet", include_str!("../../sheet/Cargo.toml")),
     ("text", include_str!("../../text/Cargo.toml")),
@@ -41,6 +41,9 @@ const READERS: [(&str, &str); 9] = [
     ("ui_tui", include_str!("../../ui_tui/Cargo.toml")),
     ("ui_web", include_str!("../../ui_web/Cargo.toml")),
     ("ui_win32", include_str!("../../ui_win32/Cargo.toml")),
+    // The meta-package links nothing at all; listed so that the day it gains a dependency, this
+    // is one of the places that notices.
+    ("suite", include_str!("../../suite/Cargo.toml")),
 ];
 
 /// The crates R11 exempts, and why each one is allowed to link an evaluator.

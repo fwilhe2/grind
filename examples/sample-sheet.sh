@@ -522,6 +522,12 @@ say "build: a document generated from a script"
 sheet view "$out/generated.fods" A1:E9
 sheet view "$out/generated.fods" B8:E8 --formulas   # the totals the loop wrote
 
+# D8: the same script's own checks. `grind test` builds the document again, recalculates it, and
+# calls each `test_` function at the bottom of `budget.rhai` with it — the totals, what they
+# display, the second sheet reaching back — and fails if any assertion does. Nothing is written.
+say "test: the generated document's totals, checked"
+"$GRIND" test "$here/budget.rhai"
+
 # Data and code, separated: `examples/prices.rhai` says what the document *is* and
 # `examples/prices.json` beside it says what is *in* it, which somebody who has never read a
 # line of Rhai can edit. A script reads JSON and nothing else, from one directory a person

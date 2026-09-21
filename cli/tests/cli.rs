@@ -379,6 +379,48 @@ fn example(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// **D8's exit criterion**: a generated document's totals asserted — by the script that generated
+/// it, through `grind test`, which fails the command when an assertion does and points at its
+/// line.
+#[test]
+fn a_script_tests_its_own_totals() {
+    let json = succeeds(
+        grind(&["--format", "json", "test", &s(&example("budget.rhai"))]),
+        &[],
+    );
+    assert_eq!(field(&json, "passed"), "4");
+    assert_eq!(field(&json, "failed"), "0");
+
+    // The same model with one number wrong: the command fails, and says where and what.
+    let dir = Sandbox::new("test-fails");
+    let wrong = dir.path("budget.rhai");
+    let source = std::fs::read_to_string(example("budget.rhai"))
+        .unwrap()
+        .replace(
+            "assert_eq(d.cell(\"B8\").value, 3260);",
+            "assert_eq(d.cell(\"B8\").value, 3261);",
+        );
+    std::fs::write(&wrong, &source).unwrap();
+    let output = grind(&["test", &s(&wrong)]);
+    assert!(!output.status.success(), "a failed test fails the command");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let line = 1 + source.lines().position(|l| l.contains("3261")).unwrap();
+    assert!(
+        stdout.contains("FAILED\ttest_the_totals_add_up"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("budget.rhai:{line}:5: expected 3261, got 3260")),
+        "{stdout}"
+    );
+    assert!(stdout.contains("3 passed, 1 failed"), "{stdout}");
+
+    // A script with no tests is an error rather than a pass.
+    let output = grind(&["test", &s(&example("prices.rhai"))]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("defines no tests"));
+}
+
 /// **D7's exit criterion**: `examples/sample-sheet.sh`'s document, generated
 /// (`doc/dsl.md` §7). The script is the whole table said once — the categories are data and a
 /// loop writes the rows — and what comes out is an ordinary document with the same totals.

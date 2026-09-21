@@ -406,7 +406,8 @@ the last of which is gated on `doc/odt-format.md` §5's unanswered question abou
 Writer table's formula is OpenFormula at all.
 
 **Both.** Pagination and RTL, both gated — RTL by explicit decision in `doc/text-layout.md`.
-Editing the code view (`doc/dsl.md` §6.4). `grind test`, D8's half of the generator.
+Editing the code view (`doc/dsl.md` §6.4). `grind test` is built (D8) and, like `grind build`,
+is the CLI's alone by R11: no shell links the generator.
 
 ## 10. How to re-derive this
 

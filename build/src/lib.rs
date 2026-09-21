@@ -51,11 +51,15 @@
 //! because a generated document is nearly always asked one more question before it is
 //! written: recalculate it, lint it, or (D8) assert something about a total. Writing it is
 //! then the ordinary `save_file`, and `grind build` is a dozen lines in `cli/src/main.rs`.
+//!
+//! [`test`](mod@test) is the other verb, D8: the same script built the same way, recalculated, and its
+//! `test_` functions called with the result.
 
 pub mod data;
 pub mod engine;
 pub mod hint;
 pub mod sheet;
+pub mod test;
 pub mod text;
 
 use std::fmt;
@@ -115,7 +119,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 impl Error {
-    fn at(script: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn at(script: &str, message: impl Into<String>) -> Self {
         Error {
             script: script.to_owned(),
             line: None,
@@ -137,7 +141,11 @@ impl Error {
 /// learn, and burying forty of those functions in six hundred of Rhai's own is how a reference
 /// becomes unreadable — an editor already knows the standard ones.
 pub fn definitions() -> String {
-    engine::engine(Rc::new(NoData))
+    // `grind test`'s vocabulary too: a test is written in the same file as the model, so the
+    // editor open on it should complete `assert_eq` as readily as `row`.
+    let mut engine = engine::engine(Rc::new(NoData));
+    test::register(&mut engine);
+    engine
         .definitions()
         .include_standard_packages(false)
         .single_file()
@@ -264,7 +272,7 @@ pub fn build_with(source: &str, script: &str, data: Rc<dyn Data>) -> Result<Arti
 /// Three accepted shapes, and the third is sugar: a script that builds one sheet may return
 /// the sheet, because `spreadsheet()` around a single `sheet(…)` is ceremony. `doc/dsl.md`
 /// §4.2's sketch ends with a bare `s`, and it runs.
-fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Error> {
+pub(crate) fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Error> {
     let named = value.type_name().to_owned();
     if let Some(book) = value.clone().try_cast::<sheet::Book>() {
         return sheet::materialise(&book)
@@ -291,7 +299,7 @@ fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Error> {
 }
 
 /// A Rhai failure as ours, with its position carried across.
-fn position(script: &str, error: &rhai::EvalAltResult) -> Error {
+pub(crate) fn position(script: &str, error: &rhai::EvalAltResult) -> Error {
     let at = error.position();
     Error {
         script: script.to_owned(),

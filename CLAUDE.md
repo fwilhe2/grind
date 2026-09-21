@@ -76,7 +76,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`: every milestone, W0 through W8, is done.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
 | `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
 | `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
-| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7 built, D8's `grind test` not) |
+| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7's `grind build` and D8's `grind test` both built) |
 | `doc/generator-spec.md` | **The generator's language — normative for `build/`.** §8 is the editor half: `grind definitions` writes a Rhai `.d.rhai` file from the engine itself and `--snippets` writes the same vocabulary as VS Code snippets, so completion and hover cover it with or without a language server, and `build/src/hint.rs` is why every function has documentation to show — registering one *takes* the comment, so an undocumented function cannot be added by forgetting. The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
 | `doc/projection-guide.md` | **The projection's guide (D12)** — writing a `.grind` by hand, in the order the problems arrive, built on `examples/quote.grind`. Task-shaped where `doc/projection-sheet.md` is a vocabulary; §1 is the answer to *why would anybody want this*, and §10 the honest list of what converting *to* a projection drops |
 | `doc/generator-guide.md` | **The generator's guide (D14)** — from `examples/first.rhai` to `examples/timesheet.rhai`, four sheets that have to agree with each other. `cli/tests/editor.rs` builds every script it names |
@@ -115,6 +115,7 @@ cargo run -p grind-cli -- sheet import-csv book.ods data.csv --locale de-DE  # d
 cargo run -p grind-cli -- sheet export-csv book.ods --delimiter tab
 cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
 cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
+cargo run -p grind-cli -- test examples/budget.rhai                # and asserts its own totals
 cargo run -p grind-cli -- build examples/timesheet.rhai -o month.fods  # four sheets that agree
 cargo run -p grind-cli -- lint examples/quote.grind       # a hand-written projection
 cargo run -p grind-cli -- sheet import book.xlsx book.fods  # phase 11; one way in, never out
@@ -1035,7 +1036,12 @@ network, environment, clock or randomness, two of those by feature flags rather 
 unregistering; and everything is bounded, so a script that does not terminate is an error with a
 line number. The host vocabulary is `doc/projection-sheet.md`'s rather than a third spelling of
 one model, and the same source produces the same bytes — a test builds the budget twice and
-compares them. **D8 (`grind test`) is not built**, and it plus the rest of §6.5's table are the
+compares them. **D8 is `grind test`**: the same script built the same way and recalculated, and
+every `fn test_…(d)` in it called with the document it built — assertions (`assert`,
+`assert_eq`, `assert_ne`, `assert_near`) and a read-only handle (`d.cell("B8").value`,
+`.display`, `.formula`, `d.block("p2")`, `d.lint()`), in `build/src/test.rs` and
+`doc/generator-spec.md` §10. `grind build` never calls a test, so a model and its checks are one
+file — `examples/budget.rhai` ends with four, and CI runs them. The rest of §6.5's table is the
 open list. A script may read JSON data beside itself (`json("prices.json")`,
 `examples/prices.rhai` + `prices.json`), which is the one amendment to §2's "no I/O" and is
 narrower than the rule it replaces — `doc/generator-spec.md` §3.5 has the four walls and

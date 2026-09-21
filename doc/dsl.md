@@ -22,7 +22,9 @@ with the line the selection is on marked and moving in it selecting what that li
 that *returns* a document and writes it — `grind-build`, the only crate in the workspace an
 evaluator reaches, and the CLI is the only binary that links it (R11, checked). A script has no
 filesystem, no network, no clock and no randomness, and is bounded; the same source produces the
-same bytes, asserted by building `examples/budget.rhai` twice. `grind test` (D8) is not built.
+same bytes, asserted by building `examples/budget.rhai` twice. **And its second half** (D8):
+`grind test model.rhai` builds the same script, recalculates it, and calls every `test_` function
+in it with the document it built — `examples/budget.rhai` asserts its own totals, in CI.
 **Three of the four documents §7 says the two languages owe are written** — the generator's
 specification (`doc/generator-spec.md`, D13) and both guides (`doc/projection-guide.md` and
 `doc/generator-guide.md`, D12 and D14), each with the mechanical check its genre allows, plus
@@ -560,6 +562,13 @@ test "the total is the sum of the regions" {
 A spreadsheet whose totals are checked by a test that runs in CI is a genuinely new thing to
 have, and it is the clearest single answer to *why bother with a generator at all*.
 
+**As built (D8), the sketch above is not the syntax**: `test "name" { … }` is not Rhai, and
+making it Rhai would mean custom syntax — a second grammar in a crate whose argument is that the
+language is somebody else's. A test is a function in the model's own script, `fn test_total(d)
+{ … }`, called with the document the script built; `grind build` never calls one, so the model
+and its checks are one file. `doc/generator-spec.md` §10 is the reference, and
+`examples/budget.rhai` ends with four of them.
+
 ---
 
 ## 5. The field, measured
@@ -738,7 +747,7 @@ Everything in this document is a core capability except the generator, and the e
 | `grind lint` | core, per app | ● | ● | ● | ● |
 | Refactorings — each one an `Action` | core, per app | ● | ● | ● | ● |
 | **`grind build`** — the generator | **its own crate** (`grind-build`) | ● | ✗ | ✗ | ✗ |
-| **`grind test`** | same | ○ (D8, not built) | ✗ | ✗ | ✗ |
+| **`grind test`** | same | ● | ✗ | ✗ | ✗ |
 
 Three qualifications, because "in the core" is not the same as "free in every shell". (● is
 built, ✗ is by decision.)
@@ -785,7 +794,7 @@ its language choice is reversible (§1) and layer 0's bijection is not.
 | **D5** | R6 for the projection: splice at the spans `kdl-rs` reports | One cell edited changes one line; comments survive | **done**, both document types — `grind_core::projection::Source` plus a splice per app. An untouched save returns the bytes that were read, over both corpora. Not through `kdl-rs`'s *mutation* API, and §3.1 records why |
 | **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | **done**, both applications — eight rules, five per app with two shared, each in §4.3's table and each with a test. `grind sheet lint` / `grind text lint`, plus `grind lint` at the suite level, which reads the kind out of the file. What a diagnostic *is* is `grind_core::lint` (R8); every rule is asked through machinery that already answers its question, so the linter cannot disagree with the document's own behaviour |
 | **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | **done** — `build/` (`grind-build`), `grind build model.rhai -o model.fods`, **both document types**. `examples/budget.rhai` is the exit criterion: the budget's table, its formulas, formats, styles, widths, names and second sheet, with the categories as data and a loop for the rows, asserted in `cli/tests/cli.rs` and run by `examples/sample-sheet.sh`. The host vocabulary is `doc/projection-sheet.md`'s, `sum_above()` lost the argument the sketch gave it, styles layer where the core's replace, and the dependency was 13 crates rather than 26 — §4.2's own subsection is the record |
-| **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | not started |
+| **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | **Done (2026-09-21).** `examples/budget.rhai` asserts its totals, their display and its second sheet; `cli/tests/cli.rs` runs it and a copy with one number wrong, which fails at the assertion's line |
 | **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |
 | **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | **first row done** — rename-a-sheet, which closed a documented bug rather than adding a feature. One `Action::Batch` reached from `grind sheet rename` and from all four shells, undone by one Ctrl+Z, and it counts what it rewrote so a document-wide edit is visible. The rest of §6.5's table is open and moves one row at a time, on evidence |
 | **D11** | The projection's **specification** — the language, not the vocabulary (below) | Every production has an example a test runs; somebody with only that file can hand-write a `.grind` that opens | not started |

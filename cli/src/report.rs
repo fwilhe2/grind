@@ -40,6 +40,8 @@ pub enum Report {
     TextDocument(TextDocumentReport),
     /// What `grind lint` found (`doc/dsl.md` §4.3, D6).
     Lint(LintReport),
+    /// What `grind test` ran, and what failed (`doc/dsl.md` §4.4, D8).
+    Tests(TestsReport),
     /// What `grind sheet import` carried, and what it did not (`doc/xlsx-import.md`).
     /// Boxed for the reason `CellStyle` is: the fidelity report outgrew every other variant.
     #[cfg(feature = "xlsx")]
@@ -101,6 +103,45 @@ pub struct ImportReport {
     /// a refusal — in a spreadsheet such a namespace guards a feature rather than the cell
     /// values, and cell values are what an import is for.
     pub must_understand: Vec<String>,
+}
+
+/// What `grind test` ran: every test by name, and each failure with where it failed.
+#[derive(Debug, Serialize)]
+pub struct TestsReport {
+    pub script: String,
+    pub passed: usize,
+    pub failed: usize,
+    pub tests: Vec<TestOutcome>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TestOutcome {
+    pub name: String,
+    pub passed: bool,
+    /// `model.rhai:12:5: expected 781, got 780` — the shape a compiler prints, so an editor's
+    /// error parser can jump to it. Absent when the test passed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
+}
+
+impl TestsReport {
+    pub fn new(script: &str, tests: &grind_build::test::Tests) -> Self {
+        let tests: Vec<TestOutcome> = tests
+            .outcomes
+            .iter()
+            .map(|outcome| TestOutcome {
+                name: outcome.name.clone(),
+                passed: outcome.failure.is_none(),
+                failure: outcome.failure.as_ref().map(ToString::to_string),
+            })
+            .collect();
+        TestsReport {
+            script: script.to_owned(),
+            passed: tests.iter().filter(|t| t.passed).count(),
+            failed: tests.iter().filter(|t| !t.passed).count(),
+            tests,
+        }
+    }
 }
 
 #[cfg(feature = "xlsx")]
@@ -395,11 +436,13 @@ impl LintReport {
 
 impl Report {
     /// Whether the command found something that should fail a script. `lint` does on an
-    /// error-severity finding, and `sheet import --strict` on any loss; every other report here
+    /// error-severity finding, `test` on a failed test, and `sheet import --strict` on any loss; every other report here
     /// is the result of an operation that either worked or returned an `Err`, and a no-op is a
     /// success.
     pub fn failed(&self) -> bool {
-        matches!(self, Report::Lint(lint) if lint.failed()) || self.import_refused()
+        matches!(self, Report::Lint(lint) if lint.failed())
+            || matches!(self, Report::Tests(tests) if tests.failed > 0)
+            || self.import_refused()
     }
 
     #[cfg(feature = "xlsx")]
@@ -528,6 +571,23 @@ impl Report {
                     import.formatted,
                     import.styled,
                     import.flavour
+                );
+            }
+            // One line per test, `cargo test`'s shape, and each failure's location on its own
+            // line in a compiler's, so an editor can jump to the assertion.
+            Report::Tests(tests) => {
+                for test in &tests.tests {
+                    match &test.failure {
+                        None => println!("ok\t{}", test.name),
+                        Some(failure) => {
+                            println!("FAILED\t{}", test.name);
+                            println!("  {failure}");
+                        }
+                    }
+                }
+                println!(
+                    "{}: {} passed, {} failed",
+                    tests.script, tests.passed, tests.failed
                 );
             }
             // One diagnostic per line, in the shape every compiler prints — so an editor's

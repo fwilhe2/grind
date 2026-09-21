@@ -517,8 +517,8 @@ above with what each extension actually does.
 A specification nothing checks drifts, and this one has the same guard
 `doc/small-group.md` puts on `funcs::implemented()`, in `build/tests/spec.rs`.
 
-**Two conventions make it possible, and editing this file means keeping them.** The API is §3.5, §4
-and §5 and nowhere else, because the tables elsewhere name things that are deliberately *not*
+**Two conventions make it possible, and editing this file means keeping them.** The API is §3.5, §4,
+§5 and §10 and nowhere else, because the tables elsewhere name things that are deliberately *not*
 functions — `eval` in §2.3 is a row about its absence. And inside those three sections, a table
 row's first cell is a code span holding the call as a script writes it: `` `sheet(name)` ``,
 `` `s.push(row)` ``, `` `s.rows` ``. The name is what is left after dropping the receiver and
@@ -541,3 +541,73 @@ What the check does not cover, and a reader should therefore treat as prose: the
 columns. Argument types and return values are no longer only prose — §8's definition file has
 them from the engine, and the tables here are written to agree with it. Those are held by `build/tests/smoke.rs`, which
 executes most of them, and by the examples.
+
+---
+
+## 10. Testing — `grind test`
+
+`doc/dsl.md` §4.4, D8. **A test is a function in the model's own script** whose name starts
+with `test_` and which takes one parameter, the document:
+
+```rhai
+let s = sheet("Sales");
+s.push(row(["Region", "Units"]));
+s.push(row(["North", 400]));
+s.push(row(["South", 380]));
+s.push(row(["Total", sum_above()]));
+s;
+
+fn test_the_total_is_the_sum_of_the_regions(d) {
+    assert_eq(d.cell("B4").value, 780);
+    assert(d.lint().is_empty());
+}
+```
+
+`grind test model.rhai` builds the script exactly as `grind build` does (§6), **recalculates**
+what it built — a test asks about the formulas' answers, not about what the script typed — and
+calls each `test_` function with it, in order of name. Every test runs; each
+failure is reported with the line of the assertion that failed, and the command exits non-zero
+if any did. A script that defines **no** test is an error rather than a pass, since a CI step
+that runs a file with no checks in it must not go green.
+
+Three things follow from the shape, and each is a decision:
+
+- **The model's last statement ends with `;` when tests follow it** — `s;`. Rhai will not take a
+  function definition straight after a bare expression, and a script's value is its last
+  statement's either way, so `grind build` is unaffected. Tests may equally sit before the model.
+- **`grind build` never calls a test.** A function nothing calls is inert, so the model and its
+  checks are one file, and building it writes the same bytes with or without them.
+- **A test reaches the document only through its argument.** A Rhai function cannot see the
+  script's own variables, so what a test checks is what was *built*, never a value the script
+  happened to leave in a variable. The handle is read-only: nothing below edits.
+
+§4.4's first sketch, `test "name" { … }`, is not Rhai; making it Rhai would mean custom syntax, a
+second grammar in a crate whose whole argument is that the language is somebody else's.
+
+### 10.1 Assertions
+
+Registered for `grind test`; a `grind build` has nothing to assert, and never calls a test.
+
+| Call | Returns | Meaning |
+|---|---|---|
+| `assert(condition)` | `()` | fail unless `condition` is true |
+| `assert(condition, message)` | `()` | the same, saying `message` |
+| `assert_eq(actual, expected)` | `()` | fail unless the two are equal. A number compares as a number, so `780` equals the `780.0` a cell holds; anything else compares by type and value |
+| `assert_ne(actual, unexpected)` | `()` | fail if they are equal |
+| `assert_near(actual, expected, tolerance)` | `()` | fail unless the two numbers are within `tolerance` — a sum of fractions, where `0.1 + 0.2` is not `0.3` to the last bit |
+
+### 10.2 The built document
+
+| Call | Returns | Meaning |
+|---|---|---|
+| `d.cell(address)` | a `Cell` | one cell of a spreadsheet by address — `"B4"` on the first sheet, `"Summary.B4"` on another. Asking a text document is a failure |
+| `c.value` | a number, a string, a bool or `()` | what the cell holds after recalculation; `()` is an empty cell |
+| `c.display` | a string | what the cell shows, through its number format |
+| `c.formula` | a string or `()` | its formula in OpenFormula's syntax, `"=SUM([.B2:.B3])"` |
+| `d.block(address)` | a string | one block's text in a text document, by any of its addresses — `"p2"`, `"#intro"`, `"§2.1"` |
+| `d.lint()` | an array of strings | every error and warning `grind lint` would report, one line each; `assert(d.lint().is_empty())` is a document that contradicts itself nowhere |
+
+A test that fails does not stop the others. The report names each test and, for a failure, the
+script, the line and column of the assertion, and what it expected — `model.rhai:12:5:
+expected 781, got 780`.
+

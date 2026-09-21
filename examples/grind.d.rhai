@@ -3,6 +3,23 @@ module static;
 /// `fo:text-align` — `left`, `center`, `right` or `justify`.
 fn align(style: Style, align: string) -> Style;
 
+/// Fail this test unless `condition` is true.
+fn assert(condition: bool) -> ();
+
+/// Fail this test with `message` unless `condition` is true.
+fn assert(condition: bool, message: string) -> ();
+
+/// Fail this test unless the two values are equal. A number compares as a number, so
+/// `assert_eq(d.cell("B6").value, 15400)` holds for the float the cell holds.
+fn assert_eq(actual: ?, expected: ?) -> ();
+
+/// Fail this test if the two values are equal.
+fn assert_ne(actual: ?, unexpected: ?) -> ();
+
+/// Fail this test unless `actual` is within `tolerance` of `expected` — for a total of
+/// fractions, where `0.1 + 0.2` is not `0.3` to the last bit.
+fn assert_near(actual: float, expected: float, tolerance: float) -> ();
+
 /// The address of a cell, from indices counted from 0 — `s.at(0, 1)` is `"B1"`.
 ///
 /// The one place a script converts between an index and an address; the `+ 1` a
@@ -11,6 +28,10 @@ fn at(sheet: Sheet, row: int, column: int) -> string;
 
 /// `fo:background-color`, in the same colours `color` takes.
 fn background(style: Style, color: string) -> Style;
+
+/// One block's text in the built text document, by address — `"p3"`, `"#intro"`,
+/// `"§2.1"`.
+fn block(document: Built, address: string) -> string;
 
 /// How many blocks have been said.
 fn blocks(document: Text) -> int;
@@ -29,6 +50,10 @@ fn bookmark(document: Text, name: string) -> Text;
 
 /// All four edges — a width, a line and a colour: `"0.5pt solid navy"`.
 fn border(style: Style, border: string) -> Style;
+
+/// One cell of the built spreadsheet, by address — `"B6"` on the first sheet, or
+/// `"Summary.B6"`. Read after the document was recalculated.
+fn cell(document: Built, address: string) -> Cell;
 
 /// `fo:color` — a palette name (`navy`, `red`, `silver`, …), `#rrggbb`, or
 /// `transparent`.
@@ -65,8 +90,17 @@ fn formula(source: string) -> Cell;
 /// How many blocks have been said.
 fn get blocks(_: Text) -> int;
 
+/// What the cell shows — its value through its number format.
+fn get display(_: Cell) -> string;
+
+/// The cell's formula in OpenFormula's syntax, `=SUM([.B2:.B5])`, or `()` if it has none.
+fn get formula(_: Cell) -> ?;
+
 /// How many rows have been written — where the next `push` will land.
 fn get rows(_: Sheet) -> int;
+
+/// What the cell holds: a number, a string, a bool, or `()` when it is empty.
+fn get value(_: Cell) -> ?;
 
 /// Thousands separators.
 fn grouping(format: Format) -> Format;
@@ -99,6 +133,10 @@ fn item(document: Text, depth: int, text: string) -> Text;
 /// the one `--data` names — and `..`, an absolute path and a symlink pointing out
 /// are all refused. Reading the same file twice is free.
 fn json(name: string) -> ?;
+
+/// Every error and warning `grind lint` would report, one string each —
+/// `assert(d.lint().is_empty())` is a document that contradicts itself nowhere.
+fn lint(document: Built) -> array;
 
 /// The locale whose separators the format uses — `"de-DE"`.
 fn locale(format: Format, tag: string) -> Format;

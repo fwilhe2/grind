@@ -527,6 +527,8 @@ the same `.db` produce the same bytes.
   verb, not a subsystem.
 - **It might be the wrong shape entirely.** The honest alternative is that everything Part I does
   could be a *projection* question instead — the `.grind` form is already text, a query over it is
-  a different kind of tool, and `grind test` (D8) is the unbuilt half of the language that was
-  supposed to answer "ask a question about a document". If D8 lands first and answers most of
-  §3.1, this document shrinks to Part II and Part III.
+  a different kind of tool, and `grind test` (D8) is the half of the language that was supposed
+  to answer "ask a question about a document". D8 has since landed, for a *generated* document
+  only — `d.cell(…)` reads what a script built, not a file somebody hands it — so whether it
+  answers most of §3.1 is still open, and this document shrinks to Part II and Part III if it
+  grows a way to open one.

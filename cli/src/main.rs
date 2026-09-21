@@ -789,6 +789,21 @@ enum Top {
         no_recalc: bool,
     },
 
+    /// Run the tests in a script
+    ///
+    /// Builds the document exactly as `grind build` does, recalculates it, and calls every
+    /// function in the script whose name starts with `test_` with the document it built —
+    /// `fn test_total(d) { assert_eq(d.cell("B6").value, 15400); }`. Each failure is reported
+    /// with the line of the assertion that failed, and the command fails if any test did, or if
+    /// the script defines none. Nothing is written.
+    Test {
+        /// The script to test
+        script: PathBuf,
+        /// Directory the script may read data from, instead of its own — as for `build`
+        #[arg(long, value_name = "DIR")]
+        data: Option<PathBuf>,
+    },
+
     /// Print what an editor needs to help you write a script
     ///
     /// Every function `grind build` gives a script, with its parameters, its types and its
@@ -1989,6 +2004,20 @@ impl From<ChartType> for grind_sheet::ChartKind {
     }
 }
 
+/// The one directory a script may read data from: `--data`, or the one the script is in, which
+/// is what makes `json("prices.json")` mean the file beside it. The walls around it are
+/// `grind_build::Directory`'s, not this file's (doc/dsl.md §2).
+fn data_root(script: &Path, data: Option<&Path>) -> Result<grind_build::Directory, String> {
+    let root = match data {
+        Some(dir) => dir.to_path_buf(),
+        None => match script.parent() {
+            Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+            _ => PathBuf::from("."),
+        },
+    };
+    grind_build::Directory::new(&root).map_err(|e| format!("--data {e}"))
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match run(&cli) {
@@ -2064,14 +2093,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             // Data comes from one directory a *person* named — `--data`, or the one the script
             // is in, which is what makes `json("prices.json")` mean the file beside it. The
             // walls around it are `grind_build::Directory`'s, not this file's (doc/dsl.md §2).
-            let root = match data {
-                Some(dir) => dir.clone(),
-                None => match script.parent() {
-                    Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
-                    _ => PathBuf::from("."),
-                },
-            };
-            let root = grind_build::Directory::new(&root).map_err(|e| format!("--data {e}"))?;
+            let root = data_root(script, data.as_deref())?;
             let built = grind_build::build_with(
                 &source,
                 &script.display().to_string(),
@@ -2097,6 +2119,24 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 }
                 grind_build::Artifact::Text(app) => finish_text(&app, cli, out, true),
             }
+        }
+
+        // D8: the same script, built the same way, and its `test_` functions called with what it
+        // built. Nothing is written; a failed test is the command's failure (`Report::failed`).
+        Top::Test { script, data } => {
+            let source = std::fs::read_to_string(script)
+                .map_err(|e| format!("cannot read {}: {e}", script.display()))?;
+            let root = data_root(script, data.as_deref())?;
+            let tests = grind_build::test::run(
+                &source,
+                &script.display().to_string(),
+                std::rc::Rc::new(root),
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(Report::Tests(report::TestsReport::new(
+                &show_path(script),
+                &tests,
+            )))
         }
 
         // No document, no script — the vocabulary itself, for an editor rather than for a

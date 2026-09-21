@@ -105,4 +105,34 @@ journal.width("A:A", "5cm");
 let d = spreadsheet();
 d.push(s);
 d.push(journal);
-d
+d;
+
+// --- what must stay true -------------------------------------------------------------------
+//
+// `grind test examples/budget.rhai` builds the document above, recalculates it, and calls each
+// function below with it (doc/generator-spec.md §10). `grind build` never calls them, so the
+// model and its checks are one file. A test sees only what was built: `d` here is the finished
+// document, not the variable above.
+
+fn test_the_totals_add_up(d) {
+    assert_eq(d.cell("B8").value, 3260);
+    assert_near(d.cell("C8").value, 3243.29, 0.005);
+    // Budgeted less actual, row by row and in total — the difference column agrees with itself.
+    assert_near(d.cell("D8").value, d.cell("B8").value - d.cell("C8").value, 0.005);
+}
+
+fn test_the_facts_below_read_the_table(d) {
+    assert_eq(d.cell("B10").value, 1825.5);
+    // A currency sits a no-break space from its number, so a line never breaks between them.
+    assert_eq(d.cell("B10").display, "1,825.50\u00A0€");
+    assert_eq(d.cell("B12").display, "99.5%");
+}
+
+fn test_the_journal_reaches_back_across(d) {
+    assert_eq(d.cell("Journal.B4").value, 6);
+    assert_eq(d.cell("Journal.B4").formula, "=COUNT([Budget.B2:.B7])");
+}
+
+fn test_nothing_contradicts_itself(d) {
+    assert(d.lint().is_empty(), "grind lint finds nothing");
+}

@@ -7,6 +7,46 @@
     "prefix": "align",
     "scope": "rhai"
   },
+  "assert(condition: bool) -> ()": {
+    "body": [
+      "assert(${1:condition})"
+    ],
+    "description": "Fail this test unless `condition` is true.",
+    "prefix": "assert",
+    "scope": "rhai"
+  },
+  "assert(condition: bool, message: string) -> ()": {
+    "body": [
+      "assert(${1:condition}, ${2:message})"
+    ],
+    "description": "Fail this test with `message` unless `condition` is true.",
+    "prefix": "assert",
+    "scope": "rhai"
+  },
+  "assert_eq(actual: ?, expected: ?) -> ()": {
+    "body": [
+      "assert_eq(${1:actual}, ${2:expected})"
+    ],
+    "description": "Fail this test unless the two values are equal. A number compares as a number, so\n`assert_eq(d.cell(\"B6\").value, 15400)` holds for the float the cell holds.",
+    "prefix": "assert_eq",
+    "scope": "rhai"
+  },
+  "assert_ne(actual: ?, unexpected: ?) -> ()": {
+    "body": [
+      "assert_ne(${1:actual}, ${2:unexpected})"
+    ],
+    "description": "Fail this test if the two values are equal.",
+    "prefix": "assert_ne",
+    "scope": "rhai"
+  },
+  "assert_near(actual: float, expected: float, tolerance: float) -> ()": {
+    "body": [
+      "assert_near(${1:actual}, ${2:expected}, ${3:tolerance})"
+    ],
+    "description": "Fail this test unless `actual` is within `tolerance` of `expected` — for a total of\nfractions, where `0.1 + 0.2` is not `0.3` to the last bit.",
+    "prefix": "assert_near",
+    "scope": "rhai"
+  },
   "at(sheet: Sheet, row: int, column: int) -> string": {
     "body": [
       "at(${1:row}, ${2:column})"
@@ -21,6 +61,14 @@
     ],
     "description": "`fo:background-color`, in the same colours `color` takes.",
     "prefix": "background",
+    "scope": "rhai"
+  },
+  "block(document: Built, address: string) -> string": {
+    "body": [
+      "block(${1:address})"
+    ],
+    "description": "One block's text in the built text document, by address — `\"p3\"`, `\"#intro\"`,\n`\"§2.1\"`.",
+    "prefix": "block",
     "scope": "rhai"
   },
   "blocks(document: Text) -> int": {
@@ -61,6 +109,14 @@
     ],
     "description": "All four edges — a width, a line and a colour: `\"0.5pt solid navy\"`.",
     "prefix": "border",
+    "scope": "rhai"
+  },
+  "cell(document: Built, address: string) -> Cell": {
+    "body": [
+      "cell(${1:address})"
+    ],
+    "description": "One cell of the built spreadsheet, by address — `\"B6\"` on the first sheet, or\n`\"Summary.B6\"`. Read after the document was recalculated.",
+    "prefix": "cell",
     "scope": "rhai"
   },
   "color(style: Style, color: string) -> Style": {
@@ -135,12 +191,36 @@
     "prefix": "blocks",
     "scope": "rhai"
   },
+  "get display(_: Cell) -> string": {
+    "body": [
+      "display"
+    ],
+    "description": "What the cell shows — its value through its number format.",
+    "prefix": "display",
+    "scope": "rhai"
+  },
+  "get formula(_: Cell) -> ?": {
+    "body": [
+      "formula"
+    ],
+    "description": "The cell's formula in OpenFormula's syntax, `=SUM([.B2:.B5])`, or `()` if it has none.",
+    "prefix": "formula",
+    "scope": "rhai"
+  },
   "get rows(_: Sheet) -> int": {
     "body": [
       "rows"
     ],
     "description": "How many rows have been written — where the next `push` will land.",
     "prefix": "rows",
+    "scope": "rhai"
+  },
+  "get value(_: Cell) -> ?": {
+    "body": [
+      "value"
+    ],
+    "description": "What the cell holds: a number, a string, a bool, or `()` when it is empty.",
+    "prefix": "value",
     "scope": "rhai"
   },
   "grouping(format: Format) -> Format": {
@@ -205,6 +285,14 @@
     ],
     "description": "The data in one JSON file, as values a script can use.\n\nAn object is a map, an array is an array, `null` is `()`, and object keys come\nback sorted. The file is read from the data directory — the script's own, or\nthe one `--data` names — and `..`, an absolute path and a symlink pointing out\nare all refused. Reading the same file twice is free.",
     "prefix": "json",
+    "scope": "rhai"
+  },
+  "lint(document: Built) -> array": {
+    "body": [
+      "lint()"
+    ],
+    "description": "Every error and warning `grind lint` would report, one string each —\n`assert(d.lint().is_empty())` is a document that contradicts itself nowhere.",
+    "prefix": "lint",
     "scope": "rhai"
   },
   "locale(format: Format, tag: string) -> Format": {

@@ -77,7 +77,7 @@ const SHIPPED: &str = include_str!("../../examples/grind.d.rhai");
 
 /// Every function the specification names, from the first column of its **API tables**.
 ///
-/// Two conventions, and the document says so in §9. The API is §3.5, §4 and §5 and nothing else, so
+/// Two conventions, and the document says so in §9. The API is §3.5, §4, §5 and §10 and nothing else, so
 /// the scan is bounded by those headings — otherwise §2.3's `eval` and §3.1's `true` would read
 /// as promised functions, which is the opposite of what those tables say about them. Inside
 /// them, a row's first cell is a code span holding the call as a script writes it —
@@ -88,7 +88,10 @@ fn documented() -> Vec<String> {
     let mut inside = false;
     for line in SPEC.lines() {
         if let Some(heading) = line.strip_prefix("## ") {
-            inside = heading.starts_with("4.") || heading.starts_with("5.");
+            // §10 is `grind test`'s vocabulary — the assertions and the built document.
+            inside = heading.starts_with("4.")
+                || heading.starts_with("5.")
+                || heading.starts_with("10.");
             continue;
         }
         // §3.5 is the third API table: `json(…)` belongs to neither application, because it
@@ -138,7 +141,7 @@ fn every_registered_function_is_in_the_specification() {
     assert!(
         missing.is_empty(),
         "registered and undocumented: {missing:?}. Every function a script can call has a row \
-         in doc/generator-spec.md §3.5, §4 or §5 — that is the check the specification \
+         in doc/generator-spec.md §3.5, §4, §5 or §10 — that is the check the specification \
          exists to pass, since adding one is three lines in register()."
     );
 }
