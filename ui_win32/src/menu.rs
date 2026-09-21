@@ -36,6 +36,9 @@ use crate::sheet::keymap::{Key, Mods};
 ///
 /// Deliberately not a home for anything that reads or writes a property of the selection —
 /// alignment, a number format, bold — which is the format strip's admission test and W5's work.
+/// Two exceptions, and each of them is also somewhere else: the text pane's toggles also sit on
+/// its strip, and the three currencies are in the grid's Format menu because that pane has no
+/// strip of its own yet. A cell's other properties wait for one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     /// A new, empty spreadsheet — **in this window**, whichever kind it was showing.
@@ -106,6 +109,13 @@ pub enum Command {
     /// first, so the plain one stays zero-prompt, which is the shape the web shell's palette
     /// gives the pair too.
     FormatTableTotals,
+    /// Format the selection as one of `numfmt::CURRENCIES` — the euro, the dollar, the pound,
+    /// in that order ([`Command::currency`]), one click each, as the GTK picker's buttons are.
+    /// The grid's alone; `sheet/currency.rs` is what each one writes, and the item whose
+    /// currency the active cell already has carries a check.
+    CurrencyEuro,
+    CurrencyDollar,
+    CurrencyPound,
     SheetAdd,
     SheetRename,
     SheetDelete,
@@ -210,6 +220,9 @@ impl Command {
         Command::ToggleFilter,
         Command::FormatTable,
         Command::FormatTableTotals,
+        Command::CurrencyEuro,
+        Command::CurrencyDollar,
+        Command::CurrencyPound,
         Command::SheetAdd,
         Command::SheetRename,
         Command::SheetDelete,
@@ -255,6 +268,18 @@ impl Command {
             .expect("every command is in ALL");
         FIRST_ID + at as u16
     }
+
+    /// The three currency verbs, in `numfmt::CURRENCIES`' order.
+    pub const CURRENCIES: [Command; 3] = [
+        Command::CurrencyEuro,
+        Command::CurrencyDollar,
+        Command::CurrencyPound,
+    ];
+
+    /// Which of `numfmt::CURRENCIES` this verb writes, by index — `None` for every other verb.
+    pub fn currency(self) -> Option<usize> {
+        Self::CURRENCIES.iter().position(|c| *c == self)
+    }
 }
 
 /// The first id a menu command may take. Below it are the child controls' ids.
@@ -291,9 +316,9 @@ pub struct Menu {
 /// Seven menus and nothing that is not a verb. Format holds the text pane's toggles and block
 /// kinds even now that W5b's drawn strip reaches the same four — those items *read and write* a
 /// property of the selection, exactly what a strip is for, but a menu they can also start from
-/// costs nothing and is where Ctrl+B/I/U were reachable first — and `win.rs`'s `build_menu`
-/// leaves the whole menu out of the bar over the grid (`menu_has_items`), since `applies_to`
-/// says every one of its items is the text pane's alone. View holds W6's three shared panes: the
+/// costs nothing and is where Ctrl+B/I/U were reachable first. Over the grid it is the three
+/// currencies and nothing else, since `applies_to` says every other item in it is the text
+/// pane's alone. View holds W6's three shared panes: the
 /// source, the check, and the two overlays only the grid can draw. What is deliberately absent:
 /// anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was removed for being one,
 /// and the argument carries.
@@ -446,6 +471,22 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "F&ormat",
         items: &[
+            // The grid's, and over it the whole of this menu: a cell's currency, one click, the
+            // same three the other windows offer (`numfmt::CURRENCIES`). Over the text pane
+            // `applies_to` drops them and the separator after them with them.
+            Item::Verb {
+                command: Command::CurrencyEuro,
+                label: "Currency: Eu&ro (€)",
+            },
+            Item::Verb {
+                command: Command::CurrencyDollar,
+                label: "Currency: US &Dollar ($)",
+            },
+            Item::Verb {
+                command: Command::CurrencyPound,
+                label: "Currency: Pound Sterlin&g (£)",
+            },
+            Item::Separator,
             Item::Verb {
                 command: Command::Bold,
                 label: "&Bold\tCtrl+B",
@@ -715,6 +756,9 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        | Command::CurrencyEuro
+        | Command::CurrencyDollar
+        | Command::CurrencyPound
         // CSV is cells: fields land in a grid and a range comes out of one, so both are the
         // spreadsheet's even though they sit in the File menu with the universal verbs.
         | Command::ImportCsv
@@ -776,8 +820,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
 /// This replaced greying: a menu bar with every verb visible and half of them unclickable read
 /// as a text pane that still thought it was a grid, since the sheet's own six verbs (`Sheet`'s
 /// whole menu, `Recalculate`, `Cell Roles`) so outnumbered the universal ones that the &View
-/// and &Sheet menus looked identical open on either pane. Two ends now: `Format` on the grid and
-/// `Sheet`/`Data` on the text pane can end up with nothing in them at all, which is
+/// and &Sheet menus looked identical open on either pane. `Sheet`/`Data` on the text pane can
+/// end up with nothing in them at all, which is
 /// [`menu_has_items`]'s question, asked before a menu is put in the bar at all. The welcome screen
 /// is the extreme case of the same rule: everything but `File` and `Help` empties out, and the
 /// bar over it is those two.
@@ -1032,6 +1076,10 @@ mod tests {
             // document has no cells for fields to land in.
             Command::ImportCsv,
             Command::ExportCsv,
+            // A cell's currency: the text pane's runs have no number format.
+            Command::CurrencyEuro,
+            Command::CurrencyDollar,
+            Command::CurrencyPound,
         ] {
             assert!(applies_to(command, Spreadsheet), "{command:?}");
             assert!(!applies_to(command, Text), "{command:?}");
@@ -1130,15 +1178,39 @@ mod tests {
         assert!(items_for(menu("&Data"), Surface::Document(Text)).is_empty());
     }
 
-    /// `Format` is the text pane's alone, for the same reason in reverse.
+    /// `Format` over the grid is the three currencies and nothing else — every other item in it
+    /// is the text pane's — and over the text pane it has none of them.
     #[test]
-    fn format_vanishes_on_the_grid() {
-        use grind_core::DocumentKind::Spreadsheet;
-        assert!(!menu_has_items(
-            menu("F&ormat"),
-            Surface::Document(Spreadsheet)
-        ));
-        assert!(items_for(menu("F&ormat"), Surface::Document(Spreadsheet)).is_empty());
+    fn format_on_the_grid_is_the_currencies() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        let over = |kind| {
+            items_for(menu("F&ormat"), Surface::Document(kind))
+                .into_iter()
+                .filter_map(|item| match item {
+                    Item::Verb { command, .. } => Some(command),
+                    Item::Separator => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(over(Spreadsheet), Command::CURRENCIES.to_vec());
+        assert!(!over(Text).iter().any(|c| c.currency().is_some()));
+    }
+
+    /// Each currency verb is the `numfmt::CURRENCIES` entry at its own index, and its label
+    /// names that symbol — so the menu cannot say `$` and write `£`.
+    #[test]
+    fn every_currency_item_names_the_currency_it_writes() {
+        for (index, command) in Command::CURRENCIES.iter().enumerate() {
+            assert_eq!(command.currency(), Some(index));
+            let (symbol, _) = grind_sheet::numfmt::CURRENCIES[index];
+            let label = label_for(*command).unwrap();
+            assert!(label.contains(&format!("({symbol})")), "{label}");
+        }
+        assert_eq!(Command::Bold.currency(), None);
+        assert_eq!(
+            grind_sheet::numfmt::CURRENCIES.len(),
+            Command::CURRENCIES.len()
+        );
     }
 
     /// `Edit` mixes universal verbs with `Outline`, which is the text pane's alone — so the

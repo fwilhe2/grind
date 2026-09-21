@@ -169,7 +169,7 @@ The single largest divergence in the suite is this table's last column.
 | Text colour, cell background | ● | ● | ● | ● | ○ |
 | Clear formatting | ● | ● | ● | ● | ○ |
 | Number formats — the eight presets | ● | ● | ● | ● | ○ |
-| Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ○ |
+| Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ |
 | Read a cell's style / format back | ● | ● | ● | ● | ○ |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● |
@@ -183,6 +183,9 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 ᵇ `:format number [n]` takes a decimal count and `:format currency [eur|usd|gbp]` one of the three
 currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `grind sheet format`'s.
 ᶜ More / fewer decimals, and the three currencies of `numfmt::CURRENCIES` as three menu entries.
+ʷ The three currencies of `numfmt::CURRENCIES` only — Format ▸ Currency and the cells' context
+menu, one click each, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
+No other number format and no decimal count; row 1 of §8 is the rest.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).
 ᵉ A border's *line style* is ignored, so `dashed` and `double` draw solid.
 
@@ -349,8 +352,9 @@ one, and no client sets a column width, because the model carries no table style
 Everything here is reachable from the CLI, which is R9 doing its job. The order is by how much
 of a client's own job is missing.
 
-1. **`grind-win32` cannot format a cell at all.** Not bold, not an alignment, not a colour, not
-   a number format — `ui_win32` calls neither `App::set_style` nor `App::set_format`. It
+1. **`grind-win32` can barely format a cell.** Not bold, not an alignment, not a colour, and of
+   the number formats only a currency — `ui_win32` never calls `App::set_style`, and calls
+   `App::set_format` only for the Format menu's three currencies (§5 ʷ). It
    *draws* alignment, bold, italic, text colour and background, so a document formatted
    elsewhere looks right and nothing in this window can produce one. `doc/windows-shell.md`
    decision 4 anticipates exactly this — "a property of the selection goes on the format strip

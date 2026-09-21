@@ -743,6 +743,18 @@ this shell's whole half of it, and is compiled out with the crate's `xlsx` featu
 
 R10 allows per-shell feature gaps and requires them to be named. These are the named ones.
 
+**A cell's formatting, but for its currency.** The grid has no format strip, so it cannot set
+bold, an alignment, a colour, a border or any number format but one: **Format ▸ Currency**,
+`numfmt::CURRENCIES`' three (euro, US dollar, pound sterling) as three menu items and the same
+three on the cells' context menu, one click each as in the GNOME window's picker. The item
+naming the active cell's currency is checked when a menu opens (`WM_INITMENUPOPUP`, since the
+bar itself is rebuilt only when the pane changes). `sheet/currency.rs` is the portable half: a
+cell that is already a currency keeps its decimals, grouping and locale and changes only its
+symbol, anything else gets two decimals and grouped thousands, and a whole row or column is cut
+to the sheet in use before `App::set_format`, which refuses a million cells. Menu items for a
+property rather than a strip is decision 4 bent, and deliberately only this far: the rest waits
+for a grid format strip, which would also be where these three move.
+
 **Not drawn, kept intact.** A **chart** in a file is read, kept and written back untouched, and
 nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
 than a stub. A **table** in a text document is the second: the core carries one now

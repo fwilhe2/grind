@@ -71,10 +71,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE,
     WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD,
-    WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL,
+    WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -109,6 +109,7 @@ use crate::notice;
 use crate::problems;
 use crate::sheet::assist;
 use crate::sheet::clip;
+use crate::sheet::currency;
 use crate::sheet::draw::{self, Frame};
 use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
@@ -1567,6 +1568,14 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             context_menu(hwnd, lparam);
             LRESULT(0)
         }
+        // A menu is about to open — from the bar or from a right click, since
+        // `TrackPopupMenuEx` sends this to its owner too. The one check that depends on the
+        // *selection* rather than the pane is set here rather than in `build_menu`, which runs
+        // only when the pane changes: the currency the active cell has now.
+        WM_INITMENUPOPUP => {
+            check_currency(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
+            LRESULT(0)
+        }
         // A character, after the keyboard layout and after the IME — which is why a printable
         // key is decided here and not in `WM_KEYDOWN`. Deciding "is this printable" on a
         // virtual-key code is the bug that makes an accented character unable to start an edit.
@@ -1863,7 +1872,7 @@ fn move_to(child: HWND, rect: Rect, repaint: bool) {
 /// outnumber the universal ones that `&Sheet` and half of `&View` stayed on screen, greyed, on
 /// every document that was not a spreadsheet, and the bar read as a grid that had not noticed it
 /// was showing a document. Omitting instead means a menu can end up with nothing left in it at
-/// all — `&Sheet`/`&Data` on the text pane, `&Format` on the grid — which is exactly what
+/// all — `&Sheet`/`&Data` on the text pane — which is exactly what
 /// `menu_has_items` checks before a menu is put in the bar. This is rebuilt whenever the pane
 /// itself changes (`adopt`) rather than the selection inside it, same as before; `Command::id`
 /// still calls `do_command` for a command with no *item* on screen if one somehow arrives (a
@@ -1895,8 +1904,8 @@ fn build_menu(hwnd: HWND) {
     unsafe {
         let Ok(bar) = CreateMenu() else { return };
         for menu in menu::MENUS {
-            // A menu with nothing this pane answers to — `Sheet`/`Data` on the text pane,
-            // `Format` on the grid — is left out of the bar entirely rather than added with an
+            // A menu with nothing this pane answers to — `Sheet`/`Data` on the text pane — is
+            // left out of the bar entirely rather than added with an
             // empty popup under its title.
             if !menu::menu_has_items(menu, surface) {
                 continue;
@@ -1976,6 +1985,9 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
                 Command::Copy,
                 Command::Paste,
                 Command::ClearCells,
+                Command::CurrencyEuro,
+                Command::CurrencyDollar,
+                Command::CurrencyPound,
             ],
         }
     };
@@ -1997,6 +2009,10 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             return;
         };
         for command in commands {
+            // The currencies are a group of their own, as they are in the Format menu.
+            if command.currency() == Some(0) {
+                let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
+            }
             if let Some(label) = menu::label_for(*command) {
                 let label = gdi::wide(label);
                 let _ = AppendMenuW(
@@ -3153,6 +3169,11 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ToggleFilter => toggle_filter(hwnd),
         Command::FormatTable => format_table(hwnd, None),
         Command::FormatTableTotals => format_table_totals(hwnd),
+        Command::CurrencyEuro | Command::CurrencyDollar | Command::CurrencyPound => {
+            if let Some(index) = command.currency() {
+                set_currency(hwnd, index);
+            }
+        }
         Command::SheetAdd => sheet_add(hwnd),
         Command::SheetRename => sheet_rename(hwnd),
         Command::SheetDelete => sheet_delete(hwnd),
@@ -3732,6 +3753,68 @@ fn format_table(hwnd: HWND, totals: Option<grind_sheet::TotalsFunction>) {
     refresh(hwnd);
 }
 
+/// Format the selection as `numfmt::CURRENCIES[index]` — the Format menu's three items and the
+/// cells' context menu. `sheet/currency.rs` decides the format: a cell that is already a currency
+/// keeps its decimals, grouping and locale and changes only its symbol, and anything else gets
+/// the GTK picker's defaults. One `App::set_format`, so one undo step over the whole selection.
+fn set_currency(hwnd: HWND, index: usize) {
+    let Some((symbol, _)) = grind_sheet::numfmt::CURRENCIES.get(index) else {
+        return;
+    };
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = currency::target(start, end, used);
+            let current = state
+                .app
+                .format_at(state.sheet, state.selection.active)
+                .ok()
+                .flatten();
+            let format = currency::format_for(
+                current.as_ref(),
+                symbol,
+                grind_sheet::locale::from_environment(),
+            );
+            if let Err(error) = state.app.set_format(state.sheet, start, end, Some(format)) {
+                state.say(Some(error.to_string()));
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Check the currency item the active cell's format names, and uncheck the other two, in
+/// whichever menu is opening. `MF_BYCOMMAND` on a popup that holds none of the three — File,
+/// say — finds nothing and changes nothing, so this needs no idea of *which* menu it is.
+fn check_currency(hwnd: HWND, popup: HMENU) {
+    // SAFETY: one borrow; nothing inside dispatches. `None` off the grid, where no currency item
+    // is ever shown.
+    let Some(chosen) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let current = state
+                .app
+                .format_at(state.sheet, state.selection.active)
+                .ok()
+                .flatten();
+            currency::chosen(current.as_ref())
+        })
+    }) else {
+        return;
+    };
+    for (index, command) in Command::CURRENCIES.iter().enumerate() {
+        let flag = match chosen == Some(index) {
+            true => MF_CHECKED,
+            false => MF_UNCHECKED,
+        };
+        // SAFETY: `popup` is the menu Windows is about to show, alive for this message.
+        unsafe {
+            let _ = CheckMenuItem(popup, u32::from(command.id()), (MF_BYCOMMAND | flag).0);
+        }
+    }
+}
+
 /// *Format as Table with Totals…* — [`format_table`], having asked which aggregate the totals
 /// row carries.
 ///
@@ -4157,6 +4240,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        | Command::CurrencyEuro
+        | Command::CurrencyDollar
+        | Command::CurrencyPound
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
@@ -5146,6 +5232,9 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        | Command::CurrencyEuro
+        | Command::CurrencyDollar
+        | Command::CurrencyPound
         // CSV is cells in both directions, so neither means anything here — and `applies_to`
         // keeps both out of this pane's File menu rather than leaving them to be no-ops.
         | Command::ImportCsv

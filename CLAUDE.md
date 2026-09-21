@@ -190,7 +190,10 @@ carried four references with it — whose every sentence is a pure function in `
 the **clipboard**: `CF_UNICODETEXT`, tab- and CRLF-separated, over `App::input_text` —
 `clipboard.rs` is the only file that opens it and `sheet/clip.rs` the portable codec either side,
 so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the same
-way Delete already did.
+way Delete already did. Its one number format is a **currency**: Format ▸ Currency — `€`, `$`,
+`£`, `numfmt::CURRENCIES` — and the same three on the cells' context menu, checked for the active
+cell when a menu opens, over `sheet/currency.rs`. The rest of a cell's formatting waits for a
+grid format strip (`doc/windows-shell.md`, "What it will not do").
 
 **W9 is formula literacy, and the chrome that carries it.** The pure half of "help somebody
 typing a formula" is now the core's — `grind_sheet::formula::assist`, which holds `prefix_at`,
