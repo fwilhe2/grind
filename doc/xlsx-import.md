@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# The xlsx import filter — phase 11, built through X3
+# The xlsx import filter — phase 11, built through X4
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
 building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
@@ -569,31 +569,55 @@ questions — *is this a date?* (X1's) and *what does it display?* — so the tw
   and meridiem markers and a format's LCID would not, so the format is carried without them.
   Inventing a `Part` for a fraction remains a phase 5 decision rather than an import decision.
 
-### 5. Styles and geometry (X4)
+### 5. Styles and geometry (X4) — **built**
 
 `xl/styles.xml`: `cellXfs[s]` indexes a font, a fill, a border, an alignment and a number
-format. Each maps onto `style::CellStyle`, whose values are ODF's own strings.
+format. Each maps onto `style::CellStyle`, whose values are ODF's own strings, and is translated
+**once** per entry (`xlsx/src/styles.rs`); every cell naming it clones the result.
 
 | Excel | `CellStyle` |
 |---|---|
-| `<b/>`, `<i/>`, `<sz val="11"/>` | `font_weight: "bold"`, `font_style: "italic"`, `font_size: "11pt"` |
-| `<color rgb="FF0000FF"/>` | `color: "#0000ff"` — alpha dropped |
-| `<color indexed="12"/>` | the legacy palette (ECMA-376 §18.8.27), a table |
-| `<color theme="4" tint="-0.25"/>` | `xl/theme/theme1.xml`'s `<a:clrScheme>` plus ECMA's tint formula |
-| `<patternFill patternType="solid"><fgColor …/>` | `background` |
-| any other pattern or a gradient | dropped, counted |
-| `<border><left style="thin">…` | `"0.5pt solid #000000"` — the style→width table is measured |
-| `horizontal`, `vertical`, `wrapText` | `align`, `vertical_align`, `wrap` |
+| `<b/>`, `<i/>`, `<sz val="14"/>` | `font_weight: "bold"`, `font_style: "italic"`, `font_size: "14pt"` |
+| `<color rgb="FF0000FF"/>` | `color: "#0000ff"` — alpha dropped; six digits accepted too |
+| `<color indexed="12"/>` | the legacy palette, **measured** (`doc/xlsx-format.md` §4.1); 64 and 65 are automatic |
+| `<color theme="4" tint="-0.25"/>` | `xl/theme/theme1.xml`'s scheme in `theme` order, then ECMA's tint (§4.2) |
+| `<patternFill patternType="solid"><fgColor …/>` | `background` — the *fg* colour |
+| any other pattern, or a gradient | nothing, counted |
+| `<left style="thin">…` | `"0.74pt solid #000000"` — the width table is the oracle's (§4.3), the line XSL-FO's |
+| `horizontal`, `vertical`, `wrapText` | `align`, `vertical_align`, `wrap` (§4.7) |
 | `<name val="Calibri"/>` | **dropped**, counted — `style.rs` deliberately does not carry a font family (§5.4) |
+| `<u/>`, `<strike/>`, `vertAlign`, `indent`, `textRotation`, `shrinkToFit`, diagonals | counted — no `CellStyle` property |
 
-**Column widths and row heights** were the one place this plan waited on another, and the wait
-is over: phase 9's **M8** landed them, so `Sheet::set_col_width` / `set_row_height` exist and
-X4 converts rather than counting. `<col width="8.43"/>` needs ECMA-376 §18.3.1.13's
-character-width conversion (through the Normal font's maximum digit width) and `<row ht="15"/>`
-is points; both become the verbatim ODF length strings the model stores, and the conversion
-constant is measured against the oracle and recorded in `doc/xlsx-format.md` rather than
-taken from the spec's prose alone. `<col hidden="1"/>` and `<row hidden="1"/>` map onto
-`set_col_hidden` / `set_row_hidden`, which the model also has now.
+Three decisions the table does not show:
+
+- **The cell format's own ids are the ones in effect**, whatever its `applyX` flags say — the
+  oracle reads `applyFont="0"` that way (§4.4) and it is the reading that makes an entry mean
+  one thing. An id the entry leaves out comes from its named style (`xfId`).
+- **The workbook's default cell format is the document's default.** The model has no default
+  cell style (`odf/read.rs`'s ponytail), so a property equal to what cell format 0 says — a
+  size, a colour, an alignment — is written nowhere rather than onto every cell. A workbook in
+  11pt Calibri therefore produces cells with no size at all, and a shell draws them in its own.
+- **A look is carried on a cell with a value only.** `odf::read` drops a styled *empty* cell
+  (its `TODO:`), so a bordered blank would be lost on the first save and reopen; it is counted
+  (`Appearance::StyledBlank`) until that half is fixed.
+
+What the model has no slot for is **`Appearance`**, one class per piece, counted in
+`Report::appearance_lost` the way `Report::formats_lost` counts a number format: per cell for a
+piece of a style, per track for a zero size, once per sheet for panes, an outline, or a default
+width derived from a base. The corpus asks for two style losses by `Dropped` names they already
+had — `FontFamily`, and `ThemeColor` for a theme colour with **no theme to resolve it in**.
+
+**Column widths and row heights** land on `Sheet::set_col_width` / `set_row_height`, and hidden
+tracks on `set_col_hidden` / `set_row_hidden`. `<row ht="15"/>` is points and is written as
+`15pt`, where the author set it (`customHeight`). `<col width="8.43"/>` is characters of the
+default font's maximum digit width (ECMA-376 §18.3.1.13), and here the oracle was measured and
+**not** followed: it measures the digit in whatever font the converting machine substitutes, so
+its widths are a fact about that machine (`doc/xlsx-format.md` §4.5). This filter uses the
+specification's own constant, Calibri 11's seven pixels at 96 dpi, which makes Excel's default
+column two-thirds of an inch. A `<col>` run to the sheet's edge and `defaultColWidth` are
+carried onto the used columns nothing else sized, as an ODF column run is (`MAX_TRACK_RUN`).
+A size of zero cannot be written — ODF's sizes are positive lengths — so such a track is hidden
+and counted.
 
 ### 6. The document level (X5)
 
@@ -627,7 +651,7 @@ feature matrix.
 | X1 | **Values** — **DONE (2026-09-19)** | shared strings, cell types, the two date systems and the leap-year rule, bounded materialisation, implicit `r`, `Report` v1, `doc/xlsx-format.md` opened | **loop D** green on the value-only corpus: every cell equals what the oracle's conversion produced, at 15 significant digits — **68 workbooks, 501,335 cells, 0 disagreements**, against the pinned oracle, with eight named divergences where the oracle is the one that differs (below) |
 | X2 | **Formulas** — **DONE (2026-09-20)** | the Excel expression translator (`formula.rs`), shared-formula groups over the core's existing `formula::shift`, `_xlfn.`, 3-D refs, the exclusion classes as a `Refusal` enum, `<f>` with no `<v>` | every formula in the corpus either round-trips through our canonical serialiser or falls in a named class — **12681 of 13039 translated (97.3%) over 362 workbooks, and every one of the other 358 counted by class**; the generated corpus asserts formula *text* per cell, 122 of 125 claims, 3 named |
 | X3 | **Number formats** — **DONE (2026-09-20)** | built-ins by meaning, the code parser, sections → `style:map`, `Unspellable` and its two severities, three measured rules in the core's renderer | loop D compares **displayed text** per cell wherever both sides formatted it — **68 workbooks, 501,335 cells, 0 disagreements, ten named divergences** — and the generated corpus asserts every `display` the manifest states: **89 of 107**, with the other 18 named in `UNSPELLABLE` by the `Part` that does not exist |
-| X4 | **Styles and geometry** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks, all of which the model now has | loop D compares styles the way loop C does — borders numerically, everything else exactly |
+| X4 | **Styles and geometry** — **DONE (2026-09-21)** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks; `Appearance` for what has no slot | loop D compares every carried cell's **style** the way loop C does — borders numerically, everything else exactly — and every column's width, row's height and track's hidden-ness: **68 workbooks, 0 style or track disagreements, eleven named divergences** of X4's own, every one the oracle approximating or guessing where this build counts (below); loop A′ imports all 362 of LibreOffice's workbooks with the identity check extended to styles and tracks |
 | X5 | **The document level** | defined names, sheet order and visibility, merges, autofilters, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct; `--strict` exits non-zero when anything was dropped |
 | X6 | **The shells** | the GTK Open dialog learns `.xlsx` (import → a new unsaved document, retitled `.ods`), file filters, the wasm shell's note | open an `.xlsx` in the GUI, edit it, save it as `.ods` |
 
@@ -784,6 +808,58 @@ Five things it found on the way, three of them in the core rather than here:
 its format is known, so X3 closes a gap X1 opened rather than adding a new one — X1 took the one
 question it could not do without (finding 5) and nothing more.
 
+### What X4 found
+
+**The number first.** Over LibreOffice's 362 workbooks, 32,428 of 123,424 cells come out
+carrying a style, all 362 still import, and every imported document still survives our own
+writer and reader — a check X4 extended to every cell's style and every track's size and
+hidden-ness. The losses, per cell unless marked: 19,813 **styled empty cells** — a border or
+a fill on a blank (below) — 2,394 font families, 249 indents, 90 underlines, 45 rotations, 27
+pattern fills, ten centred-across-selections, and 18 sheets with frozen panes, three with
+outlines, 33 with a default width this build cannot derive. No theme colour went unresolved.
+
+Seven things it found on the way:
+
+1. **The oracle's column widths are a fact about the converting machine.** The plan said the
+   width constant would be measured against the oracle; measuring it found that the oracle's
+   unit is the digit of *whatever font the machine substitutes* for the workbook's default —
+   `width × 7pt` on a machine with only DejaVu, and `width × 12.75pt` once the default font was
+   changed to 20pt Arial. That is id 14's problem again (§3.1 of `doc/xlsx-format.md`), so the
+   same answer: the specification's reading with its own worked constant, Calibri 11's seven
+   pixels, and a divergence naming the ratio (`doc/xlsx-format.md` §4.5).
+2. **The oracle approximates, and the manifest says not to.** It blends a pattern fill into one
+   colour by coverage and a gradient into its midpoint, spells LibreOffice's own border lines
+   (`fine-dashed`, `dash-dot`, `double-thin`), writes `style:vertical-align="justify"`, which
+   ODF's cell vocabulary does not have, and adds an alignment to rotated text that the file does
+   not state. Each is a loop D divergence and each is counted here as an `Appearance` instead.
+3. **`applyFont="0"` does not do what the corpus's note says.** `named-styles.xlsx` expects the
+   named style's font to win; the oracle draws the cell in its own. So the cell format's own ids
+   are the ones in effect — the reading §3.3 already took for `applyNumberFormat`, now measured
+   for a sibling flag.
+4. **`Dropped` was the wrong place for most of a look.** It holds constructs, and the corpus
+   compares it kind for kind, so an underline counted there would have disagreed with every
+   style fixture's manifest. `Appearance` is `numfmt::Unspellable`'s sibling instead, with the
+   same admission rule; `FontFamily` and `ThemeColor` keep their `Dropped` names because the
+   corpus asks for them by those.
+5. **`ThemeColor` needed a meaning, and the manifest had two.** `colors.xlsx` expects fourteen
+   where every one of its seventeen theme colours resolves, and `borders.xlsx` expects none where
+   two edges name a slot in a workbook with no theme. This build counts a theme colour with no
+   theme to resolve it — one, in `borders.xlsx` — and both are `DECIDED_OTHERWISE` entries
+   citing the bytes. The generated-corpus test also had to learn that a kind the manifest does
+   not mention is a claim of zero, so that a table entry could name it.
+6. **The default cell format had to become the document's default, for everything.** LibreOffice's
+   own `.xlsx` gives its default named style `vertical="bottom"`, so the vendored sample put a
+   style on every cell to say what the workbook already said. A property equal to cell format
+   0's is now written nowhere, which is the rule the default *font* needed anyway — 11pt on a
+   million cells is a million styles saying nothing.
+7. **A styled empty cell is the largest loss, and it is the core's.** 19,813 of them across the
+   corpus, a border or a fill on a blank — a table's frame, mostly. (Counting every styled
+   blank said 73,232; a bold font on an empty cell shows nothing, and is not a loss.) The
+   model holds them and the ODF writer writes them; the ODF reader drops them (its `TODO:`,
+   which has measured why), so an imported one would vanish on the first save and reopen, and
+   `ooxmlgen.rs`'s identity check would fail. They are counted until that `TODO:` is closed,
+   which is a change to `grind-sheet` rather than here.
+
 ---
 
 ## Verification
@@ -811,8 +887,10 @@ The comparison is `sheet/tests/roundtrip.rs`'s existing semantic comparator's ru
 formulas as canonical text, formats as **the text the cell displays**. The oracle's output is
 cached by content hash so a full run is one conversion per file, ever.
 
-**As built at X3** it compares every cell's value, its kind and — wherever both sides put a
-format on the cell — the text it displays, sheets matched by name. A cell this build left
+**As built at X4** it compares every cell's value, its kind and — wherever both sides put a
+format on the cell — the text it displays, sheets matched by name; and since X4, every
+carried cell's **style**, after taking out the defaults the oracle spells on every automatic
+style, and every column's width, row's height and track's hidden-ness. A cell this build left
 unformatted is one whose code it refused by name, and those classes are counted in the report
 and asserted one at a time in `ooxmlgen.rs`; asking the oracle about them here would say the
 same thing again in a worse vocabulary. Where the two conversions differ on purpose — usually
@@ -881,7 +959,7 @@ contains and what a conversion of it should produce. That is loop D's oracle, tr
 the corpus instead of waiting for `soffice` — and where a conversion is genuinely ambiguous a
 cell carries an `oracle` field, so the two can be told apart.
 
-Since this build is X3, part of that oracle is still about a later milestone. **Three** tables
+Since this build is X4, part of that oracle is still about a later milestone. **Three** tables
 carry the difference and all three are checked in **both directions**:
 
 - **`PENDING`** — a claim this build does not satisfy yet, with the milestone that will and
@@ -889,7 +967,8 @@ carry the difference and all three are checked in **both directions**:
   has to be deleted when its milestone lands. It is loop F's "a test that fails the day it is
   projected" applied to a roadmap, and it is what stops a milestone table from quietly
   becoming a list of things that already work. 21 entries at X0; 18 after X1, which satisfied
-  three and had to delete them; **13 since X2**, which satisfied five more.
+  three and had to delete them; 13 after X2, which satisfied five more; **11 since X4**, which
+  satisfied `FontFamily` and moved `ThemeColor` to the next table but one.
 - **`UNSPELLABLE`** — X3's, and a third table because neither of the others fits: a claim the
   **model** cannot satisfy, because the piece of format it is about has no `Part` in
   `grind_sheet::numfmt`. Not pending, since no milestone of this phase lands it; not decided
@@ -898,15 +977,24 @@ carry the difference and all three are checked in **both directions**:
   fraction part they fail for passing.
 - **`DECIDED_OTHERWISE`** — a claim this build answers differently *on purpose*. 2 entries at
   X0, 3 after X1 — the third is `realworld/xml-space-preserve.xlsx`'s A5, whose manifest wants
-  twenty spaces of indentation the fixture's own `sharedStrings.xml` does not contain — and
-  **7 since X2**.
+  twenty spaces of indentation the fixture's own `sharedStrings.xml` does not contain — 7
+  after X2, and **9 since X4**: the two `ThemeColor` counts, where the manifest disagrees with
+  its own fixtures in both directions.
 
 Everything else is asserted. At X0 that was 138 of 161 claims, with the cell-level half held by
 one assertion that `report.cells == 0`, written to fail the day X1 began. It did, and was
 replaced by the comparison it promised; X2 added a formula claim per formula cell and X3 a
-display claim per formatted one. **1696 of 1734 claims now** — 1340 of 1341 cells, 122 of 125
+display claim per formatted one. **1697 of 1735 claims now** — 1340 of 1341 cells, 122 of 125
 formulas and 89 of 107 displays — one claim per cell per question (`cell:Sheet!A1`,
 `formula:Sheet!A1`, `display:Sheet!A1`), so a table entry can name exactly the cell it excuses.
+
+X4's expectations are in the manifest's *prose* — `font_weight: "bold"`, "one side only — the
+other three must not inherit it" — rather than its fields, so there is no claim for the table
+machinery to count. Three tests write them out instead, one assertion per note:
+`the_colour_fixture_says_what_each_colour_is` holds `colors.xlsx`'s own column C,
+`the_style_fixtures_look_as_their_notes_say` the fonts, fills, borders, alignment and named
+styles, and `the_geometry_fixtures_size_and_hide_what_their_notes_say` the widths, heights,
+hidden tracks, outlines and panes.
 
 ### What the generated corpus found
 

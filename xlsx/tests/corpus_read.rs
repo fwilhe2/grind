@@ -145,6 +145,9 @@ fn every_corpus_workbook_imports() {
     let mut cells = 0usize;
     let mut formatted = 0usize;
     let mut formats_lost: BTreeMap<grind_xlsx::numfmt::Unspellable, usize> = BTreeMap::new();
+    let mut styled = 0usize;
+    let mut appearance_lost: BTreeMap<grind_xlsx::Appearance, usize> = BTreeMap::new();
+    let mut style_drops: BTreeMap<grind_xlsx::Dropped, usize> = BTreeMap::new();
 
     for path in &files {
         let Some(bytes) = workbook_bytes(path) else {
@@ -164,6 +167,18 @@ fn every_corpus_workbook_imports() {
                 formatted += report.formatted;
                 for (class, count) in &report.formats_lost {
                     *formats_lost.entry(*class).or_default() += count;
+                }
+                styled += report.styled;
+                for (class, count) in &report.appearance_lost {
+                    *appearance_lost.entry(*class).or_default() += count;
+                }
+                for kind in [
+                    grind_xlsx::Dropped::FontFamily,
+                    grind_xlsx::Dropped::ThemeColor,
+                ] {
+                    if let Some(count) = report.dropped.get(&kind) {
+                        *style_drops.entry(kind).or_default() += count;
+                    }
                 }
             }
             Err(e) if e.is_encrypted() => encrypted += 1,
@@ -209,6 +224,16 @@ fn every_corpus_workbook_imports() {
                 false => "",
             }
         );
+    }
+    // X4's, in the same shape and for the same reason no ratchet: an unstyled cell is the
+    // ordinary case. The two style losses the report names as `Dropped` kinds are printed
+    // here too, since this is where somebody reading about looks will look for them.
+    eprintln!("loop A′ styles: {styled}/{cells} cells carry one");
+    for (kind, count) in &style_drops {
+        eprintln!("  {:40} {count}", kind.label());
+    }
+    for (class, count) in &appearance_lost {
+        eprintln!("  {:40} {count}", class.label());
     }
     for (path, err) in failures.iter().take(10) {
         eprintln!("  {}: {err}", path.display());

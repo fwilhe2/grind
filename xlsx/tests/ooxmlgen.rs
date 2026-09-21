@@ -27,12 +27,14 @@
 //! contains and what a conversion of it should produce. A corpus with an oracle travelling
 //! beside it is the thing loop D needs and does not have until `soffice` is on `PATH`.
 //!
-//! **This build is X3**: every cell's value and kind is asserted against the manifest, one
+//! **This build is X4**: every cell's value and kind is asserted against the manifest, one
 //! claim per cell; so is every cell's **formula** — the text where the manifest states one,
 //! and *the absence of one* where it states an `excel` and no translation, which is how the
 //! exclusion classes are held to rather than merely described; and so is every **display** the
-//! manifest states, which is the claim about a number *format*. The rest of the oracle — styles,
-//! the document level — is about a later milestone. Three tables carry the difference and
+//! manifest states, which is the claim about a number *format*. X4's claims — what a style or a
+//! track should become — are in the manifest's prose rather than its fields, so three tests
+//! below write them out one assertion per note. The rest of the oracle, the document level, is
+//! about a later milestone. Three tables carry the difference and
 //! they are checked in *both* directions, which is the only arrangement that survives contact
 //! with a growing filter:
 //!
@@ -58,6 +60,7 @@ use std::path::{Path, PathBuf};
 
 use grind_sheet::formula::date;
 use grind_sheet::model::{CellValue, NumberKind, Pos, Sheet};
+use grind_sheet::style::CellStyle;
 use grind_xlsx::{Dropped, Error, Flavour};
 
 /// The ratchet, and the only number here that is about the corpus rather than about the
@@ -82,9 +85,9 @@ const PENDING: &[(&str, &str, &str)] = &[
          verbatim. The other eight names in that file — spaces, an apostrophe, CJK, 31 \
          characters — already come through exactly.",
     ),
-    // The report's remaining kinds. `Macro` and `HiddenSheet` are already counted, so these
-    // are the fifteen (file, kind) pairs left, each behind the milestone that reads the part
-    // the construct lives in.
+    // The report's remaining kinds. `Macro`, `HiddenSheet`, `FontFamily` and `ThemeColor` are
+    // already counted, so these are the nine (file, kind) pairs left, each behind the milestone
+    // that reads the part the construct lives in.
     (
         "document/chart.xlsx",
         "dropped:Chart",
@@ -126,16 +129,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "dropped:Protection",
         "X5 — `<sheetProtection>` and `<workbookProtection>`",
     ),
-    (
-        "styles/colors.xlsx",
-        "dropped:ThemeColor",
-        "X4 — the theme part is not read yet",
-    ),
-    (
-        "styles/fonts.xlsx",
-        "dropped:FontFamily",
-        "X4 — `<fonts>` is not read yet",
-    ),
     // The sheet-local names of `document/defined-names.xlsx` are dropped, and D3 is the cell
     // that names one. Its formula therefore loses its referent, which is why the manifest
     // states no translation for it.
@@ -156,6 +149,29 @@ const PENDING: &[(&str, &str, &str)] = &[
 /// deliberately does not have; the third is a manifest that disagrees with its own fixture's
 /// bytes, which is the one kind of claim no filter could satisfy.
 const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
+    (
+        "styles/colors.xlsx",
+        "dropped:ThemeColor",
+        "The manifest expects fourteen; this build counts none, because every theme colour in \
+         the file resolves — the workbook has a theme part, and all seventeen cells that name \
+         a slot come out as the colour the fixture's own column C says they should (checked \
+         by `the_colour_fixture_says_what_each_colour_is`) and as the oracle draws them. What \
+         does not come through is the *link* to the theme, which changes nothing while the \
+         theme does not change, and ODF has no theme to change. Fourteen also matches no count \
+         of anything in the file: seventeen fonts name a theme slot. `ThemeColor` here means \
+         a theme colour with **no theme to resolve it in** — the case below.",
+    ),
+    (
+        "styles/borders.xlsx",
+        "dropped:ThemeColor",
+        "The manifest expects none; this build counts one. B16's top and bottom edges name \
+         `theme=\"4\"`, and `borders.xlsx` has no theme part at all — its package holds no \
+         `xl/theme/`. There is nothing to resolve the slot against, so the edges are drawn in \
+         the ink and the cell is counted. The oracle does not resolve it either: it draws both \
+         edges white, and writes no colour at all for the same reference on a font (measured \
+         2026-09-21, `doc/xlsx-format.md` §4.2) — two different guesses where this build \
+         makes none.",
+    ),
     (
         "hostile/no-workbook-part.xlsx",
         "error",
@@ -973,6 +989,11 @@ fn every_claim_is_satisfied_or_named() {
         for (kind, got) in &report.dropped {
             let name = format!("{kind:?}");
             let want = fixture.expect_dropped.get(&name).copied().unwrap_or(0);
+            // A kind the manifest does not mention is an implicit claim of zero, and this is
+            // the only place it is evaluated — recorded, so a table entry can name it.
+            if !fixture.expect_dropped.contains_key(&name) {
+                reached.check(file, &format!("dropped:{name}"), false);
+            }
             if *got > want && !excused(file, &format!("dropped:{name}")) {
                 failures.push(format!(
                     "{file}: dropped {name}×{got} — the manifest expects ×{want}, and a \
@@ -1142,13 +1163,247 @@ fn nothing_outside_the_package_is_touched() {
     );
 }
 
+/// One fixture, imported — for the tests below that ask about a particular cell.
+fn import(file: &str) -> (grind_sheet::model::Document, grind_xlsx::Report) {
+    let bytes = std::fs::read(root().join(file)).expect("a vendored fixture");
+    grind_xlsx::import_bytes(&bytes).expect("it imports")
+}
+
+fn style_at(document: &grind_sheet::model::Document, at: &str) -> Option<CellStyle> {
+    let pos = grind_xlsx::address::cell(at).expect("an address");
+    document.sheets[0].style(pos).cloned()
+}
+
+/// `styles/colors.xlsx` states its own answer: column C is the colour each row's B cell should
+/// be, where the manifest could state one without the theme arithmetic. Every stated colour is
+/// held here — the four spellings, the palette, and all twelve theme slots, including the two
+/// whose order is swapped — and the rows the manifest calls automatic come out with no colour.
+/// The tinted rows state `—`, and `color.rs` holds those to the oracle's own values instead.
+#[test]
+fn the_colour_fixture_says_what_each_colour_is() {
+    let (document, report) = import("styles/colors.xlsx");
+    let sheet = &document.sheets[0];
+    let mut checked = 0;
+    for row in 1..30 {
+        let label = sheet.get(Pos::new(row, 0));
+        let want = sheet.get(Pos::new(row, 2));
+        let got = sheet.style(Pos::new(row, 1)).and_then(|s| s.color.clone());
+        let (CellValue::Text(label), CellValue::Text(want)) = (label, want) else {
+            continue;
+        };
+        if want.starts_with('#') {
+            assert_eq!(
+                got.as_deref(),
+                Some(want.as_str()),
+                "B{} ({label})",
+                row + 1
+            );
+            checked += 1;
+        } else if ["auto", "indexed 64", "indexed 65"].contains(&label.as_str()) {
+            assert_eq!(got, None, "B{} ({label}) is automatic", row + 1);
+            checked += 1;
+        }
+    }
+    // 21 rows state a hex; three more are the automatic ones.
+    assert_eq!(checked, 24, "the fixture's stated rows");
+    assert_eq!(report.dropped.get(&Dropped::ThemeColor), None);
+}
+
+/// What the style and geometry fixtures' own notes say each cell is, one assertion per note —
+/// the manifest states these in prose rather than as claims, so they are written out here.
+#[test]
+fn the_style_fixtures_look_as_their_notes_say() {
+    use grind_xlsx::Appearance;
+    let style = |pairs: &[(&str, &str)]| {
+        let mut s = CellStyle::default();
+        for (key, value) in pairs {
+            let value = Some((*value).to_owned());
+            match *key {
+                "weight" => s.font_weight = value,
+                "slant" => s.font_style = value,
+                "size" => s.font_size = value,
+                "color" => s.color = value,
+                "background" => s.background = value,
+                "align" => s.align = value,
+                "valign" => s.vertical_align = value,
+                "wrap" => s.wrap = value,
+                "border" => s.set_border(value),
+                "left" => s.borders[0] = value,
+                _ => unreachable!("{key}"),
+            }
+        }
+        Some(s)
+    };
+
+    let (fonts, report) = import("styles/fonts.xlsx");
+    assert_eq!(style_at(&fonts, "B2"), None, "the default font is no style");
+    assert_eq!(style_at(&fonts, "B3"), style(&[("weight", "bold")]));
+    assert_eq!(style_at(&fonts, "B4"), style(&[("slant", "italic")]));
+    assert_eq!(style_at(&fonts, "B10"), style(&[("size", "8pt")]));
+    assert_eq!(style_at(&fonts, "B11"), None, "11pt is the default size");
+    assert_eq!(style_at(&fonts, "B13"), style(&[("size", "10.5pt")]));
+    assert_eq!(
+        style_at(&fonts, "B21"),
+        style(&[("weight", "bold"), ("slant", "italic"), ("size", "14pt")])
+    );
+    assert_eq!(report.appearance_lost[&Appearance::Underline], 4);
+    assert_eq!(report.appearance_lost[&Appearance::Strike], 2);
+    assert_eq!(report.appearance_lost[&Appearance::Script], 2);
+
+    let (fills, report) = import("styles/fills.xlsx");
+    assert_eq!(style_at(&fills, "B2"), style(&[("background", "#ffff00")]));
+    assert_eq!(
+        style_at(&fills, "B5"),
+        None,
+        "a pattern is not its foreground"
+    );
+    // Seventeen two-colour patterns: the file's "eighteen" counts `none` among them, which is
+    // B3 and is no fill at all.
+    assert_eq!(report.appearance_lost[&Appearance::PatternFill], 17);
+    assert_eq!(report.appearance_lost[&Appearance::GradientFill], 1);
+
+    let (borders, report) = import("styles/borders.xlsx");
+    assert_eq!(
+        style_at(&borders, "B2"),
+        style(&[("border", "0.74pt solid #000000")])
+    );
+    assert_eq!(
+        style_at(&borders, "C2"),
+        style(&[("left", "0.74pt solid #000000")]),
+        "one side only"
+    );
+    assert_eq!(
+        style_at(&borders, "B5"),
+        style(&[("border", "1.76pt double #000000")])
+    );
+    assert_eq!(style_at(&borders, "B15"), None, "an explicit none");
+    assert_eq!(report.appearance_lost[&Appearance::Diagonal], 3);
+    // dashDot, dashDotDot, mediumDashDot, mediumDashDotDot and slantDashDot, twice each.
+    assert_eq!(report.appearance_lost[&Appearance::BorderPattern], 10);
+
+    let (alignment, report) = import("styles/alignment.xlsx");
+    for (at, key, value) in [
+        ("B3", "align", "start"),
+        ("B4", "align", "center"),
+        ("B5", "align", "end"),
+        ("B7", "align", "justify"),
+        ("B10", "valign", "top"),
+        ("B11", "valign", "middle"),
+        ("B12", "valign", "bottom"),
+        ("B15", "wrap", "wrap"),
+    ] {
+        assert_eq!(style_at(&alignment, at), style(&[(key, value)]), "{at}");
+    }
+    assert_eq!(style_at(&alignment, "B2"), None, "general is no alignment");
+    for class in [
+        Appearance::Fill,
+        Appearance::CenterAcross,
+        Appearance::Distributed,
+        Appearance::Shrink,
+    ] {
+        assert_eq!(report.appearance_lost[&class], 1, "{class:?}");
+    }
+    assert_eq!(report.appearance_lost[&Appearance::VerticalJustify], 2);
+    assert_eq!(report.appearance_lost[&Appearance::Indent], 3);
+    assert_eq!(report.appearance_lost[&Appearance::Rotation], 6);
+
+    // `applyFont="0"` does not hand A5 its named style's font: the cell format's own ids are
+    // the ones in effect, as the oracle reads it (`doc/xlsx-format.md` §4.4).
+    let (named, _) = import("styles/named-styles.xlsx");
+    assert_eq!(
+        style_at(&named, "A1"),
+        style(&[("weight", "bold"), ("size", "16pt"), ("color", "#1f4e79")])
+    );
+    assert_eq!(
+        style_at(&named, "A2"),
+        style(&[("slant", "italic"), ("color", "#808080")])
+    );
+    assert_eq!(style_at(&named, "A3"), None);
+    assert_eq!(style_at(&named, "A5"), style(&[("weight", "bold")]));
+}
+
+/// The geometry fixtures, by their notes. Widths are ECMA-376's unit — see
+/// `grind_xlsx::sheet::col_width` for why that is not the oracle's.
+#[test]
+fn the_geometry_fixtures_size_and_hide_what_their_notes_say() {
+    use grind_xlsx::Appearance;
+    use grind_xlsx::sheet::col_width;
+
+    let (columns, report) = import("geometry/columns.xlsx");
+    let sheet = &columns.sheets[0];
+    assert_eq!(sheet.col_width(0), Some(col_width(4.0).as_str()));
+    assert_eq!(sheet.col_width(4), Some(col_width(12.75).as_str()));
+    assert_eq!(
+        sheet.col_width(8),
+        Some(col_width(12.75).as_str()),
+        "E:I is one element"
+    );
+    // J is hidden at width 0, and a `<col>` that mentions it is not one the sheet's default
+    // width fills in: hidden, with no width of its own.
+    assert!(
+        sheet.col_hidden(9) && sheet.col_width(9).is_none(),
+        "J: hidden, width 0"
+    );
+    assert!(sheet.col_hidden(10), "K: hidden…");
+    assert_eq!(
+        sheet.col_width(10),
+        Some(col_width(15.0).as_str()),
+        "…and remembers"
+    );
+    // N:XFD is one element: carried as far as the sheet goes, and no further.
+    assert_eq!(sheet.col_width(13), Some(col_width(8.43).as_str()));
+    // A to N, less J.
+    assert_eq!(sheet.col_widths().count(), 13);
+    assert!(
+        report.appearance_lost.is_empty(),
+        "{:?}",
+        report.appearance_lost
+    );
+    // Excel's default column: 64 pixels, which is two-thirds of an inch. The file stores
+    // 9.140625 — 64/7 truncated to a 256th — so the width is 64 pixels to within 0.004mm.
+    let default = grind_sheet::style::length_mm(&col_width(9.140625)).unwrap();
+    assert!((default - 25.4 * 64.0 / 96.0).abs() < 0.01, "{default}");
+
+    let (rows, report) = import("geometry/rows.xlsx");
+    let sheet = &rows.sheets[0];
+    assert_eq!(sheet.row_height(0), None, "no `ht`: the default");
+    assert_eq!(sheet.row_height(1), Some("15pt"));
+    assert_eq!(sheet.row_height(2), Some("7.5pt"));
+    assert_eq!(sheet.row_height(4), Some("120.75pt"));
+    assert!(sheet.row_manually_hidden(5) && sheet.row_height(5).is_none());
+    assert!(sheet.row_manually_hidden(6));
+    assert_eq!(sheet.row_height(6), Some("25pt"), "unhiding restores 25pt");
+    assert!(sheet.row_manually_hidden(7), "ht=0 is invisible");
+    assert_eq!(sheet.row_height(8), Some("409pt"));
+    assert_eq!(
+        style_at(&rows, "A10").and_then(|s| s.font_weight),
+        Some("bold".to_owned()),
+        "a row's style reaches a cell that names none"
+    );
+    assert_eq!(report.appearance_lost[&Appearance::ZeroSize], 1);
+
+    let (outlines, report) = import("geometry/outlines.xlsx");
+    let sheet = &outlines.sheets[0];
+    assert!(sheet.row_manually_hidden(5) && sheet.row_manually_hidden(6));
+    assert!(sheet.col_hidden(4));
+    assert_eq!(report.appearance_lost[&Appearance::Outline], 1);
+
+    let (_, report) = import("geometry/panes.xlsx");
+    assert_eq!(
+        report.appearance_lost.get(&Appearance::Pane),
+        Some(&3),
+        "two frozen and one split; the gridlines and the zoom are view state"
+    );
+}
+
 /// Every imported document survives our own writer and reader.
 ///
 /// The same identity check `corpus_read.rs` runs over LibreOffice's corpus and phase 3 owns
 /// for ODF: import → write → read → compare. It proves the importer produced something **ODF
 /// can actually express** rather than something that only lives in memory, and it is the
 /// cheapest test in this file to keep honest as X1–X5 add content to carry. Since X1 that is
-/// every cell's value and kind as well as the sheet list.
+/// every cell's value and kind as well as the sheet list; since X4, every cell's style and
+/// every column's and row's size and hidden-ness.
 ///
 /// And no longer the cheapest to run: `scale/large-sheet.xlsx` makes it a 47 MB ODF write and
 /// read, which takes about two minutes in a debug build against a second and a half in a
@@ -1199,6 +1454,42 @@ fn every_imported_document_survives_a_write_and_a_read() {
                     sheet.kind(pos),
                     read.get(pos),
                     read.kind(pos)
+                ));
+            }
+            // X4's: every cell's style, exactly, and every track's size and hidden-ness.
+            let styled = sheet.rows_carrying().into_iter().flatten();
+            if let Some(pos) = styled
+                .flat_map(|row| (0..cols).map(move |col| Pos::new(row, col)))
+                .find(|&pos| sheet.style(pos) != read.style(pos))
+            {
+                differences.push(format!(
+                    "{}: {}!{} was styled {:?}, read back as {:?}",
+                    fixture.file,
+                    sheet.name,
+                    grind_sheet::a1::format(None, pos),
+                    sheet.style(pos),
+                    read.style(pos)
+                ));
+            }
+            let tracks = |s: &grind_sheet::model::Sheet| {
+                (
+                    s.col_widths()
+                        .map(|(c, w)| (c, w.to_owned()))
+                        .collect::<Vec<_>>(),
+                    s.row_heights()
+                        .map(|(r, h)| (r, h.to_owned()))
+                        .collect::<Vec<_>>(),
+                    s.hidden_cols().collect::<Vec<_>>(),
+                    s.manually_hidden_rows().collect::<Vec<_>>(),
+                )
+            };
+            if tracks(sheet) != tracks(read) {
+                differences.push(format!(
+                    "{}: {}'s tracks were {:?}, read back as {:?}",
+                    fixture.file,
+                    sheet.name,
+                    tracks(sheet),
+                    tracks(read)
                 ));
             }
         }

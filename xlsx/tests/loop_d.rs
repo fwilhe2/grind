@@ -24,8 +24,9 @@
 //! manifest already carries — and the oracle's own version string, so a second run costs no
 //! conversion and a different LibreOffice never reuses another one's answer.
 //!
-//! **What is compared: every cell's value, its kind, and — since X3 — what it displays.**
-//! Styles are X4's; each milestone widens [`differences`] rather than adding a loop. The
+//! **What is compared: every cell's value, its kind, and — since X3 — what it displays; since
+//! X4, every carried cell's style and every column's and row's size and hidden-ness.** Each
+//! milestone widens [`differences`] rather than adding a loop. The
 //! display is compared where **both** sides put a format on the cell, since a cell this build
 //! left unformatted is one whose code it refused by name, and those classes are counted in the
 //! report and asserted one at a time in `ooxmlgen.rs` — asking the oracle about them here would
@@ -52,6 +53,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use grind_sheet::model::{CellValue, Document, NumberKind, Pos, Sheet};
+use grind_sheet::style::{self, CellStyle};
 
 /// How many fixtures must reach the comparison. The ratchet, as in every loop: raise it,
 /// never lower it. 69 of the 76 import; the seven that do not are refused on purpose.
@@ -73,6 +75,12 @@ struct Divergence {
 enum Scope {
     /// One cell both sides have a sheet for.
     Cell(fn(ours: &Cell, theirs: &Cell) -> bool),
+    /// One cell's **style**, where both sides carry a value (X4). A scope of its own rather
+    /// than [`Scope::Cell`]'s, so that a divergence written about values — which says nothing
+    /// about styles — cannot swallow a style difference on the same cell.
+    Style(fn(ours: &CellStyle, theirs: &CellStyle) -> bool),
+    /// One column or row of a sheet both sides have (X4).
+    Track(fn(&Track) -> bool),
     /// A sheet of ours, by name, that the oracle's conversion does not have.
     OnlyOurs(fn(name: &str) -> bool),
     /// A sheet of the oracle's, by name, that ours does not have.
@@ -168,6 +176,192 @@ const DIVERGENCES: &[Divergence] = &[
             ours.value == theirs.value && theirs.display.trim_end() == ours.display
         }),
     },
+    // ---- X4: styles ----
+    Divergence {
+        name: "the oracle names its own border lines",
+        why: "`fo:border` is XSL-FO's shorthand (ODF §20.183), whose line styles are `solid`, \
+              `dotted`, `dashed` and `double` among others. The oracle writes LibreOffice's own \
+              — `fine-dashed` for Excel's `dashed` and `slantDashDot`, `dash-dot`, \
+              `dash-dot-dot`, and `double-thin` with a `style:border-line-width` beside it for \
+              `double` — where this import writes the nearest XSL-FO name and counts the lost \
+              dash pattern (`Appearance::BorderPattern`). Read from the oracle's conversion of \
+              `styles/borders.xlsx`, 2026-09-21. Everything else about each edge must agree.",
+        scope: Scope::Style(|ours, theirs| same_but(ours, theirs, |a, b| a == b)),
+    },
+    Divergence {
+        name: "a theme colour with no theme is drawn white by the oracle",
+        why: "`styles/borders.xlsx` B16 names `theme=\"4\"` on two edges and the package has no \
+              theme part. There is nothing to resolve the slot against: this import draws the \
+              edge in the ink and counts `Dropped::ThemeColor`; the oracle draws it `#ffffff` \
+              — and, measured on a font the same way, writes no colour at all. Every other \
+              edge of the cell must agree.",
+        scope: Scope::Style(|ours, theirs| {
+            same_but(ours, theirs, |a, b| {
+                a == b || (a == "#000000" && b == "#ffffff")
+            })
+        }),
+    },
+    Divergence {
+        name: "a system colour is a fixed colour in the oracle",
+        why: "`indexed=\"64\"` and `\"65\"` are the system's foreground and background \
+              (ECMA-376 §18.8.27), which is ODF's automatic colour, and this import carries them \
+              as no colour. The oracle fixes them at `#000000` and `#ffffff` — on a dark theme, \
+              black text. `styles/colors.xlsx` B12 and B13.",
+        scope: Scope::Style(|ours, theirs| {
+            ours.color.is_none()
+                && matches!(theirs.color.as_deref(), Some("#000000" | "#ffffff"))
+                && CellStyle {
+                    color: None,
+                    ..theirs.clone()
+                } == *ours
+        }),
+    },
+    Divergence {
+        name: "a tint rounds one step differently",
+        why: "ECMA-376's tint moves a colour's HSL luminance. This import computes it in \
+              floating point and rounds each channel half up, which reproduces the oracle's \
+              colour exactly for 69 of the 75 tinted theme colours measured \
+              (`doc/xlsx-format.md` §4.2) and is one step off in one or more channels for the \
+              other six: the oracle quantises somewhere the specification does not say to. \
+              `styles/colors.xlsx` B27, accent1 at tint 0.5, is one of them.",
+        scope: Scope::Style(|ours, theirs| {
+            let (Some(a), Some(b)) = (ours.color.as_deref(), theirs.color.as_deref()) else {
+                return false;
+            };
+            let channel = |hex: &str, i: usize| i32::from_str_radix(&hex[1 + 2 * i..3 + 2 * i], 16);
+            (0..3).all(|i| match (channel(a, i), channel(b, i)) {
+                (Ok(x), Ok(y)) => (x - y).abs() <= 1,
+                _ => false,
+            }) && CellStyle {
+                color: None,
+                ..ours.clone()
+            } == CellStyle {
+                color: None,
+                ..theirs.clone()
+            }
+        }),
+    },
+    Divergence {
+        name: "a pattern fill is blended into one colour",
+        why: "A pattern fill is two colours and a texture; ODF's cell background is one flat \
+              colour. The oracle blends ink and paper by the pattern's coverage — `darkGray` \
+              becomes `#668dd9` — and a gradient into its midpoint; this import carries no \
+              background and counts `Appearance::PatternFill` or `GradientFill`, which is the \
+              manifest's own instruction (\"dropped and counted, not approximated by its \
+              foreground\"). `styles/fills.xlsx` B4–B21.",
+        scope: Scope::Style(|ours, theirs| {
+            ours.background.is_none()
+                && theirs.background.is_some()
+                && CellStyle {
+                    background: None,
+                    ..theirs.clone()
+                } == *ours
+        }),
+    },
+    Divergence {
+        name: "the oracle aligns rotated text",
+        why: "`textRotation` with no `horizontal`: the oracle adds `fo:text-align` by the \
+              angle — `start` at 45° and 180°, `end` at 90°, 135° and stacked — where the file \
+              says `general`, which this import carries as no alignment and counts the rotation \
+              (`Appearance::Rotation`). `styles/alignment.xlsx` B19–B23.",
+        scope: Scope::Style(|ours, theirs| {
+            ours.align.is_none()
+                && matches!(theirs.align.as_deref(), Some("start" | "end"))
+                && CellStyle {
+                    align: None,
+                    ..theirs.clone()
+                } == *ours
+        }),
+    },
+    Divergence {
+        name: "the oracle justifies vertically, which ODF cannot say",
+        why: "`vertical=\"justify\"` and `\"distributed\"` arrive in the oracle's output as \
+              `style:vertical-align=\"justify\"` — not a value ODF's cell vertical alignment \
+              has (top, middle, bottom, automatic; OpenDocument 1.4 schema) — and with wrapping \
+              switched on. This import counts `Appearance::VerticalJustify` and writes neither. \
+              `styles/alignment.xlsx` B13 and B14.",
+        scope: Scope::Style(|ours, theirs| {
+            theirs.vertical_align.as_deref() == Some("justify")
+                && CellStyle {
+                    vertical_align: None,
+                    wrap: None,
+                    ..theirs.clone()
+                } == *ours
+        }),
+    },
+    Divergence {
+        name: "a workbook with no Normal style gets the oracle's own 10pt",
+        why: "`styles/named-styles.xlsx` declares cell styles `Heading 1` and `Note` and no \
+              `Normal`, so the oracle's `Default` cell style keeps LibreOffice's own 10pt, and \
+              each automatic style spells `11pt` — the size a font with no `<sz>` has — against \
+              it. This import takes the workbook's default font as the document's default \
+              whatever the cell styles are called, and that font is 11pt, so the same cells \
+              carry no size. Both say the cell is set in 11pt.",
+        scope: Scope::Style(|ours, theirs| {
+            ours.font_size.is_none()
+                && theirs.font_size.as_deref() == Some("11pt")
+                && CellStyle {
+                    font_size: None,
+                    ..theirs.clone()
+                } == *ours
+        }),
+    },
+    Divergence {
+        name: "the oracle frames a pivot table in its own borders",
+        why: "The pivot table's output is regenerated by the oracle (the divergence above), and \
+              regenerated with LibreOffice's own frame round it: borders 2.01pt and 0.99pt wide \
+              — widths no Excel border style becomes, since those are 0.06, 0.74, 1.76 and \
+              2.49pt (`doc/xlsx-format.md` §4.3). This import carries the cells the workbook \
+              holds, unstyled, as the workbook styles them.",
+        scope: Scope::Style(|ours, theirs| {
+            ours.is_plain()
+                && CellStyle {
+                    borders: Default::default(),
+                    ..theirs.clone()
+                }
+                .is_plain()
+                && theirs.borders.iter().flatten().all(|edge| {
+                    style::border_parts(edge).is_some_and(|(width, _, _)| {
+                        [0.99, 2.01].iter().any(|w| (width - w).abs() < 0.005)
+                    })
+                })
+        }),
+    },
+    // ---- X4: geometry ----
+    Divergence {
+        name: "the oracle measures a column in the font it substituted",
+        why: "ECMA-376 §18.3.1.13 counts a column's width in the maximum digit width of the \
+              workbook's default font. This import takes that to be Calibri 11's seven pixels at \
+              96 dpi, the specification's own example (`grind_xlsx::sheet::DIGIT_PX`); the \
+              oracle measures the digit in whatever font the converting machine substitutes \
+              for the default — DejaVu Sans on the pinned image, whose digit at 11pt is 7.0 \
+              *points* — which makes every width four-thirds of this import's. Measured \
+              2026-09-21 by changing the fixture's default font and watching the oracle's \
+              widths follow it (`doc/xlsx-format.md` §4.5): its answer is a fact about the \
+              machine, which is id 14's date-order problem again.",
+        scope: Scope::Track(|track| {
+            track.axis == Axis::Column
+                && matches!(track.what, TrackDifference::Size { ours, theirs: Some(theirs) }
+                    if (theirs / ours - 4.0 / 3.0).abs() < 0.005)
+        }),
+    },
+    Divergence {
+        name: "a zero-height row is shown by the oracle",
+        why: "`geometry/rows.xlsx` row 8 is `ht=\"0\" customHeight=\"1\"` and not hidden: \
+              invisible in Excel. ODF's row height is a positive length, so this import carries \
+              the row hidden and counts `Appearance::ZeroSize`; the oracle ignores the height \
+              and shows the row at the default.",
+        scope: Scope::Track(|track| {
+            track.axis == Axis::Row
+                && matches!(
+                    track.what,
+                    TrackDifference::Hidden {
+                        ours: true,
+                        theirs: false
+                    }
+                )
+        }),
+    },
     Divergence {
         name: "a sheet whose name the oracle does not allow is dropped",
         why: "`document/sheets.xlsx` has ten sheets and the oracle's conversion has eight: \
@@ -205,16 +399,170 @@ struct Cell {
     formula: bool,
     formatted: bool,
     display: String,
+    /// The cell's style after [`normalise`] — `None` where it looks like the document's
+    /// default. Compared only where both sides carry a value: the ODF reader drops a styled
+    /// empty cell (its `TODO:`), so the oracle's blanks arrive unstyled whatever it wrote.
+    style: Option<CellStyle>,
 }
 
-fn cell(sheet: &Sheet, pos: Pos, null_date: i64) -> Cell {
+fn cell(sheet: &Sheet, pos: Pos, null_date: i64, defaults: &Defaults) -> Cell {
+    let value = sheet.get(pos);
     Cell {
-        value: sheet.get(pos),
+        style: match value {
+            CellValue::Empty => None,
+            _ => normalise(sheet.style(pos), defaults),
+        },
+        value,
         kind: sheet.kind(pos),
         formula: sheet.formula(pos).is_some(),
         formatted: sheet.format(pos).is_some(),
         display: grind_sheet::render(sheet, pos, null_date),
     }
+}
+
+/// What a document's default cell looks like, as far as the comparison needs: the size and
+/// colour its `Default` cell style carries. Ours has none — the model has no document default
+/// (`odf/read.rs`'s ponytail on `style:default-style`) — and the oracle's is read out of its
+/// output here, because the oracle **spells the default out on every automatic style**
+/// (`fo:font-size="11pt"` on each of them, measured 2026-09-21), and a size equal to the
+/// document's own default is the absence of one.
+#[derive(Default)]
+struct Defaults {
+    size: Option<String>,
+    color: Option<String>,
+}
+
+impl Defaults {
+    /// The `Default` table-cell style's attributes, read out of the `.fods` text. A substring
+    /// search rather than a parse, because the style is one element whose shape the oracle
+    /// writes the same way every time, and our own reader deliberately does not keep it.
+    fn of(fods: &str) -> Self {
+        let Some(start) = fods.find(r#"style:name="Default" style:family="table-cell""#) else {
+            return Defaults::default();
+        };
+        let element = &fods[start..];
+        // A self-closed `<style:style …/>` carries nothing, and reading on to the next
+        // `</style:style>` would take another style's attributes for this one's.
+        let open = &element[..element.find('>').unwrap_or(element.len())];
+        if open.ends_with('/') {
+            return Defaults::default();
+        }
+        let element = &element[..element.find("</style:style>").unwrap_or(element.len())];
+        let attr = |name: &str| {
+            let at = element.find(&format!(" {name}=\""))? + name.len() + 3;
+            Some(element[at..at + element[at..].find('"')?].to_owned())
+        };
+        Defaults {
+            size: attr("fo:font-size"),
+            color: attr("fo:color"),
+        }
+    }
+}
+
+/// A style with every property that says "the default" taken out, so that the two sides are
+/// compared on what they *mean*. The oracle writes `fo:font-weight="normal"`,
+/// `fo:font-style="normal"`, `fo:wrap-option="no-wrap"` and `style:vertical-align="bottom"`
+/// onto styles that set none of them, where this import writes nothing; both are the same cell.
+fn normalise(style: Option<&CellStyle>, defaults: &Defaults) -> Option<CellStyle> {
+    let mut s = style?.clone();
+    let clear = |field: &mut Option<String>, plain: &[&str]| {
+        if field.as_deref().is_some_and(|v| plain.contains(&v)) {
+            *field = None;
+        }
+    };
+    clear(&mut s.font_weight, &["normal"]);
+    clear(&mut s.font_style, &["normal"]);
+    clear(&mut s.wrap, &["no-wrap"]);
+    clear(&mut s.vertical_align, &["bottom", "automatic"]);
+    clear(&mut s.background, &["transparent"]);
+    if s.font_size.is_some() && s.font_size == defaults.size {
+        s.font_size = None;
+    }
+    if s.color.is_some() && s.color == defaults.color {
+        s.color = None;
+    }
+    (!s.is_plain()).then_some(s)
+}
+
+/// Loop C's rule for two styles (`sheet/tests/roundtrip.rs`'s `same_style`): a border's width
+/// numerically, since LibreOffice re-quantises it, and everything else exactly.
+fn same_style(a: &Option<CellStyle>, b: &Option<CellStyle>) -> bool {
+    let (Some(a), Some(b)) = (a, b) else {
+        return a.is_none() && b.is_none();
+    };
+    let borders = a.borders.iter().zip(&b.borders).all(|(a, b)| {
+        match (
+            a.as_deref().and_then(style::border_parts),
+            b.as_deref().and_then(style::border_parts),
+        ) {
+            (Some((wa, sa, ca)), Some((wb, sb, cb))) => {
+                (wa - wb).abs() < 0.05 && sa == sb && ca == cb
+            }
+            _ => a == b,
+        }
+    });
+    let bare = |s: &CellStyle| CellStyle {
+        borders: Default::default(),
+        ..s.clone()
+    };
+    borders && bare(a) == bare(b)
+}
+
+/// Are these the same style except where `colour` excuses a border colour — with the oracle's
+/// own line names read as the XSL-FO ones this import writes? The divergences about borders
+/// are built on it, so that each excuses exactly one thing.
+fn same_but(ours: &CellStyle, theirs: &CellStyle, colour: fn(&str, &str) -> bool) -> bool {
+    fn xsl(line: &str) -> &str {
+        match line {
+            "fine-dashed" | "dash-dot" | "dash-dot-dot" => "dashed",
+            "double-thin" => "double",
+            other => other,
+        }
+    }
+    let edges = ours.borders.iter().zip(&theirs.borders).all(|(a, b)| {
+        match (
+            a.as_deref().and_then(style::border_parts),
+            b.as_deref().and_then(style::border_parts),
+        ) {
+            (Some((wa, la, ca)), Some((wb, lb, cb))) => {
+                (wa - wb).abs() < 0.05 && la == xsl(lb) && colour(ca, cb)
+            }
+            _ => a == b,
+        }
+    });
+    let bare = |s: &CellStyle| CellStyle {
+        borders: Default::default(),
+        ..s.clone()
+    };
+    edges && bare(ours) == bare(theirs)
+}
+
+/// One column or row on which the two conversions disagree.
+#[derive(Debug)]
+struct Track {
+    axis: Axis,
+    index: u32,
+    what: TrackDifference,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Axis {
+    Column,
+    Row,
+}
+
+#[derive(Debug)]
+enum TrackDifference {
+    /// A size ours carries, in millimetres, against the oracle's — which it has for every
+    /// track, since it measures the ones nobody sized.
+    Size {
+        ours: f64,
+        theirs: Option<f64>,
+    },
+    Hidden {
+        ours: bool,
+        theirs: bool,
+    },
 }
 
 /// Loop C's rule, restated: equal at 15 significant digits (`sheet/tests/roundtrip.rs`'s
@@ -238,6 +586,8 @@ fn same(a: &Cell, b: &Cell) -> bool {
 /// One way the two conversions differ.
 enum Difference {
     Cell(String, Pos, Cell, Cell),
+    Style(String, Pos, Option<CellStyle>, Option<CellStyle>),
+    Track(String, Track),
     OnlyOurs(String),
     OnlyTheirs(String),
     Unreached(String),
@@ -247,6 +597,11 @@ impl Difference {
     fn explained_by(&self, divergence: &Divergence) -> bool {
         match (self, &divergence.scope) {
             (Difference::Cell(_, _, a, b), Scope::Cell(applies)) => applies(a, b),
+            (Difference::Style(_, _, a, b), Scope::Style(applies)) => {
+                let plain = CellStyle::default();
+                applies(a.as_ref().unwrap_or(&plain), b.as_ref().unwrap_or(&plain))
+            }
+            (Difference::Track(_, track), Scope::Track(applies)) => applies(track),
             (Difference::OnlyOurs(name), Scope::OnlyOurs(applies)) => applies(name),
             (Difference::OnlyTheirs(name), Scope::OnlyTheirs(applies)) => applies(name),
             (Difference::Unreached(_), Scope::Unreached) => true,
@@ -264,6 +619,19 @@ impl Difference {
                 b.value,
                 b.kind
             ),
+            Difference::Style(sheet, pos, a, b) => format!(
+                "{sheet}!{} is styled {a:?}, the oracle's {b:?}",
+                grind_sheet::a1::format(None, *pos),
+            ),
+            Difference::Track(sheet, track) => format!(
+                "{sheet}: {} {} is {:?}",
+                match track.axis {
+                    Axis::Column => "column",
+                    Axis::Row => "row",
+                },
+                track.index + 1,
+                track.what
+            ),
             Difference::OnlyOurs(name) => format!("sheet {name:?} is not in the oracle's"),
             Difference::OnlyTheirs(name) => format!("sheet {name:?} is only in the oracle's"),
             Difference::Unreached(name) => {
@@ -278,7 +646,7 @@ impl Difference {
 ///
 /// Cells are walked over the rows either side *carries* rather than over the used rectangle,
 /// which for `scale/wide-and-sparse.xlsx` is the whole grid — seventeen billion cells.
-fn differences(ours: &Document, theirs: &Document) -> Vec<Difference> {
+fn differences(ours: &Document, theirs: &Document, defaults: &Defaults) -> Vec<Difference> {
     let mut out = Vec::new();
     for other in &theirs.sheets {
         if !ours.sheets.iter().any(|s| s.name == other.name) {
@@ -307,15 +675,83 @@ fn differences(ours: &Document, theirs: &Document) -> Vec<Difference> {
             for col in 0..cols {
                 let pos = Pos::new(row, col);
                 let (a, b) = (
-                    cell(mine, pos, ours.null_date),
-                    cell(other, pos, theirs.null_date),
+                    cell(mine, pos, ours.null_date, &Defaults::default()),
+                    cell(other, pos, theirs.null_date, defaults),
                 );
+                if !same_style(&a.style, &b.style) {
+                    out.push(Difference::Style(
+                        mine.name.clone(),
+                        pos,
+                        a.style.clone(),
+                        b.style.clone(),
+                    ));
+                }
                 if !same(&a, &b) {
                     out.push(Difference::Cell(mine.name.clone(), pos, a, b));
                 }
             }
         }
+        for track in tracks(mine, other) {
+            out.push(Difference::Track(mine.name.clone(), track));
+        }
     }
+    out
+}
+
+/// The columns and rows on which two sheets disagree (X4). A size is compared where **ours**
+/// carries one — the oracle carries one for every track, measuring the rows nobody sized with
+/// its own fonts, and a height this import did not state is one a shell measures in its own —
+/// at loop C's tolerance of a tenth of a millimetre. Hidden-ness is compared everywhere.
+fn tracks(mine: &Sheet, other: &Sheet) -> Vec<Track> {
+    let mut out = Vec::new();
+    let mm = |s: Option<&str>| s.and_then(style::length_mm);
+    let mut size = |axis, index, ours: Option<&str>, theirs: Option<&str>| {
+        if let Some(ours) = mm(ours) {
+            let theirs = mm(theirs);
+            if theirs.is_none_or(|t| (t - ours).abs() >= 0.1) {
+                out.push(Track {
+                    axis,
+                    index,
+                    what: TrackDifference::Size { ours, theirs },
+                });
+            }
+        }
+    };
+    for (col, width) in mine.col_widths() {
+        size(Axis::Column, col, Some(width), other.col_width(col));
+    }
+    for (row, height) in mine.row_heights() {
+        size(Axis::Row, row, Some(height), other.row_height(row));
+    }
+    let hidden = |axis, a: Vec<u32>, b: Vec<u32>, out: &mut Vec<Track>| {
+        for index in a
+            .iter()
+            .chain(&b)
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let (ours, theirs) = (a.contains(&index), b.contains(&index));
+            if ours != theirs {
+                out.push(Track {
+                    axis,
+                    index,
+                    what: TrackDifference::Hidden { ours, theirs },
+                });
+            }
+        }
+    };
+    hidden(
+        Axis::Column,
+        mine.hidden_cols().collect(),
+        other.hidden_cols().collect(),
+        &mut out,
+    );
+    hidden(
+        Axis::Row,
+        mine.manually_hidden_rows().collect(),
+        other.manually_hidden_rows().collect(),
+        &mut out,
+    );
     out
 }
 
@@ -477,7 +913,8 @@ fn our_import_agrees_with_the_oracles() {
         compared += 1;
         cells += report.cells;
 
-        for difference in differences(&ours, &theirs) {
+        let defaults = Defaults::of(&std::fs::read_to_string(&theirs_path).unwrap_or_default());
+        for difference in differences(&ours, &theirs, &defaults) {
             match DIVERGENCES.iter().find(|d| difference.explained_by(d)) {
                 Some(d) => *matched.entry(d.name).or_default() += 1,
                 None => failures.push(format!("{}: {}", fixture.file, difference.describe())),

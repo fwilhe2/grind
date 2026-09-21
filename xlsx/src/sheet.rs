@@ -36,20 +36,32 @@
 //! An explicit `r` moves the counter, so a row that mixes the two resumes from the last
 //! explicit address rather than from the number of cells seen. `dimension` and `spans` are
 //! claims and are never read.
+//!
+//! **Geometry (X4).** `<cols>` and each `<row>` carry widths, heights and hidden-ness, which
+//! the model holds per track. A row height is points and is carried verbatim; a column width
+//! is counted in characters and is converted through [`col_width`]. A `<col>` element covers
+//! a *range*, and one running to the sheet's last column is the sheet's background rather than
+//! sixteen thousand columns of layout: it is carried over the columns the sheet uses and no
+//! further, which is `grind_sheet::MAX_TRACK_RUN`'s rule for an ODF column run. The sheet's
+//! stated default width (`<sheetFormatPr defaultColWidth>`) is carried the same way, onto the
+//! used columns no `<col>` mentions — the model has no sheet default to put it in. What has no
+//! home — an outline's grouping, frozen panes, a size of zero — is counted as an
+//! [`Appearance`].
 
 use std::collections::HashMap;
 
 use grind_sheet::formula::parse::Expr;
 use grind_sheet::formula::{date, funcs, shift};
 use grind_sheet::model::{CellValue, NumberKind, Pos, Sheet};
-use grind_sheet::{MAX_COLS, MAX_ROWS};
+use grind_sheet::style::mm_length;
+use grind_sheet::{MAX_COLS, MAX_ROWS, MAX_TRACK_RUN};
 
 use crate::address;
 use crate::dates;
 use crate::formula::{self, Refusal};
 use crate::report::{Dropped, Report};
 use crate::strings::{self, Item};
-use crate::styles::Styles;
+use crate::styles::{Appearance, Styles};
 use crate::xml::{Handled, Reader};
 
 /// Cells one import will materialise, across every sheet — the same number `odf/read.rs`
@@ -89,19 +101,238 @@ pub fn read(
 ) {
     let mut reader = Reader::new(bytes);
     let mut shared = Shared::default();
+    let mut tracks = Tracks::default();
     if matches!(reader.root(), Ok(Some((ref root, _))) if root.is("worksheet")) {
-        let _ = reader.children(|reader, name, _| {
-            if !name.is("sheetData") {
+        let _ = reader.children(|reader, name, attrs| {
+            if name.is("sheetData") {
+                rows(
+                    reader,
+                    context,
+                    index,
+                    sheet,
+                    report,
+                    &mut shared,
+                    &mut tracks,
+                )?;
+            } else if name.is("cols") {
+                cols(reader, sheet, report, &mut tracks)?;
+            } else if name.is("sheetFormatPr") {
+                // A stated default width is carried like a long `<col>` run, onto the columns
+                // the sheet uses. A `baseColWidth` with no `defaultColWidth` beside it means a
+                // default derived from a base, by arithmetic nobody here has measured; unless
+                // it is Excel's own eight, it is counted instead.
+                let number = |local: &str| {
+                    attrs
+                        .plain(local)
+                        .and_then(|v| v.trim().parse::<f64>().ok())
+                        .filter(|v| v.is_finite() && *v > 0.0)
+                };
+                tracks.default_width = number("defaultColWidth");
+                tracks.sheet_width |= tracks.default_width.is_none()
+                    && number("baseColWidth").is_some_and(|base| (base - 8.0).abs() > 1e-9);
+            } else if name.is("sheetViews") {
+                tracks.pane |= panes(reader)?;
+            } else {
                 return Ok(Handled::No);
             }
-            rows(reader, context, index, sheet, report, &mut shared)?;
             Ok(Handled::Yes)
         });
     }
     shared.resolve(index, sheet, report);
+    tracks.finish(sheet, report);
     report.must_understand.append(&mut reader.must_understand);
     seen.transitional |= reader.seen.transitional;
     seen.strict |= reader.seen.strict;
+}
+
+/// ECMA-376 §18.3.1.13's unit for a column width: the **maximum digit width** of the
+/// workbook's default font, in pixels at 96 dpi. Seven is Calibri 11's — the spec's own worked
+/// example, and Excel's default font since 2007.
+///
+/// ponytail: one constant for every workbook, because this crate has no font metrics — the
+/// core measures text only through a shell's `Metrics`. A workbook whose default font is not
+/// Calibri 11 gets its widths in the wrong unit, proportionally: a 10pt Arial workbook is a
+/// few percent off. The oracle does not have this problem and has a worse one: it measures
+/// the digit in whatever font *the converting machine* substitutes, so its widths are a fact
+/// about that machine (`doc/xlsx-format.md` §4.5, and loop D's divergence). The upgrade is a
+/// measured table of digit widths by family and size, keyed on the default font's `<name>` and
+/// `<sz>`.
+pub const DIGIT_PX: f64 = 7.0;
+
+/// A column width in characters, as the ODF length the model stores: `width × DIGIT_PX`
+/// pixels at 96 dpi. The width already includes Excel's padding — `9.140625` is its
+/// 64-pixel default column, which the UI calls 8.43 characters — so nothing is added.
+pub fn col_width(chars: f64) -> String {
+    mm_length(chars * DIGIT_PX * 25.4 / 96.0)
+}
+
+/// What a sheet's tracks said beyond their sizes, collected across the whole part.
+#[derive(Default)]
+struct Tracks {
+    /// `<col>` runs longer than `MAX_TRACK_RUN`, applied once the sheet's extent is known.
+    long: Vec<(u32, u32, Track)>,
+    /// `<sheetFormatPr defaultColWidth>`: the width of every column no `<col>` mentions.
+    default_width: Option<f64>,
+    /// Every `<col>` range, as `start..end`, so that the default goes only where none did.
+    mentioned: Vec<std::ops::Range<u32>>,
+    outline: bool,
+    pane: bool,
+    sheet_width: bool,
+}
+
+/// One `<col>` or `<row>`'s own attributes.
+#[derive(Clone, Copy, Default)]
+struct Track {
+    /// In the track's own unit: characters for a column, points for a row.
+    size: Option<f64>,
+    hidden: bool,
+}
+
+impl Tracks {
+    /// Put the long runs on the columns the sheet uses, and count what the sheet as a whole
+    /// could not keep.
+    fn finish(&mut self, sheet: &mut Sheet, report: &mut Report) {
+        let used = sheet.used_cols();
+        for (start, end, track) in std::mem::take(&mut self.long) {
+            for col in start..end.min(used) {
+                column(sheet, col, track, report);
+            }
+        }
+        if let Some(width) = self.default_width {
+            for col in 0..used {
+                if !self.mentioned.iter().any(|range| range.contains(&col)) {
+                    sheet.set_col_width(col, Some(col_width(width)));
+                }
+            }
+        }
+        for (on, class) in [
+            (self.outline, Appearance::Outline),
+            (self.pane, Appearance::Pane),
+            (self.sheet_width, Appearance::SheetDefaultWidth),
+        ] {
+            if on {
+                report.lose(class);
+            }
+        }
+    }
+}
+
+/// `<cols>`: each `<col min max>` is a 1-based, inclusive range.
+fn cols(
+    reader: &mut Reader<'_>,
+    sheet: &mut Sheet,
+    report: &mut Report,
+    tracks: &mut Tracks,
+) -> crate::Result<()> {
+    reader.children(|_, name, attrs| {
+        if !name.is("col") {
+            return Ok(Handled::No);
+        }
+        let bound = |local: &str| {
+            attrs
+                .plain(local)
+                .and_then(|v| v.trim().parse::<u32>().ok())
+        };
+        let (Some(min), Some(max)) = (bound("min"), bound("max")) else {
+            return Ok(Handled::Yes);
+        };
+        let (start, end) = (min.max(1) - 1, max.min(MAX_COLS));
+        if start >= end {
+            return Ok(Handled::Yes);
+        }
+        let track = Track {
+            size: attrs
+                .plain("width")
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .filter(|w| w.is_finite() && *w >= 0.0),
+            hidden: attrs.flag("hidden"),
+        };
+        tracks.outline |= outlined(attrs);
+        tracks.mentioned.push(start..end);
+        if end - start <= MAX_TRACK_RUN {
+            for col in start..end {
+                column(sheet, col, track, report);
+            }
+        } else {
+            // The sheet's background. Carried over the columns in use once they are known; the
+            // rest is only worth a sentence when the author chose it — a width Excel computed
+            // for the whole sheet is its default, not a decision.
+            tracks.sheet_width |= track.hidden || attrs.flag("customWidth");
+            tracks.long.push((start, end, track));
+        }
+        Ok(Handled::Yes)
+    })
+}
+
+fn column(sheet: &mut Sheet, col: u32, track: Track, report: &mut Report) {
+    match track.size {
+        Some(width) if width > 0.0 => sheet.set_col_width(col, Some(col_width(width))),
+        // `width="0"` on a column that is not hidden is invisible all the same.
+        Some(_) if !track.hidden => {
+            sheet.set_col_hidden(col, true);
+            report.lose(Appearance::ZeroSize);
+        }
+        _ => {}
+    }
+    if track.hidden {
+        sheet.set_col_hidden(col, true);
+    }
+}
+
+/// A `<row>`'s height and hidden-ness. The height is carried only where the author set it
+/// (`customHeight`): otherwise it is Excel's measurement of what the row holds, which a shell
+/// makes again from the row's own content.
+fn row_geometry(sheet: &mut Sheet, row: u32, attrs: &crate::xml::Attrs, report: &mut Report) {
+    let height = attrs
+        .plain("ht")
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|h| h.is_finite() && *h >= 0.0);
+    let hidden = attrs.flag("hidden");
+    match height {
+        Some(ht) if ht > 0.0 && attrs.flag("customHeight") => {
+            sheet.set_row_height(row, Some(format!("{ht}pt")));
+        }
+        Some(ht) if ht == 0.0 && attrs.flag("customHeight") && !hidden => {
+            sheet.set_row_hidden(row, true);
+            report.lose(Appearance::ZeroSize);
+        }
+        _ => {}
+    }
+    if hidden {
+        sheet.set_row_hidden(row, true);
+    }
+}
+
+fn outlined(attrs: &crate::xml::Attrs) -> bool {
+    attrs
+        .plain("outlineLevel")
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .is_some_and(|level| level > 0)
+}
+
+/// Whether any `<sheetView>` freezes or splits its panes. A `<pane>` with neither split is a
+/// view with one pane, which is every sheet.
+fn panes(reader: &mut Reader<'_>) -> crate::Result<bool> {
+    let mut any = false;
+    reader.children(|reader, name, _| {
+        if !name.is("sheetView") {
+            return Ok(Handled::No);
+        }
+        reader.children(|_, name, attrs| {
+            if name.is("pane") {
+                let split = |local: &str| {
+                    attrs
+                        .plain(local)
+                        .and_then(|v| v.trim().parse::<f64>().ok())
+                        .is_some_and(|v| v > 0.0)
+                };
+                any |= split("xSplit") || split("ySplit");
+            }
+            Ok(Handled::No)
+        })?;
+        Ok(Handled::Yes)
+    })?;
+    Ok(any)
 }
 
 /// The shared-formula groups of one worksheet, and the cells still waiting on one.
@@ -140,6 +371,7 @@ fn rows(
     sheet: &mut Sheet,
     report: &mut Report,
     shared: &mut Shared,
+    tracks: &mut Tracks,
 ) -> crate::Result<()> {
     // The row the *next* implicit `<row>` lands on.
     let mut next_row: u32 = 0;
@@ -152,6 +384,15 @@ fn rows(
             .and_then(|r| r.parse::<u32>().ok())
             .filter(|r| (1..=MAX_ROWS).contains(r))
             .map_or(next_row, |r| r - 1);
+        row_geometry(sheet, row, attrs, report);
+        tracks.outline |= outlined(attrs);
+        // A row's own style reaches the cells in it that name none — measured: the oracle draws
+        // `geometry/rows.xlsx`'s A10, which has no `s`, in its row's bold. Only under
+        // `customFormat`, which is what says the row's `s` is meant (§18.3.1.73).
+        let row_style = attrs
+            .flag("customFormat")
+            .then(|| attrs.plain("s").and_then(|s| s.parse::<usize>().ok()))
+            .flatten();
         let mut at = Pos::new(row, 0);
         reader.children(|reader, name, attrs| {
             if !name.is("c") {
@@ -168,7 +409,11 @@ fn rows(
             }
             let raw = RawCell {
                 t: attrs.plain("t").unwrap_or("n").to_owned(),
-                s: attrs.plain("s").and_then(|s| s.parse().ok()).unwrap_or(0),
+                s: attrs
+                    .plain("s")
+                    .and_then(|s| s.parse().ok())
+                    .or(row_style)
+                    .unwrap_or(0),
             };
             let mut value = cell(reader)?;
             if let Some(f) = value.f.take() {
@@ -366,6 +611,13 @@ fn store(
         _ => CellValue::Empty,
     };
     if value.is_empty() {
+        if context
+            .styles
+            .look(raw.s)
+            .is_some_and(|look| look.shows_when_empty())
+        {
+            report.lose(Appearance::StyledBlank);
+        }
         return;
     }
     if report.cells >= MAX_CELLS {
@@ -378,6 +630,28 @@ fn store(
         sheet.set_kind(at, kind);
     }
     format(sheet, at, raw.s, context, report);
+    look(sheet, at, raw.s, context, report);
+}
+
+/// Put the cell's style on it, and count whatever it could not carry (X4). Translated once,
+/// when the styles part was read; cloned here, as [`format`] clones a number format.
+fn look(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mut Report) {
+    let Some(look) = context.styles.look(s) else {
+        return;
+    };
+    if let Some(style) = &look.style {
+        report.styled += 1;
+        sheet.set_style(at, style.clone());
+    }
+    for lost in &look.lost {
+        report.lose(*lost);
+    }
+    if look.family {
+        report.drop_one(Dropped::FontFamily);
+    }
+    if look.unresolved_theme {
+        report.drop_one(Dropped::ThemeColor);
+    }
 }
 
 /// Put the cell's number format on it, and count whatever its code could not say (X3).
@@ -519,7 +793,7 @@ mod tests {
         let xml = format!(
             r#"<styleSheet xmlns="{MAIN}"><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="46"/><xf numFmtId="2"/></cellXfs></styleSheet>"#
         );
-        crate::styles::read(xml.as_bytes())
+        crate::styles::read(xml.as_bytes(), &[])
     }
 
     /// The same `<v>` under four formats: only the date is corrected, and only the date and
@@ -734,6 +1008,159 @@ mod tests {
                 .collect()
         );
         assert!(report.lossless(), "an unknown name loses nothing");
+    }
+
+    /// A whole worksheet part, for the tests that need what sits beside `<sheetData>`.
+    fn worksheet(inner: &str, styles: &Styles) -> (Sheet, Report) {
+        let xml = format!(r#"<worksheet xmlns="{MAIN}">{inner}</worksheet>"#);
+        let context = Context {
+            strings: &[],
+            styles,
+            date_1904: false,
+            null_date: date::DEFAULT_NULL_DATE,
+        };
+        let mut sheet = Sheet::new("S");
+        let mut report = Report::default();
+        read(
+            xml.as_bytes(),
+            &context,
+            0,
+            &mut sheet,
+            &mut report,
+            &mut Default::default(),
+        );
+        (sheet, report)
+    }
+
+    /// A `<col>` is a range; a width is characters of a seven-pixel digit; a run to the edge
+    /// of the sheet stops where the sheet does.
+    #[test]
+    fn columns_are_ranges_and_widths_are_characters() {
+        let (sheet, report) = worksheet(
+            r#"<cols>
+                 <col min="1" max="1" width="9.140625" customWidth="1"/>
+                 <col min="2" max="3" width="20" customWidth="1" hidden="1"/>
+                 <col min="4" max="4" width="0" customWidth="1"/>
+                 <col min="5" max="16384" width="12" customWidth="1"/>
+               </cols>
+               <sheetData><row r="1"><c r="F1"><v>1</v></c></row></sheetData>"#,
+            &Styles::default(),
+        );
+        // 9.140625 characters is Excel's 64-pixel default: two-thirds of an inch.
+        assert_eq!(sheet.col_width(0), Some(col_width(9.140625).as_str()));
+        assert_eq!(col_width(9.140625), "16.929mm");
+        assert!(sheet.col_hidden(1) && sheet.col_hidden(2));
+        assert_eq!(
+            sheet.col_width(2),
+            Some(col_width(20.0).as_str()),
+            "hidden, and sized"
+        );
+        assert!(sheet.col_hidden(3), "width 0 is invisible, so it is hidden");
+        assert_eq!(sheet.col_width(3), None);
+        // E:XFD reaches the columns the sheet uses — E and F — and no further.
+        assert_eq!(sheet.col_width(5), Some(col_width(12.0).as_str()));
+        assert_eq!(sheet.col_width(6), None);
+        assert_eq!(report.appearance_lost[&Appearance::ZeroSize], 1);
+        assert_eq!(
+            report.appearance_lost[&Appearance::SheetDefaultWidth],
+            1,
+            "a width chosen for the whole sheet has no home"
+        );
+    }
+
+    /// `defaultColWidth` is every used column's that no `<col>` mentions — the model has no
+    /// sheet default to hold it.
+    #[test]
+    fn the_sheets_default_width_fills_the_columns_nothing_mentions() {
+        let (sheet, report) = worksheet(
+            r#"<sheetFormatPr defaultColWidth="11.53515625" defaultRowHeight="12.8"/>
+               <cols><col min="2" max="2" width="0" hidden="1" customWidth="1"/></cols>
+               <sheetData><row r="1"><c r="C1"><v>1</v></c></row></sheetData>"#,
+            &Styles::default(),
+        );
+        assert_eq!(sheet.col_width(0), Some(col_width(11.53515625).as_str()));
+        assert_eq!(sheet.col_width(1), None, "mentioned, and hidden at zero");
+        assert_eq!(sheet.col_width(2), Some(col_width(11.53515625).as_str()));
+        assert_eq!(sheet.col_width(3), None, "past the sheet's content");
+        assert!(report.appearance_lost.is_empty());
+
+        let (_, report) = worksheet(
+            r#"<sheetFormatPr baseColWidth="12"/><sheetData/>"#,
+            &Styles::default(),
+        );
+        assert_eq!(report.appearance_lost[&Appearance::SheetDefaultWidth], 1);
+    }
+
+    /// A height is points, carried where the author set it; a measured one is left to the
+    /// shell, and zero is hidden.
+    #[test]
+    fn rows_carry_the_heights_their_authors_set() {
+        let (sheet, report) = worksheet(
+            r#"<sheetData>
+                 <row r="1" ht="30" customHeight="1"><c r="A1"><v>1</v></c></row>
+                 <row r="2" ht="18.75"><c r="A2"><v>2</v></c></row>
+                 <row r="3" ht="25" hidden="1" customHeight="1"/>
+                 <row r="4" ht="0" customHeight="1"/>
+                 <row r="5" outlineLevel="1" hidden="1"/>
+               </sheetData>"#,
+            &Styles::default(),
+        );
+        assert_eq!(sheet.row_height(0), Some("30pt"));
+        assert_eq!(
+            sheet.row_height(1),
+            None,
+            "Excel's measurement, not the author's"
+        );
+        assert!(sheet.row_manually_hidden(2));
+        assert_eq!(sheet.row_height(2), Some("25pt"), "hidden, and remembers");
+        assert!(sheet.row_manually_hidden(3), "zero height");
+        assert!(sheet.row_manually_hidden(4));
+        assert_eq!(report.appearance_lost[&Appearance::ZeroSize], 1);
+        assert_eq!(report.appearance_lost[&Appearance::Outline], 1);
+    }
+
+    #[test]
+    fn a_frozen_pane_is_counted_and_a_zoom_is_not() {
+        let (_, report) = worksheet(
+            r#"<sheetViews><sheetView zoomScale="150" showGridLines="0">
+                 <pane ySplit="1" topLeftCell="A2" state="frozen"/>
+               </sheetView></sheetViews><sheetData/>"#,
+            &Styles::default(),
+        );
+        assert_eq!(report.appearance_lost[&Appearance::Pane], 1);
+        let (_, report) = worksheet(
+            r#"<sheetViews><sheetView zoomScale="150"/></sheetViews><sheetData/>"#,
+            &Styles::default(),
+        );
+        assert!(report.appearance_lost.is_empty());
+    }
+
+    /// A row's `s` reaches the cells in it that name none, under `customFormat` only; a cell's
+    /// own `s` wins; and a styled cell with no value is counted rather than carried.
+    #[test]
+    fn a_rows_style_reaches_its_unstyled_cells() {
+        let xml = format!(
+            r#"<styleSheet xmlns="{MAIN}"><fonts><font/><font><b/></font><font><i/></font></fonts>
+                 <borders><border/><border><left style="thin"/></border></borders>
+                 <cellXfs><xf/><xf fontId="1"/><xf fontId="2"/><xf borderId="1"/></cellXfs></styleSheet>"#
+        );
+        let styles = crate::styles::read(xml.as_bytes(), &[]);
+        let (sheet, report) = worksheet(
+            r#"<sheetData>
+                 <row r="1" s="1" customFormat="1">
+                   <c r="A1"><v>1</v></c><c r="B1" s="2"><v>2</v></c><c r="C1" s="3"/>
+                 </row>
+                 <row r="2" s="1"><c r="A2"><v>3</v></c></row>
+               </sheetData>"#,
+            &styles,
+        );
+        let weight = |addr| sheet.style(at(addr)).and_then(|s| s.font_weight.clone());
+        assert_eq!(weight("A1"), Some("bold".into()), "the row's");
+        assert_eq!(weight("B1"), None, "its own, which is italic");
+        assert_eq!(weight("A2"), None, "no customFormat, no row style");
+        assert_eq!(sheet.style(at("C1")), None);
+        assert_eq!(report.appearance_lost[&Appearance::StyledBlank], 1);
+        assert_eq!(report.styled, 2);
     }
 
     #[test]

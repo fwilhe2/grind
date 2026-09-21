@@ -34,6 +34,12 @@ pub enum Ns {
     /// Markup Compatibility and Extensibility — Part 3, invariant, and the reason `mce.rs`
     /// exists.
     Mce,
+    /// DrawingML's main namespace, which is where a theme's colour scheme lives
+    /// (`xl/theme/theme1.xml`, `<a:clrScheme>`). **Transitional only**: the Strict spelling
+    /// has not been measured — no workbook this project holds carries one — so a Strict
+    /// theme resolves to [`Ns::Other`], its colours come back unresolved, and the report
+    /// counts them rather than this table guessing (`doc/xlsx-format.md` §4.2).
+    Drawing,
     /// No namespace at all. Most SpreadsheetML *attributes* are unprefixed (`<sheet name=…
     /// sheetId=…>`), so this is a real answer rather than an error case.
     None,
@@ -80,6 +86,8 @@ impl Seen {
 // ---- Part 1, Transitional (ECMA-376 1st edition spellings) ----
 
 pub const MAIN_T: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+/// Measured from `styles/colors.xlsx`'s theme part, 2026-09-21.
+pub const DRAWING_T: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 pub const REL_T: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 // ---- Part 1, Strict (ISO/IEC 29500 Strict) ----
@@ -101,6 +109,7 @@ impl Ns {
             PACKAGE_RELS => Ns::PackageRels,
             CONTENT_TYPES => Ns::ContentTypes,
             MCE => Ns::Mce,
+            DRAWING_T => Ns::Drawing,
             "" => Ns::None,
             _ => Ns::Other,
         }

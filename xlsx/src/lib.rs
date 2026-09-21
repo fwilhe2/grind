@@ -26,14 +26,17 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: milestone X3.** The seam (X0) — the package, the flavour and markup
+//! **State of the build: milestone X4.** The seam (X0) — the package, the flavour and markup
 //! compatibility machinery, the workbook's sheet list — every cell's **value** (X1): shared and
 //! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
 //! rule — every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
 //! shared groups resolved through the core's own `formula::shift` — and every cell's **number
 //! format** (X3), parsed out of Excel's code string by [`numfmt`] into the model's ordered parts,
 //! with the sections becoming a style and its `style:map` branches. What no `Part` can spell is
-//! named, counted and *not approximated*. A cell carries no font, fill or border yet (X4).
+//! named, counted and *not approximated*. And every cell's **look** (X4) — font, fill, border
+//! and alignment, through [`styles`], [`color`] and [`theme`] — with every column's width, row's
+//! height and track's hidden-ness; what the model has no slot for is an [`Appearance`], counted
+//! the same way. Defined names, merges and the rest of the document level are X5's.
 
 use std::fmt;
 use std::path::Path;
@@ -41,6 +44,7 @@ use std::path::Path;
 use grind_sheet::model::Document;
 
 pub mod address;
+pub mod color;
 pub mod dates;
 pub mod formula;
 pub mod mce;
@@ -51,11 +55,13 @@ pub mod report;
 pub mod sheet;
 pub mod strings;
 pub mod styles;
+pub mod theme;
 pub mod workbook;
 pub mod xml;
 
 pub use names::Flavour;
 pub use report::{Dropped, Report};
+pub use styles::Appearance;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -151,11 +157,17 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     // Styles before sheets, as `odf/read.rs` reads `styles.xml` before `content.xml`: a serial
     // is not a date until its format says so. Both parts are optional, and a workbook without
     // them reads every cell as a plain value.
+    let theme = book
+        .theme_part
+        .as_deref()
+        .and_then(|part| package.part(part))
+        .map(|bytes| theme::read(&bytes))
+        .unwrap_or_default();
     let styles = book
         .styles_part
         .as_deref()
         .and_then(|part| package.part(part))
-        .map(|bytes| styles::read(&bytes))
+        .map(|bytes| styles::read(&bytes, &theme))
         .unwrap_or_default();
     let strings = book
         .strings_part

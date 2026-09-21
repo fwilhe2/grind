@@ -101,6 +101,18 @@ pub struct Report {
     /// A class that [`crate::numfmt::Unspellable::refuses`] cost the cell its whole format
     /// and it shows its plain value; every other class cost it a piece and no more.
     pub formats_lost: BTreeMap<crate::numfmt::Unspellable, usize>,
+    /// Cells carrying a cell style of their own — a font, a fill, a border or an alignment
+    /// that differs from the workbook's default.
+    pub styled: usize,
+    /// What the workbook's look lost, by class: per **cell** for a piece of a cell's style,
+    /// per **track** for a zero-size row or column, and once per **sheet** for panes, an
+    /// outline or a sheet-wide column width — [`crate::styles::Appearance`] says which is which.
+    ///
+    /// [`Report::formats_lost`]'s sibling, and kept apart from [`Report::dropped`] for the same
+    /// reason that one is: a construct the model has no home for is a different sentence from
+    /// a piece of formatting it has no slot for, and a person deciding whether a conversion is
+    /// good enough wants to read them separately.
+    pub appearance_lost: BTreeMap<crate::styles::Appearance, usize>,
     /// Cells past `sheet::MAX_CELLS`, read and not carried.
     ///
     /// Not a [`Dropped`] kind, because the model can hold these cells perfectly well and
@@ -115,6 +127,11 @@ pub struct Report {
 impl Report {
     pub fn drop_one(&mut self, what: Dropped) {
         self.drop_many(what, 1);
+    }
+
+    /// Count one piece of the workbook's look that did not come through.
+    pub fn lose(&mut self, what: crate::styles::Appearance) {
+        *self.appearance_lost.entry(what).or_default() += 1;
     }
 
     pub fn drop_many(&mut self, what: Dropped, count: usize) {
@@ -133,6 +150,7 @@ impl Report {
         self.dropped.is_empty()
             && self.untranslated.is_empty()
             && self.formats_lost.is_empty()
+            && self.appearance_lost.is_empty()
             && self.over_budget == 0
     }
 }

@@ -70,6 +70,13 @@ pub struct ImportReport {
     /// each class cost. A class that would have misstated the number took the cell's whole
     /// format with it and the cell shows its plain value; the rest took a piece.
     pub formats_lost: Vec<DroppedCount>,
+    /// Cells carrying a cell style of their own — a font, fill, border or alignment that
+    /// differs from the workbook's default.
+    pub styled: usize,
+    /// Pieces of the workbook's look the model has no slot for, by class: per cell for a
+    /// piece of a cell's style, per track for a zero-size row or column, once per sheet for
+    /// panes, an outline or a sheet-wide column width. The label says which.
+    pub appearance_lost: Vec<DroppedCount>,
     /// Formulas read and not carried, by the class that stopped each one. The cell kept the
     /// value Excel cached for it, so the document is not wrong — it no longer recalculates
     /// there, which is what this says.
@@ -117,6 +124,15 @@ impl ImportReport {
             formatted: report.formatted,
             formats_lost: report
                 .formats_lost
+                .iter()
+                .map(|(class, count)| DroppedCount {
+                    what: class.label().to_owned(),
+                    count: *count,
+                })
+                .collect(),
+            styled: report.styled,
+            appearance_lost: report
+                .appearance_lost
                 .iter()
                 .map(|(class, count)| DroppedCount {
                     what: class.label().to_owned(),
@@ -417,6 +433,9 @@ impl Report {
                 for class in &import.formats_lost {
                     println!("format\t{}\t{}", class.count, class.what);
                 }
+                for class in &import.appearance_lost {
+                    println!("look\t{}\t{}", class.count, class.what);
+                }
                 for class in &import.untranslated {
                     println!("untranslated\t{}\t{}", class.count, class.what);
                 }
@@ -439,8 +458,13 @@ impl Report {
                     }
                 );
                 println!(
-                    "{} sheets\t{} cells\t{} formulas\t{} formatted\t{}",
-                    import.sheets, import.cells, import.formulas, import.formatted, import.flavour
+                    "{} sheets\t{} cells\t{} formulas\t{} formatted\t{} styled\t{}",
+                    import.sheets,
+                    import.cells,
+                    import.formulas,
+                    import.formatted,
+                    import.styled,
+                    import.flavour
                 );
             }
             // One diagnostic per line, in the shape every compiler prints — so an editor's

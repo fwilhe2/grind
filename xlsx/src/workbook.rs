@@ -7,7 +7,7 @@
 //! Reached by relationship from `_rels/.rels`, never by its conventional path. What X0 takes
 //! from it is the document's skeleton: one [`grind_sheet::model::Sheet`] per `<sheet>`, in
 //! document order, and the epoch every serial date will be counted from; X1 adds where the
-//! string table and the styles are. Defined names are X5's.
+//! string table, the styles and the theme are. Defined names are X5's.
 
 use grind_sheet::formula::date;
 use grind_sheet::model::{Document, Sheet};
@@ -43,6 +43,9 @@ pub struct Workbook {
     pub strings_part: Option<String>,
     /// `xl/styles.xml`, likewise.
     pub styles_part: Option<String>,
+    /// `xl/theme/theme1.xml`, which a `<color theme="4"/>` indexes into. Optional as well: a
+    /// workbook with no theme has theme colours nothing can resolve, and the report counts them.
+    pub theme_part: Option<String>,
     /// The `conformance="strict"` attribute, when the workbook carries one. Corroborates the
     /// namespace evidence rather than replacing it — a file can be Strict without saying so.
     pub declares_strict: bool,
@@ -142,6 +145,7 @@ pub fn resolve_parts(
     };
     workbook.strings_part = first(RelType::SharedStrings);
     workbook.styles_part = first(RelType::Styles);
+    workbook.theme_part = first(RelType::Theme);
     for sheet in &mut workbook.sheets {
         let Some(id) = &sheet.rel_id else { continue };
         sheet.part = rels
