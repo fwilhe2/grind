@@ -211,7 +211,7 @@ fn style(sheet: Sheet, range: string, style: Style) -> Sheet;
 /// above it — an AutoSum's rule, so a header of text is not part of it.
 fn sum_above() -> Cell;
 
-/// The currency symbol — `"€"`, `"EUR"`.
+/// The currency symbol — `"€"` (the default), `"$"`, `"£"`, `"CHF"`.
 fn symbol(format: Format, symbol: string) -> Format;
 
 /// An empty text document. Say headings, paragraphs and list items into it, and

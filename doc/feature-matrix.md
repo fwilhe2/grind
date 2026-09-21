@@ -180,8 +180,9 @@ The single largest divergence in the suite is this table's last column.
 `CellStyle::borders`; the strip carries bold, italic, three alignments, wrap, two colour
 buttons, Clear Formatting and the number-format menu, and no border control. The window *draws*
 borders. `grind sheet style --border` and the browser's two palette verbs both set them.
-ᵇ `:format number [n]` takes a decimal count; the symbol and the locale are `grind sheet format`'s.
-ᶜ More / fewer decimals only.
+ᵇ `:format number [n]` takes a decimal count and `:format currency [eur|usd|gbp]` one of the three
+currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `grind sheet format`'s.
+ᶜ More / fewer decimals, and the three currencies of `numfmt::CURRENCIES` as three menu entries.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).
 ᵉ A border's *line style* is ignored, so `dashed` and `double` draw solid.
 

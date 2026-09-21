@@ -189,6 +189,10 @@ and `currency` take `--decimals`, `--grouping`, `--symbol` and `--locale`:
 grind sheet format report.ods B2:B40 currency --symbol '€' --grouping --locale de-DE   # 1.234,50 €
 ```
 
+With no `--symbol` a currency is the euro (`numfmt::DEFAULT_CURRENCY`, the default every shell
+uses too). `$` and `£` are written before the amount — `$1,234.50` — and every other symbol
+after it, behind a no-break space.
+
 A date a formula computes shows as its serial until the cell says otherwise, which is the
 one place this bites:
 

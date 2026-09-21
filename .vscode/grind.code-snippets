@@ -427,7 +427,7 @@
     "body": [
       "symbol(${1:symbol})"
     ],
-    "description": "The currency symbol — `\"€\"`, `\"EUR\"`.",
+    "description": "The currency symbol — `\"€\"` (the default), `\"$\"`, `\"£\"`, `\"CHF\"`.",
     "prefix": "symbol",
     "scope": "rhai"
   },

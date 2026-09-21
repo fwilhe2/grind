@@ -204,7 +204,7 @@ fn format_changes_what_a_cell_shows_and_not_what_it_holds() {
     ]);
     ok(&["format", &s(&file), "A2", "percent", "--decimals", "1"]);
 
-    assert_eq!(ok(&["view", &s(&file), "A1:A2"]), "1,234.50\u{a0}$\n7.5%\n");
+    assert_eq!(ok(&["view", &s(&file), "A1:A2"]), "$1,234.50\n7.5%\n");
     assert_eq!(
         ok(&["view", &s(&file), "A1:A2", "--raw"]),
         "1234.5\n0.075\n"

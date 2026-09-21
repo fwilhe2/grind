@@ -122,7 +122,27 @@ pub const SHEET: &[Command] = &[
     cmd("format.number", "Number: 1 234.57", "Number", "", false),
     cmd("format.integer", "Number: 1 235", "Number", "", false),
     cmd("format.percent", "Number: per cent", "Number", "", false),
-    cmd("format.currency", "Number: currency", "Number", "", false),
+    cmd(
+        "format.currency",
+        "Number: currency, euro (€)",
+        "Number",
+        "",
+        false,
+    ),
+    cmd(
+        "format.currency-usd",
+        "Number: currency, US dollar ($)",
+        "Number",
+        "",
+        false,
+    ),
+    cmd(
+        "format.currency-gbp",
+        "Number: currency, pound sterling (£)",
+        "Number",
+        "",
+        false,
+    ),
     cmd("format.date", "Number: date", "Number", "", false),
     cmd(
         "format.datetime",

@@ -63,6 +63,9 @@ const KINDS: [(&str, Option<Kind>); 9] = [
 /// Where "Date and time" sits in [`KINDS`] — the one entry that is not a `Kind`.
 const DATETIME: u32 = 5;
 
+/// Where "Currency" sits in [`KINDS`] — what a currency button selects before it writes.
+const CURRENCY: u32 = 3;
+
 /// The strip, and the one thing anything outside it may do: ask it to re-read the cell.
 ///
 /// Two events move what it should show, and only one of them is a selection change: undo,
@@ -470,13 +473,23 @@ fn capitalised(name: &str) -> String {
 ///
 /// Applied on a button rather than on every change, because four widgets describe *one*
 /// format and applying halfway through would write two formats a user never asked for.
+///
+/// **The currency is picked, never typed** — a currency symbol is exactly the character
+/// nobody can find on their keyboard. [`numfmt::CURRENCIES`] are a row of buttons, the euro
+/// first and chosen by default ([`numfmt::DEFAULT_CURRENCY`]), and one click on any of them
+/// *is* the whole request: the selection becomes that currency, with the decimals and grouping
+/// above. A cell whose currency is none of the three shows it on a fourth button, so a
+/// document's own `CHF` is kept rather than quietly offered as a euro.
 #[derive(Clone)]
 struct Picker {
     popover: gtk::Popover,
     kind: gtk::DropDown,
     decimals: gtk::SpinButton,
     grouping: gtk::CheckButton,
-    symbol: gtk::Entry,
+    /// One per [`numfmt::CURRENCIES`] entry, in that order, grouped so exactly one is down.
+    currencies: Vec<gtk::ToggleButton>,
+    /// A document's own symbol when it is none of the three; hidden otherwise.
+    other: gtk::ToggleButton,
     locale: gtk::Entry,
     apply: gtk::Button,
     /// Says a document's format is one this vocabulary cannot spell, rather than offering
@@ -491,7 +504,30 @@ impl Picker {
         let decimals = gtk::SpinButton::with_range(0.0, 10.0, 1.0);
         decimals.set_value(2.0);
         let grouping = gtk::CheckButton::with_label("Group thousands");
-        let symbol = gtk::Entry::builder().text("$").max_width_chars(4).build();
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.add_css_class("linked");
+        let currencies: Vec<gtk::ToggleButton> = numfmt::CURRENCIES
+            .iter()
+            .map(|(symbol, name)| {
+                let button = gtk::ToggleButton::builder()
+                    .label(*symbol)
+                    .tooltip_text(format!("{name} — format as {symbol}"))
+                    .hexpand(true)
+                    .build();
+                row.append(&button);
+                button
+            })
+            .collect();
+        let other = gtk::ToggleButton::builder()
+            .hexpand(true)
+            .visible(false)
+            .tooltip_text("This cell's own currency")
+            .build();
+        row.append(&other);
+        for button in currencies.iter().skip(1).chain([&other]) {
+            button.set_group(Some(&currencies[0]));
+        }
+        currencies[0].set_active(true);
         let locale = gtk::Entry::builder()
             .placeholder_text("e.g. de-DE")
             .max_width_chars(8)
@@ -519,8 +555,8 @@ impl Picker {
         grid.attach(&label("Decimals"), 0, 1, 1, 1);
         grid.attach(&decimals, 1, 1, 1, 1);
         grid.attach(&grouping, 1, 2, 1, 1);
-        grid.attach(&label("Symbol"), 0, 3, 1, 1);
-        grid.attach(&symbol, 1, 3, 1, 1);
+        grid.attach(&label("Currency"), 0, 3, 1, 1);
+        grid.attach(&row, 1, 3, 1, 1);
         grid.attach(&label("Locale"), 0, 4, 1, 1);
         grid.attach(&locale, 1, 4, 1, 1);
         grid.attach(&note, 0, 5, 2, 1);
@@ -531,7 +567,8 @@ impl Picker {
             kind,
             decimals,
             grouping,
-            symbol,
+            currencies,
+            other,
             locale,
             apply,
             note,
@@ -554,7 +591,9 @@ impl Picker {
         let numeric = matches!(kind, Some(Kind::Number | Kind::Percentage | Kind::Currency));
         self.decimals.set_sensitive(numeric);
         self.grouping.set_sensitive(numeric);
-        self.symbol.set_sensitive(kind == Some(Kind::Currency));
+        // The currency buttons stay live whatever the kind: pressing one is how a cell
+        // *becomes* a currency, so greying them out until Currency is chosen would hide the
+        // quick way behind the slow one.
         // General is the absence of a format, so nothing else on the menu applies to it.
         let formatted = kind.is_some() || self.kind.selected() == DATETIME;
         self.locale.set_sensitive(formatted);
@@ -580,13 +619,48 @@ impl Picker {
         self.kind.set_selected(selected);
         self.decimals.set_value(f64::from(decimals));
         self.grouping.set_active(grouping);
-        if !symbol.is_empty() {
-            self.symbol.set_text(&symbol);
-        }
+        self.show_currency(&symbol);
         self.locale
             .set_text(&format.locale.as_ref().map(Locale::tag).unwrap_or_default());
         self.note.set_visible(!format.is_preset());
         self.sensitivity();
+    }
+
+    /// Press the button for `symbol` — one of the three, the fourth carrying a document's own,
+    /// or the euro when the cell has no currency at all.
+    fn show_currency(&self, symbol: &str) {
+        let symbol = match symbol {
+            "" => numfmt::DEFAULT_CURRENCY,
+            symbol => symbol,
+        };
+        match numfmt::CURRENCIES.iter().position(|(s, _)| *s == symbol) {
+            Some(index) => {
+                self.other.set_visible(false);
+                self.currencies[index].set_active(true);
+            }
+            None => {
+                self.other.set_label(symbol);
+                self.other.set_visible(true);
+                self.other.set_active(true);
+            }
+        }
+    }
+
+    /// The symbol whose button is down.
+    fn symbol(&self) -> String {
+        match self.other.is_active() {
+            true => self
+                .other
+                .label()
+                .map(|l| l.to_string())
+                .unwrap_or_default(),
+            false => numfmt::CURRENCIES
+                .iter()
+                .zip(&self.currencies)
+                .find(|(_, button)| button.is_active())
+                .map_or(numfmt::DEFAULT_CURRENCY, |((symbol, _), _)| *symbol)
+                .to_owned(),
+        }
     }
 
     /// The write half: build the `Format` the core builds for `sheet format`, and set it.
@@ -598,40 +672,59 @@ impl Picker {
             grid,
             #[strong]
             app,
-            move |_| {
-                picker.popover.popdown();
-                let Some((sheet, start, end)) = grid.target() else {
-                    return;
-                };
-                let locale = match picker.locale.text().trim() {
-                    "" => grind_sheet::locale::from_environment(),
-                    tag => match Locale::parse(tag) {
-                        Some(locale) => Some(locale),
-                        // A tag that is not a tag is a typo, not a format: say so and change
-                        // nothing, rather than writing an unmarked format.
-                        None => {
-                            grid.report(Notice::Refused(format!("{tag} is not a locale tag")));
-                            return;
-                        }
-                    },
-                };
-                let selected = picker.kind.selected();
-                let format = match KINDS.get(selected as usize).and_then(|(_, kind)| *kind) {
-                    _ if selected == DATETIME => Some(numfmt::datetime_preset()),
-                    None => None,
-                    Some(kind) => Some(numfmt::preset(
-                        kind,
-                        picker.decimals.value() as u8,
-                        picker.grouping.is_active(),
-                        &picker.symbol.text(),
-                    )),
-                }
-                .map(|format| format.in_locale(locale));
-                if let Err(error) = app.set_format(sheet, start, end, format) {
-                    grid.report(Notice::Refused(error.to_string()));
-                }
-            }
+            move |_| picker.write(&grid, &app)
         ));
+        // One click on a currency is the whole request: Currency, that symbol, written now.
+        // `clicked` rather than `toggled`, because [`Picker::show`] presses these buttons too,
+        // and reading a cell must never write one.
+        for button in self.currencies.iter().chain([&self.other]) {
+            button.connect_clicked(glib::clone!(
+                #[strong(rename_to = picker)]
+                self,
+                #[weak]
+                grid,
+                #[strong]
+                app,
+                move |_| {
+                    picker.kind.set_selected(CURRENCY);
+                    picker.write(&grid, &app);
+                }
+            ));
+        }
+    }
+
+    fn write(&self, grid: &Grid, app: &Arc<App>) {
+        self.popover.popdown();
+        let Some((sheet, start, end)) = grid.target() else {
+            return;
+        };
+        let locale = match self.locale.text().trim() {
+            "" => grind_sheet::locale::from_environment(),
+            tag => match Locale::parse(tag) {
+                Some(locale) => Some(locale),
+                // A tag that is not a tag is a typo, not a format: say so and change
+                // nothing, rather than writing an unmarked format.
+                None => {
+                    grid.report(Notice::Refused(format!("{tag} is not a locale tag")));
+                    return;
+                }
+            },
+        };
+        let selected = self.kind.selected();
+        let format = match KINDS.get(selected as usize).and_then(|(_, kind)| *kind) {
+            _ if selected == DATETIME => Some(numfmt::datetime_preset()),
+            None => None,
+            Some(kind) => Some(numfmt::preset(
+                kind,
+                self.decimals.value() as u8,
+                self.grouping.is_active(),
+                &self.symbol(),
+            )),
+        }
+        .map(|format| format.in_locale(locale));
+        if let Err(error) = app.set_format(sheet, start, end, format) {
+            grid.report(Notice::Refused(error.to_string()));
+        }
     }
 }
 
@@ -678,11 +771,21 @@ mod tests {
     /// display: every kind the menu offers is one `numfmt` builds, and a colour makes the
     /// round trip a document needs it to make.
     #[test]
+    fn the_currency_buttons_select_currency() {
+        assert_eq!(KINDS[CURRENCY as usize].1, Some(Kind::Currency));
+        assert_eq!(
+            numfmt::CURRENCIES[0].0,
+            numfmt::DEFAULT_CURRENCY,
+            "the euro comes first"
+        );
+    }
+
+    #[test]
     fn every_menu_entry_names_a_format_the_core_builds() {
         for (index, (label, kind)) in KINDS.iter().enumerate() {
             match kind {
                 Some(kind) => {
-                    let format = numfmt::preset(*kind, 2, false, "$");
+                    let format = numfmt::preset(*kind, 2, false, numfmt::DEFAULT_CURRENCY);
                     assert_eq!(format.preset_params().0, *kind, "{label}");
                     assert!(format.is_preset(), "{label}");
                 }

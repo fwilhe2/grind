@@ -603,7 +603,7 @@ pub fn register(engine: &mut Engine) {
         engine,
         "symbol",
         ["format: Format", "symbol: string", "Format"],
-        ["/// The currency symbol — `\"€\"`, `\"EUR\"`."],
+        ["/// The currency symbol — `\"€\"` (the default), `\"$\"`, `\"£\"`, `\"CHF\"`."],
         |f: &mut Fmt, symbol: &str| {
             let mut out = f.clone();
             out.symbol = symbol.to_owned();
@@ -907,6 +907,14 @@ impl Fmt {
     fn format(&self) -> Res<numfmt::Format> {
         let format = match (self.kind, self.datetime) {
             (_, true) => numfmt::datetime_preset(),
+            // A currency nobody named is the suite's default, the euro — the same answer
+            // `grind sheet format … currency` gives.
+            (Some(numfmt::Kind::Currency), _) if self.symbol.is_empty() => numfmt::preset(
+                numfmt::Kind::Currency,
+                self.decimals,
+                self.grouping,
+                numfmt::DEFAULT_CURRENCY,
+            ),
             (Some(kind), _) => numfmt::preset(kind, self.decimals, self.grouping, &self.symbol),
             (None, _) => {
                 return Err(bad(

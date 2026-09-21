@@ -335,7 +335,7 @@ here; the projection spells one part by part and this deliberately does not (`do
 |---|---|
 | `f.decimals(n)` | fraction digits, `0`–`255`. Exactly `n`, never "up to" |
 | `f.grouping()` | thousands separators |
-| `f.symbol(text)` | the currency symbol — `"€"`, `"EUR"` |
+| `f.symbol(text)` | the currency symbol — `"€"` (the default), `"$"`, `"£"`, `"CHF"` |
 | `f.locale(tag)` | the locale whose separators it uses |
 
 `format("general")` is the *absence* of a format. Using it where a format is required is an

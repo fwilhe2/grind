@@ -1406,13 +1406,30 @@ impl App {
             "int" | "integer" => Some(numfmt::preset(Kind::Number, 0, true, "")),
             "number" => Some(numfmt::preset(Kind::Number, decimals, true, "")),
             "percent" => Some(numfmt::preset(Kind::Percentage, 0, false, "")),
-            "currency" => Some(numfmt::preset(Kind::Currency, 2, true, CURRENCY)),
+            // `:format currency usd` — a word, because `$` and `£` are keys and `€` often is
+            // not; the euro when nothing is named (`numfmt::currency_named`).
+            "currency" => {
+                let named = what.split_whitespace().nth(1);
+                let symbol = match named {
+                    None => CURRENCY,
+                    Some(word) => match numfmt::currency_named(word) {
+                        Some(symbol) => symbol,
+                        None => {
+                            self.status =
+                                format!("not a currency: {word} — eur, usd or gbp (or € $ £)");
+                            return;
+                        }
+                    },
+                };
+                Some(numfmt::preset(Kind::Currency, 2, true, symbol))
+            }
             "date" => Some(numfmt::preset(Kind::Date, 0, false, "")),
             "time" => Some(numfmt::preset(Kind::Time, 0, false, "")),
             "datetime" => Some(numfmt::datetime_preset()),
             other => {
                 self.status = format!(
-                    "not a format: {other} — general int number percent currency date time datetime"
+                    "not a format: {other} — general int number percent currency [eur|usd|gbp] \
+                     date time datetime"
                 );
                 return;
             }
@@ -1922,10 +1939,9 @@ fn show_value(value: &CellValue) -> String {
 /// document already full of them has.
 const BORDER: &str = "0.06pt solid #000000";
 
-/// What `:format currency` spells. A gap, and a named one: the core carries the symbol a
-/// document chose and this shell has no locale to pick one from, so it offers the one that is
-/// unambiguous rather than guessing at the reader's.
-const CURRENCY: &str = "\u{a4}";
+/// What `:format currency` spells: the suite's default currency, the euro, so a cell formatted
+/// here looks the way the same command formats it everywhere else.
+const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
 
 /// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
 /// opposed to a value a picker sets.

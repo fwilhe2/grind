@@ -283,7 +283,19 @@ impl Format {
     pub fn is_preset(&self) -> bool {
         let (kind, decimals, grouping, symbol) = self.preset_params();
         let same = |built: Format| built.in_locale(self.locale.clone()) == *self;
-        same(preset(kind, decimals, grouping, &symbol)) || same(datetime_preset())
+        // `1,234.50 $` is what this build wrote for a dollar before [`symbol_leads`]: still one
+        // of its own, so a picker offers it rather than calling it foreign — and re-applying it
+        // writes the leading form.
+        let written_trailing = || {
+            let mut old = preset(kind, decimals, grouping, &symbol);
+            if let Some(Part::Number { .. }) = old.parts.get(1) {
+                old.parts = trailing_currency(old.parts[1].clone(), &symbol);
+            }
+            old
+        };
+        same(preset(kind, decimals, grouping, &symbol))
+            || (kind == Kind::Currency && symbol_leads(&symbol) && same(written_trailing()))
+            || same(datetime_preset())
     }
 
     /// Whether the hours in this format are a 12-hour clock (§16.27.19: `number:am-pm`).
@@ -526,6 +538,40 @@ fn digits(
     }
 }
 
+/// The currency a format gets when nobody named one: the euro, by the project's decision.
+///
+/// One constant, so `grind sheet format … currency`, every shell's currency button and a
+/// generator's `format("currency")` agree on it — a shell that picked its own default (as two
+/// did, with `¤`) is a document that looks different depending on where it was formatted.
+pub const DEFAULT_CURRENCY: &str = "€";
+
+/// The currencies a shell offers **one click away**, most common first, as (symbol, name).
+///
+/// A picker's quick choices, not a limit: any symbol is still a currency `preset` builds, and a
+/// document's own is shown and kept. The list is short on purpose — `€`, `$` and `£` are the
+/// three nobody should have to type, and a fourth button is a question every user has to read.
+pub const CURRENCIES: [(&str, &str); 3] =
+    [("€", "Euro"), ("$", "US dollar"), ("£", "Pound sterling")];
+
+/// The currency a *word* names — `eur`/`euro`, `usd`/`dollar`, `gbp`/`pound`, or one of the
+/// three symbols themselves — for a shell whose user types rather than clicks. Case is ignored;
+/// anything else is `None`, and the caller says so rather than guessing a symbol.
+pub fn currency_named(word: &str) -> Option<&'static str> {
+    match word.to_lowercase().as_str() {
+        "€" | "eur" | "euro" | "euros" => Some("€"),
+        "$" | "usd" | "dollar" | "dollars" => Some("$"),
+        "£" | "gbp" | "pound" | "pounds" => Some("£"),
+        _ => None,
+    }
+}
+
+/// Whether a currency symbol is written **before** the amount — `$1,234.50`, `£1,234.50` —
+/// rather than after it with a no-break space, `1,234.50 €`, which is how the euro is written
+/// across most of the countries that use it and how every other symbol is spelled here.
+pub fn symbol_leads(symbol: &str) -> bool {
+    matches!(symbol, "$" | "£")
+}
+
 /// Build one of the formats a shell can ask for by name.
 ///
 /// The whole of the "set a format" vocabulary, and it lives here rather than in a shell for
@@ -574,12 +620,10 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
     let parts = match kind {
         Kind::Number => vec![number],
         Kind::Percentage => vec![number, Part::Text("%".into())],
+        // `$1,234.50`: the symbol against the amount, as it is written.
+        Kind::Currency if symbol_leads(symbol) => vec![Part::Currency(symbol.to_owned()), number],
         // A no-break space before the symbol, so the amount and its unit never wrap apart.
-        Kind::Currency => vec![
-            number,
-            Part::Text("\u{a0}".into()),
-            Part::Currency(symbol.to_owned()),
-        ],
+        Kind::Currency => trailing_currency(number, symbol),
         Kind::Date => date(),
         Kind::Time => time(),
         Kind::Boolean => vec![Part::Boolean],
@@ -591,6 +635,15 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
         locale: None,
         maps: Vec::new(),
     }
+}
+
+/// `1,234.50 €` — the amount, a no-break space, the symbol.
+fn trailing_currency(number: Part, symbol: &str) -> Vec<Part> {
+    vec![
+        number,
+        Part::Text("\u{a0}".into()),
+        Part::Currency(symbol.to_owned()),
+    ]
 }
 
 /// The ISO date-and-time format — [`preset`]'s `Date` with a clock after it.
@@ -918,5 +971,32 @@ mod tests {
             "18:00:00"
         );
         assert_eq!(general(&CellValue::Number(1.5), None, EPOCH), "1.5");
+    }
+
+    #[test]
+    fn a_currency_is_written_where_it_is_read() {
+        let shown = |symbol: &str, n: f64| {
+            preset(Kind::Currency, 2, true, symbol).render(&CellValue::Number(n), 0)
+        };
+        assert_eq!(shown("€", 1234.5), "1,234.50\u{a0}€");
+        assert_eq!(shown("$", 1234.5), "$1,234.50");
+        assert_eq!(
+            shown("$", -1234.5),
+            "-$1,234.50",
+            "the sign before the symbol"
+        );
+        assert_eq!(shown("£", 0.5), "£0.50");
+        assert_eq!(shown("CHF", 10.0), "10.00\u{a0}CHF");
+        assert!(symbol_leads("$") && symbol_leads("£") && !symbol_leads("€"));
+        assert_eq!(currency_named("USD"), Some("$"));
+        assert_eq!(currency_named("euro"), Some("€"));
+        assert_eq!(currency_named("£"), Some("£"));
+        assert_eq!(currency_named("chf"), None);
+        assert_eq!(CURRENCIES[0].0, DEFAULT_CURRENCY);
+        // A dollar this build wrote *after* the amount before is still one of its own.
+        let mut old = preset(Kind::Currency, 2, true, "$");
+        let number = old.parts[1].clone();
+        old.parts = trailing_currency(number, "$");
+        assert!(old.is_preset());
     }
 }

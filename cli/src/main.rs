@@ -1573,8 +1573,8 @@ enum Command {
         /// Group thousands, e.g. 1,234,567
         #[arg(long)]
         grouping: bool,
-        /// Currency symbol
-        #[arg(long, default_value = "$")]
+        /// Currency symbol — written before the amount for $ and £, after it for € and the rest
+        #[arg(long, default_value = grind_sheet::numfmt::DEFAULT_CURRENCY)]
         symbol: String,
         /// Locale for the decimal and grouping characters, e.g. de-DE. Defaults to
         /// $GRIND_LOCALE, then $XDG_CONFIG_HOME/sheet/locale, then none.

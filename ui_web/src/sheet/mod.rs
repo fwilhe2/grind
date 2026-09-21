@@ -677,7 +677,9 @@ impl Ui {
             "format.integer" => self.preset(Kind::Number, 0),
             "format.number" => self.preset(Kind::Number, 2),
             "format.percent" => self.preset(Kind::Percentage, 0),
-            "format.currency" => self.preset(Kind::Currency, 2),
+            "format.currency" => self.currency(numfmt::DEFAULT_CURRENCY),
+            "format.currency-usd" => self.currency("$"),
+            "format.currency-gbp" => self.currency("£"),
             "format.date" => self.preset(Kind::Date, 0),
             "format.time" => self.preset(Kind::Time, 0),
             "format.datetime" => self.set_format_of_selection(Some(numfmt::datetime_preset())),
@@ -865,6 +867,12 @@ impl Ui {
     fn preset(&self, kind: Kind, decimals: u8) {
         let grouping = matches!(kind, Kind::Number | Kind::Currency) && decimals > 0;
         self.set_format_of_selection(Some(numfmt::preset(kind, decimals, grouping, CURRENCY)));
+    }
+
+    /// A currency with two decimals and grouping, in the symbol a command named — one command
+    /// per [`numfmt::CURRENCIES`] entry, so none of them has to be typed.
+    fn currency(&self, symbol: &str) {
+        self.set_format_of_selection(Some(numfmt::preset(Kind::Currency, 2, true, symbol)));
     }
 
     /// More or fewer decimal places, keeping whatever kind the cell already had — General
@@ -1756,10 +1764,9 @@ impl Ui {
 /// weight nothing else uses.
 const BORDER: &str = "0.06pt solid #000000";
 
-/// What `format.currency` spells. A gap, and a named one: the core carries the symbol a
-/// document chose and this shell has no locale to pick one from, so it offers the one that is
-/// unambiguous rather than guessing at the reader's.
-const CURRENCY: &str = "¤";
+/// What `format.currency` spells: the suite's default currency, the euro, so a cell formatted
+/// here looks the way the same command formats it everywhere else.
+const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
 
 /// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
 /// opposed to a value a picker sets.
@@ -1787,7 +1794,7 @@ fn named_format(format: Option<&numfmt::Format>) -> String {
     if !format.is_preset() {
         return "format.general".to_owned();
     }
-    let (kind, decimals, _, _) = format.preset_params();
+    let (kind, decimals, _, symbol) = format.preset_params();
     // "Date and time" is not a `Kind` of its own — it is a `Date` format with the time's own
     // parts appended (`numfmt::datetime_preset`), so the two are told apart by what is in it.
     let has_time = format
@@ -1798,6 +1805,8 @@ fn named_format(format: Option<&numfmt::Format>) -> String {
         Kind::Number if decimals == 0 => "format.integer",
         Kind::Number => "format.number",
         Kind::Percentage => "format.percent",
+        Kind::Currency if symbol == "$" => "format.currency-usd",
+        Kind::Currency if symbol == "£" => "format.currency-gbp",
         Kind::Currency => "format.currency",
         Kind::Date if has_time => "format.datetime",
         Kind::Date => "format.date",
