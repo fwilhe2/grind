@@ -1024,7 +1024,10 @@ rewrite is `formula::rename`, an AST substitution re-serialised by the printer, 
 one; a formula this build cannot parse is left alone and `grind lint` finds it. **A named
 expression renames the same way** — `App::rename_name`, `grind sheet name <old> --rename <new>`
 — carrying every formula and every other name that uses it; the function `RATE(…)` is not the
-name `rate`, and a clash with an existing name is refused rather than merged.
+name `rate`, and a clash with an existing name is refused rather than merged. **And one inlines**
+— `App::inline_name`, `grind sheet name <name> --inline` — the same substitution with the
+definition's tree where the new name would go, bracketed by the printer's own precedence rule,
+and the name deleted in the same batch.
 
 **D7 is `grind build` — layer 1 has begun.** `grind build model.rhai -o model.fods` runs a Rhai
 script that **returns** a document and writes it, for either document type;

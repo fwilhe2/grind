@@ -494,6 +494,12 @@ sheet name "$out/renamed.fods" budgeted --rename planned >/dev/null
 sheet view "$out/renamed.fods" J1:J1 --formulas
 sheet name "$out/renamed.fods" biggestBudget
 
+# And the inverse of extracting one: `biggestBudget` written back into J2 as the `MAX(planned)`
+# it stood for, and the name deleted — one undo step, and the answer is the same.
+say "inline: a name, written into every formula that used it"
+sheet name "$out/renamed.fods" biggestBudget --inline >/dev/null
+sheet view "$out/renamed.fods" J2:J2 --formulas
+
 # --- lint: what the document says about itself ---------------------------------------------
 # `doc/dsl.md` §4.3, D6. The rules are about *documents*, which is why no third-party linter can
 # have them: a cached value that disagrees with its formula, a formula naming a sheet that is

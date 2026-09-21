@@ -202,6 +202,7 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 | **Honours** a filter | ● | ● | ● | ● | ● |
 | Define, redefine or delete a name | ● | ● | ● | ○ | ○ |
 | Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ |
+| Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ |

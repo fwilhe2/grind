@@ -72,6 +72,11 @@ stops ratcheting.
   `Action::Batch`, rewritten through `formula::rename::rename_name` — an AST substitution, so the
   function `RATE(…)`, the longer name `rate_2` and the string `"rate"` are left alone. The count
   of rewritten uses goes to stderr, as `rename_sheet`'s does
+- `inline_name` — `grind sheet name <name> --inline`, `doc/dsl.md` §6.5's Inline row: the
+  definition is written into every formula and every other name that uses it and the name is
+  deleted, in one `Action::Batch`, through `formula::rename::inline_name` — the same substitution
+  as `rename_name` with the definition's tree in place of a new name. Refused when the name uses
+  itself or a formula that does not parse spells it; the count goes to stderr
 - `add_sheet` — `grind sheet add <name>`
 - `rename_sheet` — `grind sheet rename <sheet> <name>`, which carries every reference that named
   the old sheet with it: formulas, named expressions and chart ranges, in one `Action::Batch` so

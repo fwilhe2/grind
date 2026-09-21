@@ -1652,6 +1652,93 @@ impl App {
         })
     }
 
+    /// Write a named expression back into every formula and every other name that uses it,
+    /// and delete it (`doc/dsl.md` §6.5's Inline row — the inverse of extracting one).
+    ///
+    /// One [`Action::Batch`], so one undo brings the name and every use of it back. The rewrite
+    /// is `formula::rename::inline_name`, the same AST substitution [`App::rename_name`] uses with
+    /// the definition's tree in place of a new name; the printer brackets it where precedence
+    /// needs it. Cached values are kept, since a name is evaluated as its definition at the
+    /// using cell and the inlined formula is that same tree. Returns how many formulas and other
+    /// names were rewritten.
+    ///
+    /// Refused — rather than leave a `#NAME?` behind — when the name is not defined, when its
+    /// definition does not parse or uses the name itself, and when a formula or name *this
+    /// build cannot parse* spells it: that text cannot be rewritten, and deleting the definition
+    /// would break it. The last check is textual and so errs towards refusing.
+    pub fn inline_name(&self, name: &str) -> Result<usize> {
+        self.mutate(|state| {
+            let doc = &state.doc;
+            let key = name.to_lowercase();
+            let Some(expression) = doc.names.get(&key).cloned() else {
+                return Err(Error::Formula(format!("no such name: {name}")));
+            };
+            let definition = formula::parse::parse(&expression).map_err(|e| {
+                Error::Formula(format!(
+                    "{name} does not parse, so it cannot be inlined: {e}"
+                ))
+            })?;
+            if formula::rename::uses_name(&definition, name) {
+                return Err(Error::Formula(format!(
+                    "{name} uses itself, so it cannot be written out of existence"
+                )));
+            }
+            let unreadable = |text: &str| {
+                formula::parse::parse(text).is_err() && text.to_lowercase().contains(&key)
+            };
+            let mut actions = vec![Action::SetName {
+                name: name.to_owned(),
+                expression: None,
+            }];
+            for (index, sheet) in doc.sheets.iter().enumerate() {
+                for (pos, text) in sheet.formulas() {
+                    if unreadable(text) {
+                        return Err(Error::Formula(format!(
+                            "{} may use {name} and does not parse; fix it before inlining",
+                            a1::format(Some(&sheet.name), pos)
+                        )));
+                    }
+                    if let Some(formula) =
+                        formula::rename::inline_name_in_formula(text, name, &definition)
+                    {
+                        actions.push(Action::SetFormula {
+                            sheet: index,
+                            pos,
+                            formula: Some(formula),
+                            value: sheet.get(pos),
+                        });
+                    }
+                }
+            }
+            for (other, text) in &doc.names {
+                if *other == key {
+                    continue;
+                }
+                if unreadable(text) {
+                    return Err(Error::Formula(format!(
+                        "the name {other} may use {name} and does not parse; fix it before inlining"
+                    )));
+                }
+                if let Some(rewritten) =
+                    formula::rename::inline_name_in_formula(text, name, &definition)
+                {
+                    actions.push(Action::SetName {
+                        name: other.clone(),
+                        expression: Some(rewritten),
+                    });
+                }
+            }
+            let rewritten = actions.len() - 1;
+            let inverse = state
+                .doc
+                .apply(Action::Batch(actions))
+                .expect("a name addresses no sheet");
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(rewritten)
+        })
+    }
+
     /// Delete a named expression. `false` if there was no such name.
     ///
     /// Deleting one a formula still mentions is allowed and turns that formula into

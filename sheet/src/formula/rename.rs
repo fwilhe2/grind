@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Renaming a sheet, in the formulas that name it — `doc/dsl.md` §6.5's first row, D10.
+//! Renaming a sheet, in the formulas that name it — `doc/dsl.md` §6.5's first row, D10 — and
+//! the two refactorings of a named expression built on the same walk: renaming one and
+//! inlining one.
 //!
 //! [`shift`](super::shift) is the sibling: that one moves a reference to a different *cell*,
 //! this one points it at a differently *named* sheet. Both are AST rewrites re-serialised
@@ -111,20 +113,34 @@ pub fn rename_in_formula(formula: &str, from: &str, to: &str) -> Option<String> 
 ///
 /// Names match case-insensitively, as §5.11 makes them; the new spelling is `to` exactly.
 pub fn rename_name(expr: &Expr, from: &str, to: &str) -> Expr {
+    substitute_name(expr, from, &Expr::Name(to.to_owned()))
+}
+
+/// Every use of the named expression `name` in `expr`, replaced by the tree `with` — the one
+/// walk under both [`rename_name`] (`with` is the new name) and [`inline_name`] (`with` is
+/// what the name stands for).
+///
+/// No brackets are added here: the printer parenthesises by precedence
+/// ([`super::serialize`]), so `rate*2` with `rate` standing for `0.2+[.A1]` prints as
+/// `(0.2+[.A1])*2` without this function knowing what binds tighter than what.
+fn substitute_name(expr: &Expr, name: &str, with: &Expr) -> Expr {
     match expr {
-        Expr::Name(name) if name.eq_ignore_ascii_case(from) => Expr::Name(to.to_owned()),
-        Expr::Call { name, args } => Expr::Call {
-            name: name.clone(),
-            args: args.iter().map(|a| rename_name(a, from, to)).collect(),
+        Expr::Name(n) if n.eq_ignore_ascii_case(name) => with.clone(),
+        Expr::Call { name: f, args } => Expr::Call {
+            name: f.clone(),
+            args: args
+                .iter()
+                .map(|a| substitute_name(a, name, with))
+                .collect(),
         },
-        Expr::Prefix(op, e) => Expr::Prefix(*op, Box::new(rename_name(e, from, to))),
-        Expr::Postfix(op, e) => Expr::Postfix(*op, Box::new(rename_name(e, from, to))),
+        Expr::Prefix(op, e) => Expr::Prefix(*op, Box::new(substitute_name(e, name, with))),
+        Expr::Postfix(op, e) => Expr::Postfix(*op, Box::new(substitute_name(e, name, with))),
         Expr::Binary(op, l, r) => Expr::Binary(
             *op,
-            Box::new(rename_name(l, from, to)),
-            Box::new(rename_name(r, from, to)),
+            Box::new(substitute_name(l, name, with)),
+            Box::new(substitute_name(r, name, with)),
         ),
-        Expr::Paren(e) => Expr::Paren(Box::new(rename_name(e, from, to))),
+        Expr::Paren(e) => Expr::Paren(Box::new(substitute_name(e, name, with))),
         Expr::Name(_)
         | Expr::Ref(_)
         | Expr::Number(_)
@@ -132,6 +148,36 @@ pub fn rename_name(expr: &Expr, from: &str, to: &str) -> Expr {
         | Expr::Error(_)
         | Expr::Empty => expr.clone(),
     }
+}
+
+/// Whether `expr` uses the named expression `name` anywhere — the question [`inline_name`]'s
+/// caller asks of a definition before inlining it, since a name that mentions itself cannot be
+/// written out of existence.
+pub fn uses_name(expr: &Expr, name: &str) -> bool {
+    substitute_name(expr, name, &Expr::Empty) != *expr
+}
+
+/// Every use of the named expression `name` in `expr`, written out as the tree `definition`
+/// it stands for — `doc/dsl.md` §6.5's Inline row, the inverse of extracting one.
+///
+/// The result means what the original meant **to this evaluator**: a name is evaluated by
+/// parsing its definition and evaluating that tree at the using cell
+/// (`Engine::named`), so a sheet-less `[.A1]` in a definition already resolves against the
+/// using formula's own sheet, and inlined it still does.
+pub fn inline_name(expr: &Expr, name: &str, definition: &Expr) -> Expr {
+    substitute_name(expr, name, definition)
+}
+
+/// [`inline_name`] over one stored formula, keeping its intro, or `None` when the formula does
+/// not use the name — or does not parse, which a caller must tell apart before deleting the
+/// definition (`App::inline_name` refuses rather than leave a `#NAME?` behind).
+pub fn inline_name_in_formula(formula: &str, name: &str, definition: &Expr) -> Option<String> {
+    let expr = parse(formula).ok()?;
+    let inlined = inline_name(&expr, name, definition);
+    if inlined == expr {
+        return None;
+    }
+    Some(format!("{}{inlined}", intro(formula)))
 }
 
 /// [`rename_in_formula`] for a named expression: one stored formula with the name `from`
@@ -256,5 +302,41 @@ mod tests {
             None,
             "§5.8: a reference into a document that is not open names somebody else's sheet"
         );
+    }
+
+    fn inlined(formula: &str, name: &str, definition: &str) -> Option<String> {
+        inline_name_in_formula(formula, name, &parse(definition).unwrap())
+    }
+
+    /// The definition goes where the name was, bracketed by the printer only where precedence
+    /// needs it — and, like a rename, only the name node: not `rate_2`, not `"rate"`, not
+    /// `RATE(…)`.
+    #[test]
+    fn a_name_is_inlined_where_it_is_a_name_and_bracketed_only_where_it_must_be() {
+        assert_eq!(
+            inlined("=rate*2+RATE(1;2;3)+rate_2&\"rate\"", "Rate", "0.2+[.A1]").as_deref(),
+            Some("=(0.2+[.A1])*2+RATE(1;2;3)+rate_2&\"rate\"")
+        );
+        assert_eq!(
+            inlined("=SUM(budgeted)", "budgeted", "[$Budget.$B$2:.$B$7]").as_deref(),
+            Some("=SUM([$Budget.$B$2:.$B$7])")
+        );
+        assert_eq!(
+            inlined("of:=1+rate", "rate", "[.A1]*2").as_deref(),
+            Some("of:=1+[.A1]*2"),
+            "the intro is kept, and a tighter definition needs no brackets"
+        );
+        assert_eq!(inlined("=1+other", "rate", "2"), None);
+        assert_eq!(
+            inlined("=1+", "rate", "2"),
+            None,
+            "a formula that does not parse"
+        );
+    }
+
+    #[test]
+    fn a_definition_that_uses_its_own_name_is_found() {
+        assert!(uses_name(&parse("1+RATE_x*2").unwrap(), "rate_x"));
+        assert!(!uses_name(&parse("RATE(1;2;3)+\"rate\"").unwrap(), "rate"));
     }
 }

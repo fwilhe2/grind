@@ -407,6 +407,31 @@ fn renaming_a_name_rewrites_every_use() {
     );
 }
 
+/// `grind sheet name <name> --inline`: `doc/dsl.md` §6.5's Inline row. The definition goes into
+/// every formula and every other name that used it, bracketed where precedence needs it, and the
+/// name is gone.
+#[test]
+fn inlining_a_name_writes_it_into_every_use() {
+    let dir = Sandbox::new("inline-name");
+    let book = s(&dir.path("book.fods"));
+    ok(&["new", &book]);
+    ok(&["set", &book, "A1", "0.2"]);
+    ok(&["name", &book, "rate", "=[.$A$1]+0.05"]);
+    ok(&["name", &book, "doubled", "=rate*2"]);
+    ok(&["set", &book, "B1", "=rate+1"]);
+
+    ok(&["name", &book, "rate", "--inline"]);
+    assert_eq!(
+        ok(&["get", &book, "B1", "--formula"]).trim(),
+        "=[.$A$1]+0.05+1"
+    );
+    assert_eq!(ok(&["name", &book, "doubled"]).trim(), "([.$A$1]+0.05)*2");
+    assert!(
+        !grind(&["sheet", "name", &book, "rate"]).status.success(),
+        "the name is gone"
+    );
+}
+
 /// **D8's exit criterion**: a generated document's totals asserted — by the script that generated
 /// it, through `grind test`, which fails the command when an assertion does and points at its
 /// line.

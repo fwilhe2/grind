@@ -1113,3 +1113,66 @@ fn renaming_a_name_carries_every_use_with_it() {
         Some("=Rate*[.A2]+RATE(1;-1;2)")
     );
 }
+
+/// `doc/dsl.md` §6.5's Inline row, the inverse of extracting a name: the definition is written
+/// into every formula and every other name that used it, the name is gone, the answers are the
+/// same, and one undo brings all of it back.
+#[test]
+fn inlining_a_name_writes_it_into_every_use_and_deletes_it() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 0.2).unwrap();
+    app.set_cell(0, p(1, 0), 100.0).unwrap();
+    app.set_name("rate", "[.$A$1]+0.05").unwrap();
+    app.set_name("taxed", "[.$A$2]*(1+rate)").unwrap();
+    app.set_formula(0, p(0, 1), "=rate*[.A2]+RATE(1;-1;2)")
+        .unwrap();
+    app.set_formula(0, p(1, 1), "=taxed").unwrap();
+    app.recalc().unwrap();
+    let answers = |app: &App| {
+        let view = app.get_viewport(0, 0..2, 1..2).unwrap();
+        (
+            view.text(0, 1).map(str::to_owned),
+            view.text(1, 1).map(str::to_owned),
+        )
+    };
+    let before = answers(&app);
+
+    assert_eq!(app.inline_name("RATE").unwrap(), 2, "B1 and `taxed`");
+    let names: std::collections::BTreeMap<_, _> = app.names().into_iter().collect();
+    assert!(!names.contains_key("rate"));
+    assert_eq!(
+        names.get("taxed").map(String::as_str),
+        Some("[.$A$2]*(1+([.$A$1]+0.05))"),
+        "the user's own brackets are kept, and the printer adds none it does not need"
+    );
+    assert_eq!(
+        app.formula(0, p(0, 1)).unwrap().as_deref(),
+        Some("=([.$A$1]+0.05)*[.A2]+RATE(1;-1;2)"),
+        "bracketed by precedence; the function RATE is not the name rate"
+    );
+    app.recalc().unwrap();
+    assert_eq!(answers(&app), before, "the answers are the same");
+
+    assert!(app.undo());
+    let names: std::collections::BTreeMap<_, _> = app.names().into_iter().collect();
+    assert_eq!(names.get("rate").map(String::as_str), Some("[.$A$1]+0.05"));
+    assert_eq!(
+        app.formula(0, p(0, 1)).unwrap().as_deref(),
+        Some("=rate*[.A2]+RATE(1;-1;2)")
+    );
+
+    // Refusals, each leaving the document as it was.
+    assert!(app.inline_name("nope").is_err());
+    app.set_name("loop", "loop+1").unwrap();
+    assert!(app.inline_name("loop").is_err(), "a name that uses itself");
+    app.set_formula(0, p(2, 1), "=rate+").unwrap();
+    assert!(
+        app.inline_name("rate").is_err(),
+        "a formula that does not parse and spells the name would be left as #NAME?"
+    );
+    assert!(app.names().iter().any(|(n, _)| n == "rate"));
+    assert_eq!(
+        app.formula(0, p(0, 1)).unwrap().as_deref(),
+        Some("=rate*[.A2]+RATE(1;-1;2)")
+    );
+}
