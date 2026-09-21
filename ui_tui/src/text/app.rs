@@ -294,6 +294,8 @@ pub struct App {
     core: Arc<CoreApp>,
     redraw: Arc<RedrawFlag>,
     path: Option<PathBuf>,
+    /// [`RedrawFlag::edits`] as of the last open or save: a count past it is unsaved work.
+    saved_at: u64,
     caret: Caret,
     /// The first document line on screen, as a block and a line within it. Scrolling by line
     /// rather than by block, because one paragraph can be taller than the window.
@@ -344,10 +346,15 @@ pub struct App {
 
 impl App {
     pub fn new(core: Arc<CoreApp>, redraw: Arc<RedrawFlag>, path: Option<PathBuf>) -> Self {
+        // Registered here rather than by the caller, so that every pane — the tests' included —
+        // counts its edits the same way. The document is already open: that load is not an edit.
+        core.set_observer(redraw.clone());
+        let saved_at = redraw.edits();
         App {
             core,
             redraw,
             path,
+            saved_at,
             caret: Caret {
                 block: 0,
                 offset: 0,
@@ -958,10 +965,11 @@ impl App {
             "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
             "q!" => self.cmd_quit(true),
-            "w" => self.cmd_write(None),
-            "wq" | "x" => {
+            "w" => {
                 self.cmd_write(None);
-                if self.status.starts_with("wrote") {
+            }
+            "wq" | "x" => {
+                if self.cmd_write(None) {
                     self.quit = true;
                 }
             }
@@ -994,7 +1002,9 @@ impl App {
             _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
             _ if cmd.starts_with("highlight ") => self.cmd_color(cmd[10..].trim(), true),
             _ if cmd.starts_with("li") => self.cmd_list(cmd[2..].trim()),
-            _ if cmd.starts_with("w ") => self.cmd_write(Some(cmd[2..].trim())),
+            _ if cmd.starts_with("w ") => {
+                self.cmd_write(Some(cmd[2..].trim()));
+            }
             _ if cmd.starts_with("style ") => self.cmd_style(Some(cmd[6..].trim())),
             "style" => self.cmd_style(None),
             _ if cmd.starts_with("h ") => self.cmd_kind(cmd[2..].trim()),
@@ -1004,22 +1014,33 @@ impl App {
         }
     }
 
-    fn cmd_write(&mut self, path: Option<&str>) {
+    /// Write the document; whether it was written.
+    fn cmd_write(&mut self, path: Option<&str>) -> bool {
         let Some(target) = path.map(PathBuf::from).or_else(|| self.path.clone()) else {
             self.status = "no file name".to_string();
-            return;
+            return false;
         };
         match self.core.save_file(&target) {
             Ok(()) => {
                 self.status = format!("wrote {}", target.display());
                 self.path = Some(target);
+                self.saved_at = self.redraw.edits();
+                true
             }
-            Err(e) => self.status = e.to_string(),
+            Err(e) => {
+                self.status = e.to_string();
+                false
+            }
         }
     }
 
+    /// Whether there is anything a quit would lose.
+    fn unsaved(&self) -> bool {
+        self.redraw.edits() != self.saved_at
+    }
+
     fn cmd_quit(&mut self, force: bool) {
-        if !force && self.core.can_undo() {
+        if !force && self.unsaved() {
             self.status = "unsaved changes — :q! to discard, :w to save".to_string();
             return;
         }
@@ -1808,7 +1829,7 @@ impl App {
         // --- the title bar: which document, and which section of it the caret is in ---
         let name = chrome::file_name(self.path.as_deref());
         let mut left = vec![chrome::badge("TEXT")];
-        left.extend(chrome::document(&name, self.core.can_undo()));
+        left.extend(chrome::document(&name, self.unsaved()));
         let right = match self.section_here() {
             Some(section) => vec![Span::styled(
                 format!("{section}  "),
@@ -2729,16 +2750,55 @@ mod tests {
 
     #[test]
     fn quit_with_unsaved_changes_needs_a_bang() {
-        let mut app = app(&["a"]);
-        press(&mut app, KeyCode::Char(':'));
-        type_str(&mut app, "q");
-        press(&mut app, KeyCode::Enter);
-        assert!(!app.should_quit(), "the insert that built it is unsaved");
+        let mut opened = app(&["a"]);
+        press(&mut opened, KeyCode::Char(':'));
+        type_str(&mut opened, "q");
+        press(&mut opened, KeyCode::Enter);
+        assert!(
+            opened.should_quit(),
+            "a document as it was opened has nothing to lose"
+        );
 
-        press(&mut app, KeyCode::Char(':'));
-        type_str(&mut app, "q!");
-        press(&mut app, KeyCode::Enter);
-        assert!(app.should_quit());
+        let mut edited = app(&["a"]);
+        type_str(&mut edited, "ib");
+        press(&mut edited, KeyCode::Esc);
+        press(&mut edited, KeyCode::Char(':'));
+        type_str(&mut edited, "q");
+        press(&mut edited, KeyCode::Enter);
+        assert!(!edited.should_quit(), "an edit is unsaved");
+
+        press(&mut edited, KeyCode::Char(':'));
+        type_str(&mut edited, "q!");
+        press(&mut edited, KeyCode::Enter);
+        assert!(edited.should_quit());
+    }
+
+    /// A save is what makes a document safe to leave — not an empty undo stack, which a save
+    /// does not empty. `:q` after `:w` quits, and so does `:wq`.
+    #[test]
+    fn writing_then_quitting_quits() {
+        let dir = std::env::temp_dir().join("grind-tui-text-wq");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("note.fodt");
+        let mut unnamed = app(&["a"]);
+        type_str(&mut unnamed, "ib");
+        press(&mut unnamed, KeyCode::Esc);
+        press(&mut unnamed, KeyCode::Char(':'));
+        type_str(&mut unnamed, &format!("w {}", file.display()));
+        press(&mut unnamed, KeyCode::Enter);
+        press(&mut unnamed, KeyCode::Char(':'));
+        type_str(&mut unnamed, "q");
+        press(&mut unnamed, KeyCode::Enter);
+        assert!(unnamed.should_quit(), "{}", unnamed.status);
+
+        let mut named = app(&["a"]);
+        named.path = Some(file);
+        type_str(&mut named, "ic");
+        press(&mut named, KeyCode::Esc);
+        press(&mut named, KeyCode::Char(':'));
+        type_str(&mut named, "wq");
+        press(&mut named, KeyCode::Enter);
+        assert!(named.should_quit(), "{}", named.status);
     }
 
     #[test]

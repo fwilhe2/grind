@@ -102,6 +102,8 @@ pub struct App {
     core: Arc<CoreApp>,
     redraw: Arc<RedrawFlag>,
     path: Option<PathBuf>,
+    /// [`RedrawFlag::edits`] as of the last open or save: a count past it is unsaved work.
+    saved_at: u64,
     sheet: usize,
     active: Pos,
     top: Pos,
@@ -150,10 +152,15 @@ pub struct App {
 
 impl App {
     pub fn new(core: Arc<CoreApp>, redraw: Arc<RedrawFlag>, path: Option<PathBuf>) -> Self {
+        // Registered here rather than by the caller, so that every pane — the tests' included —
+        // counts its edits the same way. The document is already open: that load is not an edit.
+        core.set_observer(redraw.clone());
+        let saved_at = redraw.edits();
         App {
             core,
             redraw,
             path,
+            saved_at,
             sheet: 0,
             active: Pos::new(0, 0),
             top: Pos::new(0, 0),
@@ -191,7 +198,7 @@ impl App {
 
     /// Whether there is anything a quit would lose.
     fn unsaved(&self) -> bool {
-        self.core.can_undo() || self.imported.is_some()
+        self.redraw.edits() != self.saved_at || self.imported.is_some()
     }
 
     pub fn should_quit(&self) -> bool {
@@ -842,10 +849,11 @@ impl App {
             "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
             "q!" => self.cmd_quit(true),
-            "w" => self.cmd_write(None),
-            "wq" | "x" => {
+            "w" => {
                 self.cmd_write(None);
-                if self.status.is_empty() {
+            }
+            "wq" | "x" => {
+                if self.cmd_write(None) {
                     self.quit = true;
                 }
             }
@@ -896,7 +904,9 @@ impl App {
             _ if cmd.starts_with("csv-in ") => self.cmd_csv_in(cmd[7..].trim()),
             _ if cmd.starts_with("csv-out ") => self.cmd_csv_out(cmd[8..].trim()),
             _ if cmd.starts_with("sheet-rename ") => self.cmd_sheet_rename(cmd[13..].trim()),
-            _ if cmd.starts_with("w ") => self.cmd_write(Some(cmd[2..].trim())),
+            _ if cmd.starts_with("w ") => {
+                self.cmd_write(Some(cmd[2..].trim()));
+            }
             _ if cmd.starts_with("sheet ") => self.cmd_sheet(cmd[6..].trim()),
             // Anything else is a cell, a range or a defined name — vi's `:{line}` counterpart.
             _ => self.cmd_jump(cmd),
@@ -1304,22 +1314,28 @@ impl App {
         };
     }
 
-    fn cmd_write(&mut self, path: Option<&str>) {
+    /// Write the document; whether it was written.
+    fn cmd_write(&mut self, path: Option<&str>) -> bool {
         let Some(target) = path.map(PathBuf::from).or_else(|| self.path.clone()) else {
             self.status = match &self.imported {
                 // An imported workbook has no path on purpose; name the one it would take.
                 Some(name) => format!("no file name — :w {name}"),
                 None => "no file name".to_string(),
             };
-            return;
+            return false;
         };
         match self.core.save_file(&target) {
             Ok(()) => {
                 self.status = format!("wrote {}", target.display());
                 self.path = Some(target);
                 self.imported = None;
+                self.saved_at = self.redraw.edits();
+                true
             }
-            Err(e) => self.status = e.to_string(),
+            Err(e) => {
+                self.status = e.to_string();
+                false
+            }
         }
     }
 
@@ -2019,6 +2035,38 @@ mod tests {
             Arc::new(RedrawFlag::default()),
             None,
         )
+    }
+
+    /// `:wq` quits once the write succeeded, and `:q` after a `:w` has nothing to lose.
+    #[test]
+    fn writing_then_quitting_quits() {
+        let dir = std::env::temp_dir().join("grind-tui-wq");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("book.fods");
+        let _ = std::fs::remove_file(&file);
+
+        let mut app = app();
+        type_str(&mut app, "i42");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Esc);
+        type_str(&mut app, &format!(":w {}", file.display()));
+        press(&mut app, KeyCode::Enter);
+        assert!(file.exists(), "{}", app.status);
+        type_str(&mut app, ":q");
+        press(&mut app, KeyCode::Enter);
+        assert!(app.should_quit(), ":q after :w — {}", app.status);
+
+        let mut app = App::new(
+            Arc::new(CoreApp::new()),
+            Arc::new(RedrawFlag::default()),
+            Some(file.clone()),
+        );
+        type_str(&mut app, "i7");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Esc);
+        type_str(&mut app, ":wq");
+        press(&mut app, KeyCode::Enter);
+        assert!(app.should_quit(), ":wq — {}", app.status);
     }
 
     /// An imported workbook comes up unsaved with no path (X6): `:q` will not lose it, and

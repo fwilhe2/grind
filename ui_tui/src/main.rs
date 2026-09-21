@@ -171,7 +171,6 @@ fn run_sheet(mut path: Option<PathBuf>) -> io::Result<()> {
         }
     }
     let redraw = Arc::new(RedrawFlag::default());
-    core.set_observer(redraw.clone());
     redraw.raise(); // paint the first frame before waiting for input
 
     let mut terminal = setup_terminal()?;
@@ -191,7 +190,6 @@ fn run_text(path: Option<PathBuf>) -> io::Result<()> {
             .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
     }
     let redraw = Arc::new(RedrawFlag::default());
-    core.set_observer(redraw.clone());
     redraw.raise();
 
     let mut terminal = setup_terminal()?;
