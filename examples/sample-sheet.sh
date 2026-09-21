@@ -569,8 +569,10 @@ sheet view "$out/prices.fods" F7:F9 --formulas
 if "$GRIND" sheet import --help >/dev/null 2>&1; then
     say "import: an Excel workbook becomes an ODF document"
     # `--strict` fails, and writes nothing, if anything at all was lost. This workbook loses
-    # nothing, which is the claim the flag makes on its behalf.
-    "$GRIND" sheet import --strict "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
+    # nothing, which is the claim the flag makes on its behalf. `--force` because this directory
+    # is rebuilt on every run (`scripts/run.sh`), and `import`, rightly, will not replace a
+    # document it did not write unless it is told to.
+    "$GRIND" sheet import --strict --force "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
     "$GRIND" --format json info "$out/imported.fods"
     sheet view "$out/imported.fods" A1:B3
     sheet view "$out/imported.fods" B3 --formulas

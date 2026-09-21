@@ -33,6 +33,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 shell="${1:-sheet-gtk}"
 demo="${GRIND_DEMO:-/tmp/grind-demo}"
 port="${PORT:-8000}"
+# Where cargo puts what it builds — `CARGO_TARGET_DIR` when it is set (as it is in
+# `scripts/claude-vm.sh`'s VM), `target/` beside the workspace otherwise.
+target_dir="${CARGO_TARGET_DIR:-$root/target}"
 
 document="${2:-}"
 if [ -z "$document" ]; then
@@ -41,11 +44,11 @@ if [ -z "$document" ]; then
     # reading when it is the subject and noise when it is the fixture.
     case "$shell" in
         text-gtk)
-            GRIND="$root/target/debug/grind" "$root/examples/sample-text.sh" "$demo" >/dev/null
+            GRIND="$target_dir/debug/grind" "$root/examples/sample-text.sh" "$demo" >/dev/null
             document="$demo/sample.fodt"
             ;;
         *)
-            GRIND="$root/target/debug/grind" "$root/examples/sample-sheet.sh" "$demo" >/dev/null
+            GRIND="$target_dir/debug/grind" "$root/examples/sample-sheet.sh" "$demo" >/dev/null
             document="$demo/sample.fods"
             ;;
     esac
@@ -84,7 +87,7 @@ case "$shell" in
         # `.cargo/config.toml` reserves 8 MB of stack — with the MSVC default of 1 MB it
         # overflowed before `main` did anything (doc/windows-shell.md, W0).
         cargo xwin build -p grind-win32 --target "$target"
-        exe="$root/target/$target/debug/grind-win32.exe"
+        exe="$target_dir/$target/debug/grind-win32.exe"
         # Quiet Wine down: no Mono or Gecko prompt on a fresh prefix, and no debug channel
         # chatter over the top of whatever the shell itself has to say.
         export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"

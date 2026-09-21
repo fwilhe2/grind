@@ -797,18 +797,23 @@ fn the_sample_script_still_builds_its_document() {
         .expect("the workspace root")
         .join("examples/sample-sheet.sh");
 
-    let output = Command::new("bash")
-        .arg(&script)
-        .arg(s(&dir.path("out")))
-        .env("GRIND", env!("CARGO_BIN_EXE_grind"))
-        .output()
-        .expect("bash runs");
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    // Twice into the same directory, because that is how `scripts/run.sh` uses it: the demo is
+    // rebuilt on every run, and a step that refuses to replace its own last output breaks the
+    // second one.
+    for run in 1..=2 {
+        let output = Command::new("bash")
+            .arg(&script)
+            .arg(s(&dir.path("out")))
+            .env("GRIND", env!("CARGO_BIN_EXE_grind"))
+            .output()
+            .expect("bash runs");
+        assert!(
+            output.status.success(),
+            "run {run}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     // Both forms exist, and the document reads back as the one the script described.
     assert!(dir.path("out/sample.ods").exists());
@@ -1602,18 +1607,21 @@ fn the_text_sample_script_still_builds_its_document() {
         .parent()
         .expect("the workspace root");
 
-    let output = Command::new("bash")
-        .arg(root.join("examples/sample-text.sh"))
-        .arg(s(&dir.path("out")))
-        .env("GRIND", env!("CARGO_BIN_EXE_grind"))
-        .output()
-        .expect("bash runs");
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    // Twice into the same directory, as `scripts/run.sh` does — see the sheet sample's test.
+    for run in 1..=2 {
+        let output = Command::new("bash")
+            .arg(root.join("examples/sample-text.sh"))
+            .arg(s(&dir.path("out")))
+            .env("GRIND", env!("CARGO_BIN_EXE_grind"))
+            .output()
+            .expect("bash runs");
+        assert!(
+            output.status.success(),
+            "run {run}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     // Both forms exist, and the document reads back as the one the script described.
     assert!(dir.path("out/sample.fodt").exists());
