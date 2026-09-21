@@ -647,7 +647,9 @@ forms this project cares about most. `shared-mime-info` already knows all four; 
 (measured with `gio info`; `xdg-mime query filetype` falls back to `file` and calls both the
 first) — with `Keywords=Excel;xlsx` and an AppStream `<provides>` block, so a file manager's *Open
 With* and a software centre both say it can. The word processor lists neither: it hands a
-workbook to Sheet. **Listing is the whole of it**: no package here writes a `mimeapps.list`, runs
+workbook to Sheet. **CSV and TSV** (`text/csv`, `text/tab-separated-values`) are listed the
+same way and for the same reason: Sheet opens one as a new, unsaved spreadsheet
+(`grind_sheet::csv::open`), and the word processor hands one over. **Listing is the whole of it**: no package here writes a `mimeapps.list`, runs
 `xdg-mime default`, or otherwise names a default, because which program a double-click opens is
 the user's or the distribution's to say.
 
@@ -657,7 +659,8 @@ default for `.xlsx` — the user's own after any "always open with", or a distri
 default keeps the double-click and Sheet appears under *Recommended*. Where **nothing** names one,
 the freedesktop fallback is the first entry in `mimeinfo.cache`, which `update-desktop-database`
 writes in **alphabetical order of desktop-file ID** — so `io.github.fwilhe2.Sheet` is picked over
-`libreoffice-calc`, for `.xlsx` exactly as it already was for `.ods`. There is no desktop-entry
+`libreoffice-calc`, for `.xlsx` exactly as it already was for `.ods` — and, for `.csv`, before
+any editor whose ID starts later in the alphabet (`org.gnome.TextEditor`, for one). There is no desktop-entry
 field that lowers an application's rank for GIO (KDE's `InitialPreference` is per entry, not per
 type, and GIO ignores it), so the only ways to change that would be to write a default after all
 or to stop listing the type. Stock Debian ships no default list for either; distributions that

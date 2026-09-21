@@ -178,6 +178,9 @@ fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     if cfg!(feature = "xlsx") {
         filters.push((gdi::wide("Excel Workbook"), gdi::wide("*.xlsx;*.xlsm")));
     }
+    // A CSV opened here is a document of its own, like a workbook; *Import CSV* on the Data
+    // menu is the one that puts the fields into the sheet already open.
+    filters.push((gdi::wide("CSV and TSV"), gdi::wide("*.csv;*.tsv;*.tab")));
     filters
 }
 

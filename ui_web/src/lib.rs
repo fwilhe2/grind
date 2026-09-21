@@ -72,11 +72,13 @@ const UNTITLED_TEXT: &str = "untitled.fodt";
 /// Both document types and all three forms in one list, for `spreadsheet_filters`' reason in
 /// the GTK window: packaged, flat and projected are the same document to everyone but the
 /// writer, and the kind is read from the bytes (`grind_core::kind`) rather than the name.
+/// A CSV or TSV is opened too, as a new spreadsheet (`import.rs`) — where the sheet pane's own
+/// *Import CSV* puts the fields into the sheet already open.
 #[cfg(not(feature = "xlsx"))]
-const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind";
+const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab";
 /// And an Excel workbook, which is imported on arrival (`import.rs`, X6).
 #[cfg(feature = "xlsx")]
-const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm";
+const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm,.csv,.tsv,.tab";
 /// Delimited text, including `.txt`, which is what a great many exports are called — the
 /// delimiter is sniffed from the content, so the name never has to carry it.
 const CSV_TYPES: &str = ".csv,.tsv,.tab,.txt,text/csv";

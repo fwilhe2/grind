@@ -1240,7 +1240,11 @@ fn document_name(path: Option<&Path>) -> String {
 
 /// Whether a file is a spreadsheet, decided from its bytes rather than its name — which is
 /// what `grind_core::kind` is for, and it answers before any parsing. An Excel workbook is one
-/// too (X6): `grind-sheet-gtk` imports it, so the handoff reaches it the same way.
+/// too (X6): `grind-sheet-gtk` imports it, so the handoff reaches it the same way. So is a CSV
+/// or TSV, which that window opens as a document of its own — known by its name alone, and
+/// only once the bytes have said they are neither ODF nor a workbook, since plain text has no
+/// signature. The extension list is `grind_sheet::csv::is_delimited_name`'s, restated because
+/// this crate must not depend on `grind-sheet`.
 fn is_spreadsheet(path: &Path) -> bool {
     let Ok(bytes) = std::fs::read(path) else {
         return false;
@@ -1249,7 +1253,13 @@ fn is_spreadsheet(path: &Path) -> bool {
     if grind_xlsx::sniff(&bytes) {
         return true;
     }
-    kind(&bytes).is_some_and(|found| found == DocumentKind::Spreadsheet)
+    match kind(&bytes) {
+        Some(found) => found == DocumentKind::Spreadsheet,
+        None => path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ["csv", "tsv", "tab"].contains(&ext.to_ascii_lowercase().as_str())),
+    }
 }
 
 fn describe_kind(kind: &BlockKind, style: Option<&str>) -> String {
@@ -1356,6 +1366,14 @@ mod tests {
             ))),
             "a workbook is handed to the spreadsheet window, which imports it"
         );
+        let csv = dir.join("prices.CSV");
+        std::fs::write(&csv, "item,price\nnut,0.5\n").expect("writes");
+        assert!(is_spreadsheet(&csv), "a CSV is handed over too");
+        let notes = dir.join("notes.txt");
+        std::fs::write(&notes, "item,price\n").expect("writes");
+        assert!(!is_spreadsheet(&notes), "by a delimited name only");
+        let _ = std::fs::remove_file(&csv);
+        let _ = std::fs::remove_file(&notes);
     }
 
     /// A flat spreadsheet, spelled out rather than depended on: this crate must not have

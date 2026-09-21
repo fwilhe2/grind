@@ -93,9 +93,9 @@ fn version() -> String {
 /// back an empty document rather than an error if it were handed the wrong type.
 fn sniff(path: &Path) -> Result<DocumentKind, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    // A workbook is a spreadsheet this shell imports (`import.rs`); `grind_core::kind` answers
-    // only which *ODF* type some bytes are, and should.
-    if import::is_workbook(&bytes) {
+    // A workbook or a CSV is a spreadsheet this shell imports (`import.rs`); `grind_core::kind`
+    // answers only which *ODF* type some bytes are, and should.
+    if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
         return Ok(DocumentKind::Spreadsheet);
     }
     grind_core::kind(&bytes).ok_or_else(|| {

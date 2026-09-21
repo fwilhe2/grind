@@ -112,9 +112,9 @@ struct Desktop {
     entry: &'static str,
     /// The media types this application claims, both forms of its one document type.
     mime: [&'static str; 2],
-    /// The media types it opens by importing (`doc/xlsx-import.md`, X6): listed so a file
-    /// manager offers it for them, and never made their default — no package here writes a
-    /// `mimeapps.list`.
+    /// The media types it opens by importing — Excel workbooks (`doc/xlsx-import.md`, X6) and
+    /// CSV/TSV (`grind_sheet::csv::open`): listed so a file manager offers it for them, and never
+    /// made their default — no package here writes a `mimeapps.list`.
     imports: &'static [&'static str],
 }
 
@@ -131,6 +131,8 @@ const DESKTOPS: [Desktop; 2] = [
         imports: &[
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "application/vnd.ms-excel.sheet.macroEnabled.12",
+            "text/csv",
+            "text/tab-separated-values",
         ],
     },
     Desktop {
@@ -321,7 +323,7 @@ fn each_gui_shell_declares_itself_to_the_desktop() {
             assert!(
                 app.entry.contains(media),
                 "{id}.desktop does not list {media}, so a file manager does not offer \
-                 {package} for a workbook it can import (doc/xlsx-import.md, X6)"
+                 {package} for a file it can import"
             );
         }
         let listed = app

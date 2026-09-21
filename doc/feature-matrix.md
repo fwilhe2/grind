@@ -210,6 +210,7 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ |
 | Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ |
+| Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● |
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● |
 | Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ |
@@ -246,6 +247,13 @@ Save asks where to put it and nothing can write ODF over the workbook. Every she
 same `Report::summary` sentence — a toast, the status line, the page's message, the notice bar.
 The word processor's GTK window hands a workbook to the spreadsheet one, as it does an `.ods`.
 Behind each crate's `xlsx` feature, on by default.
+ˡ The same shape as ᵏ, through `grind_sheet::csv::open`: a `.csv`, `.tsv` or `.tab` whose bytes
+are neither ODF nor a workbook — plain text has no signature, so the name is asked last — is read
+the way ʲ's *Import CSV* reads one, into `A1` of a sheet named after the file, and opened as a new,
+unsaved `data.fods` with no path and a one-sentence summary. Every window's Open reaches it, and
+so does a double-click (`doc/suite.md`, "Mime types"; `doc/windows-shell.md`, "File
+associations"). The CLI's spelling is two verbs, `sheet new` and `sheet import-csv`, which is
+what the function does.
 
 ## 7. Word processor
 

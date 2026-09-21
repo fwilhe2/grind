@@ -35,10 +35,11 @@ pub struct FileType {
     pub description: &'static str,
 }
 
-/// Every type the window opens: the three forms of both ODF document types, and the two Excel
+/// Every type the window opens: the three forms of both ODF document types, the two Excel
 /// workbooks the import filter reads (`doc/xlsx-import.md`, X6) — `.xlsm` included, since it is
-/// the same XML with a macro that is counted and never run. `.xls` and `.xlsb` are not here
-/// because the filter does not read them. The Excel rows are compiled out with the `xlsx`
+/// the same XML with a macro that is counted and never run — and CSV/TSV, which open the same
+/// way (`grind_sheet::csv::open`). `.xls` and `.xlsb` are not here because the filter does not
+/// read them; `.tab` opens but is not offered, since nothing on Windows calls a file that. The Excel rows are compiled out with the `xlsx`
 /// feature, like the import itself: offering a type the binary then refuses would be worse
 /// than not offering it.
 pub const TYPES: &[FileType] = &[
@@ -79,6 +80,16 @@ pub const TYPES: &[FileType] = &[
         prog_id: "Grind.MacroWorkbook",
         description: "Excel Macro-Enabled Workbook (opened as a new ODF document)",
     },
+    FileType {
+        extension: ".csv",
+        prog_id: "Grind.Csv",
+        description: "Comma-Separated Values (opened as a new ODF document)",
+    },
+    FileType {
+        extension: ".tsv",
+        prog_id: "Grind.Tsv",
+        description: "Tab-Separated Values (opened as a new ODF document)",
+    },
 ];
 
 /// The name the application goes by in *Open with* and in Default apps.
@@ -86,8 +97,8 @@ pub const APPLICATION: &str = "Grind";
 
 /// What Default apps says under the name.
 pub const DESCRIPTION: &str = "An ODF-native office suite. Opens OpenDocument spreadsheets and \
-text documents, and Excel workbooks by importing them into a new ODF document — never writing \
-one back.";
+text documents, and Excel workbooks and CSV files by importing them into a new ODF document — \
+never writing one back.";
 
 /// Where the capabilities live, relative to `HKEY_CURRENT_USER`.
 const CAPABILITIES: &str = r"Software\Grind\Capabilities";

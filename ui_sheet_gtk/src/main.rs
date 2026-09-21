@@ -692,9 +692,9 @@ impl Ui {
             Err(error) => return self.toast(&format!("Could not open: {error}")),
         };
         // The open's own notification is swallowed so an ODF document comes up unmodified. An
-        // imported workbook is *meant* to come up modified — nothing has saved it — so for one
+        // imported workbook or CSV is *meant* to come up modified — nothing has saved it — so for one
         // the notification is let through to mark it.
-        self.loading.set(!import::is_workbook(&bytes));
+        self.loading.set(!import::is_import(path, &bytes));
         match import::open(&self.app, path, &bytes) {
             Ok(opened) => {
                 *self.path.borrow_mut() = opened.path;
@@ -2253,26 +2253,37 @@ fn spreadsheet_filters() -> gio::ListStore {
     filter.add_pattern("*.grind");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
-    // A workbook is imported (`import.rs`), which is why it is a filter of its own rather
-    // than a pattern in the one above: it opens as a *new* document, and "Excel Workbook" is
-    // the name a person knows the format by. Both filters together first, so the default
-    // selection shows everything this window opens.
+    // A workbook and a CSV are imported (`import.rs`), which is why each is a filter of its own
+    // rather than a pattern in the one above: they open as a *new* document, and "Excel
+    // Workbook" and "CSV" are the names a person knows them by. Everything together first, so
+    // the default selection shows every file this window opens.
+    let mut patterns = vec!["*.fods", "*.ods", "*.grind"];
+    let mut imports = Vec::new();
     if cfg!(feature = "xlsx") {
         let workbooks = gtk::FileFilter::new();
         workbooks.set_name(Some("Excel Workbook"));
         for pattern in ["*.xlsx", "*.xlsm"] {
             workbooks.add_pattern(pattern);
+            patterns.push(pattern);
         }
-        let everything = gtk::FileFilter::new();
-        everything.set_name(Some("All Spreadsheets"));
-        for pattern in ["*.fods", "*.ods", "*.grind", "*.xlsx", "*.xlsm"] {
-            everything.add_pattern(pattern);
-        }
-        filters.append(&everything);
-        filters.append(&filter);
-        filters.append(&workbooks);
-    } else {
-        filters.append(&filter);
+        imports.push(workbooks);
+    }
+    let delimited = gtk::FileFilter::new();
+    delimited.set_name(Some("CSV and TSV"));
+    for pattern in ["*.csv", "*.tsv", "*.tab"] {
+        delimited.add_pattern(pattern);
+        patterns.push(pattern);
+    }
+    imports.push(delimited);
+    let everything = gtk::FileFilter::new();
+    everything.set_name(Some("All Spreadsheets"));
+    for pattern in patterns {
+        everything.add_pattern(pattern);
+    }
+    filters.append(&everything);
+    filters.append(&filter);
+    for import in &imports {
+        filters.append(import);
     }
     filters
 }

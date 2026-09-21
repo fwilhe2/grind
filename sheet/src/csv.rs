@@ -170,6 +170,96 @@ pub fn decode(bytes: Vec<u8>) -> Result<String, &'static str> {
     String::from_utf8(bytes).map_err(|_| NOT_UTF8)
 }
 
+/// Whether a file *name* is a delimited file — `.csv`, `.tsv` or `.tab`, in any case.
+///
+/// **The one question here a name answers**, and only because the bytes cannot: plain text has
+/// no signature, so nothing in a CSV says it is one. A caller asks it *last* — after the bytes
+/// have been asked whether they are an ODF document or a workbook — so a name never overrules
+/// content that does say what it is.
+pub fn is_delimited_name(name: &str) -> bool {
+    let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    matches!(
+        file.rsplit_once('.').map(|(stem, ext)| (stem.is_empty(), ext.to_ascii_lowercase())),
+        Some((false, ext)) if matches!(ext.as_str(), "csv" | "tsv" | "tab")
+    )
+}
+
+/// A delimited file opened as a document of its own: what [`open`] hands a shell.
+#[derive(Debug)]
+pub struct Opened {
+    /// The name it now goes by — `data.csv` becomes `data.fods`, beside it when `name` was a
+    /// path. A shell opens it with **no path**, so Save asks where the ODF document goes and can
+    /// never write it over the CSV it came from.
+    pub name: String,
+    /// Flat ODF, for [`crate::App::open_bytes`].
+    pub odf: Vec<u8>,
+    /// One sentence for a notice bar, the same in every shell.
+    pub summary: String,
+}
+
+/// Open a delimited file as a new spreadsheet — what a double-click on `data.csv` means, as
+/// opposed to *Import CSV*, which puts the fields into a document already open.
+///
+/// `None` when `name` is not a delimited file ([`is_delimited_name`]), so a caller tries this
+/// after ODF and Excel and passes anything else on unchanged. Otherwise the fields land at `A1`
+/// of one sheet named after the file, read exactly as a window's *Import CSV* reads them
+/// ([`Import::sniffed`]: the delimiter from the content, ISO dates as dates, nothing else
+/// guessed), and come back as flat ODF under an ODF name — the shape `grind_xlsx::open` gives
+/// a workbook, so every shell adds one branch beside that one. What the file *is* is still
+/// decided by the content: a `.csv` that is not UTF-8 is refused with [`NOT_UTF8`] rather than
+/// guessed at.
+pub fn open(name: &str, bytes: &[u8]) -> Option<Result<Opened, String>> {
+    if !is_delimited_name(name) {
+        return None;
+    }
+    Some(open_delimited(name, bytes))
+}
+
+fn open_delimited(name: &str, bytes: &[u8]) -> Result<Opened, String> {
+    let fail = |e: &dyn std::fmt::Display| format!("{name}: {e}");
+    let text = decode(bytes.to_vec()).map_err(|e| fail(&e))?;
+    let options = Import::sniffed(&text);
+    let app = crate::App::new();
+    app.import_csv(
+        0,
+        crate::model::Pos::new(0, 0),
+        &text,
+        &options,
+        crate::RecalcMode::Document,
+    )
+    .map_err(|e| fail(&e))?;
+
+    let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+    // LibreOffice names the sheet after the file too. A stem that is not a valid sheet name
+    // (one with `[` in it, say) keeps `Sheet1` rather than failing the open.
+    let _ = app.rename_sheet(0, stem);
+    let odf = app.save_bytes(crate::Form::Flat).map_err(|e| fail(&e))?;
+
+    let rows = parse(&text, &options.dialect);
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let plural = |n: usize, one: &str| match n {
+        1 => format!("1 {one}"),
+        n => format!("{n} {one}s"),
+    };
+    let separated = match options.dialect.delimiter {
+        ',' => "comma".to_owned(),
+        ';' => "semicolon".to_owned(),
+        '\t' => "tab".to_owned(),
+        '|' => "bar".to_owned(),
+        other => format!("{other:?}"),
+    };
+    Ok(Opened {
+        name: format!("{}{stem}.fods", &name[..name.len() - file.len()]),
+        odf,
+        summary: format!(
+            "Imported from CSV: {} × {}, {separated}-separated.",
+            plural(rows.len(), "row"),
+            plural(columns, "column")
+        ),
+    })
+}
+
 /// Read a delimited file into rows of fields. Never fails; see the module's tolerance rule.
 ///
 /// The readings that are decisions rather than obligations:
@@ -912,5 +1002,46 @@ mod tests {
         // after rather than an error: a save dialog has already accepted the name by then.
         assert_eq!(Dialect::for_name("data"), Dialect::COMMA);
         assert_eq!(Dialect::for_name("notes.txt"), Dialect::COMMA);
+    }
+
+    #[test]
+    fn a_delimited_name_is_known_by_its_extension_alone() {
+        for name in ["data.csv", "DATA.CSV", "a/b/list.tsv", r"C:\\x\\t.tab"] {
+            assert!(is_delimited_name(name), "{name}");
+        }
+        for name in ["data.fods", "notes.txt", ".csv", "csv", "data.csv.fods"] {
+            assert!(!is_delimited_name(name), "{name}");
+        }
+    }
+
+    /// What a double-click on a CSV means: a document of its own, named after the file, read
+    /// the way a window's Import CSV reads one — delimiter sniffed, ISO dates dated.
+    #[test]
+    fn a_delimited_file_opens_as_a_document_of_its_own() {
+        let opened = open(
+            "/tmp/in/prices.csv",
+            b"item;price;when\nnut;0,5;2026-03-15\n",
+        )
+        .expect("a delimited name")
+        .unwrap();
+        assert_eq!(opened.name, "/tmp/in/prices.fods");
+        assert_eq!(
+            opened.summary,
+            "Imported from CSV: 2 rows × 3 columns, semicolon-separated."
+        );
+        let app = crate::App::new();
+        app.open_bytes(&opened.name, &opened.odf).unwrap();
+        assert_eq!(app.sheet_count(), 1);
+        assert_eq!(app.sheet_name(0).unwrap(), "prices");
+        let view = app.get_viewport(0, 0..2, 0..3).unwrap();
+        assert_eq!(view.text(0, 0), Some("item"));
+        assert_eq!(view.text(1, 2), Some("2026-03-15"));
+
+        assert!(open("book.fods", b"").is_none(), "not ours to answer");
+        let refused = open("latin1.csv", b"caf\xe9\n").unwrap().unwrap_err();
+        assert!(
+            refused.contains("latin1.csv") && refused.contains("UTF-8"),
+            "{refused}"
+        );
     }
 }

@@ -20,8 +20,8 @@ pub struct Imported {
     pub summary: String,
 }
 
-/// `Some` when `bytes` are a workbook, imported; `None` for anything else, which goes on to
-/// `grind_core::kind` as before.
+/// `Some` when `bytes` are a workbook or a CSV, imported; `None` for anything else, which goes
+/// on to `grind_core::kind` as before.
 pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
     #[cfg(feature = "xlsx")]
     if grind_xlsx::sniff(bytes) {
@@ -35,7 +35,17 @@ pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
                 .map_err(|e| format!("{name}: {e}")),
         );
     }
-    let _ = (name, bytes);
+    // A CSV or TSV, known by its name once the bytes have said they are not ODF — plain text has
+    // no signature — arrives the same way: flat ODF, renamed `.fods`.
+    if grind_core::kind(bytes).is_none()
+        && let Some(opened) = grind_sheet::csv::open(name, bytes)
+    {
+        return Some(opened.map(|opened| Imported {
+            name: opened.name,
+            odf: opened.odf,
+            summary: opened.summary,
+        }));
+    }
     None
 }
 
@@ -54,5 +64,23 @@ mod tests {
         );
         assert!(imported.summary.starts_with("Imported from Excel"));
         assert!(workbook("plain.fods", b"<office:document/>").is_none());
+    }
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::*;
+
+    #[test]
+    fn a_csv_becomes_flat_odf_under_an_odf_name() {
+        let imported = workbook("prices.csv", b"item,price\nnut,0.5\n")
+            .expect("a CSV")
+            .unwrap();
+        assert_eq!(imported.name, "prices.fods");
+        assert_eq!(
+            grind_core::kind(&imported.odf),
+            Some(grind_core::DocumentKind::Spreadsheet)
+        );
+        assert!(workbook("notes.txt", b"a,b").is_none());
     }
 }

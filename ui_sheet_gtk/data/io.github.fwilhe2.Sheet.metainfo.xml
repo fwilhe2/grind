@@ -26,12 +26,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       new, unsaved ODF spreadsheet, with a sentence saying what — if anything — had nowhere to
       go. It never writes an Excel file, and it never makes itself the default for one.
     </p>
+    <p>
+      A CSV or TSV file opens the same way: a new ODF spreadsheet named after it, the delimiter
+      read from the file itself.
+    </p>
   </description>
   <provides>
     <mediatype>application/vnd.oasis.opendocument.spreadsheet</mediatype>
     <mediatype>application/vnd.oasis.opendocument.spreadsheet-flat-xml</mediatype>
     <mediatype>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</mediatype>
     <mediatype>application/vnd.ms-excel.sheet.macroEnabled.12</mediatype>
+    <mediatype>text/csv</mediatype>
+    <mediatype>text/tab-separated-values</mediatype>
   </provides>
   <launchable type="desktop-id">io.github.fwilhe2.Sheet.desktop</launchable>
   <url type="homepage">https://github.com/fwilhe2/sheet</url>

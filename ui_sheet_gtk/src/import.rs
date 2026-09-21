@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Opening a file that may be an Excel workbook (`doc/xlsx-import.md`, X6) — with no GTK in
-//! it, so the rule is testable with no display.
+//! Opening a file that may be an Excel workbook (`doc/xlsx-import.md`, X6) or a CSV — with no
+//! GTK in it, so the rule is testable with no display. A CSV takes the same path as a workbook:
+//! a new, unsaved document under an ODF name (`grind_sheet::csv::open`).
 //!
 //! The Open dialog imports **transparently**: a workbook is sniffed from its bytes, never its
 //! name (`grind_xlsx::sniff`, as `grind_core::kind` is), imported, and opened as a **new,
@@ -35,6 +36,22 @@ pub struct Imported {
     pub summary: String,
 }
 
+/// Whether opening `path` imports it — a workbook, or a delimited file ([`delimited`]) — and so
+/// brings it up as a new, unsaved document rather than the file itself.
+pub fn is_import(path: &Path, bytes: &[u8]) -> bool {
+    is_workbook(bytes) || delimited(path, bytes)
+}
+
+/// Whether `path` is a CSV or TSV to open as a document of its own. Asked only of bytes that
+/// are neither ODF nor a workbook: plain text has no signature, so the name is the one thing
+/// that can say it (`grind_sheet::csv::is_delimited_name`), and it never overrules content
+/// that does.
+fn delimited(path: &Path, bytes: &[u8]) -> bool {
+    !is_workbook(bytes)
+        && grind_sheet::kind(bytes).is_none()
+        && grind_sheet::csv::is_delimited_name(&document_name(path))
+}
+
 /// Whether these bytes are a workbook this build can import.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
@@ -61,6 +78,22 @@ pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Opened, String> {
             }),
         });
     }
+    // A CSV double-clicked, or picked in Open, is the same shape: a document of its own, named
+    // `data.fods`, with no path — where *Import CSV* puts the fields into this one instead.
+    if delimited(path, bytes)
+        && let Some(opened) = grind_sheet::csv::open(&document_name(path), bytes)
+    {
+        let opened = opened?;
+        app.open_bytes(&opened.name, &opened.odf)
+            .map_err(|e| e.to_string())?;
+        return Ok(Opened {
+            path: None,
+            imported: Some(Imported {
+                name: opened.name,
+                summary: opened.summary,
+            }),
+        });
+    }
     app.open_bytes(&path.display().to_string(), bytes)
         .map_err(|e| e.to_string())?;
     Ok(Opened {
@@ -69,7 +102,6 @@ pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Opened, String> {
     })
 }
 
-#[cfg(feature = "xlsx")]
 fn document_name(path: &Path) -> String {
     path.file_name().map_or_else(
         || "Untitled".to_owned(),
@@ -115,5 +147,30 @@ mod tests {
         let opened = open(&App::new(), &path, &bytes).unwrap();
         assert_eq!(opened.path.as_deref(), Some(path.as_path()));
         assert_eq!(opened.imported, None);
+    }
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::*;
+
+    /// A CSV opens the way a workbook does: unsaved, named `.fods`, the fields at A1.
+    #[test]
+    fn a_csv_opens_as_an_unsaved_odf_document() {
+        let app = App::new();
+        let path = Path::new("/somewhere/prices.csv");
+        let bytes = b"item,price\nnut,0.5\n";
+        assert!(is_import(path, bytes));
+        let opened = open(&app, path, bytes).expect("it imports");
+        assert_eq!(opened.path, None, "Save must not write over the CSV");
+        let imported = opened.imported.expect("it was imported");
+        assert_eq!(imported.name, "prices.fods");
+        assert!(imported.summary.starts_with("Imported from CSV"));
+        let viewport = app.get_viewport(0, 1..2, 0..2).unwrap();
+        assert_eq!(viewport.text(1, 1), Some("0.5"));
+        assert!(
+            !is_import(Path::new("notes.txt"), bytes),
+            "only a delimited name"
+        );
     }
 }

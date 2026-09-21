@@ -639,9 +639,9 @@ jobs:
           path: iso-root/
 
       # A handful of documents that exercise both panes: spreadsheets with formulas,
-      # conditional formatting, a chart and a table, one Writer document, and four Excel
-      # workbooks for the import. All of them already live in the repo as corpus/fixture
-      # files — nothing here is generated, so this step is a `cp`, not a build.
+      # conditional formatting, a chart and a table, one Writer document, four Excel
+      # workbooks and a CSV for the import. All of them already live in the repo as
+      # corpus/fixture files — nothing here is generated, so this step is a `cp`, not a build.
       - name: Stage sample documents
         run: |
           set -eu
@@ -657,6 +657,7 @@ jobs:
           cp xlsx/tests/data/corpus/styles/colors.xlsx "iso-root/samples/Excel Colours.xlsx"
           cp xlsx/tests/data/corpus/formulas/functions.xlsx "iso-root/samples/Excel Formulas.xlsx"
           cp xlsx/tests/data/corpus/document/macro-enabled.xlsm "iso-root/samples/Excel Macros.xlsm"
+          cp "sheet/tests/data/samples/Price List.csv" iso-root/samples/
           cat > iso-root/README.txt <<'EOF'
           Grind for Windows - test disc
           ==============================
@@ -676,14 +677,15 @@ jobs:
             Excel Colours.xlsx                - fills, fonts and theme colours
             Excel Formulas.xlsx               - Excel formulas, translated to OpenFormula
             Excel Macros.xlsm                 - its data opens; the macro is counted, never run
+            Price List.csv                    - semicolon-separated; opens as a new spreadsheet
 
-          A workbook opens as a new, unsaved ODF document: Save asks where to put the
-          .fods, and nothing is ever written back over the Excel file.
+          A workbook - or a .csv/.tsv file - opens as a new, unsaved ODF document: Save
+          asks where to put the .fods, and nothing is ever written back over the original.
 
           Run grind-win32.exe with a sample's path as its one argument to open it.
 
           Starting grind-win32.exe once also offers it for .ods, .fods, .odt, .fodt,
-          .grind, .xlsx and .xlsm - in Explorer's "Open with" menu and in Settings >
+          .grind, .xlsx, .xlsm, .csv and .tsv - in Explorer's "Open with" menu and in Settings >
           Apps > Default apps. It never changes which program a double-click opens:
           pick Grind there if you want it. Running from this disc offers the copy on
           the disc; run a copy from elsewhere and it offers that one instead.

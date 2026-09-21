@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Opening an Excel workbook (`doc/xlsx-import.md`, X6) — the portable half, tested on Linux
-//! like the rest of this crate's.
+//! Opening an Excel workbook (`doc/xlsx-import.md`, X6) or a CSV — the portable half, tested on
+//! Linux like the rest of this crate's.
 //!
 //! A workbook is sniffed from its bytes, imported, and opened as a new **unsaved** spreadsheet
 //! with no path: Save then runs Save As, seeded with the ODF name beside the workbook
@@ -48,9 +48,31 @@ pub fn open(app: &grind_sheet::App, path: &Path) -> Result<Option<Imported>, Str
             summary: report.summary(),
         }));
     }
+    // A CSV or TSV is the same shape as a workbook: a new, unsaved document under the ODF name
+    // beside it (`grind_sheet::csv::open`). Asked only once the bytes have said they are not
+    // ODF, since plain text has no signature and its name is all there is.
+    if is_delimited(path, &bytes)
+        && let Some(opened) = grind_sheet::csv::open(&path.display().to_string(), &bytes)
+    {
+        let opened = opened?;
+        app.open_bytes(&opened.name, &opened.odf)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        return Ok(Some(Imported {
+            suggested: PathBuf::from(opened.name),
+            summary: opened.summary,
+        }));
+    }
     app.open_bytes(&path.display().to_string(), &bytes)
         .map_err(|error| format!("{}: {error}", path.display()))?;
     Ok(None)
+}
+
+/// Whether `path` is a CSV or TSV this shell opens as a new document: bytes that are neither a
+/// workbook nor ODF, under a delimited name (`grind_sheet::csv::is_delimited_name`).
+pub fn is_delimited(path: &Path, bytes: &[u8]) -> bool {
+    !is_workbook(bytes)
+        && grind_core::kind(bytes).is_none()
+        && grind_sheet::csv::is_delimited_name(&path.display().to_string())
 }
 
 #[cfg(all(test, feature = "xlsx"))]
@@ -70,5 +92,29 @@ mod tests {
         assert!(imported.summary.starts_with("Imported from Excel"));
         let viewport = app.get_viewport(0, 0..1, 0..1).unwrap();
         assert_eq!(viewport.text(0, 0), Some("Region"));
+    }
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::*;
+
+    #[test]
+    fn a_csv_opens_unsaved_with_an_odf_name_beside_it() {
+        let dir = std::env::temp_dir().join(format!("grind-win32-csv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("prices.tsv");
+        std::fs::write(&path, "item\tprice\nnut\t0.5\n").unwrap();
+        let app = grind_sheet::App::new();
+        let imported = open(&app, &path).unwrap().expect("a CSV is imported");
+        assert_eq!(imported.suggested, path.with_extension("fods"));
+        assert!(
+            imported.summary.contains("tab-separated"),
+            "{}",
+            imported.summary
+        );
+        let viewport = app.get_viewport(0, 1..2, 0..2).unwrap();
+        assert_eq!(viewport.text(1, 0), Some("nut"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -20,6 +20,31 @@ pub struct Imported {
     pub summary: String,
 }
 
+/// Whether `path` is a CSV or TSV opened as a document of its own: bytes that are neither a
+/// workbook nor ODF, under a delimited name (`grind_sheet::csv::is_delimited_name` — plain text
+/// has no signature, so its name is all there is).
+pub fn is_delimited(path: &Path, bytes: &[u8]) -> bool {
+    !is_workbook(bytes)
+        && grind_core::kind(bytes).is_none()
+        && grind_sheet::csv::is_delimited_name(&path.display().to_string())
+}
+
+/// Open the CSV at `path` into `app` as a new document — the same shape as a workbook: named
+/// `data.fods`, with no path. Only called once [`is_delimited`] said yes.
+pub fn open_delimited(app: &App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
+    let file = path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let opened = grind_sheet::csv::open(&file, bytes).ok_or("not a delimited file")??;
+    app.open_bytes(&opened.name, &opened.odf)
+        .map_err(|e| e.to_string())?;
+    Ok(Imported {
+        name: opened.name,
+        summary: opened.summary,
+    })
+}
+
 /// Whether these bytes are a workbook this build imports.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
@@ -70,5 +95,22 @@ mod tests {
         assert!(imported.name.ends_with("sample.fods"), "{}", imported.name);
         let viewport = app.get_viewport(0, 0..1, 0..1).unwrap();
         assert_eq!(viewport.text(0, 0), Some("Region"));
+    }
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::*;
+
+    #[test]
+    fn a_csv_opens_as_an_unsaved_odf_document() {
+        let path = Path::new("/somewhere/prices.csv");
+        let bytes = b"item,price\nnut,0.5\n";
+        assert!(is_delimited(path, bytes));
+        let app = App::new();
+        let imported = open_delimited(&app, path, bytes).unwrap();
+        assert_eq!(imported.name, "prices.fods");
+        assert!(imported.summary.starts_with("Imported from CSV"));
+        assert!(!is_delimited(Path::new("notes.txt"), bytes));
     }
 }

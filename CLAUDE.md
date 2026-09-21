@@ -374,7 +374,7 @@ Windows at all. `win32.yml` gained a step reading `FileVersionInfo` and the icon
 linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine
 where that would be a real bug rather than an expected gap — fails the build. File
 associations were answered in `doc/windows-shell.md` and are **now built** (`assoc.rs`), with no
-installer: seven ProgIDs — the three ODF forms of each type plus `.xlsx`/`.xlsm` — written
+installer: nine ProgIDs — the three ODF forms of each type plus `.xlsx`/`.xlsm` and `.csv`/`.tsv` — written
 per-user by the window on start whenever one is missing or names another copy of the `.exe`,
 and **offered, never taken**: `OpenWithProgids` and a `RegisteredApplications` capability, never
 an extension's own default value or `UserChoice`, so Excel or LibreOffice keeps a double-click
@@ -689,7 +689,10 @@ before it can be answered.
   format-code strings (Excel's spelling, not ODF's) — a format is an ordered sequence of
   pieces. `preset`/`is_preset`/`preset_params` are the whole "set/read a format" vocabulary
   and live here so no shell invents a second one.
-- **`sheet/src/csv.rs`** — CSV and TSV, the one non-ODF format (`doc/not-doing.md` §2). TSV is
+- **`sheet/src/csv.rs`** — CSV and TSV, the one non-ODF format (`doc/not-doing.md` §2). `open` is
+  what a double-click on one means in every window — a new, unsaved `data.fods`, the shape
+  `grind_xlsx::open` gives a workbook — and `is_delimited_name` is the one question a *name*
+  answers, asked only after the bytes have said they are neither ODF nor a workbook. TSV is
   not a second format: the delimiter is a field of `Dialect`, sniffed from the file's own
   content when nobody names one. Tolerance on the way in (`parse` never fails — an unterminated
   quote, a stray quote, CRLF, a BOM and ragged rows all have a defined reading), strictness on
