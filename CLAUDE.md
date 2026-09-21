@@ -1021,7 +1021,10 @@ parser already takes. **D10's first row is done**: renaming a sheet now carries 
 that named it — formulas, named expressions and chart ranges — in one `Action::Batch`, so it is
 one Ctrl+Z and `doc/not-doing.md`'s row says *deleting* rather than "renaming or deleting". The
 rewrite is `formula::rename`, an AST substitution re-serialised by the printer, never a textual
-one; a formula this build cannot parse is left alone and `grind lint` finds it.
+one; a formula this build cannot parse is left alone and `grind lint` finds it. **A named
+expression renames the same way** — `App::rename_name`, `grind sheet name <old> --rename <new>`
+— carrying every formula and every other name that uses it; the function `RATE(…)` is not the
+name `rate`, and a clash with an existing name is refused rather than merged.
 
 **D7 is `grind build` — layer 1 has begun.** `grind build model.rhai -o model.fods` runs a Rhai
 script that **returns** a document and writes it, for either document type;

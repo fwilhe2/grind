@@ -1578,6 +1578,80 @@ impl App {
         })
     }
 
+    /// Rename a named expression, and every formula and every other name that uses it
+    /// (`doc/dsl.md` §6.5's Rename row — the named-expression half, beside
+    /// [`App::rename_sheet`]).
+    ///
+    /// One [`Action::Batch`], so one undo takes the whole rename back. The rewrite is
+    /// `formula::rename::rename_name`, an AST substitution: `rate` inside `rate_2`, inside
+    /// `"rate"` or as the function `RATE(…)` is untouched, and a formula this build cannot parse
+    /// is left alone for `grind lint` to find. A cached value is kept, since what the name
+    /// stands for has not changed. Returns how many formulas and other names were rewritten.
+    ///
+    /// Refused when `from` is not defined, when `to` is not a name (§5.11's spelling), and when
+    /// `to` is already another name — merging two would silently drop one definition. Changing
+    /// only the case (`rate` → `Rate`) is allowed, and respells every use.
+    pub fn rename_name(&self, from: &str, to: &str) -> Result<usize> {
+        validate_name(to)?;
+        self.mutate(|state| {
+            let doc = &state.doc;
+            let Some(expression) = doc.names.get(&from.to_lowercase()).cloned() else {
+                return Err(Error::Formula(format!("no such name: {from}")));
+            };
+            if !from.eq_ignore_ascii_case(to) && doc.names.contains_key(&to.to_lowercase()) {
+                return Err(Error::Formula(format!(
+                    "{to} is already a name; delete it first, or pick another"
+                )));
+            }
+            let mut actions = vec![
+                Action::SetName {
+                    name: from.to_owned(),
+                    expression: None,
+                },
+                Action::SetName {
+                    name: to.to_owned(),
+                    // A name that mentions itself is a cycle `grind lint` reports; renamed all
+                    // the same, so the definition keeps meaning what it meant.
+                    expression: Some(
+                        formula::rename::rename_name_in_formula(&expression, from, to)
+                            .unwrap_or(expression),
+                    ),
+                },
+            ];
+            for (index, sheet) in doc.sheets.iter().enumerate() {
+                for (pos, text) in sheet.formulas() {
+                    if let Some(formula) = formula::rename::rename_name_in_formula(text, from, to) {
+                        actions.push(Action::SetFormula {
+                            sheet: index,
+                            pos,
+                            formula: Some(formula),
+                            value: sheet.get(pos),
+                        });
+                    }
+                }
+            }
+            for (name, other) in &doc.names {
+                if name.eq_ignore_ascii_case(from) {
+                    continue;
+                }
+                if let Some(rewritten) = formula::rename::rename_name_in_formula(other, from, to) {
+                    actions.push(Action::SetName {
+                        name: name.clone(),
+                        expression: Some(rewritten),
+                    });
+                }
+            }
+            let rewritten = actions.len() - 2;
+            let inverse = state
+                .doc
+                .apply(Action::Batch(actions))
+                .expect("a name addresses no sheet");
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(rewritten)
+        })
+    }
+
     /// Delete a named expression. `false` if there was no such name.
     ///
     /// Deleting one a formula still mentions is allowed and turns that formula into

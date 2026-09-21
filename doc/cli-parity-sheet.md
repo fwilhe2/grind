@@ -67,6 +67,11 @@ stops ratcheting.
   column the aggregate cannot answer for is left blank rather than given a cached error
 - `set_name` — `grind sheet name <name> <address-or-=expression>`
 - `clear_name` — `grind sheet name <name> --delete`
+- `rename_name` — `grind sheet name <name> --rename <new>`, the named-expression half of
+  `doc/dsl.md` §6.5's Rename row: every formula and every other name that uses it follows, in one
+  `Action::Batch`, rewritten through `formula::rename::rename_name` — an AST substitution, so the
+  function `RATE(…)`, the longer name `rate_2` and the string `"rate"` are left alone. The count
+  of rewritten uses goes to stderr, as `rename_sheet`'s does
 - `add_sheet` — `grind sheet add <name>`
 - `rename_sheet` — `grind sheet rename <sheet> <name>`, which carries every reference that named
   the old sheet with it: formulas, named expressions and chart ranges, in one `Action::Batch` so

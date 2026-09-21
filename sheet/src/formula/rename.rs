@@ -103,9 +103,81 @@ pub fn rename_in_formula(formula: &str, from: &str, to: &str) -> Option<String> 
     (rewritten != formula).then_some(rewritten)
 }
 
+/// Every use of the named expression `from` in `expr`, spelled `to` instead (§5.11) — the
+/// other half of `doc/dsl.md` §6.5's Rename row, and the same kind of operation as [`rename`]:
+/// an AST substitution re-serialised by the printer, never a textual one. `rate` occurs inside
+/// `rate_2`, inside `"rate"` and as a function name in `RATE(…)`, and only the first of those
+/// four is this node.
+///
+/// Names match case-insensitively, as §5.11 makes them; the new spelling is `to` exactly.
+pub fn rename_name(expr: &Expr, from: &str, to: &str) -> Expr {
+    match expr {
+        Expr::Name(name) if name.eq_ignore_ascii_case(from) => Expr::Name(to.to_owned()),
+        Expr::Call { name, args } => Expr::Call {
+            name: name.clone(),
+            args: args.iter().map(|a| rename_name(a, from, to)).collect(),
+        },
+        Expr::Prefix(op, e) => Expr::Prefix(*op, Box::new(rename_name(e, from, to))),
+        Expr::Postfix(op, e) => Expr::Postfix(*op, Box::new(rename_name(e, from, to))),
+        Expr::Binary(op, l, r) => Expr::Binary(
+            *op,
+            Box::new(rename_name(l, from, to)),
+            Box::new(rename_name(r, from, to)),
+        ),
+        Expr::Paren(e) => Expr::Paren(Box::new(rename_name(e, from, to))),
+        Expr::Name(_)
+        | Expr::Ref(_)
+        | Expr::Number(_)
+        | Expr::Text(_)
+        | Expr::Error(_)
+        | Expr::Empty => expr.clone(),
+    }
+}
+
+/// [`rename_in_formula`] for a named expression: one stored formula with the name `from`
+/// spelled `to`, or `None` when nothing changed or the formula does not parse.
+pub fn rename_name_in_formula(formula: &str, from: &str, to: &str) -> Option<String> {
+    let expr = parse(formula).ok()?;
+    let renamed = rename_name(&expr, from, to);
+    if renamed == expr {
+        return None;
+    }
+    let rewritten = format!("{}{renamed}", intro(formula));
+    (rewritten != formula).then_some(rewritten)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only the name node moves: not a longer name that starts with it, not a string holding
+    /// it, not a function spelled the same way — and the match ignores case, as §5.11 does.
+    #[test]
+    fn a_name_is_renamed_where_it_is_a_name_and_nowhere_else() {
+        assert_eq!(
+            rename_name_in_formula("=rate*[.B2]+rate_2", "rate", "tax_rate").as_deref(),
+            Some("=tax_rate*[.B2]+rate_2")
+        );
+        assert_eq!(
+            rename_name_in_formula("=SUM(Budgeted)/COUNT(budgeted)", "budgeted", "planned")
+                .as_deref(),
+            Some("=SUM(planned)/COUNT(planned)")
+        );
+        assert_eq!(
+            rename_name_in_formula(r#"="rate"&RATE(1;2;3)"#, "rate", "x"),
+            None
+        );
+        assert_eq!(
+            rename_name_in_formula("of:=rate+1", "rate", "vat").as_deref(),
+            Some("of:=vat+1"),
+            "the intro is kept"
+        );
+        assert_eq!(
+            rename_name_in_formula("=SUM(", "rate", "x"),
+            None,
+            "unparseable: left alone"
+        );
+    }
 
     fn renamed(formula: &str, from: &str, to: &str) -> Option<String> {
         rename_in_formula(formula, from, to)

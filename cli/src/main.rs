@@ -1671,7 +1671,7 @@ enum Command {
         unhide: bool,
     },
 
-    /// Define, redefine or delete a named range or expression (§5.11)
+    /// Define, redefine, rename or delete a named range or expression (§5.11)
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.
     Name {
@@ -1684,6 +1684,9 @@ enum Command {
         /// Delete the name instead
         #[arg(long, conflicts_with = "target")]
         delete: bool,
+        /// Rename it, and every formula and every other name that uses it — one undo step
+        #[arg(long, value_name = "NEW", conflicts_with_all = ["target", "delete"])]
+        rename: Option<String>,
     },
 
     /// Filter rows by a set of values per column (§9.4)
@@ -2732,8 +2735,20 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             name,
             target,
             delete,
+            rename,
         } => {
             let app = load(file, cli)?;
+            if let Some(to) = rename {
+                // The count goes to stderr, as `sheet rename`'s does: stdout is the report.
+                let rewritten = app.rename_name(name, to).say()?;
+                if rewritten > 0 {
+                    eprintln!(
+                        "grind: {rewritten} use(s) rewritten to name {to:?}; \
+                         `grind sheet undo` undoes the whole rename"
+                    );
+                }
+                return finish(&app, cli, file, true);
+            }
             if *delete {
                 let removed = app.clear_name(name);
                 if !removed {

@@ -1040,3 +1040,76 @@ fn a_styled_empty_cell_survives_a_save_and_a_read() {
         assert_eq!(back.style_at(0, p(3, 0)).unwrap(), None, "{form:?}");
     }
 }
+
+/// `doc/dsl.md` §6.5's Rename row, for a named expression: every formula and every other name
+/// that uses it follows, in one undo step, and the cached values stay what they were.
+#[test]
+fn renaming_a_name_carries_every_use_with_it() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 0.2).unwrap();
+    app.set_cell(0, p(1, 0), 100.0).unwrap();
+    app.set_name("rate", "[.$A$1]").unwrap();
+    app.set_name("taxed", "[.$A$2]*(1+rate)").unwrap();
+    app.set_formula(0, p(0, 1), "=rate*[.A2]+RATE(1;-1;2)")
+        .unwrap();
+    app.set_formula(0, p(1, 1), "=taxed").unwrap();
+    app.recalc().unwrap();
+    let before = app
+        .get_viewport(0, 0..2, 1..2)
+        .unwrap()
+        .text(1, 1)
+        .map(str::to_owned);
+
+    assert_eq!(app.rename_name("RATE", "vat").unwrap(), 2, "B1 and `taxed`");
+    let names: std::collections::BTreeMap<_, _> = app.names().into_iter().collect();
+    assert_eq!(names.get("vat").map(String::as_str), Some("[.$A$1]"));
+    assert_eq!(
+        names.get("taxed").map(String::as_str),
+        Some("[.$A$2]*(1+vat)")
+    );
+    assert!(!names.contains_key("rate"));
+    assert_eq!(
+        app.formula(0, p(0, 1)).unwrap().as_deref(),
+        Some("=vat*[.A2]+RATE(1;-1;2)"),
+        "the function RATE is not the name rate"
+    );
+    app.recalc().unwrap();
+    assert_eq!(
+        app.get_viewport(0, 0..2, 1..2)
+            .unwrap()
+            .text(1, 1)
+            .map(str::to_owned),
+        before,
+        "the answer is the same, because the name means the same"
+    );
+
+    // One undo, all of it.
+    assert!(app.undo());
+    let names: std::collections::BTreeMap<_, _> = app.names().into_iter().collect();
+    assert!(names.contains_key("rate") && !names.contains_key("vat"));
+    assert_eq!(
+        names.get("taxed").map(String::as_str),
+        Some("[.$A$2]*(1+rate)")
+    );
+    assert_eq!(
+        app.formula(0, p(0, 1)).unwrap().as_deref(),
+        Some("=rate*[.A2]+RATE(1;-1;2)")
+    );
+
+    // Refusals: no such name, a clash, and a spelling that is not a name.
+    assert!(app.rename_name("nope", "x").is_err());
+    assert!(
+        app.rename_name("rate", "taxed").is_err(),
+        "merging would lose a definition"
+    );
+    assert!(
+        app.rename_name("rate", "B2").is_err(),
+        "a cell address is not a name"
+    );
+    // Only the case: allowed, and every use respelled.
+    app.rename_name("rate", "Rate").unwrap();
+    assert_eq!(
+        app.formula(0, p(0, 1)).unwrap().as_deref(),
+        Some("=Rate*[.A2]+RATE(1;-1;2)")
+    );
+}

@@ -379,6 +379,34 @@ fn example(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// `grind sheet name <old> --rename <new>`: the named-expression half of `doc/dsl.md` §6.5's
+/// Rename row. Every formula and every other name follows; that it is one undo step is
+/// `sheet/tests/app.rs`'s to hold, since the CLI keeps no history between invocations.
+#[test]
+fn renaming_a_name_rewrites_every_use() {
+    let dir = Sandbox::new("rename-name");
+    let book = s(&dir.path("book.fods"));
+    ok(&["new", &book]);
+    ok(&["set", &book, "A1", "0.2"]);
+    ok(&["name", &book, "rate", "A1"]);
+    ok(&["name", &book, "doubled", "=rate*2"]);
+    ok(&["set", &book, "B1", "=rate+1"]);
+
+    ok(&["name", &book, "rate", "--rename", "vat"]);
+    assert_eq!(ok(&["get", &book, "B1", "--formula"]).trim(), "=vat+1");
+    assert_eq!(ok(&["name", &book, "doubled"]).trim(), "vat*2");
+    assert!(
+        !grind(&["sheet", "name", &book, "rate"]).status.success(),
+        "the old name is gone"
+    );
+    assert!(
+        !grind(&["sheet", "name", &book, "vat", "--rename", "doubled"])
+            .status
+            .success(),
+        "a clash is refused rather than merged"
+    );
+}
+
 /// **D8's exit criterion**: a generated document's totals asserted — by the script that generated
 /// it, through `grind test`, which fails the command when an assertion does and points at its
 /// line.

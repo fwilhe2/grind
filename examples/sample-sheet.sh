@@ -486,6 +486,14 @@ sheet rename "$out/renamed.fods" Budget Ledger >/dev/null
 sheet view "$out/renamed.fods" B8:B8 --formulas
 sheet name "$out/renamed.fods" budgeted   # the named expression followed too
 
+# The same refactoring for a *name*: `budgeted` becomes `planned`, and `SUM(budgeted)` in J1,
+# `biggestBudget`'s own definition and every other use follow — an AST rewrite again, so the
+# function `RATE(…)` or a string spelling the old name would be left alone.
+say "rename: a name, and every formula and name that uses it"
+sheet name "$out/renamed.fods" budgeted --rename planned >/dev/null
+sheet view "$out/renamed.fods" J1:J1 --formulas
+sheet name "$out/renamed.fods" biggestBudget
+
 # --- lint: what the document says about itself ---------------------------------------------
 # `doc/dsl.md` §4.3, D6. The rules are about *documents*, which is why no third-party linter can
 # have them: a cached value that disagrees with its formula, a formula naming a sheet that is
