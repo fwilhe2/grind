@@ -34,6 +34,7 @@
 
 pub mod code;
 pub mod command;
+pub mod import;
 pub mod palette;
 pub mod problems;
 pub mod sheet;
@@ -71,7 +72,11 @@ const UNTITLED_TEXT: &str = "untitled.fodt";
 /// Both document types and all three forms in one list, for `spreadsheet_filters`' reason in
 /// the GTK window: packaged, flat and projected are the same document to everyone but the
 /// writer, and the kind is read from the bytes (`grind_core::kind`) rather than the name.
+#[cfg(not(feature = "xlsx"))]
 const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind";
+/// And an Excel workbook, which is imported on arrival (`import.rs`, X6).
+#[cfg(feature = "xlsx")]
+const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm";
 /// Delimited text, including `.txt`, which is what a great many exports are called — the
 /// delimiter is sniffed from the content, so the name never has to carry it.
 const CSV_TYPES: &str = ".csv,.tsv,.tab,.txt,text/csv";
@@ -824,6 +829,14 @@ impl Shell {
     /// empty document rather than an error. Deciding first is what makes one bundle able to
     /// hold two document types honestly.
     fn open(&self, name: String, bytes: &[u8]) {
+        // A workbook is imported first and arrives as the flat ODF document it became, under
+        // the name it will download as.
+        let (name, bytes, summary) = match import::workbook(&name, bytes) {
+            Some(Ok(imported)) => (imported.name, imported.odf, Some(imported.summary)),
+            Some(Err(error)) => return self.set_message(error),
+            None => (name, bytes.to_vec(), None),
+        };
+        let bytes = bytes.as_slice();
         let opened = match kind(bytes) {
             Some(DocumentKind::Spreadsheet) => self.sheet.open(&name, bytes).map(|()| Mode::Sheet),
             Some(DocumentKind::Text) => self.text.open(&name, bytes).map(|()| Mode::Text),
@@ -845,7 +858,7 @@ impl Shell {
                 if let Err(error) = self.show(mode) {
                     web_sys::console::error_1(&error);
                 }
-                self.set_message(format!("Opened {name}"));
+                self.set_message(summary.unwrap_or_else(|| format!("Opened {name}")));
             }
             // Tolerance is the reader's job, not the shell's: if the core will not take it,
             // saying why is all there is to do.

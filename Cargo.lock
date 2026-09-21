@@ -987,6 +987,7 @@ dependencies = [
  "async-channel",
  "grind-core",
  "grind-sheet",
+ "grind-xlsx",
  "gtk4",
  "libadwaita",
 ]
@@ -1007,6 +1008,7 @@ dependencies = [
  "async-channel",
  "grind-core",
  "grind-text",
+ "grind-xlsx",
  "gtk4",
  "libadwaita",
 ]
@@ -1018,6 +1020,7 @@ dependencies = [
  "grind-core",
  "grind-sheet",
  "grind-text",
+ "grind-xlsx",
  "ratatui",
  "unicode-width 0.2.2",
 ]
@@ -1029,6 +1032,7 @@ dependencies = [
  "grind-core",
  "grind-sheet",
  "grind-text",
+ "grind-xlsx",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -1043,6 +1047,7 @@ dependencies = [
  "grind-core",
  "grind-sheet",
  "grind-text",
+ "grind-xlsx",
  "windows",
 ]
 

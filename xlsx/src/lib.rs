@@ -26,7 +26,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: milestone X5.** The seam (X0) — the package, the flavour and markup
+//! **State of the build: phase 11 is done, X0 through X6.** The seam (X0) — the package, the flavour and markup
 //! compatibility machinery, the workbook's sheet list — every cell's **value** (X1): shared and
 //! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
 //! rule — every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
@@ -38,7 +38,9 @@
 //! height and track's hidden-ness; what the model has no slot for is an [`Appearance`], counted
 //! the same way. And the document level (X5): defined names, sheet names LibreOffice would not
 //! keep, autofilters, and every construct beside the cells — merges, charts, comments, pivot
-//! tables, rules — counted by kind ([`parts`]). The GUI shells opening a workbook are X6's.
+//! tables, rules — counted by kind ([`parts`]). And every shell opens a workbook (X6) through
+//! [`open`], [`suggested_name`] and [`Report::summary`]: a new, unsaved ODF document that nothing
+//! can save back over the workbook.
 
 use std::fmt;
 use std::path::Path;
@@ -216,6 +218,40 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     Ok((document, report))
 }
 
+/// What a **shell** opens (X6): the workbook imported and written as a flat ODF document,
+/// ready for `App::open_bytes` under [`suggested_name`], with the report beside it.
+///
+/// Bytes rather than a `Document` because `grind_sheet::App` never takes one — its only door
+/// is `open_bytes`, and this phase adds nothing to the core (`doc/xlsx-import.md`, risk 6). The
+/// detour is the identity loop A′ already asserts over every corpus workbook: an imported
+/// document written by our writer and read by our reader is the same document. It costs one
+/// write and one read, about a second and a half for half a million cells in a release build.
+///
+/// Flat because `doc/flat-first.md` says so, and the form is invisible anyway: the shell holds
+/// the document in memory and the user picks the form when they save.
+pub fn open(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
+    let (document, report) = import_bytes(bytes)?;
+    let odf = grind_sheet::write_bytes(&document, grind_sheet::Form::Flat)
+        .map_err(|e| Error::Xml(format!("the imported document would not write: {e}")))?;
+    Ok((odf, report))
+}
+
+/// The name an imported workbook goes by until it is saved: `budget.xlsx` becomes
+/// `budget.fods`, the flat form `doc/flat-first.md` makes every save dialog's default.
+///
+/// **A shell must never save back to the workbook's own path.** One way in, never out
+/// (`doc/not-doing.md` §1): an imported document is a new, unsaved ODF document, and writing
+/// ODF into a file called `.xlsx` would be the one way this filter could destroy a user's data.
+/// This is the name to offer in the save dialog; the path to save *to* is `None` until the
+/// user picks one.
+pub fn suggested_name(workbook: &str) -> String {
+    let stem = match workbook.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && !ext.contains(['/', '\\']) => stem,
+        _ => workbook,
+    };
+    format!("{stem}.fods")
+}
+
 /// The filesystem twin. `import_bytes` is the real function — rule 5, and the browser has no
 /// filesystem.
 pub fn import_file(path: &Path) -> Result<(Document, Report)> {
@@ -225,6 +261,17 @@ pub fn import_file(path: &Path) -> Result<(Document, Report)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_imported_workbook_is_offered_under_an_odf_name() {
+        assert_eq!(suggested_name("budget.xlsx"), "budget.fods");
+        assert_eq!(
+            suggested_name("/home/a/Q3 plan.xlsm"),
+            "/home/a/Q3 plan.fods"
+        );
+        assert_eq!(suggested_name("no-extension"), "no-extension.fods");
+        assert_eq!(suggested_name("dir.v2/book"), "dir.v2/book.fods");
+    }
 
     #[test]
     fn nothing_that_is_not_a_package_sniffs_as_one() {

@@ -22,6 +22,7 @@ mod app;
 mod chrome;
 mod code;
 mod help;
+mod import;
 mod pick;
 mod problems;
 mod sheet;
@@ -131,6 +132,11 @@ fn main() -> ExitCode {
 /// What kind of document a file holds, read from its bytes.
 fn sniff(path: &Path) -> io::Result<DocumentKind> {
     let bytes = std::fs::read(path)?;
+    // An Excel workbook is a spreadsheet this shell *imports* (`import.rs`). `grind_core::kind`
+    // does not know it, and should not: it answers which ODF document type some bytes are.
+    if import::is_workbook(&bytes) {
+        return Ok(DocumentKind::Spreadsheet);
+    }
     grind_core::kind(&bytes).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -147,11 +153,22 @@ fn describe(kind: DocumentKind) -> &'static str {
     }
 }
 
-fn run_sheet(path: Option<PathBuf>) -> io::Result<()> {
+fn run_sheet(mut path: Option<PathBuf>) -> io::Result<()> {
     let core = Arc::new(grind_sheet::App::new());
-    if let Some(path) = &path {
-        core.open_file(path)
-            .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    let mut imported = None;
+    if let Some(given) = path.clone() {
+        let bytes = std::fs::read(&given)?;
+        if import::is_workbook(&bytes) {
+            // No path: `:w` must be told where the ODF document goes.
+            imported = Some(
+                import::open(&core, &given, &bytes)
+                    .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
+            );
+            path = None;
+        } else {
+            core.open_bytes(&given.display().to_string(), &bytes)
+                .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?;
+        }
     }
     let redraw = Arc::new(RedrawFlag::default());
     core.set_observer(redraw.clone());
@@ -161,7 +178,7 @@ fn run_sheet(path: Option<PathBuf>) -> io::Result<()> {
     let result = event_loop(
         &mut terminal,
         &redraw,
-        &mut sheet::app::App::new(core, redraw.clone(), path),
+        &mut sheet::app::App::new(core, redraw.clone(), path).imported(imported),
     );
     restore_terminal();
     result

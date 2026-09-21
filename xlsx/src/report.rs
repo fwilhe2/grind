@@ -150,6 +150,71 @@ impl Report {
         }
     }
 
+    /// One sentence for a shell's notice bar (X6): what arrived, and — the half a person has to
+    /// decide about — the kinds of thing that did not, largest first, at most three named.
+    ///
+    /// Written here rather than in each shell so that four shells say the same sentence about
+    /// the same import, and the CLI's report stays the long form of it.
+    pub fn summary(&self) -> String {
+        let plural = |n: usize, one: &str| match n {
+            1 => format!("1 {one}"),
+            n => format!("{n} {one}s"),
+        };
+        let carried = format!(
+            "Imported from Excel: {}, {}",
+            plural(self.sheets, "sheet"),
+            plural(self.cells, "cell")
+        );
+        if self.lossless() {
+            return format!("{carried}; nothing was lost.");
+        }
+        // Every loss, by what a person would call it, counted the way the report counts it.
+        let mut losses: Vec<(usize, String)> = Vec::new();
+        losses.extend(self.dropped.iter().map(|(k, n)| (*n, k.label().to_owned())));
+        losses.extend(
+            self.appearance_lost
+                .iter()
+                .map(|(k, n)| (*n, k.label().to_owned())),
+        );
+        losses.extend(
+            self.formats_lost
+                .iter()
+                .map(|(k, n)| (*n, format!("{} (format)", k.label()))),
+        );
+        // A refusal that is also a `Dropped` kind (an array formula, a structured reference,
+        // an external link) is already in the list above; the rest are counted here once.
+        let formulas: usize = self
+            .refused
+            .iter()
+            .filter(|(class, _)| class.dropped().is_none())
+            .map(|(_, n)| n)
+            .sum();
+        if formulas > 0 {
+            losses.push((formulas, "formula kept as its value".to_owned()));
+        }
+        if !self.names_lost.is_empty() {
+            losses.push((self.names_lost.len(), "defined name".to_owned()));
+        }
+        if !self.renamed.is_empty() {
+            losses.push((self.renamed.len(), "sheet renamed".to_owned()));
+        }
+        if self.over_budget > 0 {
+            losses.push((self.over_budget, "cell past the size limit".to_owned()));
+        }
+        losses.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        let named: Vec<String> = losses
+            .iter()
+            .take(3)
+            .map(|(n, what)| format!("{what} ×{n}"))
+            .collect();
+        let more = match losses.len().saturating_sub(3) {
+            0 => String::new(),
+            1 => " and 1 more kind".to_owned(),
+            n => format!(" and {n} more kinds"),
+        };
+        format!("{carried}; not carried: {}{more}.", named.join(", "))
+    }
+
     /// Did the conversion lose anything at all? `--strict` is this question.
     ///
     /// An untranslated formula counts: the cell kept Excel's value, so the document is not
@@ -170,6 +235,29 @@ impl Report {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_summary_names_the_largest_losses_first() {
+        let mut report = Report {
+            sheets: 2,
+            cells: 120,
+            ..Report::default()
+        };
+        assert_eq!(
+            report.summary(),
+            "Imported from Excel: 2 sheets, 120 cells; nothing was lost."
+        );
+        report.drop_many(Dropped::MergedCells, 7);
+        report.drop_one(Dropped::Chart);
+        report.lose(crate::styles::Appearance::Underline);
+        report.lose(crate::styles::Appearance::Underline);
+        report.renamed.push(("A/B".into(), "A_B".into()));
+        assert_eq!(
+            report.summary(),
+            "Imported from Excel: 2 sheets, 120 cells; not carried: merged range ×7, \
+             underline ×2, chart ×1 and 1 more kind."
+        );
+    }
 
     #[test]
     fn a_fresh_report_is_lossless() {

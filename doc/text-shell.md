@@ -122,6 +122,10 @@ was being asked about would re-enter a lock it is already inside. Kind and style
 every shell keys a face off anyway: `Title` and `Subtitle` are paragraphs whose only signal is
 the name.
 
+**A workbook given to the word processor's GTK window is a spreadsheet** (X6): it is offered to
+`grind-sheet-gtk` with the same banner an `.ods` gets, and that window imports it. The only
+Excel code in this binary is `grind_xlsx::sniff`, behind the `xlsx` feature.
+
 ## The gaps, written down
 
 Deferred by decision, not omission. Nothing here is reachable in one shell and missing from

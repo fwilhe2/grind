@@ -18,7 +18,14 @@ path = "src/main.rs"
 # `MimeType=` is how a desktop associates an application with a file type and one entry
 # claiming both spreadsheets and text documents is what makes "Open With" useless
 # (`doc/suite.md`, "One binary per document type — for GTK only").
+# Only for `grind_xlsx::sniff` (X6): a workbook arriving here is a spreadsheet, and is handed
+# to `grind-sheet-gtk`, which imports it. On by default, as everywhere else.
+[features]
+default = ["xlsx"]
+xlsx = ["dep:grind-xlsx"]
+
 [dependencies]
+grind-xlsx = { path = "../xlsx", optional = true }
 grind-core = { path = "../core" }
 grind-text = { path = "../text" }
 # The same two toolkit versions `ui_sheet_gtk` pins, for the same reasons — see its `Cargo.toml`.

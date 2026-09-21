@@ -134,6 +134,13 @@ and for a stronger reason: a diagnostic is document-type-neutral by construction
 halves differ only in what an address means, and each resolves one the way it already resolves
 any other.
 
+**An Excel workbook opens** (`doc/xlsx-import.md`, X6) from the command line: `grind-tui budget.xlsx` is a spreadsheet, the title bar says `budget.fods`, the status line carries the report and names the `:w` that would save it, and `:q` refuses to lose it — sniffed from the bytes,
+imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
+under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
+sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
+this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).

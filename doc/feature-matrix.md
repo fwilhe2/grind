@@ -207,6 +207,7 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ |
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ |
+| Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● |
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● |
 | Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ |
@@ -236,6 +237,13 @@ the sniffed delimiter plus `dates`, which is ISO-only and so cannot misread a fi
 dialog for `--text`, `--formulas`, `--locale`, `--trim` or a delimiter the sniffer got wrong.
 `grind sheet import-csv` has all seven (R9), and `doc/not-doing.md`'s "a CSV column typed by
 hand" is the row this sits under.
+ᵏ `grind sheet import`, and in every window the ordinary Open (X6, `doc/xlsx-import.md`): sniffed
+from the bytes, imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF
+document with no path** under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), so
+Save asks where to put it and nothing can write ODF over the workbook. Every shell shows the
+same `Report::summary` sentence — a toast, the status line, the page's message, the notice bar.
+The word processor's GTK window hands a workbook to the spreadsheet one, as it does an `.ods`.
+Behind each crate's `xlsx` feature, on by default.
 
 ## 7. Word processor
 

@@ -76,7 +76,7 @@ const FLOOR: usize = 76;
 const PENDING: &[(&str, &str, &str)] = &[
     // Empty since X5, which satisfied the last eleven: every claim the manifest makes is now
     // either held or named in one of the two tables below. Kept, and still checked in both
-    // directions, because the corpus grows and X6 is still to come.
+    // directions, because the corpus grows.
 ];
 
 /// Claims this build answers differently **on purpose**: `(fixture, claim, why ours stands)`.

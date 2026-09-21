@@ -19,7 +19,7 @@
 //! paid for by what they carry that nothing else could, and argued in `doc/tui-shell.md`.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ratatui::Frame;
@@ -142,6 +142,9 @@ pub struct App {
     problems: crate::problems::Problems,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
+    /// The name an imported workbook goes by until `:w NAME` saves it (`crate::import`). While
+    /// set the document is unsaved, whatever the undo stack says — an import clears it.
+    imported: Option<String>,
     quit: bool,
 }
 
@@ -168,8 +171,27 @@ impl App {
             source: None,
             problems: crate::problems::Problems::default(),
             help_height: 20,
+            imported: None,
             quit: false,
         }
+    }
+
+    /// Start as an imported workbook: named after it, unsaved, with no path to write to, and
+    /// the report's sentence on the status bar.
+    pub fn imported(mut self, imported: Option<crate::import::Imported>) -> Self {
+        if let Some(imported) = imported {
+            let short = Path::new(&imported.name)
+                .file_name()
+                .map_or(imported.name.clone(), |n| n.to_string_lossy().into_owned());
+            self.status = format!("{} — :w {short} to save it", imported.summary);
+            self.imported = Some(imported.name);
+        }
+        self
+    }
+
+    /// Whether there is anything a quit would lose.
+    fn unsaved(&self) -> bool {
+        self.core.can_undo() || self.imported.is_some()
     }
 
     pub fn should_quit(&self) -> bool {
@@ -1284,20 +1306,25 @@ impl App {
 
     fn cmd_write(&mut self, path: Option<&str>) {
         let Some(target) = path.map(PathBuf::from).or_else(|| self.path.clone()) else {
-            self.status = "no file name".to_string();
+            self.status = match &self.imported {
+                // An imported workbook has no path on purpose; name the one it would take.
+                Some(name) => format!("no file name — :w {name}"),
+                None => "no file name".to_string(),
+            };
             return;
         };
         match self.core.save_file(&target) {
             Ok(()) => {
                 self.status = format!("wrote {}", target.display());
                 self.path = Some(target);
+                self.imported = None;
             }
             Err(e) => self.status = e.to_string(),
         }
     }
 
     fn cmd_quit(&mut self, force: bool) {
-        if !force && self.core.can_undo() {
+        if !force && self.unsaved() {
             self.status = "unsaved changes — :q! to discard, :w to save".to_string();
             return;
         }
@@ -1492,6 +1519,7 @@ impl App {
         self.path
             .as_ref()
             .map(|p| p.display().to_string())
+            .or_else(|| self.imported.clone())
             .unwrap_or_else(|| "untitled".to_owned())
     }
 
@@ -1626,9 +1654,12 @@ impl App {
             .ok();
 
         // --- the title bar: which document, and which of its sheets ---
-        let name = chrome::file_name(self.path.as_deref());
+        let name = match (&self.path, &self.imported) {
+            (None, Some(imported)) => chrome::file_name(Some(Path::new(imported))),
+            (path, _) => chrome::file_name(path.as_deref()),
+        };
         let mut left = vec![chrome::badge("SHEET")];
-        left.extend(chrome::document(&name, self.core.can_undo()));
+        left.extend(chrome::document(&name, self.unsaved()));
         let sheets: Vec<String> = (0..self.core.sheet_count())
             .map(|index| self.core.sheet_name(index).unwrap_or_default())
             .collect();
@@ -1988,6 +2019,25 @@ mod tests {
             Arc::new(RedrawFlag::default()),
             None,
         )
+    }
+
+    /// An imported workbook comes up unsaved with no path (X6): `:q` will not lose it, and
+    /// `:w` will not guess where it goes — it names the file it would take instead.
+    #[test]
+    fn an_imported_workbook_is_unsaved_and_has_nowhere_to_write_yet() {
+        let mut app = app().imported(Some(crate::import::Imported {
+            name: "/tmp/budget.fods".into(),
+            summary: "Imported from Excel: 1 sheet, 3 cells; nothing was lost.".into(),
+        }));
+        assert!(app.status.contains(":w budget.fods"), "{}", app.status);
+        assert_eq!(app.document_name(), "/tmp/budget.fods");
+        type_str(&mut app, ":q");
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.should_quit(), "an import is unsaved");
+        type_str(&mut app, ":w");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.status, "no file name — :w /tmp/budget.fods");
+        assert!(app.path.is_none());
     }
 
     fn status_line(app: &mut App, width: u16, height: u16) -> String {

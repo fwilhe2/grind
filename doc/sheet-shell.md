@@ -637,6 +637,13 @@ fixed property bar, plain popover menus, and a search box — the last of these 
 running from `M-x` and `:` through every editor since. None of this is a legal opinion; it is
 the design rule, and the design rule is: diverge, rather than rely on anything having expired.
 
+**An Excel workbook opens** (`doc/xlsx-import.md`, X6) from the Open dialog — *All Spreadsheets*, *OpenDocument Spreadsheet* and *Excel Workbook* filters — or the command line: the title is `budget.fods`, *Unsaved changes*, the report is a ten-second toast, and Ctrl+S opens Save As on `budget.fods`. Verified in the real window under Xvfb, edit and save included. It is not added to Recent: reopening it would import it again rather than open what was saved — sniffed from the bytes,
+imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
+under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
+sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
+this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+
 ## The gaps, written down
 
 **The code view is read-only** (`doc/dsl.md` §6, D9), and is the one thing in this window that

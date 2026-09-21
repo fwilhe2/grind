@@ -264,6 +264,15 @@ impl Pane {
         }
     }
 
+    /// What the document is called and where Save As starts: its path, or — for an imported
+    /// workbook, which has none — the ODF name beside the workbook (`import.rs`).
+    fn suggested(&self) -> Option<PathBuf> {
+        match self {
+            Pane::Sheet(sheet) => sheet.path.clone().or_else(|| sheet.imported.clone()),
+            _ => self.path(),
+        }
+    }
+
     /// Which document kind this pane is showing, for the Save dialog's filters and suggested
     /// name — `dialog::save_path` needs to know whether to offer `.fods`/`.ods` or
     /// `.fodt`/`.odt`.
@@ -311,7 +320,7 @@ impl Pane {
         if matches!(self, Pane::Welcome(_)) {
             return welcome::TITLE.to_owned();
         }
-        let path = self.path();
+        let path = self.suggested();
         match &path {
             Some(path) => path
                 .file_name()
@@ -349,7 +358,10 @@ impl Pane {
         match result {
             Ok(()) => {
                 match self {
-                    Pane::Sheet(sheet) => sheet.path = Some(path.to_owned()),
+                    Pane::Sheet(sheet) => {
+                        sheet.path = Some(path.to_owned());
+                        sheet.imported = None;
+                    }
                     Pane::Text(text) => text.path = Some(path.to_owned()),
                     Pane::Welcome(_) => {}
                 }
@@ -399,6 +411,9 @@ impl Welcome {
 struct Sheet {
     app: grind_sheet::App,
     path: Option<PathBuf>,
+    /// For an imported workbook, which has no `path`: the ODF name beside it that the title shows
+    /// and Save As starts from (`import.rs`, X6). Cleared by the first save.
+    imported: Option<PathBuf>,
     sheet: usize,
     geom: GridGeom,
     theme: Theme,
@@ -1227,13 +1242,27 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
 
 fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
     let app = grind_sheet::App::new();
-    if let Some(path) = &path {
-        app.open_file(path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
+    let imported = match &path {
+        Some(path) => crate::import::open(&app, path)?,
+        None => None,
+    };
+    let mut sheet = opened_sheet_on(app, path, theme);
+    // An imported workbook: no path for Save to write over, unsaved, and the report's sentence
+    // on the notice bar, where a state the document is in belongs.
+    if let Some(imported) = imported {
+        sheet.path = None;
+        sheet.imported = Some(imported.suggested);
+        sheet.dirty = true;
+        sheet.say(Some(imported.summary));
     }
-    Ok(Sheet {
+    Ok(sheet)
+}
+
+fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -> Sheet {
+    Sheet {
         app,
         path,
+        imported: None,
         sheet: 0,
         geom: GridGeom {
             strip_h: draw::STRIP_H,
@@ -1272,7 +1301,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
         field_brush: None,
         surrogate: None,
         overlays: grind_sheet::view::Overlays::NONE,
-    })
+    }
 }
 
 /// Draw one frame of a document to a `.bmp` and exit — **with no window, no compositor and no
@@ -3982,7 +4011,7 @@ fn save(hwnd: HWND) -> bool {
 fn save_as(hwnd: HWND) -> bool {
     // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
     let (suggested, kind) =
-        unsafe { with_pane(hwnd, |pane| (pane.path(), pane.kind())) }.unwrap_or((None, None));
+        unsafe { with_pane(hwnd, |pane| (pane.suggested(), pane.kind())) }.unwrap_or((None, None));
     // Nothing to save: the welcome screen holds no document, and `menu::on_welcome` keeps this verb
     // off its menu bar — so this is only reachable by a stale accelerator, and saying nothing is
     // the right answer to one.

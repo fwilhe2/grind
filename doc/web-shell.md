@@ -85,6 +85,13 @@ clicking a row goes there and puts the document back. A pane rather than a dialo
 shell's one design decision applied again: a browser tab has no window manager to keep a second
 window in front of the first. `problems.rs` is shared by both panes, like `code.rs`.
 
+**An Excel workbook opens** (`doc/xlsx-import.md`, X6) from the picker, which lists `.xlsx` and `.xlsm`, or from `?doc=`: the page's message line says the report, and the download is `budget.fods`. A page cannot overwrite the file it was given anyway, so here the rename is the whole of the rule — sniffed from the bytes,
+imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
+under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
+sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
+this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).

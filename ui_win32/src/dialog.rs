@@ -169,10 +169,16 @@ fn kind_label(kind: DocumentKind) -> &'static str {
 /// Held as owned UTF-16 by the caller, because `COMDLG_FILTERSPEC` is two borrowed pointers and
 /// the dialog reads them after `SetFileTypes` returns.
 fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
-    vec![(
+    let mut filters = vec![(
         gdi::wide("OpenDocument Spreadsheet or Text"),
         gdi::wide("*.fods;*.ods;*.fodt;*.odt;*.grind"),
-    )]
+    )];
+    // A workbook is imported as a new document (`import.rs`, X6), so it is a filter of its own
+    // under the name a person knows it by — second, so the ODF documents still greet the user.
+    if cfg!(feature = "xlsx") {
+        filters.push((gdi::wide("Excel Workbook"), gdi::wide("*.xlsx;*.xlsm")));
+    }
+    filters
 }
 
 /// The Save dialog's filters, for whichever `kind` the open pane is. **Flat first**

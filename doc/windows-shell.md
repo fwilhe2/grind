@@ -706,6 +706,13 @@ anything that is not also an elevated installer. None of that is code this crate
 `.exe` opens whatever it is handed regardless of how it got handed it, which is the same
 `args.rs` behaviour a double-click and a command line both already exercise.
 
+**An Excel workbook opens** (`doc/xlsx-import.md`, X6) from File ▸ Open — an *Excel Workbook* filter beside the ODF one — or the command line: the caption is `*budget.fods`, the notice bar carries the report, and Save opens Save As in the workbook's folder — sniffed from the bytes,
+imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
+under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
+sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
+this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+
 ## What it will not do
 
 R10 allows per-shell feature gaps and requires them to be named. These are the named ones.

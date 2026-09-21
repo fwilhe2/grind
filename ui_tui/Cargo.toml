@@ -14,7 +14,13 @@ repository.workspace = true
 name = "grind-tui"
 path = "src/main.rs"
 
+# The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
+[features]
+default = ["xlsx"]
+xlsx = ["dep:grind-xlsx"]
+
 [dependencies]
+grind-xlsx = { path = "../xlsx", optional = true }
 # One binary, both document types: `grind_core::kind` decides which shell runs (R10).
 grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }

@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# The xlsx import filter — phase 11, built through X5
+# The xlsx import filter — phase 11, done (X0–X6)
 
 This is the work plan for reading `.xlsx`, and the document that holds it to the rules once
 building starts. It is normative for this phase the way `doc/sheet-shell.md` is for phase 9.
@@ -671,7 +671,7 @@ feature matrix.
 | X3 | **Number formats** — **DONE (2026-09-20)** | built-ins by meaning, the code parser, sections → `style:map`, `Unspellable` and its two severities, three measured rules in the core's renderer | loop D compares **displayed text** per cell wherever both sides formatted it — **68 workbooks, 501,335 cells, 0 disagreements, ten named divergences** — and the generated corpus asserts every `display` the manifest states: **89 of 107**, with the other 18 named in `UNSPELLABLE` by the `Part` that does not exist |
 | X4 | **Styles and geometry** — **DONE (2026-09-21)** | fonts, fills, borders, alignment, theme and indexed colours; column widths, row heights and hidden tracks; `Appearance` for what has no slot | loop D compares every carried cell's **style** the way loop C does — borders numerically, everything else exactly — and every column's width, row's height and track's hidden-ness: **68 workbooks, 0 style or track disagreements, eleven named divergences** of X4's own, every one the oracle approximating or guessing where this build counts (below); loop A′ imports all 362 of LibreOffice's workbooks with the identity check extended to styles and tracks |
 | X5 | **The document level** — **DONE (2026-09-21)** | defined names, sheet order, visibility and renames, merges, autofilters, the parts beside a worksheet, the report as JSON, `--strict` | `grind sheet import --format json` counts every dropped construct — **every `dropped:` claim in the generated corpus holds, and `PENDING` is empty**; `--strict` exits non-zero and writes nothing when anything was lost (`cli/tests/cli.rs`) |
-| X6 | **The shells** | the GTK Open dialog learns `.xlsx` (import → a new unsaved document, retitled `.ods`), file filters, the wasm shell's note | open an `.xlsx` in the GUI, edit it, save it as `.ods` |
+| X6 | **The shells** — **DONE (2026-09-21)** | every shell's ordinary Open imports a workbook — the GNOME window, the terminal, the browser page and the Windows window — as a new unsaved document named `budget.fods` with no path, and says the report's sentence; file filters; the word processor's window hands one over | **done in the real window**: `sample.xlsx` opened in `grind-sheet-gtk` under Xvfb, a cell typed, Ctrl+S offered `sample.fods` in Save As, the result read back and validated with `jing`, and the workbook's checksum unchanged |
 
 ### What X0 found
 
@@ -883,7 +883,7 @@ Seven things it found on the way:
 **`PENDING` is empty.** X5 satisfied its last eleven entries — nine report kinds, the sheet
 names, and D3's formula naming a sheet-local name — and every claim the generated corpus makes
 is now either held or named in `UNSPELLABLE` or `DECIDED_OTHERWISE`. The table stays, checked in
-both directions, because the corpus grows and X6 is still to come.
+both directions, because the corpus grows.
 
 Five things on the way:
 
@@ -917,6 +917,37 @@ Five things on the way:
 unreadable (mostly `Sheet!#REF!`), four structured references, two inline arrays, one union —
 and every construct counted by kind: 741 merges, 152 conditional-format rules, 96 pivot tables,
 72 drawings, 40 validations, 28 comments, 14 protections, ten charts.
+
+### What X6 found
+
+**The exit criterion, in the real window.** `grind-sheet-gtk sample.xlsx` under Xvfb came up
+titled `sample.fods`, *Unsaved changes*, with the report's sentence in a toast; typing into B4
+and pressing Ctrl+S opened Save As on `sample.fods` with the flat filter selected; the file it
+wrote holds the edit and Excel's `B2*2` as `=[.B2]*2`, validates against the schema, and
+`sample.xlsx` was byte-identical afterwards. The plan said *retitled `.ods`*; it is `.fods`,
+because `doc/flat-first.md` is normative for every save dialog's default and outranks a line
+written before it.
+
+Four things on the way:
+
+1. **The core needed no door for a `Document`.** A shell's only way in is
+   `App::open_bytes`, and this phase promised nothing in the core; so `grind_xlsx::open`
+   imports, writes flat ODF and hands the shell bytes. That detour is exactly the identity loop
+   A′ already asserts over all 362 corpus workbooks, so it is proved rather than hoped, and it
+   costs a write and a read — about a second and a half for half a million cells.
+2. **The dangerous path is Save, not Open.** Opening a workbook "transparently" is easy; the
+   thing to get right is that the imported document has **no path**, so every shell's Save
+   becomes Save As (or, in the terminal, `:w` names the file it would take and waits). Each
+   shell has a test that an imported document has nowhere to write until somebody chooses.
+3. **"Unsaved" needed a second meaning in two shells.** The GNOME window swallows the
+   notification an open causes so a document comes up clean, and the terminal reads "modified"
+   off the undo stack, which an open clears. An import has to come up *modified* in both — the
+   window lets the notification through for a workbook, and the terminal carries the imported
+   name as state that `:q` refuses to lose.
+4. **One sentence, five surfaces.** `Report::summary` — what arrived, and the three largest
+   kinds of loss — is written once in `grind-xlsx`, so a toast, a status line, a message line
+   and a notice bar cannot describe the same import four ways. The CLI's report stays its long
+   form.
 
 ---
 

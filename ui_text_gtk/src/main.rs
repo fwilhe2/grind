@@ -1239,12 +1239,17 @@ fn document_name(path: Option<&Path>) -> String {
 }
 
 /// Whether a file is a spreadsheet, decided from its bytes rather than its name — which is
-/// what `grind_core::kind` is for, and it answers before any parsing.
+/// what `grind_core::kind` is for, and it answers before any parsing. An Excel workbook is one
+/// too (X6): `grind-sheet-gtk` imports it, so the handoff reaches it the same way.
 fn is_spreadsheet(path: &Path) -> bool {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| kind(&bytes))
-        .is_some_and(|found| found == DocumentKind::Spreadsheet)
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    #[cfg(feature = "xlsx")]
+    if grind_xlsx::sniff(&bytes) {
+        return true;
+    }
+    kind(&bytes).is_some_and(|found| found == DocumentKind::Spreadsheet)
 }
 
 fn describe_kind(kind: &BlockKind, style: Option<&str>) -> String {
@@ -1343,6 +1348,14 @@ mod tests {
         std::fs::write(&path, text).expect("writes");
         assert!(!is_spreadsheet(&path));
         let _ = std::fs::remove_file(&path);
+        #[cfg(feature = "xlsx")]
+        assert!(
+            is_spreadsheet(Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../xlsx/tests/data/sample.xlsx"
+            ))),
+            "a workbook is handed to the spreadsheet window, which imports it"
+        );
     }
 
     /// A flat spreadsheet, spelled out rather than depended on: this crate must not have

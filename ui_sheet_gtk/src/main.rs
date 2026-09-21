@@ -30,6 +30,7 @@ mod formatting;
 mod formula_ux;
 mod geom;
 mod grid;
+mod import;
 mod keymap;
 mod lint;
 mod palette;
@@ -64,7 +65,7 @@ fn main() -> ExitCode {
     // with an exit code rather than an empty window with a dialog in front of it. Like
     // every other shell here, a missing file is an error and not a new document.
     let mut args = std::env::args_os().skip(1);
-    let path: Option<PathBuf> = args.next().map(PathBuf::from);
+    let mut path: Option<PathBuf> = args.next().map(PathBuf::from);
     // `--render-to <png>` draws one frame, writes it and exits. Not a user feature: it is
     // how a machine checks that the grid still draws, since a custom-drawn widget has no
     // other assertable output and `editor`'s §5 rule is to exercise every boundary with a
@@ -99,17 +100,33 @@ fn main() -> ExitCode {
             _ => {}
         }
     }
-    if let Some(path) = &path
-        && let Err(error) = app.open_file(path)
-    {
-        eprintln!("grind-sheet-gtk: {}: {error}", path.display());
-        return ExitCode::FAILURE;
+    // A workbook on the command line is imported like one picked in the dialog: it comes up
+    // unsaved, under an ODF name, with no path for Save to write over.
+    let mut imported = None;
+    if let Some(given) = path.take() {
+        let opened = std::fs::read(&given)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| import::open(&app, &given, &bytes));
+        match opened {
+            Ok(opened) => {
+                path = opened.path;
+                imported = opened.imported;
+            }
+            Err(error) => {
+                eprintln!("grind-sheet-gtk: {}: {error}", given.display());
+                return ExitCode::FAILURE;
+            }
+        }
     }
+    let imported = Rc::new(RefCell::new(imported));
 
     let application = adw::Application::builder().application_id(APP_ID).build();
     application.connect_activate(move |application| {
         theme::install();
         let ui = Ui::build(application, &app, path.clone());
+        if let Some(imported) = imported.borrow_mut().take() {
+            ui.adopt_import(imported);
+        }
         if overlays.any() {
             ui.grid.set_overlays(overlays);
         }
@@ -157,6 +174,9 @@ struct Ui {
     undo: gtk::Button,
     redo: gtk::Button,
     path: RefCell<Option<PathBuf>>,
+    /// The name an imported workbook goes by until it is saved (`import.rs`) — shown as the
+    /// title and offered by Save As. `None` for every document that came from ODF.
+    imported: RefCell<Option<String>>,
     dirty: Cell<bool>,
     /// Set by a load, and consumed by the change it is about to cause — opening a document
     /// notifies like any other change, and it must not leave the new one marked as modified.
@@ -283,6 +303,7 @@ impl Ui {
             path: RefCell::new(path),
             dirty: Cell::new(false),
             loading: Cell::new(false),
+            imported: RefCell::new(None),
             closing: Cell::new(false),
         });
         ui.wire(application);
@@ -500,8 +521,11 @@ impl Ui {
 
     /// Everything derived from the document, in one place, run after every change.
     fn refresh(self: &Rc<Self>) {
-        self.title
-            .set_title(&document_name(self.path.borrow().as_deref()));
+        let title = match (&*self.path.borrow(), &*self.imported.borrow()) {
+            (None, Some(name)) => name.clone(),
+            (path, _) => document_name(path.as_deref()),
+        };
+        self.title.set_title(&title);
         self.title.set_subtitle(match self.dirty.get() {
             true => "Unsaved changes",
             false => "",
@@ -591,6 +615,7 @@ impl Ui {
         match self.app.save_file(path) {
             Ok(()) => {
                 *self.path.borrow_mut() = Some(path.to_owned());
+                *self.imported.borrow_mut() = None;
                 self.dirty.set(false);
                 // No "Saved" toast: the subtitle's "Unsaved changes" clearing is the
                 // confirmation, and routine success asking to be noticed is noise. A save
@@ -613,7 +638,12 @@ impl Ui {
         let dialog = gtk::FileDialog::builder()
             .title("Save As")
             .filters(&spreadsheet_save_filters())
-            .initial_name(save_name(self.path.borrow().as_deref()))
+            .initial_name(
+                self.imported
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| save_name(self.path.borrow().as_deref())),
+            )
             .build();
         dialog.save(
             Some(&self.window),
@@ -657,18 +687,43 @@ impl Ui {
     }
 
     fn load(self: &Rc<Self>, path: &Path) {
-        self.loading.set(true);
-        match self.app.open_file(path) {
-            Ok(()) => {
-                *self.path.borrow_mut() = Some(path.to_owned());
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) => return self.toast(&format!("Could not open: {error}")),
+        };
+        // The open's own notification is swallowed so an ODF document comes up unmodified. An
+        // imported workbook is *meant* to come up modified — nothing has saved it — so for one
+        // the notification is let through to mark it.
+        self.loading.set(!import::is_workbook(&bytes));
+        match import::open(&self.app, path, &bytes) {
+            Ok(opened) => {
+                *self.path.borrow_mut() = opened.path;
+                *self.imported.borrow_mut() = None;
                 self.grid.set_sheet(0);
-                remember_recent(path);
+                match opened.imported {
+                    Some(imported) => self.adopt_import(imported),
+                    None => remember_recent(path),
+                }
             }
             Err(error) => {
                 self.loading.set(false);
                 self.toast(&format!("Could not open: {error}"));
             }
         }
+    }
+
+    /// An imported workbook: named after it, unsaved, and the report's sentence where it
+    /// cannot be missed. Not added to the recent files — it is not a file this window can
+    /// open *as*, and reopening it would import it again rather than open what was saved.
+    fn adopt_import(self: &Rc<Self>, imported: import::Imported) {
+        *self.imported.borrow_mut() = Some(imported.name);
+        self.dirty.set(true);
+        self.refresh();
+        let toast = adw::Toast::builder()
+            .title(&imported.summary)
+            .timeout(10)
+            .build();
+        self.toasts.add_toast(toast);
     }
 
     // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
@@ -2198,7 +2253,27 @@ fn spreadsheet_filters() -> gio::ListStore {
     filter.add_pattern("*.grind");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
+    // A workbook is imported (`import.rs`), which is why it is a filter of its own rather
+    // than a pattern in the one above: it opens as a *new* document, and "Excel Workbook" is
+    // the name a person knows the format by. Both filters together first, so the default
+    // selection shows everything this window opens.
+    if cfg!(feature = "xlsx") {
+        let workbooks = gtk::FileFilter::new();
+        workbooks.set_name(Some("Excel Workbook"));
+        for pattern in ["*.xlsx", "*.xlsm"] {
+            workbooks.add_pattern(pattern);
+        }
+        let everything = gtk::FileFilter::new();
+        everything.set_name(Some("All Spreadsheets"));
+        for pattern in ["*.fods", "*.ods", "*.grind", "*.xlsx", "*.xlsm"] {
+            everything.add_pattern(pattern);
+        }
+        filters.append(&everything);
+        filters.append(&filter);
+        filters.append(&workbooks);
+    } else {
+        filters.append(&filter);
+    }
     filters
 }
 

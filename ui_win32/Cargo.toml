@@ -22,6 +22,11 @@ path = "src/main.rs"
 [build-dependencies]
 embed-resource = "3"
 
+# The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
+[features]
+default = ["xlsx"]
+xlsx = ["dep:grind-xlsx"]
+
 [dependencies]
 # One binary, both document types, chosen by `grind_core::kind` from the file's bytes (R10) —
 # `grind-tui`'s arrangement rather than the two GTK binaries'. The GTK shells are split because
@@ -29,6 +34,7 @@ embed-resource = "3"
 # executable registers as many as it likes, so the reason to split does not exist here
 # (`doc/windows-shell.md`, decision 1).
 grind-core = { path = "../core" }
+grind-xlsx = { path = "../xlsx", optional = true }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 
