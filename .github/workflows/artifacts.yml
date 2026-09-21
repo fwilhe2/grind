@@ -639,9 +639,9 @@ jobs:
           path: iso-root/
 
       # A handful of documents that exercise both panes: spreadsheets with formulas,
-      # conditional formatting, a chart and a table, plus one Writer document. All of them
-      # already live in the repo as corpus/fixture files — nothing here is generated, so this
-      # step is a `cp`, not a build.
+      # conditional formatting, a chart and a table, one Writer document, and four Excel
+      # workbooks for the import. All of them already live in the repo as corpus/fixture
+      # files — nothing here is generated, so this step is a `cp`, not a build.
       - name: Stage sample documents
         run: |
           set -eu
@@ -651,6 +651,12 @@ jobs:
           cp sheet/tests/data/samples/conditional-formatting.fods iso-root/samples/
           cp sheet/tests/data/samples/table.fods iso-root/samples/
           cp text/tests/data/edited-default-paragraph-style.fodt iso-root/samples/
+          # Excel workbooks, imported on open (doc/xlsx-import.md, X6): each comes up as a new,
+          # unsaved ODF document, with the import report on the notice bar.
+          cp xlsx/tests/data/sample.xlsx "iso-root/samples/Excel Sample.xlsx"
+          cp xlsx/tests/data/corpus/styles/colors.xlsx "iso-root/samples/Excel Colours.xlsx"
+          cp xlsx/tests/data/corpus/formulas/functions.xlsx "iso-root/samples/Excel Formulas.xlsx"
+          cp xlsx/tests/data/corpus/document/macro-enabled.xlsm "iso-root/samples/Excel Macros.xlsm"
           cat > iso-root/README.txt <<'EOF'
           Grind for Windows - test disc
           ==============================
@@ -666,6 +672,13 @@ jobs:
             conditional-formatting.fods       - conditional formatting rules
             table.fods                        - a plain grid
             edited-default-paragraph-style.fodt - a Writer document
+            Excel Sample.xlsx                 - a workbook that imports with nothing lost
+            Excel Colours.xlsx                - fills, fonts and theme colours
+            Excel Formulas.xlsx               - Excel formulas, translated to OpenFormula
+            Excel Macros.xlsm                 - its data opens; the macro is counted, never run
+
+          A workbook opens as a new, unsaved ODF document: Save asks where to put the
+          .fods, and nothing is ever written back over the Excel file.
 
           Run grind-win32.exe with a sample's path as its one argument to open it.
           EOF
