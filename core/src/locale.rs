@@ -41,13 +41,52 @@ pub struct Locale {
 ///
 /// The list is the discriminator, not an inventory of supported locales — anything absent
 /// gets the `.`/`,` pair, which is what English, Chinese, Japanese and Korean use.
-const COMMA_DECIMAL: [&str; 26] = [
+const COMMA_DECIMAL: [&str; 30] = [
     "af", "az", "be", "bg", "ca", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hr", "hu", "id",
-    "is", "it", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru",
+    "is", "it", "lt", "lv", "nb", "nl", "nn", "no", "pl", "pt", "ro", "ru", "sv", "tr",
 ];
 
 /// Languages that group with a space rather than with the other separator.
-const SPACE_GROUPING: [&str; 6] = ["fr", "cs", "fi", "lv", "pl", "ru"];
+const SPACE_GROUPING: [&str; 11] = [
+    "fr", "cs", "fi", "hu", "lv", "nb", "nn", "no", "pl", "ru", "sv",
+];
+
+/// The locales a picker offers, by the name a person knows them by — **exactly the ones whose
+/// separators this module gets right**, which is why Switzerland, Portugal and India are not
+/// here (the apostrophe, the space and the lakh: `ponytail:` above). Sorted by name, which is
+/// the order a list is read in. A locale not in it is still a locale — a document may state any
+/// — and a picker shows it by its tag.
+pub const KNOWN: [(&str, &str); 29] = [
+    ("zh-CN", "Chinese (China)"),
+    ("cs-CZ", "Czech (Czechia)"),
+    ("da-DK", "Danish (Denmark)"),
+    ("nl-BE", "Dutch (Belgium)"),
+    ("nl-NL", "Dutch (Netherlands)"),
+    ("en-AU", "English (Australia)"),
+    ("en-CA", "English (Canada)"),
+    ("en-IE", "English (Ireland)"),
+    ("en-NZ", "English (New Zealand)"),
+    ("en-GB", "English (United Kingdom)"),
+    ("en-US", "English (United States)"),
+    ("fi-FI", "Finnish (Finland)"),
+    ("fr-BE", "French (Belgium)"),
+    ("fr-CA", "French (Canada)"),
+    ("fr-FR", "French (France)"),
+    ("de-DE", "German (Germany)"),
+    ("el-GR", "Greek (Greece)"),
+    ("hu-HU", "Hungarian (Hungary)"),
+    ("it-IT", "Italian (Italy)"),
+    ("ja-JP", "Japanese (Japan)"),
+    ("ko-KR", "Korean (South Korea)"),
+    ("nb-NO", "Norwegian Bokmål (Norway)"),
+    ("pl-PL", "Polish (Poland)"),
+    ("pt-BR", "Portuguese (Brazil)"),
+    ("ro-RO", "Romanian (Romania)"),
+    ("ru-RU", "Russian (Russia)"),
+    ("es-ES", "Spanish (Spain)"),
+    ("sv-SE", "Swedish (Sweden)"),
+    ("tr-TR", "Turkish (Türkiye)"),
+];
 
 impl Locale {
     pub fn new(language: impl Into<String>, country: impl Into<String>) -> Self {
@@ -74,6 +113,15 @@ impl Locale {
             true => self.language.clone(),
             false => format!("{}-{}", self.language, self.country),
         }
+    }
+
+    /// The name a person knows this locale by, when it is one of [`KNOWN`].
+    pub fn name(&self) -> Option<&'static str> {
+        let tag = self.tag();
+        KNOWN
+            .iter()
+            .find(|(known, _)| *known == tag)
+            .map(|(_, name)| *name)
     }
 
     fn comma_decimal(&self) -> bool {
@@ -107,6 +155,29 @@ pub fn from_environment() -> Option<Locale> {
         .ok()
         .and_then(|tag| Locale::parse(&tag))
         .or_else(from_config_file)
+}
+
+/// A POSIX locale name as the environment spells one — `de_DE.UTF-8`, `sv_SE@euro`, `fr` — as
+/// a locale. `C` and `POSIX` are the absence of one, and so is anything that is not a language.
+pub fn from_posix(value: &str) -> Option<Locale> {
+    let name = value.split(['.', '@']).next().unwrap_or_default().trim();
+    match name {
+        "" | "C" | "POSIX" => None,
+        name => Locale::parse(name),
+    }
+}
+
+/// The desktop's own locale for numbers: `LC_ALL`, then `LC_NUMERIC`, then `LANG` — POSIX's own
+/// order of precedence, the first one set winning. What a window gives a **new** document, so a
+/// spreadsheet started on a German desktop speaks German (`doc/ods-format.md` §5.2); a command
+/// line's new document states none unless told, since a script's output should not depend on
+/// whose shell ran it.
+pub fn from_desktop() -> Option<Locale> {
+    ["LC_ALL", "LC_NUMERIC", "LANG"]
+        .into_iter()
+        .filter_map(|var| std::env::var(var).ok())
+        .find(|value| !value.is_empty())
+        .and_then(|value| from_posix(&value))
 }
 
 /// `$XDG_CONFIG_HOME/grind/locale` (or `~/.config/grind/locale`), a bare BCP 47 tag such as
@@ -194,6 +265,48 @@ mod tests {
             std::env::remove_var("XDG_CONFIG_HOME");
         }
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Every locale a picker offers renders with separators this table decides, parses back
+    /// from its own tag, and names itself.
+    #[test]
+    fn every_known_locale_is_one_this_table_gets_right_and_names() {
+        let mut names: Vec<&str> = KNOWN.iter().map(|(_, name)| *name).collect();
+        let sorted = {
+            let mut s = names.clone();
+            s.sort_unstable();
+            s
+        };
+        assert_eq!(
+            names, sorted,
+            "KNOWN is read as a list, so it is sorted by name"
+        );
+        names.dedup();
+        assert_eq!(names.len(), KNOWN.len());
+        for (tag, name) in KNOWN {
+            let locale = Locale::parse(tag).unwrap_or_else(|| panic!("{tag}"));
+            assert_eq!(locale.tag(), tag);
+            assert_eq!(locale.name(), Some(name));
+        }
+        assert_eq!(
+            Locale::new("de", "CH").name(),
+            None,
+            "Switzerland groups with ’"
+        );
+        let sv = Locale::new("sv", "SE");
+        assert_eq!((sv.decimal(), sv.group()), (',', '\u{a0}'));
+        let tr = Locale::new("tr", "TR");
+        assert_eq!((tr.decimal(), tr.group()), (',', '.'));
+    }
+
+    #[test]
+    fn a_posix_locale_name_reads_as_a_locale_and_c_as_none() {
+        assert_eq!(from_posix("de_DE.UTF-8"), Locale::parse("de-DE"));
+        assert_eq!(from_posix("sv_SE@euro"), Locale::parse("sv-SE"));
+        assert_eq!(from_posix("fr"), Locale::parse("fr"));
+        assert_eq!(from_posix("C.UTF-8"), None);
+        assert_eq!(from_posix("POSIX"), None);
+        assert_eq!(from_posix(""), None);
     }
 
     #[test]

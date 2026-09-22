@@ -575,7 +575,7 @@ Stated as one sentence, which is the sentence to hold this window to:
 - **Sheet tab context menu** (`chrome::tab_menu_model`): Rename… · Delete, on the tab, which is
   the only spelling that says *which* sheet.
 - **Primary menu**: the four file verbs, the four things done to a document as a whole
-  (Recalculate, Check the Document, Find a Calculation…, Names…), and Find a Command ·
+  (Recalculate, Check the Document, Find a Calculation…, Names…, Document Settings…), and Find a Command ·
   Keyboard Shortcuts · About. **Nothing about the selection**, which is the HIG's own rule for
   a primary menu and the thing that finally sizes it.
 - **Command palette**: Ctrl+K, the search button, or the menu. Type three letters, Enter.
@@ -704,6 +704,23 @@ value list behind it (`filter_ui.rs`), and `win.filter` / Ctrl+Shift+L — reach
 menu, since a filter is about a selection — to put a filter over the selection or clear it. Which rows that hides comes from the core and
 is never stored (`sheet/src/filter.rs`), so the grid asks `App::hidden_rows` per paint and
 draws those rows at zero height.
+
+**The document's own locale is a setting of the document, not of a cell** (`doc/ods-format.md`
+§5.2). *Document Settings…* — the primary menu's document section, or the palette — is an
+`adw::PreferencesDialog` with one searchable row, the locale, whose subtitle is what that locale
+does to a number (`1.234.567,89 · 1234,5`, rendered by the core). It applies the moment it
+changes, as one undo step, and the grid behind it follows at once: every number with no format,
+and every format that names no locale of its own, is spelled the new way, and a number typed
+afterwards is read that way too. A **new** document — *New*, or a window started with no file —
+states the desktop's locale (`$GRIND_LOCALE`, the config file, then `LC_ALL`/`LC_NUMERIC`/`LANG`),
+where `grind sheet new` states none unless told. The number popover's *Locale* is a dropdown now,
+first row *Document — German (Germany)*, then every locale this build renders correctly by name
+(`locale::KNOWN`); a format made in a document carries the locale explicitly, so LibreOffice
+shows it the same on any machine. Above the popover's settings is a **live sample** — the active
+cell as the settings would show it, `1.234,50 €`, from `App::shown_as` — and the strip's button
+face says what the active cell is formatted as (`123`, `%`, `€`, `Date`, …). The row's search
+matches by prefix, which is libadwaita 1.5's only mode: typing *Germ* finds German, *de-DE* does
+not.
 
 **CSV is built, both directions, and it is deliberately a picker and nothing else.** *Import
 CSV…* and *Export CSV…* are two verbs in the primary menu's own section and two rows in the

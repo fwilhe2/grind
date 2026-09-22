@@ -35,6 +35,7 @@ mod import;
 mod keymap;
 mod lint;
 mod palette;
+mod settings;
 mod state;
 mod theme;
 
@@ -118,6 +119,11 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
+    }
+    // A window with no file is a new document, and a new document here speaks the desktop's
+    // language (`fresh_document`).
+    if path.is_none() && imported.is_none() {
+        let _ = app.open_bytes("untitled.fods", &fresh_document());
     }
     let imported = Rc::new(RefCell::new(imported));
 
@@ -862,11 +868,7 @@ impl Ui {
             move || {
                 // There is no `App::reset`, and there does not need to be: an empty document
                 // written and read back is one, through the same path a file takes.
-                let Ok(bytes) =
-                    grind_sheet::write_bytes(&grind_sheet::Document::default(), Form::Flat)
-                else {
-                    return;
-                };
+                let bytes = fresh_document();
                 ui.loading.set(true);
                 if ui.app.open_bytes("untitled.fods", &bytes).is_ok() {
                     *ui.path.borrow_mut() = None;
@@ -1805,6 +1807,13 @@ fn actions() -> Vec<Verb> {
             |ui| ui.explore_calculations(),
         ),
         verb("names", &[], "Names…", "Document", |ui| ui.manage_names()),
+        verb(
+            "document-settings",
+            &[],
+            "Document Settings…",
+            "Document",
+            |ui| settings::present(&ui.window, &ui.app),
+        ),
         // --- the selection ---
         //
         // The clipboard four have no accelerator here: `keymap.rs` already owns Ctrl+C/X/V
@@ -1950,6 +1959,7 @@ fn primary_menu() -> gio::Menu {
     document.append(Some("Check the Document"), Some("win.lint"));
     document.append(Some("Find a Calculation…"), Some("win.calculations"));
     document.append(Some("Names…"), Some("win.names"));
+    document.append(Some("Document Settings…"), Some("win.document-settings"));
     menu.append_section(None, &document);
 
     let rest = gio::Menu::new();
@@ -2082,6 +2092,20 @@ impl Observer for Bridge {
 /// custom "Open Recent" menu to build or keep in sync.
 fn remember_recent(path: &Path) {
     gtk::RecentManager::default().add_item(&gio::File::for_path(path).uri());
+}
+
+/// An empty document, as bytes — what *New* opens and what a window started without a file
+/// shows. It states a locale: `$GRIND_LOCALE` or the config file's when there is one, and the
+/// desktop's otherwise (`LC_ALL`, `LC_NUMERIC`, `LANG`), so a spreadsheet begun on a German
+/// desktop spells its numbers `1234,5` and reads `1,5` typed into it as one and a half
+/// (`doc/ods-format.md` §5.2). The command line's `sheet new` states none unless told: a
+/// script's output should not depend on whose shell ran it, and a window's should.
+fn fresh_document() -> Vec<u8> {
+    let doc = grind_sheet::Document {
+        locale: grind_sheet::locale::from_environment().or_else(grind_sheet::locale::from_desktop),
+        ..Default::default()
+    };
+    grind_sheet::write_bytes(&doc, Form::Flat).expect("an empty document always writes")
 }
 
 /// The document's name, or what an unsaved one is called until it has one.

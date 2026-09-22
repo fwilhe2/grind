@@ -1481,6 +1481,26 @@ impl App {
         Ok(s.format(pos).cloned())
     }
 
+    /// What one cell **would** show under `format` — `None` being the general format — in the
+    /// document's own locale, with nothing written. A format picker's live sample asks this as
+    /// the person changes a setting, so the sample is the renderer's own answer rather than a
+    /// second one the picker makes up.
+    pub fn shown_as(
+        &self,
+        sheet: usize,
+        pos: Pos,
+        format: Option<&numfmt::Format>,
+    ) -> Result<String> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        let value = s.get(pos);
+        let locale = state.doc.locale.as_ref();
+        Ok(match format {
+            Some(format) => format.render_in(&value, state.doc.null_date, locale),
+            None => numfmt::general_in(&value, s.kind(pos), state.doc.null_date, locale),
+        })
+    }
+
     /// A cell's formula in display form, **with the document's names substituted** —
     /// `doc/view-modes.md` §3.3. `None` for a cell holding a plain value.
     ///

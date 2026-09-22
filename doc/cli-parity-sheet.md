@@ -119,6 +119,9 @@ stops ratcheting.
   bar or line series, one bar, or one pie slice gets, overriding `series_color`'s default
   cycle
   (`doc/chart-format.md`)
+- `shown_as` — not exposed: it is `sheet format` without the write, and its answer is a sample
+  for a picker to show while a person is still choosing. The CLI's way to see a format on a cell
+  is to set it — on a copy, if need be — and `sheet get` it, which is the same renderer.
 - `preview_chart` — not exposed: it is `chart-add`/`chart-edit` without the write, and what it
   returns is something to *draw*. The CLI's preview of a chart is to add it and `chart-list` it
   — or to add it to a copy — and it has no drawing surface to show the rest on, for the reason

@@ -214,6 +214,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
 
     let refresh = {
         let (app, picker, updating) = (app.clone(), picker.clone(), updating.clone());
+        let face = numbers.clone();
         let toggles = (bold, italic, wrap, left, center, right);
         let colors = (color, background);
         let grid = grid.downgrade();
@@ -243,7 +244,8 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
             // default — a red swatch over an unstyled cell is a claim about the cell.
             colors.0.show(style.color.as_deref(), true);
             colors.1.show(style.background.as_deref(), false);
-            picker.show(format.as_ref());
+            face.set_label(&picker.show(format.as_ref(), app.locale().as_ref()));
+            picker.sample(&grid, &app);
             updating.set(false);
         }
     };
@@ -490,7 +492,14 @@ struct Picker {
     currencies: Vec<gtk::ToggleButton>,
     /// A document's own symbol when it is none of the three; hidden otherwise.
     other: gtk::ToggleButton,
-    locale: gtk::Entry,
+    /// Which locale the format speaks: the document's own first, then every
+    /// [`grind_sheet::locale::KNOWN`] one by name — `locales` is what each row means.
+    locale: gtk::DropDown,
+    locales: std::cell::RefCell<Vec<Option<Locale>>>,
+    /// The active cell as the format being built would show it — the core's own rendering
+    /// ([`App::shown_as`]), redrawn as each setting changes, so a person sees `1.234,50 €`
+    /// before they press anything.
+    sample: gtk::Label,
     apply: gtk::Button,
     /// Says a document's format is one this vocabulary cannot spell, rather than offering
     /// parameters that would quietly replace it (`Format::is_preset`).
@@ -528,10 +537,21 @@ impl Picker {
             button.set_group(Some(&currencies[0]));
         }
         currencies[0].set_active(true);
-        let locale = gtk::Entry::builder()
-            .placeholder_text("e.g. de-DE")
-            .max_width_chars(8)
+        let locale = gtk::DropDown::from_strings(&[]);
+        locale.set_enable_search(true);
+        locale.set_expression(Some(gtk::PropertyExpression::new(
+            gtk::StringObject::static_type(),
+            gtk::Expression::NONE,
+            "string",
+        )));
+        let sample = gtk::Label::builder()
+            .xalign(0.5)
+            .margin_bottom(6)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .max_width_chars(24)
             .build();
+        sample.add_css_class("title-3");
+        sample.add_css_class("numeric");
         let apply = gtk::Button::with_label("Apply");
         apply.add_css_class("suggested-action");
         let note = gtk::Label::builder()
@@ -550,17 +570,18 @@ impl Picker {
             .margin_start(6)
             .margin_end(6)
             .build();
-        grid.attach(&label("Format"), 0, 0, 1, 1);
-        grid.attach(&kind, 1, 0, 1, 1);
-        grid.attach(&label("Decimals"), 0, 1, 1, 1);
-        grid.attach(&decimals, 1, 1, 1, 1);
-        grid.attach(&grouping, 1, 2, 1, 1);
-        grid.attach(&label("Currency"), 0, 3, 1, 1);
-        grid.attach(&row, 1, 3, 1, 1);
-        grid.attach(&label("Locale"), 0, 4, 1, 1);
-        grid.attach(&locale, 1, 4, 1, 1);
-        grid.attach(&note, 0, 5, 2, 1);
-        grid.attach(&apply, 0, 6, 2, 1);
+        grid.attach(&sample, 0, 0, 2, 1);
+        grid.attach(&label("Format"), 0, 1, 1, 1);
+        grid.attach(&kind, 1, 1, 1, 1);
+        grid.attach(&label("Decimals"), 0, 2, 1, 1);
+        grid.attach(&decimals, 1, 2, 1, 1);
+        grid.attach(&grouping, 1, 3, 1, 1);
+        grid.attach(&label("Currency"), 0, 4, 1, 1);
+        grid.attach(&row, 1, 4, 1, 1);
+        grid.attach(&label("Locale"), 0, 5, 1, 1);
+        grid.attach(&locale, 1, 5, 1, 1);
+        grid.attach(&note, 0, 6, 2, 1);
+        grid.attach(&apply, 0, 7, 2, 1);
 
         let picker = Rc::new(Self {
             popover: gtk::Popover::builder().child(&grid).build(),
@@ -570,6 +591,8 @@ impl Picker {
             currencies,
             other,
             locale,
+            locales: std::cell::RefCell::new(Vec::new()),
+            sample,
             apply,
             note,
         });
@@ -599,13 +622,15 @@ impl Picker {
         self.locale.set_sensitive(formatted);
     }
 
-    /// Show a cell's current format — the picker's whole read half.
-    fn show(self: &Rc<Self>, format: Option<&numfmt::Format>) {
+    /// Show a cell's current format — the picker's whole read half — in a document whose own
+    /// locale is `document`. Returns what the strip's button face should say about it.
+    fn show(self: &Rc<Self>, format: Option<&numfmt::Format>, document: Option<&Locale>) -> String {
+        self.show_locales(document, format.and_then(|f| f.locale.as_ref()));
         let Some(format) = format else {
             self.kind.set_selected(0);
             self.note.set_visible(false);
             self.sensitivity();
-            return;
+            return face(None, "");
         };
         let (kind, decimals, grouping, symbol) = format.preset_params();
         let datetime = *format == numfmt::datetime_preset().in_locale(format.locale.clone());
@@ -620,10 +645,89 @@ impl Picker {
         self.decimals.set_value(f64::from(decimals));
         self.grouping.set_active(grouping);
         self.show_currency(&symbol);
-        self.locale
-            .set_text(&format.locale.as_ref().map(Locale::tag).unwrap_or_default());
         self.note.set_visible(!format.is_preset());
         self.sensitivity();
+        match datetime {
+            true => "Date".to_owned(),
+            false => face(Some(kind), &symbol),
+        }
+    }
+
+    /// The locale dropdown's rows for a document whose own locale is `document`, with `own`
+    /// selected — the format's own locale, or the document's row when it names none. A locale
+    /// this build has no name for is added by its tag rather than shown as something else.
+    fn show_locales(&self, document: Option<&Locale>, own: Option<&Locale>) {
+        let mut locales: Vec<Option<Locale>> = std::iter::once(None)
+            .chain(
+                grind_sheet::locale::KNOWN
+                    .iter()
+                    .map(|(tag, _)| Locale::parse(tag)),
+            )
+            .collect();
+        if let Some(own) = own
+            && !locales.iter().any(|l| l.as_ref() == Some(own))
+        {
+            locales.push(Some(own.clone()));
+        }
+        let labels: Vec<String> = locales
+            .iter()
+            .map(|choice| match choice {
+                None => format!(
+                    "Document — {}",
+                    document.map_or_else(|| "None".to_owned(), crate::settings::label_of)
+                ),
+                Some(locale) => crate::settings::label_of(locale),
+            })
+            .collect();
+        let model = gtk::StringList::new(&labels.iter().map(String::as_str).collect::<Vec<_>>());
+        self.locale.set_model(Some(&model));
+        let selected = own
+            .and_then(|own| locales.iter().position(|l| l.as_ref() == Some(own)))
+            .unwrap_or(0);
+        self.locale.set_selected(selected as u32);
+        *self.locales.borrow_mut() = locales;
+    }
+
+    /// The format the popover's settings describe — `Ok(None)` for General — with the locale a
+    /// format made in this document carries: the one picked, or the document's own, or the
+    /// environment's. The same answer [`Picker::write`] writes and [`Picker::sample`] shows.
+    fn built(&self, app: &App) -> Option<numfmt::Format> {
+        let chosen = self
+            .locales
+            .borrow()
+            .get(self.locale.selected() as usize)
+            .cloned()
+            .flatten();
+        let locale = chosen
+            .or_else(|| app.locale())
+            .or_else(grind_sheet::locale::from_environment);
+        let selected = self.kind.selected();
+        match KINDS.get(selected as usize).and_then(|(_, kind)| *kind) {
+            _ if selected == DATETIME => Some(numfmt::datetime_preset()),
+            None => None,
+            Some(kind) => Some(numfmt::preset(
+                kind,
+                self.decimals.value() as u8,
+                self.grouping.is_active(),
+                &self.symbol(),
+            )),
+        }
+        .map(|format| format.in_locale(locale))
+    }
+
+    /// Redraw the sample: the active cell as the settings would show it.
+    fn sample(&self, grid: &Grid, app: &App) {
+        let shown = app
+            .shown_as(
+                grid.sheet(),
+                grid.selection().active,
+                self.built(app).as_ref(),
+            )
+            .unwrap_or_default();
+        self.sample.set_label(match shown.is_empty() {
+            true => "—",
+            false => &shown,
+        });
     }
 
     /// Press the button for `symbol` — one of the three, the fourth carrying a document's own,
@@ -665,6 +769,28 @@ impl Picker {
 
     /// The write half: build the `Format` the core builds for `sheet format`, and set it.
     fn connect_applied(self: &Rc<Self>, grid: &Grid, app: &Arc<App>) {
+        // Every setting redraws the sample. A weak grid, like every other handler here, since
+        // the grid owns the popover these widgets live in.
+        let redraw = {
+            let (picker, grid, app) = (Rc::downgrade(self), grid.downgrade(), app.clone());
+            move || {
+                if let (Some(picker), Some(grid)) = (picker.upgrade(), grid.upgrade()) {
+                    picker.sample(&grid, &app);
+                }
+            }
+        };
+        let r = redraw.clone();
+        self.kind.connect_selected_notify(move |_| r());
+        let r = redraw.clone();
+        self.locale.connect_selected_notify(move |_| r());
+        let r = redraw.clone();
+        self.decimals.connect_value_changed(move |_| r());
+        let r = redraw.clone();
+        self.grouping.connect_toggled(move |_| r());
+        for button in self.currencies.iter().chain([&self.other]) {
+            let r = redraw.clone();
+            button.connect_toggled(move |_| r());
+        }
         self.apply.connect_clicked(glib::clone!(
             #[strong(rename_to = picker)]
             self,
@@ -698,33 +824,28 @@ impl Picker {
         let Some((sheet, start, end)) = grid.target() else {
             return;
         };
-        let locale = match self.locale.text().trim() {
-            "" => grind_sheet::locale::from_environment(),
-            tag => match Locale::parse(tag) {
-                Some(locale) => Some(locale),
-                // A tag that is not a tag is a typo, not a format: say so and change
-                // nothing, rather than writing an unmarked format.
-                None => {
-                    grid.report(Notice::Refused(format!("{tag} is not a locale tag")));
-                    return;
-                }
-            },
-        };
-        let selected = self.kind.selected();
-        let format = match KINDS.get(selected as usize).and_then(|(_, kind)| *kind) {
-            _ if selected == DATETIME => Some(numfmt::datetime_preset()),
-            None => None,
-            Some(kind) => Some(numfmt::preset(
-                kind,
-                self.decimals.value() as u8,
-                self.grouping.is_active(),
-                &self.symbol(),
-            )),
-        }
-        .map(|format| format.in_locale(locale));
+        let format = self.built(app);
         if let Err(error) = app.set_format(sheet, start, end, format) {
             grid.report(Notice::Refused(error.to_string()));
         }
+    }
+}
+
+/// What the strip's number button says about the active cell: `123` for a plain number or none
+/// at all, `%`, the currency's own symbol, `Date`, `Time`, `T/F`, `Abc` — a glance at the button
+/// answers "what is this cell formatted as" without opening it.
+fn face(kind: Option<Kind>, symbol: &str) -> String {
+    match kind {
+        None | Some(Kind::Number) => "123".to_owned(),
+        Some(Kind::Percentage) => "%".to_owned(),
+        Some(Kind::Currency) => match symbol {
+            "" => numfmt::DEFAULT_CURRENCY.to_owned(),
+            symbol => symbol.to_owned(),
+        },
+        Some(Kind::Date) => "Date".to_owned(),
+        Some(Kind::Time) => "Time".to_owned(),
+        Some(Kind::Boolean) => "T/F".to_owned(),
+        Some(Kind::Text) => "Abc".to_owned(),
     }
 }
 

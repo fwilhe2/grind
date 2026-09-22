@@ -206,3 +206,24 @@ fn a_filter_keeps_rows_by_their_german_spelling() {
     app.set_filter(0, Some(filter)).unwrap();
     assert_eq!(app.hidden_rows(0).unwrap(), vec![2]);
 }
+
+/// A format picker's sample: what a cell would show under a format nobody has set yet, in the
+/// document's own spelling — and nothing changes.
+#[test]
+fn a_cell_shown_as_a_format_it_does_not_have_writes_nothing() {
+    let app = App::new();
+    app.set_locale(german()).unwrap();
+    let at = Pos::new(0, 0);
+    app.set_cell(0, at, 1234.5).unwrap();
+    let euro = numfmt::preset(Kind::Currency, 2, true, "€");
+    assert_eq!(app.shown_as(0, at, Some(&euro)).unwrap(), "1.234,50\u{a0}€");
+    assert_eq!(app.shown_as(0, at, None).unwrap(), "1234,5");
+    assert_eq!(
+        app.format_at(0, at).unwrap(),
+        None,
+        "the cell keeps no format"
+    );
+    // The locale and the value are the only steps: nothing the samples did is one.
+    assert!(app.undo() && app.undo());
+    assert!(!app.can_undo());
+}
