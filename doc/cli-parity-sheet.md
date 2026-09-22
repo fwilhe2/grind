@@ -88,14 +88,21 @@ stops ratcheting.
 - `stale` — every command that writes: the warning on stderr, and the `stale` field of its
   JSON report. Not a command of its own, because the answer is only interesting *after* an
   edit — asking it of an untouched document is what `grind sheet recalc --dry-run` is for.
-- `add_chart` — `grind sheet chart-add --type bar|line|pie --categories <range> --series
-  <range>[=<label-range>] … [--x-axis-label <text>] [--y-axis-label <text>]
-  [--x-tick-labels <bool>] [--y-tick-labels <bool>] [--x-gridlines <bool>]
-  [--y-gridlines <bool>]` (`doc/chart-format.md`)
+- `add_chart` — `grind sheet chart-add [--from <range>] [--type bar|line|pie] [--categories
+  <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [--x-axis-label <text>]
+  [--y-axis-label <text>] [--x-tick-labels <bool>] [--y-tick-labels <bool>] [--x-gridlines
+  <bool>] [--y-gridlines <bool>]` (`doc/chart-format.md`) — one `chart::Spec`, with every flag
+  given overriding what `--from` read
+- `suggest_chart` — `grind sheet chart-add --from <range>`: the same `chart::guess` the
+  window's Insert Chart opens on, inserted as it stands unless a flag overrides a piece of it.
+  The window's *Series in* and *first row/column is labels* answers are its `shape` argument;
+  the CLI says the same things with `--series` and `--categories` rather than with a second
+  vocabulary for them
 - `edit_chart` — `grind sheet chart-edit <index> [--type bar|line|pie]
-  [--categories <range>] [--series <range>[=<label-range>]]… [the same axis flags]` — what a
-  chart *is*, changed after the fact in the vocabulary a user types; every flag left off keeps
-  what the chart already has, and its position stays `chart-reshape`'s
+  [--categories <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [the same
+  axis flags]` — what a chart *is*, changed after the fact in the vocabulary a user types;
+  every flag left off keeps what the chart already has, and its position stays
+  `chart-reshape`'s
 - `charts` — `grind sheet chart-list`
 - `remove_chart` — `grind sheet chart-remove <index>`
 - `reshape_chart` — `grind sheet chart-reshape <index> --x --y --width --height`
@@ -103,7 +110,8 @@ stops ratcheting.
   [--y-axis-label <text>] [--x-tick-labels <bool>] [--y-tick-labels <bool>]
   [--x-gridlines <bool>] [--y-gridlines <bool>] [--series-color <series>=<color>]…
   [--point-color <series>.<point>=<color>]…` — everything an axis carries, and the colour a
-  line series or a bar/pie point gets, overriding `series_color`'s default cycle
+  bar or line series, one bar, or one pie slice gets, overriding `series_color`'s default
+  cycle
   (`doc/chart-format.md`)
 - `chart_data` — not exposed: nothing here draws a chart. `chart-list`'s ranges are read
   back through `charts`; `grind-sheet-gtk` is the shell that resolves them against the live

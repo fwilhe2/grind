@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{App, Result, a1};
+use crate::{App, CellValue, Pos, Result, a1};
 
 /// Which of the three shapes this build knows — `doc/chart-format.md`'s scope line. Each is a
 /// `chart:class` token, verified against a real `soffice` build rather than guessed (the schema
@@ -183,6 +183,272 @@ impl Chart {
             clockwise: clockwise_by_default(),
         }
     }
+}
+
+/// What a chart **is**, in the vocabulary a person types — everything [`crate::App::add_chart`]
+/// and [`crate::App::edit_chart`] take, and exactly what [`guess`] produces, so a suggestion is
+/// something that can be inserted as it stands.
+///
+/// Ranges are typed ranges (`A2:A5`, or `Data.A2:A5` for another sheet) and resolved by
+/// [`parse_range`] against the sheet the chart is on; a chart's own stored, fully qualified
+/// ranges (`Sheet1.A2:Sheet1.A5`) are typed ranges too, which is what lets [`Spec::of`] hand an
+/// existing chart back to a dialog to be edited. A series is its values and, optionally, the
+/// cell naming it — `chart-add --series`'s `RANGE[=LABEL]`. Where the chart *sits* is not here:
+/// that is [`crate::App::reshape_chart`]'s, and an edit leaves it alone.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spec {
+    pub kind: ChartKind,
+    pub categories: Option<String>,
+    pub series: Vec<(String, Option<String>)>,
+    pub x_axis: Axis,
+    pub y_axis: Axis,
+    /// A pie's direction ([`Chart::clockwise`]); carried whatever the kind, so turning a pie
+    /// into a bar and back does not lose it.
+    pub clockwise: bool,
+}
+
+impl Spec {
+    /// A new chart of `kind` pointing at nothing yet — every other field a new chart's default.
+    pub fn new(kind: ChartKind) -> Self {
+        Spec {
+            kind,
+            categories: None,
+            series: Vec::new(),
+            x_axis: Axis::default(),
+            y_axis: Axis::default(),
+            clockwise: clockwise_by_default(),
+        }
+    }
+
+    /// An existing chart, as the spec that would make it — what an *Edit Chart* dialog opens on.
+    pub fn of(chart: &Chart) -> Self {
+        Spec {
+            kind: chart.kind,
+            categories: chart.categories.clone(),
+            series: chart
+                .series
+                .iter()
+                .map(|s| (s.values.clone(), s.label.clone()))
+                .collect(),
+            x_axis: chart.x_axis.clone(),
+            y_axis: chart.y_axis.clone(),
+            clockwise: chart.clockwise,
+        }
+    }
+}
+
+/// How a block of cells is read as a chart — the three questions [`guess`] answers from the
+/// cells, and a person may overrule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shape {
+    /// Each **row** of values is a series, rather than each column.
+    pub by_rows: bool,
+    /// The block's first row names things — the series, or the categories when `by_rows`.
+    pub header_row: bool,
+    /// The block's first column names things — the categories, or the series when `by_rows`.
+    pub label_column: bool,
+}
+
+/// What [`guess`] read: the block (a single cell grows into the table around it), the
+/// [`Shape`] it read that block as, and the chart that makes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Guess {
+    pub start: Pos,
+    pub end: Pos,
+    pub shape: Shape,
+    pub spec: Spec,
+}
+
+/// A chart of a block of cells, guessed from what the cells hold — **the one place this guess is
+/// made**, so the GNOME window, the CLI's `chart-add --from` and any other shell read the same
+/// table the same way. The shell used to guess on its own, always taking each column as a
+/// series, which turned a table with months across its top on its side.
+///
+/// - **One cell** grows into the block around it — every row and column touching a non-empty
+///   cell, the way a person means "this table" by clicking in it.
+/// - **Labels.** A first row of text over numbers names things; so does a first column of text,
+///   of dates, or of a counting sequence (`2021, 2022, 2023` or `1, 2, 3` — a column that counts
+///   rather than measures, since a year charted as a bar is nobody's intent).
+/// - **Orientation.** What is left once the labels are taken is the values. They run in columns
+///   unless that block is wider than it is tall — twelve months across and two rows of figures
+///   is two series of twelve, not twelve series of two.
+/// - **Kind.** A line when the categories are dates or times, since that is what a line is *for*;
+///   a bar otherwise. A pie is never guessed: whether parts make a whole is not something the
+///   cells say.
+///
+/// `shape`, when given, replaces the three answers about the block and the rest follows from it
+/// — how a dialog lets a person say "no, the series are the rows".
+pub fn guess(sheet: &crate::Sheet, start: Pos, end: Pos, shape: Option<Shape>) -> Guess {
+    let (start, end) = match start == end {
+        true => region(sheet, start),
+        false => (start, end),
+    };
+    let shape = shape.unwrap_or_else(|| read_shape(sheet, start, end));
+    let body = Pos::new(
+        start.row + u32::from(shape.header_row),
+        start.col + u32::from(shape.label_column),
+    );
+    let range = |from: Pos, to: Pos| match from == to {
+        true => a1::format(None, from),
+        false => format!("{}:{}", a1::format(None, from), a1::format(None, to)),
+    };
+    let mut spec = Spec::new(ChartKind::Bar);
+    // Nothing to chart: the labels took the whole block, or what is left holds no figure —
+    // an empty spec, which a dialog can say so about, rather than a bar chart of zeros.
+    let figures = (body.row..=end.row).any(|row| {
+        (body.col..=end.col).any(|col| {
+            let pos = Pos::new(row, col);
+            matches!(sheet.get(pos), CellValue::Number(_)) && crate::date_kind(sheet, pos).is_none()
+        })
+    });
+    if body.row > end.row || body.col > end.col || !figures {
+        return Guess {
+            start,
+            end,
+            shape,
+            spec,
+        };
+    }
+    let category_cells: Vec<Pos> = match shape.by_rows {
+        false => (body.row..=end.row)
+            .map(|row| Pos::new(row, start.col))
+            .collect(),
+        true => (body.col..=end.col)
+            .map(|col| Pos::new(start.row, col))
+            .collect(),
+    };
+    let has_categories = match shape.by_rows {
+        false => shape.label_column,
+        true => shape.header_row,
+    };
+    if has_categories
+        && let (Some(first), Some(last)) = (category_cells.first(), category_cells.last())
+    {
+        spec.categories = Some(range(*first, *last));
+        if category_cells
+            .iter()
+            .any(|pos| crate::date_kind(sheet, *pos).is_some())
+        {
+            spec.kind = ChartKind::Line;
+        }
+    }
+    match shape.by_rows {
+        false => {
+            for col in body.col..=end.col {
+                let values = range(Pos::new(body.row, col), Pos::new(end.row, col));
+                let label = shape
+                    .header_row
+                    .then(|| a1::format(None, Pos::new(start.row, col)));
+                spec.series.push((values, label));
+            }
+        }
+        true => {
+            for row in body.row..=end.row {
+                let values = range(Pos::new(row, body.col), Pos::new(row, end.col));
+                let label = shape
+                    .label_column
+                    .then(|| a1::format(None, Pos::new(row, start.col)));
+                spec.series.push((values, label));
+            }
+        }
+    }
+    Guess {
+        start,
+        end,
+        shape,
+        spec,
+    }
+}
+
+/// The block around one cell: grown a row or a column at a time while the line just outside it
+/// — corners included — holds anything, and never past what the sheet uses.
+fn region(sheet: &crate::Sheet, at: Pos) -> (Pos, Pos) {
+    let (rows, cols) = (sheet.used_rows(), sheet.used_cols());
+    if rows == 0 || cols == 0 || at.row >= rows || at.col >= cols {
+        return (at, at);
+    }
+    let filled = |row: u32, col: u32| !matches!(sheet.get(Pos::new(row, col)), CellValue::Empty);
+    let (mut top, mut left, mut bottom, mut right) = (at.row, at.col, at.row, at.col);
+    loop {
+        let (l, r) = (left.saturating_sub(1), (right + 1).min(cols - 1));
+        let (t, b) = (top.saturating_sub(1), (bottom + 1).min(rows - 1));
+        let grow_up = top > 0 && (l..=r).any(|col| filled(top - 1, col));
+        let grow_down = bottom + 1 < rows && (l..=r).any(|col| filled(bottom + 1, col));
+        let grow_left = left > 0 && (t..=b).any(|row| filled(row, left - 1));
+        let grow_right = right + 1 < cols && (t..=b).any(|row| filled(row, right + 1));
+        if !(grow_up || grow_down || grow_left || grow_right) {
+            return (Pos::new(top, left), Pos::new(bottom, right));
+        }
+        top -= u32::from(grow_up);
+        bottom += u32::from(grow_down);
+        left -= u32::from(grow_left);
+        right += u32::from(grow_right);
+    }
+}
+
+/// The three answers [`guess`] reads out of a block, when nobody gave them.
+fn read_shape(sheet: &crate::Sheet, start: Pos, end: Pos) -> Shape {
+    let value = |pos: Pos| sheet.get(pos);
+    let is_text = |pos: Pos| matches!(value(pos), CellValue::Text(ref t) if !t.is_empty());
+    let is_number = |pos: Pos| {
+        matches!(value(pos), CellValue::Number(_)) && crate::date_kind(sheet, pos).is_none()
+    };
+    let cols = start.col..=end.col;
+    let any_number_in = |rows: std::ops::RangeInclusive<u32>,
+                         cols: std::ops::RangeInclusive<u32>| {
+        rows.clone()
+            .any(|row| cols.clone().any(|col| is_number(Pos::new(row, col))))
+    };
+
+    // A first row of text (nothing in it a number), over rows that hold numbers.
+    let header_row = end.row > start.row
+        && cols.clone().any(|col| is_text(Pos::new(start.row, col)))
+        && !cols.clone().any(|col| is_number(Pos::new(start.row, col)))
+        && any_number_in(start.row + 1..=end.row, cols.clone());
+    let first_body_row = start.row + u32::from(header_row);
+
+    // A first column of names: text or dates, or a counting sequence — beside columns that hold
+    // numbers of their own.
+    let column: Vec<Pos> = (first_body_row..=end.row)
+        .map(|row| Pos::new(row, start.col))
+        .collect();
+    let names = column.iter().all(|pos| {
+        is_text(*pos) || crate::date_kind(sheet, *pos).is_some() || value(*pos) == CellValue::Empty
+    }) && column
+        .iter()
+        .any(|pos| !matches!(value(*pos), CellValue::Empty));
+    let label_column = end.col > start.col
+        && (names || counts(&column.iter().map(|pos| value(*pos)).collect::<Vec<_>>()))
+        && any_number_in(first_body_row..=end.row, start.col + 1..=end.col);
+
+    let body_rows = end.row - first_body_row + 1;
+    let body_cols = end.col - (start.col + u32::from(label_column)) + 1;
+    Shape {
+        by_rows: body_cols > body_rows,
+        header_row,
+        label_column,
+    }
+}
+
+/// Whether a run of cells is a **counting sequence** — whole numbers with one constant step, at
+/// least three of them: `2021, 2022, 2023`, or `1, 2, 3`. A column like that labels the rows
+/// beside it rather than being a measurement of its own.
+fn counts(cells: &[CellValue]) -> bool {
+    let numbers: Option<Vec<f64>> = cells
+        .iter()
+        .map(|cell| match cell {
+            CellValue::Number(n) if n.fract() == 0.0 => Some(*n),
+            _ => None,
+        })
+        .collect();
+    let Some(numbers) = numbers else {
+        return false;
+    };
+    if numbers.len() < 3 {
+        return false;
+    }
+    let step = numbers[1] - numbers[0];
+    step != 0.0 && numbers.windows(2).all(|pair| pair[1] - pair[0] == step)
 }
 
 /// The colour a mark actually gets: a bar, a pie slice, or a line — the single place the
@@ -571,6 +837,163 @@ mod tests {
         // A whole series picked by hand colours every bar in it.
         chart.series[1].color = Some("#abcdef".to_owned());
         assert_eq!(effective_color(&chart, 1, Some(2)), "#abcdef");
+    }
+
+    /// A sheet from rows of cells, `""` being empty and anything that parses a number.
+    fn table(rows: &[&[&str]]) -> crate::Sheet {
+        let mut sheet = crate::Sheet::new("S");
+        for (r, row) in rows.iter().enumerate() {
+            for (c, cell) in row.iter().enumerate() {
+                let value = match (cell.is_empty(), cell.parse::<f64>()) {
+                    (true, _) => continue,
+                    (false, Ok(n)) => CellValue::Number(n),
+                    (false, Err(_)) => CellValue::Text((*cell).to_owned()),
+                };
+                sheet.set(Pos::new(r as u32, c as u32), value);
+            }
+        }
+        sheet
+    }
+
+    fn series_of(spec: &Spec) -> Vec<(&str, Option<&str>)> {
+        spec.series
+            .iter()
+            .map(|(values, label)| (values.as_str(), label.as_deref()))
+            .collect()
+    }
+
+    const DOWN: &[&[&str]] = &[
+        &["Month", "Sales", "Costs"],
+        &["Jan", "10", "4"],
+        &["Feb", "20", "6"],
+        &["Mar", "30", "9"],
+        &["Apr", "40", "12"],
+    ];
+
+    const ACROSS: &[&[&str]] = &[
+        &["", "Jan", "Feb", "Mar", "Apr", "May"],
+        &["Sales", "10", "20", "30", "40", "50"],
+        &["Costs", "4", "6", "9", "12", "15"],
+    ];
+
+    /// The shape every spreadsheet's first chart has: a column of names, a row of headings,
+    /// and a column of figures per series.
+    #[test]
+    fn a_table_down_the_page_is_a_series_per_column() {
+        let guessed = guess(&table(DOWN), Pos::new(0, 0), Pos::new(4, 2), None);
+        assert_eq!(
+            guessed.shape,
+            Shape {
+                by_rows: false,
+                header_row: true,
+                label_column: true
+            }
+        );
+        assert_eq!(guessed.spec.kind, ChartKind::Bar);
+        assert_eq!(guessed.spec.categories.as_deref(), Some("A2:A5"));
+        assert_eq!(
+            series_of(&guessed.spec),
+            [("B2:B5", Some("B1")), ("C2:C5", Some("C1"))]
+        );
+    }
+
+    /// The bug this function exists for: months across the top are the categories, and each
+    /// row of figures is a series — where the shell's old guess made "Sales" and "Costs" the
+    /// x axis and five unlabelled bars of each.
+    #[test]
+    fn a_table_across_the_page_is_a_series_per_row() {
+        let guessed = guess(&table(ACROSS), Pos::new(0, 0), Pos::new(2, 5), None);
+        assert!(guessed.shape.by_rows);
+        assert_eq!(guessed.spec.categories.as_deref(), Some("B1:F1"));
+        assert_eq!(
+            series_of(&guessed.spec),
+            [("B2:F2", Some("A2")), ("B3:F3", Some("A3"))]
+        );
+    }
+
+    /// Clicking anywhere in a table means the table.
+    #[test]
+    fn one_cell_grows_into_the_table_around_it() {
+        let mut rows: Vec<&[&str]> = ACROSS.to_vec();
+        rows.push(&[]);
+        rows.push(&["", "", "", "", "", "", "", "unrelated"]);
+        let guessed = guess(&table(&rows), Pos::new(1, 3), Pos::new(1, 3), None);
+        assert_eq!(
+            (guessed.start, guessed.end),
+            (Pos::new(0, 0), Pos::new(2, 5))
+        );
+    }
+
+    #[test]
+    fn dates_along_the_categories_make_a_line() {
+        let mut sheet = table(DOWN);
+        for row in 1..=4 {
+            sheet.set(
+                Pos::new(row, 0),
+                CellValue::Number(46000.0 + f64::from(row)),
+            );
+            sheet.set_kind(Pos::new(row, 0), crate::model::NumberKind::Date);
+        }
+        let guessed = guess(&sheet, Pos::new(0, 0), Pos::new(4, 2), None);
+        assert!(guessed.shape.label_column, "a date column names its rows");
+        assert_eq!(guessed.spec.kind, ChartKind::Line);
+        assert_eq!(guessed.spec.series.len(), 2);
+    }
+
+    /// A column that counts labels the rows beside it — a year is not a measurement.
+    #[test]
+    fn a_counting_column_labels_its_rows_rather_than_being_charted() {
+        let rows: &[&[&str]] = &[
+            &["Year", "Revenue"],
+            &["2021", "5"],
+            &["2022", "7"],
+            &["2023", "6"],
+        ];
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None);
+        assert!(guessed.shape.label_column);
+        assert_eq!(guessed.spec.categories.as_deref(), Some("A2:A4"));
+        assert_eq!(series_of(&guessed.spec), [("B2:B4", Some("B1"))]);
+        // Figures that do not count are figures.
+        let rows: &[&[&str]] = &[&["A", "B"], &["3", "5"], &["1", "7"], &["8", "6"]];
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None);
+        assert!(!guessed.shape.label_column);
+        assert_eq!(guessed.spec.series.len(), 2);
+    }
+
+    #[test]
+    fn a_bare_column_of_figures_is_one_series_with_nothing_naming_it() {
+        let rows: &[&[&str]] = &[&["3"], &["1"], &["4"]];
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(2, 0), None);
+        assert_eq!(guessed.spec.categories, None);
+        assert_eq!(series_of(&guessed.spec), [("A1:A3", None)]);
+    }
+
+    /// A person overruling the guess gets exactly what they said, and the rest follows.
+    #[test]
+    fn a_shape_given_is_a_shape_obeyed() {
+        let columns = Shape {
+            by_rows: false,
+            header_row: true,
+            label_column: true,
+        };
+        let guessed = guess(
+            &table(ACROSS),
+            Pos::new(0, 0),
+            Pos::new(2, 5),
+            Some(columns),
+        );
+        assert_eq!(guessed.shape, columns);
+        assert_eq!(guessed.spec.categories.as_deref(), Some("A2:A3"));
+        assert_eq!(guessed.spec.series.len(), 5);
+        assert_eq!(guessed.spec.series[0], ("B2:B3".into(), Some("B1".into())));
+    }
+
+    #[test]
+    fn a_block_with_no_figures_in_it_charts_nothing() {
+        let rows: &[&[&str]] = &[&["a", "b"], &["c", "d"]];
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(1, 1), None);
+        assert!(guessed.spec.series.is_empty());
+        assert_eq!(guessed.spec.categories, None);
     }
 
     fn pie_of(values: &[f64]) -> ChartData {

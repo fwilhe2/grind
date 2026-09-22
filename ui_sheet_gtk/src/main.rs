@@ -1299,34 +1299,25 @@ impl Ui {
                 };
 
                 let sheet = ui.grid.sheet();
+                let spec = grind_sheet::ChartSpec {
+                    categories: categories_range,
+                    series: series
+                        .iter()
+                        .map(|(values, label)| ((*values).to_owned(), label.map(str::to_owned)))
+                        .collect(),
+                    x_axis,
+                    y_axis,
+                    ..grind_sheet::ChartSpec::new(chart_kind)
+                };
                 let result = match editing {
-                    Some(index) => ui.app.edit_chart(
-                        sheet,
-                        index,
-                        chart_kind,
-                        categories_range.as_deref(),
-                        &series,
-                        x_axis,
-                        y_axis,
-                    ),
+                    Some(index) => ui.app.edit_chart(sheet, index, &spec),
                     None => {
                         // Successive inserts land at slightly different spots, so they don't
                         // stack exactly on top of each other — a user repositions by dragging
                         // afterward either way.
                         let n = ui.app.charts(sheet).map(|c| c.len()).unwrap_or(0) as f64;
                         let at = grind_sheet::style::mm_length(20.0 + n * 5.0);
-                        ui.app.add_chart(
-                            sheet,
-                            chart_kind,
-                            categories_range.as_deref(),
-                            &series,
-                            &at,
-                            &at,
-                            "12cm",
-                            "8cm",
-                            x_axis,
-                            y_axis,
-                        )
+                        ui.app.add_chart(sheet, &spec, &at, &at, "12cm", "8cm")
                     }
                 };
                 match result {
@@ -1341,32 +1332,24 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
-    /// The current selection read as a chart's ranges: `(categories, series)`, both empty
-    /// unless the selection spans more than one row *and* more than one column, which is the
-    /// only shape where "the first column names the rest" is a safe guess.
+    /// The current selection read as a chart's ranges: `(categories, series)` — the core's
+    /// [`grind_sheet::chart::guess`], so this window reads a table the way `chart-add --from`
+    /// does, months across the top included.
     fn selection_as_chart(&self) -> (String, Vec<String>) {
         let (start, end) = self.grid.selection().rect();
-        if end.row <= start.row || end.col <= start.col {
+        let Ok(guessed) = self.app.suggest_chart(self.grid.sheet(), start, end, None) else {
             return (String::new(), Vec::new());
-        }
-        let range = |row_from: u32, row_to: u32, col: u32| {
-            format!(
-                "{}:{}",
-                a1::format(None, grind_sheet::Pos::new(row_from, col)),
-                a1::format(None, grind_sheet::Pos::new(row_to, col))
-            )
         };
-        let categories = range(start.row + 1, end.row, start.col);
-        let series = ((start.col + 1)..=end.col)
-            .map(|col| {
-                format!(
-                    "{}={}",
-                    range(start.row + 1, end.row, col),
-                    a1::format(None, grind_sheet::Pos::new(start.row, col))
-                )
+        let series = guessed
+            .spec
+            .series
+            .iter()
+            .map(|(values, label)| match label {
+                Some(label) => format!("{values}={label}"),
+                None => values.clone(),
             })
             .collect();
-        (categories, series)
+        (guessed.spec.categories.unwrap_or_default(), series)
     }
 
     /// Deleting a chart is immediate, with an Undo toast — the inverse carries the whole

@@ -10,6 +10,27 @@ use std::sync::{Arc, Mutex};
 
 use grind_sheet::{App, CellValue, Entered, Observer, Pos, Recalc, RecalcMode};
 
+/// The old positional vocabulary, as the [`grind_sheet::ChartSpec`] `add_chart` and `edit_chart`
+/// take now — so a test says what its chart is in one line.
+fn spec(
+    kind: grind_sheet::ChartKind,
+    categories: Option<&str>,
+    series: &[(&str, Option<&str>)],
+    x_axis: grind_sheet::ChartAxis,
+    y_axis: grind_sheet::ChartAxis,
+) -> grind_sheet::ChartSpec {
+    grind_sheet::ChartSpec {
+        categories: categories.map(str::to_owned),
+        series: series
+            .iter()
+            .map(|(values, label)| ((*values).to_owned(), label.map(str::to_owned)))
+            .collect(),
+        x_axis,
+        y_axis,
+        ..grind_sheet::ChartSpec::new(kind)
+    }
+}
+
 fn p(row: u32, col: u32) -> Pos {
     Pos::new(row, col)
 }
@@ -453,15 +474,17 @@ fn renaming_a_sheet_carries_every_reference_that_named_it() {
     app.set_name("total", "SUM([$Data.$A$1:.$A$2])").unwrap();
     app.add_chart(
         0,
-        grind_sheet::ChartKind::Bar,
-        None,
-        &[("Data.A1:Data.A2", None)],
+        &spec(
+            grind_sheet::ChartKind::Bar,
+            None,
+            &[("Data.A1:Data.A2", None)],
+            Default::default(),
+            Default::default(),
+        ),
         "2cm",
         "2cm",
         "8cm",
         "6cm",
-        Default::default(),
-        Default::default(),
     )
     .unwrap();
 

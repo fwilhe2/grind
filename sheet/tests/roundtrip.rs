@@ -33,6 +33,27 @@ use grind_sheet::numfmt::{Format, Kind, Map, Op, Part};
 use grind_sheet::style::{self, CellStyle};
 use grind_sheet::{CellValue, Document, Form, Pos, Sheet};
 
+/// The old positional vocabulary, as the [`grind_sheet::ChartSpec`] `add_chart` and `edit_chart`
+/// take now — so a test says what its chart is in one line.
+fn spec(
+    kind: grind_sheet::ChartKind,
+    categories: Option<&str>,
+    series: &[(&str, Option<&str>)],
+    x_axis: grind_sheet::ChartAxis,
+    y_axis: grind_sheet::ChartAxis,
+) -> grind_sheet::ChartSpec {
+    grind_sheet::ChartSpec {
+        categories: categories.map(str::to_owned),
+        series: series
+            .iter()
+            .map(|(values, label)| ((*values).to_owned(), label.map(str::to_owned)))
+            .collect(),
+        x_axis,
+        y_axis,
+        ..grind_sheet::ChartSpec::new(kind)
+    }
+}
+
 const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
 
 /// Calc's test data, under the checkout root. `GRIND_LO_CORPUS` names the **root**
@@ -764,15 +785,17 @@ fn charts() -> (String, Document) {
     ] {
         app.add_chart(
             0,
-            kind,
-            Some("A2:A4"),
-            series,
+            &spec(
+                kind,
+                Some("A2:A4"),
+                series,
+                titled("Month"),
+                titled("Amount"),
+            ),
             at,
             "3cm",
             "8cm",
             "6cm",
-            titled("Month"),
-            titled("Amount"),
         )
         .unwrap();
     }
@@ -799,15 +822,17 @@ fn counter_clockwise_pie() -> (String, Document) {
     }
     app.add_chart(
         0,
-        grind_sheet::ChartKind::Pie,
-        Some("A1:A3"),
-        &[("B1:B3", None)],
+        &spec(
+            grind_sheet::ChartKind::Pie,
+            Some("A1:A3"),
+            &[("B1:B3", None)],
+            grind_sheet::ChartAxis::default(),
+            grind_sheet::ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "8cm",
         "8cm",
-        grind_sheet::ChartAxis::default(),
-        grind_sheet::ChartAxis::default(),
     )
     .unwrap();
     let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();

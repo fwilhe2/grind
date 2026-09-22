@@ -1825,21 +1825,34 @@ enum Command {
     // `doc/chart-format.md` is the scope line these three shapes come from.
     /// Add a chart — bar, line or pie
     ///
-    /// `sheet chart-add book.ods --type bar --categories B3:B9 --series C3:C9` adds a bar
-    /// chart of column C, labelled by column B. Repeat `--series` for more than one series
-    /// (a pie's first is the one drawn); each may carry its own name as `range=label-range`,
-    /// e.g. `C3:C9=C2:C2` — `=` rather than a second `:`, since a range already has one.
+    /// `sheet chart-add book.ods --from A1:C5` charts a table, reading it the way the window's
+    /// Insert Chart does: a first row of text names the series, a first column of text, dates
+    /// or a counting sequence names the categories, and the series run down the columns unless
+    /// the figures are wider than they are tall. Any flag below overrides what that read.
+    ///
+    /// Or say it all: `sheet chart-add book.ods --type bar --categories B3:B9 --series C3:C9`
+    /// adds a bar chart of column C, labelled by column B. Repeat `--series` for more than one
+    /// series (a pie's first is the one drawn); each may carry its own name as
+    /// `range=label-range`, e.g. `C3:C9=C2:C2` — `=` rather than a second `:`, since a range
+    /// already has one.
     ChartAdd {
         file: PathBuf,
+        /// A table to chart, read the way Insert Chart reads one; `--series` is then optional
+        #[arg(long, value_name = "RANGE")]
+        from: Option<String>,
+        /// Bar, line or pie; with `--from`, defaults to what the table suggests
         #[arg(value_enum, long)]
-        r#type: ChartType,
+        r#type: Option<ChartType>,
         /// The range naming each category (the x axis), e.g. B3:B9
         #[arg(long)]
         categories: Option<String>,
         /// A series' values, optionally followed by `=label-range` — repeat for more than
-        /// one series
-        #[arg(long = "series", required = true, value_name = "RANGE[=LABEL]")]
+        /// one series. Required unless `--from` is given; given, these replace its series
+        #[arg(long = "series", value_name = "RANGE[=LABEL]")]
         series: Vec<String>,
+        /// Which way a pie runs from twelve o'clock (default true)
+        #[arg(long, value_name = "BOOL")]
+        clockwise: Option<bool>,
         /// Which sheet the ranges (and the chart itself) are on; defaults to the first
         #[arg(long)]
         sheet: Option<String>,
@@ -1895,6 +1908,9 @@ enum Command {
         /// one series. Given at all, these replace every series the chart had.
         #[arg(long = "series", value_name = "RANGE[=LABEL]")]
         series: Vec<String>,
+        /// Which way a pie runs from twelve o'clock
+        #[arg(long, value_name = "BOOL")]
+        clockwise: Option<bool>,
         /// The x axis' own title; pass an empty string to clear it
         #[arg(long, value_name = "TEXT")]
         x_axis_label: Option<String>,
@@ -1953,10 +1969,9 @@ enum Command {
     ///
     /// `sheet chart-style book.ods 0 --x-axis-label Party --y-axis-label Votes` titles a
     /// chart's axes, and `--y-gridlines true` rules gridlines across it.
-    /// `--series-color 0=navy` sets a whole line series' colour (line charts
-    /// only — a bar or a pie colours per bar/slice instead: `--point-color 0.2=red` is the
-    /// third bar or slice of series 0). Either repeatable flag with nothing after `=` — `
-    /// --series-color 0=` — goes back to the default cycle.
+    /// `--series-color 0=navy` sets a whole bar or line series' colour, and `--point-color
+    /// 0.2=red` one bar of it or one slice of a pie — the third of series 0. Either repeatable
+    /// flag with nothing after `=` — `--series-color 0=` — goes back to the default cycle.
     ChartStyle {
         file: PathBuf,
         /// The chart's position in `chart-list`, 0-based
@@ -1982,8 +1997,8 @@ enum Command {
         /// Rule gridlines across from the y axis
         #[arg(long, value_name = "BOOL")]
         y_gridlines: Option<bool>,
-        /// A line series' whole colour, as `SERIES=COLOR` (a palette name or `#rrggbb`) —
-        /// `SERIES=` clears it. Repeat for more than one series.
+        /// A bar or line series' whole colour, as `SERIES=COLOR` (a palette name or
+        /// `#rrggbb`) — `SERIES=` clears it. Repeat for more than one series.
         #[arg(long = "series-color", value_name = "SERIES=COLOR")]
         series_color: Vec<String>,
         /// One bar's or slice's colour, as `SERIES.POINT=COLOR` — `SERIES.POINT=` clears it.
@@ -3045,9 +3060,11 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
 
         Command::ChartAdd {
             file,
+            from,
             r#type,
             categories,
             series,
+            clockwise,
             sheet,
             x,
             y,
@@ -3062,21 +3079,55 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         } => {
             let app = load(file, cli)?;
             let sheet_index = chart_sheet(&app, sheet.as_deref())?;
-            let owned = split_series(series);
-            let series = borrow_series(&owned);
-            app.add_chart(
-                sheet_index,
-                (*r#type).into(),
-                categories.as_deref(),
-                &series,
-                x,
-                y,
-                width,
-                height,
-                axis(None, x_axis_label, *x_tick_labels, *x_gridlines),
-                axis(None, y_axis_label, *y_tick_labels, *y_gridlines),
-            )
-            .say()?;
+            let mut spec = match from {
+                Some(range) => {
+                    let qualified =
+                        grind_sheet::chart::parse_range(&app, sheet_index, range).say()?;
+                    let (on, start, end) =
+                        grind_sheet::chart::resolve_range(&app, &qualified).say()?;
+                    let guessed = app.suggest_chart(on, start, end, None).say()?;
+                    if guessed.spec.series.is_empty() && series.is_empty() {
+                        return Err(format!("nothing in {range} is a number to chart"));
+                    }
+                    guessed.spec
+                }
+                None => {
+                    if series.is_empty() {
+                        return Err("give the chart a --series, or a table --from".to_owned());
+                    }
+                    grind_sheet::ChartSpec::new(
+                        r#type
+                            .map(Into::into)
+                            .unwrap_or(grind_sheet::ChartKind::Bar),
+                    )
+                }
+            };
+            if let Some(kind) = r#type {
+                spec.kind = (*kind).into();
+            }
+            if let Some(range) = categories {
+                spec.categories = (!range.is_empty()).then(|| range.clone());
+            }
+            if !series.is_empty() {
+                spec.series = split_series(series);
+            }
+            if let Some(clockwise) = clockwise {
+                spec.clockwise = *clockwise;
+            }
+            spec.x_axis = axis(
+                Some(&spec.x_axis),
+                x_axis_label,
+                *x_tick_labels,
+                *x_gridlines,
+            );
+            spec.y_axis = axis(
+                Some(&spec.y_axis),
+                y_axis_label,
+                *y_tick_labels,
+                *y_gridlines,
+            );
+            app.add_chart(sheet_index, &spec, x, y, width, height)
+                .say()?;
             finish(&app, cli, file, true)
         }
 
@@ -3087,6 +3138,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             r#type,
             categories,
             series,
+            clockwise,
             x_axis_label,
             y_axis_label,
             x_tick_labels,
@@ -3102,40 +3154,34 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 .ok_or_else(|| format!("sheet {sheet_index} has no chart {index}"))?;
             // Nothing given keeps what is there — including the series, which are handed back
             // as the resolved addresses they already are and re-resolve to themselves.
-            let owned = match series.is_empty() {
-                true => chart
-                    .series
-                    .iter()
-                    .map(|s| (s.values.clone(), s.label.clone()))
-                    .collect(),
-                false => split_series(series),
-            };
-            let series = borrow_series(&owned);
-            let categories = match categories {
-                None => chart.categories.clone(),
-                Some(range) if range.is_empty() => None,
-                Some(range) => Some(range.clone()),
-            };
-            app.edit_chart(
-                sheet_index,
-                *index,
-                r#type.map(Into::into).unwrap_or(chart.kind),
-                categories.as_deref(),
-                &series,
-                axis(
-                    Some(&chart.x_axis),
-                    x_axis_label,
-                    *x_tick_labels,
-                    *x_gridlines,
-                ),
-                axis(
-                    Some(&chart.y_axis),
-                    y_axis_label,
-                    *y_tick_labels,
-                    *y_gridlines,
-                ),
-            )
-            .say()?;
+            let mut spec = grind_sheet::ChartSpec::of(chart);
+            if let Some(kind) = r#type {
+                spec.kind = (*kind).into();
+            }
+            if !series.is_empty() {
+                spec.series = split_series(series);
+            }
+            match categories {
+                Some(range) if range.is_empty() => spec.categories = None,
+                Some(range) => spec.categories = Some(range.clone()),
+                None => {}
+            }
+            if let Some(clockwise) = clockwise {
+                spec.clockwise = *clockwise;
+            }
+            spec.x_axis = axis(
+                Some(&chart.x_axis),
+                x_axis_label,
+                *x_tick_labels,
+                *x_gridlines,
+            );
+            spec.y_axis = axis(
+                Some(&chart.y_axis),
+                y_axis_label,
+                *y_tick_labels,
+                *y_gridlines,
+            );
+            app.edit_chart(sheet_index, *index, &spec).say()?;
             finish(&app, cli, file, true)
         }
 
@@ -3343,15 +3389,6 @@ fn split_series(series: &[String]) -> Vec<(String, Option<String>)> {
             Some((values, label)) => (values.to_owned(), Some(label.to_owned())),
             None => (s.clone(), None),
         })
-        .collect()
-}
-
-/// The borrowed view of [`split_series`]' own output, which is what `App` actually takes —
-/// two steps because the owned halves have to outlive the call.
-fn borrow_series(series: &[(String, Option<String>)]) -> Vec<(&str, Option<&str>)> {
-    series
-        .iter()
-        .map(|(values, label)| (values.as_str(), label.as_deref()))
         .collect()
 }
 

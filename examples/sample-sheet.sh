@@ -161,11 +161,14 @@ run width "$book" H:H 3.5cm
 run height "$book" 1:1 8mm
 
 # A chart tracks ranges, not values, the way a formula does — moving the data it points at
-# moves the chart with no separate step. Bar and pie colour per bar or slice by default
-# (`series_color`'s own cycle); a colour picked by hand — `--point-color`/`--series-color` —
-# is a sticky override that survives every later save, which is what `chart-style` is for.
+# moves the chart with no separate step. `--from` reads a table the way the window's Insert
+# Chart does: the heading row names the two series, the Category column the bars, and each
+# column of figures is a series because the figures are taller than they are wide. A bar or a
+# line is one colour per series, a pie one per slice (`series_color`'s own cycle); a colour
+# picked by hand — `--point-color`/`--series-color` — is a sticky override that survives every
+# later save, which is what `chart-style` is for.
 say "chart: bar, line and pie, tracking ranges rather than values"
-run chart-add "$book" --type bar --categories A2:A7 --series B2:B7=B1 --series C2:C7=C1 \
+run chart-add "$book" --from A1:C7 \
   --x-axis-label Category --y-axis-label Budgeted --y-gridlines true \
   --x 1cm --y 30cm --width 12cm --height 8cm
 sheet chart-list "$book"
@@ -179,6 +182,8 @@ run chart-reshape "$book" 0 --x 1cm --y 30cm --width 14cm --height 9cm
 say "chart: edit what one is after the fact, and switch an axis' own labels off"
 run chart-edit "$book" 0 --x-tick-labels false --x-axis-label ""
 
+# Spelled out in full, which is how to say anything `--from` would read differently: a pie
+# runs clockwise from twelve o'clock unless told `--clockwise false`, and says so in the file.
 say "chart: a pie of the same categories, coloured per slice by default"
 run chart-add "$book" --type pie --categories A2:A7 --series C2:C7 \
   --x 16cm --y 30cm --width 10cm --height 8cm

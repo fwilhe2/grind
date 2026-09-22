@@ -46,8 +46,9 @@ pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
 pub use chart::{
-    Axis as ChartAxis, Chart, ChartData, ChartKind, Series as ChartSeries, Slice, Ticks,
-    axis_ticks, effective_color, pie_slice_at, pie_slices, series_color,
+    Axis as ChartAxis, Chart, ChartData, ChartKind, Guess as ChartGuess, Series as ChartSeries,
+    Shape as ChartShape, Slice, Spec as ChartSpec, Ticks, axis_ticks, effective_color,
+    pie_slice_at, pie_slices, series_color,
 };
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
@@ -1848,36 +1849,26 @@ impl App {
 
     // --- charts ---
 
-    /// Add a chart to a sheet, resolving `categories` and each series' `(values, label)` the
-    /// way a formula's own reference resolves — see [`chart::parse_range`]. `label` names a
-    /// range too (`chart:label-cell-address`, usually one cell); pass `None` for a series with
-    /// no name of its own.
-    #[allow(clippy::too_many_arguments)]
+    /// Add a chart to a sheet at the given place — `x`/`y`/`width`/`height` are ODF lengths
+    /// (`"2.5cm"`), the same as [`Self::reshape_chart`] takes — resolving the spec's ranges the
+    /// way a formula's own reference resolves ([`chart::parse_range`]). One undo step.
     pub fn add_chart(
         &self,
         sheet: usize,
-        kind: ChartKind,
-        categories: Option<&str>,
-        series: &[(&str, Option<&str>)],
+        spec: &chart::Spec,
         x: &str,
         y: &str,
         width: &str,
         height: &str,
-        x_axis: chart::Axis,
-        y_axis: chart::Axis,
     ) -> Result<()> {
-        let (categories, series) = self.resolve_chart_ranges(sheet, categories, series)?;
         let mut chart = Chart::new(
-            kind,
+            spec.kind,
             x.to_owned(),
             y.to_owned(),
             width.to_owned(),
             height.to_owned(),
         );
-        chart.categories = categories;
-        chart.series = series;
-        chart.x_axis = x_axis;
-        chart.y_axis = y_axis;
+        self.fill_chart(sheet, spec, &mut chart)?;
 
         self.mutate(|state| {
             let sheet_len = state
@@ -1898,6 +1889,22 @@ impl App {
             state.redo.clear();
             Ok(())
         })
+    }
+
+    /// The chart a block of cells makes — [`chart::guess`], under one read lock. `shape` is a
+    /// person overruling one of its answers (which way the series run, and whether the first
+    /// row or column names things); `None` lets the cells decide. Nothing is written: the
+    /// [`chart::Spec`] it returns is what [`Self::add_chart`] takes.
+    pub fn suggest_chart(
+        &self,
+        sheet: usize,
+        start: Pos,
+        end: Pos,
+        shape: Option<chart::Shape>,
+    ) -> Result<chart::Guess> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(chart::guess(s, start, end, shape))
     }
 
     /// Every chart on a sheet, in document order.
@@ -1976,43 +1983,46 @@ impl App {
         self.replace_chart(sheet, index, chart)
     }
 
-    /// Change what a chart *is*: its kind, the ranges it points at and its axes, in the same
-    /// vocabulary [`Self::add_chart`] takes — one undo step. Its position and size are left
-    /// alone (they are [`Self::reshape_chart`]'s, and a dialog that reopened would otherwise
-    /// undo a drag).
+    /// Change what a chart *is* — everything a [`chart::Spec`] says — one undo step. Its
+    /// position and size are left alone (they are [`Self::reshape_chart`]'s, and a dialog that
+    /// reopened would otherwise undo a drag).
     ///
     /// **A colour a user picked by hand survives an edit** that leaves the series it was
     /// picked on pointing at the same range: colours are matched back on by range address
     /// rather than by position, so adding a series above another one does not shuffle the
     /// colours down. A series whose range *changed* starts again from the default cycle,
     /// since a colour chosen for the fourth bar of one range means nothing on another.
-    // Eight arguments, one over the limit, and the same eight `add_chart` takes minus the
-    // geometry plus the index — an "options struct" here would only be this list with a name.
-    #[allow(clippy::too_many_arguments)]
-    pub fn edit_chart(
-        &self,
-        sheet: usize,
-        index: usize,
-        kind: ChartKind,
-        categories: Option<&str>,
-        series: &[(&str, Option<&str>)],
-        x_axis: chart::Axis,
-        y_axis: chart::Axis,
-    ) -> Result<()> {
-        let (categories, mut series) = self.resolve_chart_ranges(sheet, categories, series)?;
-        let mut chart = self.chart(sheet, index)?;
-        for new in &mut series {
-            if let Some(old) = chart.series.iter().find(|old| old.values == new.values) {
+    pub fn edit_chart(&self, sheet: usize, index: usize, spec: &chart::Spec) -> Result<()> {
+        let old = self.chart(sheet, index)?;
+        let mut chart = old.clone();
+        self.fill_chart(sheet, spec, &mut chart)?;
+        chart.kind = spec.kind;
+        for new in &mut chart.series {
+            if let Some(old) = old.series.iter().find(|old| old.values == new.values) {
                 new.color = old.color.clone();
                 new.point_colors = old.point_colors.clone();
             }
         }
-        chart.kind = kind;
+        self.replace_chart(sheet, index, chart)
+    }
+
+    /// Everything a spec says, resolved into `chart` — shared by [`Self::add_chart`] and
+    /// [`Self::edit_chart`], and run **before** the mutation, because resolving a reference
+    /// takes the same lock the mutation does.
+    fn fill_chart(&self, sheet: usize, spec: &chart::Spec, chart: &mut Chart) -> Result<()> {
+        let series: Vec<(&str, Option<&str>)> = spec
+            .series
+            .iter()
+            .map(|(values, label)| (values.as_str(), label.as_deref()))
+            .collect();
+        let (categories, series) =
+            self.resolve_chart_ranges(sheet, spec.categories.as_deref(), &series)?;
         chart.categories = categories;
         chart.series = series;
-        chart.x_axis = x_axis;
-        chart.y_axis = y_axis;
-        self.replace_chart(sheet, index, chart)
+        chart.x_axis = spec.x_axis.clone();
+        chart.y_axis = spec.y_axis.clone();
+        chart.clockwise = spec.clockwise;
+        Ok(())
     }
 
     /// One chart, by index — the read every chart edit starts from, since each of them
@@ -2160,7 +2170,7 @@ pub fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
 /// An explicit format wins because it is the one the user can see and change; a plain
 /// number a user has *formatted* as a date is one they mean as a date even if the cell
 /// never carried an `office:date-value`.
-fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
+pub(crate) fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
     match sheet.format(pos).map(|f| f.kind) {
         Some(numfmt::Kind::Date) => Some(model::NumberKind::Date),
         Some(numfmt::Kind::Time) => Some(model::NumberKind::Time),

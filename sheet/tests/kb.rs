@@ -44,6 +44,27 @@ use std::process::Command;
 
 use grind_sheet::{Document, Form, Pos};
 
+/// The old positional vocabulary, as the [`grind_sheet::ChartSpec`] `add_chart` and `edit_chart`
+/// take now — so a test says what its chart is in one line.
+fn spec(
+    kind: grind_sheet::ChartKind,
+    categories: Option<&str>,
+    series: &[(&str, Option<&str>)],
+    x_axis: grind_sheet::ChartAxis,
+    y_axis: grind_sheet::ChartAxis,
+) -> grind_sheet::ChartSpec {
+    grind_sheet::ChartSpec {
+        categories: categories.map(str::to_owned),
+        series: series
+            .iter()
+            .map(|(values, label)| ((*values).to_owned(), label.map(str::to_owned)))
+            .collect(),
+        x_axis,
+        y_axis,
+        ..grind_sheet::ChartSpec::new(kind)
+    }
+}
+
 /// The hand-written half of R7. Listed rather than globbed: the requirement is these eight,
 /// so a file going missing must fail rather than quietly shrink the run.
 const KB: [&str; 8] = [
@@ -276,15 +297,17 @@ fn every_chart_we_write_is_valid_odf() {
     for kind in [ChartKind::Bar, ChartKind::Line, ChartKind::Pie] {
         app.add_chart(
             0,
-            kind,
-            Some("A1:A2"),
-            &[("B1:B2", Some("B1")), ("C1:C2", None)],
+            &spec(
+                kind,
+                Some("A1:A2"),
+                &[("B1:B2", Some("B1")), ("C1:C2", None)],
+                axis.clone(),
+                axis.clone(),
+            ),
             "1cm",
             "1cm",
             "8cm",
             "6cm",
-            axis.clone(),
-            axis.clone(),
         )
         .unwrap();
     }

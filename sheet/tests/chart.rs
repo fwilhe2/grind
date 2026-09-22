@@ -8,6 +8,27 @@
 
 use grind_sheet::{App, ChartAxis, ChartKind, Form};
 
+/// The old positional vocabulary, as the [`grind_sheet::ChartSpec`] `add_chart` and `edit_chart`
+/// take now — so a test says what its chart is in one line.
+fn spec(
+    kind: grind_sheet::ChartKind,
+    categories: Option<&str>,
+    series: &[(&str, Option<&str>)],
+    x_axis: grind_sheet::ChartAxis,
+    y_axis: grind_sheet::ChartAxis,
+) -> grind_sheet::ChartSpec {
+    grind_sheet::ChartSpec {
+        categories: categories.map(str::to_owned),
+        series: series
+            .iter()
+            .map(|(values, label)| ((*values).to_owned(), label.map(str::to_owned)))
+            .collect(),
+        x_axis,
+        y_axis,
+        ..grind_sheet::ChartSpec::new(kind)
+    }
+}
+
 /// An axis carrying nothing but a title — what most of these tests want to pass.
 fn titled(label: &str) -> ChartAxis {
     ChartAxis {
@@ -36,15 +57,17 @@ fn a_new_chart_reads_back_the_ranges_it_was_given() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Bar,
-        Some("A2:A4"),
-        &[("B2:B4", Some("B1"))],
+        &spec(
+            ChartKind::Bar,
+            Some("A2:A4"),
+            &[("B2:B4", Some("B1"))],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
@@ -68,15 +91,17 @@ fn chart_data_resolves_against_the_live_sheet() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Pie,
-        Some("A2:A4"),
-        &[("B2:B4", Some("B1"))],
+        &spec(
+            ChartKind::Pie,
+            Some("A2:A4"),
+            &[("B2:B4", Some("B1"))],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
@@ -99,15 +124,17 @@ fn removing_a_chart_undoes_back_to_having_it() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Line,
-        None,
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Line,
+            None,
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
     assert_eq!(app.charts(0).unwrap().len(), 1);
@@ -126,15 +153,17 @@ fn reshaping_a_chart_moves_it_and_undoes_back() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Bar,
-        None,
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Bar,
+            None,
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
@@ -169,15 +198,17 @@ fn a_bad_range_is_an_error_not_a_panic() {
     assert!(
         app.add_chart(
             0,
-            ChartKind::Bar,
-            None,
-            &[("not a range", None)],
+            &spec(
+                ChartKind::Bar,
+                None,
+                &[("not a range", None)],
+                ChartAxis::default(),
+                ChartAxis::default()
+            ),
             "1cm",
             "1cm",
             "10cm",
-            "8cm",
-            ChartAxis::default(),
-            ChartAxis::default(),
+            "8cm"
         )
         .is_err()
     );
@@ -198,15 +229,17 @@ fn a_chart_survives_a_save_and_reopen_in_both_forms() {
         filled(&app);
         app.add_chart(
             0,
-            ChartKind::Pie,
-            Some("A2:A4"),
-            &[("B2:B4", Some("B1"))],
+            &spec(
+                ChartKind::Pie,
+                Some("A2:A4"),
+                &[("B2:B4", Some("B1"))],
+                titled("Party"),
+                titled("Votes"),
+            ),
             "1cm",
             "2cm",
             "10cm",
             "8cm",
-            titled("Party"),
-            titled("Votes"),
         )
         .unwrap();
 
@@ -240,15 +273,17 @@ fn a_custom_point_colour_survives_a_save_and_reopen() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Bar,
-        None,
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Bar,
+            None,
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
@@ -286,15 +321,17 @@ fn set_chart_style_sets_and_undoes_axis_labels() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Line,
-        None,
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Line,
+            None,
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
@@ -320,23 +357,25 @@ fn axis_tick_labels_and_gridlines_survive_a_save_and_reopen_in_both_forms() {
         filled(&app);
         app.add_chart(
             0,
-            ChartKind::Bar,
-            Some("A2:A4"),
-            &[("B2:B4", None)],
+            &spec(
+                ChartKind::Bar,
+                Some("A2:A4"),
+                &[("B2:B4", None)],
+                ChartAxis {
+                    label: None,
+                    tick_labels: false,
+                    gridlines: false,
+                },
+                ChartAxis {
+                    label: Some("Votes".to_owned()),
+                    tick_labels: true,
+                    gridlines: true,
+                },
+            ),
             "1cm",
             "1cm",
             "10cm",
             "8cm",
-            ChartAxis {
-                label: None,
-                tick_labels: false,
-                gridlines: false,
-            },
-            ChartAxis {
-                label: Some("Votes".to_owned()),
-                tick_labels: true,
-                gridlines: true,
-            },
         )
         .unwrap();
 
@@ -362,15 +401,17 @@ fn an_axis_with_nothing_said_about_it_reads_back_with_its_labels_shown() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Bar,
-        Some("A2:A4"),
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Bar,
+            Some("A2:A4"),
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
@@ -397,26 +438,30 @@ fn editing_a_chart_changes_its_kind_and_ranges_and_undoes_in_one_step() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Bar,
-        Some("A2:A4"),
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Bar,
+            Some("A2:A4"),
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 
     app.edit_chart(
         0,
         0,
-        ChartKind::Line,
-        Some("A2:A3"),
-        &[("B2:B3", Some("B1"))],
-        titled("Party"),
-        ChartAxis::default(),
+        &spec(
+            ChartKind::Line,
+            Some("A2:A3"),
+            &[("B2:B3", Some("B1"))],
+            titled("Party"),
+            ChartAxis::default(),
+        ),
     )
     .unwrap();
 
@@ -443,15 +488,17 @@ fn editing_a_chart_keeps_a_hand_picked_colour_on_the_series_it_was_picked_on() {
     filled(&app);
     app.add_chart(
         0,
-        ChartKind::Line,
-        None,
-        &[("B2:B4", None)],
+        &spec(
+            ChartKind::Line,
+            None,
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
     let mut series = app.charts(0).unwrap()[0].series.clone();
@@ -464,11 +511,13 @@ fn editing_a_chart_keeps_a_hand_picked_colour_on_the_series_it_was_picked_on() {
     app.edit_chart(
         0,
         0,
-        ChartKind::Line,
-        None,
-        &[("A2:A4", None), ("B2:B4", None)],
-        ChartAxis::default(),
-        ChartAxis::default(),
+        &spec(
+            ChartKind::Line,
+            None,
+            &[("A2:A4", None), ("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
     )
     .unwrap();
     let chart = &app.charts(0).unwrap()[0];
@@ -480,11 +529,13 @@ fn editing_a_chart_keeps_a_hand_picked_colour_on_the_series_it_was_picked_on() {
     app.edit_chart(
         0,
         0,
-        ChartKind::Line,
-        None,
-        &[("B2:B3", None)],
-        ChartAxis::default(),
-        ChartAxis::default(),
+        &spec(
+            ChartKind::Line,
+            None,
+            &[("B2:B3", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
     )
     .unwrap();
     assert_eq!(app.charts(0).unwrap()[0].series[0].color, None);
@@ -499,11 +550,13 @@ fn editing_a_chart_that_does_not_exist_is_an_error() {
         app.edit_chart(
             0,
             0,
-            ChartKind::Bar,
-            None,
-            &[("B2:B4", None)],
-            ChartAxis::default(),
-            ChartAxis::default(),
+            &spec(
+                ChartKind::Bar,
+                None,
+                &[("B2:B4", None)],
+                ChartAxis::default(),
+                ChartAxis::default()
+            )
         )
         .is_err()
     );
@@ -514,15 +567,17 @@ fn editing_a_chart_that_does_not_exist_is_an_error() {
 fn add(app: &App, kind: ChartKind, series: &[(&str, Option<&str>)]) {
     app.add_chart(
         0,
-        kind,
-        Some("A2:A4"),
-        series,
+        &spec(
+            kind,
+            Some("A2:A4"),
+            series,
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
         "1cm",
         "1cm",
         "10cm",
         "8cm",
-        ChartAxis::default(),
-        ChartAxis::default(),
     )
     .unwrap();
 }
