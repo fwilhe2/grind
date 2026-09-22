@@ -492,17 +492,10 @@ mod windows_impl {
                 if let Some(colour) = highlight {
                     SetBkColor(dc, COLORREF(colour.colorref()));
                 }
-                SetTextColor(
-                    dc,
-                    COLORREF(
-                        props
-                            .color
-                            .as_deref()
-                            .and_then(Rgb::parse)
-                            .unwrap_or(ink)
-                            .colorref(),
-                    ),
-                );
+                // `ink` is already the run's own colour where it has one, made to read on the
+                // ground it lands on (`theme::document_ink`) — the caller's decision, not this
+                // measuring call's.
+                SetTextColor(dc, COLORREF(ink.colorref()));
                 let _ = ExtTextOutW(
                     dc,
                     rect.left,

@@ -21,16 +21,16 @@ use super::keymap::Selection;
 
 /// Where the selection is, and what it adds up to.
 ///
-/// `A1` for a single cell; `B2:C4 · Sum 21215.51 · Count 6 · Average 3535.9` for a range that
-/// holds something; just the address for one that does not. A single cell is left alone
-/// deliberately: it has nothing to add up and every other spreadsheet stays quiet about it.
+/// Nothing for a single cell — the name box is already saying where it is, and a status bar
+/// that repeated it was two read-outs of one fact; `B2:C4 · Sum 21215.51 · Count 6 · Average
+/// 3535.9` for a range that holds something; just the address for one that does not.
 ///
 /// The numbers are spelled the document's way ([`App::display_number`]), so a German document's
 /// sum reads `21215,51`, as its cells do.
 pub fn selection_text(app: &App, sheet: usize, selection: Selection) -> String {
     let (start, end) = selection.rect();
     if selection.is_single() {
-        return a1::format(None, start);
+        return String::new();
     }
     let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
     let Ok((rows, cols)) = app.used_extent(sheet) else {
@@ -78,27 +78,6 @@ pub fn clamp(start: Pos, end: Pos, rows: u32, cols: u32) -> Option<(Pos, Pos)> {
     }
     let end = Pos::new(end.row.min(rows - 1), end.col.min(cols - 1));
     (end.row >= start.row && end.col >= start.col).then_some((start, end))
-}
-
-/// The status bar's two halves: which document is open on the left, what is selected in it on
-/// the right.
-///
-/// One function rather than two because they are one line and the split is a *layout* decision —
-/// the window draws the left half from the left edge and the right half from the right, so the
-/// arithmetic is what survives a narrow window and the sheet's name is what gets elided. It was
-/// one long left-aligned string before W9, where the numbers a person actually watches ended up
-/// wherever the sheet's name happened to leave them.
-pub fn status_halves(app: &App, sheet: usize, selection: Selection) -> (String, String) {
-    let name = app
-        .sheet_name(sheet)
-        .unwrap_or_else(|_| String::from("Sheet1"));
-    let (rows, cols) = app.used_extent(sheet).unwrap_or((0, 0));
-    let left = format!(
-        "{name}   \u{00b7}   sheet {} of {}   \u{00b7}   {rows} \u{00d7} {cols} used",
-        sheet + 1,
-        app.sheet_count(),
-    );
-    (left, selection_text(app, sheet, selection))
 }
 
 /// What the name box shows for a selection: what it is called, or where it is.
@@ -221,13 +200,14 @@ mod tests {
         }
     }
 
+    /// One cell is the name box's to show, and the bar says nothing rather than repeat it.
     #[test]
-    fn one_cell_is_an_address_and_nothing_else() {
+    fn one_cell_leaves_the_bar_quiet() {
         let app = book();
         assert_eq!(
             selection_text(&app, 0, Selection::at(Pos::new(1, 1))),
-            "B2",
-            "a single cell has nothing to add up"
+            "",
+            "a single cell has nothing to add up, and the name box says where it is"
         );
     }
 
@@ -326,26 +306,6 @@ mod tests {
         );
         assert_eq!(clamp(Pos::new(5, 0), Pos::new(9, 9), 4, 2), None);
         assert_eq!(clamp(Pos::new(0, 0), Pos::new(9, 9), 0, 0), None);
-    }
-
-    /// The left half is about the document and the right half about the selection — and
-    /// nothing appears in both, since a bar that said the same thing at each end would be
-    /// wasting the half of it a narrow window drops.
-    #[test]
-    fn the_status_bar_puts_the_document_left_and_the_selection_right() {
-        let app = book();
-        let (left, right) = status_halves(&app, 0, Selection::at(Pos::new(1, 1)));
-        assert!(left.contains("sheet 1 of 1"), "{left}");
-        assert!(left.contains("4 \u{d7} 2 used"), "{left}");
-        assert_eq!(right, "B2");
-        assert!(!left.contains("B2"), "{left}");
-
-        // And the right half is the one that grows: a range carries its own arithmetic.
-        let (_, right) = status_halves(&app, 0, from((1, 1), (3, 1)));
-        assert!(
-            right.starts_with("B2:B4") && right.contains("Sum 60"),
-            "{right}"
-        );
     }
 
     #[test]

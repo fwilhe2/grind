@@ -590,7 +590,7 @@ ui_win32/
                           document measured into a `Flow` — portable, and checked on Linux
                           against what `grind text view --width` breaks (W5a)
       keymap.rs         * virtual-key codes -> caret operations, and where a word ends
-      status.rs         * what the status bar says: the caret's address and the document's size
+      status.rs         * what the status bar says: what the caret is in and the document's length
       draw.rs        [~]* laid-out blocks painted onto an HDC, run by run — and, portable beside
                           it, how a line is cut into runs, which part of it is selected, and the
                           two characters that are measured and never drawn
@@ -626,6 +626,40 @@ windows = { workspace = true }
 Only the namespaces used get features. The first `cargo tree` after W0 records what that costs
 in lock entries and in a cold build; `windows-sys` is already in `Cargo.lock` transitively, so
 part of the machinery is paid for.
+
+## The UX pass — the review the other two GUI shells had
+
+Screenshots under Wine on an Xvfb display, and `--render-to --dark` frames, rather than a reading
+of the code — the same review `doc/sheet-shell.md`, `doc/text-shell.md` and `doc/web-shell.md`
+record for theirs, and it found most of the same things.
+
+* **Sheet tabs** (`sheet/tabs.rs`, portable, over the status bar's left half). The only sign a
+  document had a second sheet was *sheet 1 of 2* in the status bar, and the only ways to it were
+  Ctrl+PageDown and the Sheet menu. A tab is a click away from being the sheet on screen, a
+  double-click renames it, a right-click is its own menu (Rename, Delete, Add — the Sheet menu's
+  verbs, so no new verb) and `+` adds one. The sheet on screen is a card with an accent bar, the
+  same mark a selected header wears. The painter returns where it put the tabs and the window
+  keeps that, so a click is tested against exactly what was drawn; tabs that do not fit beside
+  the arithmetic are left out rather than squeezed, and the menu still reaches them.
+* **The status bar stopped repeating itself**: nothing for one cell, where it said the address
+  the name box was already showing, and the used extent went with the old left half.
+* **Document colours read on the dark page** — `theme::document_ink`, `automatic_ink`'s other
+  half: a colour the document chose is lifted along its own hue until it reads when it lands on
+  the dark theme's ground. A navy word was invisible there in both panes. The same rule
+  `ui_sheet_gtk`'s `theme::ink` and `ui_web`'s `ink.rs` apply, over the same `grind_core::color`.
+* **A filtered heading ends where its button begins** rather than running under it.
+* **The text pane's status bar is in words** (`Heading 1 · 90 words`), where it said
+  `p1+0   90 words   22 blocks`; the style name is decoded by `grind_text::style::readable_name`,
+  hoisted out of the GNOME and browser windows so all three share one.
+* **Formatting at a bare caret**: Bold, then type, is bold — it said *nothing selected*. The
+  strip's toggles already *showed* the pending style (`text_style_here`); pressing one now sets
+  it (`text_write_style`), and any caret move forgets it.
+
+Still owed from the same review: **a table in the text pane is not drawn as a grid** — its cells
+stack as paragraphs, so an empty table is a tall blank gap. `ui_text_gtk/src/geom.rs` and
+`ui_web/src/text/table.rs` are the two answers to copy; here it touches `text/geom.rs`'s `Flow`
+(a slot needs an x and a width), the click, the caret's `Faces` and the painter, which is a
+milestone rather than a line in this one.
 
 ## Milestones
 
@@ -838,10 +872,10 @@ W3 adds three of its own, each smaller than it sounds. There is no **recent-file
 registered ProgID — which now exists ("File associations"), so this is the next thing that can be built on it. There
 is no **greying of unavailable verbs** — Undo is enabled with nothing to undo, and pressing it
 does nothing rather than something wrong — because `MF_GRAYED` means tracking menu state on
-every change, and W7 is where the menus are finished. And the **sheet is chosen from a menu
-rather than from a tab strip**: Ctrl+PageUp/PageDown and Sheet ▸ Next/Previous reach every sheet,
-the status bar says which one and how many, and `doc/sheet-shell.md` removed its own tab strip
-for looking like a ribbon.
+every change, and W7 is where the menus are finished. The **sheet was chosen from a menu
+rather than from a tab strip** until the UX pass below, on a reading of `doc/sheet-shell.md` that
+was wrong: the strip that document removed for looking like a ribbon was its *tool* row's
+Format/View/Calculate tabs, and the GNOME window has sheet tabs to this day. Tabs are built now.
 
 **System-drawn, and therefore not themed by us — narrowed in W10.** This shell's *own* modals do
 follow the theme now: `dialog.rs`'s prompt and chooser take the palette for their ground, their

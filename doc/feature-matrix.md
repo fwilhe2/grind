@@ -103,7 +103,7 @@ CLI matters most exactly where a GUI's whole output is colour.
 | Name box / address field | ● | ● | ● | ● | ● |
 | Go to a defined name | ● | ● | ● | ● | ● |
 | Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ○ | ● |
-| Sheet switching | address | tab strip | `:sheet` | tab strip | menu + Ctrl+PgUp/PgDn |
+| Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn |
 | Zoom | — | ● | ○ | ○ | ○ |
 
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.

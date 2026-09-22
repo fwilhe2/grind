@@ -521,6 +521,29 @@ pub fn automatic_ink(ground: Rgb, theme: Theme) -> Rgb {
     grind_core::color::automatic_ink(ground.into(), theme.text.into()).into()
 }
 
+/// The ink for a cell or a run, whatever the document chose — [`automatic_ink`] when it chose
+/// no colour, and its own colour otherwise, **lifted along its own hue until it reads when it
+/// lands on the theme's dark ground** (`grind_core::color::legible`).
+///
+/// That last clause is the half W10 did not have, and a dark frame shows why: a navy word the
+/// document chose for white paper is invisible on the dark page, in the grid and in the text
+/// pane alike. A lighter navy is still the document's navy. A colour on a fill the document chose
+/// itself, or anything in the light palette, is the document's decision about its own paper and
+/// is drawn as it is — `ui_sheet_gtk`'s `theme::ink` and `ui_web`'s `ink.rs` make the same three
+/// calls over the same arithmetic, so a document's colours read the same in every window.
+///
+/// `ground` is where the text lands: the document's own fill when it has one, the theme's
+/// ground (or a selection wash over it) when it does not; `filled` says which.
+pub fn document_ink(own: Option<Rgb>, ground: Rgb, filled: bool, theme: Theme) -> Rgb {
+    match own {
+        None => automatic_ink(ground, theme),
+        Some(own) if !filled && theme.mode == Mode::Dark => {
+            grind_core::color::legible(own.into(), ground.into(), grind_core::color::TEXT).into()
+        }
+        Some(own) => own,
+    }
+}
+
 /// Which of the three grounds a strip control is standing on right now.
 ///
 /// The whole of this shell's hover-and-press feedback, as a portable function: a control with a
@@ -944,6 +967,28 @@ mod tests {
                 assert!(a.abs_diff(b) <= 1, "{colour:?} came back {back:?}");
             }
         }
+    }
+
+    /// The dark frame, as a test: navy the document chose is lifted on the dark page until it
+    /// reads, left alone in the light palette and on a fill of its own, and a cell with no
+    /// colour still gets automatic ink.
+    #[test]
+    fn a_documents_own_colour_reads_on_the_dark_page() {
+        let navy = Rgb(0x00, 0x1f, 0x3f);
+        let dark = Theme::of(Mode::Dark);
+        let lifted = document_ink(Some(navy), dark.background, false, dark);
+        assert!(lifted.contrast(dark.background) >= 4.5, "{lifted:?}");
+        let light = Theme::of(Mode::Light);
+        assert_eq!(
+            document_ink(Some(navy), light.background, false, light),
+            navy
+        );
+        let silver = Rgb(0xdd, 0xdd, 0xdd);
+        assert_eq!(document_ink(Some(navy), silver, true, dark), navy);
+        assert_eq!(
+            document_ink(None, silver, true, dark),
+            automatic_ink(silver, dark)
+        );
     }
 
     /// **Automatic is a colour that can be read**, on whatever ground the document chose — which

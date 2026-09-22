@@ -51,8 +51,8 @@ use std::sync::Arc;
 
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, ClientToScreen, EndPaint, HDC, InvalidateRect, OPAQUE, PAINTSTRUCT, SetBkColor,
-    SetBkMode, SetTextColor, UpdateWindow,
+    BeginPaint, ClientToScreen, EndPaint, HDC, InvalidateRect, OPAQUE, PAINTSTRUCT, ScreenToClient,
+    SetBkColor, SetBkMode, SetTextColor, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -411,6 +411,10 @@ impl Welcome {
 /// Everything the *spreadsheet* pane owns.
 struct Sheet {
     app: grind_sheet::App,
+    /// Where the last paint put the sheet tabs (`sheet::tabs`) — what a click on the status bar
+    /// is tested against, so a tab is exactly as clickable as it looks. A `RefCell` because the
+    /// paint borrows the state immutably.
+    tabs: std::cell::RefCell<Vec<crate::sheet::tabs::Tab>>,
     path: Option<PathBuf>,
     /// For an imported workbook, which has no `path`: the ODF name beside it that the title shows
     /// and Save As starts from (`import.rs`, X6). Cleared by the first save.
@@ -1048,6 +1052,7 @@ impl Text {
             true => self.goal_x.or_else(|| self.caret_x()),
             false => None,
         };
+        self.resume = None;
         self.caret = self.moved(motion, goal.unwrap_or(0.0));
         if !extend {
             self.anchor = self.caret;
@@ -1058,7 +1063,12 @@ impl Text {
 
     /// Put the caret somewhere and forget the goal column and the selection — what a click does,
     /// and what every edit does with the caret it leaves behind.
+    /// Put the caret somewhere, forgetting any style pending for the next character — a Bold
+    /// pressed with nothing selected belongs to where it was pressed. Typing sets it again after
+    /// placing the caret (`text_type`), which is what makes it survive a keystroke and nothing
+    /// else.
     fn place(&mut self, at: Caret, extend: bool) {
+        self.resume = None;
         self.caret = at;
         if !extend {
             self.anchor = at;
@@ -1262,6 +1272,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
 fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -> Sheet {
     Sheet {
         app,
+        tabs: std::cell::RefCell::new(Vec::new()),
         path,
         imported: None,
         sheet: 0,
@@ -1965,8 +1976,18 @@ fn build_menu(hwnd: HWND) {
 fn context_menu(hwnd: HWND, lparam: LPARAM) {
     // The welcome screen's own: the three cards, which is what a right click on a screen made of
     // three choices can usefully offer. Clipboard verbs would be items over nothing.
+    let on_tab = context_on_tab(hwnd, lparam);
     let commands: &[Command] = if is_welcome(hwnd) {
         &[Command::NewSheet, Command::NewText, Command::Open]
+    } else if on_tab {
+        // A tab's own menu: the three verbs the Sheet menu already has, over the tab under the
+        // pointer — which `context_on_tab` has just brought to the front, so "this sheet" is
+        // the one that was clicked rather than whichever happened to be showing.
+        &[
+            Command::SheetRename,
+            Command::SheetDelete,
+            Command::SheetAdd,
+        ]
     } else {
         match is_text(hwnd) {
             true => &[
@@ -2599,6 +2620,20 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     // typed into would turn out to be the one that was just clicked.
     commit_edit(hwnd, None);
     let (x, y) = point(lparam);
+    // A sheet tab (`sheet::tabs`): the sheet it names comes to the front, and `+` adds one.
+    // SAFETY: one borrow, released before `sheet_add` opens its prompt.
+    let tab = unsafe { with_sheet(hwnd, |state| sheet_tab_at(state, x, y)) }.flatten();
+    match tab {
+        Some(crate::sheet::tabs::Target::Sheet(index)) => {
+            sheet_show(hwnd, index);
+            return;
+        }
+        Some(crate::sheet::tabs::Target::Add) => {
+            sheet_add(hwnd);
+            return;
+        }
+        None => {}
+    }
     let extend = mods().shift;
     // The two fields on the strip are drawn chrome until they are clicked, at which point the
     // control hiding behind the drawing appears over it. Deciding that needs the geometry, so it
@@ -2705,6 +2740,14 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
         return;
     }
     let (x, y) = point(lparam);
+    // A double-click on a tab renames the sheet, as it does in every spreadsheet — the first
+    // click has already brought it to the front.
+    // SAFETY: one borrow, released before the rename prompt's nested loop.
+    let tab = unsafe { with_sheet(hwnd, |state| sheet_tab_at(state, x, y)) }.flatten();
+    if let Some(crate::sheet::tabs::Target::Sheet(_)) = tab {
+        sheet_rename(hwnd);
+        return;
+    }
     // SAFETY: no nested loop inside.
     let on_cell = unsafe {
         with_sheet(hwnd, |state| match state.geom.hit(x, y) {
@@ -3963,6 +4006,62 @@ fn export_csv(hwnd: HWND) {
 ///
 /// Clamped rather than wrapped: Ctrl+PageDown on the last sheet doing nothing is less surprising
 /// than it jumping back to the first, and it is what Excel does.
+/// The tab under a client-space point, if the grid's status bar has one there.
+fn sheet_tab_at(state: &Sheet, x: f64, y: f64) -> Option<crate::sheet::tabs::Target> {
+    crate::sheet::tabs::hit(&state.tabs.borrow(), x, y)
+}
+
+/// Whether a `WM_CONTEXTMENU` landed on a sheet tab — and if it did, bring that sheet to the
+/// front first, so the menu's verbs act on the tab that was right-clicked. The message carries
+/// *screen* coordinates, and `(-1, -1)` for the keyboard, which is never on a tab.
+fn context_on_tab(hwnd: HWND, lparam: LPARAM) -> bool {
+    if is_welcome(hwnd) || is_text(hwnd) {
+        return false;
+    }
+    let (x, y) = point(lparam);
+    if (x, y) == (-1.0, -1.0) {
+        return false;
+    }
+    let mut at = POINT {
+        x: x.round() as i32,
+        y: y.round() as i32,
+    };
+    // SAFETY: `at` is a live local the call writes through.
+    unsafe {
+        let _ = ScreenToClient(hwnd, &mut at);
+    }
+    // SAFETY: one borrow, nothing inside dispatches.
+    let tab = unsafe {
+        with_sheet(hwnd, |state| {
+            sheet_tab_at(state, f64::from(at.x), f64::from(at.y))
+        })
+    }
+    .flatten();
+    match tab {
+        Some(crate::sheet::tabs::Target::Sheet(index)) => {
+            sheet_show(hwnd, index);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Bring one sheet to the front — a tab clicked. Its own selection starts at `A1`, as
+/// Ctrl+PageDown's does.
+fn sheet_show(hwnd: HWND, index: usize) {
+    commit_edit(hwnd, None);
+    // SAFETY: one borrow.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            if index < state.app.sheet_count() && index != state.sheet {
+                state.sheet = index;
+                state.selection = Selection::default();
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
 fn sheet_step(hwnd: HWND, by: i64) {
     // SAFETY: one borrow.
     unsafe {
@@ -4352,7 +4451,10 @@ fn draw_frame(dc: HDC, state: &Sheet) {
                 .get_viewport(0, 0..0, 0..0)
                 .expect("an empty rectangle of the first sheet always reads")
         });
-    let (status, status_right) = status::status_halves(&state.app, state.sheet, state.selection);
+    let status_right = status::selection_text(&state.app, state.sheet, state.selection);
+    let sheets: Vec<String> = (0..state.app.sheet_count())
+        .map(|index| state.app.sheet_name(index).unwrap_or_default())
+        .collect();
     let name = status::name_box_text(&state.app, state.sheet, state.selection);
     // While an in-cell edit is open the bar mirrors the control, which is what makes the strip a
     // read-out of *the cell* rather than of the document underneath it. When the control is on
@@ -4368,13 +4470,14 @@ fn draw_frame(dc: HDC, state: &Sheet) {
     let friendly = (state.friendly && !editing)
         .then(|| assist::friendly_line(&formula))
         .flatten();
-    draw::paint(
+    let tabs = draw::paint(
         dc,
         &Frame {
             geom: &state.geom,
             theme: state.theme,
             viewport: &viewport,
-            status: &status,
+            sheets: &sheets,
+            sheet: state.sheet,
             status_right: &status_right,
             name: &name,
             formula: friendly.as_deref().unwrap_or(&formula),
@@ -4390,6 +4493,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             face: face(),
         },
     );
+    *state.tabs.borrow_mut() = tabs;
 }
 
 /// One frame, through the back buffer.
@@ -4838,6 +4942,7 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
             unsafe {
                 with_text(hwnd, |text| {
                     text.anchor = START;
+                    text.resume = None;
                     text.caret = text.last_caret();
                     text.goal_x = None;
                     text.reveal();
@@ -4884,8 +4989,8 @@ fn text_type(hwnd: HWND, c: char) {
                 .type_markdown(at, &c.to_string(), text.resume.as_ref())
             {
                 Ok(typed) => {
-                    text.resume = typed.resume;
                     text.place(typed.caret, false);
+                    text.resume = typed.resume;
                     text.caret_on = true;
                     text.say(None);
                 }
@@ -5403,12 +5508,11 @@ fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            if !text.has_selection() {
-                text.say(Some("nothing selected".to_owned()));
-                return;
-            }
-            let (from, to) = text.range();
-            let mut style = text.app.char_style(from, to).unwrap_or_default();
+            // With nothing selected this sets what the next character typed carries, rather than
+            // saying "nothing selected" — Bold, then type, is bold in every word processor, and
+            // `grind-text-gtk` and `grind-web` made the same change. `text_style_here` is what
+            // the strip already showed there, so pressing a button in turns what it showed.
+            let mut style = text_style_here(text);
             let wanted = emphasis.style();
             let field = |style: &grind_text::CharStyle| emphasis_field(style, emphasis);
             let off = emphasis_off(emphasis);
@@ -5424,10 +5528,7 @@ fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
                 markdown::Emphasis::Strike => style.line_through = value,
                 markdown::Emphasis::Code => style.font_family = value,
             }
-            match text.app.set_char_style(from, to, &style) {
-                Ok(_) => text.say(None),
-                Err(error) => text.say(Some(error.to_string())),
-            }
+            text_write_style(text, style);
         });
     }
     refresh(hwnd);
@@ -5442,20 +5543,27 @@ fn text_format(hwnd: HWND, change: grind_text::format::Change) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            if !text.has_selection() {
-                text.say(Some("nothing selected".to_owned()));
-                return;
-            }
-            let (from, to) = text.range();
-            let mut style = text.app.char_style(from, to).unwrap_or_default();
+            let mut style = text_style_here(text);
             change.apply(&mut style);
-            match text.app.set_char_style(from, to, &style) {
-                Ok(_) => text.say(None),
-                Err(error) => text.say(Some(error.to_string())),
-            }
+            text_write_style(text, style);
         });
     }
     refresh(hwnd);
+}
+
+/// Write `style` over the selection — or, with nothing selected, hold it for the next character
+/// typed at the caret (`Text::resume`, which `type_markdown` already carried).
+fn text_write_style(text: &mut Text, style: grind_text::CharStyle) {
+    if !text.has_selection() {
+        text.resume = Some(style);
+        text.say(None);
+        return;
+    }
+    let (from, to) = text.range();
+    match text.app.set_char_style(from, to, &style) {
+        Ok(_) => text.say(None),
+        Err(error) => text.say(Some(error.to_string())),
+    }
 }
 
 /// The families the picker offers — curated rather than enumerated. `grind-text-gtk` lists every
@@ -5892,11 +6000,13 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             layout,
         });
     }
-    let status = text::status::status_line(
-        &grind_text::loc::format_offset(state.caret.block, state.caret.offset),
-        selected_chars(state),
-        state.app.counts(),
-    );
+    let here = state
+        .app
+        .get_viewport(state.caret.block..state.caret.block + 1)
+        .get(state.caret.block)
+        .map(|block| text::status::describe(&block.kind, block.style.as_deref()))
+        .unwrap_or_default();
+    let status = text::status::status_line(&here, selected_chars(state), state.app.counts());
     let style = text_style_here(state);
     text::draw::paint(
         dc,

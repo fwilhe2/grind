@@ -24,3 +24,4 @@ pub mod geom;
 pub mod keymap;
 pub mod state;
 pub mod status;
+pub mod tabs;

@@ -1610,36 +1610,9 @@ fn describe(kind: &BlockKind, style: Option<&str>) -> String {
         (BlockKind::ListItem { depth }, _) => format!("List item, level {depth}"),
     };
     match style {
-        Some(style) => format!("{name} — {}", readable_style(style)),
+        Some(style) => format!("{name} — {}", grind_text::style::readable_name(style)),
         None => name,
     }
-}
-
-/// `Text_20_body` as its author wrote it: *Text body*.
-fn readable_style(name: &str) -> String {
-    let mut out = String::new();
-    let mut rest = name;
-    while let Some(at) = rest.find('_') {
-        out.push_str(&rest[..at]);
-        let tail = &rest[at + 1..];
-        let decoded = tail
-            .get(..3)
-            .filter(|code| code.ends_with('_'))
-            .and_then(|code| u8::from_str_radix(&code[..2], 16).ok())
-            .filter(u8::is_ascii);
-        match decoded {
-            Some(byte) => {
-                out.push(char::from(byte));
-                rest = &tail[3..];
-            }
-            None => {
-                out.push('_');
-                rest = tail;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// The space under a block, and the extra above a heading — written into the page once, so
@@ -1678,7 +1651,6 @@ mod tests {
             describe(&BlockKind::Paragraph, Some("Text_20_body")),
             "Body text — Text body"
         );
-        assert_eq!(readable_style("snake_case"), "snake_case");
     }
 
     fn block(kind: BlockKind, style: Option<&str>) -> BlockView {

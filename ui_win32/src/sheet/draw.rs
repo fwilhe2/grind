@@ -199,8 +199,10 @@ mod windows_impl {
         pub geom: &'a GridGeom,
         pub theme: Theme,
         pub viewport: &'a grind_sheet::Viewport,
-        /// The status bar's left half: which document is open — `status::status_halves`.
-        pub status: &'a str,
+        /// The sheets' names, in order, and which one is on screen — the tabs the status bar's
+        /// left half is (`super::tabs`).
+        pub sheets: &'a [String],
+        pub sheet: usize,
         /// Its right half: where the selection is and what it adds up to. Drawn from the right
         /// edge inwards, so it is the *sheet's name* that is elided on a narrow window rather
         /// than the arithmetic somebody is watching.
@@ -258,7 +260,9 @@ mod windows_impl {
     ///
     /// Every pixel of the client area is written, which is what lets `WM_ERASEBKGND` be
     /// answered with "already done" — see `gdi::BackBuffer`.
-    pub fn paint(dc: HDC, frame: &Frame) {
+    /// Returns where the sheet tabs were drawn, which is what a click is tested against
+    /// (`crate::sheet::tabs::hit`) — the window keeps it, so a tab is exactly as clickable as it looks.
+    pub fn paint(dc: HDC, frame: &Frame) -> Vec<crate::sheet::tabs::Tab> {
         let g = frame.geom;
         let theme = frame.theme;
         let body = g.body();
@@ -338,6 +342,9 @@ mod windows_impl {
                     gdi::fill(dc, right - 1, top, right, bottom, line);
                     gdi::fill(dc, left, bottom - 1, right, bottom, line);
 
+                    // A filtered heading's text ends where its button begins, rather than running
+                    // under it (`Budgete▼`) — the same fix every other window in the suite made.
+                    let mut text_right = right;
                     if let Some(filter) = &frame.filter
                         && filter.buttons
                         && row == filter.start.row
@@ -345,6 +352,7 @@ mod windows_impl {
                         && let Some(button) = g.filter_button(row, col)
                     {
                         draw_filter_button(dc, button, theme);
+                        text_right = (button.x.round() as i32).max(left + 1);
                     }
 
                     // The role overlay reserves a margin at the cell's leading edge for its own
@@ -390,19 +398,23 @@ mod windows_impl {
                     // white where it does not. See `theme::automatic_ink`: a document that fills
                     // its heading row and leaves the text alone is the ordinary case, and in a
                     // dark palette the theme's near-white on that fill is unreadable.
-                    let ink = look.text.unwrap_or_else(|| {
-                        crate::theme::automatic_ink(
-                            super::ground(look.background, theme, selected, active)
-                                .unwrap_or(theme.background),
-                            theme,
-                        )
-                    });
+                    //
+                    // A colour it *did* choose is lifted until it reads when it lands on the
+                    // dark theme's own ground (`theme::document_ink`) — navy on the dark sheet
+                    // was the dark frame's other invisible text.
+                    let ink = crate::theme::document_ink(
+                        look.text,
+                        super::ground(look.background, theme, selected, active)
+                            .unwrap_or(theme.background),
+                        look.background.is_some(),
+                        theme,
+                    );
                     draw_text(
                         dc,
                         text,
                         text_left,
                         top,
-                        right,
+                        text_right,
                         bottom,
                         look.align,
                         ink,
@@ -697,7 +709,8 @@ mod windows_impl {
             runs(dc, frame, left, top, right, bottom, &body_font, &bold);
         }
 
-        // The status bar: which sheet on the left, where the selection is and what it adds up to
+        let tabs;
+        // The status bar: the sheet tabs on the left, where the selection is and what it adds up to
         // on the right. Two ends rather than one long line, because the left half changes when
         // the document does and the right half on every keystroke — and an eye that knows which
         // side a number is on does not have to read the whole bar to find it.
@@ -709,9 +722,9 @@ mod windows_impl {
             // No hairline over it, for the same reason the strip has none under it: the grid's
             // paper stops exactly here and the change of surface *is* the edge.
             gdi::fill(dc, left, top, right, bottom, theme.backdrop);
-            // The right half is measured and placed first, and the left half is given what is
-            // left over — so the two can never overlap, and it is the *sheet's name* that is
-            // elided on a narrow window rather than the arithmetic.
+            // The right half is measured and placed first, and the tabs are given what is left
+            // over — so the two can never overlap, and it is a tab that is left out on a narrow
+            // window rather than the arithmetic.
             //
             // Two pads and two pixels of slack, which is not arithmetic for its own sake:
             // `draw_text` insets its rectangle by the padding at both ends and by one further
@@ -732,18 +745,90 @@ mod windows_impl {
                 theme.text_secondary,
                 pad,
             );
-            draw_text(
-                dc,
-                frame.status,
-                left,
-                top,
-                split,
-                bottom,
-                Align::Left,
-                theme.text_tertiary,
-                pad,
-            );
+            tabs = draw_tabs(dc, frame, rect, f64::from(split));
         }
+        tabs
+    }
+
+    /// The sheet tabs, from the status bar's left edge up to `limit` (`super::tabs`). The sheet
+    /// on screen is a card with an accent bar under its name — the Fluent pivot's selected
+    /// state, the same mark the header buttons wear — and the others are its name alone in the
+    /// secondary ink, so the one on screen is found without reading. `+` is Add Sheet.
+    fn draw_tabs(
+        dc: HDC,
+        frame: &Frame,
+        bar: crate::sheet::geom::Rect,
+        limit: f64,
+    ) -> Vec<crate::sheet::tabs::Tab> {
+        use crate::sheet::tabs::{self, Target};
+        let theme = frame.theme;
+        let dpi = frame.geom.dpi;
+        let widths: Vec<f64> = frame
+            .sheets
+            .iter()
+            .map(|name| f64::from(gdi::text_width(dc, name)))
+            .collect();
+        let laid = tabs::layout(&widths, bar, limit, f64::from(dpi) / 96.0);
+        let radius = crate::sheet::geom::scale(4.0, dpi).round() as i32;
+        let pad = crate::sheet::geom::scale(tabs::PAD, dpi);
+        for tab in &laid {
+            let (left, top, right, bottom) = tab.rect.edges();
+            match tab.target {
+                Target::Sheet(index) => {
+                    let current = index == frame.sheet;
+                    if current {
+                        gdi::round_rect(
+                            dc,
+                            RECT {
+                                left,
+                                top,
+                                right,
+                                bottom,
+                            },
+                            radius,
+                            theme.card,
+                            theme.stroke,
+                        );
+                        let bar_h = crate::sheet::geom::scale(3.0, dpi).round() as i32;
+                        let inset = crate::sheet::geom::scale(12.0, dpi).round() as i32;
+                        gdi::fill(
+                            dc,
+                            left + inset,
+                            bottom - bar_h - 1,
+                            right - inset,
+                            bottom - 1,
+                            theme.accent,
+                        );
+                    }
+                    draw_text(
+                        dc,
+                        frame.sheets.get(index).map_or("", String::as_str),
+                        left,
+                        top,
+                        right,
+                        bottom,
+                        Align::Center,
+                        match current {
+                            true => theme.text,
+                            false => theme.text_secondary,
+                        },
+                        pad,
+                    );
+                }
+                Target::Add => draw_text(
+                    dc,
+                    "+",
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    Align::Center,
+                    theme.text_secondary,
+                    0.0,
+                ),
+            }
+        }
+        laid
     }
 
     /// A header button's lettering: the theme's own, or the accent when its track is selected.

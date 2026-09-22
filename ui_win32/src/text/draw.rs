@@ -374,15 +374,25 @@ mod windows_impl {
                     // over that highlight, not over the page — the grid's own rule
                     // (`theme::automatic_ink`), and the case that matters here is a yellow
                     // highlight in a dark palette, where the theme's near-white ink vanishes.
-                    let ink = match piece
+                    //
+                    // And a run the document *did* colour is lifted until it reads on the dark
+                    // page (`theme::document_ink`) — the navy word that vanished there.
+                    let fill = piece
                         .props
                         .background
                         .as_deref()
-                        .and_then(crate::theme::Rgb::parse)
-                    {
-                        Some(ground) => crate::theme::automatic_ink(ground, theme),
-                        None => theme.text,
-                    };
+                        .filter(|value| *value != "transparent")
+                        .and_then(crate::theme::Rgb::parse);
+                    let ink = crate::theme::document_ink(
+                        piece
+                            .props
+                            .color
+                            .as_deref()
+                            .and_then(crate::theme::Rgb::parse),
+                        fill.unwrap_or(theme.background),
+                        fill.is_some(),
+                        theme,
+                    );
                     // Every segment is placed at the x the **core** measured for its first
                     // character, never at where the last one happened to end — which is what
                     // makes a tab and a line break work: both are measured and neither is drawn.

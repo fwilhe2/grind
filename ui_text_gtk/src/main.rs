@@ -1416,38 +1416,9 @@ fn describe_kind(kind: &BlockKind, style: Option<&str>) -> String {
         (BlockKind::ListItem { depth }, _) => format!("List item, level {depth}"),
     };
     match style {
-        Some(style) => format!("{name} — {}", readable_style(style)),
+        Some(style) => format!("{name} — {}", grind_text::style::readable_name(style)),
         None => name,
     }
-}
-
-/// A style's name as its author wrote it. ODF spells a name that is not an XML name with each
-/// awkward character as `_xx_` in hex (`Text_20_body` is *Text body*), which is a file format's
-/// spelling and not something to show a person.
-fn readable_style(name: &str) -> String {
-    let mut out = String::new();
-    let mut rest = name;
-    while let Some(at) = rest.find('_') {
-        out.push_str(&rest[..at]);
-        let tail = &rest[at + 1..];
-        let decoded = tail
-            .get(..3)
-            .filter(|code| code.ends_with('_'))
-            .and_then(|code| u8::from_str_radix(&code[..2], 16).ok())
-            .filter(u8::is_ascii);
-        match decoded {
-            Some(byte) => {
-                out.push(char::from(byte));
-                rest = &tail[3..];
-            }
-            None => {
-                out.push('_');
-                rest = tail;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// What the Save As dialog puts in its name field for a document with no path yet.
@@ -1517,16 +1488,6 @@ mod tests {
             "Paragraph — Text body",
             "a file format's escaping is not shown to a person"
         );
-    }
-
-    /// ODF's `_xx_` escaping undone, and nothing that merely contains an underscore mangled.
-    #[test]
-    fn a_style_name_is_shown_as_its_author_wrote_it() {
-        assert_eq!(readable_style("Text_20_body"), "Text body");
-        assert_eq!(readable_style("Heading_20_1"), "Heading 1");
-        assert_eq!(readable_style("snake_case_name"), "snake_case_name");
-        assert_eq!(readable_style("trailing_"), "trailing_");
-        assert_eq!(readable_style("A_2e_B"), "A.B");
     }
 
     /// The bar's first control and the block it describes agree, and every entry names an
