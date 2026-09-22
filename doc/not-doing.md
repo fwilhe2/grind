@@ -71,7 +71,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 | **Draw objects beyond images** | Shapes, connectors, and their layout model are a drawing application. |
 | **Pivot tables** | Revisit *once*, later, as `plan.md` says — and only against a real use, because the honest version is an aggregation engine plus a UI plus a serialisation format. |
 | **A chart type beyond bar, line, pie** | Three proved the mechanism holds no per-type special case (`doc/chart-format.md`); a fourth is taste until a real document asks for one. |
-| **A chart's title, subtitle or legend** | Each is `rng:optional` and each is its own layout problem — a legend already needs a second box the plot area's own size makes room for. Read past and dropped, like any other unmodelled optional element (`doc/chart-format.md`). |
+| **A chart's subtitle or footer** | Each is `rng:optional` and each is its own layout problem. Read past and dropped, like any other unmodelled optional element (`doc/chart-format.md`). A chart's own **title and legend** left this row: a chart of two series with no legend is one nobody can read. |
 
 ### The word processor
 
@@ -135,12 +135,12 @@ the code, and this table is an index rather than a second source of truth.
 
 | Capability | Stops at | Where |
 |---|---|---|
-| **Locales** | The decimal separator and the grouping separator. Switzerland's apostrophe and India's lakh grouping are wrong. | `locale.rs:16` |
+| **Locales** | The decimal separator and the grouping separator — a format's own, or the **document's** (`grind sheet locale`, *Document Settings…*), which decides every unmarked number shown and every number typed (`1,5` in a German document). Switzerland's apostrophe, Portugal's space and India's lakh grouping are wrong, so none of them is offered by a picker (`locale::KNOWN`). **A number inside a formula is ISO in every locale** — `=A1*1.5`, never `=A1*1,5` — since a formula is stored in ODF's own syntax and a second, localised display grammar is its own project. | `locale.rs:16` |
 | **CSV encodings** | UTF-8, with a byte-order mark stripped as the encoding signature it is. Anything else is refused by name with `iconv` in the message, because a guessed encoding is silent when it is wrong and every wrong guess is a document full of mojibake. `encoding_rs` is the upgrade, and no file has asked for it yet. The rule is one function and one sentence, said the same way by the CLI and by all four shells. | `csv::decode`, `csv::NOT_UTF8` |
 | **A CSV date** | ISO 8601 under `--dates`, and nothing else. `15/03/2026` and `03/15/2026` are the same characters meaning two different days and the file does not say which, so they stay text — the guess is how a date column gets corrupted, not how it gets imported. | `csv::dated` |
 | **A CSV import's size** | One paste: `MAX_FORMATTED_CELLS`, refused by name above it. Every cell is an undo entry's worth of inverse, which is what bounds it; a bigger file is a generator's job (`doc/dsl.md` layer 1) or two commands. | `App::import_csv` |
 | **Month and weekday names** | English, whatever the document's locale says. | `numfmt/` module docs |
-| **Text→number conversion** | ISO 8601 only. Part 4 §6.3.6 makes it `HOST-LOCALE`-dependent, so LibreOffice reads `"0,005"` in a German document and this does not. | `date.rs` |
+| **Text→number conversion** | ISO 8601 only, *inside a formula*. Part 4 §6.3.6 makes it `HOST-LOCALE`-dependent, so LibreOffice reads `"0,005"` as a number in a German document's formula and this does not. Typing into a cell is a different door and does read the document's locale. | `date.rs` |
 | **A date a formula computes** | Displays as its serial until the cell is formatted — the subtype belongs in `formula::value` (§4.3.3), not in `numfmt`. | `datetime.rs:15` |
 | **Preset date formats** | The ISO spelling. The model holds `DD.MM.YYYY` fine; nothing can ask for one. | `numfmt::preset` |
 | **`style:map`** | Read, rendered and round-tripped; `sheet format` cannot build one. | `numfmt/` module docs |

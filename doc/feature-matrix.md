@@ -173,6 +173,9 @@ The single largest divergence in the suite is this table's last column.
 | Number formats — the eight presets | ● | ● | ● | ● | ○ |
 | Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ |
 | Read a cell's style / format back | ● | ● | ● | ● | ○ |
+| A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ |
+| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ |
+| **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ |
@@ -190,6 +193,14 @@ menu, one click each, a currency cell keeping its own decimals and grouping (`ui
 No other number format and no decimal count; row 1 of §8 is the rest.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).
 ᵉ A border's *line style* is ignored, so `dashed` and `double` draw solid.
+ᶠ Above the number popover's settings: the active cell as they would show it, from
+`App::shown_as`, the renderer's own answer — and the strip's button face says what the cell is
+formatted as (`123`, `%`, `€`, `Date`).
+ᵍ *Document Settings…*, applied at once as one undo step. **Honouring** a locale costs a client
+nothing, which is why that row is full: every cell's text comes out of `App::get_viewport`
+already spelled the document's way, and every typed number goes through the core's typing
+rule. A new document in the GNOME window states the desktop's locale; `grind sheet new` states
+none unless told.
 
 ## 6. Spreadsheet — structure, charts and interchange
 
@@ -211,7 +222,11 @@ No other number format and no decimal count; row 1 of §8 is the rest.
 | Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ |
+| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ |
+| A chart's own title and legend | ● | ● | ○ | ○ | ○ |
+| A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ |
+| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ |
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ |
@@ -260,6 +275,10 @@ unsaved `data.fods` with no path and a one-sentence summary. Every window's Open
 so does a double-click (`doc/suite.md`, "Mime types"; `doc/windows-shell.md`, "File
 associations"). The CLI's spelling is two verbs, `sheet new` and `sheet import-csv`, which is
 what the function does.
+ⁿ `grind sheet chart-add --from A1:C7`, with any flag overriding a piece of what it read.
+ᵒ The chart dialog's top third is the chart, drawn by the grid's own painter from
+`App::preview_chart` — `add_chart`/`edit_chart` without the write — and a new chart lands beside
+the table it was made from (`doc/chart-format.md`, The shell).
 
 ## 7. Word processor
 
@@ -462,6 +481,11 @@ tuples, a `&str` of help text, an HTML file, a `match`), and normalising all fiv
 piece of work than the one thing it would buy: this file going stale is visible the first time
 somebody reads it beside a shell, where a broken ratchet is visible immediately. Until then it
 carries a date.
+
+**Amended on 2026-09-22** for §5's three locale rows — a document now states its own locale, the
+GNOME window and the CLI set it, and every client honours it since the core does the spelling —
+and for §6's chart rows: a chart read from a table, its own title and legend (which the browser
+draws too), and the GNOME window's preview. Nothing else was re-derived.
 
 **Amended on 2026-09-12** for the CSV rows (§6, §8 row 6), which every GUI shell now has, and for
 §8 row 5, which the browser shell's formula assist narrowed to point mode after the first

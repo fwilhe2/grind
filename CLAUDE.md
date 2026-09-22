@@ -646,7 +646,7 @@ rather than a guest:
 
 | Crate | Directory | Holds |
 |---|---|---|
-| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale, the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header, the token and span maps of `doc/dsl.md`'s third physical form, and `projection/source.rs`, which is R6 for it |
+| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`, sub-documents and a `styles.xml` included), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale (and `KNOWN`, the ones a picker offers), `color` (WCAG contrast, automatic ink, a colour lifted along its hue — the Windows and GNOME themes both), the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header, the token and span maps of `doc/dsl.md`'s third physical form, and `projection/source.rs`, which is R6 for it |
 | `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
 | `grind-text` | `text/` | The word processor (phase 10): the block model — flat, with two axes: a block's *kind* (paragraph, heading, list item) and the `Cell` coordinate that says which table cell it is in, since a cell holds blocks rather than a value — `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
 | `grind-build` | `build/` | **The generator** (`doc/dsl.md` layer 1, D7): a Rhai script that *returns* a document, and the sandbox it runs in. `sheet.rs` and `text.rs` are the two host vocabularies — the projection's own nouns — `engine.rs` is every restriction §2 promises, in one screen, and `data.rs` is the one exception to them: `json(…)`, which reads **data and never code** from one directory a person named, with `..`, absolute paths and symlinks out all refused. **Nothing that opens a document may depend on this crate** (R11), which `build/tests/manifest.rs` reads the manifests to enforce |
@@ -1107,6 +1107,28 @@ is a free function precisely so it is testable with no Pango context or display,
 `font`/`font_scale` already were. `font_scale` itself now shares its string parsing with the new
 code (`scale_of`) rather than each retyping "ODF points over the default", so a cell can no
 longer be drawn at one size and measured at another.
+
+**The GNOME spreadsheet's chart and locale pass is done** — the one that found that a pie this
+build wrote ran the other way round in LibreOffice. Loop C now has chart cases, and their first
+run found three shipped bugs (`doc/chart-format.md`): a pie's direction was never written
+(`Chart::clockwise`, always stated now, LibreOffice's counter-clockwise the reading default),
+LibreOffice ignored every colour because a series named no style of its own, and an `.ods`
+lost its charts because LibreOffice drops an inline chart document in a package (the package
+form writes `Object N/content.xml` sub-documents now). A colour is a *series* rather than a point,
+a chart has its own **title and legend** (a scope-line change, `doc/not-doing.md`), and the core
+reads a table the way a person means it — `chart::guess`/`App::suggest_chart`, orientation,
+labels, a line for dates — which `chart-add --from` and the new **chart dialog**
+(`ui_sheet_gtk/src/chart_dialog.rs`) share. The dialog is built around a live preview from
+`App::preview_chart` (`add_chart`/`edit_chart` without the write), puts a new chart beside its
+table, and *Edit a Chart…* reaches one from the keyboard. A document states **its own locale**
+(`Document::locale`, `fo:language` on the default cell style — `doc/ods-format.md` §5.2 has the
+measurement that LibreOffice renders by the machine instead): it decides every unmarked number
+shown and every number typed, reaches `grind sheet locale`, the projection and *Document
+Settings…*, and the number popover shows a live sample through `App::shown_as`. Dark mode reads:
+`grind_core::color` is the contrast arithmetic hoisted out of the Windows shell, and
+`ui_sheet_gtk/src/theme.rs`'s `ink` gives automatic text a colour that reads on the document's
+own fill and lifts the document's own colours along their hue on a dark sheet — never writing
+either.
 
 **S11 — packaging the suite — is done.** The per-app half was already (both GTK apps' `.desktop`
 files, metainfo, icons and packages, and the `grind` CLI container); the meta-package closed it.

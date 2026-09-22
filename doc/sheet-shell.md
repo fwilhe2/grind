@@ -412,6 +412,17 @@ Recomputed on `css_changed` / `notify::dark` / `notify::accent-color` → clear 
 cache, redraw. The reference palette is checked in light, dark and high-contrast. Never a
 hardcoded RGBA.
 
+**A document's own colours meet the theme in `theme::ink`**, and nothing it decides is written.
+Text with no colour of its own is ODF's *automatic*: the theme's ink, unless the document's own
+fill makes that unreadable, and then black or white — white theme text on the silver heading row
+a table format gives a document was the dark-mode bug that made this a rule. A colour the
+document chose, drawn on the theme's own ground in a dark theme, is lifted along its own hue until
+it reads (navy chosen for white paper is invisible on a dark sheet; a lighter navy is still the
+document's navy). A colour on a fill the document chose, or anything in a light theme, is the
+document's decision about its own paper and is drawn as it is. The arithmetic is
+`grind_core::color`, shared with the Windows shell's theme, and a test sweeps the palette in both
+schemes.
+
 The accessibility floor, stated honestly: `AccessibleRole::Grid` plus an accessible
 description announcing the active cell on move. A custom-drawn grid is otherwise
 invisible to assistive technology; full grid a11y is a future milestone of its own,
