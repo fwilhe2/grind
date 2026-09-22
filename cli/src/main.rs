@@ -1300,6 +1300,26 @@ enum Command {
         /// Overwrite the file if it already exists
         #[arg(long)]
         force: bool,
+        /// The document's own locale, e.g. de-DE — how it spells its numbers (`sheet locale`).
+        /// A new document states none unless told
+        #[arg(long, value_parser = locale)]
+        locale: Option<grind_sheet::locale::Locale>,
+    },
+
+    /// Print or set the document's own locale — how it spells its numbers
+    ///
+    /// `sheet locale book.fods de-DE` makes every number with no format, and every format that
+    /// names no locale of its own, read `1.234,5`; a number typed afterwards is read the same
+    /// way (`1,5` is one and a half). A format that names its own locale keeps it. `--clear`
+    /// takes the document's away again, and with neither it prints the one it has, or `none`.
+    Locale {
+        file: PathBuf,
+        /// A language, and optionally a country: de-DE, fr, pt-BR
+        #[arg(value_parser = locale)]
+        tag: Option<grind_sheet::locale::Locale>,
+        /// State no locale at all
+        #[arg(long, conflicts_with = "tag")]
+        clear: bool,
     },
 
     /// Print a cell or a range
@@ -1576,8 +1596,9 @@ enum Command {
         /// Currency symbol — written before the amount for $ and £, after it for € and the rest
         #[arg(long, default_value = grind_sheet::numfmt::DEFAULT_CURRENCY)]
         symbol: String,
-        /// Locale for the decimal and grouping characters, e.g. de-DE. Defaults to
-        /// $GRIND_LOCALE, then $XDG_CONFIG_HOME/sheet/locale, then none.
+        /// Locale for the decimal and grouping characters, e.g. de-DE. Defaults to the
+        /// document's own (`sheet locale`), then $GRIND_LOCALE, then
+        /// $XDG_CONFIG_HOME/grind/locale, then none.
         #[arg(long, value_parser = locale)]
         locale: Option<grind_sheet::locale::Locale>,
         /// Print the format of one cell instead of setting one
@@ -2345,12 +2366,37 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             ))))
         }
 
-        Command::New { file, force } => {
+        Command::New {
+            file,
+            force,
+            locale,
+        } => {
             if file.exists() && !force {
                 return Err(format!("{} exists; pass --force", file.display()));
             }
             let app = App::new();
+            // Born with its locale rather than given one, so a new document opens with nothing
+            // to undo.
+            if locale.is_some() {
+                let doc = grind_sheet::Document {
+                    locale: locale.clone(),
+                    ..Default::default()
+                };
+                let bytes = grind_sheet::write_bytes(&doc, grind_sheet::Form::Flat).say()?;
+                app.open_bytes("new.fods", &bytes).say()?;
+            }
             finish(&app, cli, file, true)
+        }
+
+        Command::Locale { file, tag, clear } => {
+            let app = load(file, cli)?;
+            if tag.is_none() && !clear {
+                let shown = app.locale().map_or_else(|| "none".to_owned(), |l| l.tag());
+                return Ok(Report::Text(TextReport { lines: vec![shown] }));
+            }
+            let before = app.locale();
+            app.set_locale(tag.clone()).say()?;
+            finish(&app, cli, file, app.locale() != before)
         }
 
         Command::Get {
@@ -2654,10 +2700,14 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 Style::Datetime => Some(numfmt::datetime_preset()),
                 style => Some(numfmt::preset(kind(style), *decimals, *grouping, symbol)),
             }
+            // Explicit, then the document's own, then the environment's — and written onto the
+            // format whichever it is, so LibreOffice shows it the same way on any machine
+            // (`doc/ods-format.md` §5.2).
             .map(|format| {
                 format.in_locale(
                     locale
                         .clone()
+                        .or_else(|| app.locale())
                         .or_else(grind_sheet::locale::from_environment),
                 )
             });
@@ -3625,6 +3675,7 @@ fn document(app: &App, file: &Path, changed: bool, written: bool, stale: usize) 
             .into_iter()
             .map(|(name, expression)| Name { name, expression })
             .collect(),
+        locale: app.locale().map(|locale| locale.tag()),
         can_undo: app.can_undo(),
         can_redo: app.can_redo(),
     }

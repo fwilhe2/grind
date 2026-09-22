@@ -500,6 +500,9 @@ fn differences(a: &Document, b: &Document) -> Vec<String> {
     if a.null_date != b.null_date {
         out.push(format!("null-date {} vs {}", a.null_date, b.null_date));
     }
+    if a.locale != b.locale {
+        out.push(format!("locale {:?} vs {:?}", a.locale, b.locale));
+    }
     if a.null_year != b.null_year {
         out.push(format!("null-year {} vs {}", a.null_year, b.null_year));
     }

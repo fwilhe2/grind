@@ -249,21 +249,31 @@ impl Sheet {
 
     /// Every row the filter hides, in order — empty when there is no filter.
     ///
-    /// `null_date` because matching is on what a cell *displays*, and a date cell cannot be
-    /// rendered without the epoch (Part 4 §3.4).
-    pub fn hidden_rows(&self, null_date: i64) -> Vec<u32> {
+    /// `null_date` and `locale` because matching is on what a cell *displays*, and a date cell
+    /// cannot be rendered without the epoch (Part 4 §3.4) nor a number without the document's
+    /// separators.
+    pub fn hidden_rows(
+        &self,
+        null_date: i64,
+        locale: Option<&grind_core::locale::Locale>,
+    ) -> Vec<u32> {
         self.filter
             .as_ref()
-            .map(|f| f.hidden_rows(self, null_date))
+            .map(|f| f.hidden_rows(self, null_date, locale))
             .unwrap_or_default()
     }
 
     /// Whether one row is hidden by the filter — the per-row question a writer and a
     /// renderer both ask, without building the whole list.
-    pub fn row_hidden(&self, row: u32, null_date: i64) -> bool {
+    pub fn row_hidden(
+        &self,
+        row: u32,
+        null_date: i64,
+        locale: Option<&grind_core::locale::Locale>,
+    ) -> bool {
         self.filter
             .as_ref()
-            .is_some_and(|f| f.hides(self, row, null_date))
+            .is_some_and(|f| f.hides(self, row, null_date, locale))
     }
 
     /// The column's width, or `None` when it is drawn at the shell's default.
@@ -579,6 +589,20 @@ pub struct Document {
     /// a year that equals or follows this year". Set by `table:null-year`, which a document
     /// in the corpus really does put at 1919 — hence a setting rather than a constant.
     pub null_year: i64,
+    /// The document's own locale — `fo:language`/`fo:country` on the default cell style
+    /// (`doc/ods-format.md` §5.2, "The document's own language"). `None` is a document that
+    /// states none.
+    ///
+    /// **What it decides is how the document spells numbers**: the separators of every number
+    /// shown through a format with no locale of its own or through no format at all, and how a
+    /// number typed into it is read (`1,5` is one and a half in a German document). A format
+    /// that names a locale keeps it; this is the fallback, not an override.
+    ///
+    /// LibreOffice renders those same numbers by the locale of whichever machine opens the
+    /// file (measured, same section), so this is the one place the two read a document
+    /// differently — deliberately: the document's own statement is the one that does not change
+    /// with the desktop it is opened on.
+    pub locale: Option<grind_core::locale::Locale>,
     /// The bytes this document was read from, when it was read from any (doc/plan.md R6).
     ///
     /// `None` for a document built in memory, which is every document `sheet new` makes —
@@ -639,6 +663,7 @@ impl Default for Document {
             names: BTreeMap::new(),
             null_date: crate::formula::date::DEFAULT_NULL_DATE,
             null_year: crate::formula::date::DEFAULT_NULL_YEAR,
+            locale: None,
             source: None,
             projection_source: None,
             edits: Edits::default(),

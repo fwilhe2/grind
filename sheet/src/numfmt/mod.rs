@@ -315,7 +315,19 @@ impl Format {
     /// meets falls back to the value's plain spelling, because a cell whose style says
     /// `date` and whose value is a string is a real document, not an error.
     pub fn render(&self, value: &CellValue, null_date: i64) -> String {
-        self.render_as(value, null_date, false)
+        self.render_as(value, null_date, false, None)
+    }
+
+    /// [`Format::render`] in a document whose own locale is `fallback` — which is what a format
+    /// with no locale of its own spells its separators with ([`crate::Document::locale`]). A
+    /// format that names a locale keeps it.
+    pub fn render_in(
+        &self,
+        value: &CellValue,
+        null_date: i64,
+        fallback: Option<&Locale>,
+    ) -> String {
+        self.render_as(value, null_date, false, fallback)
     }
 
     /// [`Format::render`], plus whether this format was reached through a **negative**
@@ -330,26 +342,43 @@ impl Format {
     /// `-(1,234.50)`. A branch reached by any other condition keeps its sign, which is the
     /// same measurement the other way round: `[<50][Red]0;[>500][Blue]0;[Green]0` renders
     /// −50 as `-50`, because `value()<50` does not say the value is negative.
-    fn render_as(&self, value: &CellValue, null_date: i64, branch: bool) -> String {
+    fn render_as(
+        &self,
+        value: &CellValue,
+        null_date: i64,
+        branch: bool,
+        fallback: Option<&Locale>,
+    ) -> String {
+        // A branch with no locale of its own speaks this style's, and this style the
+        // document's.
+        let fallback = self.locale.as_ref().or(fallback);
         if let CellValue::Number(n) = value
             && let Some(map) = self.branch(*n)
             // Guard against a document mapping a style to itself: one level, then stop.
             && !std::ptr::eq(&map.format, self)
         {
-            return map.format.render_as(value, null_date, map.negative());
+            return map
+                .format
+                .render_as(value, null_date, map.negative(), fallback);
         }
         match (self.kind, value) {
             (_, CellValue::Empty) => String::new(),
-            (Kind::Text, _) => self.render_parts(value, null_date, branch),
+            (Kind::Text, _) => self.render_parts(value, null_date, branch, fallback),
             (_, CellValue::Text(s)) => s.clone(),
             (Kind::Boolean, CellValue::Bool(_)) | (_, CellValue::Number(_)) => {
-                self.render_parts(value, null_date, branch)
+                self.render_parts(value, null_date, branch, fallback)
             }
             (_, CellValue::Bool(b)) => if *b { "TRUE" } else { "FALSE" }.to_owned(),
         }
     }
 
-    fn render_parts(&self, value: &CellValue, null_date: i64, branch: bool) -> String {
+    fn render_parts(
+        &self,
+        value: &CellValue,
+        null_date: i64,
+        branch: bool,
+        locale: Option<&Locale>,
+    ) -> String {
         let n = match value {
             CellValue::Number(n) => *n,
             CellValue::Bool(b) => f64::from(u8::from(*b)),
@@ -389,7 +418,7 @@ impl Format {
                     *min_decimals,
                     *min_int,
                     *grouping,
-                    locale::separators(self.locale.as_ref()),
+                    locale::separators(locale),
                 )),
                 Part::Year { long } => out.push_str(&match long {
                     true => format!("{y:04}"),
@@ -668,6 +697,18 @@ pub fn general(
     kind: Option<crate::model::NumberKind>,
     null_date: i64,
 ) -> String {
+    general_in(value, kind, null_date, None)
+}
+
+/// [`general`] in a document whose own locale is `locale`: a number is spelled with its decimal
+/// separator ([`spell_number`]). Dates and times stay ISO — `doc/sheet-shell.md` C3's reason, that
+/// ISO is the one spelling that reads back unambiguously in every locale.
+pub fn general_in(
+    value: &CellValue,
+    kind: Option<crate::model::NumberKind>,
+    null_date: i64,
+    locale: Option<&Locale>,
+) -> String {
     match (value, kind) {
         (CellValue::Number(n), Some(crate::model::NumberKind::Date)) => {
             let (y, m, d) = date::ymd(*n, null_date);
@@ -683,10 +724,24 @@ pub fn general(
         // The clock, not the `xsd:duration` the file stores — `PT12H00M00S` is a
         // serialisation, not something to show a user.
         (CellValue::Number(n), Some(crate::model::NumberKind::Time)) => clock(*n),
-        (CellValue::Number(n), None) => format_number(*n),
+        (CellValue::Number(n), None) => spell_number(*n, locale),
         (CellValue::Text(s), _) => s.clone(),
         (CellValue::Bool(b), _) => if *b { "TRUE" } else { "FALSE" }.to_owned(),
         (CellValue::Empty, _) => String::new(),
+    }
+}
+
+/// A number with no format, spelled in `locale` — [`format_number`]'s shortest round-trip
+/// spelling, with the locale's decimal separator where that has a `.`. No grouping: a number with
+/// no format has none in any locale, and `1234,5` reads back as exactly one number.
+///
+/// The one spelling a cell's plain number is shown with *and* put in front of somebody editing
+/// it (`App::input_text`), so what is shown is what can be typed back.
+pub fn spell_number(n: f64, locale: Option<&Locale>) -> String {
+    let plain = format_number(n);
+    match locale::separators(locale).0 {
+        '.' => plain,
+        decimal => plain.replace('.', &decimal.to_string()),
     }
 }
 

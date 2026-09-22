@@ -201,6 +201,7 @@ impl Builder {
                 names: Default::default(),
                 null_date: date::DEFAULT_NULL_DATE,
                 null_year: date::DEFAULT_NULL_YEAR,
+                locale: None,
                 source: None,
                 projection_source: None,
                 edits: Default::default(),
@@ -1481,6 +1482,26 @@ impl Context<Builder> for Cell {
 
 // --- styles (§5) -----------------------------------------------------------------------
 
+/// `style:default-style style:family="table-cell"` — the one thing read off it is the
+/// document's locale, `fo:language`/`fo:country` on its text properties, kept verbatim like
+/// every other locale here ([`grind_core::locale`]). The rest of it — its font size above all,
+/// which is the ponytail on [`Styles`] — is still read past.
+struct DefaultCellStyle;
+
+impl Context<Builder> for DefaultCellStyle {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "text-properties")
+            && let Some(language) = attrs.get(Ns::Fo, "language")
+        {
+            b.doc.locale = Some(Locale::new(
+                language,
+                attrs.get(Ns::Fo, "country").unwrap_or_default(),
+            ));
+        }
+        None
+    }
+}
+
 /// `office:automatic-styles` and `office:styles`.
 ///
 /// Three things in here are read: a `number:*-style`, which *is* a format; a `table-cell`
@@ -1488,8 +1509,9 @@ impl Context<Builder> for Cell {
 /// `table-column`/`table-row` one, of which only the size is kept (§5.4). Everything else a
 /// style carries falls down the ignore path and is dropped rather than half-kept.
 ///
-/// ponytail: `style:default-style style:family="table-cell"` is one of the things dropped,
-/// and it is the one a *shell* notices. Every document LibreOffice writes puts
+/// ponytail: `style:default-style style:family="table-cell"` is mostly dropped — only its
+/// locale is read ([`DefaultCellStyle`]) — and what is dropped is the one thing a *shell*
+/// notices. Every document LibreOffice writes puts
 /// `fo:font-size="10pt"` there and then says `10pt` again on each cell it styled, so a
 /// reader that keeps only the second half hands out a document in two sizes: the styled
 /// cells carry a size, the rest carry none and get whatever the shell's own font is.
@@ -1507,6 +1529,14 @@ impl Context<Builder> for Styles {
     }
 
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        // The document's own locale lives on the default *cell* style (`doc/ods-format.md`
+        // §5.2); a default style of any other family says nothing this model holds.
+        if name.is(Ns::Style, "default-style") {
+            return match attrs.get(Ns::Style, "family") {
+                Some("table-cell") => Some(Box::new(DefaultCellStyle)),
+                _ => Some(Box::new(super::context::Ignore)),
+            };
+        }
         if name.is(Ns::Style, "style") {
             let family = attrs.get(Ns::Style, "family").unwrap_or_default();
             let Some(name) = attrs.get(Ns::Style, "name").map(str::to_owned) else {

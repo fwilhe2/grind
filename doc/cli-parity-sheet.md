@@ -77,6 +77,11 @@ stops ratcheting.
   deleted, in one `Action::Batch`, through `formula::rename::inline_name` — the same substitution
   as `rename_name` with the definition's tree in place of a new name. Refused when the name uses
   itself or a formula that does not parse spells it; the count goes to stderr
+- `set_locale` — `grind sheet locale <file> <tag>` (`de-DE`, `fr`, `pt-BR`), and `--clear` to
+  state none; `grind sheet new --locale <tag>` makes a document born with one, so it opens with
+  nothing to undo. Document-level, like a name, and one undo entry: every number with no format,
+  or with one that names no locale of its own, is spelled the new way at once, and a number
+  typed afterwards is read the new way (`doc/ods-format.md` §5.2)
 - `add_sheet` — `grind sheet add <name>`
 - `rename_sheet` — `grind sheet rename <sheet> <name>`, which carries every reference that named
   the old sheet with it: formulas, named expressions and chart ranges, in one `Action::Batch` so
@@ -191,6 +196,15 @@ stops ratcheting.
 - `sheet_name` — `grind info`, and any sheet-qualified address
 - `used_extent` — `grind info`, and `grind sheet view` with no range
 - `names` — `grind info`, and `grind sheet name <name>` for one
+- `locale` — `grind sheet locale <file>` with no tag, which prints the document's locale or
+  `none`; also `grind info`'s `locale` line and the `locale` field of every JSON document report,
+  absent when the document states none
+- `display_number` — not exposed: a spelling rather than a capability. It is
+  `numfmt::spell_number` in the document's locale, for a number that is in no cell — a shell's
+  status-bar sum. The CLI's one number in no cell is `grind sheet eval`'s, which prints a value
+  the way a script reads one, ISO whatever the document says, as `grind sheet get` does; the
+  document's own spelling of a number is what `grind sheet get --value` already prints for any
+  cell with no format
 - `lint` — `grind sheet lint`, and `grind lint` at the suite level, which reads the kind out of
   the file. `doc/dsl.md` §4.3's rules over one document: a cached value that disagrees with its
   formula, a formula naming a sheet that is gone or reading a cell that is empty, an off-palette

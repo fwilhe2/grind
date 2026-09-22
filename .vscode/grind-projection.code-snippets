@@ -153,6 +153,14 @@
     ],
     "description": "The two-digit-year cutoff. Omitted at its default."
   },
+  "node: locale": {
+    "scope": "kdl",
+    "prefix": "locale",
+    "body": [
+      "locale \"${1:de-DE}\""
+    ],
+    "description": "The document's own locale, a language and optionally a country: how every number with no format, or with one naming no locale, is spelled and typed. Omitted when the document states none."
+  },
   "format part: number": {
     "scope": "kdl",
     "prefix": "number",

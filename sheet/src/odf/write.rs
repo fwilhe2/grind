@@ -51,7 +51,13 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         Form::Flat => Ok(content(doc, form).0.into_bytes()),
         Form::Package => {
             let (content, objects) = content(doc, Form::Package);
-            Ok(write_package_with(MIMETYPE, &content, &objects)?)
+            let styles = common_styles_part(doc);
+            Ok(write_package_with(
+                MIMETYPE,
+                &content,
+                styles.as_deref(),
+                &objects,
+            )?)
         }
         // The third form is not XML at all, so it leaves before any of this file runs
         // (`doc/dsl.md` §9). It is here rather than one layer up because `write_bytes` is the
@@ -185,11 +191,16 @@ fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
     // that only a *cell* style uses only when one does. A chart's own `style:style
     // style:family="chart"` needs the same prefix even when no cell in the sheet is styled at
     // all, or `style:` would go undeclared.
-    if !pool.is_empty() || doc.sheets.iter().any(|s| !s.charts().is_empty()) {
+    // The flat form's `office:styles` holds the document's locale, on the default cell style,
+    // which needs both `style:` and `fo:` even in a document with no cell styled at all.
+    let common = (form == Form::Flat).then(|| common_styles(doc)).flatten();
+    if !pool.is_empty() || doc.sheets.iter().any(|s| !s.charts().is_empty()) || common.is_some() {
         let _ = write!(out, " xmlns:style=\"{STYLE}\"");
     }
     if pool.styles_cells() {
         let _ = write!(out, " xmlns:number=\"{NUMBER}\" xmlns:fo=\"{FO}\"");
+    } else if common.is_some() {
+        let _ = write!(out, " xmlns:fo=\"{FO}\"");
     }
     // A chart's own document needs all four — `doc/chart-format.md`'s embedded shape — and
     // only a document that actually has a chart pays for the declarations.
@@ -204,6 +215,10 @@ fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
     }
     out.push_str(">\n");
+    // `office:styles` before `office:automatic-styles`, which is the schema's order.
+    if let Some(common) = &common {
+        out.push_str(common);
+    }
     // Before the body, which is where the schema puts it.
     if !pool.is_empty() {
         pool.write(&mut out);
@@ -226,7 +241,14 @@ fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
     }
     let mut objects = Objects::new(form);
     for sheet in &doc.sheets {
-        table(&mut out, sheet, doc.null_date, &pool, &mut objects);
+        table(
+            &mut out,
+            sheet,
+            doc.null_date,
+            doc.locale.as_ref(),
+            &pool,
+            &mut objects,
+        );
     }
     // §5.11, and *after* the tables: the schema's `office-spreadsheet-content-epilogue`
     // (line 8263) is where `table-functions` sits, and `table:named-expressions` is its
@@ -251,6 +273,35 @@ fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
     database_ranges(&mut out, doc);
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     (out, objects.documents)
+}
+
+/// `office:styles` — which this writer fills with exactly one thing, the document's locale on
+/// the default cell style (`doc/ods-format.md` §5.2, "The document's own language"), and only
+/// when the document has one (R3). `None` otherwise, so a document with no locale writes no
+/// element for it at all.
+fn common_styles(doc: &Document) -> Option<String> {
+    let locale = doc.locale.as_ref()?;
+    let country = match locale.country.is_empty() {
+        true => String::new(),
+        false => format!(" fo:country=\"{}\"", esc(&locale.country)),
+    };
+    Some(format!(
+        " <office:styles><style:default-style style:family=\"table-cell\">\
+         <style:text-properties fo:language=\"{}\"{country}/></style:default-style>\
+         </office:styles>\n",
+        esc(&locale.language)
+    ))
+}
+
+/// The package form's `styles.xml`: [`common_styles`] in the part `office:styles` lives in, since
+/// `content.xml`'s root does not allow one. `None` when there is nothing for it to hold.
+fn common_styles_part(doc: &Document) -> Option<String> {
+    let common = common_styles(doc)?;
+    Some(format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles \
+         xmlns:office=\"{OFFICE}\" xmlns:style=\"{STYLE}\" xmlns:fo=\"{FO}\" \
+         office:version=\"{VERSION}\">\n{common}</office:document-styles>\n"
+    ))
 }
 
 /// `table:database-ranges` (§9.4): every sheet's autofilter, as a range plus one
@@ -1040,14 +1091,21 @@ fn cell_count(range: &str) -> usize {
     (rows * cols) as usize
 }
 
-fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool, objects: &mut Objects) {
+fn table(
+    out: &mut String,
+    sheet: &Sheet,
+    null_date: i64,
+    locale: Option<&grind_core::locale::Locale>,
+    pool: &Pool,
+    objects: &mut Objects,
+) {
     let cols = sheet.used_cols().max(1);
     // A sized or hidden track past the last value still has to be declared, or the layout
     // is lost — widening or hiding an empty column is a perfectly ordinary thing to do.
     let declared = cols
         .max(last(sheet.col_widths()))
         .max(last_index(sheet.hidden_cols()));
-    let rows = cols_or_rows_extent(sheet, null_date);
+    let rows = cols_or_rows_extent(sheet, null_date, locale);
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
     // Before the columns, which is where the schema puts it (rng:15961, ahead of
@@ -1084,7 +1142,7 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool, objects: 
     // LibreOffice keeps the two spellings apart, and a row that is both wins `"collapse"`,
     // the more structural of the two.
     let filtered: std::collections::BTreeSet<u32> =
-        sheet.hidden_rows(null_date).into_iter().collect();
+        sheet.hidden_rows(null_date, locale).into_iter().collect();
     let manual: std::collections::BTreeSet<u32> = sheet.manually_hidden_rows().collect();
     let visibility = |row: u32| -> &'static str {
         match (manual.contains(&row), filtered.contains(&row)) {
@@ -1135,12 +1193,16 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool, objects: 
 
 /// The row extent: the last used row, the last sized one, and the last one hidden by hand
 /// or by the filter — any of which has to be declared even past the sheet's used content.
-fn cols_or_rows_extent(sheet: &Sheet, null_date: i64) -> u32 {
+fn cols_or_rows_extent(
+    sheet: &Sheet,
+    null_date: i64,
+    locale: Option<&grind_core::locale::Locale>,
+) -> u32 {
     sheet
         .used_rows()
         .max(last(sheet.row_heights()))
         .max(last_index(sheet.manually_hidden_rows()))
-        .max(last_index(sheet.hidden_rows(null_date).into_iter()))
+        .max(last_index(sheet.hidden_rows(null_date, locale).into_iter()))
 }
 
 /// One past the last track a sparse size table mentions.
@@ -1628,6 +1690,7 @@ mod tests {
         let bytes = write_package_with(
             MIMETYPE,
             &content(&Document::default(), Form::Package).0,
+            None,
             &[],
         )
         .unwrap();

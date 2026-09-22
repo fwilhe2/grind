@@ -579,7 +579,10 @@ impl App {
             for (row, line) in fields.iter().enumerate() {
                 for (col, field) in line.iter().enumerate() {
                     let pos = at(row, col);
-                    let (this, edit) = typed(&state.doc, sheet, pos, &csv::input(field, options));
+                    // `csv::input` spells a number the ISO way, whatever the file or the
+                    // document spell one, so it is read the ISO way too.
+                    let (this, edit) =
+                        typed_in(&state.doc, sheet, pos, &csv::input(field, options), None);
                     if (row, col) == (0, 0) {
                         kind = this;
                     }
@@ -629,7 +632,7 @@ impl App {
                     Some(formula) => {
                         formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned())
                     }
-                    None => render(s, pos, state.doc.null_date),
+                    None => render_in(s, pos, state.doc.null_date, state.doc.locale.as_ref()),
                 });
             }
             rows.push(fields);
@@ -1327,7 +1330,12 @@ impl App {
             for col in cols.clone() {
                 let pos = Pos::new(row, col);
                 let value = s.get(pos);
-                texts.push(render(s, pos, state.doc.null_date));
+                texts.push(render_in(
+                    s,
+                    pos,
+                    state.doc.null_date,
+                    state.doc.locale.as_ref(),
+                ));
                 styles.push(s.style(pos).cloned());
                 cells.push(value);
                 if let Some(roles) = roles.as_mut() {
@@ -1422,7 +1430,9 @@ impl App {
                 Some(kind) => {
                     numfmt::general(&CellValue::Number(n), Some(kind), state.doc.null_date)
                 }
-                None => formula::value::format_number(n),
+                // In the document's own spelling, so what the formula bar puts in front of
+                // somebody is what the typing rule reads back as the same number.
+                None => numfmt::spell_number(n, state.doc.locale.as_ref()),
             },
             CellValue::Bool(true) => "TRUE".to_owned(),
             CellValue::Bool(false) => "FALSE".to_owned(),
@@ -1440,7 +1450,12 @@ impl App {
     pub fn value_text(&self, sheet: usize, pos: Pos) -> Result<String> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
-        Ok(render(s, pos, state.doc.null_date))
+        Ok(render_in(
+            s,
+            pos,
+            state.doc.null_date,
+            state.doc.locale.as_ref(),
+        ))
     }
 
     /// How one cell looks, or `None` for a plain one.
@@ -1525,6 +1540,8 @@ impl App {
     pub fn calculations(&self) -> Vec<Calculation> {
         let state = self.state.read().unwrap();
         let null_date = state.doc.null_date;
+        let locale = state.doc.locale.clone();
+        let locale = locale.as_ref();
         state
             .doc
             .sheets
@@ -1539,7 +1556,7 @@ impl App {
                     // bar; one that will not parse is shown exactly as it is stored.
                     formula: formula::display::to_display(formula)
                         .unwrap_or_else(|_| formula.to_owned()),
-                    value: render(s, pos, null_date),
+                    value: render_in(s, pos, null_date, locale),
                     functions: formula::funcs::used(formula).unwrap_or_default(),
                 })
             })
@@ -1550,6 +1567,38 @@ impl App {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.formula_count())
+    }
+
+    /// The document's own locale ([`Document::locale`]) — how it spells its numbers.
+    pub fn locale(&self) -> Option<locale::Locale> {
+        self.state.read().unwrap().doc.locale.clone()
+    }
+
+    /// Set the document's own locale, or take it away with `None` — one undo step, and every
+    /// number shown through a format with no locale of its own, or through none at all, is
+    /// spelled the new way at once; what is typed afterwards is read the new way too. Nothing is
+    /// written to any cell: this changes how the document *speaks*, not what it holds.
+    pub fn set_locale(&self, locale: Option<locale::Locale>) -> Result<()> {
+        self.mutate(|state| {
+            if state.doc.locale == locale {
+                return Ok(());
+            }
+            let inverse = state
+                .doc
+                .apply(Action::SetLocale { locale })
+                .expect("a document-level action names no sheet");
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
+    /// A number spelled the way this document spells a number with no format —
+    /// [`numfmt::spell_number`] in its locale. What a shell's status bar and any other place that
+    /// shows a computed number beside the grid use, so a German document's sum reads `1234,5`
+    /// where its cells do.
+    pub fn display_number(&self, n: f64) -> String {
+        numfmt::spell_number(n, self.state.read().unwrap().doc.locale.as_ref())
     }
 
     /// Define a named expression, or redefine one (§5.11).
@@ -1810,7 +1859,7 @@ impl App {
     pub fn hidden_rows(&self, sheet: usize) -> Result<Vec<u32>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
-        Ok(s.hidden_rows(state.doc.null_date))
+        Ok(s.hidden_rows(state.doc.null_date, state.doc.locale.as_ref()))
     }
 
     /// Format a rectangle as a table (Excel's own feature, read the ODF way): an autofilter,
@@ -2196,10 +2245,22 @@ pub struct EnterOutcome {
 /// a cell reads as — and **public** for the same reason: `grind-xlsx`'s corpus tests ask what
 /// an imported cell displays, and the one thing they must not do is answer it themselves.
 pub fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
+    render_in(sheet, pos, null_date, None)
+}
+
+/// [`render`] in a document whose own locale is `locale` ([`Document::locale`]) — what every
+/// view of a document displays with. A format naming a locale keeps it; one naming none, and a
+/// number with no format at all, spell their separators the document's way.
+pub fn render_in(
+    sheet: &Sheet,
+    pos: Pos,
+    null_date: i64,
+    locale: Option<&locale::Locale>,
+) -> String {
     let value = sheet.get(pos);
     match sheet.format(pos) {
-        Some(format) => format.render(&value, null_date),
-        None => numfmt::general(&value, sheet.kind(pos), null_date),
+        Some(format) => format.render_in(&value, null_date, locale),
+        None => numfmt::general_in(&value, sheet.kind(pos), null_date, locale),
     }
 }
 
@@ -2238,6 +2299,18 @@ fn entered_kind(value: &CellValue) -> Entered {
 }
 
 fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Action) {
+    typed_in(doc, sheet, pos, input, doc.locale.as_ref())
+}
+
+/// A typed number, read the way the document spells one — `reading` is its locale, or `None`
+/// for the ISO spelling ([`read_number`]).
+fn typed_in(
+    doc: &Document,
+    sheet: usize,
+    pos: Pos,
+    input: &str,
+    reading: Option<&locale::Locale>,
+) -> (Entered, Action) {
     let cell = |kind, value| {
         (
             kind,
@@ -2281,7 +2354,7 @@ fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Actio
             return cell(Entered::Number, CellValue::Number(n));
         }
     }
-    if let Ok(n) = input.parse::<f64>() {
+    if let Some(n) = read_number(input, reading) {
         return cell(Entered::Number, CellValue::Number(n));
     }
     match input {
@@ -2290,6 +2363,30 @@ fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Actio
         "" => cell(Entered::Cleared, CellValue::Empty),
         _ => cell(Entered::Text, CellValue::Text(input.to_owned())),
     }
+}
+
+/// A number, as somebody typing into a document in `locale` spells one
+/// (`doc/ods-format.md` §5.2, "The document's own language").
+///
+/// With no locale this is the reading every typed number has always had, Rust's own — `1.5`,
+/// `-3`, `1e5`, `007`. With one, the document's separators decide: `1,5` and `1.234,5` are
+/// numbers in a German document, through the same position-checked reading a CSV field gets
+/// ([`csv::number`], so `1,2,3` is not a thousand and twenty-three). What that reading refuses
+/// is still a number if it has no separator in it that the locale could mean otherwise — `007`
+/// and `1e5` — and text if it has one: `1.5` in a German document is not one and a half, and
+/// guessing that it is would make `1.234` mean two different numbers in two cells.
+fn read_number(input: &str, locale: Option<&locale::Locale>) -> Option<f64> {
+    let Some(locale) = locale else {
+        return input.parse().ok();
+    };
+    let (decimal, group) = locale::separators(Some(locale));
+    if let Some(iso) = csv::number(input, decimal, group) {
+        return iso.parse().ok();
+    }
+    if input.contains(['.', ',', ' ', '\u{a0}', '\u{202f}']) {
+        return None;
+    }
+    input.parse().ok()
 }
 
 /// Apply an edit and, if asked, the recalculation behind it — as **one** undo entry.

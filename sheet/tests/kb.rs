@@ -356,6 +356,54 @@ fn every_chart_we_write_is_valid_odf() {
     );
 }
 
+/// A document's own locale, which lives in `office:styles` — in the flat file, and in a package's
+/// `styles.xml` (the part `office:styles` belongs in, since `content.xml`'s root does not allow
+/// it). Each part must validate as the document it is.
+#[test]
+fn a_document_locale_is_valid_odf_in_both_forms() {
+    use grind_sheet::{App, Pos, locale::Locale};
+    let app = App::new();
+    app.set_cell(0, Pos::new(0, 0), 1234.5).unwrap();
+    app.set_locale(Locale::parse("de-DE")).unwrap();
+    let dir = std::env::temp_dir().join(format!("sheet-kb-locale-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let package = app.save_bytes(Form::Package).unwrap();
+    let mut parts = vec![(
+        "locale.fods".to_owned(),
+        app.save_bytes(Form::Flat).unwrap(),
+    )];
+    for name in ["content.xml", "styles.xml"] {
+        let bytes = grind_sheet::odf::package::part(&package, name)
+            .unwrap_or_else(|| panic!("the package has no {name}"));
+        parts.push((name.to_owned(), bytes));
+    }
+    let manifest = String::from_utf8(
+        grind_sheet::odf::package::part(&package, "META-INF/manifest.xml").unwrap(),
+    )
+    .unwrap();
+    assert!(manifest.contains("manifest:full-path=\"styles.xml\""));
+    let mut failures = Vec::new();
+    for (name, bytes) in parts {
+        let path = dir.join(&name);
+        std::fs::write(&path, bytes).unwrap();
+        match jing(&path) {
+            None => {
+                eprintln!("skipping: no `jing` on PATH; schema validity unchecked");
+                let _ = std::fs::remove_dir_all(&dir);
+                return;
+            }
+            Some(Ok(())) => {}
+            Some(Err(report)) => failures.push(format!("{name}:\n{report}")),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        failures.is_empty(),
+        "not valid ODF 1.4:\n{}",
+        failures.join("\n")
+    );
+}
+
 // --- R3 and R6, which are the same measurement read two ways -----------------------------
 
 /// R3: a document carries only the boilerplate it uses.
@@ -373,7 +421,8 @@ fn a_written_document_carries_no_boilerplate() {
         // preamble is the four pooled number styles those need and nothing else. 13 today.
         ("kb", "minimal.fods", 20),
         // LibreOffice's own 482 lines, written back: three cells and no formats, so the
-        // preamble is the root element and the two elements above the first table. 7 today.
+        // preamble is the root element, the document's German locale on one line of
+        // `office:styles`, and the two elements above the first table. 8 today.
         ("kb", "minimal-libreoffice.fods", 12),
         // Styled, so the preamble is the pooled automatic styles and number formats —
         // proportional to the distinct formats used, never to the size of the file. 24 today

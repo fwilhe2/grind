@@ -92,6 +92,11 @@ pub enum Action {
         name: String,
         expression: Option<String>,
     },
+    /// The document's own locale ([`Document::locale`]), `None` taking it away. Document-level,
+    /// like a name: it changes how every unmarked number in the document is spelled at once.
+    SetLocale {
+        locale: Option<grind_core::locale::Locale>,
+    },
     /// Insert a sheet at `index`, carrying everything on it.
     ///
     /// A whole [`Sheet`] rather than a name because this is the inverse of
@@ -266,6 +271,9 @@ impl Document {
                     expression: previous,
                 })
             }
+            Action::SetLocale { locale } => Some(Action::SetLocale {
+                locale: std::mem::replace(&mut self.locale, locale),
+            }),
             // The three that move sheets rather than cells. They shift every later index,
             // which the undo stack survives for one reason: it is strictly ordered, so an
             // older entry is only ever applied *after* this one has been undone and the
@@ -407,6 +415,9 @@ impl Document {
             // `table:visibility` it implies sits on rows rather than cells.
             Action::SetFilter { .. } => self.edits.only_values = false,
             Action::SetName { .. } => self.edits.only_values = false,
+            // The default cell style is not a splice site: it lives in `office:styles`, which
+            // the regenerating writer writes fresh.
+            Action::SetLocale { .. } => self.edits.only_values = false,
             // Not a cell either, and worse: adding or removing a sheet shifts every later
             // index, so the `(sheet, pos)` keys already in `cells` would name the wrong
             // sheet. Regenerating is what makes that harmless — the splice map is never
@@ -437,8 +448,9 @@ impl Document {
             | Action::SetColHidden { sheet, .. }
             | Action::SetRowHidden { sheet, .. }
             | Action::SetFilter { sheet, .. } => self.sheet(*sheet).is_some(),
-            // Names are document-level, so there is no sheet index to be wrong about.
-            Action::SetName { .. } => true,
+            // Names and the locale are document-level, so there is no sheet index to be wrong
+            // about.
+            Action::SetName { .. } | Action::SetLocale { .. } => true,
             // One past the end is where a sheet is appended, so an insert is checked with
             // `<=` and a removal with `<`.
             Action::InsertSheet { index, .. } => *index <= self.sheets.len(),

@@ -110,6 +110,7 @@ mod tests {
                 .unwrap()
                 .sheets[0],
                 0,
+                app.locale().as_ref(),
             );
             assert!(
                 hidden.len() < 2,

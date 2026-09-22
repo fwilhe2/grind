@@ -28,7 +28,11 @@ fn libreoffice_collapsed_column_c_and_row_three() {
 
     // A manually hidden row is not what the (nonexistent, here) filter hides — the two
     // stay distinguishable even though both mean "do not draw this".
-    assert!(sheet.hidden_rows(doc.null_date).is_empty());
+    assert!(
+        sheet
+            .hidden_rows(doc.null_date, doc.locale.as_ref())
+            .is_empty()
+    );
 }
 
 /// Our own file says the same thing: hidden columns and rows both survive being written

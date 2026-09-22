@@ -574,7 +574,7 @@ pub fn input(field: &str, options: &Import) -> String {
 /// The grouping check is the fussy part and has to be: `1,234` is a number and `1,2,3` is
 /// three fields that ended up in one, so the positions are checked rather than the separator
 /// merely being deleted.
-fn number(field: &str, decimal: char, group: char) -> Option<String> {
+pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> {
     // A no-break space groups in French and Russian, and a file written by hand — or by a tool
     // that normalised its whitespace — has a plain one. Both mean the same digit group.
     let owned;

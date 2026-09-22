@@ -43,7 +43,7 @@ fn filter_matches_libreoffice() {
     assert!(filter.keep[&2].contains("Desk"), "a kept value");
     assert!(!filter.keep[&2].contains("Chair"), "a filtered-out value");
 
-    let hidden = sheet.hidden_rows(doc.null_date);
+    let hidden = sheet.hidden_rows(doc.null_date, doc.locale.as_ref());
     assert_eq!(
         hidden,
         marked_hidden(&xml),
@@ -67,8 +67,10 @@ fn a_filter_survives_our_own_round_trip() {
     assert_eq!(
         back.sheet(0)
             .expect("one sheet")
-            .hidden_rows(back.null_date),
-        doc.sheet(0).expect("one sheet").hidden_rows(doc.null_date)
+            .hidden_rows(back.null_date, back.locale.as_ref()),
+        doc.sheet(0)
+            .expect("one sheet")
+            .hidden_rows(doc.null_date, doc.locale.as_ref())
     );
     assert!(
         String::from_utf8_lossy(&bytes).contains("table:visibility=\"filter\""),

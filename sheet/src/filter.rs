@@ -81,14 +81,29 @@ impl Filter {
     /// Whether this row is excluded: it is inside the range, and at least one field's value
     /// is not among the ones that field keeps. Several conditions are an **and** (§9.4's
     /// `table:filter-and`), so one failing field is enough.
-    pub fn hides(&self, sheet: &Sheet, row: u32, null_date: i64) -> bool {
+    ///
+    /// `locale` is the document's ([`crate::Document::locale`]): a value is matched as it is
+    /// *shown*, and a German document shows `1234,5` — which is also what a German LibreOffice
+    /// saved as the value to keep.
+    pub fn hides(
+        &self,
+        sheet: &Sheet,
+        row: u32,
+        null_date: i64,
+        locale: Option<&crate::locale::Locale>,
+    ) -> bool {
         if row < self.first_data_row() || row > self.end.row {
             return false;
         }
         self.keep.iter().any(|(field, keep)| {
             let col = self.column(*field);
             col <= self.end.col
-                && !keep.contains(&crate::render(sheet, Pos::new(row, col), null_date))
+                && !keep.contains(&crate::render_in(
+                    sheet,
+                    Pos::new(row, col),
+                    null_date,
+                    locale,
+                ))
         })
     }
 
@@ -104,12 +119,17 @@ impl Filter {
 
     /// Every row this filter hides, in order — what the writer paints
     /// `table:visibility="filter"` onto and what a shell leaves undrawn.
-    pub fn hidden_rows(&self, sheet: &Sheet, null_date: i64) -> Vec<u32> {
+    pub fn hidden_rows(
+        &self,
+        sheet: &Sheet,
+        null_date: i64,
+        locale: Option<&crate::locale::Locale>,
+    ) -> Vec<u32> {
         if self.keep.is_empty() {
             return Vec::new();
         }
         (self.first_data_row()..=self.end.row)
-            .filter(|row| self.hides(sheet, *row, null_date))
+            .filter(|row| self.hides(sheet, *row, null_date, locale))
             .collect()
     }
 }
@@ -143,10 +163,10 @@ mod tests {
     #[test]
     fn a_row_survives_when_every_field_is_one_of_the_kept_values() {
         let (sheet, filter) = (sheet(), filter(&["Chair", "Desk"]));
-        assert_eq!(filter.hidden_rows(&sheet, 0), vec![3]);
-        assert!(!filter.hides(&sheet, 0, 0), "the heading row");
+        assert_eq!(filter.hidden_rows(&sheet, 0, None), vec![3]);
+        assert!(!filter.hides(&sheet, 0, 0, None), "the heading row");
         // Past the range: outside a filter's business entirely.
-        assert!(!filter.hides(&sheet, 9, 0));
+        assert!(!filter.hides(&sheet, 9, 0, None));
     }
 
     /// A filter with no conditions is a range with dropdown buttons and nothing chosen —
@@ -155,7 +175,7 @@ mod tests {
     fn a_filter_with_no_conditions_hides_nothing() {
         let mut filter = filter(&[]);
         filter.keep.clear();
-        assert!(filter.hidden_rows(&sheet(), 0).is_empty());
+        assert!(filter.hidden_rows(&sheet(), 0, None).is_empty());
     }
 
     /// An empty cell is a value like any other, spelled `""` — which is how LibreOffice
@@ -165,8 +185,8 @@ mod tests {
     fn the_empty_string_keeps_empty_cells() {
         let mut sheet = sheet();
         sheet.set(Pos::new(2, 1), CellValue::Empty);
-        assert_eq!(filter(&["Chair", ""]).hidden_rows(&sheet, 0), vec![3]);
-        assert_eq!(filter(&["Chair"]).hidden_rows(&sheet, 0), vec![2, 3]);
+        assert_eq!(filter(&["Chair", ""]).hidden_rows(&sheet, 0, None), vec![3]);
+        assert_eq!(filter(&["Chair"]).hidden_rows(&sheet, 0, None), vec![2, 3]);
     }
 
     /// Two fields are an `and`: a row has to satisfy both to stay.
@@ -180,6 +200,6 @@ mod tests {
         let mut filter = filter(&["Chair", "Desk", "Lamp"]);
         filter.end.col = 2;
         filter.keep.insert(1, ["Office".to_owned()].into());
-        assert_eq!(filter.hidden_rows(&sheet, 0), vec![2]);
+        assert_eq!(filter.hidden_rows(&sheet, 0, None), vec![2]);
     }
 }

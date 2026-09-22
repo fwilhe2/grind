@@ -337,6 +337,10 @@ pub struct DocumentReport {
     pub stale: usize,
     pub sheets: Vec<SheetInfo>,
     pub names: Vec<Name>,
+    /// The document's own locale, as a tag (`de-DE`) — how it spells its numbers. Absent from
+    /// the JSON, and from the text, when the document states none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
     pub can_undo: bool,
     pub can_redo: bool,
 }
@@ -493,6 +497,9 @@ impl Report {
             Report::Document(doc) => {
                 if let Some(kind) = doc.kind {
                     println!("{kind}");
+                }
+                if let Some(locale) = &doc.locale {
+                    println!("locale\t{locale}");
                 }
                 for sheet in &doc.sheets {
                     println!(

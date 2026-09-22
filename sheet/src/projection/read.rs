@@ -47,6 +47,18 @@ pub fn read(text: &str) -> Result<Document> {
                 doc.null_date = formula::date::days_from_civil(y, m, d);
             }
             "null-year" => doc.null_year = integer(node, 0)?,
+            // The document's own locale, as the tag a person writes (`de-DE`).
+            "locale" => {
+                let tag = text_arg(node, 0)?;
+                doc.locale = Some(grind_core::locale::Locale::parse(&tag).ok_or_else(|| {
+                    at(
+                        node,
+                        format!(
+                            "{tag} is not a locale — a language, and optionally a country: de-DE"
+                        ),
+                    )
+                })?);
+            }
             "name" => {
                 let name = text_arg(node, 0)?;
                 let expression = text_arg(node, 1)?;

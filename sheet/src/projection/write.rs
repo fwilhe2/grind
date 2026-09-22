@@ -135,6 +135,15 @@ fn settings(out: &mut Emitter, doc: &Document) {
         out.end();
         wrote = true;
     }
+    if let Some(locale) = &doc.locale {
+        if !wrote {
+            out.blank();
+        }
+        out.begin("locale");
+        out.arg(locale.tag());
+        out.end();
+        wrote = true;
+    }
     if !doc.names.is_empty() && !wrote {
         out.blank();
     }

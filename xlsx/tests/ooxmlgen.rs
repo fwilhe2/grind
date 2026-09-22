@@ -1396,7 +1396,7 @@ fn the_document_fixtures_carry_what_their_notes_say() {
     // The rows the carried filter hides are its to hide, not hidden by hand as well.
     let sheet = &document.sheets[1];
     let null = document.null_date;
-    for row in sheet.hidden_rows(null) {
+    for row in sheet.hidden_rows(null, document.locale.as_ref()) {
         assert!(!sheet.row_manually_hidden(row), "row {}", row + 1);
     }
 

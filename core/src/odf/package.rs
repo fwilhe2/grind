@@ -129,13 +129,19 @@ pub struct SubDocument {
 /// Minimal by intent (§1.4) — a manifest lists what the package *holds*, and this writer holds
 /// two entries. Listing a `styles.xml` that is not there would be a lie a reader acts on.
 pub fn manifest(mimetype: &str) -> String {
-    manifest_with(mimetype, &[])
+    manifest_with(mimetype, false, &[])
 }
 
-/// [`manifest`], plus two entries per [`SubDocument`]: its directory, carrying its media type,
-/// and the `content.xml` inside it.
-fn manifest_with(mimetype: &str, subdocuments: &[SubDocument]) -> String {
+/// [`manifest`], plus `styles.xml` when the package holds one, and two entries per
+/// [`SubDocument`]: its directory, carrying its media type, and the `content.xml` inside it.
+fn manifest_with(mimetype: &str, styles: bool, subdocuments: &[SubDocument]) -> String {
     let mut entries = String::new();
+    if styles {
+        entries.push_str(
+            "\x20<manifest:file-entry manifest:full-path=\"styles.xml\" \
+             manifest:media-type=\"text/xml\"/>\n",
+        );
+    }
     for sub in subdocuments {
         entries.push_str(&format!(
             "\x20<manifest:file-entry manifest:full-path=\"{dir}/\" manifest:version=\"{VERSION}\" \
@@ -166,13 +172,16 @@ fn manifest_with(mimetype: &str, subdocuments: &[SubDocument]) -> String {
 /// `mimetype` goes first, **stored uncompressed**, raw bytes, no trailing newline: readers
 /// sniff it at a fixed offset before parsing any XML, so this is not somewhere to be creative.
 pub fn write_package(mimetype: &str, content: &str) -> Result<Vec<u8>> {
-    write_package_with(mimetype, content, &[])
+    write_package_with(mimetype, content, None, &[])
 }
 
-/// [`write_package`], with [`SubDocument`]s beside the content.
+/// [`write_package`], with a `styles.xml` when there are common styles to put in one — the
+/// part `office:styles` lives in, since `content.xml`'s root does not allow it — and
+/// [`SubDocument`]s beside the content.
 pub fn write_package_with(
     mimetype: &str,
     content: &str,
+    styles: Option<&str>,
     subdocuments: &[SubDocument],
 ) -> Result<Vec<u8>> {
     use std::io::Write as _;
@@ -189,10 +198,15 @@ pub fn write_package_with(
         .compression_method(zip::CompressionMethod::Deflated);
     w.start_file("META-INF/manifest.xml", deflated)
         .map_err(zip)?;
-    w.write_all(manifest_with(mimetype, subdocuments).as_bytes())?;
+    w.write_all(manifest_with(mimetype, styles.is_some(), subdocuments).as_bytes())?;
 
     w.start_file("content.xml", deflated).map_err(zip)?;
     w.write_all(content.as_bytes())?;
+
+    if let Some(styles) = styles {
+        w.start_file("styles.xml", deflated).map_err(zip)?;
+        w.write_all(styles.as_bytes())?;
+    }
 
     for sub in subdocuments {
         w.start_file(format!("{}/content.xml", sub.directory), deflated)
@@ -240,6 +254,7 @@ mod tests {
         let bytes = write_package_with(
             "application/vnd.oasis.opendocument.spreadsheet",
             "<x/>",
+            None,
             &[SubDocument {
                 directory: "Object 1".to_owned(),
                 mimetype: CHART,

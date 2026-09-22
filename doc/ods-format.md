@@ -387,6 +387,50 @@ wrong here before:
    1234.5678 under a `number:text-style` shows `1234.5678`. §16.27.28 is "the text of the cell",
    and a number has one. The bug this fixed was an empty cell for every number formatted `@`.
 
+**The document's own language — where it lives, and what it does not do.** A document states
+its default language on the default *cell* style: `office:styles` →
+`style:default-style style:family="table-cell"` → `style:text-properties` with `fo:language` and
+`fo:country` (`style-default-style` at rng:10412, the text properties' `fo:language` and
+`fo:country` at rng:13540 and rng:13555). Measured from
+`sheet/tests/data/kb/minimal-libreoffice.fods`, which a German LibreOffice wrote:
+`fo:language="de" fo:country="DE"` there, beside the Asian and complex-script languages (which
+this build neither reads nor writes), and **no `number:language` on the plain number styles
+beside it** — only the `number:currency-symbol` of its euro format carries one. A document
+LibreOffice writes relies on something other than the format for the separators of every plain
+number.
+
+What that something is was measured next (LibreOffice 26.8.0.3, running in `en-US`, by eye in its
+own window): a hand-written, schema-valid document whose default cell style says `de-DE`, holding
+1234.5 once with no format and once under an unmarked `#,##0.00`, renders **`1234.5` and
+`1,234.50`** — exactly what the same document says with `en-US` there instead. **LibreOffice does
+not render numbers by the document's language; it renders them by the locale of the machine
+that opened it.** The same German file shows `1.234,50` on a German desktop and `1,234.50` on
+this one.
+
+So this build takes the document's language as *its* rule and makes the file say it too:
+
+- **Reading**: `Document::locale` is `fo:language`/`fo:country` off that default style — the
+  document's own statement, rather than whoever happens to be looking at it.
+- **Rendering**: a format with no locale of its own, and a number with no format at all, show
+  the document's separators. That is the portable reading of a document LibreOffice renders
+  machine by machine: the answer does not change with the desktop.
+- **Writing**: the default style carries the locale when the document has one, and nothing when
+  it does not (R3) — in the flat file's own `office:styles`, and in a package's `styles.xml`,
+  since `content.xml`'s root has no room for `office:styles`. Measured (loop C's `german` case):
+  a German document written this way comes back from `soffice --convert-to` still German, in
+  both forms. A document that states **no** locale comes back stating LibreOffice's own — the
+  converting machine's `en-US` here — which is the oracle filling in a default rather than the
+  document losing anything, and why loop C compares a locale only where the document states
+  one. **Every format this build creates carries its locale explicitly**
+  (`number:language`/`number:country` on the style, which LibreOffice *does* honour — measured in
+  the same window: the same `#,##0.00` marked `de-DE` renders `1.234,50` there), so a format made
+  in a German document renders `1.234,50` in LibreOffice on any machine. A General cell cannot carry one — there is no style to put it on
+  — and shows whatever the opening LibreOffice's own locale says, which is LibreOffice's
+  behaviour for every document and not something a file can change.
+- **Typing**: the document's decimal point and grouping are what a typed number is read with
+  (`1,5` is one and a half in a German document) — this build's rule, not LibreOffice's, which
+  reads input by the machine's locale too.
+
 ### 5.3 Style pooling (minimality + correctness)
 
 Define each distinct formatting/number-format combination exactly once as a named

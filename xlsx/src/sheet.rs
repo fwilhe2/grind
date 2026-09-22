@@ -276,7 +276,7 @@ fn autofilter(
 /// the sheet shows what Excel showed.
 fn apply_filter(sheet: &mut Sheet, filter: grind_sheet::Filter, null_date: i64) {
     sheet.set_filter(Some(filter));
-    for row in sheet.hidden_rows(null_date) {
+    for row in sheet.hidden_rows(null_date, None) {
         sheet.set_row_hidden(row, false);
     }
 }

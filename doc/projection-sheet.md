@@ -44,6 +44,7 @@ body — one or more document-level nodes — and it is executable, not illustra
 | `sheet` | `Document::sheets`, and `Sheet::name` as its argument | `sheet Sales { }` |
 | `null-date` | `Document::null_date`, as `YYYY-MM-DD`. Omitted at its default, which is why the example is the *other* epoch a real document uses | `null-date "1904-01-01"` |
 | `null-year` | `Document::null_year`. Omitted at its default | `null-year 1919` |
+| `locale` | `Document::locale` — how the document spells its numbers, as a language and optionally a country (`doc/ods-format.md` §5.2). Omitted when the document states none | `locale "de-DE"` |
 | `name` | one entry of `Document::names` — §5.11's `table:named-expressions` | `name "tax_rate" "[$Sales.$B$1]"` |
 | `col` | `Sheet::col_widths` and `Sheet::hidden_cols` for one column, numbered from 1 | `sheet S { col 2 width="2.258cm" hidden=#true }` |
 | `row` | two things by position: `Sheet::row_heights` and `Sheet::manually_hidden_rows` at the sheet level, and one line of a grid inside an `at` | `sheet S { row 3 height="0.45cm" hidden=#true; at A1 { row Region 4200 #null } }` |
@@ -130,6 +131,7 @@ thing that grows.
 | `Document::names` | `name` |
 | `Document::null_date` | `null-date` |
 | `Document::null_year` | `null-year` |
+| `Document::locale` | `locale` |
 | `Document::source` | gap: R6's retained bytes of the form the document was *read* from. Not state a document has — a physical form does — and a projection is a third form, which D5 gave a splice of its own |
 | `Document::projection_source` | gap: **that splice** — the projection's own retained text and the byte range of every cell in it. The same argument one row up, and the reason it is a second field rather than a variant of the first is that the two retain different things (`grind_core::projection::source`) |
 | `Document::edits` | gap: what has changed since the read, which is a fact about a session rather than about a document |

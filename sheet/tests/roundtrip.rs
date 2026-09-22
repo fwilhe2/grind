@@ -196,6 +196,18 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
             (got.null_date, got.null_year)
         ));
     }
+    // The document's own locale (`doc/ods-format.md` §5.2), which decides how every unmarked
+    // number in it reads — a document that came back without it has changed every such number.
+    // Compared where the document *states* one: LibreOffice gives a document that states none
+    // its own machine's locale on save (measured, this loop), which is the oracle filling in a
+    // default rather than the document losing anything — and what every cell *shows* is
+    // compared below regardless.
+    if want.locale.is_some() && want.locale != got.locale {
+        out.push(format!(
+            "{label}: locale {:?}, back as {:?}",
+            want.locale, got.locale
+        ));
+    }
     for (i, (w, g)) in want.sheets.iter().zip(&got.sheets).enumerate() {
         if w.name != g.name {
             out.push(format!(
@@ -870,6 +882,26 @@ fn counter_clockwise_pie() -> (String, Document) {
     ("counter-clockwise-pie".to_owned(), doc)
 }
 
+/// A German document: its locale on the default cell style, a number with no format, and one
+/// under a format that names no locale — the two the locale decides — beside one under a format
+/// that names its own.
+fn german() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Daten")],
+        locale: Locale::parse("de-DE"),
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    for row in 0..3 {
+        sheet.set(Pos::new(row, 0), CellValue::Number(1234.5));
+    }
+    let two =
+        grind_sheet::numfmt::preset(Kind::Number, 2, true, grind_sheet::numfmt::DEFAULT_CURRENCY);
+    sheet.set_format(Pos::new(1, 0), two.clone());
+    sheet.set_format(Pos::new(2, 0), two.in_locale(Locale::parse("en-US")));
+    ("german".to_owned(), doc)
+}
+
 fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
@@ -900,6 +932,7 @@ fn cases() -> Vec<(String, Document)> {
         filtered(),
         charts(),
         counter_clockwise_pie(),
+        german(),
         case(
             "numbers",
             &[
