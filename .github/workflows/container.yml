@@ -74,7 +74,7 @@ jobs:
       # for `wasm-bindgen-cli` — is what would make caching these builds worth its space, and
       # is the open item here.
       - name: Build Image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./Containerfile.distroless-cli
@@ -162,7 +162,7 @@ jobs:
       # The context is the repository root: grind-web depends on grind-core,
       # grind-sheet and grind-text, so ui_web/ alone would not build.
       - name: Build Image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./ui_web/Dockerfile
