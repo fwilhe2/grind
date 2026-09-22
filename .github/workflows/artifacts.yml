@@ -160,7 +160,7 @@ jobs:
       # Prebuilt, from `install-action`'s own manifest — this used to be `cargo install
       # cargo-deb --locked`, which compiled a few hundred crates on every run to produce a
       # tool whose version nothing here pins.
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: cargo-deb
 
@@ -739,7 +739,7 @@ jobs:
 
       # Prebuilt rather than `cargo install wasm-bindgen-cli --version …`, which compiled the
       # tool from source on every cold cache.
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: wasm-bindgen@${{ steps.wasm_bindgen.outputs.version }}
 
