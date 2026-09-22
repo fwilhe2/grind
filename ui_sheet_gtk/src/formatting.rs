@@ -504,6 +504,11 @@ struct Picker {
     /// Says a document's format is one this vocabulary cannot spell, rather than offering
     /// parameters that would quietly replace it (`Format::is_preset`).
     note: gtk::Label,
+    /// The rows that only mean something for some kinds, each with its label — **hidden**,
+    /// not greyed, when the kind chosen has no such parameter. A greyed "Decimals" under
+    /// *Date* is a question the popover asks and then refuses to take an answer to.
+    numeric_rows: Vec<gtk::Widget>,
+    locale_rows: Vec<gtk::Widget>,
 }
 
 impl Picker {
@@ -552,6 +557,11 @@ impl Picker {
             .build();
         sample.add_css_class("title-3");
         sample.add_css_class("numeric");
+        // Without a caption the sample is a bold line of the cell's own text at the top of a
+        // popover, and it reads as the popover's title — `Category`, over a format menu.
+        let caption = gtk::Label::builder().label("Preview").xalign(0.5).build();
+        caption.add_css_class("caption");
+        caption.add_css_class("dim-label");
         let apply = gtk::Button::with_label("Apply");
         apply.add_css_class("suggested-action");
         let note = gtk::Label::builder()
@@ -570,18 +580,27 @@ impl Picker {
             .margin_start(6)
             .margin_end(6)
             .build();
-        grid.attach(&sample, 0, 0, 2, 1);
-        grid.attach(&label("Format"), 0, 1, 1, 1);
-        grid.attach(&kind, 1, 1, 1, 1);
-        grid.attach(&label("Decimals"), 0, 2, 1, 1);
-        grid.attach(&decimals, 1, 2, 1, 1);
-        grid.attach(&grouping, 1, 3, 1, 1);
-        grid.attach(&label("Currency"), 0, 4, 1, 1);
-        grid.attach(&row, 1, 4, 1, 1);
-        grid.attach(&label("Locale"), 0, 5, 1, 1);
-        grid.attach(&locale, 1, 5, 1, 1);
-        grid.attach(&note, 0, 6, 2, 1);
-        grid.attach(&apply, 0, 7, 2, 1);
+        let decimals_label = label("Decimals");
+        let locale_label = label("Locale");
+        grid.attach(&caption, 0, 0, 2, 1);
+        grid.attach(&sample, 0, 1, 2, 1);
+        grid.attach(&label("Format"), 0, 2, 1, 1);
+        grid.attach(&kind, 1, 2, 1, 1);
+        grid.attach(&decimals_label, 0, 3, 1, 1);
+        grid.attach(&decimals, 1, 3, 1, 1);
+        grid.attach(&grouping, 1, 4, 1, 1);
+        grid.attach(&label("Currency"), 0, 5, 1, 1);
+        grid.attach(&row, 1, 5, 1, 1);
+        grid.attach(&locale_label, 0, 6, 1, 1);
+        grid.attach(&locale, 1, 6, 1, 1);
+        grid.attach(&note, 0, 7, 2, 1);
+        grid.attach(&apply, 0, 8, 2, 1);
+        let numeric_rows = vec![
+            decimals_label.upcast(),
+            decimals.clone().upcast(),
+            grouping.clone().upcast(),
+        ];
+        let locale_rows = vec![locale_label.upcast(), locale.clone().upcast()];
 
         let picker = Rc::new(Self {
             popover: gtk::Popover::builder().child(&grid).build(),
@@ -595,6 +614,8 @@ impl Picker {
             sample,
             apply,
             note,
+            numeric_rows,
+            locale_rows,
         });
         // Digits belong to the numeric families and a symbol to currency; the rest of the
         // menu would be offering parameters the format cannot carry.
@@ -612,14 +633,31 @@ impl Picker {
             .get(self.kind.selected() as usize)
             .and_then(|(_, k)| *k);
         let numeric = matches!(kind, Some(Kind::Number | Kind::Percentage | Kind::Currency));
-        self.decimals.set_sensitive(numeric);
-        self.grouping.set_sensitive(numeric);
-        // The currency buttons stay live whatever the kind: pressing one is how a cell
-        // *becomes* a currency, so greying them out until Currency is chosen would hide the
-        // quick way behind the slow one.
+        for widget in &self.numeric_rows {
+            widget.set_visible(numeric);
+        }
+        // The currency buttons stay whatever the kind: pressing one is how a cell *becomes* a
+        // currency, so hiding them until Currency is chosen would hide the quick way behind
+        // the slow one. What they must not do is look *chosen* on a cell that is not one —
+        // a pressed `€` over a General cell says the cell is in euros. So none is down until
+        // the kind is Currency, and then the default is, if nothing else was.
+        let buttons = || self.currencies.iter().chain([&self.other]);
+        match kind {
+            Some(Kind::Currency) if !buttons().any(|b| b.is_active()) => {
+                self.currencies[0].set_active(true);
+            }
+            Some(Kind::Currency) => {}
+            _ => {
+                for button in buttons() {
+                    button.set_active(false);
+                }
+            }
+        }
         // General is the absence of a format, so nothing else on the menu applies to it.
         let formatted = kind.is_some() || self.kind.selected() == DATETIME;
-        self.locale.set_sensitive(formatted);
+        for widget in &self.locale_rows {
+            widget.set_visible(formatted);
+        }
     }
 
     /// Show a cell's current format — the picker's whole read half — in a document whose own

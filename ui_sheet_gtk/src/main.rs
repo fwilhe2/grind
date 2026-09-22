@@ -278,8 +278,10 @@ impl Ui {
         let formula_bar = chrome::formula_bar(&grid, app, true);
         view.add_top_bar(&formula_bar.widget);
         view.add_top_bar(&banner);
-        view.add_bottom_bar(&tabs.widget);
-        view.add_bottom_bar(&chrome::status_bar(&grid, app));
+        view.add_bottom_bar(&chrome::bottom_bar(
+            &tabs.widget,
+            &chrome::status_bar(&grid, app),
+        ));
 
         let window = adw::ApplicationWindow::builder()
             .application(application)

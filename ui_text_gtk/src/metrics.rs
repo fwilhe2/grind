@@ -238,6 +238,57 @@ pub fn size_units(font_size: Option<&str>, base: i32) -> Option<i32> {
 /// An ODF colour — `#rrggbb`, or one of the names GDK already knows — as Pango's three
 /// channels. `transparent` is not a colour a run of text can be painted in and answers `None`,
 /// which is what leaves a highlight of it undrawn rather than painted black.
+/// The page a run is drawn on and the theme's own ink for it — what a colour the document chose
+/// has to be read against.
+///
+/// **A document's colours meet the theme here, and nothing it decides is written.** The rule is
+/// `ui_sheet_gtk`'s `theme::ink`, one document type over, over the same arithmetic
+/// ([`grind_core::color`]):
+///
+/// - **No colour of its own and no highlight**: nothing is emitted, and the line's own ink — the
+///   theme's — is what it is drawn in.
+/// - **No colour of its own, on a highlight**: ODF's *automatic* colour, which is the theme's ink
+///   where that reads on the highlight and black or white where it does not.
+/// - **A colour of its own on the page, in a dark theme**: lifted along its own hue until it
+///   reads ([`grind_core::color::legible`]). The screenshot that made this a rule was a navy
+///   italic word, invisible on the dark page.
+/// - **Anything else** is the document's decision about its own paper, drawn as it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Paper {
+    pub ink: grind_core::color::Rgb,
+    pub page: grind_core::color::Rgb,
+}
+
+impl Paper {
+    /// Black on white — what a test that is not about colour draws on.
+    pub const LIGHT: Paper = Paper {
+        ink: (0, 0, 0),
+        page: (255, 255, 255),
+    };
+
+    fn dark(self) -> bool {
+        grind_core::color::luminance(self.page) < 0.2
+    }
+
+    /// The foreground a run is drawn in, or `None` for the line's own ink.
+    pub fn ink(self, color: Option<&str>, fill: Option<&str>) -> Option<(u16, u16, u16)> {
+        use grind_core::color as core;
+        let rgb = |value: Option<&str>| {
+            channels(value).map(|(r, g, b)| ((r >> 8) as u8, (g >> 8) as u8, (b >> 8) as u8))
+        };
+        let wide =
+            |(r, g, b): core::Rgb| (u16::from(r) * 257, u16::from(g) * 257, u16::from(b) * 257);
+        match (rgb(color), rgb(fill)) {
+            (None, None) => None,
+            (None, Some(fill)) => Some(wide(core::automatic_ink(fill, self.ink))),
+            (Some(own), None) if self.dark() => {
+                Some(wide(core::legible(own, self.page, core::TEXT)))
+            }
+            (Some(own), _) => Some(wide(own)),
+        }
+    }
+}
+
 fn channels(value: Option<&str>) -> Option<(u16, u16, u16)> {
     let value = value?;
     if value.eq_ignore_ascii_case("transparent") {
@@ -408,6 +459,7 @@ pub fn run_attributes(
     line_end: usize,
     text: &str,
     base: i32,
+    paper: Paper,
 ) -> pango::AttrList {
     let attrs = pango::AttrList::new();
     // A char-offset-to-byte-offset table for this line alone — built once rather than once
@@ -445,11 +497,12 @@ pub fn run_attributes(
             mark(pango::AttrSize::new(size).into());
         }
         // The two colours. Neither changes how wide anything is, so neither has a measuring
-        // twin — but until now neither was drawn either, and a document that coloured a word
-        // came out in the theme's own ink. The run's colour is drawn where it has one and the
-        // theme's is left alone where it does not, which is what keeps a plain document
-        // readable in a dark theme.
-        if let Some((r, g, b)) = channels(run.props.color.as_deref()) {
+        // twin. The ink is [`Paper::ink`]'s — the spreadsheet window's rule, so a navy word
+        // chosen on white paper is still readable on a dark page, and a yellow highlight does
+        // not carry the dark theme's white text across it.
+        if let Some((r, g, b)) =
+            paper.ink(run.props.color.as_deref(), run.props.background.as_deref())
+        {
             mark(pango::AttrColor::new_foreground(r, g, b).into());
         }
         if let Some((r, g, b)) = channels(run.props.background.as_deref()) {
@@ -489,6 +542,29 @@ mod tests {
         assert_eq!(size_units(None, base), None);
         assert_eq!(size_units(Some("5cm"), base), None);
         assert_eq!(size_units(Some("0pt"), base), None);
+    }
+
+    /// The dark-mode screenshot, as a test: navy on the dark page is lifted, navy on white is
+    /// left alone, and an uncoloured word on a yellow highlight is not drawn in white.
+    #[test]
+    fn a_documents_colour_reads_on_the_page_it_is_drawn_on() {
+        let dark = Paper {
+            ink: (255, 255, 255),
+            page: (30, 30, 30),
+        };
+        let navy = Some("#001f3f");
+        let (r, g, b) = dark.ink(navy, None).expect("a colour of its own is drawn");
+        let lifted = ((r >> 8) as u8, (g >> 8) as u8, (b >> 8) as u8);
+        assert!(grind_core::color::contrast(lifted, dark.page) >= grind_core::color::TEXT);
+        assert_eq!(
+            Paper::LIGHT.ink(navy, None),
+            Some((0, 0x1f * 257, 0x3f * 257))
+        );
+        let on_yellow = dark
+            .ink(None, Some("#ffdc00"))
+            .expect("automatic ink on a highlight");
+        assert_eq!(on_yellow, (0, 0, 0));
+        assert_eq!(dark.ink(None, None), None);
     }
 
     /// `transparent` is ODF's spelling for "no highlight", and it is a value rather than an

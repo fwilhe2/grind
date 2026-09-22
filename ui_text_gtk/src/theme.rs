@@ -45,6 +45,17 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// The page and the ink a document's own colours are read against
+    /// ([`crate::metrics::Paper`]).
+    pub fn paper(&self) -> crate::metrics::Paper {
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let rgb = |c: gdk::RGBA| (byte(c.red()), byte(c.green()), byte(c.blue()));
+        crate::metrics::Paper {
+            ink: rgb(self.foreground),
+            page: rgb(self.background),
+        }
+    }
+
     /// Read the palette out of `widget`'s current style.
     pub fn of(widget: &impl IsA<gtk::Widget>) -> Self {
         let widget = widget.as_ref();
@@ -65,6 +76,27 @@ impl Palette {
             rule: with_alpha(foreground, 0.28),
         }
     }
+}
+
+/// Whether an announcement from `widget` reaches anybody.
+///
+/// Two ways it does not, and both used to cost something. GTK's fallback accessibility context —
+/// the one it uses when there is no AT-SPI bus, as in a container, a VM or a minimal session —
+/// has no `announce` hook, and `gtk_accessible_announce` calls it anyway: a jump to address zero
+/// on every move (measured on GTK 4.18 under Xvfb, with and without a session bus). And with
+/// `GTK_A11Y=none` there is **no context at all**: `gtk_accessible_get_at_context` returns NULL,
+/// which the generated binding asserts against, so the first click in the window aborted it. The
+/// raw call is made here because it is the one spelling that can say "none".
+pub fn heard(widget: &impl IsA<gtk::Accessible>) -> bool {
+    use gtk::glib::translate::{ToGlibPtr, from_glib_full};
+    // SAFETY: the call is transfer-full and documented to return NULL when accessibility is off;
+    // `from_glib_full` into an `Option` takes the reference and maps NULL to `None`.
+    let context: Option<gtk::ATContext> = unsafe {
+        from_glib_full(gtk::ffi::gtk_accessible_get_at_context(
+            widget.as_ref().to_glib_none().0,
+        ))
+    };
+    context.is_some_and(|context| context.type_().name() != "GtkTestATContext")
 }
 
 #[allow(deprecated)]

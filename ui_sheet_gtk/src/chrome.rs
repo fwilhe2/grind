@@ -227,13 +227,13 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         move |_| explain_label.set_label(&explanation(&app, &grid))
     ));
 
-    let accept = icon_button("object-select-symbolic", "Accept");
+    let accept = icon_button("object-select-symbolic", "Accept (Enter)");
     accept.connect_clicked(glib::clone!(
         #[weak]
         grid,
         move |_| grid.commit(None)
     ));
-    let reject = icon_button("edit-undo-symbolic", "Cancel");
+    let reject = icon_button("window-close-symbolic", "Cancel (Escape)");
     reject.connect_clicked(glib::clone!(
         #[weak]
         grid,
@@ -366,14 +366,34 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                     let text = grid.buffer().text().to_string();
                     // Errors included, which is half the value: a formula that will not
                     // parse says so before it is committed rather than after.
-                    let preview = match grind_sheet::formula::display::from_display(&text) {
-                        Ok(canonical) => app
-                            .preview(grid.sheet(), grid.selection().active, &canonical)
-                            .map(|value| show_value(&app, &value))
-                            .unwrap_or_else(|error| error.to_string()),
-                        Err(error) => error.message,
-                    };
-                    chip.set_text(&format!("= {preview}"));
+                    // A formula that does not parse yet is *unfinished* far more often than it
+                    // is wrong — this runs while somebody is typing — so it is not spelled as
+                    // though it were a value (`= expected ; or )` read as the answer), and it
+                    // is drawn in the theme's warning colour rather than the dim one.
+                    let (preview, unfinished) =
+                        match grind_sheet::formula::display::from_display(&text) {
+                            Ok(canonical) => (
+                                app.preview(grid.sheet(), grid.selection().active, &canonical)
+                                    .map(|value| format!("= {}", show_value(&app, &value)))
+                                    .unwrap_or_else(|error| format!("= {error}")),
+                                false,
+                            ),
+                            Err(error) => (
+                                format!("Not finished: {}", error.message.replace('`', "")),
+                                true,
+                            ),
+                        };
+                    chip.set_text(&preview);
+                    match unfinished {
+                        true => {
+                            chip.remove_css_class("dim-label");
+                            chip.add_css_class("warning");
+                        }
+                        false => {
+                            chip.remove_css_class("warning");
+                            chip.add_css_class("dim-label");
+                        }
+                    }
                     chip.set_visible(true);
                 },
             )));
@@ -770,13 +790,11 @@ impl Tabs {
             .build();
         strip.add_css_class("linked");
 
+        // No margins of its own: it is the start of the window's one bottom bar
+        // ([`bottom_bar`]), and that bar's `toolbar` class is the padding.
         let widget = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(6)
-            .margin_start(6)
-            .margin_end(6)
-            .margin_top(3)
-            .margin_bottom(3)
             .build();
         widget.append(&strip);
         widget.append(add);
@@ -898,18 +916,19 @@ pub fn tab_menu_model() -> gio::Menu {
 /// spanning a very large used extent stutters the drag; the plan's answer is a worker and a
 /// generation counter, which is the threading milestone's machinery rather than this one's.
 pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
+    // Right-aligned and dimmed: it is the far end of the bar the sheet tabs start
+    // ([`bottom_bar`]), and it is a readout rather than something to press.
     let label = gtk::Label::builder()
-        .xalign(0.0)
+        .xalign(1.0)
         .hexpand(true)
-        .margin_start(10)
-        .margin_end(10)
-        .margin_top(4)
-        .margin_bottom(4)
+        .ellipsize(gtk::pango::EllipsizeMode::Start)
+        .margin_start(12)
+        .margin_end(6)
         .build();
+    label.add_css_class("dim-label");
+    label.add_css_class("numeric");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    // libadwaita paints a toolbar; without the class the bar is transparent and the grid
-    // scrolls underneath the text.
-    bar.add_css_class("toolbar");
+    bar.set_hexpand(true);
     bar.append(&label);
 
     // The zoom readout: invisible at 100%, because that is the resting state and a bar
@@ -980,14 +999,31 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
     bar
 }
 
-/// `B2:C4  ·  Sum 21215.51  ·  Count 6  ·  Average 3535.9`, or just the address when the
-/// selection holds nothing. The numbers are spelled the document's way
+/// The window's one bottom bar: the sheet tabs at the start, the selection's arithmetic at the
+/// end.
+///
+/// It used to be two bars stacked — a tab strip, and under it a status line whose resting state
+/// was the active cell's address, which the name box above the grid was already showing. Two
+/// rows of chrome for one row of information is the kind of thing a person stops seeing, and
+/// every spreadsheet with tabs puts the two on one line for that reason.
+pub fn bottom_bar(tabs: &impl IsA<gtk::Widget>, status: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    // libadwaita paints a toolbar; without the class the bar is transparent and the grid
+    // scrolls underneath it.
+    bar.add_css_class("toolbar");
+    bar.append(tabs);
+    bar.append(status);
+    bar
+}
+
+/// `B2:C4  ·  Sum 21215.51  ·  Count 6  ·  Average 3535.9`, the range alone when it holds
+/// nothing, and **nothing at all for one cell** — the name box is already saying where that is. The numbers are spelled the document's way
 /// ([`App::display_number`]), so a German document's sum reads `21215,51`, as its cells do.
 fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
     let (start, end) = selection.rect();
     if selection.is_single() {
         // One cell has nothing to add up, and every other spreadsheet stays quiet about it.
-        return a1::format(None, start);
+        return String::new();
     }
     let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
     // Clamped to the used extent first: a whole-column selection must not ask the evaluator
@@ -1069,6 +1105,8 @@ mod tests {
             "B1:B3  ·  Sum 30,5  ·  Count 3  ·  Average 10,1666666666667"
         );
         assert_eq!(show_value(&app, &CellValue::Number(0.25)), "0,25");
+        // One cell is the name box's to show, and the bar says nothing rather than repeat it.
+        assert_eq!(status_text(&app, 0, Selection::at(Pos::new(0, 1))), "");
     }
 
     /// The name box's whole ambiguity, pinned: a word is a name, an address is a place, and

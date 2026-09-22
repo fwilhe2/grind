@@ -7,8 +7,19 @@
 //! `ui_sheet_gtk/src/formatting.rs`'s counterpart, one document type over, and it earns its
 //! place by the same admission test `doc/sheet-shell.md` sets for that shell's format bar: a
 //! control belongs here when it **reads and writes a property of the selection**, and nowhere
-//! else. `CharStyle`'s eight fields are therefore the whole bound of this file — there is no
-//! room here for a verb, and a verb that wants a home goes in the menu.
+//! else. `CharStyle`'s eight fields and the caret's block *kind* are therefore the whole bound
+//! of this file — there is no room here for a verb, and a verb that wants a home goes in the
+//! menu.
+//!
+//! The kind is the one control that is not a `CharStyle` field, and it is first on the bar
+//! because it is the one a writer reaches for most: *make this a heading*. It lived in a
+//! submenu of the primary menu, three clicks away and invisible, while the bar beside it showed
+//! the font size — and a heading is what a document's outline, its addresses (`§2.1`) and its
+//! look are all built from.
+//!
+//! **With nothing selected the bar still works**: a control pressed at a bare caret sets the
+//! style the *next character typed* will carry, as every word processor does, rather than
+//! greying out and leaving Bold-then-type silently unbold. See `Ui::apply_char_style`.
 //!
 //! **Every control reads the document and writes the document, and keeps nothing.** The toggles
 //! show what [`grind_text::App::char_style`] says the selection agrees about and write through
@@ -41,6 +52,38 @@ use gtk::{gdk, glib, pango};
 /// set and reads as "fixed width" to anybody who would reach for this button.
 const CODE_ICON: &str = "utilities-terminal-symbolic";
 
+/// The block kinds the bar's first control offers, each with the `win.` action that applies it
+/// — the same actions the keys (Ctrl+0…3, Ctrl+L) reach, so the picker adds no second way of
+/// making a heading, only a visible one.
+pub const BLOCK_STYLES: [(&str, &str); 10] = [
+    ("Paragraph", "win.paragraph"),
+    ("Title", "win.title"),
+    ("Subtitle", "win.subtitle"),
+    ("Heading 1", "win.heading-1"),
+    ("Heading 2", "win.heading-2"),
+    ("Heading 3", "win.heading-3"),
+    ("Heading 4", "win.heading-4"),
+    ("Heading 5", "win.heading-5"),
+    ("Heading 6", "win.heading-6"),
+    ("List Item", "win.list-item"),
+];
+
+/// Which of [`BLOCK_STYLES`] a block is: its kind, and for a paragraph the two named styles this
+/// window draws a face of its own for. A paragraph under any other name is a Paragraph — the
+/// name is kept (`Ui::set_kind`) and simply is not one this picker offers.
+pub fn block_style(kind: &grind_text::BlockKind, style: Option<&str>) -> u32 {
+    use grind_text::BlockKind;
+    match kind {
+        BlockKind::Paragraph => match style {
+            Some("Title") => 1,
+            Some("Subtitle") => 2,
+            _ => 0,
+        },
+        BlockKind::Heading { level } => 2 + (*level).clamp(1, 6),
+        BlockKind::ListItem { .. } => 9,
+    }
+}
+
 /// One toggle and the [`Change`] it asks for when pressed.
 type Toggle = (gtk::ToggleButton, fn(bool) -> Change);
 
@@ -50,6 +93,8 @@ type Apply = Rc<dyn Fn(Change)>;
 /// The formatting bar's widgets, and the one callback they all reach the document through.
 pub struct Bar {
     pub widget: gtk::Box,
+    /// The caret's block kind — [`BLOCK_STYLES`].
+    block: gtk::DropDown,
     toggles: Vec<Toggle>,
     family: gtk::DropDown,
     families: gtk::StringList,
@@ -92,6 +137,11 @@ impl Bar {
             ),
             (toggle(CODE_ICON, "Monospace"), Change::Code),
         ];
+        let labels: Vec<&str> = BLOCK_STYLES.iter().map(|(label, _)| *label).collect();
+        let block = gtk::DropDown::from_strings(&labels);
+        block.set_tooltip_text(Some("Paragraph Style"));
+        block.set_size_request(140, -1);
+
         let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         group.add_css_class("linked");
         for (button, _) in &toggles {
@@ -127,14 +177,16 @@ impl Bar {
         let clear = gtk::Button::from_icon_name("edit-clear-symbolic");
         clear.set_tooltip_text(Some("Clear Formatting"));
 
+        // The `toolbar` class is what makes the buttons in it flat, the way the spreadsheet's
+        // format bar has always drawn — without it Clear Formatting was the one raised button
+        // on the bar and read as its default action.
         let widget = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(6)
-            .margin_start(6)
-            .margin_end(6)
-            .margin_top(4)
-            .margin_bottom(4)
             .build();
+        widget.add_css_class("toolbar");
+        widget.append(&block);
+        widget.append(&gtk::Separator::new(gtk::Orientation::Vertical));
         widget.append(&group);
         widget.append(&family);
         widget.append(&size);
@@ -144,6 +196,7 @@ impl Bar {
 
         let bar = Rc::new(Bar {
             widget,
+            block,
             toggles,
             family,
             families,
@@ -191,7 +244,28 @@ impl Bar {
             bar,
             move |_| bar.ask(Change::Clear)
         ));
+        // The kind goes through the window's own action rather than through `apply`, since it
+        // is a block's property and not a run's: the same action Ctrl+1 activates.
+        bar.block.connect_selected_notify(glib::clone!(
+            #[strong]
+            bar,
+            move |drop_down| {
+                if bar.updating.get() {
+                    return;
+                }
+                if let Some((_, action)) = BLOCK_STYLES.get(drop_down.selected() as usize) {
+                    let _ = drop_down.activate_action(action, None);
+                }
+            }
+        ));
         bar
+    }
+
+    /// Show the caret's block kind — [`block_style`]'s index.
+    pub fn show_block(&self, index: u32) {
+        self.updating.set(true);
+        self.block.set_selected(index);
+        self.updating.set(false);
     }
 
     /// Where every control ends up: ask the window to make this change to the selection —
@@ -212,32 +286,19 @@ impl Bar {
         *self.apply.borrow_mut() = Some(Rc::new(apply));
     }
 
-    /// Paint the bar from the selection's own formatting.
-    ///
-    /// `enabled` is whether there is a selection at all: with none, every control is
-    /// insensitive rather than lying about a range that is not there. The style is still shown,
-    /// because [`grind_text::App::char_style`] answers a bare caret with what the *next*
-    /// keystroke would carry, and a toolbar that shows that is telling the truth.
-    pub fn show(&self, style: &CharStyle, enabled: bool) {
+    /// Paint the bar from the selection's own formatting — or, with nothing selected, from what
+    /// the next character typed will carry, which is what a control pressed there would change.
+    pub fn show(&self, style: &CharStyle) {
         self.updating.set(true);
         for (button, change) in &self.toggles {
-            button.set_sensitive(enabled);
             let mut probe = style.clone();
             change(true).apply(&mut probe);
             // Pressed when turning this control *on* would change nothing — one rule for all
             // five, so Code lights up for a monospace run exactly as Bold does for a bold one.
             button.set_active(probe == *style);
         }
-        for widget in [
-            self.family.upcast_ref::<gtk::Widget>(),
-            self.size.upcast_ref(),
-        ] {
-            widget.set_sensitive(enabled);
-        }
         self.color.show(style.color.as_deref());
         self.highlight.show(style.background.as_deref());
-        self.color.button.set_sensitive(enabled);
-        self.highlight.button.set_sensitive(enabled);
 
         select(&self.family, &self.families, style.font_family.as_deref());
         // The document's own size may not be on the ladder, and it has to be selectable while

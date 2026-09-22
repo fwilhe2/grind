@@ -53,6 +53,7 @@ pub mod model;
 pub mod odf;
 pub mod projection;
 pub mod style;
+pub mod word;
 
 pub use action::Action;
 pub use grind_core::layout::{self, Fixed, Layout, Metrics};

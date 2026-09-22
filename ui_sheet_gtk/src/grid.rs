@@ -3520,12 +3520,7 @@ mod imp {
                 }
                 Err(_) => address,
             };
-            // GTK's fallback accessibility context — the one it uses when there is no AT-SPI
-            // bus, as in a container, a VM or a minimal session — has no `announce` hook, and
-            // `gtk_accessible_announce` calls it anyway: a jump to address zero on every move
-            // (measured on GTK 4.18 under Xvfb, with and without a session bus). With nothing
-            // listening there is nobody to announce to, so skipping it loses nothing.
-            if self.obj().at_context().type_().name() == "GtkTestATContext" {
+            if !crate::theme::heard(&*self.obj()) {
                 return;
             }
             self.obj()
@@ -3799,8 +3794,35 @@ mod imp {
             }
         }
 
-        /// The active cell's border, drawn after the text so it is never painted over.
+        /// The active cell's border, drawn after the text so it is never painted over — and
+        /// round a range, a hairline in the same accent. A wash alone is twelve per cent of a
+        /// colour, which on a filled table is a shape a reader has to look for; the edge is
+        /// what says where the selection *stops*, and so what a fill or a paste will cover.
         fn draw_active(&self, f: &Frame) {
+            if !f.selection.is_single() {
+                let (start, end) = f.selection.rect();
+                let top_left = f.geom.cell_rect(start.row, start.col);
+                let bottom_right = f.geom.cell_rect(end.row, end.col);
+                // Clamped for the reason `draw_selection` gives: a whole column is taller
+                // than an f32 rectangle stays exact at.
+                let x = top_left.x.max(f.geom.header_w - 1.0);
+                let y = top_left.y.max(f.geom.header_h - 1.0);
+                let right = (bottom_right.x + bottom_right.w).min(f.width + 1.0);
+                let bottom = (bottom_right.y + bottom_right.h).min(f.height + 1.0);
+                if right > x && bottom > y {
+                    outline(
+                        f.snapshot,
+                        Rect {
+                            x,
+                            y,
+                            w: right - x,
+                            h: bottom - y,
+                        },
+                        f.palette.accent,
+                        1.0,
+                    );
+                }
+            }
             let cell = f
                 .geom
                 .cell_rect(f.selection.active.row, f.selection.active.col);
@@ -3987,7 +4009,19 @@ mod imp {
                     let valign = valigned(style.and_then(|s| s.vertical_align.as_deref()));
                     let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
 
-                    let cell = geom.cell_rect(row, col);
+                    let mut cell = geom.cell_rect(row, col);
+                    let mut capped = false;
+                    // A filtered range's heading ends where its button begins. The button is
+                    // drawn over the text (`draw_filter_buttons`), and a heading that runs
+                    // under it reads as `Budgete▾` — a word cut by a control rather than a
+                    // word beside one. Centred text centres in what is left, so a heading
+                    // stays centred on the part of the cell a reader can see.
+                    if let Some(filter) = f.filter.as_ref().filter(|filter| filter.buttons)
+                        && let Some((_, button)) = Self::filter_button_at(geom, filter, row, col)
+                    {
+                        cell.w = (button.x - cell.x).max(1.0);
+                        capped = true;
+                    }
                     // A wrapped cell is drawn inside its own width, and its row was grown to
                     // fit what wraps into it (`measure_rows`) unless the document set that
                     // row a height of its own — an explicit height means explicit, so it
@@ -3999,6 +4033,12 @@ mod imp {
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
                     let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * pad;
+                    // A heading too wide for the room its button leaves keeps its *start*:
+                    // centred, it would lose a letter at each end and read as neither word.
+                    let align = match capped && !fits {
+                        true => Align::Left,
+                        false => align,
+                    };
 
                     // A number that does not fit is never truncated — a wrong magnitude
                     // read as a right one is worse than no reading at all.
@@ -4030,7 +4070,8 @@ mod imp {
                     // Text keeps going until it meets something, which is the other half
                     // of the convention.
                     let mut paint = cell;
-                    if !fits && align == Align::Left {
+                    // …except past a filter button, which is a control in the way.
+                    if !fits && align == Align::Left && !capped {
                         let stop = (col + 1..fetch.end)
                             .find(|c| viewport.get(row, *c).is_some_and(|v| !v.is_empty()))
                             .map_or(f.width + geom.scroll_x, |c| geom.cell_rect(row, c).x);

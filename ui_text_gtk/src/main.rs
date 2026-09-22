@@ -361,10 +361,33 @@ impl Ui {
                         ui.doc.go_to(caret);
                         ui.doc.grab_focus();
                     }
-                    Err(error) => ui.toast(&error),
+                    // Said in the box, which is where the reader is looking — a toast would
+                    // land behind the popover it is about. The popover stays open to be fixed.
+                    Err(error) => {
+                        entry.add_css_class("error");
+                        entry.set_tooltip_text(Some(&error));
+                    }
                 }
             }
         ));
+        self.address.connect_changed(|entry| {
+            entry.remove_css_class("error");
+            entry.set_tooltip_text(None);
+        });
+        // Opened on where the caret *is*, selected, so the notation is taught by the box that
+        // takes it: `p14+11` is visibly the address of here, and typing replaces it.
+        if let Some(popover) = self.goto.popover() {
+            popover.connect_show(glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |_| {
+                    let caret = ui.doc.caret();
+                    ui.address
+                        .set_text(&grind_text::loc::format_offset(caret.block, caret.offset));
+                    ui.address.select_region(0, -1);
+                }
+            ));
+        }
 
         self.format.connect(glib::clone!(
             #[strong(rename_to = ui)]
@@ -518,20 +541,31 @@ impl Ui {
 
         let caret = self.doc.caret();
         let counts = self.app.counts();
-        let here = match self
-            .app
-            .get_viewport(caret.block..caret.block + 1)
-            .get(caret.block)
-        {
-            Some(block) => describe_kind(&block.kind, block.style.as_deref()),
-            None => "empty".to_owned(),
+        let viewport = self.app.get_viewport(caret.block..caret.block + 1);
+        let here = match viewport.get(caret.block) {
+            Some(block) => {
+                self.format
+                    .show_block(format::block_style(&block.kind, block.style.as_deref()));
+                describe_kind(&block.kind, block.style.as_deref())
+            }
+            None => String::new(),
         };
-        self.status.set_text(&format!(
-            "{}   {here}   {} words, {} blocks",
+        // In words, for a reader: what kind of paragraph this is and how long the document
+        // is. The caret's address (`p14+11`) used to lead the line; it is the go-to box's
+        // now, shown there when the box opens, which is where an address is for typing.
+        let words = match counts.words {
+            1 => "1 word".to_owned(),
+            n => format!("{n} words"),
+        };
+        self.status.set_text(&match here.is_empty() {
+            true => words,
+            false => format!("{here}  ·  {words}"),
+        });
+        self.status.set_tooltip_text(Some(&format!(
+            "At {} — {} blocks",
             grind_text::loc::format_offset(caret.block, caret.offset),
-            counts.words,
-            counts.blocks,
-        ));
+            counts.blocks
+        )));
     }
 
     fn toast(&self, text: &str) {
@@ -948,26 +982,39 @@ impl Ui {
     /// rather than kept as state of its own — there is exactly one fact anywhere about whether
     /// a run is bold, and it is in the document (`App::char_style`).
     fn refresh_formatting(self: &Rc<Self>) {
-        let selected = self.doc.selection();
-        // With no selection the caret still has an answer — `char_style` reports what the next
-        // keystroke would carry — so the bar shows it and is insensitive rather than blank.
+        self.format.show(&self.style_here());
+    }
+
+    /// What the bar shows and what a control changes: the selection's agreed style, or — with
+    /// nothing selected — what the next character typed will carry. That is the style pending
+    /// at the caret if a control or a markdown span left one, and otherwise `char_style`'s own
+    /// answer for a bare caret.
+    fn style_here(&self) -> grind_text::CharStyle {
+        if let Some((from, to)) = self.doc.selection() {
+            return self.app.char_style(from, to).unwrap_or_default();
+        }
+        if let Some(pending) = self.doc.pending() {
+            return pending;
+        }
         let caret = self.doc.caret();
-        let (from, to) = selected.unwrap_or((caret, caret));
-        let style = self.app.char_style(from, to).unwrap_or_default();
-        self.format.show(&style, selected.is_some());
+        self.app.char_style(caret, caret).unwrap_or_default()
     }
 
     /// One control of the formatting bar, applied to the current selection. The [`format::
     /// Change`] sets the one property that control owns, on top of what the selection already
     /// agrees about, so toggling Italic on a bold-and-italic run leaves the bold alone.
+    ///
+    /// With nothing selected it changes nothing in the document: it sets the style the next
+    /// character typed at the caret will carry (`Doc::set_pending`) — Bold, then type, is bold
+    /// — and forgets it if the caret moves first. The bar used to be insensitive there, which
+    /// looked broken at rest and turned the most common way of asking for bold into nothing.
     fn apply_char_style(self: &Rc<Self>, change: format::Change) {
+        let mut style = self.style_here();
+        change.apply(&mut style);
         let Some((from, to)) = self.doc.selection() else {
-            // Every control is insensitive with no selection, so reaching here would have to be
-            // a stray event rather than a person — nothing to toast about.
+            self.doc.set_pending(style);
             return;
         };
-        let mut style = self.app.char_style(from, to).unwrap_or_default();
-        change.apply(&mut style);
         if let Err(error) = self.app.set_char_style(from, to, &style) {
             self.toast(&error.to_string());
         }
@@ -1063,6 +1110,21 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.doc.copy();
         }),
         ("paste", &["<Control>v"][..], |ui| ui.doc.paste()),
+        ("select-all", &["<Control>a"][..], |ui| ui.doc.select_all()),
+        // The three keys every word processor has, over the same call the bar's toggles make —
+        // on when the selection (or the caret's pending style) is not already, off when it is.
+        ("bold", &["<Control>b"][..], |ui| {
+            let on = !ui.style_here().is_bold();
+            ui.apply_char_style(format::Change::Bold(on));
+        }),
+        ("italic", &["<Control>i"][..], |ui| {
+            let on = !ui.style_here().is_italic();
+            ui.apply_char_style(format::Change::Italic(on));
+        }),
+        ("underline", &["<Control>u"][..], |ui| {
+            let on = !ui.style_here().is_underlined();
+            ui.apply_char_style(format::Change::Underline(on));
+        }),
         ("image", &["<Control><Shift>i"][..], |ui| ui.insert_image()),
         ("table", &["<Control><Shift>t"][..], |ui| ui.insert_table()),
         ("paragraph", &["<Control>0"][..], |ui| {
@@ -1102,48 +1164,26 @@ fn primary_menu() -> gio::Menu {
     files.append(Some("Save As…"), Some("win.save-as"));
     menu.append_section(None, &files);
 
-    let edit = gio::Menu::new();
-    edit.append(Some("Cut"), Some("win.cut"));
-    edit.append(Some("Copy"), Some("win.copy"));
-    edit.append(Some("Paste"), Some("win.paste"));
-    menu.append_section(None, &edit);
+    // **The document and the window, and nothing about the selection** — the HIG's rule for a
+    // primary menu, which the spreadsheet's already keeps (`doc/sheet-shell.md`, "Four
+    // surfaces"). The clipboard went to the page's own right-click menu, and the block kinds
+    // to the format bar's first control, where each shows what the caret is in.
+    let insert = gio::Menu::new();
+    insert.append(Some("Insert Picture…"), Some("win.image"));
+    insert.append(Some("Insert Table…"), Some("win.table"));
+    menu.append_section(None, &insert);
 
     let structure = gio::Menu::new();
     structure.append(Some("Outline…"), Some("win.outline"));
-    structure.append(Some("Go to Address"), Some("win.goto"));
-    structure.append(Some("Show Bookmarks"), Some("win.show-names"));
-    structure.append(Some("Show Source"), Some("win.show-source"));
+    structure.append(Some("Go to Address…"), Some("win.goto"));
     structure.append(Some("Word Count"), Some("win.words"));
     structure.append(Some("Check Document"), Some("win.lint"));
     menu.append_section(None, &structure);
 
-    // Every block kind `doc/text-core.md` allows an author, in one submenu rather than eight
-    // items in the primary one: the six heading levels are a ladder and read as one.
-    let kinds = gio::Menu::new();
-    let body = gio::Menu::new();
-    body.append(Some("Paragraph"), Some("win.paragraph"));
-    body.append(Some("Title"), Some("win.title"));
-    body.append(Some("Subtitle"), Some("win.subtitle"));
-    kinds.append_section(None, &body);
-    let headings = gio::Menu::new();
-    for level in 1..=6 {
-        headings.append(
-            Some(&format!("Heading {level}")),
-            Some(&format!("win.heading-{level}")),
-        );
-    }
-    kinds.append_section(None, &headings);
-    let lists = gio::Menu::new();
-    lists.append(Some("List Item"), Some("win.list-item"));
-    lists.append(Some("Increase Indent"), Some("win.indent"));
-    lists.append(Some("Decrease Indent"), Some("win.outdent"));
-    kinds.append_section(None, &lists);
-
-    let structure_kinds = gio::Menu::new();
-    structure_kinds.append_submenu(Some("Paragraph Style"), &kinds);
-    structure_kinds.append(Some("Insert Picture…"), Some("win.image"));
-    structure_kinds.append(Some("Insert Table…"), Some("win.table"));
-    menu.append_section(None, &structure_kinds);
+    let view = gio::Menu::new();
+    view.append(Some("Show Bookmarks"), Some("win.show-names"));
+    view.append(Some("Show Source"), Some("win.show-source"));
+    menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
     rest.append(Some("About Text"), Some("win.about"));
@@ -1263,15 +1303,46 @@ fn is_spreadsheet(path: &Path) -> bool {
 }
 
 fn describe_kind(kind: &BlockKind, style: Option<&str>) -> String {
-    let name = match kind {
-        BlockKind::Paragraph => "paragraph".to_owned(),
-        BlockKind::Heading { level } => format!("heading {level}"),
-        BlockKind::ListItem { depth } => format!("list item, depth {depth}"),
+    let name = match (kind, style) {
+        (BlockKind::Paragraph, Some(named @ ("Title" | "Subtitle"))) => return named.to_owned(),
+        (BlockKind::Paragraph, _) => "Paragraph".to_owned(),
+        (BlockKind::Heading { level }, _) => format!("Heading {level}"),
+        (BlockKind::ListItem { depth: 1 }, _) => "List item".to_owned(),
+        (BlockKind::ListItem { depth }, _) => format!("List item, level {depth}"),
     };
     match style {
-        Some(style) => format!("{name} ({style})"),
+        Some(style) => format!("{name} — {}", readable_style(style)),
         None => name,
     }
+}
+
+/// A style's name as its author wrote it. ODF spells a name that is not an XML name with each
+/// awkward character as `_xx_` in hex (`Text_20_body` is *Text body*), which is a file format's
+/// spelling and not something to show a person.
+fn readable_style(name: &str) -> String {
+    let mut out = String::new();
+    let mut rest = name;
+    while let Some(at) = rest.find('_') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at + 1..];
+        let decoded = tail
+            .get(..3)
+            .filter(|code| code.ends_with('_'))
+            .and_then(|code| u8::from_str_radix(&code[..2], 16).ok())
+            .filter(u8::is_ascii);
+        match decoded {
+            Some(byte) => {
+                out.push(char::from(byte));
+                rest = &tail[3..];
+            }
+            None => {
+                out.push('_');
+                rest = tail;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// What the Save As dialog puts in its name field for a document with no path yet.
@@ -1322,15 +1393,105 @@ mod tests {
     /// The status bar's vocabulary — the one thing in this file that is not a widget call.
     #[test]
     fn a_block_is_described_by_its_kind_and_its_style() {
-        assert_eq!(describe_kind(&BlockKind::Paragraph, None), "paragraph");
+        assert_eq!(describe_kind(&BlockKind::Paragraph, None), "Paragraph");
         assert_eq!(
             describe_kind(&BlockKind::Heading { level: 2 }, None),
-            "heading 2"
+            "Heading 2"
         );
         assert_eq!(
-            describe_kind(&BlockKind::ListItem { depth: 1 }, Some("Quote")),
-            "list item, depth 1 (Quote)"
+            describe_kind(&BlockKind::Paragraph, Some("Title")),
+            "Title",
+            "the two names this window draws are kinds to a reader"
         );
+        assert_eq!(
+            describe_kind(&BlockKind::ListItem { depth: 2 }, Some("Quote")),
+            "List item, level 2 — Quote"
+        );
+        assert_eq!(
+            describe_kind(&BlockKind::Paragraph, Some("Text_20_body")),
+            "Paragraph — Text body",
+            "a file format's escaping is not shown to a person"
+        );
+    }
+
+    /// ODF's `_xx_` escaping undone, and nothing that merely contains an underscore mangled.
+    #[test]
+    fn a_style_name_is_shown_as_its_author_wrote_it() {
+        assert_eq!(readable_style("Text_20_body"), "Text body");
+        assert_eq!(readable_style("Heading_20_1"), "Heading 1");
+        assert_eq!(readable_style("snake_case_name"), "snake_case_name");
+        assert_eq!(readable_style("trailing_"), "trailing_");
+        assert_eq!(readable_style("A_2e_B"), "A.B");
+    }
+
+    /// The bar's first control and the block it describes agree, and every entry names an
+    /// action this window declares — a picker row that activates nothing is silent.
+    #[test]
+    fn the_paragraph_style_picker_covers_every_kind_and_every_row_is_an_action() {
+        use format::{BLOCK_STYLES, block_style};
+        assert_eq!(block_style(&BlockKind::Paragraph, None), 0);
+        assert_eq!(block_style(&BlockKind::Paragraph, Some("Subtitle")), 2);
+        assert_eq!(block_style(&BlockKind::Paragraph, Some("Quote")), 0);
+        for level in 1..=6 {
+            let row = block_style(&BlockKind::Heading { level }, None) as usize;
+            assert_eq!(BLOCK_STYLES[row].0, format!("Heading {level}"));
+        }
+        assert_eq!(
+            BLOCK_STYLES[block_style(&BlockKind::ListItem { depth: 3 }, None) as usize].0,
+            "List Item"
+        );
+        let declared: Vec<String> = actions()
+            .iter()
+            .map(|(name, _, _)| format!("win.{name}"))
+            .collect();
+        for (label, action) in BLOCK_STYLES {
+            assert!(
+                declared.iter().any(|d| d == action),
+                "{label} names {action}, which nothing declares"
+            );
+        }
+    }
+
+    /// Every item in both menus names an action the window declares.
+    #[test]
+    fn every_menu_item_names_a_declared_action() {
+        let declared: Vec<String> = actions()
+            .iter()
+            .map(|(name, _, _)| format!("win.{name}"))
+            .collect();
+        for (menu, model) in [
+            ("the primary menu", primary_menu()),
+            ("the page's menu", view::context_menu_model()),
+        ] {
+            for action in menu_actions(model.upcast_ref()) {
+                // The two stateful readings are added beside the table, not in it.
+                if matches!(action.as_str(), "win.show-names" | "win.show-source") {
+                    continue;
+                }
+                assert!(
+                    declared.contains(&action),
+                    "{menu} names {action}, which nothing declares"
+                );
+            }
+        }
+    }
+
+    fn menu_actions(model: &gio::MenuModel) -> Vec<String> {
+        let mut out = Vec::new();
+        for item in 0..model.n_items() {
+            if let Some(action) = model
+                .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
+                .and_then(|value| value.get::<String>())
+            {
+                out.push(action);
+            }
+            for link in ["section", "submenu"] {
+                if let Some(child) = model.item_link(item, link) {
+                    out.extend(menu_actions(&child));
+                }
+            }
+        }
+        out
     }
 
     #[test]

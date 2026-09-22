@@ -31,7 +31,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | Selection | Shift+arrow, Shift+click, dragging the mouse; typing or Enter over one replaces it | the same |
 | Formatting | a **bar** (`format.rs`): the four booleans, Monospace, a font and a size drop-down, two colour swatches and Clear Formatting, all over the selection through `App::char_style`/`set_char_style`. Every one of the eight `CharStyle` properties is drawn as well as measured, and `Title`/`Subtitle` paragraphs get their own face | the same toolbar, plus colour and highlight, and every one of those drawn: the four booleans as classes, the values the document chose as inline CSS |
 | Clipboard | Cut/Copy/Paste over `gdk::Clipboard`, plain text; a newline is a block boundary either way, and a paste is not read as markdown | the browser's own, the same two halves |
-| Block structure | Paragraph, `Title`, `Subtitle`, Heading 1–6 and list items from the *Paragraph Style* submenu; Tab and Shift+Tab nest and un-nest a list | the same set, in the Ctrl+K palette |
+| Block structure | Paragraph, `Title`, `Subtitle`, Heading 1–6 and list items from the format bar's first control, which also shows what the caret is in; Tab and Shift+Tab nest and un-nest a list | the same set, in the Ctrl+K palette |
 | Tables | **Insert Table…** (Ctrl+Shift+T) makes one, and a table read from a file is **drawn as a grid**: equal columns across the measure, each row as tall as its tallest cell, a rule round every cell, and a merged cell as wide as the columns it spans. Every other verb reaches inside a cell unchanged — a cell holds blocks, so typing, formatting, Tab and the caret all work there because they never knew about tables in the first place | not drawn: the pane stacks a cell's blocks like any other and shows no grid (`doc/web-shell.md`) |
 | Images | **Insert Picture…** (Ctrl+Shift+I) puts one in a paragraph of its own, and `grind text image` inserts one anywhere (`App::insert_image`); a block that is a picture — with or without a caption read alongside it — is decoded and drawn fit-to-column, the caption wrapped underneath, both sized into the flow from the picture and the caption rather than a line of text; reads either the schema's `office:binary-data` or a package's own `xlink:href` part | drawn, as a `data:` URL |
 | Cross-app | a `.ods` opens a banner: *"This is a spreadsheet"* + **Open in Sheet** | one bundle, so the other pane simply opens |
@@ -220,8 +220,9 @@ they were closed here first because this is the shell the suite showcases:
   A selection's blocks join with a newline going out and split into blocks coming back, and
   pasted text is deliberately **not** read as markdown: text from a clipboard is text.
 * **Lists, `Title` and `Subtitle` are authorable.** Tab at the front of a block starts a list and
-  nests one already in it, Shift+Tab un-nests and ends it, and the primary menu's *Paragraph
-  Style* submenu carries Paragraph, Title, Subtitle, Heading 1–6 and the three list items. The
+  nests one already in it, Shift+Tab un-nests and ends it, and the format bar's first control
+  carries Paragraph, Title, Subtitle, Heading 1–6 and List Item (it was a submenu of the primary
+  menu until the UX pass below). The
   named style is only ever *removed* when this window put it on: `Title` and `Subtitle` are the
   two names it can apply and draw, and a document's own `Quotations` is a name this build keeps
   and does not interpret (`doc/text-core.md`), so Paragraph leaves it alone.
@@ -262,6 +263,49 @@ shell's answers live now — it grew a command palette, formatting, a clipboard 
 in the DOM rather than windowed, and character advances are cached per character so kerning
 between two of them is lost. The outline dialog and the go-to-address field are no longer gaps
 — both are in the palette Ctrl+K opens, which is that shell's answer to a dialog.
+
+## The UX pass — clearer at rest, and nothing that fails silently
+
+A review of this window from screenshots, light and dark, rather than from its code. Nothing in
+it is a new capability of the document; every item is the window saying what it can already do,
+or stopping it doing the wrong thing quietly.
+
+* **Click, then type, lost the first character** — and had since selection was built. A click
+  plants the anchor *at* the caret so a drag has somewhere to grow from, typing left it there,
+  and the character just typed became a selection the next keystroke replaced; two Backspaces
+  after a click erased one character each side of it. `consume_selection` and the two erase
+  paths drop the anchor now, and `a_click_then_two_keystrokes_types_both` pins it. No test had
+  ever clicked and then typed twice.
+* **The format bar works with nothing selected.** It used to go insensitive at a bare caret —
+  so the bar looked broken at rest, and Bold-then-type, the most common way of asking for bold,
+  did nothing. A control pressed there now sets the style the next character typed carries
+  (`Doc::set_pending`, over the `resume` that `App::type_markdown` already took), and moving the
+  caret first forgets it. **Ctrl+B, Ctrl+I and Ctrl+U** exist, over the same call; the window had
+  none of the three.
+* **The paragraph style is the bar's first control**, since *make this a heading* is what a
+  writer reaches for most and the document's outline and its `§2.1` addresses are built from it.
+  It passes the bar's admission test — it reads and writes a property of the selection — which a
+  submenu three clicks into the primary menu never showed.
+* **Double-click selects a word, triple-click the paragraph, Ctrl+A everything.** The word is
+  `grind_text::word::around`'s, in the core so the next shell to want one agrees with this one.
+* **A right-click menu on the page** (Cut, Copy, Paste, Select All), and the clipboard left the
+  primary menu, which now holds the document and the window and nothing about the selection —
+  the rule the spreadsheet's already kept.
+* **The status bar is in words**: *Paragraph — Text body · 90 words* rather than
+  `p14+11   paragraph (Text_20_body)   90 words, 22 blocks`. ODF's `_20_` escaping is undone
+  for display. The address moved to where addresses are typed: the go-to box opens holding the
+  caret's own (`p14+11`, selected), which teaches the notation at the one place it is used, and
+  says what is wrong with an address inside the box rather than in a toast behind it.
+* **Dark mode could not read a document's own colours** — a navy word vanished on the dark page.
+  `metrics::Paper::ink` is `ui_sheet_gtk`'s `theme::ink` rule over the same `grind_core::color`
+  arithmetic: lifted along its hue on the dark page, automatic ink on a highlight.
+* **`GTK_A11Y=none` aborted the window on its first click**, in both GTK shells: the binding
+  asserts `at_context()` is non-null and with accessibility off it is null. `theme::heard` asks
+  the raw call, which can say "none".
+
+Still owed from the same review: a shortcuts window (the spreadsheet has one and this does not),
+Ctrl+Left/Right by word (`word::around` is the half of it that is in the core now), and no find
+bar, though `grind text find` exists.
 
 ## How to see them
 

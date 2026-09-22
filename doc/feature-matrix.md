@@ -31,7 +31,7 @@ re-derive it, and why that step is worth keeping.
 |---|---|---|---|---|
 | **CLI** | `grind-cli` | `grind` | both, kind read from the file | subcommands (`grind <app> <verb>`) |
 | **Sheet GTK** | `grind-sheet-gtk` | `grind-sheet-gtk` | spreadsheet only | header bar, format bar, context menus, **Ctrl+K palette** |
-| **Text GTK** | `grind-text-gtk` | `grind-text-gtk` | text only | header bar, format bar, one primary menu |
+| **Text GTK** | `grind-text-gtk` | `grind-text-gtk` | text only | header bar, format bar (paragraph style first), primary menu, a context menu on the page |
 | **TUI** | `grind-tui` | `grind-tui` | both, one binary | vi keys and a `:` command line |
 | **Web** | `grind-web` | one wasm bundle | both, one bundle | verb bar, one tool row per type, **Ctrl+K palette** |
 | **Win32** | `grind-win32` | `grind-win32.exe` | both, one binary | **menu bar**, context menus, format strip |

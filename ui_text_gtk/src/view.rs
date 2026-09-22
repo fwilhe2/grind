@@ -104,6 +104,44 @@ impl Doc {
         self.imp().selection()
     }
 
+    /// Select the whole document, first block to last.
+    pub fn select_all(&self) {
+        let imp = self.imp();
+        let Some(app) = imp.app() else { return };
+        let count = app.block_count();
+        if count == 0 {
+            return;
+        }
+        let last = count - 1;
+        let end = app.input_text(last).map_or(0, |text| text.chars().count());
+        imp.anchor.set(Some(Caret {
+            block: 0,
+            offset: 0,
+        }));
+        imp.move_caret(
+            Caret {
+                block: last,
+                offset: end,
+            },
+            true,
+        );
+    }
+
+    /// The style the next character typed will carry, when one is pending — a markdown span
+    /// that just closed, or a formatting control pressed with nothing selected.
+    pub fn pending(&self) -> Option<grind_text::CharStyle> {
+        self.imp().resume.borrow().clone()
+    }
+
+    /// Hold `style` for the next character typed at the caret. Forgotten as soon as the caret
+    /// moves anywhere but forward by typing ([`imp::Doc::move_caret`]).
+    pub fn set_pending(&self, style: grind_text::CharStyle) {
+        self.imp().resume.replace(Some(style));
+        for hook in self.imp().on_moved.borrow().iter() {
+            hook(self.imp().caret.get());
+        }
+    }
+
     /// Told whenever the caret moves — the status bar's readout.
     pub fn connect_moved(&self, f: impl Fn(Caret) + 'static) {
         self.imp().on_moved.borrow_mut().push(Box::new(f));
@@ -171,6 +209,24 @@ impl Doc {
     }
 }
 
+/// The right-click menu on the page: what to do with the text under the pointer.
+///
+/// The clipboard, and nothing about the document as a whole — that is the primary menu's, the
+/// same split `doc/sheet-shell.md`'s "Four surfaces" draws for the spreadsheet. A free function
+/// returning the model so a test can walk it without a display.
+pub fn context_menu_model() -> gtk::gio::Menu {
+    let model = gtk::gio::Menu::new();
+    let clipboard = gtk::gio::Menu::new();
+    clipboard.append(Some("Cut"), Some("win.cut"));
+    clipboard.append(Some("Copy"), Some("win.copy"));
+    clipboard.append(Some("Paste"), Some("win.paste"));
+    model.append_section(None, &clipboard);
+    let selection = gtk::gio::Menu::new();
+    selection.append(Some("Select All"), Some("win.select-all"));
+    model.append_section(None, &selection);
+    model
+}
+
 mod imp {
     use super::*;
 
@@ -228,6 +284,14 @@ mod imp {
         pub im: gtk::IMMulticontext,
         pub on_notice: RefCell<Vec<NoticeHook>>,
         pub on_moved: RefCell<Vec<MovedHook>>,
+        /// The last press — its time, where it was, and how many presses in a row it made — so
+        /// a second press on the same spot is a double-click. Counted here rather than by a
+        /// second gesture, because the drag that plants the caret and a click gesture that
+        /// selects a word would both answer the same press, in an order GTK does not promise.
+        pub presses: Cell<Option<(u32, f64, f64, u8)>>,
+        /// The right-click menu, built once, parented on this widget and unparented in
+        /// `dispose` — `ui_sheet_gtk`'s cell menu, for the same reason.
+        pub menu: std::cell::OnceCell<gtk::PopoverMenu>,
     }
 
     // Spelled out rather than derived: neither `Caret` nor `ScrollablePolicy` has a
@@ -255,6 +319,8 @@ mod imp {
                 im: gtk::IMMulticontext::new(),
                 on_notice: RefCell::new(Vec::new()),
                 on_moved: RefCell::new(Vec::new()),
+                presses: Cell::new(None),
+                menu: std::cell::OnceCell::new(),
             }
         }
     }
@@ -326,6 +392,14 @@ mod imp {
             }
         }
 
+        /// The one child — the right-click menu — has to be unparented, or GTK complains at
+        /// teardown.
+        fn dispose(&self) {
+            if let Some(menu) = self.menu.get() {
+                menu.unparent();
+            }
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let widget = self.obj();
@@ -378,19 +452,52 @@ mod imp {
                     let shift = gesture
                         .current_event_state()
                         .contains(gtk::gdk::ModifierType::SHIFT_MASK);
-                    doc.imp().click(x, y, shift);
+                    let count = doc.imp().count_press(gesture.current_event_time(), x, y);
+                    match count {
+                        1 => doc.imp().click(x, y, shift),
+                        // A double-click is the word, a triple-click the paragraph — what every
+                        // text field on the desktop does, and so what a hand already expects.
+                        2 => doc.imp().select_around(x, y, false),
+                        _ => doc.imp().select_around(x, y, true),
+                    }
                 }
             ));
             drag.connect_drag_update(glib::clone!(
                 #[weak(rename_to = doc)]
                 widget,
                 move |gesture, offset_x, offset_y| {
+                    // A word or a paragraph just selected by a multi-click stays selected: the
+                    // pointer's jitter between the presses is not a drag.
+                    if doc.imp().presses.get().is_some_and(|(.., count)| count > 1) {
+                        return;
+                    }
                     if let Some((start_x, start_y)) = gesture.start_point() {
                         doc.imp().drag_to(start_x + offset_x, start_y + offset_y);
                     }
                 }
             ));
             widget.add_controller(drag);
+
+            // The right-click menu. A secondary press outside the selection moves the caret
+            // there first, the way `ui_sheet_gtk`'s cell menu moves the selection: the menu
+            // acts on what is under the pointer, and after this that is what is selected.
+            let menu = gtk::PopoverMenu::from_model(Some(&super::context_menu_model()));
+            menu.set_parent(&*widget);
+            menu.set_has_arrow(false);
+            menu.set_halign(gtk::Align::Start);
+            let _ = self.menu.set(menu);
+            let secondary = gtk::GestureClick::new();
+            secondary.set_button(gtk::gdk::BUTTON_SECONDARY);
+            secondary.connect_pressed(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |gesture, _, x, y| {
+                    gesture.set_state(gtk::EventSequenceState::Claimed);
+                    doc.grab_focus();
+                    doc.imp().open_menu(x, y);
+                }
+            ));
+            widget.add_controller(secondary);
         }
     }
 
@@ -560,8 +667,14 @@ mod imp {
                     // A line's `end` includes the break that ended it, and a newline handed
                     // to Pango would start a second line inside this one.
                     let piece = piece.trim_end_matches('\n');
-                    let attrs =
-                        run_attributes(&block.runs, line.start, line.end, piece, face.size());
+                    let attrs = run_attributes(
+                        &block.runs,
+                        line.start,
+                        line.end,
+                        piece,
+                        face.size(),
+                        palette.paper(),
+                    );
                     draw_at(
                         snapshot,
                         face.draw_styled(piece, &attrs),
@@ -1088,6 +1201,76 @@ mod imp {
             self.move_caret(caret, true);
         }
 
+        /// How many presses in a row this one makes: one more than the last when it came within
+        /// the desktop's double-click time and a few pixels of it, and one otherwise.
+        pub fn count_press(&self, time: u32, x: f64, y: f64) -> u8 {
+            let settings = gtk::Settings::default();
+            let window = settings
+                .as_ref()
+                .map_or(400, |s| s.gtk_double_click_time())
+                .max(1) as u32;
+            let distance = settings
+                .as_ref()
+                .map_or(5, |s| s.gtk_double_click_distance())
+                .max(1) as f64;
+            let count = match self.presses.get() {
+                Some((then, px, py, count))
+                    if time.wrapping_sub(then) <= window
+                        && (x - px).abs() <= distance
+                        && (y - py).abs() <= distance =>
+                {
+                    // Past three it starts again at the word, the way a text field cycles.
+                    count % 3 + 1
+                }
+                _ => 1,
+            };
+            self.presses.set(Some((time, x, y, count)));
+            count
+        }
+
+        /// Select the word under a point — or, with `block`, its whole paragraph. The word is
+        /// [`grind_text::word::around`]'s, so every shell that selects one agrees on where it
+        /// ends.
+        pub fn select_around(&self, x: f64, y: f64, block: bool) {
+            let Some(app) = self.app() else { return };
+            let Some(caret) = self.caret_at(x, y) else {
+                return;
+            };
+            let text = app.input_text(caret.block).unwrap_or_default();
+            let (start, end) = match block {
+                true => (0, text.chars().count()),
+                false => grind_text::word::around(&text, caret.offset),
+            };
+            self.anchor.set(Some(Caret {
+                block: caret.block,
+                offset: start,
+            }));
+            self.move_caret(
+                Caret {
+                    block: caret.block,
+                    offset: end,
+                },
+                true,
+            );
+        }
+
+        /// Open the right-click menu at a point, moving the caret there first unless the point
+        /// is inside the selection — a right-click on selected text is about that text.
+        fn open_menu(&self, x: f64, y: f64) {
+            let Some(menu) = self.menu.get() else { return };
+            if let Some(caret) = self.caret_at(x, y) {
+                let inside = self
+                    .selection()
+                    .is_some_and(|(from, to)| from <= caret && caret <= to);
+                if !inside {
+                    self.anchor.set(None);
+                    self.move_caret(caret, true);
+                }
+            }
+            menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            menu.popup();
+        }
+
         /// Dragging with the button down: the anchor [`Doc::click`] planted stays put and
         /// only the caret follows the pointer, which is what grows the highlighted band.
         pub fn drag_to(&self, x: f64, y: f64) {
@@ -1170,10 +1353,16 @@ mod imp {
         /// what typing a character, or Enter, over a selection does in every editor. Returns
         /// the caret unchanged when there is nothing selected.
         fn consume_selection(&self, app: &App) -> Caret {
-            let Some((from, to)) = self.selection() else {
+            // The anchor goes whether or not it made a selection. A click plants one *at* the
+            // caret, so that a drag has somewhere to grow from, and an edit that left it there
+            // turned the character it just typed into a selection — the next keystroke then
+            // replaced it, and clicking and typing `xy` wrote `y`. Found by a screenshot, and
+            // pinned by `a_click_then_two_keystrokes_types_both`.
+            let selection = self.selection();
+            self.anchor.set(None);
+            let Some((from, to)) = selection else {
                 return self.caret.get();
             };
-            self.anchor.set(None);
             match app.erase(from, to) {
                 Ok(_) => from,
                 Err(error) => {
@@ -1208,7 +1397,7 @@ mod imp {
                 Ok(typed) => {
                     self.goal_x.set(None);
                     *self.resume.borrow_mut() = typed.resume;
-                    self.move_caret(typed.caret, true);
+                    self.place_caret(typed.caret, true);
                 }
                 Err(error) => self.notice(error.to_string()),
             }
@@ -1242,6 +1431,9 @@ mod imp {
                 }
                 return;
             }
+            // No selection, but perhaps an anchor a click left at the caret — which an edit
+            // must not leave behind, or the next one erases across it (`consume_selection`).
+            self.anchor.set(None);
             let caret = self.caret.get();
             let from = self.stepped(&app, -1);
             if from == caret {
@@ -1263,6 +1455,7 @@ mod imp {
                 }
                 return;
             }
+            self.anchor.set(None);
             let caret = self.caret.get();
             let to = match caret.offset < self.block_len(&app, caret.block) {
                 true => Caret {
@@ -1284,7 +1477,17 @@ mod imp {
 
         /// The one place the caret changes: keep it inside the document, scroll it into
         /// view, tell the listeners, repaint.
+        /// Put the caret somewhere, and forget any style it was holding for the next
+        /// character — a pending Bold pressed with nothing selected belongs to *where* it was
+        /// pressed, and clicking elsewhere is changing one's mind. Typing is the one move that
+        /// keeps it, and it goes through [`Doc::place_caret`] to say so.
         pub fn move_caret(&self, caret: Caret, clear_goal: bool) {
+            self.resume.replace(None);
+            self.place_caret(caret, clear_goal);
+        }
+
+        /// [`Doc::move_caret`] without forgetting the pending style.
+        fn place_caret(&self, caret: Caret, clear_goal: bool) {
             self.caret.set(caret);
             if clear_goal {
                 self.goal_x.set(None);
@@ -1343,12 +1546,7 @@ mod imp {
                 Ok(text) if !text.is_empty() => format!("{address}: {text}"),
                 _ => address,
             };
-            // GTK's fallback accessibility context — the one it uses when there is no AT-SPI
-            // bus, as in a container, a VM or a minimal session — has no `announce` hook, and
-            // `gtk_accessible_announce` calls it anyway: a jump to address zero on every move
-            // (measured on GTK 4.18 under Xvfb, with and without a session bus). With nothing
-            // listening there is nobody to announce to, so skipping it loses nothing.
-            if self.obj().at_context().type_().name() == "GtkTestATContext" {
+            if !crate::theme::heard(&*self.obj()) {
                 return;
             }
             self.obj()
@@ -1722,6 +1920,18 @@ mod tests {
             dragging_the_mouse_selects_text,
         ),
         (
+            "a click then two keystrokes types both",
+            a_click_then_two_keystrokes_types_both,
+        ),
+        (
+            "a double-click selects a word and a triple-click the paragraph",
+            a_double_click_selects_a_word_and_a_triple_click_the_paragraph,
+        ),
+        (
+            "a style pressed at a bare caret is what is typed next",
+            a_style_pressed_at_a_bare_caret_is_what_is_typed_next,
+        ),
+        (
             "a Title style is drawn in a larger face than the body",
             a_title_style_is_drawn_in_a_larger_face_than_the_body,
         ),
@@ -2023,6 +2233,108 @@ mod tests {
         );
     }
 
+    /// Where `offset` in block 0 of a [`shell`] is on screen — the point a click there lands on.
+    fn point_of(doc: &Doc, offset: usize) -> (f64, f64) {
+        let imp = doc.imp();
+        let (layout, _, _) = imp.measured(0).expect("the block lays out");
+        let flow = imp.flow(f64::from(doc.width()));
+        let slot = flow.slot(0).expect("one block");
+        let (left, _) = crate::geom::column(f64::from(doc.width()));
+        (left + f64::from(layout.x_at(offset)), slot.top + 1.0)
+    }
+
+    /// The bug a screenshot found: a click plants the selection's anchor at the caret so a drag
+    /// has somewhere to grow from, and typing used to leave it there — so the first character
+    /// typed became a selection and the second replaced it. Clicking and typing `xy` wrote `y`,
+    /// and two Backspaces after a click erased one character each side of it.
+    fn a_click_then_two_keystrokes_types_both() {
+        let (doc, app) = shell(&["hello world"]);
+        let imp = doc.imp();
+        let (x, y) = point_of(&doc, 5);
+        imp.click(x, y, false);
+        imp.type_text("x");
+        imp.type_text("y");
+        assert_eq!(text(&app), "helloxy world");
+        assert_eq!(doc.selection(), None, "typing leaves nothing selected");
+
+        let (x, y) = point_of(&doc, 5);
+        imp.click(x, y, false);
+        imp.erase_back();
+        imp.erase_back();
+        assert_eq!(text(&app), "helxy world", "both Backspaces erase backwards");
+    }
+
+    /// A double-click is the word under the pointer — [`grind_text::word::around`]'s — and a
+    /// triple-click the whole paragraph, the way every text field on the desktop behaves.
+    fn a_double_click_selects_a_word_and_a_triple_click_the_paragraph() {
+        let (doc, _app) = shell(&["don't panic now"]);
+        let imp = doc.imp();
+        let at = |offset| Caret { block: 0, offset };
+        let (x, y) = point_of(&doc, 8);
+        imp.select_around(x, y, false);
+        assert_eq!(doc.selection(), Some((at(6), at(11))), "`panic`");
+        let (x, y) = point_of(&doc, 2);
+        imp.select_around(x, y, false);
+        assert_eq!(
+            doc.selection(),
+            Some((at(0), at(5))),
+            "`don't`, apostrophe and all"
+        );
+        imp.select_around(x, y, true);
+        assert_eq!(doc.selection(), Some((at(0), at(15))), "the paragraph");
+
+        // And the press counting that tells the two apart: close in time and place counts up,
+        // anything else starts again.
+        assert_eq!(imp.count_press(1000, x, y), 1);
+        assert_eq!(imp.count_press(1100, x + 1.0, y), 2);
+        assert_eq!(imp.count_press(1200, x, y), 3);
+        assert_eq!(
+            imp.count_press(5000, x, y),
+            1,
+            "too late to be a double-click"
+        );
+    }
+
+    /// Bold with nothing selected, then typing, is bold — the pending style
+    /// ([`Doc::set_pending`]) is what the next character carries — and moving the caret first
+    /// is changing one's mind, so it goes.
+    fn a_style_pressed_at_a_bare_caret_is_what_is_typed_next() {
+        let (doc, app) = shell(&["plain"]);
+        let imp = doc.imp();
+        let end = Caret {
+            block: 0,
+            offset: 5,
+        };
+        imp.move_caret(end, true);
+        let mut bold = grind_text::CharStyle::default();
+        bold.set_bold(true);
+        doc.set_pending(bold.clone());
+        assert_eq!(doc.pending(), Some(bold));
+        imp.type_text("B");
+        imp.type_text("b");
+        let view = app.get_viewport(0..1);
+        let run = view
+            .get(0)
+            .expect("the block")
+            .runs
+            .iter()
+            .find(|run| run.text == "Bb")
+            .expect("both typed characters are one run");
+        assert!(run.props.is_bold(), "and it is bold");
+
+        let mut italic = grind_text::CharStyle::default();
+        italic.set_italic(true);
+        doc.set_pending(italic);
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        assert_eq!(doc.pending(), None, "a caret that moves forgets it");
+    }
+
     /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes
     /// a heading bigger than the body, keyed off the block's *name* instead of its kind
     /// because `Title` is `BlockKind::Paragraph` with nothing else to tell it apart.
@@ -2253,6 +2565,7 @@ mod tests {
             block.text.chars().count(),
             &block.text,
             face.size(),
+            crate::metrics::Paper::LIGHT,
         );
         assert!(
             attrs
@@ -2325,6 +2638,7 @@ mod tests {
             block.text.chars().count(),
             &block.text,
             face.size(),
+            crate::metrics::Paper::LIGHT,
         );
         let kinds: Vec<pango::AttrType> =
             attrs.attributes().iter().map(|attr| attr.type_()).collect();

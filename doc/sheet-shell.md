@@ -217,11 +217,13 @@ accent API gets a CSS fallback). Files, each single-purpose:
   navigates, resolved through `core::a1` — the same lookup as everywhere; typing anything
   else *defines* it over the selection, via `App::set_name`, and the core's own refusal is
   the toast) · formula entry (hexpand) · ✓/✗ buttons visible only while editing.
-- **Sheet tab strip** (bottom): linked toggle buttons + `+`; double-click / context menu
+- **Sheet tab strip** (bottom, the start of the one bottom bar it shares with the status
+  readout — see "The UX pass" below): linked toggle buttons + `+`; double-click / context menu
   rename popover; Delete is **immediate, with an undo toast** ("Deleted 'Q3 Actuals' —
   Undo") — the HIG undo-toast pattern, exactly what the sheet-carrying inverse was built
   for. Plain buttons, not `adw::TabBar` — wrong tool.
-- **Status bar**: Sum · Count · Average of the selection via `App::preview` with generated
+- **Status bar** (the end of that same bar, right-aligned and dimmed; silent for one cell,
+  whose address the name box already shows): Sum · Count · Average of the selection via `App::preview` with generated
   formulas — `SUM`, **`COUNTA`** (a status bar's Count is non-empty, not numeric),
   `AVERAGE`; Sum/Average hidden when COUNTA is 0. Ranges clamped to `used_extent` first —
   whole-column selections must not walk a million rows. Debounced 100 ms, off-main,
@@ -654,6 +656,33 @@ under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the r
 sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
 (`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
 this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+
+## The UX pass — one bottom bar, and nothing that misleads
+
+A review from screenshots, light and dark, of what this window says at rest and while
+editing. No capability moved and no surface's admission test changed; each item is a control
+that said something untrue, or two controls saying the same thing.
+
+* **One bottom bar where there were two** (`chrome::bottom_bar`): the sheet tabs at its start,
+  the selection's arithmetic at its end. The status line's resting state was the active cell's
+  address — which the name box above the grid was already showing — so it now says nothing for
+  one cell and `B8:C11 · Sum … · Count … · Average …` for a range.
+* **A filtered heading ends where its button begins.** It used to run under the button
+  (`Budgete▾`, `% of Tot▾`); now the text is laid out in the room the button leaves, keeps its
+  start when it does not fit rather than losing a letter at each end, and does not overflow past
+  the button into the next cell.
+* **A range has an edge**: a hairline in the accent round the whole selection, over the twelve
+  per cent wash, so a filled table still shows where a fill or a paste will stop.
+* **The editing buttons say what they do**: ✕ for Cancel, where an undo arrow stood beside the
+  header bar's own Undo; and a formula that does not parse *yet* reads as *Not finished: expected
+  ; or )* in the theme's warning colour, rather than `= expected `;` or `)`` in the place the
+  answer goes.
+* **The number menu shows only what applies.** Decimals and grouping are hidden, not greyed, for a
+  format with neither; the locale for General; and no currency button is pressed on a cell that is
+  not a currency — a pressed € over a General cell said it was in euros. The sample is captioned
+  *Preview*, since without one it read as the popover's title.
+* **`GTK_A11Y=none` aborted the window on its first click** (`theme::heard`, which `doc/text-shell.md`
+  records for both shells).
 
 ## The gaps, written down
 
