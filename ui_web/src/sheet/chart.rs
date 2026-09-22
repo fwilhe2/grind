@@ -255,37 +255,27 @@ fn lines(
     }
 }
 
+/// Every slice as [`grind_sheet::pie_slices`] sweeps it — the core's arithmetic, so this pane
+/// and the GNOME window cannot run the same pie two ways round (`doc/chart-format.md`,
+/// Direction). A negative sweep is SVG's sweep-flag `0`.
 fn pie(out: &mut String, chart: &Chart, data: &ChartData, plot: Plot) {
-    let Some((_, values)) = data.series.first() else {
-        return;
-    };
-    let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
-    if total <= 0.0 {
-        return;
-    }
     let (cx, cy) = (plot.0 + plot.2 / 2.0, plot.1 + plot.3 / 2.0);
     let r = (plot.2.min(plot.3) / 2.0).max(1.0);
-    let mut angle = -std::f64::consts::FRAC_PI_2;
-    for (i, value) in values.iter().enumerate() {
-        let value = value.max(0.0);
-        if value <= 0.0 {
-            continue;
-        }
-        let sweep = (value / total) * std::f64::consts::TAU;
-        let end = angle + sweep;
+    for slice in grind_sheet::pie_slices(data, chart.clockwise) {
+        let end = slice.start + slice.sweep;
         // SVG's own arc, rather than the fan of segments the GTK painter draws: `gsk` has no
         // arc primitive and this does.
-        let large = i32::from(sweep > std::f64::consts::PI);
+        let large = i32::from(slice.sweep.abs() > std::f64::consts::PI);
+        let sweep = i32::from(slice.sweep > 0.0);
         out.push_str(&format!(
-            "<path fill=\"{}\" d=\"M{cx:.1} {cy:.1} L{:.2} {:.2} A{r:.2} {r:.2} 0 {large} 1 {:.2} \
-             {:.2} Z\"/>",
-            effective_color(chart, 0, Some(i)),
-            cx + r * angle.cos(),
-            cy + r * angle.sin(),
+            "<path fill=\"{}\" d=\"M{cx:.1} {cy:.1} L{:.2} {:.2} A{r:.2} {r:.2} 0 {large} {sweep} \
+             {:.2} {:.2} Z\"/>",
+            effective_color(chart, 0, Some(slice.point)),
+            cx + r * slice.start.cos(),
+            cy + r * slice.start.sin(),
             cx + r * end.cos(),
             cy + r * end.sin(),
         ));
-        angle = end;
     }
 }
 

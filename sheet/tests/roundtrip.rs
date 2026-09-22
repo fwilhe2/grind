@@ -219,6 +219,7 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 g.filter()
             ));
         }
+        out.extend(chart_differences(label, i, w, g));
         let rows = w.used_rows().max(g.used_rows());
         let cols = w.used_cols().max(g.used_cols());
         for row in 0..rows {
@@ -276,6 +277,117 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
         }
     }
     out
+}
+
+/// Every chart on one sheet, compared as what it *says* rather than as XML — `doc/chart-format.md`
+/// is the list of what that is, and none of it was checked against LibreOffice until a pie this
+/// build wrote turned out to run the other way round there, and every colour turned out to be
+/// ignored.
+///
+/// Ranges are compared by the cells they name ([`range_key`]), since LibreOffice respells every
+/// one absolute (`$A$2`), and the frame by [`same_length`]'s tolerance. A pie's direction is
+/// compared only on a pie: it is the one kind this build gives a direction.
+fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String> {
+    let mut out = Vec::new();
+    if w.charts().len() != g.charts().len() {
+        out.push(format!(
+            "{label}: sheet {i} had {} charts, back with {}",
+            w.charts().len(),
+            g.charts().len()
+        ));
+        return out;
+    }
+    for (n, (a, b)) in w.charts().iter().zip(g.charts()).enumerate() {
+        let mut say = |what: &str, want: String, got: String| {
+            if want != got {
+                out.push(format!(
+                    "{label}: sheet {i} chart {n} {what} was {want}, back as {got}"
+                ));
+            }
+        };
+        say("kind", format!("{:?}", a.kind), format!("{:?}", b.kind));
+        say(
+            "categories",
+            format!("{:?}", a.categories.as_deref().map(range_key)),
+            format!("{:?}", b.categories.as_deref().map(range_key)),
+        );
+        say(
+            "axes",
+            format!("{:?}", (&a.x_axis, &a.y_axis)),
+            format!("{:?}", (&b.x_axis, &b.y_axis)),
+        );
+        if a.kind == grind_sheet::ChartKind::Pie {
+            say(
+                "direction",
+                format!("clockwise {}", a.clockwise),
+                format!("clockwise {}", b.clockwise),
+            );
+        }
+        let frame =
+            |c: &grind_sheet::Chart| [c.x.clone(), c.y.clone(), c.width.clone(), c.height.clone()];
+        for (want, got) in frame(a).iter().zip(frame(b)) {
+            if !same_length(want, Some(&got)) {
+                say(
+                    "frame",
+                    format!("{:?}", frame(a)),
+                    format!("{:?}", frame(b)),
+                );
+                break;
+            }
+        }
+        say(
+            "series count",
+            a.series.len().to_string(),
+            b.series.len().to_string(),
+        );
+        for (s, (x, y)) in a.series.iter().zip(&b.series).enumerate() {
+            let what = format!("series {s}");
+            say(
+                &what,
+                format!(
+                    "{:?}",
+                    (range_key(&x.values), x.label.as_deref().map(range_key))
+                ),
+                format!(
+                    "{:?}",
+                    (range_key(&y.values), y.label.as_deref().map(range_key))
+                ),
+            );
+            // The colours are what `doc/chart-format.md`'s Colour section measured LibreOffice
+            // ignoring, and an override that comes back as the default (or the reverse) is
+            // the same loss seen from this side.
+            let colours = |series: &grind_sheet::ChartSeries| {
+                let mut points = series.point_colors.clone();
+                while points.last() == Some(&None) {
+                    points.pop();
+                }
+                (series.color.clone(), points)
+            };
+            say(
+                &format!("{what} colours"),
+                format!("{:?}", colours(x)),
+                format!("{:?}", colours(y)),
+            );
+        }
+    }
+    out
+}
+
+/// A chart's stored range, as the cells it names — `Sheet1.A2:Sheet1.A5` and LibreOffice's
+/// `Sheet1.$A$2:.$A$5` are the same key, and one cell is a range of itself.
+fn range_key(addr: &str) -> String {
+    let Ok(reference) = grind_sheet::a1::parse_bracketed(&format!("[{addr}]")) else {
+        return format!("unparsed {addr:?}");
+    };
+    let end = reference
+        .end
+        .clone()
+        .unwrap_or_else(|| reference.start.clone());
+    let sheet = reference.start.sheet.clone();
+    let cell = |c: &grind_sheet::formula::lex::CellRef| {
+        (c.row.map(|r| r.index), c.col.map(|col| col.index))
+    };
+    format!("{sheet:?} {:?}:{:?}", cell(&reference.start), cell(&end))
 }
 
 /// The same length, in millimetres, to within LibreOffice's own quantisation.
@@ -624,6 +736,90 @@ fn filtered() -> (String, Document) {
     ("filtered".to_owned(), doc)
 }
 
+/// Charts (`doc/chart-format.md`): a bar of two series with one series and one bar coloured by
+/// hand, a line, and a clockwise pie — built through `App`, the only thing that adds a chart,
+/// and read back from its own bytes into the [`Document`] this loop compares.
+fn charts() -> (String, Document) {
+    let app = grind_sheet::App::new();
+    let rows = [("Jan", 10.0, 4.0), ("Feb", 20.0, 6.0), ("Mar", 30.0, 9.0)];
+    app.set_cell(0, Pos::new(0, 0), "Month").unwrap();
+    app.set_cell(0, Pos::new(0, 1), "Sales").unwrap();
+    app.set_cell(0, Pos::new(0, 2), "Costs").unwrap();
+    for (r, (month, sales, costs)) in rows.iter().enumerate() {
+        let row = r as u32 + 1;
+        app.set_cell(0, Pos::new(row, 0), *month).unwrap();
+        app.set_cell(0, Pos::new(row, 1), *sales).unwrap();
+        app.set_cell(0, Pos::new(row, 2), *costs).unwrap();
+    }
+    let titled = |label: &str| grind_sheet::ChartAxis {
+        label: Some(label.to_owned()),
+        gridlines: true,
+        ..grind_sheet::ChartAxis::default()
+    };
+    let series = [("B2:B4", Some("B1")), ("C2:C4", Some("C1"))];
+    for (kind, series, at) in [
+        (grind_sheet::ChartKind::Bar, &series[..], "1cm"),
+        (grind_sheet::ChartKind::Line, &series[..], "10cm"),
+        (grind_sheet::ChartKind::Pie, &series[..1], "19cm"),
+    ] {
+        app.add_chart(
+            0,
+            kind,
+            Some("A2:A4"),
+            series,
+            at,
+            "3cm",
+            "8cm",
+            "6cm",
+            titled("Month"),
+            titled("Amount"),
+        )
+        .unwrap();
+    }
+    let mut bar = app.charts(0).unwrap()[0].series.clone();
+    bar[0].color = Some("#112233".to_owned());
+    bar[1].point_colors = vec![None, Some("#445566".to_owned())];
+    app.set_chart_style(0, 0, titled("Month"), titled("Amount"), bar)
+        .unwrap();
+    let bytes = app.save_bytes(Form::Flat).unwrap();
+    let doc = grind_sheet::read_bytes("charts.fods", &bytes).unwrap();
+    ("charts".to_owned(), doc)
+}
+
+/// A counter-clockwise pie — a file that says so, which is the only way one arises — so that
+/// both values of `chart:reverse-direction` go through LibreOffice.
+fn counter_clockwise_pie() -> (String, Document) {
+    let app = grind_sheet::App::new();
+    for (row, (name, votes)) in [("GRÜNE", 100.0), ("CDU", 80.0), ("AfD", 60.0)]
+        .iter()
+        .enumerate()
+    {
+        app.set_cell(0, Pos::new(row as u32, 0), *name).unwrap();
+        app.set_cell(0, Pos::new(row as u32, 1), *votes).unwrap();
+    }
+    app.add_chart(
+        0,
+        grind_sheet::ChartKind::Pie,
+        Some("A1:A3"),
+        &[("B1:B3", None)],
+        "1cm",
+        "1cm",
+        "8cm",
+        "8cm",
+        grind_sheet::ChartAxis::default(),
+        grind_sheet::ChartAxis::default(),
+    )
+    .unwrap();
+    let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    let turned = flat.replace(
+        "chart:reverse-direction=\"true\"",
+        "chart:reverse-direction=\"false\"",
+    );
+    assert_ne!(turned, flat, "the writer states a pie's direction");
+    let doc = grind_sheet::read_bytes("pie.fods", turned.as_bytes()).unwrap();
+    ("counter-clockwise-pie".to_owned(), doc)
+}
+
 fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
@@ -652,6 +848,8 @@ fn cases() -> Vec<(String, Document)> {
         styles(),
         tracks(),
         filtered(),
+        charts(),
+        counter_clockwise_pie(),
         case(
             "numbers",
             &[

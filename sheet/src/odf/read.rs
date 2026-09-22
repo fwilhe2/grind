@@ -143,6 +143,13 @@ struct PendingChart {
     /// Separate from `styles` because the two properties live on different elements
     /// (`style:graphic-properties` and `style:chart-properties`) and no style carries both.
     display_labels: HashMap<String, bool>,
+    /// And the third: name → `chart:reverse-direction` (rng:10064), the other half of an axis'
+    /// `style:chart-properties` this build reads — a pie's direction (`doc/chart-format.md`,
+    /// Direction).
+    reverse_directions: HashMap<String, bool>,
+    /// What the y axis' own style said about its direction, if anything — `None` being "said
+    /// nothing", which for a pie is LibreOffice's counter-clockwise.
+    y_reversed: Option<bool>,
 }
 
 impl Default for PendingChart {
@@ -162,6 +169,8 @@ impl Default for PendingChart {
             y_axis: crate::chart::Axis::bare(),
             styles: HashMap::new(),
             display_labels: HashMap::new(),
+            reverse_directions: HashMap::new(),
+            y_reversed: None,
         }
     }
 }
@@ -560,6 +569,8 @@ impl Context<Builder> for Frame {
                         main.y_axis = found.y_axis;
                         main.styles = found.styles;
                         main.display_labels = found.display_labels;
+                        main.reverse_directions = found.reverse_directions;
+                        main.y_reversed = found.y_reversed;
                     }
                 }
                 Some(Box::new(super::context::Ignore))
@@ -590,6 +601,14 @@ impl Context<Builder> for Frame {
             height,
             x_axis: pending.x_axis,
             y_axis: pending.y_axis,
+            // A pie runs the way its file says, and a file that says nothing is LibreOffice's
+            // counter-clockwise (`doc/chart-format.md`, Direction). A bar or line has no
+            // direction this build reads, so it keeps a new chart's — which is what it becomes
+            // if somebody turns it into a pie.
+            clockwise: match kind {
+                crate::chart::ChartKind::Pie => pending.y_reversed == Some(true),
+                _ => true,
+            },
         };
         let sheet = &mut b.doc.sheets[b.sheet];
         let index = sheet.charts().len();
@@ -656,12 +675,17 @@ impl Context<Builder> for ChartStyleStyle {
         {
             pending.styles.insert(self.name.clone(), color.to_owned());
         }
-        if name.is(Ns::Style, "chart-properties")
-            && let Some(display) = attrs.get(Ns::Chart, "display-label")
-        {
-            pending
-                .display_labels
-                .insert(self.name.clone(), display == "true");
+        if name.is(Ns::Style, "chart-properties") {
+            if let Some(display) = attrs.get(Ns::Chart, "display-label") {
+                pending
+                    .display_labels
+                    .insert(self.name.clone(), display == "true");
+            }
+            if let Some(reverse) = attrs.get(Ns::Chart, "reverse-direction") {
+                pending
+                    .reverse_directions
+                    .insert(self.name.clone(), reverse == "true");
+            }
         }
         None
     }
@@ -743,6 +767,13 @@ impl Context<Builder> for ChartPlotArea {
                 {
                     dim.axis(pending).tick_labels = display;
                 }
+                if let AxisDim::Y = dim
+                    && let Some(pending) = &mut b.pending_chart
+                {
+                    pending.y_reversed = attrs
+                        .get(Ns::Chart, "style-name")
+                        .and_then(|name| pending.reverse_directions.get(name).copied());
+                }
                 Some(Box::new(ChartAxis { dim }) as Ctx)
             }
             (Ns::Chart, "series") => {
@@ -757,20 +788,36 @@ impl Context<Builder> for ChartPlotArea {
                     let pending = b.pending_chart.as_ref()?;
                     (pending.series.len(), pending.kind)
                 };
-                // Only `Line` still carries one colour on the series element itself
-                // (`doc/chart-format.md`) — `Bar` and `Pie` colour per point, read below
-                // from each `chart:data-point`. A colour identical to the default cycle at
-                // this position is treated as unset, so an unmodified chart keeps
+                // A bar or a line is one colour per series, carried on the series element's
+                // own style (`doc/chart-format.md`, Colour); a pie's colours are its slices',
+                // read below from each `chart:data-point`. A colour identical to the default
+                // cycle at this position is treated as unset, so an unmodified chart keeps
                 // re-cycling — see [`crate::chart::effective_color`].
+                let own = series_style.as_deref().and_then(|name| {
+                    let pending = b.pending_chart.as_ref()?;
+                    pending.styles.get(name).cloned()
+                });
                 let color = match kind {
-                    Some(crate::chart::ChartKind::Line) => {
-                        series_style.as_deref().and_then(|name| {
-                            let pending = b.pending_chart.as_ref()?;
-                            let hex = pending.styles.get(name)?;
-                            (hex.as_str() != crate::chart::series_color(index)).then(|| hex.clone())
-                        })
-                    }
+                    Some(crate::chart::ChartKind::Bar | crate::chart::ChartKind::Line) => own
+                        .as_deref()
+                        .filter(|hex| *hex != crate::chart::series_color(index))
+                        .map(str::to_owned),
                     _ => None,
+                };
+                // What a data point's colour is compared against to tell an override from an
+                // untouched default. A pie's slice, and a bar under a series that names no
+                // style of its own, cycle per point: the second is how this build wrote bars
+                // before a colour was a series, and a file it wrote then must not come back
+                // with every bar's old default mistaken for a colour somebody picked.
+                let points = match (kind, &own) {
+                    (Some(crate::chart::ChartKind::Pie), _)
+                    | (Some(crate::chart::ChartKind::Bar), None) => PointDefault::Cycle,
+                    (Some(crate::chart::ChartKind::Bar), Some(_)) => PointDefault::Series(
+                        color
+                            .clone()
+                            .unwrap_or_else(|| crate::chart::series_color(index).to_owned()),
+                    ),
+                    _ => PointDefault::NoPoints,
                 };
                 let pending = b.pending_chart.as_mut()?;
                 pending.series.push(crate::chart::Series {
@@ -782,6 +829,7 @@ impl Context<Builder> for ChartPlotArea {
                 Some(Box::new(ChartSeries {
                     series_index: index,
                     point: 0,
+                    points,
                 }) as Ctx)
             }
             _ => None,
@@ -790,12 +838,23 @@ impl Context<Builder> for ChartPlotArea {
 }
 
 /// One of `chart:series`' own `chart:data-point` children (rng:552) — colour only, read into
-/// [`crate::chart::Series::point_colors`] for `Bar`/`Pie` the same way [`ChartPlotArea`]
-/// reads `Line`'s own series-level colour, comparing to the default cycle at each point's
-/// position so an unmodified chart keeps re-cycling.
+/// [`crate::chart::Series::point_colors`] for `Bar`/`Pie`, comparing each to what that point
+/// would have been anyway ([`PointDefault`]) so an unmodified chart keeps re-cycling.
 struct ChartSeries {
     series_index: usize,
     point: usize,
+    points: PointDefault,
+}
+
+/// What a data point of one series is coloured when nobody picked it a colour.
+enum PointDefault {
+    /// The default cycle at the point's own position — a pie's slice, or a bar written before
+    /// a colour was a series.
+    Cycle,
+    /// The series' own colour — a bar.
+    Series(String),
+    /// A line's points carry no colour of their own.
+    NoPoints,
 }
 
 impl Context<Builder> for ChartSeries {
@@ -808,10 +867,16 @@ impl Context<Builder> for ChartSeries {
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(1)
             .max(1);
-        if let Some(style_name) = attrs.get(Ns::Chart, "style-name")
+        let default = match &self.points {
+            PointDefault::Cycle => Some(crate::chart::series_color(self.point)),
+            PointDefault::Series(hex) => Some(hex.as_str()),
+            PointDefault::NoPoints => None,
+        };
+        if let Some(default) = default
+            && let Some(style_name) = attrs.get(Ns::Chart, "style-name")
             && let Some(pending) = &mut b.pending_chart
             && let Some(hex) = pending.styles.get(style_name).cloned()
-            && hex != crate::chart::series_color(self.point)
+            && hex != default
             && let Some(series) = pending.series.get_mut(self.series_index)
         {
             if series.point_colors.len() <= self.point {
@@ -885,16 +950,18 @@ impl Context<Builder> for ChartAxisTitle {
             return None;
         }
         b.text.clear();
-        Some(Box::new(Paragraph) as Ctx)
+        Some(Box::new(Paragraph::CHART) as Ctx)
     }
 
     fn end(&mut self, b: &mut Builder) {
         let text = std::mem::take(&mut b.text);
+        // The trailing half of the white-space rule `Paragraph::CHART` applies.
+        let text = text.trim_end();
         if text.is_empty() {
             return;
         }
         if let Some(pending) = &mut b.pending_chart {
-            self.dim.axis(pending).label = Some(text);
+            self.dim.axis(pending).label = Some(text.to_owned());
         }
     }
 }
@@ -1283,7 +1350,7 @@ impl Context<Builder> for Cell {
             b.text.push('\n');
         }
         self.saw_paragraph = true;
-        Some(Box::new(Paragraph))
+        Some(Box::new(Paragraph::CELL))
     }
 
     fn end(&mut self, b: &mut Builder) {
@@ -1649,13 +1716,30 @@ impl Context<Builder> for StyleText {
 }
 
 /// `text:p` and the runs beneath it — the only contexts that collect character data.
-struct Paragraph;
+struct Paragraph {
+    /// Whether character data follows ODF's white-space rule (§6.1.2 of Part 3: a run of
+    /// spaces, tabs and line ends is one space, and none opens a paragraph) — or is taken
+    /// verbatim, as a *cell's* always has been, since no writer in the corpus pretty-prints a
+    /// cell's paragraph and every cell test depends on the characters as they stand.
+    ///
+    /// A chart's titles are where the rule bites: LibreOffice pretty-prints a chart document,
+    /// so its axis title arrives as `<text:p>⏎␠␠␠␠<text:span>Euro</text:span></text:p>`, and read
+    /// verbatim it came back from loop C as `"\n               Euro"`.
+    collapse: bool,
+}
+
+impl Paragraph {
+    const CELL: Paragraph = Paragraph { collapse: false };
+    const CHART: Paragraph = Paragraph { collapse: true };
+}
 
 impl Context<Builder> for Paragraph {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
             // A span is styled text; its characters still belong to the cell.
-            (Ns::Text, "span" | "a") => Some(Box::new(Paragraph)),
+            (Ns::Text, "span" | "a") => Some(Box::new(Paragraph {
+                collapse: self.collapse,
+            })),
             // `text:s` carries a *count*: ODF collapses runs of whitespace in `text:p`, so
             // "a    b" is written as one literal space plus `<text:s text:c="3"/>`.
             // Ignoring the count silently turns every multi-space string into a
@@ -1680,6 +1764,19 @@ impl Context<Builder> for Paragraph {
     }
 
     fn text(&mut self, text: &str, b: &mut Builder) {
-        b.text.push_str(text);
+        if !self.collapse {
+            b.text.push_str(text);
+            return;
+        }
+        for c in text.chars() {
+            match c {
+                ' ' | '\t' | '\r' | '\n' => {
+                    if !b.text.is_empty() && !b.text.ends_with(' ') {
+                        b.text.push(' ');
+                    }
+                }
+                c => b.text.push(c),
+            }
+        }
     }
 }

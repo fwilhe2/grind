@@ -46,8 +46,8 @@ pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
 pub use chart::{
-    Axis as ChartAxis, Chart, ChartData, ChartKind, Series as ChartSeries, Ticks, axis_ticks,
-    effective_color, series_color,
+    Axis as ChartAxis, Chart, ChartData, ChartKind, Series as ChartSeries, Slice, Ticks,
+    axis_ticks, effective_color, pie_slice_at, pie_slices, series_color,
 };
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};

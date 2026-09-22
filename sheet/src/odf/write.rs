@@ -29,7 +29,7 @@ use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
-use grind_core::odf::package::{VERSION, write_package};
+use grind_core::odf::package::{SubDocument, VERSION, write_package_with};
 use grind_core::odf::xml::esc;
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
@@ -48,8 +48,11 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         return Ok(spliced);
     }
     match form {
-        Form::Flat => Ok(content(doc, form).into_bytes()),
-        Form::Package => Ok(write_package(MIMETYPE, &content(doc, Form::Package))?),
+        Form::Flat => Ok(content(doc, form).0.into_bytes()),
+        Form::Package => {
+            let (content, objects) = content(doc, Form::Package);
+            Ok(write_package_with(MIMETYPE, &content, &objects)?)
+        }
         // The third form is not XML at all, so it leaves before any of this file runs
         // (`doc/dsl.md` §9). It is here rather than one layer up because `write_bytes` is the
         // one door out of the crate, and a form that only *some* callers knew to handle would
@@ -159,8 +162,10 @@ fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) ->
     out
 }
 
-/// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3).
-fn content(doc: &Document, form: Form) -> String {
+/// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3) — and,
+/// in the package form, the charts' own documents, which live beside it there
+/// ([`Objects`]).
+fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
     let root = match form {
         Form::Package => "office:document-content",
         // The flat form is one XML document; the projection never reaches here, because
@@ -219,8 +224,9 @@ fn content(doc: &Document, form: Form) -> String {
             date::format_date(0.0, doc.null_date)
         );
     }
+    let mut objects = Objects::new(form);
     for sheet in &doc.sheets {
-        table(&mut out, sheet, doc.null_date, &pool);
+        table(&mut out, sheet, doc.null_date, &pool, &mut objects);
     }
     // §5.11, and *after* the tables: the schema's `office-spreadsheet-content-epilogue`
     // (line 8263) is where `table-functions` sits, and `table:named-expressions` is its
@@ -244,7 +250,7 @@ fn content(doc: &Document, form: Form) -> String {
     // names, for the same schema reason. One range per sheet: [`Sheet::filter`].
     database_ranges(&mut out, doc);
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
-    out
+    (out, objects.documents)
 }
 
 /// `table:database-ranges` (§9.4): every sheet's autofilter, as a range plus one
@@ -675,31 +681,65 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
 /// every time: `doc/chart-format.md` explains why this build does not try to splice a chart's
 /// own document the way a cell splices, and assigns [`crate::chart::series_color`] rather than
 /// reproducing whatever colours the chart was last saved with.
-fn write_shapes(out: &mut String, sheet: &Sheet) {
+fn write_shapes(out: &mut String, sheet: &Sheet, objects: &mut Objects) {
     if sheet.charts().is_empty() {
         return;
     }
     out.push_str("    <table:shapes>\n");
     for chart in sheet.charts() {
-        write_chart(out, chart);
+        write_chart(out, chart, objects);
     }
     out.push_str("    </table:shapes>\n");
+}
+
+/// Where a chart's own document goes, which is the one thing the two physical forms disagree
+/// about (`doc/chart-format.md`, The two places a chart's own document can live).
+///
+/// **Flat: inline**, an `office:document` right inside `draw:object`. **Package: a
+/// sub-document** beside `content.xml` — `Object 1/content.xml`, which `draw:object` points at
+/// by `xlink:href`. The schema allows either in either form (rng:5541-5545), and this writer
+/// used to write the inline shape into packages too, on the strength of that; measured
+/// (LibreOffice 26.8.0.3, loop C), LibreOffice **drops every inline chart it finds in a
+/// package**, so an `.ods` this build wrote came back with no charts at all.
+struct Objects {
+    form: Form,
+    documents: Vec<SubDocument>,
+}
+
+impl Objects {
+    fn new(form: Form) -> Self {
+        Objects {
+            form,
+            documents: Vec::new(),
+        }
+    }
 }
 
 /// One chart, as the flat form's own inline shape (`doc/chart-format.md`) — valid ODF
 /// regardless of the outer document's physical form, and always the simpler of the two
 /// `draw:object` may hold (R3).
-fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
+fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Objects) {
+    use crate::chart::ChartKind;
     // Every `style:style style:family="chart"` this chart's document needs, one
-    // [`crate::chart::effective_color`] each — one per bar or slice (`Bar`, `Pie`, neither of
-    // which has an axis to share a colour down between their own points) or one per series
-    // (`Line`). Built before anything is written, so the automatic-styles section — which the
-    // schema puts ahead of the body — never has to forward-reference a name the body decides
-    // on later.
+    // [`crate::chart::effective_color`] each. Built before anything is written, so the
+    // automatic-styles section — which the schema puts ahead of the body — never has to
+    // forward-reference a name the body decides on later.
+    //
+    // **Every series names a style of its own, whatever its kind** (`doc/chart-format.md`,
+    // Colour): LibreOffice ignores a data point's style under a series that names none, which
+    // is how every bar and slice this build wrote used to come out in its default palette. A
+    // bar or a line colours per series; a pie's series style carries its first slice's colour
+    // and each slice is a data point of its own; a bar's data points are written only where a
+    // bar carries an override ([`bar_points`]).
     let mut styles: Vec<(String, String)> = Vec::new();
     for (n, series) in chart.series.iter().enumerate() {
+        let own = match chart.kind {
+            ChartKind::Pie => crate::chart::effective_color(chart, n, Some(0)),
+            ChartKind::Bar | ChartKind::Line => crate::chart::effective_color(chart, n, None),
+        };
+        styles.push((format!("gch{n}"), own));
         match chart.kind {
-            crate::chart::ChartKind::Bar | crate::chart::ChartKind::Pie => {
+            ChartKind::Pie => {
                 for point in 0..cell_count(&series.values) {
                     styles.push((
                         format!("gch{n}-{point}"),
@@ -707,12 +747,15 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
                     ));
                 }
             }
-            crate::chart::ChartKind::Line => {
-                styles.push((
-                    format!("gch{n}"),
-                    crate::chart::effective_color(chart, n, None),
-                ));
+            ChartKind::Bar => {
+                for point in bar_overrides(series, cell_count(&series.values)) {
+                    styles.push((
+                        format!("gch{n}-{point}"),
+                        crate::chart::effective_color(chart, n, Some(point)),
+                    ));
+                }
             }
+            ChartKind::Line => {}
         }
     }
     // Each axis needs a style of its own to carry `chart:display-label` — a
@@ -723,7 +766,19 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
     // `false`, so leaving the attribute off when tick labels are shown would hand out a chart
     // that draws differently there than it does here. A chart LibreOffice itself writes states
     // it explicitly too, which is the same conclusion reached from the other direction.
-    let axis_styles: [(&str, &Axis); 2] = [("gchx", &chart.x_axis), ("gchy", &chart.y_axis)];
+    //
+    // A pie's y axis is its angle axis, and its style states `chart:reverse-direction` for the
+    // same reason: LibreOffice draws a pie whose file says nothing counter-clockwise
+    // (`doc/chart-format.md`, Direction), so leaving it off would draw a clockwise pie the
+    // other way round there.
+    let direction = match chart.kind {
+        ChartKind::Pie => format!(" chart:reverse-direction=\"{}\"", chart.clockwise),
+        ChartKind::Bar | ChartKind::Line => String::new(),
+    };
+    let axis_styles: [(&str, &Axis, &str); 2] = [
+        ("gchx", &chart.x_axis, ""),
+        ("gchy", &chart.y_axis, &direction),
+    ];
 
     let _ = writeln!(
         out,
@@ -733,11 +788,11 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
         esc(&chart.width),
         esc(&chart.height)
     );
-    out.push_str("      <draw:object>\n");
-    let _ = writeln!(
-        out,
-        "       <office:document office:mimetype=\"{CHART_MIMETYPE}\" office:version=\"{VERSION}\">"
-    );
+    // The chart's own document is written into `document` and placed afterwards, inline or
+    // as a sub-document ([`Objects`]); its content is the same either way.
+    let whole = out;
+    let mut document = String::new();
+    let out = &mut document;
     out.push_str("        <office:automatic-styles>\n");
     for (name, color) in &styles {
         let _ = writeln!(
@@ -747,11 +802,11 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
              </style:style>"
         );
     }
-    for (name, axis) in axis_styles {
+    for (name, axis, extra) in axis_styles {
         let _ = writeln!(
             out,
             "         <style:style style:name=\"{name}\" style:family=\"chart\">\
-             <style:chart-properties chart:display-label=\"{}\"/>\
+             <style:chart-properties chart:display-label=\"{}\"{extra}/>\
              </style:style>",
             axis.tick_labels
         );
@@ -774,36 +829,50 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
             .as_deref()
             .map(|l| format!(" chart:label-cell-address=\"{}\"", esc(l)))
             .unwrap_or_default();
-        // Only `Line` still carries one colour on the series element itself — `Bar` and
-        // `Pie` colour per point, below.
-        let style = match chart.kind {
-            crate::chart::ChartKind::Line => format!(" chart:style-name=\"gch{n}\""),
-            crate::chart::ChartKind::Bar | crate::chart::ChartKind::Pie => String::new(),
-        };
         let _ = writeln!(
             out,
             "           <chart:series chart:class=\"{}\" \
-             chart:values-cell-range-address=\"{}\"{label}{style}>",
+             chart:values-cell-range-address=\"{}\"{label} chart:style-name=\"gch{n}\">",
             chart.kind.class(),
             esc(&series.values)
         );
+        let count = cell_count(&series.values);
         match chart.kind {
-            // Neither a bar nor a pie has an axis to share one colour down between its own
-            // points, so every one is its own `chart:data-point` and its own colour.
-            crate::chart::ChartKind::Bar | crate::chart::ChartKind::Pie => {
-                for point in 0..cell_count(&series.values) {
+            // A pie's slices are what a reader tells apart, so every one is its own
+            // `chart:data-point` and its own colour.
+            ChartKind::Pie => {
+                for point in 0..count {
                     let _ = writeln!(
                         out,
                         "            <chart:data-point chart:style-name=\"gch{n}-{point}\"/>"
                     );
                 }
             }
+            // A bar series is its own colour; only a bar picked by hand is a point of its own,
+            // and the runs between them are one `chart:repeated` each.
+            ChartKind::Bar => {
+                for run in bar_points(series, count) {
+                    match run {
+                        PointRun::Own(point) => {
+                            let _ = writeln!(
+                                out,
+                                "            <chart:data-point chart:style-name=\"gch{n}-{point}\"/>"
+                            );
+                        }
+                        PointRun::Plain(repeated) => {
+                            let _ = writeln!(
+                                out,
+                                "            <chart:data-point chart:repeated=\"{repeated}\"/>"
+                            );
+                        }
+                    }
+                }
+            }
             // A line series shares one colour across every point in it.
-            crate::chart::ChartKind::Line => {
+            ChartKind::Line => {
                 let _ = writeln!(
                     out,
-                    "            <chart:data-point chart:repeated=\"{}\"/>",
-                    cell_count(&series.values)
+                    "            <chart:data-point chart:repeated=\"{count}\"/>"
                 );
             }
         }
@@ -812,9 +881,82 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart) {
     out.push_str("          </chart:plot-area>\n");
     out.push_str("         </chart:chart>\n");
     out.push_str("        </office:chart></office:body>\n");
-    out.push_str("       </office:document>\n");
-    out.push_str("      </draw:object>\n");
+
+    let out = whole;
+    match objects.form {
+        Form::Package => {
+            let directory = format!("Object {}", objects.documents.len() + 1);
+            let _ = writeln!(
+                out,
+                "      <draw:object xlink:href=\"./{}\" xlink:type=\"simple\" \
+                 xlink:show=\"embed\" xlink:actuate=\"onLoad\"/>",
+                esc(&directory)
+            );
+            // A part of its own, so it declares every namespace it uses rather than
+            // inheriting them from an outer document it is no longer inside.
+            let content = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <office:document-content xmlns:office=\"{OFFICE}\" xmlns:style=\"{STYLE}\" \
+                 xmlns:text=\"{TEXT}\" xmlns:table=\"{TABLE}\" xmlns:draw=\"{DRAW}\" \
+                 xmlns:chart=\"{CHART}\" xmlns:svg=\"{SVG}\" office:version=\"{VERSION}\">\n\
+                 {document}</office:document-content>\n"
+            );
+            objects.documents.push(SubDocument {
+                directory,
+                mimetype: CHART_MIMETYPE,
+                content,
+            });
+        }
+        Form::Flat | Form::Projection => {
+            out.push_str("      <draw:object>\n");
+            let _ = writeln!(
+                out,
+                "       <office:document office:mimetype=\"{CHART_MIMETYPE}\" \
+                 office:version=\"{VERSION}\">"
+            );
+            out.push_str(&document);
+            out.push_str("       </office:document>\n");
+            out.push_str("      </draw:object>\n");
+        }
+    }
     out.push_str("     </draw:frame>\n");
+}
+
+/// The points of a bar series that carry a colour of their own, in order — the only ones that
+/// get a `chart:data-point` style.
+fn bar_overrides(series: &crate::chart::Series, count: usize) -> impl Iterator<Item = usize> + '_ {
+    (0..count).filter(|point| matches!(series.point_colors.get(*point), Some(Some(_))))
+}
+
+/// One `chart:data-point` of a bar series: a point with a colour of its own, or a run of
+/// points that simply wear the series' colour.
+enum PointRun {
+    Own(usize),
+    Plain(usize),
+}
+
+/// A bar series' data points as [`PointRun`]s covering all `count` of them — every override
+/// its own element, the runs between them one `chart:repeated` each, so an untouched series is
+/// a single element however long it is.
+fn bar_points(series: &crate::chart::Series, count: usize) -> Vec<PointRun> {
+    let mut runs = Vec::new();
+    let mut plain = 0;
+    for point in 0..count {
+        match series.point_colors.get(point) {
+            Some(Some(_)) => {
+                if plain > 0 {
+                    runs.push(PointRun::Plain(plain));
+                    plain = 0;
+                }
+                runs.push(PointRun::Own(point));
+            }
+            _ => plain += 1,
+        }
+    }
+    if plain > 0 {
+        runs.push(PointRun::Plain(plain));
+    }
+    runs
 }
 
 /// One `chart:axis` (rng:423): categories (x only, `None` for y), and whatever the [`Axis`]
@@ -881,7 +1023,7 @@ fn cell_count(range: &str) -> usize {
     (rows * cols) as usize
 }
 
-fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
+fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool, objects: &mut Objects) {
     let cols = sheet.used_cols().max(1);
     // A sized or hidden track past the last value still has to be declared, or the layout
     // is lost — widening or hiding an empty column is a perfectly ordinary thing to do.
@@ -893,7 +1035,7 @@ fn table(out: &mut String, sheet: &Sheet, null_date: i64, pool: &Pool) {
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
     // Before the columns, which is where the schema puts it (rng:15961, ahead of
     // rng:15963-15964's `table-columns-and-groups`/`table-rows-and-groups`).
-    write_shapes(out, sheet);
+    write_shapes(out, sheet, objects);
     // Both the column block and the row block are mandatory, even for an all-empty sheet
     // (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring columns
     // of equal width and hidden state are one declaration, which is what the reader's
@@ -1230,7 +1372,7 @@ mod tests {
     use super::*;
 
     fn flat(doc: &Document) -> String {
-        content(doc, Form::Flat)
+        content(doc, Form::Flat).0
     }
 
     #[test]
@@ -1466,7 +1608,12 @@ mod tests {
 
     #[test]
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
-        let bytes = write_package(MIMETYPE, &content(&Document::default(), Form::Package)).unwrap();
+        let bytes = write_package_with(
+            MIMETYPE,
+            &content(&Document::default(), Form::Package).0,
+            &[],
+        )
+        .unwrap();
         // Readers sniff this at a fixed offset without unzipping anything (§1.1): local
         // header is 30 bytes, then the name, then the raw media type. Compression method
         // (offset 8) must be 0 = stored, and the extra-field length (offset 28) zero.

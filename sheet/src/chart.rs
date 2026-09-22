@@ -58,14 +58,15 @@ impl ChartKind {
 pub struct Series {
     pub values: String,
     pub label: Option<String>,
-    /// A user-assigned override for this whole series' colour — consulted for [`ChartKind::Line`]
-    /// only, an ODF colour (`"#rrggbb"`). `None` means "use the default cycle" — see
-    /// [`effective_color`].
+    /// A user-assigned override for this whole series' colour — consulted for
+    /// [`ChartKind::Bar`] and [`ChartKind::Line`], an ODF colour (`"#rrggbb"`). `None` means
+    /// "use the default cycle" — see [`effective_color`].
     #[serde(default)]
     pub color: Option<String>,
-    /// Per-point overrides, sparse by position within this series' own `values` range —
-    /// consulted for [`ChartKind::Bar`] and [`ChartKind::Pie`] only. A missing index, or `None`
-    /// at one, means "use the default cycle colour for this position" — see [`effective_color`].
+    /// Per-point overrides, sparse by position within this series' own `values` range — one
+    /// bar of a [`ChartKind::Bar`] series, or one slice of a [`ChartKind::Pie`]. A missing
+    /// index, or `None` at one, means "no override": the series' colour for a bar, the default
+    /// cycle at that position for a slice — see [`effective_color`].
     #[serde(default)]
     pub point_colors: Vec<Option<String>>,
 }
@@ -149,6 +150,21 @@ pub struct Chart {
     /// The value axis.
     #[serde(default)]
     pub y_axis: Axis,
+    /// Which way a [`ChartKind::Pie`]'s slices run from twelve o'clock — the y (angle) axis'
+    /// `chart:reverse-direction` (rng:10064), `true` meaning clockwise. Meaningless for a bar
+    /// or a line, whose axes this build never reverses.
+    ///
+    /// A **new** chart is clockwise, the direction a clock and a reader both go; a pie a file
+    /// says nothing about reads as counter-clockwise, because that is how LibreOffice draws the
+    /// same bytes (`doc/chart-format.md`, Direction, has the measurement). Absent from a
+    /// serialised chart older than the field, it reads as `true` — the way this build drew
+    /// every pie before it had one.
+    #[serde(default = "clockwise_by_default")]
+    pub clockwise: bool,
+}
+
+fn clockwise_by_default() -> bool {
+    true
 }
 
 impl Chart {
@@ -164,6 +180,7 @@ impl Chart {
             height,
             x_axis: Axis::default(),
             y_axis: Axis::default(),
+            clockwise: clockwise_by_default(),
         }
     }
 }
@@ -171,27 +188,36 @@ impl Chart {
 /// The colour a mark actually gets: a bar, a pie slice, or a line — the single place the
 /// writer and every shell's painter both resolve this, so they can never disagree.
 ///
-/// `point` is `Some` for [`ChartKind::Bar`] and [`ChartKind::Pie`] (one colour per bar or per
-/// slice, an override in [`Series::point_colors`] else the default cycle at that position,
-/// resetting per series — a pie's own rule, applied to bar too); `None` for
-/// [`ChartKind::Line`] (one colour per line, [`Series::color`] else the default cycle at the
-/// series' own position).
+/// **A colour is a series** (`doc/chart-format.md`, Colour): a [`ChartKind::Bar`] or
+/// [`ChartKind::Line`] series is one colour — [`Series::color`], else the default cycle at the
+/// series' own position — so two series side by side are two colours a legend can name. A bar
+/// may still carry an override of its own in [`Series::point_colors`], consulted when `point`
+/// is `Some`; `None` asks for the series' colour, which is what a legend's swatch shows.
+///
+/// A [`ChartKind::Pie`] has one series and its slices are what a reader tells apart, so it
+/// colours per slice: an override, else the default cycle at that slice's position. `point`
+/// must be `Some` for a pie.
 pub fn effective_color(chart: &Chart, series: usize, point: Option<usize>) -> String {
     let s = &chart.series[series];
+    let own = |point: usize| s.point_colors.get(point).cloned().flatten();
     match chart.kind {
-        ChartKind::Bar | ChartKind::Pie => {
-            let point = point.expect("Bar and Pie marks are per-point");
-            s.point_colors
-                .get(point)
-                .cloned()
-                .flatten()
-                .unwrap_or_else(|| series_color(point).to_owned())
+        ChartKind::Pie => {
+            let point = point.expect("a pie's marks are its slices");
+            own(point).unwrap_or_else(|| series_color(point).to_owned())
         }
-        ChartKind::Line => s
-            .color
-            .clone()
-            .unwrap_or_else(|| series_color(series).to_owned()),
+        ChartKind::Bar => point
+            .and_then(own)
+            .unwrap_or_else(|| series_own_color(chart, series)),
+        ChartKind::Line => series_own_color(chart, series),
     }
+}
+
+/// A bar or line series' own colour: its override, else the default cycle at its position.
+fn series_own_color(chart: &Chart, series: usize) -> String {
+    chart.series[series]
+        .color
+        .clone()
+        .unwrap_or_else(|| series_color(series).to_owned())
 }
 
 /// A user-typed range (`B3:B9`, or `Data.B3:B9` for another sheet), turned into the ODF
@@ -336,6 +362,86 @@ pub fn axis_ticks(max: f64) -> Ticks {
 /// becoming a ladder — the number of gridlines a reader can count without counting.
 const TICK_TARGET: f64 = 5.0;
 
+/// One pie slice's arc, in **screen** radians — `0` at three o'clock, a positive angle running
+/// clockwise, which is what a y-down drawing surface (GTK's snapshot, an SVG) calls positive.
+///
+/// `sweep` is signed: positive for a [`Chart::clockwise`] pie, negative for one that runs the
+/// other way, so a shell drawing a fan steps `start + sweep × t` and one drawing an arc reads
+/// its direction off the sign. `point` is the slice's position in the series — the index a
+/// colour ([`effective_color`]) and a category name are looked up by — which is not the
+/// slice's own index, since a zero or negative value takes up no slice at all.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Slice {
+    pub point: usize,
+    pub start: f64,
+    pub sweep: f64,
+}
+
+/// Where a pie's first slice starts: twelve o'clock, in [`Slice`]'s screen radians. Both
+/// directions start there — LibreOffice's counter-clockwise pie as much as a clockwise one
+/// (`doc/chart-format.md`, Direction).
+const TWELVE: f64 = -std::f64::consts::FRAC_PI_2;
+
+/// A pie's slices, in order — its first series' values, each non-positive one taking no slice
+/// (a pie of signed data has no reading), computed **here** rather than in each shell for the
+/// reason [`axis_ticks`] is: two shells sweeping the same pie two ways is two different charts,
+/// which is exactly the bug `doc/chart-format.md`'s Direction section was written about.
+///
+/// Empty when there is nothing to draw — no series, or a total of zero.
+pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
+    let Some((_, values)) = data.series.first() else {
+        return Vec::new();
+    };
+    let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
+    // `max` already dropped every NaN, so what is left to refuse is nothing, or infinity.
+    if total <= 0.0 || !total.is_finite() {
+        return Vec::new();
+    }
+    let direction = match clockwise {
+        true => 1.0,
+        false => -1.0,
+    };
+    let mut start = TWELVE;
+    let mut slices = Vec::new();
+    for (point, &value) in values.iter().enumerate() {
+        if value.is_nan() || value <= 0.0 {
+            continue;
+        }
+        let sweep = direction * (value / total) * std::f64::consts::TAU;
+        slices.push(Slice {
+            point,
+            start,
+            sweep,
+        });
+        start += sweep;
+    }
+    slices
+}
+
+/// Which slice a screen angle falls in (`atan2(dy, dx)` from the pie's centre, in
+/// [`Slice`]'s radians) — the hit-test twin of [`pie_slices`], sharing its arithmetic so a
+/// click and the picture cannot disagree about which slice a point is in. `None` when the pie
+/// has no slices; whether the point is inside the *circle* is the caller's question, since only
+/// the caller knows the radius.
+pub fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usize> {
+    let slices = pie_slices(data, clockwise);
+    // How far round from twelve o'clock the point is, travelling the way this pie runs.
+    let travelled = match clockwise {
+        true => angle - TWELVE,
+        false => TWELVE - angle,
+    }
+    .rem_euclid(std::f64::consts::TAU);
+    let mut reached = 0.0;
+    for slice in &slices {
+        reached += slice.sweep.abs();
+        if travelled < reached {
+            return Some(slice.point);
+        }
+    }
+    // Rounding at the very end of the last slice lands just past the total.
+    slices.last().map(|slice| slice.point)
+}
+
 /// A stored range, read back to the place it names — the reverse of [`parse_range`], used
 /// whenever a chart's own ranges are resolved rather than typed: reading a chart back out to
 /// list or draw it.
@@ -434,8 +540,11 @@ mod tests {
         }
     }
 
+    /// `doc/chart-format.md`, Colour: a colour is a series. Two series side by side are two
+    /// colours, and every bar of one of them is the same colour — the opposite of the rule
+    /// bars used to follow, which made Sales and Costs in one group indistinguishable.
     #[test]
-    fn a_bar_colours_per_point_by_default_like_a_pie() {
+    fn a_bar_colours_per_series_so_two_series_are_two_colours() {
         let mut chart = Chart::new(
             ChartKind::Bar,
             "0cm".into(),
@@ -443,13 +552,79 @@ mod tests {
             "1cm".into(),
             "1cm".into(),
         );
-        chart.series = vec![series("B1:B3")];
+        chart.series = vec![series("B1:B3"), series("C1:C3")];
+        assert_eq!(
+            effective_color(&chart, 0, Some(0)),
+            effective_color(&chart, 0, Some(2)),
+            "every bar of one series is one colour"
+        );
         assert_ne!(
             effective_color(&chart, 0, Some(0)),
-            effective_color(&chart, 0, Some(1))
+            effective_color(&chart, 1, Some(0)),
+            "two series in the same group are told apart"
         );
+        assert_eq!(effective_color(&chart, 1, None), series_color(1));
+        // A bar picked by hand still wins over its series, and only that bar.
+        chart.series[0].point_colors = vec![None, Some("#123456".to_owned())];
+        assert_eq!(effective_color(&chart, 0, Some(1)), "#123456");
         assert_eq!(effective_color(&chart, 0, Some(0)), series_color(0));
-        assert_eq!(effective_color(&chart, 0, Some(1)), series_color(1));
+        // A whole series picked by hand colours every bar in it.
+        chart.series[1].color = Some("#abcdef".to_owned());
+        assert_eq!(effective_color(&chart, 1, Some(2)), "#abcdef");
+    }
+
+    fn pie_of(values: &[f64]) -> ChartData {
+        ChartData {
+            kind: ChartKind::Pie,
+            categories: Vec::new(),
+            series: vec![("".into(), values.to_vec())],
+        }
+    }
+
+    /// Both directions start at twelve o'clock and cover the whole turn; only the sign of the
+    /// sweep differs, which is the whole of what `chart:reverse-direction` changes.
+    #[test]
+    fn a_pie_runs_from_twelve_either_way_round() {
+        let data = pie_of(&[1.0, 3.0]);
+        for clockwise in [true, false] {
+            let slices = pie_slices(&data, clockwise);
+            assert_eq!(slices.len(), 2);
+            assert_eq!(slices[0].start, TWELVE);
+            let turned: f64 = slices.iter().map(|s| s.sweep.abs()).sum();
+            assert!((turned - std::f64::consts::TAU).abs() < 1e-9);
+            assert_eq!(slices[0].sweep > 0.0, clockwise);
+            assert!((slices[1].start - (TWELVE + slices[0].sweep)).abs() < 1e-12);
+        }
+    }
+
+    /// A point a little clockwise of twelve is in the first slice of a clockwise pie and in the
+    /// *last* slice of a counter-clockwise one — the picture LibreOffice drew of a file that
+    /// said nothing, and the reason the direction is a field at all.
+    #[test]
+    fn a_hit_just_right_of_twelve_depends_on_which_way_the_pie_runs() {
+        let data = pie_of(&[1.0, 1.0, 1.0, 1.0]);
+        let just_right_of_twelve = TWELVE + 0.1;
+        let just_left_of_twelve = TWELVE - 0.1;
+        assert_eq!(pie_slice_at(&data, true, just_right_of_twelve), Some(0));
+        assert_eq!(pie_slice_at(&data, false, just_right_of_twelve), Some(3));
+        assert_eq!(pie_slice_at(&data, false, just_left_of_twelve), Some(0));
+        assert_eq!(pie_slice_at(&data, true, just_left_of_twelve), Some(3));
+        // Six o'clock is the boundary between the second and third quarters either way; just
+        // past it, travelling each way, is the third slice.
+        let six = std::f64::consts::FRAC_PI_2;
+        assert_eq!(pie_slice_at(&data, true, six + 0.1), Some(2));
+        assert_eq!(pie_slice_at(&data, false, six - 0.1), Some(2));
+    }
+
+    /// A value that takes no slice is skipped, but the slices after it keep their own positions
+    /// — a colour and a category name are looked up by position, not by slice.
+    #[test]
+    fn a_zero_takes_no_slice_and_moves_nobody_elses_position() {
+        let slices = pie_slices(&pie_of(&[2.0, 0.0, -1.0, 2.0]), true);
+        let points: Vec<usize> = slices.iter().map(|s| s.point).collect();
+        assert_eq!(points, [0, 3]);
+        assert!(pie_slices(&pie_of(&[0.0, 0.0]), true).is_empty());
+        assert!(pie_slices(&pie_of(&[f64::NAN]), true).is_empty());
     }
 
     #[test]

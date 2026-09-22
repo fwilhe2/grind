@@ -44,11 +44,18 @@ outer document, which is the fact this build relies on:
   draws a chart from its own model rather than from a cached picture. Measured from
   `ltwbw2026.ods`, same source document as the `.fods` above.
 
-Because the inline shape is equally valid ODF regardless of physical form (rng:5541's choice
-says nothing about packaging), **this build's writer always uses it — R3 applied to embedding,
-the same call `doc/odt-format.md` made for an image's frame.** A chart this build wrote loads
-into LibreOffice unchanged; a chart LibreOffice wrote and this build re-emits on a regenerating
-save comes back the simpler shape, exactly the trade the image writer already makes.
+The inline shape is equally valid ODF regardless of physical form (rng:5541's choice says
+nothing about packaging), and this build's writer used to use it for both, on the strength of
+that. **Measured (LibreOffice 26.8.0.3, loop C's `charts` case): LibreOffice drops an inline
+chart it finds in a package** — every chart in an `.ods` this build wrote was gone after one
+`soffice --convert-to`, while the same charts in a `.fods` came through. So the writer follows
+the form: **inline in the flat form** (R3 — one element, nothing to cross-reference) and **a
+sub-document in the package form**, `Object N/content.xml` rooted at
+`office:document-content`, pointed at by `draw:object xlink:href="./Object N"` with the
+schema's `xlink:type="simple"` (rng:1621-1640) and declared in the manifest by a directory
+entry carrying the chart's media type (`grind_core::odf::package::SubDocument`). No
+`ObjectReplacements/` preview is written — LibreOffice regenerates one, and nothing here reads
+it. Loop C now checks every chart in both forms, which is how this was found.
 
 ## What a chart's own document holds
 
@@ -68,8 +75,8 @@ save comes back the simpler shape, exactly the trade the image writer already ma
     <chart:series chart:class="chart:bar"              <!-- rng:857 -->
                   chart:values-cell-range-address="Sheet1.C3:Sheet1.C9"
                   chart:label-cell-address="Sheet1.C2:Sheet1.C2">
-     <chart:data-point chart:style-name="ch7"/>         <!-- rng:553, one per bar (Bar, Pie) or
-     <chart:data-point chart:style-name="ch8"/>              a run on a Line series, below -->
+     <chart:data-point chart:style-name="ch7"/>         <!-- rng:553, one per slice (Pie), per
+     <chart:data-point chart:style-name="ch8"/>              bar picked by hand (Bar), or a run -->
     </chart:series>
     <chart:wall/><chart:floor/>                          <!-- rng:958, rng:645 -->
    </chart:plot-area>
@@ -104,38 +111,84 @@ each kind through its own UNO API (`ScTabViewShell`'s chart insertion, `LineDiag
 
 ### Colour — verified, and where this build departs on purpose
 
-A series (line) or a data point (bar and pie — each bar or slice is its own point, since
-neither has an axis to share a colour down between its own points) carries a `style:style
-style:family="chart"` (rng:11059's `style:graphic-properties`, inside it) with:
+A series and a data point each carry a `style:style style:family="chart"` (rng:11059's
+`style:graphic-properties`, inside it) with:
 
 - `draw:fill-color` (rng:10941) — a bar's fill, a line's own colour, a pie slice's fill.
 - `svg:stroke-color` (rng:11102) — a line series repeats its fill colour here too, verified
   from the generated line chart; a bar chart's own style instead carries `draw:stroke="none"`.
+
+**A data point's style is honoured only under a series that names one of its own.** Measured
+(LibreOffice 26.8.0.3, by eye in its own window): a pie and a two-series bar chart this build
+wrote — every bar and slice a `chart:data-point` with its own `chart:style-name`, the series
+naming none — both drew in LibreOffice's *default* palette, every one of those styles ignored.
+Adding `draw:fill="solid"` to them changed nothing. Adding a `chart:style-name` to the
+`chart:series` element itself, and nothing else, made every data point's own colour appear. A
+chart LibreOffice writes always names a series style
+(`sheet/tests/data/samples/Sales Dashboard.fods`, `ch8`), which is why the earlier
+measurement — made from LibreOffice's *output*, never from it reading ours — could not see it.
+So **every series this build writes names a style**, whatever its kind.
 
 LibreOffice's own defaults here are what prompted this feature's aesthetic requirement:
 `#004586`, `#ff420e`, `#ffd320`, … — measured from the same generated charts, and not colours
 this project chooses to reproduce. **This build's writer assigns [`grind_core::style::PALETTE`]
 colours instead** (`doc/small-group.md`'s sibling rule applied to drawing rather than to
 formulas: one named table, not a second one invented for charts), cycling a fixed, curated
-order across a chart's own marks — one colour per bar or per slice (`Bar`, `Pie` — a bar
-colours per point the same way a pie already did, rather than sharing one colour across a
-whole series) or one per line (`Line`) — skipping the neutral entries (`black`, `white`,
-`gray`, `silver`) that read as "no data" rather than as a colour.
-[`grind_sheet::chart::effective_color`] is the single place this resolves, shared by the
-writer and every shell's painter.
+order — skipping the neutral entries (`black`, `white`, `gray`, `silver`) that read as "no
+data" rather than as a colour. **What a colour means is the one decision here, and it is: a
+colour is a series.** A bar and a line colour per series, so two series side by side are two
+colours and the legend can say which is which; a pie colours per slice, since a pie has one
+series and its slices are what a reader tells apart. (Bars used to colour per *point*, the way
+a pie does — which made Sales and Costs in the same group the same colour, a chart nobody
+could read.) [`grind_sheet::chart::effective_color`] is the single place this resolves, shared
+by the writer and every shell's painter.
 
-**A colour a user picks is a sticky override**, stored on [`crate::chart::Series`] (`color`
-for a line series, `point_colors` for a bar or pie point) and written back verbatim on every
-save — `App::set_chart_style` is the one entry point, reachable from the GTK shell (click a
-mark, pick a swatch) and the CLI (`sheet chart-style --series-color`/`--point-color`). Reading
-one back has to tell an override from an untouched default apart without a flag for it: the
-reader compares a mark's own `draw:fill-color` to what `series_color` would compute for that
-position and records an override only when they differ, so a chart nobody has touched keeps
+**A colour a user picks is a sticky override**, stored on [`crate::chart::Series`] (`color` for
+a whole bar or line series, `point_colors` for one bar or one pie slice) and written back
+verbatim on every save — `App::set_chart_style` is the one entry point, reachable from the GTK
+shell (click a mark, pick a swatch) and the CLI (`sheet chart-style --series-color`/
+`--point-color`). A bar series' data points are written only where one carries an override,
+with `chart:repeated` over the runs between them; a pie's are always written, one per slice.
+Reading one back has to tell an override from an untouched default apart without a flag for
+it: the reader compares a series' own `draw:fill-color` to what `series_color` would compute
+for that series (a slice's to what it would compute for that slice, a bar's to its series'
+colour) and records an override only when they differ, so a chart nobody has touched keeps
 re-cycling exactly as before (a series added or removed still reshuffles its neighbours'
 colours) while a colour someone chose stays fixed regardless of what else in the chart
 changes around it. The one gap this leaves: a user who happens to pick the colour the default
 cycle would have produced anyway is indistinguishable from having picked nothing — harmless,
 since the effective colour is identical either way.
+
+### Direction — a pie says which way it goes, and this build always says so
+
+A pie has an *angle* axis, the chart's y axis, and which way round it runs is that axis'
+`chart:reverse-direction` (rng:10064), a `style:chart-properties` attribute on the style the
+axis names — the same place `chart:display-label` lives, below. Measured (LibreOffice
+26.8.0.3, by eye, the same four-slice pie written three ways):
+
+| The y axis' style says | LibreOffice draws |
+|---|---|
+| nothing | **counter-clockwise** from twelve o'clock — the first slice just *left* of twelve |
+| `chart:reverse-direction="true"` | **clockwise** from twelve o'clock — the first slice just right of twelve |
+
+So a pie whose file says nothing runs right to left there, and that is what a pie this build
+wrote used to do: drawn clockwise in this window, counter-clockwise in LibreOffice, from the
+same bytes. The fix has two halves, like `chart:display-label`'s:
+
+- **The writer always states it** on a pie's y axis, whichever way it goes, so no reader has a
+  default to disagree about. A **new** pie is clockwise ([`grind_sheet::Chart::clockwise`]) —
+  a product decision, the direction a clock and a reader both go.
+- **The reader takes the oracle's default**: a pie whose file says nothing reads as
+  counter-clockwise, because that is how LibreOffice draws the same bytes, and a pie drawn one
+  way here and the other way there is the bug this section exists for.
+
+A bar or line chart's own axes may carry the attribute too (LibreOffice writes
+`chart:reverse-direction="false"` on both, `Sales Dashboard.fods`'s `ch4`/`ch5`); on the
+category axis it would run the categories right to left. This build neither reads nor writes
+it there — a named gap, and one no chart this build makes can reach, since it only writes the
+attribute for a pie. The slices' own angles are computed once, in
+[`grind_sheet::chart::pie_slices`], for the reason [`grind_sheet::axis_ticks`] is: two shells
+sweeping the same pie two ways is two different charts.
 
 ### The axes — three things, three places in the file
 

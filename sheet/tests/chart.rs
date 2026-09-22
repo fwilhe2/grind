@@ -508,3 +508,186 @@ fn editing_a_chart_that_does_not_exist_is_an_error() {
         .is_err()
     );
 }
+
+/// A chart over [`filled`]'s table, at a fixed place — the tests below care about what the
+/// chart *is*, not where it sits, so the one call that says where lives here.
+fn add(app: &App, kind: ChartKind, series: &[(&str, Option<&str>)]) {
+    app.add_chart(
+        0,
+        kind,
+        Some("A2:A4"),
+        series,
+        "1cm",
+        "1cm",
+        "10cm",
+        "8cm",
+        ChartAxis::default(),
+        ChartAxis::default(),
+    )
+    .unwrap();
+}
+
+/// A document written and read back in `form`.
+fn reopened(app: &App, form: Form) -> App {
+    let bytes = app.save_bytes(form).expect("writes");
+    let again = App::new();
+    again
+        .open_bytes("test", &bytes)
+        .expect("reads its own chart back");
+    again
+}
+
+/// `doc/chart-format.md`, Direction: a new pie runs clockwise, and a pie turned round keeps
+/// running the way it was turned — both through a save, in both physical forms.
+#[test]
+fn a_pies_direction_survives_a_save_and_reopen_either_way_round() {
+    for form in [Form::Flat, Form::Package] {
+        let app = App::new();
+        filled(&app);
+        add(&app, ChartKind::Pie, &[("B2:B4", None)]);
+        assert!(
+            app.charts(0).unwrap()[0].clockwise,
+            "a new pie is clockwise"
+        );
+        assert!(
+            reopened(&app, form).charts(0).unwrap()[0].clockwise,
+            "{form:?}"
+        );
+
+        // Turned round the only way a file can say so, then carried through a save.
+        let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+        let counter = flat.replace(
+            "chart:reverse-direction=\"true\"",
+            "chart:reverse-direction=\"false\"",
+        );
+        let back = App::new();
+        back.open_bytes("test.fods", counter.as_bytes()).unwrap();
+        assert!(!back.charts(0).unwrap()[0].clockwise);
+        assert!(
+            !reopened(&back, form).charts(0).unwrap()[0].clockwise,
+            "a counter-clockwise pie stays one ({form:?})"
+        );
+    }
+}
+
+/// A pie whose file says nothing about its direction reads as LibreOffice draws it —
+/// counter-clockwise — rather than as this build's own default, which is what made the same
+/// bytes draw two different pies in two programs.
+#[test]
+fn a_pie_whose_file_says_nothing_reads_counter_clockwise() {
+    let app = App::new();
+    filled(&app);
+    add(&app, ChartKind::Pie, &[("B2:B4", None)]);
+    let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    let silent = flat.replace(" chart:reverse-direction=\"true\"", "");
+    assert_ne!(silent, flat, "the writer states the direction");
+    let back = App::new();
+    back.open_bytes("test.fods", silent.as_bytes()).unwrap();
+    assert!(!back.charts(0).unwrap()[0].clockwise);
+}
+
+/// The measurement behind `doc/chart-format.md`'s Colour section: LibreOffice ignores a data
+/// point's style under a series that names none, so every series written names one.
+#[test]
+fn every_series_written_names_a_style_of_its_own() {
+    for kind in [ChartKind::Bar, ChartKind::Line, ChartKind::Pie] {
+        let app = App::new();
+        filled(&app);
+        add(&app, kind, &[("B2:B4", Some("B1")), ("B2:B4", None)]);
+        let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+        let series: Vec<&str> = flat
+            .split("<chart:series ")
+            .skip(1)
+            .map(|rest| &rest[..rest.find('>').unwrap()])
+            .collect();
+        assert_eq!(series.len(), 2, "{kind:?}");
+        for attributes in series {
+            assert!(
+                attributes.contains("chart:style-name=\""),
+                "{kind:?}: a series with no style of its own: {attributes}"
+            );
+        }
+    }
+}
+
+/// A bar series picked a colour by hand keeps it, and one nobody touched comes back with no
+/// override — still following the cycle, so adding a series in front of it still moves it on.
+#[test]
+fn a_bar_series_colour_survives_a_save_and_an_untouched_one_stays_untouched() {
+    let app = App::new();
+    filled(&app);
+    add(
+        &app,
+        ChartKind::Bar,
+        &[("B2:B4", Some("B1")), ("B2:B4", None)],
+    );
+    let mut series = app.charts(0).unwrap()[0].series.clone();
+    series[1].color = Some("#abcdef".to_owned());
+    app.set_chart_style(0, 0, ChartAxis::default(), ChartAxis::default(), series)
+        .unwrap();
+    for form in [Form::Flat, Form::Package] {
+        let back = reopened(&app, form);
+        let series = &back.charts(0).unwrap()[0].series;
+        assert_eq!(series[0].color, None, "{form:?}");
+        assert!(
+            series[0].point_colors.iter().all(Option::is_none),
+            "{form:?}"
+        );
+        assert_eq!(series[1].color.as_deref(), Some("#abcdef"), "{form:?}");
+        assert!(
+            series[1].point_colors.iter().all(Option::is_none),
+            "{form:?}"
+        );
+    }
+}
+
+/// A bar chart this build wrote *before* a colour was a series — every bar its own data-point
+/// style cycling per point, the series naming no style — reads back untouched rather than with
+/// every bar's old default mistaken for a colour somebody picked. The bytes are that writer's
+/// own shape, spelled out so the test does not depend on a writer that no longer exists.
+#[test]
+fn a_bar_chart_written_per_point_by_an_older_build_reads_back_untouched() {
+    let app = App::new();
+    filled(&app);
+    add(&app, ChartKind::Bar, &[("B2:B4", None)]);
+    let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    let cycle = [
+        grind_sheet::series_color(0),
+        grind_sheet::series_color(1),
+        grind_sheet::series_color(2),
+    ];
+    let styles: String = cycle
+        .iter()
+        .enumerate()
+        .map(|(point, hex)| {
+            format!(
+                "<style:style style:name=\"old0-{point}\" style:family=\"chart\">\
+                 <style:graphic-properties svg:stroke-color=\"{hex}\" draw:fill-color=\"{hex}\"/>\
+                 </style:style>"
+            )
+        })
+        .collect();
+    let points: String = (0..3)
+        .map(|point| format!("<chart:data-point chart:style-name=\"old0-{point}\"/>"))
+        .collect();
+    let start = flat.find("<chart:series ").unwrap();
+    let end = flat.find("</chart:series>").unwrap() + "</chart:series>".len();
+    let old_series = format!(
+        "<chart:series chart:class=\"chart:bar\" \
+         chart:values-cell-range-address=\"Sheet1.B2:Sheet1.B4\">{points}</chart:series>"
+    );
+    let old = format!("{}{old_series}{}", &flat[..start], &flat[end..]).replace(
+        "<office:automatic-styles>\n         <style:style style:name=\"gch0\"",
+        &format!("<office:automatic-styles>{styles}<style:style style:name=\"gch0\""),
+    );
+    assert!(old.contains("old0-2"), "the old styles went in");
+    let back = App::new();
+    back.open_bytes("test.fods", old.as_bytes()).unwrap();
+    let series = &back.charts(0).unwrap()[0].series[0];
+    assert_eq!(series.color, None);
+    assert!(
+        series.point_colors.iter().all(Option::is_none),
+        "an old default read as an override: {:?}",
+        series.point_colors
+    );
+}

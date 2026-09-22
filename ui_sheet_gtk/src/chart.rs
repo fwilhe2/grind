@@ -30,7 +30,9 @@ use libadwaita::prelude::*;
 
 use gtk::{gdk, graphene, gsk};
 
-use grind_sheet::{Chart, ChartAxis, ChartData, ChartKind, Ticks, axis_ticks};
+use grind_sheet::{
+    Chart, ChartAxis, ChartData, ChartKind, Ticks, axis_ticks, pie_slice_at, pie_slices,
+};
 
 use crate::geom::Rect;
 
@@ -124,7 +126,7 @@ pub fn draw(
         match data.kind {
             ChartKind::Bar => draw_bar(snapshot, &layout, data, paint.color),
             ChartKind::Line => draw_line(snapshot, &layout, data, paint.color),
-            ChartKind::Pie => draw_pie(snapshot, plot, data, paint.color),
+            ChartKind::Pie => draw_pie(snapshot, plot, chart, data, paint.color),
         }
         draw_ticks(widget, snapshot, &layout, chart, data, &measure, paint);
     }
@@ -577,78 +579,57 @@ fn distance_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
 /// fine enough that the seam between segments is not visible.
 const PIE_SAMPLES_PER_TURN: f64 = 96.0;
 
-/// One pie slice's own start and sweep angle, radians from 12 o'clock — shared by
-/// [`draw_pie`] and [`pie_hit`].
-fn pie_slices(data: &ChartData) -> Option<Vec<(usize, f64, f64)>> {
-    let (_, values) = data.series.first()?;
-    let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
-    if total <= 0.0 {
-        return None;
-    }
-    let mut angle = -std::f64::consts::FRAC_PI_2;
-    let mut slices = Vec::new();
-    for (i, &value) in values.iter().enumerate() {
-        let value = value.max(0.0);
-        if value <= 0.0 {
-            continue;
-        }
-        let sweep = (value / total) * std::f64::consts::TAU;
-        slices.push((i, angle, sweep));
-        angle += sweep;
-    }
-    Some(slices)
+/// A pie's centre and radius within its plot — shared by [`draw_pie`] and [`pie_hit`].
+fn pie_circle(plot: Rect) -> (f64, f64, f64) {
+    (
+        plot.x + plot.w / 2.0,
+        plot.y + plot.h / 2.0,
+        (plot.w.min(plot.h) / 2.0).max(1.0),
+    )
 }
 
-fn draw_pie(snapshot: &gtk::Snapshot, plot: Rect, data: &ChartData, color: &MarkColor) {
-    let Some(slices) = pie_slices(data) else {
-        return;
-    };
-    let cx = plot.x + plot.w / 2.0;
-    let cy = plot.y + plot.h / 2.0;
-    let radius = (plot.w.min(plot.h) / 2.0).max(1.0);
-    for (i, angle, sweep) in slices {
-        let steps =
-            ((sweep / (std::f64::consts::TAU / PIE_SAMPLES_PER_TURN)).ceil() as usize).max(1);
+/// Every slice as [`grind_sheet::pie_slices`] sweeps it — the core's arithmetic, so this
+/// window and the browser cannot run the same pie two ways round (`doc/chart-format.md`,
+/// Direction). `sweep` is signed, and stepping `start + sweep × t` draws either direction.
+fn draw_pie(
+    snapshot: &gtk::Snapshot,
+    plot: Rect,
+    chart: &Chart,
+    data: &ChartData,
+    color: &MarkColor,
+) {
+    let (cx, cy, radius) = pie_circle(plot);
+    for slice in pie_slices(data, chart.clockwise) {
+        let steps = ((slice.sweep.abs() / (std::f64::consts::TAU / PIE_SAMPLES_PER_TURN)).ceil()
+            as usize)
+            .max(1);
         let path = gsk::PathBuilder::new();
         path.move_to(cx as f32, cy as f32);
         for step in 0..=steps {
-            let a = angle + sweep * (step as f64 / steps as f64);
+            let a = slice.start + slice.sweep * (step as f64 / steps as f64);
             path.line_to(
                 (cx + radius * a.cos()) as f32,
                 (cy + radius * a.sin()) as f32,
             );
         }
         path.close();
-        snapshot.append_fill(&path.to_path(), gsk::FillRule::Winding, &color(0, Some(i)));
+        snapshot.append_fill(
+            &path.to_path(),
+            gsk::FillRule::Winding,
+            &color(0, Some(slice.point)),
+        );
     }
 }
 
-/// Which pie slice, if any, `(x, y)` lands in.
-fn pie_hit(plot: Rect, data: &ChartData, x: f64, y: f64) -> Option<usize> {
-    let slices = pie_slices(data)?;
-    let cx = plot.x + plot.w / 2.0;
-    let cy = plot.y + plot.h / 2.0;
-    let radius = (plot.w.min(plot.h) / 2.0).max(1.0);
+/// Which pie slice, if any, `(x, y)` lands in — [`grind_sheet::pie_slice_at`] once the point
+/// is known to be inside the circle.
+fn pie_hit(plot: Rect, chart: &Chart, data: &ChartData, x: f64, y: f64) -> Option<usize> {
+    let (cx, cy, radius) = pie_circle(plot);
     let (dx, dy) = (x - cx, y - cy);
     if (dx * dx + dy * dy).sqrt() > radius {
         return None;
     }
-    let mut a = dy.atan2(dx) + std::f64::consts::FRAC_PI_2;
-    if a < 0.0 {
-        a += std::f64::consts::TAU;
-    }
-    for (i, angle, sweep) in slices {
-        let mut start = angle + std::f64::consts::FRAC_PI_2;
-        if start < 0.0 {
-            start += std::f64::consts::TAU;
-        }
-        let end = start + sweep;
-        if a >= start && a < end || (end > std::f64::consts::TAU && a < end - std::f64::consts::TAU)
-        {
-            return Some(i);
-        }
-    }
-    None
+    pie_slice_at(data, chart.clockwise, dy.atan2(dx))
 }
 
 /// Which mark, if any, a point in widget space hits — `(series, point)`, `point` always
@@ -668,7 +649,7 @@ pub fn mark_at(
     match data.kind {
         ChartKind::Bar => bar_hit(&layout, data, x, y).map(|(s, p)| (s, Some(p))),
         ChartKind::Line => line_hit(&layout, data, x, y).map(|s| (s, None)),
-        ChartKind::Pie => pie_hit(layout.plot, data, x, y).map(|p| (0, Some(p))),
+        ChartKind::Pie => pie_hit(layout.plot, chart, data, x, y).map(|p| (0, Some(p))),
     }
 }
 

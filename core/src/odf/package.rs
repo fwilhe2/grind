@@ -107,11 +107,45 @@ fn is_encrypted<R: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<
 /// declares it in the manifest and each content part declares it again on its root.
 pub const VERSION: &str = "1.4";
 
+/// A document inside the package — an embedded object's own document: a directory of its own,
+/// holding a `content.xml` rooted at `office:document-content`, and declared in the manifest by
+/// a directory entry that carries its media type. **\[GENERIC\]** — what kind of document it
+/// is, and what it says, are the caller's business; a spreadsheet's charts are the one caller.
+///
+/// This is how LibreOffice writes an embedded chart in a package (`Object 1/content.xml`,
+/// `doc/chart-format.md`), and the only way it *reads* one there: an inline `office:document`
+/// inside a package's `draw:object` is valid ODF, and LibreOffice drops it on load.
+pub struct SubDocument {
+    /// The directory, with no leading `./` and no trailing `/` — `Object 1`.
+    pub directory: String,
+    /// The sub-document's own media type, which is what its manifest entry declares.
+    pub mimetype: &'static str,
+    /// Its `content.xml`, complete.
+    pub content: String,
+}
+
 /// `META-INF/manifest.xml` for a minimal package: the document itself and `content.xml`.
 ///
 /// Minimal by intent (§1.4) — a manifest lists what the package *holds*, and this writer holds
 /// two entries. Listing a `styles.xml` that is not there would be a lie a reader acts on.
 pub fn manifest(mimetype: &str) -> String {
+    manifest_with(mimetype, &[])
+}
+
+/// [`manifest`], plus two entries per [`SubDocument`]: its directory, carrying its media type,
+/// and the `content.xml` inside it.
+fn manifest_with(mimetype: &str, subdocuments: &[SubDocument]) -> String {
+    let mut entries = String::new();
+    for sub in subdocuments {
+        entries.push_str(&format!(
+            "\x20<manifest:file-entry manifest:full-path=\"{dir}/\" manifest:version=\"{VERSION}\" \
+             manifest:media-type=\"{mimetype}\"/>\n\
+             \x20<manifest:file-entry manifest:full-path=\"{dir}/content.xml\" \
+             manifest:media-type=\"text/xml\"/>\n",
+            dir = crate::odf::xml::esc(&sub.directory),
+            mimetype = sub.mimetype,
+        ));
+    }
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <manifest:manifest \
@@ -121,6 +155,7 @@ pub fn manifest(mimetype: &str) -> String {
          manifest:media-type=\"{mimetype}\"/>\n\
          \x20<manifest:file-entry manifest:full-path=\"content.xml\" \
          manifest:media-type=\"text/xml\"/>\n\
+         {entries}\
          </manifest:manifest>\n"
     )
 }
@@ -131,6 +166,15 @@ pub fn manifest(mimetype: &str) -> String {
 /// `mimetype` goes first, **stored uncompressed**, raw bytes, no trailing newline: readers
 /// sniff it at a fixed offset before parsing any XML, so this is not somewhere to be creative.
 pub fn write_package(mimetype: &str, content: &str) -> Result<Vec<u8>> {
+    write_package_with(mimetype, content, &[])
+}
+
+/// [`write_package`], with [`SubDocument`]s beside the content.
+pub fn write_package_with(
+    mimetype: &str,
+    content: &str,
+    subdocuments: &[SubDocument],
+) -> Result<Vec<u8>> {
     use std::io::Write as _;
 
     let zip = |e: zip::result::ZipError| Error::Package(e.to_string());
@@ -145,10 +189,16 @@ pub fn write_package(mimetype: &str, content: &str) -> Result<Vec<u8>> {
         .compression_method(zip::CompressionMethod::Deflated);
     w.start_file("META-INF/manifest.xml", deflated)
         .map_err(zip)?;
-    w.write_all(manifest(mimetype).as_bytes())?;
+    w.write_all(manifest_with(mimetype, subdocuments).as_bytes())?;
 
     w.start_file("content.xml", deflated).map_err(zip)?;
     w.write_all(content.as_bytes())?;
+
+    for sub in subdocuments {
+        w.start_file(format!("{}/content.xml", sub.directory), deflated)
+            .map_err(zip)?;
+        w.write_all(sub.content.as_bytes())?;
+    }
 
     Ok(w.finish().map_err(zip)?.into_inner())
 }
@@ -180,6 +230,33 @@ mod tests {
         );
         assert_eq!(&bytes[30..38], b"mimetype");
         assert_eq!(&bytes[38..38 + MEDIA.len()], MEDIA.as_bytes());
+    }
+
+    /// A sub-document is a directory the manifest declares with its own media type, and a
+    /// `content.xml` inside it a reader can reach by path.
+    #[test]
+    fn a_sub_document_is_declared_and_readable() {
+        const CHART: &str = "application/vnd.oasis.opendocument.chart";
+        let bytes = write_package_with(
+            "application/vnd.oasis.opendocument.spreadsheet",
+            "<x/>",
+            &[SubDocument {
+                directory: "Object 1".to_owned(),
+                mimetype: CHART,
+                content: "<y/>".to_owned(),
+            }],
+        )
+        .expect("writes");
+        assert_eq!(
+            part(&bytes, "Object 1/content.xml").as_deref(),
+            Some(&b"<y/>"[..])
+        );
+        let manifest = String::from_utf8(part(&bytes, "META-INF/manifest.xml").unwrap()).unwrap();
+        assert!(manifest.contains(&format!(
+            "manifest:full-path=\"Object 1/\" manifest:version=\"{VERSION}\" \
+             manifest:media-type=\"{CHART}\""
+        )));
+        assert!(manifest.contains("manifest:full-path=\"Object 1/content.xml\""));
     }
 
     #[test]

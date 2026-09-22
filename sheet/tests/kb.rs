@@ -256,6 +256,83 @@ fn everything_we_write_is_valid_odf() {
     );
 }
 
+/// Charts, which no R7 document has: a bar with a series and a bar coloured by hand, a line,
+/// and a pie — flat, and as a package whose charts are sub-documents of their
+/// own (`doc/chart-format.md`), each of which must validate as the document it is.
+#[test]
+fn every_chart_we_write_is_valid_odf() {
+    use grind_sheet::{App, ChartAxis, ChartKind, Pos};
+    let app = App::new();
+    for (row, (name, a, b)) in [("Jan", 10.0, 4.0), ("Feb", 20.0, 6.0)].iter().enumerate() {
+        app.set_cell(0, Pos::new(row as u32, 0), *name).unwrap();
+        app.set_cell(0, Pos::new(row as u32, 1), *a).unwrap();
+        app.set_cell(0, Pos::new(row as u32, 2), *b).unwrap();
+    }
+    let axis = ChartAxis {
+        label: Some("Amount".into()),
+        gridlines: true,
+        ..ChartAxis::default()
+    };
+    for kind in [ChartKind::Bar, ChartKind::Line, ChartKind::Pie] {
+        app.add_chart(
+            0,
+            kind,
+            Some("A1:A2"),
+            &[("B1:B2", Some("B1")), ("C1:C2", None)],
+            "1cm",
+            "1cm",
+            "8cm",
+            "6cm",
+            axis.clone(),
+            axis.clone(),
+        )
+        .unwrap();
+    }
+    let mut series = app.charts(0).unwrap()[0].series.clone();
+    series[0].color = Some("#112233".into());
+    series[1].point_colors = vec![None, Some("#445566".into())];
+    app.set_chart_style(0, 0, axis.clone(), axis, series)
+        .unwrap();
+
+    let dir = std::env::temp_dir().join(format!("sheet-kb-charts-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut parts = vec![(
+        "charts.fods".to_owned(),
+        app.save_bytes(Form::Flat).unwrap(),
+    )];
+    let package = app.save_bytes(Form::Package).unwrap();
+    for name in [
+        "content.xml",
+        "Object 1/content.xml",
+        "Object 2/content.xml",
+        "Object 3/content.xml",
+    ] {
+        let bytes = grind_sheet::odf::package::part(&package, name)
+            .unwrap_or_else(|| panic!("the package has no {name}"));
+        parts.push((name.replace('/', "-"), bytes));
+    }
+    let mut failures = Vec::new();
+    for (name, bytes) in parts {
+        let path = dir.join(&name);
+        std::fs::write(&path, bytes).unwrap();
+        match jing(&path) {
+            None => {
+                eprintln!("skipping: no `jing` on PATH; schema validity unchecked");
+                let _ = std::fs::remove_dir_all(&dir);
+                return;
+            }
+            Some(Ok(())) => {}
+            Some(Err(report)) => failures.push(format!("{name}:\n{report}")),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        failures.is_empty(),
+        "charts we wrote are not valid ODF 1.4:\n{}",
+        failures.join("\n")
+    );
+}
+
 // --- R3 and R6, which are the same measurement read two ways -----------------------------
 
 /// R3: a document carries only the boilerplate it uses.
