@@ -104,6 +104,14 @@ impl Doc {
         self.imp().selection()
     }
 
+    /// Select `from..to` with the caret at `to` — a found word, say. Scrolled into view like
+    /// any other caret move.
+    pub fn select(&self, from: Caret, to: Caret) {
+        let imp = self.imp();
+        imp.anchor.set(Some(from));
+        imp.move_caret(to, true);
+    }
+
     /// Select the whole document, first block to last.
     pub fn select_all(&self) {
         let imp = self.imp();
@@ -1018,6 +1026,7 @@ mod imp {
                 Action::Split => self.split(),
                 Action::EraseBack => self.erase_back(),
                 Action::EraseForward => self.erase_forward(),
+                Action::EraseWord(delta) => self.erase_word(delta),
                 // Tab is structural where there is structure to change and a `text:tab`
                 // otherwise, which is the rule every word processor's Tab follows: it nests a
                 // list item, it indents a block from its front, and in the middle of a
@@ -1075,6 +1084,10 @@ mod imp {
                 Motion::Char(delta) => {
                     self.goal_x.set(None);
                     self.move_caret(self.stepped(&app, delta), true);
+                }
+                Motion::Word(delta) => {
+                    self.goal_x.set(None);
+                    self.move_caret(self.word_stepped(&app, delta), true);
                 }
                 Motion::Line(steps) | Motion::Page(steps) => {
                     // A page is however many body lines fit, less one so that the line you
@@ -1153,6 +1166,30 @@ mod imp {
                 };
             }
             caret
+        }
+
+        /// Where a word motion from the caret lands: the far edge of a word in this block, or —
+        /// with none left in that direction — the end of this block, then the near end of the
+        /// next, which is where a further press goes on from. `grind_text::word` owns what a
+        /// word is.
+        fn word_stepped(&self, app: &App, delta: i32) -> Caret {
+            let caret = self.caret.get();
+            let text = app.input_text(caret.block).unwrap_or_default();
+            let len = text.chars().count();
+            let within = match delta > 0 {
+                true => grind_text::word::next_end(&text, caret.offset),
+                false => grind_text::word::previous_start(&text, caret.offset),
+            };
+            let at = |offset| Caret {
+                block: caret.block,
+                offset,
+            };
+            match within {
+                Some(offset) => at(offset),
+                None if delta > 0 && caret.offset < len => at(len),
+                None if delta < 0 && caret.offset > 0 => at(0),
+                None => self.stepped(app, delta),
+            }
         }
 
         fn block_len(&self, app: &App, index: usize) -> usize {
@@ -1440,6 +1477,29 @@ mod imp {
                 return;
             }
             match app.erase(from, caret) {
+                Ok(_) => self.move_caret(from, true),
+                Err(error) => self.notice(error.to_string()),
+            }
+        }
+
+        /// Ctrl+Backspace and Ctrl+Delete: erase as far as the word motion the same way would
+        /// land — or, over a selection, just the selection, as the plain keys do.
+        pub fn erase_word(&self, delta: i32) {
+            let Some(app) = self.app() else { return };
+            if self.selection().is_some() {
+                return match delta > 0 {
+                    true => self.erase_forward(),
+                    false => self.erase_back(),
+                };
+            }
+            self.anchor.set(None);
+            let caret = self.caret.get();
+            let target = self.word_stepped(&app, delta);
+            let (from, to) = (caret.min(target), caret.max(target));
+            if from == to {
+                return;
+            }
+            match app.erase(from, to) {
                 Ok(_) => self.move_caret(from, true),
                 Err(error) => self.notice(error.to_string()),
             }
@@ -1932,6 +1992,14 @@ mod tests {
             a_style_pressed_at_a_bare_caret_is_what_is_typed_next,
         ),
         (
+            "Ctrl+arrows move by word and Ctrl+Backspace erases one",
+            ctrl_arrows_move_by_word_and_ctrl_backspace_erases_one,
+        ),
+        (
+            "the find bar selects each hit in turn, ignoring case",
+            the_find_bar_selects_each_hit_in_turn,
+        ),
+        (
             "a Title style is drawn in a larger face than the body",
             a_title_style_is_drawn_in_a_larger_face_than_the_body,
         ),
@@ -2333,6 +2401,53 @@ mod tests {
             true,
         );
         assert_eq!(doc.pending(), None, "a caret that moves forgets it");
+    }
+
+    /// Ctrl+Right to the end of each word, across into the next block, and Ctrl+Backspace
+    /// taking back exactly the word before the caret.
+    fn ctrl_arrows_move_by_word_and_ctrl_backspace_erases_one() {
+        use crate::keymap::Motion;
+        let (doc, app) = shell(&["don't panic", "now"]);
+        let imp = doc.imp();
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        let at = |block, offset| Caret { block, offset };
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            imp.go(Motion::Word(1), false);
+            seen.push(doc.caret());
+        }
+        assert_eq!(seen, [at(0, 5), at(0, 11), at(1, 0), at(1, 3)]);
+        imp.go(Motion::Word(-1), true);
+        assert_eq!(
+            doc.selection(),
+            Some((at(1, 0), at(1, 3))),
+            "Shift extends by word"
+        );
+
+        doc.go_to(at(0, 11));
+        imp.erase_word(-1);
+        assert_eq!(text(&app), "don't \nnow");
+    }
+
+    /// Ctrl+F, typed lowercase, finds the capitalised word, and Enter walks on and wraps.
+    fn the_find_bar_selects_each_hit_in_turn() {
+        let (doc, app) = shell(&["Appendix one", "see the appendix", "APPENDIX"]);
+        let find = crate::find::Find::new(&app, &doc);
+        find.open();
+        find.search("appendix");
+        let at = |block, offset| Caret { block, offset };
+        assert_eq!(doc.selection(), Some((at(0, 0), at(0, 8))));
+        find.next();
+        assert_eq!(doc.selection(), Some((at(1, 8), at(1, 16))));
+        find.next();
+        find.next();
+        assert_eq!(doc.selection(), Some((at(0, 0), at(0, 8))), "wrapped");
     }
 
     /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes

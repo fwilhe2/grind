@@ -165,6 +165,8 @@ had no width and therefore no lines.
   the span agrees about. What a toolbar reads before it writes, and the reason a mixed selection
   shows neither state: agreement is the answer, not the first character's opinion
 - `find` — `grind text find <needle>`, with a `p12+40` address per hit
+- `find_ignoring_case` — `grind text find -i <needle>`, the same ignoring case, which is what
+  the GNOME window's find bar asks
 - `lint` — `grind text lint`, and `grind lint` at the suite level. `doc/dsl.md` §4.3's rules
   over one document: a heading level skipped, a link to a bookmark nothing declares, a style name
   the document never declares, an off-palette colour (`--hints`) and anything a `.grind` of it

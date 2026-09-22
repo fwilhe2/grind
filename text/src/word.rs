@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which word a position is in — what a double-click selects.
+//! Which word a position is in — what a double-click selects — and where the next one ends,
+//! which is what Ctrl+Right moves to.
 //!
 //! Here rather than in a shell for the reason `format.rs` is: four shells each deciding where a
 //! word ends is four answers, and a person who double-clicks `don't` in one window and gets a
@@ -42,6 +43,42 @@ pub fn around(text: &str, offset: usize) -> (usize, usize) {
         end += 1;
     }
     (start, end)
+}
+
+/// Where Ctrl+Right lands from `offset`: the end of the word the caret is in or the next one,
+/// with whatever is between skipped. `None` when there is no word left in `text` — the caller's
+/// cue to go on to the next block, since a word motion crosses a paragraph boundary the way a
+/// character motion does.
+pub fn next_end(text: &str, offset: usize) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = offset.min(chars.len());
+    while at < chars.len() && unit(&chars, at) != Unit::Word {
+        at += 1;
+    }
+    if at == chars.len() {
+        return None;
+    }
+    while at < chars.len() && unit(&chars, at) == Unit::Word {
+        at += 1;
+    }
+    Some(at)
+}
+
+/// Where Ctrl+Left lands from `offset`: the start of the word the caret is in or the one before
+/// it. `None` when there is no word before the caret — go to the previous block.
+pub fn previous_start(text: &str, offset: usize) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = offset.min(chars.len());
+    while at > 0 && unit(&chars, at - 1) != Unit::Word {
+        at -= 1;
+    }
+    if at == 0 {
+        return None;
+    }
+    while at > 0 && unit(&chars, at - 1) == Unit::Word {
+        at -= 1;
+    }
+    Some(at)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -105,6 +142,30 @@ mod tests {
         assert_eq!(pick("naïve café", 10), "café");
         assert_eq!(pick("naïve café", 99), "café");
         assert_eq!(around("", 3), (0, 0));
+    }
+
+    /// Ctrl+Right and Ctrl+Left, the way a GNOME text field moves: to the end of a word going
+    /// forward, to its start going back, punctuation and spaces skipped, `don't` one word.
+    #[test]
+    fn a_word_motion_stops_at_the_far_edge_of_each_word() {
+        let text = "Don't panic, it's fine.";
+        assert_eq!(next_end(text, 0), Some(5));
+        assert_eq!(
+            next_end(text, 5),
+            Some(11),
+            "past the space to the end of `panic`"
+        );
+        assert_eq!(next_end(text, 11), Some(17));
+        assert_eq!(next_end(text, 22), None, "only a full stop left");
+        assert_eq!(previous_start(text, 23), Some(18));
+        assert_eq!(previous_start(text, 18), Some(13));
+        assert_eq!(
+            previous_start(text, 3),
+            Some(0),
+            "from inside a word, its start"
+        );
+        assert_eq!(previous_start(text, 0), None);
+        assert_eq!(previous_start("  ", 2), None);
     }
 
     #[test]

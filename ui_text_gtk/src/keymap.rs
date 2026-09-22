@@ -48,6 +48,9 @@ pub struct Mods {
 pub enum Motion {
     /// One character, crossing into the neighbouring block at either end.
     Char(i32),
+    /// Ctrl+Left and Ctrl+Right: to the start of this word or the one before, to the end of
+    /// this word or the next — `grind_text::word`'s boundaries, crossing blocks as `Char` does.
+    Word(i32),
     /// Whole lines. Answered by the core, in the shell's own units.
     Line(i32),
     /// One screenful of lines, however many that turns out to be — the widget knows its
@@ -70,6 +73,8 @@ pub enum Action {
     EraseBack,
     /// Delete — erase the character at the caret, joining the next block on at the end.
     EraseForward,
+    /// Ctrl+Backspace and Ctrl+Delete: as far as the word motion the same way would go.
+    EraseWord(i32),
     /// Enter — a new block, split at the caret.
     Split,
     /// Tab and Shift+Tab: one step deeper into a list, or one step out of it.
@@ -84,6 +89,8 @@ pub enum Action {
 pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
     let go = |motion| Some(Action::Move(motion));
     match key {
+        Key::Left if mods.ctrl => go(Motion::Word(-1)),
+        Key::Right if mods.ctrl => go(Motion::Word(1)),
         Key::Left => go(Motion::Char(-1)),
         Key::Right => go(Motion::Char(1)),
         Key::Up => go(Motion::Line(-1)),
@@ -97,6 +104,8 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
         Key::Return => Some(Action::Split),
         Key::Tab if mods.shift => Some(Action::Indent(-1)),
         Key::Tab => Some(Action::Indent(1)),
+        Key::Backspace if mods.ctrl => Some(Action::EraseWord(-1)),
+        Key::Delete if mods.ctrl => Some(Action::EraseWord(1)),
         Key::Backspace => Some(Action::EraseBack),
         Key::Delete => Some(Action::EraseForward),
         Key::Other => None,
@@ -155,6 +164,23 @@ mod tests {
 
     /// Tab is the one key here that is about *structure* rather than about a caret: it nests a
     /// list item, and Shift+Tab un-nests one.
+    #[test]
+    fn ctrl_makes_the_horizontal_keys_and_the_erasers_work_by_word() {
+        assert_eq!(
+            action_for(Key::Left, CTRL),
+            Some(Action::Move(Motion::Word(-1)))
+        );
+        assert_eq!(
+            action_for(Key::Right, CTRL),
+            Some(Action::Move(Motion::Word(1)))
+        );
+        assert_eq!(
+            action_for(Key::Backspace, CTRL),
+            Some(Action::EraseWord(-1))
+        );
+        assert_eq!(action_for(Key::Delete, CTRL), Some(Action::EraseWord(1)));
+    }
+
     #[test]
     fn tab_nests_a_list_item_and_shift_tab_un_nests_one() {
         const SHIFT: Mods = Mods {

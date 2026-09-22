@@ -654,6 +654,43 @@ impl App {
         hits
     }
 
+    /// [`App::find`], ignoring case — what a find bar means by default, since a person typing
+    /// `appendix` is looking for *Appendix* as well.
+    ///
+    /// Folded a character at a time (each to its first lowercase character), so a hit is always
+    /// exactly as many characters as the needle and its address and length still count what a
+    /// person counts. That is simple case folding: `ß` does not match `SS`, which full folding
+    /// would need a table this crate does not carry to say.
+    pub fn find_ignoring_case(&self, needle: &str) -> Vec<Match> {
+        let fold = |c: char| c.to_lowercase().next().unwrap_or(c);
+        let needle: Vec<char> = needle.chars().map(fold).collect();
+        if needle.is_empty() {
+            return Vec::new();
+        }
+        let state = self.state.read().unwrap();
+        let mut hits = Vec::new();
+        for (index, block) in state.doc.blocks.iter().enumerate() {
+            let text = block.text();
+            let chars: Vec<char> = text.chars().map(fold).collect();
+            let mut at = 0;
+            // Non-overlapping, left to right — the same hits `match_indices` gives `find`.
+            while at + needle.len() <= chars.len() {
+                match chars[at..at + needle.len()] == needle[..] {
+                    true => {
+                        hits.push(Match {
+                            index,
+                            offset: at,
+                            text: text.clone(),
+                        });
+                        at += needle.len();
+                    }
+                    false => at += 1,
+                }
+            }
+        }
+        hits
+    }
+
     pub fn counts(&self) -> Counts {
         let state = self.state.read().unwrap();
         let mut counts = Counts {

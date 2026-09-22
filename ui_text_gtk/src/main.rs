@@ -21,6 +21,7 @@
 //! minimal shell is not yet evidence of which seam to cut.
 
 mod code;
+mod find;
 mod format;
 mod geom;
 mod keymap;
@@ -156,6 +157,8 @@ struct Ui {
     /// and writing go through the same `App` the rest of this file does
     /// (`App::char_style`/`set_char_style`) — no toolbar has its own idea of what bold means.
     format: Rc<format::Bar>,
+    /// Ctrl+F (`find.rs`).
+    find: Rc<find::Find>,
     /// Guards the code view's own writes from being read back as a cursor move — without it,
     /// painting the projection would immediately move the caret it is reporting on. The
     /// formatting bar keeps its own latch for the same reason, in `format.rs`.
@@ -259,6 +262,7 @@ impl Ui {
         // LibreOffice round-trip the same way typing does (R6). It is connected to the document
         // in `wire`, because the `Ui` it writes through does not exist yet.
         let format = format::Bar::new(&doc.pango_context());
+        let find = find::Find::new(app, &doc);
 
         let banner = adw::Banner::new("");
         let status = gtk::Label::builder()
@@ -277,6 +281,7 @@ impl Ui {
         let content = adw::ToolbarView::builder().content(&toasts).build();
         content.add_top_bar(&header);
         content.add_top_bar(&format.widget);
+        content.add_top_bar(&find.bar);
         content.add_top_bar(&banner);
         content.add_bottom_bar(&status_bar);
 
@@ -306,6 +311,7 @@ impl Ui {
             undo,
             redo,
             format,
+            find,
             updating: Cell::new(false),
             path: RefCell::new(path),
             handoff: RefCell::new(None),
@@ -1020,6 +1026,32 @@ impl Ui {
         }
     }
 
+    /// The keyboard shortcuts window — [`shortcut_rows`], which a test holds to every
+    /// accelerator this window declares.
+    fn shortcuts(&self) {
+        let window = gtk::ShortcutsWindow::builder()
+            .transient_for(&self.window)
+            .modal(true)
+            .build();
+        let section = gtk::ShortcutsSection::builder()
+            .section_name("main")
+            .build();
+        for (title, rows) in shortcut_rows() {
+            let group = gtk::ShortcutsGroup::builder().title(title).build();
+            for (title, accelerator) in rows {
+                group.add_shortcut(
+                    &gtk::ShortcutsShortcut::builder()
+                        .title(title)
+                        .accelerator(accelerator)
+                        .build(),
+                );
+            }
+            section.add_group(&group);
+        }
+        window.add_section(&section);
+        window.present();
+    }
+
     fn about(&self) {
         let about = adw::AboutDialog::builder()
             .application_name("Text")
@@ -1096,6 +1128,8 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.app.redo();
         }),
         ("goto", &["<Control>g"][..], |ui| ui.goto.popup()),
+        ("find", &["<Control>f"][..], |ui| ui.find.open()),
+        ("shortcuts", &["<Control>question"][..], |ui| ui.shortcuts()),
         ("outline", &["<Control><Shift>o"][..], |ui| ui.outline()),
         ("words", &[][..], |ui| ui.word_count()),
         // F8, the "next problem" key, and the same one `grind-sheet-gtk` uses — one suite, one
@@ -1155,6 +1189,75 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
     ]
 }
 
+/// Every key this window answers, in the groups a reader looks for them in.
+///
+/// Written out rather than read from [`actions`], because half of what a person wants to know
+/// is not an action at all — Ctrl+Left, Tab, `**bold**` — and the action table has no titles.
+/// What keeps the two in step is `every_declared_accelerator_is_in_the_shortcuts_window`.
+type ShortcutGroup = (&'static str, Vec<(&'static str, &'static str)>);
+fn shortcut_rows() -> Vec<ShortcutGroup> {
+    vec![
+        (
+            "Document",
+            vec![
+                ("New", "<Control>n"),
+                ("Open", "<Control>o"),
+                ("Save", "<Control>s"),
+                ("Save As", "<Control><Shift>s"),
+                ("Undo", "<Control>z"),
+                ("Redo", "<Control><Shift>z <Control>y"),
+                ("Find", "<Control>f"),
+                ("Go to an address", "<Control>g"),
+                ("Outline", "<Control><Shift>o"),
+                ("Check the document", "F8"),
+                ("Show bookmarks", "<Control><Shift>n"),
+                ("Show the source", "<Control><Shift>u"),
+                ("Insert a picture", "<Control><Shift>i"),
+                ("Insert a table", "<Control><Shift>t"),
+                ("Keyboard shortcuts", "<Control>question"),
+            ],
+        ),
+        (
+            "Moving and selecting",
+            vec![
+                ("By character, by line", "Left Right Up Down"),
+                ("By word", "<Control>Left <Control>Right"),
+                ("To the start or end of the line", "Home End"),
+                (
+                    "To the start or end of the document",
+                    "<Control>Home <Control>End",
+                ),
+                (
+                    "Extend the selection",
+                    "<Shift>Left <Shift>Right <Shift>Up <Shift>Down",
+                ),
+                ("Select all", "<Control>a"),
+            ],
+        ),
+        (
+            "Editing",
+            vec![
+                ("Cut, copy, paste", "<Control>x <Control>c <Control>v"),
+                ("Erase a word", "<Control>BackSpace <Control>Delete"),
+                ("New paragraph", "Return"),
+                ("Nest or un-nest a list item", "Tab <Shift>Tab"),
+            ],
+        ),
+        (
+            "Formatting",
+            vec![
+                (
+                    "Bold, italic, underline",
+                    "<Control>b <Control>i <Control>u",
+                ),
+                ("Paragraph", "<Control>0"),
+                ("Heading 1, 2, 3", "<Control>1 <Control>2 <Control>3"),
+                ("List item", "<Control>l"),
+            ],
+        ),
+    ]
+}
+
 fn primary_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     let files = gio::Menu::new();
@@ -1174,6 +1277,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &insert);
 
     let structure = gio::Menu::new();
+    structure.append(Some("Find…"), Some("win.find"));
     structure.append(Some("Outline…"), Some("win.outline"));
     structure.append(Some("Go to Address…"), Some("win.goto"));
     structure.append(Some("Word Count"), Some("win.words"));
@@ -1186,6 +1290,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &view);
 
     let rest = gio::Menu::new();
+    rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Text"), Some("win.about"));
     menu.append_section(None, &rest);
     menu
@@ -1449,6 +1554,24 @@ mod tests {
                 declared.iter().any(|d| d == action),
                 "{label} names {action}, which nothing declares"
             );
+        }
+    }
+
+    /// A key somebody can press and nobody can look up is a key that does not exist.
+    #[test]
+    fn every_declared_accelerator_is_in_the_shortcuts_window() {
+        let listed: Vec<&str> = shortcut_rows()
+            .into_iter()
+            .flat_map(|(_, rows)| rows)
+            .flat_map(|(_, accels)| accels.split(' ').collect::<Vec<_>>())
+            .collect();
+        for (name, accels, _) in actions() {
+            for accel in accels {
+                assert!(
+                    listed.contains(accel),
+                    "{name}'s {accel} is in no shortcuts row"
+                );
+            }
         }
     }
 

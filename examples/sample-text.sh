@@ -202,6 +202,8 @@ text get "$doc" '#addresses'
 
 say "find: every occurrence, with an address per hit"
 text find "$doc" 'flat'
+say "find -i: the same, ignoring case — what the GNOME window's find bar asks"
+text find -i "$doc" 'FLAT'
 
 say "formatting: every block carrying a style of its own"
 text formatting "$doc"

@@ -145,7 +145,8 @@ with `loc` where that one has `a1`, and the two are copies for `code.rs`'s reaso
 `ponytail` there covers both. Activating a row puts the caret where the finding is, through the
 same `view::caret_of` the outline dialog and the go-to box already use.
 
-**Both shells.** No find/replace UI (`grind text find`/`replace` exist). No footnotes, because
+**Both shells.** No replace UI (`grind text replace` exists); `grind-text-gtk` has a find bar
+since the UX pass, and `grind-web`'s palette is its answer. No footnotes, because
 the core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
 `text:file-name`) are also out, both for the same reason `doc/text-core.md` gives. Tables were
 in this sentence until the core grew them; `grind-text-gtk` draws and inserts one now and
@@ -252,7 +253,7 @@ clipboard even within this window. Then the plumbing: no `grind-ui` crate — `d
 extract the shared GTK plumbing "on evidence, at S9, when the second shell shows the seam", and
 one *minimal* shell is not that evidence; this one copied the observer bridge, the `--render-to`
 harness and the window-close latch, which is three data points and the right time to look again
-is when either shell grows. No shortcuts window. No a11y beyond the floor
+is when either shell grows. No a11y beyond the floor
 (`Accessible::announce` on every caret move, as M9 requires). The document is re-laid-out in
 full whenever it or the width changes, so a very long document costs a pass per resize
 (`ponytail` in `view.rs`).
@@ -303,9 +304,21 @@ or stopping it doing the wrong thing quietly.
   asserts `at_context()` is non-null and with accessibility off it is null. `theme::heard` asks
   the raw call, which can say "none".
 
-Still owed from the same review: a shortcuts window (the spreadsheet has one and this does not),
-Ctrl+Left/Right by word (`word::around` is the half of it that is in the core now), and no find
-bar, though `grind text find` exists.
+The three it left owed are built too:
+
+* **A find bar** (Ctrl+F, `find.rs`): a `gtk::SearchBar` under the format bar that searches as
+  it is typed, **ignoring case** — `App::find_ignoring_case`, reached from the CLI as
+  `grind text find -i` — with *2 of 7* beside it, Enter / Shift+Enter (and the entry's own
+  Ctrl+G) to walk the hits, wrapping at either end, and Escape back to the page with the hit
+  still selected, so typing replaces it. Seeded from a short selection. Which hit is next is
+  `find::step`, pure and tested; the hits are asked for again at every step, since an edit
+  between two presses of Enter makes a kept list wrong. Replace stays the CLI's.
+* **Ctrl+Left/Right move by word** and **Ctrl+Backspace/Delete erase one**, over
+  `grind_text::word::next_end`/`previous_start` — the end of a word going forward and its start
+  going back, crossing into the next block the way a character motion does.
+* **A keyboard shortcuts window** (Ctrl+?, and the primary menu), from `shortcut_rows` — written
+  out because Ctrl+Left, Tab and the formatting keys are not all actions, and held to the action
+  table by `every_declared_accelerator_is_in_the_shortcuts_window`.
 
 ## How to see them
 

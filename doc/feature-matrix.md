@@ -60,7 +60,7 @@ decision · — not applicable to this client.
 | Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● |
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● |
 | Go to an address | ● | ● | ● | ● | ● | ● |
-| Key list / help | ● | ● | ○ | ● | ◐ ᵈ | ● |
+| Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● |
 | About / build stamp | ● | ● | ● | ● ʰ | ○ | ● |
 | Recent files | — | ● | ○ | ○ | ○ | ○ |
 | Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● |
@@ -294,7 +294,7 @@ the table it was made from (`doc/chart-format.md`, The shell).
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● |
 | Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● |
-| Find | ● | ○ | ● ᶠ | ○ | ○ |
+| Find | ● | ● | ● ᶠ | ○ | ○ |
 | Replace | ● | ○ | ● | ○ | ○ |
 | Word count | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | |

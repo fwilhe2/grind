@@ -531,11 +531,18 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             )
         }
 
-        TextCommand::Find { file, needle } => {
+        TextCommand::Find {
+            file,
+            needle,
+            ignore_case,
+        } => {
             let app = open_text(file)?;
+            let hits = match ignore_case {
+                true => app.find_ignoring_case(needle),
+                false => app.find(needle),
+            };
             text_lines(
-                app.find(needle)
-                    .into_iter()
+                hits.into_iter()
                     .map(|m| format!("{}\t{}", m.address(), m.text))
                     .collect(),
             )
@@ -1231,6 +1238,9 @@ enum TextCommand {
         file: PathBuf,
         #[arg(allow_hyphen_values = true)]
         needle: String,
+        /// Match `Appendix` when asked for `appendix` — what a find bar does by default
+        #[arg(short, long)]
+        ignore_case: bool,
     },
 
     /// Replace every occurrence of some text
