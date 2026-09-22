@@ -168,7 +168,7 @@ run height "$book" 1:1 8mm
 # picked by hand — `--point-color`/`--series-color` — is a sticky override that survives every
 # later save, which is what `chart-style` is for.
 say "chart: bar, line and pie, tracking ranges rather than values"
-run chart-add "$book" --from A1:C7 \
+run chart-add "$book" --from A1:C7 --title "Budget against actual" \
   --x-axis-label Category --y-axis-label Budgeted --y-gridlines true \
   --x 1cm --y 30cm --width 12cm --height 8cm
 sheet chart-list "$book"
@@ -183,9 +183,10 @@ say "chart: edit what one is after the fact, and switch an axis' own labels off"
 run chart-edit "$book" 0 --x-tick-labels false --x-axis-label ""
 
 # Spelled out in full, which is how to say anything `--from` would read differently: a pie
-# runs clockwise from twelve o'clock unless told `--clockwise false`, and says so in the file.
+# runs clockwise from twelve o'clock unless told `--clockwise false`, and says so in the file,
+# and its legend names each slice — at the bottom here, rather than a new chart's end.
 say "chart: a pie of the same categories, coloured per slice by default"
-run chart-add "$book" --type pie --categories A2:A7 --series C2:C7 \
+run chart-add "$book" --type pie --categories A2:A7 --series C2:C7 --legend bottom \
   --x 16cm --y 30cm --width 10cm --height 8cm
 
 say "hide: a column or row by hand"

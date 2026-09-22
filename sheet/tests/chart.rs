@@ -746,3 +746,86 @@ fn a_bar_chart_written_per_point_by_an_older_build_reads_back_untouched() {
         series.point_colors
     );
 }
+
+/// A chart's own title and legend (`doc/chart-format.md`, The chart's own title and legend):
+/// written, read back in both forms, and cleared again by an edit that says so.
+#[test]
+fn a_charts_own_title_and_legend_survive_a_save_and_an_edit_clears_them() {
+    let app = App::new();
+    filled(&app);
+    let titled = grind_sheet::ChartSpec {
+        title: Some("Votes, 2026".to_owned()),
+        legend: Some(grind_sheet::ChartLegend::Bottom),
+        ..spec(
+            ChartKind::Bar,
+            Some("A2:A4"),
+            &[("B2:B4", Some("B1"))],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        )
+    };
+    app.add_chart(0, &titled, "1cm", "1cm", "10cm", "8cm")
+        .unwrap();
+    for form in [Form::Flat, Form::Package] {
+        let chart = reopened(&app, form).charts(0).unwrap()[0].clone();
+        assert_eq!(chart.title.as_deref(), Some("Votes, 2026"), "{form:?}");
+        assert_eq!(
+            chart.legend,
+            Some(grind_sheet::ChartLegend::Bottom),
+            "{form:?}"
+        );
+    }
+    // An empty title is no title, and no legend is no `chart:legend` at all.
+    let bare = grind_sheet::ChartSpec {
+        title: Some("  ".to_owned()),
+        legend: None,
+        ..titled
+    };
+    app.edit_chart(0, 0, &bare).unwrap();
+    let chart = &app.charts(0).unwrap()[0];
+    assert_eq!((chart.title.as_deref(), chart.legend), (None, None));
+    let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    assert!(!flat.contains("chart:legend") && !flat.contains("Votes, 2026"));
+    assert!(app.undo(), "the edit is one step");
+    assert_eq!(
+        app.charts(0).unwrap()[0].title.as_deref(),
+        Some("Votes, 2026")
+    );
+}
+
+/// A legend LibreOffice put in a corner reads as the edge it is on, and one that names no
+/// position at all reads as the end, where LibreOffice draws it.
+#[test]
+fn a_legend_in_a_corner_or_nowhere_in_particular_reads_as_an_edge() {
+    let app = App::new();
+    filled(&app);
+    let legend = grind_sheet::ChartSpec {
+        legend: Some(grind_sheet::ChartLegend::End),
+        ..spec(
+            ChartKind::Pie,
+            Some("A2:A4"),
+            &[("B2:B4", None)],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        )
+    };
+    app.add_chart(0, &legend, "1cm", "1cm", "10cm", "8cm")
+        .unwrap();
+    let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    for (written, read) in [
+        (
+            "chart:legend-position=\"top-start\"",
+            grind_sheet::ChartLegend::Top,
+        ),
+        (
+            "chart:legend-position=\"bottom-end\"",
+            grind_sheet::ChartLegend::Bottom,
+        ),
+        ("", grind_sheet::ChartLegend::End),
+    ] {
+        let bytes = flat.replace("chart:legend-position=\"end\"", written);
+        let back = App::new();
+        back.open_bytes("test.fods", bytes.as_bytes()).unwrap();
+        assert_eq!(back.charts(0).unwrap()[0].legend, Some(read), "{written:?}");
+    }
+}

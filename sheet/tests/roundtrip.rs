@@ -337,6 +337,11 @@ fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String>
             format!("{:?}", (&a.x_axis, &a.y_axis)),
             format!("{:?}", (&b.x_axis, &b.y_axis)),
         );
+        say(
+            "title and legend",
+            format!("{:?}", (&a.title, a.legend)),
+            format!("{:?}", (&b.title, b.legend)),
+        );
         if a.kind == grind_sheet::ChartKind::Pie {
             say(
                 "direction",
@@ -778,20 +783,40 @@ fn charts() -> (String, Document) {
         ..grind_sheet::ChartAxis::default()
     };
     let series = [("B2:B4", Some("B1")), ("C2:C4", Some("C1"))];
-    for (kind, series, at) in [
+    // A title and a legend at each of three edges, and none on the pie's — a chart without
+    // either is what every chart was until they were in scope, and must stay one.
+    let dressed = [
+        (
+            Some("Sales & costs, Q1"),
+            Some(grind_sheet::ChartLegend::End),
+        ),
+        (
+            Some("Month by month"),
+            Some(grind_sheet::ChartLegend::Bottom),
+        ),
+        (None, None),
+    ];
+    for ((kind, series, at), (title, legend)) in [
         (grind_sheet::ChartKind::Bar, &series[..], "1cm"),
         (grind_sheet::ChartKind::Line, &series[..], "10cm"),
         (grind_sheet::ChartKind::Pie, &series[..1], "19cm"),
-    ] {
+    ]
+    .into_iter()
+    .zip(dressed)
+    {
         app.add_chart(
             0,
-            &spec(
-                kind,
-                Some("A2:A4"),
-                series,
-                titled("Month"),
-                titled("Amount"),
-            ),
+            &grind_sheet::ChartSpec {
+                title: title.map(str::to_owned),
+                legend,
+                ..spec(
+                    kind,
+                    Some("A2:A4"),
+                    series,
+                    titled("Month"),
+                    titled("Amount"),
+                )
+            },
             at,
             "3cm",
             "8cm",

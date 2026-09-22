@@ -150,6 +150,9 @@ struct PendingChart {
     /// What the y axis' own style said about its direction, if anything — `None` being "said
     /// nothing", which for a pie is LibreOffice's counter-clockwise.
     y_reversed: Option<bool>,
+    /// `chart:chart`'s own title and legend (rng:466, rng:475).
+    title: Option<String>,
+    legend: Option<crate::chart::Legend>,
 }
 
 impl Default for PendingChart {
@@ -171,6 +174,8 @@ impl Default for PendingChart {
             display_labels: HashMap::new(),
             reverse_directions: HashMap::new(),
             y_reversed: None,
+            title: None,
+            legend: None,
         }
     }
 }
@@ -571,6 +576,8 @@ impl Context<Builder> for Frame {
                         main.display_labels = found.display_labels;
                         main.reverse_directions = found.reverse_directions;
                         main.y_reversed = found.y_reversed;
+                        main.title = found.title;
+                        main.legend = found.legend;
                     }
                 }
                 Some(Box::new(super::context::Ignore))
@@ -609,6 +616,8 @@ impl Context<Builder> for Frame {
                 crate::chart::ChartKind::Pie => pending.y_reversed == Some(true),
                 _ => true,
             },
+            title: pending.title,
+            legend: pending.legend,
         };
         let sheet = &mut b.doc.sheets[b.sheet];
         let index = sheet.charts().len();
@@ -733,14 +742,50 @@ impl Context<Builder> for OfficeChart {
     }
 }
 
-/// `chart:chart` (rng:463) — a title, subtitle, footer and legend may all sit here
-/// (`doc/chart-format.md`'s scope line: none of them are read), then `chart:plot-area`.
+/// `chart:chart` (rng:463) — a title, subtitle, footer and legend may all sit here, then
+/// `chart:plot-area`. The title and the legend are read (`doc/chart-format.md`, The chart's own
+/// title and legend); a subtitle and a footer are read past.
 struct ChartChart;
 
 impl Context<Builder> for ChartChart {
-    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        name.is(Ns::Chart, "plot-area")
-            .then(|| Box::new(ChartPlotArea) as Ctx)
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Chart, "plot-area") => Some(Box::new(ChartPlotArea) as Ctx),
+            (Ns::Chart, "title") => Some(Box::new(ChartTitle) as Ctx),
+            (Ns::Chart, "legend") => {
+                if let Some(pending) = &mut b.pending_chart {
+                    pending.legend = Some(crate::chart::Legend::from_token(
+                        attrs.get(Ns::Chart, "legend-position").unwrap_or("end"),
+                    ));
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+}
+
+/// `chart:chart`'s own `chart:title` (rng:934) — the same element an axis' title is, one level
+/// up, and read the same way ([`ChartAxisTitle`]).
+struct ChartTitle;
+
+impl Context<Builder> for ChartTitle {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Text, "p") {
+            return None;
+        }
+        b.text.clear();
+        Some(Box::new(Paragraph::CHART) as Ctx)
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let text = std::mem::take(&mut b.text);
+        let text = text.trim_end();
+        if let Some(pending) = &mut b.pending_chart
+            && !text.is_empty()
+        {
+            pending.title = Some(text.to_owned());
+        }
     }
 }
 
@@ -938,8 +983,7 @@ impl Context<Builder> for ChartAxis {
 }
 
 /// An axis' own `chart:title` (rng:934) — plain text via [`Paragraph`]. Distinct from
-/// `chart:chart`'s own title/subtitle/legend, which this build never reads
-/// (`doc/not-doing.md`).
+/// `chart:chart`'s own title ([`ChartTitle`]), though the element is the same.
 struct ChartAxisTitle {
     dim: AxisDim,
 }

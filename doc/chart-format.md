@@ -17,11 +17,13 @@ conformance oracle rather than a source.
 the mechanism, the second is taste." That line moved by an explicit decision: bar, line and pie
 are the three shapes a spreadsheet's data most commonly wants, and building one showed that the
 second and third add no new mechanism, only a second `chart:class` token and a different way of
-turning ranges into shapes on screen. What stays out: the *chart's own* title and a legend, more
-than one axis pair, stacked/percent variants, and every chart type beyond these three — each a
-`chart:*` detail this build does not read or write, not a limitation of the mechanism. What an
-*axis* carries is a different matter and is in scope — its own title, its tick labels and its
-gridlines, three separate places in the file: see The axes, below.
+turning ranges into shapes on screen. What stays out: a subtitle and a footer, more than one
+axis pair, stacked/percent variants, and every chart type beyond these three — each a `chart:*`
+detail this build does not read or write, not a limitation of the mechanism. What an *axis*
+carries is in scope — its own title, its tick labels and its gridlines, three separate places in
+the file: see The axes, below. **So are the chart's own title and its legend**, which this line
+used to leave out: a chart of two series with no legend is a chart nobody can read, and that is
+a product decision, taken, rather than a detail — see The chart's own title and legend.
 
 ## The two places a chart's own document can live
 
@@ -190,6 +192,36 @@ attribute for a pie. The slices' own angles are computed once, in
 [`grind_sheet::chart::pie_slices`], for the reason [`grind_sheet::axis_ticks`] is: two shells
 sweeping the same pie two ways is two different charts.
 
+### The chart's own title and legend
+
+Two children of `chart:chart` itself, ahead of the plot area in the schema's own order — title,
+subtitle, footer, legend, plot area (rng:462-485):
+
+| What | Where | Cited |
+|---|---|---|
+| The title | `chart:title` with one `text:p` — the same definition an axis' title uses, one level up | rng:466, rng:934-956 |
+| The legend | `chart:legend chart:legend-position="start|end|top|bottom"` | rng:475, rng:694-758 |
+
+LibreOffice writes both with a position and a style of their own
+(`sheet/tests/data/samples/Sales Dashboard.fods`'s title carries `svg:x`/`svg:y` and
+`chart:style-name="ch2"`; `spreadsheet.fods`'s legend adds `style:legend-expansion="high"`).
+**This build writes neither** — `svg:x`/`svg:y` are optional (rng:1722-1733), and so is the
+legend's expansion (rng:735's choice includes `rng:empty`). Measured (LibreOffice 26.8.0.3, loop
+C's `charts` case): a title and a legend at the end or at the bottom, written with nothing but
+their text and their position, come back from `soffice --convert-to` exactly as written, and
+LibreOffice lays both out itself. Reading back, a legend in one of the schema's corners
+(`top-start` and so on, rng:718-725) reads as the edge it is on, and one that names no position
+at all reads as `end`, where LibreOffice draws it. A title is plain text, and read with ODF's
+white-space rule — LibreOffice pretty-prints a chart's `text:p`, so without it a title read back
+carried the newline and indentation in front of it.
+
+**What a new chart gets** is a product decision, [`grind_sheet::ChartSpec::default_legend`]: a
+legend at the end when there is more than one thing to tell apart — two or more series, or a
+pie's slices — and none for a single bar or line series, whose one colour is what the chart is
+*of*. A chart made from a table ([`grind_sheet::chart::guess`]) takes that single series' name
+as its title. Both are the dataviz rule stated the other way round: a legend is always there
+when colour is carrying identity, and never there to restate a title.
+
 ### The axes — three things, three places in the file
 
 An *axis* carries three things this build reads, writes and draws
@@ -238,13 +270,18 @@ supplies only how wide a piece of text is.
 (`Grid::draw_charts`, called between `draw_cells` and `draw_filter_buttons` — over a cell's own
 text, under the active-cell outline), reading `App::charts`/`App::chart_data` fresh each frame
 the same way every other paint reads the document and throws it away (doc/plan.md rule 1).
-`ui_sheet_gtk/src/chart.rs` is the drawing itself: a bar is `append_color` rectangles, a line and
-a pie slice are `gsk::PathBuilder` paths stroked or filled — GTK's own vector drawing rather than
-cairo, since nothing here needs more than straight edges (a pie slice is a many-sided polygon,
-`PIE_SAMPLES_PER_TURN` fine enough that the seam does not show). Every mark's colour comes from
+`ui_sheet_gtk/src/chart.rs` is the drawing itself: a bar is a colour under a rounded clip —
+at most `BAR_MAX` (24px) wide, `BAR_GAP` (2px) from its neighbour, rounded at its data end and
+square at the baseline, which is the `dataviz` skill's mark spec; a line is a 2px
+`gsk::PathBuilder` stroke with round joins; a pie slice is a filled path — GTK's own vector
+drawing rather than cairo, since nothing here needs more than straight edges (a pie slice is a
+many-sided polygon, `PIE_SAMPLES_PER_TURN` fine enough that the seam does not show, swept by the
+core's `pie_slices`). Every mark's colour comes from
 [`grind_sheet::chart::effective_color`], the same function the writer calls, so what is on
-screen always matches what gets saved. No chart-level title and no legend — the same scope line
-as the format itself, drawn rather than written. What an *axis* carries is drawn: its title
+screen always matches what gets saved. The chart's own title is a bold band across the top;
+its legend is a swatch and a name per series (per slice for a pie) at its edge, the name in ink
+and never in the series' colour. Both take their room before the axes do, and a legend that
+would crowd a small chart out is left off rather than squeezing the plot. What an *axis* carries is drawn: its title
 (centred under the plot for x, rotated beside it for y), its tick labels — the category names
 under the x axis, the value scale beside the y one — and its gridlines, ruled under the marks
 so a bar covers them rather than being cut by them.
@@ -305,12 +342,13 @@ but not for a person.
 
 ## What this build does not carry
 
-No chart-level title, subtitle or legend (`chart-title`/`chart-subtitle`/`chart-legend`, each
-`rng:optional` in `chart-chart`'s own content model) — read past and dropped, the same as any
-other unmodelled optional element. **An axis' own title is different** — `chart:axis`'s own
-`chart:title` (rng:422-434) is a distinct element from `chart:chart`'s, and is in scope: read,
-written and drawn ([`grind_sheet::chart::Axis::label`]), along with the rest of what an axis
-carries — see The axes, above. **Measured, not guessed**: a document this build writes with an
+No subtitle or footer (`chart-subtitle`/`chart-footer`, each `rng:optional` in `chart-chart`'s
+own content model) — read past and dropped, the same as any other unmodelled optional element.
+The chart's own title and legend are carried (above), and so is an axis' own title —
+`chart:axis`'s own `chart:title` (rng:422-434), read, written and drawn
+([`grind_sheet::chart::Axis::label`]) along with the rest of what an axis carries. A title's or a
+legend's own position and style are not: LibreOffice's placement of either is re-derived, the
+way a chart's colours are. **Measured, not guessed**: a document this build writes with an
 axis title is schema-valid and opens correctly in LibreOffice 26.2.5.2 (the same build
 `ltwbw2026.*` was measured from), *and* survives a full `.fods` → `soffice --convert-to ods`
 → `soffice --convert-to fods` round trip through it with the title intact, on a bar chart and

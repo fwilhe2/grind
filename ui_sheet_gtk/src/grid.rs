@@ -1015,6 +1015,19 @@ mod imp {
             let widget = self.obj();
             widget.set_focusable(true);
 
+            // A chart names the mark under the pointer — `Sales · Feb: 20` — which is how a
+            // reader gets a figure off a bar without a label on every one of them.
+            widget.set_has_tooltip(true);
+            widget.connect_query_tooltip(|grid, x, y, _keyboard, tooltip| {
+                match grid.imp().chart_tooltip(f64::from(x), f64::from(y)) {
+                    Some(text) => {
+                        tooltip.set_text(Some(&text));
+                        true
+                    }
+                    None => false,
+                }
+            });
+
             // The editor is a child of the grid rather than an overlay: an overlay
             // positions in widget coordinates and would re-derive the scroll arithmetic
             // every frame, where a child is allocated by the same `cell_rect` that draws.
@@ -2777,6 +2790,24 @@ mod imp {
             self.obj().queue_draw();
         }
 
+        /// The words for whatever chart mark is under `(x, y)`, if any — [`crate::chart::describe`]
+        /// on the chart [`Self::chart_hit`] finds there.
+        fn chart_tooltip(&self, x: f64, y: f64) -> Option<String> {
+            let (index, _, rect) = self.chart_hit(x, y)?;
+            let app = self.app.borrow().clone()?;
+            let sheet = self.sheet.get();
+            let chart = app.charts(sheet).ok()?.get(index)?.clone();
+            let data = app.chart_data(sheet, index).ok()?;
+            crate::chart::describe(
+                rect,
+                &chart,
+                &data,
+                x,
+                y,
+                &crate::chart::measurer(&*self.obj()),
+            )
+        }
+
         /// A click that landed on a bar, a pie slice or a line: a palette popover at the
         /// click point, picking from [`crate::formatting::palette_grid`] — the same swatches
         /// a cell's own colour button offers — writes the mark's colour through
@@ -2815,6 +2846,7 @@ mod imp {
 
             let shown = crate::theme::color(&grind_sheet::effective_color(chart, series, point))
                 .unwrap_or(gtk::gdk::RGBA::BLACK);
+            let chart = chart.clone();
             let x_axis = chart.x_axis.clone();
             let y_axis = chart.y_axis.clone();
             let series_vec = chart.series.clone();
@@ -2824,20 +2856,41 @@ mod imp {
             popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
             popover.connect_closed(|popover| popover.unparent());
 
+            // A colour is a series (`doc/chart-format.md`, Colour), so a click on a bar colours
+            // its whole series — and the bar with it, if it had one of its own. One bar alone is
+            // a deliberate exception, and a check box says so. A pie's slice is always its own.
+            let only_this = gtk::CheckButton::with_label("Only this bar");
+            only_this.set_margin_start(6);
+            only_this.set_margin_top(6);
+            let bar = chart.kind == grind_sheet::ChartKind::Bar && point.is_some();
+            only_this.set_visible(bar);
             let widget = self.obj().clone();
+            let only = only_this.clone();
+            let kind = chart.kind;
             let choices = crate::formatting::palette_grid(&popover, shown, move |picked| {
                 let mut series_vec = series_vec.clone();
                 let Some(s) = series_vec.get_mut(series) else {
                     return;
                 };
-                match point {
+                let one = match kind {
+                    grind_sheet::ChartKind::Bar => point.filter(|_| only.is_active()),
+                    _ => point,
+                };
+                match one {
                     Some(p) => {
                         if s.point_colors.len() <= p {
                             s.point_colors.resize(p + 1, None);
                         }
                         s.point_colors[p] = picked.clone();
                     }
-                    None => s.color = picked.clone(),
+                    None => {
+                        s.color = picked.clone();
+                        if let Some(p) = point
+                            && let Some(own) = s.point_colors.get_mut(p)
+                        {
+                            *own = None;
+                        }
+                    }
                 }
                 if let Err(error) = app.set_chart_style(
                     sheet,
@@ -2850,7 +2903,10 @@ mod imp {
                 }
                 widget.queue_draw();
             });
-            popover.set_child(Some(&choices));
+            let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            content.append(&only_this);
+            content.append(&choices);
+            popover.set_child(Some(&content));
             popover.popup();
         }
 

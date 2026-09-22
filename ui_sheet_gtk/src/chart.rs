@@ -8,11 +8,11 @@
 //! A bar is a plain rectangle, the same `append_color` every other shape in [`crate::grid`]
 //! draws with; a line or a pie slice needs an actual path, which is `gsk::PathBuilder` — GTK's
 //! own vector drawing, already reachable through this shell's `v4_14` feature and one more
-//! thing that means cairo is never pulled in for a chart this simple. No chart-level title and
-//! no legend: `doc/chart-format.md`'s own scope line, applied to the picture rather than the
-//! file it comes from. What an *axis* carries is in scope and is drawn — its title, its tick
-//! labels and its gridlines ([`grind_sheet::ChartAxis`]), each of which is a different element
-//! from the chart-level title and legend that stay out.
+//! thing that means cairo is never pulled in for a chart this simple. The chart's own title and
+//! legend are drawn, and so is everything an axis carries — its title, its tick labels and its
+//! gridlines ([`grind_sheet::ChartAxis`]). The marks follow the `dataviz` skill's specs: capped,
+//! rounded bars with the surface between them, 2px round-jointed lines, a legend whose words
+//! are ink beside a swatch of the colour. [`describe`] is the words a tooltip shows for a mark.
 //!
 //! Negative values are floored to zero rather than drawn the wrong way from a baseline that
 //! would need its own zero line — every document this was built against (`ltwbw2026.*`, an
@@ -31,7 +31,8 @@ use libadwaita::prelude::*;
 use gtk::{gdk, graphene, gsk};
 
 use grind_sheet::{
-    Chart, ChartAxis, ChartData, ChartKind, Ticks, axis_ticks, pie_slice_at, pie_slices,
+    Chart, ChartAxis, ChartData, ChartKind, ChartLegend as Legend, Ticks, axis_ticks, pie_slice_at,
+    pie_slices,
 };
 
 use crate::geom::Rect;
@@ -61,6 +62,28 @@ const TICK_CLEARANCE: f64 = 6.0;
 /// How close a point has to land to a line's own path, in widget pixels, to count as a hit —
 /// a line has no area of its own, unlike a bar or a slice.
 const LINE_HIT_DISTANCE: f64 = 4.0;
+
+/// The widest a bar is drawn, in widget pixels — a bar never fills its slot, and what is left
+/// of the band is air, which is what makes a column of bars read as a chart rather than as a
+/// block (the `dataviz` mark spec).
+const BAR_MAX: f64 = 24.0;
+
+/// The gap left between two bars of the same group — the surface showing through, rather than
+/// an outline drawn round each.
+const BAR_GAP: f64 = 2.0;
+
+/// How round a bar's data end is; its baseline end stays square.
+const BAR_ROUNDING: f32 = 4.0;
+
+/// A legend swatch's side, the gap between it and its label, the gap between two entries in a
+/// row, and the gap between the legend and whatever it sits beside.
+const SWATCH: f64 = 10.0;
+const SWATCH_GAP: f64 = 6.0;
+const ENTRY_GAP: f64 = 14.0;
+const LEGEND_GAP: f64 = 10.0;
+
+/// The gap under the chart's own title.
+const TITLE_GAP: f64 = 6.0;
 
 fn bounds(r: Rect) -> graphene::Rect {
     graphene::Rect::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32)
@@ -131,26 +154,50 @@ pub fn draw(
         draw_ticks(widget, snapshot, &layout, chart, data, &measure, paint);
     }
 
-    if let Some(text) = &chart.x_axis.label {
+    if let (Some(text), Some(band)) = (&chart.title, layout.title) {
+        draw_title(widget, snapshot, text, band, paint.foreground);
+    }
+    // Text in ink, identity in the swatch beside it: a light series colour is illegible as
+    // text, and a legend that coloured its words would be one only some readers could read.
+    for entry in &layout.legend {
+        let swatch = gsk::RoundedRect::from_rect(bounds(entry.swatch), 2.0);
+        snapshot.push_rounded_clip(&swatch);
+        snapshot.append_color(
+            &(paint.color)(entry.series, entry.point),
+            &bounds(entry.swatch),
+        );
+        snapshot.pop();
+        place(
+            widget,
+            snapshot,
+            &entry.label,
+            entry.text.0,
+            entry.text.1,
+            paint.foreground,
+        );
+    }
+
+    let axes_frame = layout.axes;
+    if let Some(text) = axes(chart, data).0.label {
         draw_label(
             widget,
             snapshot,
-            text,
-            rect.x,
-            rect.y + rect.h - LABEL_SPACE,
-            rect.w,
+            &text,
+            axes_frame.x,
+            axes_frame.y + axes_frame.h - LABEL_SPACE,
+            axes_frame.w,
             paint.foreground,
             0.0,
         );
     }
-    if let Some(text) = &chart.y_axis.label {
+    if let Some(text) = axes(chart, data).1.label {
         draw_label(
             widget,
             snapshot,
-            text,
-            rect.x,
-            rect.y,
-            rect.h,
+            &text,
+            axes_frame.x,
+            axes_frame.y,
+            axes_frame.h,
             paint.foreground,
             -90.0,
         );
@@ -162,14 +209,209 @@ pub fn draw(
     snapshot.append_stroke(&outline.to_path(), &stroke, &paint.border);
 }
 
-/// A chart's frame, divided up: where the plot itself ends up once the axes have taken what
-/// they need, and the scale the values are drawn against. Computed once and shared by
-/// everything that draws or hit-tests, which is what keeps a click and the picture in step.
+/// The chart's own title, centred in its band and set bold — the one piece of text on a chart
+/// that is a heading rather than a label.
+fn draw_title(
+    widget: &impl IsA<gtk::Widget>,
+    snapshot: &gtk::Snapshot,
+    text: &str,
+    band: Rect,
+    color: gdk::RGBA,
+) {
+    let layout = widget.create_pango_layout(Some(text));
+    let attributes = gtk::pango::AttrList::new();
+    attributes.insert(gtk::pango::AttrInt::new_weight(gtk::pango::Weight::Bold));
+    layout.set_attributes(Some(&attributes));
+    layout.set_width((band.w * f64::from(gtk::pango::SCALE)) as i32);
+    layout.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    layout.set_alignment(gtk::pango::Alignment::Center);
+    snapshot.save();
+    snapshot.translate(&graphene::Point::new(band.x as f32, band.y as f32));
+    snapshot.append_layout(&layout, &color);
+    snapshot.restore();
+}
+
+/// A chart's frame, divided up: its own title's band, its legend, the frame the axes are laid
+/// out in once those have taken their room, the plot inside that, and the scale the values are
+/// drawn against. Computed once and shared by everything that draws or hit-tests, which is what
+/// keeps a click and the picture in step.
 struct Layout {
     plot: Rect,
+    /// Where the axes and their titles go — the chart's frame, less its title and its legend.
+    axes: Rect,
     /// The value axis' own scale — [`grind_sheet::axis_ticks`], so the top of the plot is a
     /// round number rather than whatever the largest bar happened to be.
     ticks: Ticks,
+    /// The band the chart's own title is drawn in, when it has one and there is room.
+    title: Option<Rect>,
+    /// Every legend entry, placed — empty when the chart has no legend, or no room for one.
+    legend: Vec<LegendEntry>,
+}
+
+/// One entry of a legend: its swatch, where its label starts, and which mark it names — the
+/// same `(series, point)` pair [`mark_at`] answers, so a click on it can colour what it names.
+struct LegendEntry {
+    swatch: Rect,
+    text: (f64, f64),
+    label: String,
+    series: usize,
+    point: Option<usize>,
+}
+
+/// What a legend names: one entry per series for a bar or a line, one per slice for a pie,
+/// each with the `(series, point)` its colour is resolved by. A series with no name of its own
+/// is named by its position, since a swatch with no words beside it names nothing.
+fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, usize, Option<usize>)> {
+    match data.kind {
+        ChartKind::Pie => pie_slices(data, chart.clockwise)
+            .into_iter()
+            .map(|slice| {
+                let name = data
+                    .categories
+                    .get(slice.point)
+                    .filter(|name| !name.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}", slice.point + 1));
+                (name, 0, Some(slice.point))
+            })
+            .collect(),
+        ChartKind::Bar | ChartKind::Line => data
+            .series
+            .iter()
+            .enumerate()
+            .map(|(i, (name, _))| {
+                let name = match name.is_empty() {
+                    true => format!("Series {}", i + 1),
+                    false => name.clone(),
+                };
+                (name, i, None)
+            })
+            .collect(),
+    }
+}
+
+/// The legend laid out at its edge of `rect`, and what is left for everything else — or no
+/// legend at all when it would take more than its share of a small chart, since a chart
+/// squeezed to a sliver beside a legend is worse than one without.
+fn place_legend(
+    rect: Rect,
+    position: Legend,
+    items: Vec<(String, usize, Option<usize>)>,
+    measure: &Measure,
+) -> (Vec<LegendEntry>, Rect) {
+    if items.is_empty() {
+        return (Vec::new(), rect);
+    }
+    let sized: Vec<_> = items
+        .into_iter()
+        .map(|(label, series, point)| {
+            let (w, h) = measure(&label);
+            (label, series, point, w, h.max(SWATCH))
+        })
+        .collect();
+    let line = sized.iter().map(|item| item.4).fold(0.0, f64::max);
+    let entry =
+        |x: f64, y: f64, (label, series, point, _, h): (String, usize, Option<usize>, f64, f64)| {
+            LegendEntry {
+                swatch: Rect {
+                    x,
+                    y: y + (h - SWATCH) / 2.0,
+                    w: SWATCH,
+                    h: SWATCH,
+                },
+                text: (x + SWATCH + SWATCH_GAP, y),
+                label,
+                series,
+                point,
+            }
+        };
+    match position {
+        Legend::Start | Legend::End => {
+            let width = SWATCH + SWATCH_GAP + sized.iter().map(|item| item.3).fold(0.0, f64::max);
+            let height = sized.len() as f64 * (line + 4.0) - 4.0;
+            if width + LEGEND_GAP > rect.w * 0.45 || height > rect.h - 2.0 * INSET {
+                return (Vec::new(), rect);
+            }
+            let x = match position {
+                Legend::End => rect.x + rect.w - INSET - width,
+                _ => rect.x + INSET,
+            };
+            let mut y = rect.y + (rect.h - height) / 2.0;
+            let mut entries = Vec::new();
+            for item in sized {
+                entries.push(entry(x, y, item));
+                y += line + 4.0;
+            }
+            let rest = match position {
+                Legend::End => Rect {
+                    w: rect.w - width - LEGEND_GAP,
+                    ..rect
+                },
+                _ => Rect {
+                    x: rect.x + width + LEGEND_GAP,
+                    w: rect.w - width - LEGEND_GAP,
+                    ..rect
+                },
+            };
+            (entries, rest)
+        }
+        Legend::Top | Legend::Bottom => {
+            // Entries flow in rows, each row centred, wrapping at the frame's own width.
+            let room = rect.w - 2.0 * INSET;
+            let mut rows: Vec<Vec<_>> = vec![Vec::new()];
+            let mut used = 0.0;
+            for item in sized {
+                let width = SWATCH + SWATCH_GAP + item.3;
+                let row = rows.last_mut().expect("never empty");
+                if !row.is_empty() && used + ENTRY_GAP + width > room {
+                    rows.push(Vec::new());
+                    used = 0.0;
+                }
+                let row = rows.last_mut().expect("never empty");
+                used += if row.is_empty() {
+                    width
+                } else {
+                    ENTRY_GAP + width
+                };
+                row.push(item);
+            }
+            let height = rows.len() as f64 * (line + 4.0) - 4.0;
+            if rows.len() > 3 || height + LEGEND_GAP > rect.h * 0.35 {
+                return (Vec::new(), rect);
+            }
+            let mut y = match position {
+                Legend::Top => rect.y + INSET,
+                _ => rect.y + rect.h - INSET - height,
+            };
+            let mut entries = Vec::new();
+            for row in rows {
+                let width: f64 = row
+                    .iter()
+                    .map(|item| SWATCH + SWATCH_GAP + item.3)
+                    .sum::<f64>()
+                    + ENTRY_GAP * (row.len().saturating_sub(1)) as f64;
+                let mut x = rect.x + (rect.w - width) / 2.0;
+                for item in row {
+                    let step = SWATCH + SWATCH_GAP + item.3 + ENTRY_GAP;
+                    entries.push(entry(x, y, item));
+                    x += step;
+                }
+                y += line + 4.0;
+            }
+            let rest = match position {
+                Legend::Top => Rect {
+                    y: rect.y + height + LEGEND_GAP,
+                    h: rect.h - height - LEGEND_GAP,
+                    ..rect
+                },
+                _ => Rect {
+                    h: rect.h - height - LEGEND_GAP,
+                    ..rect
+                },
+            };
+            (entries, rest)
+        }
+    }
 }
 
 /// Which axes actually apply: a pie has neither, so it keeps the whole frame regardless of
@@ -182,12 +424,34 @@ fn axes(chart: &Chart, data: &ChartData) -> (ChartAxis, ChartAxis) {
     }
 }
 
-/// The plot area within `rect` and the scale it is drawn against — inset from the frame's own
-/// border, and further inset by whatever the axes need: a title's fixed [`LABEL_SPACE`], the
-/// widest y tick label, one line of x tick text.
+/// The frame divided up ([`Layout`]): the chart's own title takes a band off the top, the
+/// legend takes its edge ([`place_legend`]), and the plot is what is left once the axes have
+/// taken what they need there — a title's fixed [`LABEL_SPACE`], the widest y tick label, one
+/// line of x tick text.
 fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Layout {
     let (x_axis, y_axis) = axes(chart, data);
     let ticks = axis_ticks(max_value(data));
+
+    let mut frame = rect;
+    let mut title = None;
+    if let Some(text) = &chart.title {
+        let (_, h) = measure(text);
+        if rect.h > 4.0 * h {
+            title = Some(Rect {
+                x: rect.x + INSET,
+                y: rect.y + INSET,
+                w: (rect.w - 2.0 * INSET).max(0.0),
+                h,
+            });
+            frame.y += h + TITLE_GAP;
+            frame.h -= h + TITLE_GAP;
+        }
+    }
+    let (legend, frame) = match chart.legend {
+        Some(position) => place_legend(frame, position, legend_items(chart, data), measure),
+        None => (Vec::new(), frame),
+    };
+    let rect = frame;
 
     let (tick_w, tick_h) = ticks
         .values
@@ -231,7 +495,10 @@ fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Lay
             w: (rect.w - left - INSET).max(0.0),
             h: (rect.h - bottom - top).max(0.0),
         },
+        axes: rect,
         ticks,
+        title,
+        legend,
     }
 }
 
@@ -434,12 +701,16 @@ fn max_value(data: &ChartData) -> f64 {
 
 /// One bar's own rectangle, in widget space — the geometry [`draw_bar`] paints and
 /// [`bar_hit`] tests against, so the two can never disagree.
+///
+/// A group's bars are [`BAR_MAX`] wide at most and [`BAR_GAP`] apart, centred in the group's
+/// band; what is left of the band is air between groups.
 struct BarLayout {
     categories: usize,
     series_count: usize,
     group_w: f64,
     bar_w: f64,
-    gap: f64,
+    /// Where the first bar of a group starts, measured from the start of its band.
+    lead: f64,
 }
 
 fn bar_layout(plot: Rect, data: &ChartData) -> Option<BarLayout> {
@@ -449,14 +720,15 @@ fn bar_layout(plot: Rect, data: &ChartData) -> Option<BarLayout> {
     }
     let series_count = data.series.len().max(1);
     let group_w = plot.w / categories as f64;
-    let bar_w = (group_w * (1.0 - GROUP_GAP) / series_count as f64).max(1.0);
-    let gap = (group_w - bar_w * series_count as f64) / (series_count as f64 + 1.0);
+    let gaps = BAR_GAP * (series_count - 1) as f64;
+    let bar_w = ((group_w * (1.0 - GROUP_GAP) - gaps) / series_count as f64).clamp(1.0, BAR_MAX);
+    let lead = (group_w - (bar_w * series_count as f64 + gaps)) / 2.0;
     Some(BarLayout {
         categories,
         series_count,
         group_w,
         bar_w,
-        gap,
+        lead,
     })
 }
 
@@ -470,7 +742,7 @@ fn bar_rect(
     let plot = layout.plot;
     let value = *data.series.get(series)?.1.get(cat)?;
     let y = value_y(layout, value);
-    let x = plot.x + cat as f64 * bars.group_w + bars.gap + series as f64 * (bars.bar_w + bars.gap);
+    let x = plot.x + cat as f64 * bars.group_w + bars.lead + series as f64 * (bars.bar_w + BAR_GAP);
     Some(Rect {
         x,
         y,
@@ -479,6 +751,7 @@ fn bar_rect(
     })
 }
 
+/// Each bar grows from the baseline, square there and rounded at its data end.
 fn draw_bar(snapshot: &gtk::Snapshot, layout: &Layout, data: &ChartData, color: &MarkColor) {
     let Some(bars) = bar_layout(layout.plot, data) else {
         return;
@@ -488,7 +761,16 @@ fn draw_bar(snapshot: &gtk::Snapshot, layout: &Layout, data: &ChartData, color: 
             let Some(rect) = bar_rect(layout, &bars, data, s, cat) else {
                 continue;
             };
+            if rect.h <= 0.0 {
+                continue;
+            }
+            let round = BAR_ROUNDING.min(rect.w as f32 / 2.0).min(rect.h as f32);
+            let corner = graphene::Size::new(round, round);
+            let square = graphene::Size::zero();
+            let shape = gsk::RoundedRect::new(bounds(rect), corner, corner, square, square);
+            snapshot.push_rounded_clip(&shape);
             snapshot.append_color(&color(s, Some(cat)), &bounds(rect));
+            snapshot.pop();
         }
     }
 }
@@ -541,7 +823,10 @@ fn draw_line(snapshot: &gtk::Snapshot, layout: &Layout, data: &ChartData, color:
                 _ => path.line_to(x as f32, y as f32),
             }
         }
-        let stroke = gsk::Stroke::builder(2.0).build();
+        let stroke = gsk::Stroke::builder(2.0)
+            .line_join(gsk::LineJoin::Round)
+            .line_cap(gsk::LineCap::Round)
+            .build();
         snapshot.append_stroke(&path.to_path(), &stroke, &color(s, None));
     }
 }
@@ -632,6 +917,93 @@ fn pie_hit(plot: Rect, chart: &Chart, data: &ChartData, x: f64, y: f64) -> Optio
     pie_slice_at(data, chart.clockwise, dy.atan2(dx))
 }
 
+/// What the mark under `(x, y)` *is*, in words — a tooltip's text: `Sales · Feb: 20` for a bar
+/// or a line, `Feb: 20 (33%)` for a pie slice. The same hit-test [`mark_at`] answers, so the
+/// words are always about the mark under the pointer.
+///
+/// A line has no area of its own, so hovering one names the category nearest the pointer along
+/// it; a legend entry is its own words already and gets no tooltip.
+pub fn describe(
+    rect: Rect,
+    chart: &Chart,
+    data: &ChartData,
+    x: f64,
+    y: f64,
+    measure: &Measure,
+) -> Option<String> {
+    let layout = layout(rect, chart, data, measure);
+    if legend_hit(&layout, x, y, measure).is_some() {
+        return None;
+    }
+    let number = |n: f64| grind_sheet::formula::value::format_number(n);
+    let series_name = |s: usize| match data.series.get(s) {
+        Some((name, _)) if !name.is_empty() => name.clone(),
+        _ => format!("Series {}", s + 1),
+    };
+    let category = |i: usize| match data.categories.get(i) {
+        Some(name) if !name.is_empty() => name.clone(),
+        _ => format!("{}", i + 1),
+    };
+    match data.kind {
+        ChartKind::Bar => {
+            let (s, cat) = bar_hit(&layout, data, x, y)?;
+            let value = *data.series.get(s)?.1.get(cat)?;
+            Some(format!(
+                "{} · {}: {}",
+                series_name(s),
+                category(cat),
+                number(value)
+            ))
+        }
+        ChartKind::Line => {
+            let s = line_hit(&layout, data, x, y)?;
+            let ticks = category_ticks(&layout, data);
+            let (cat, _) = ticks
+                .iter()
+                .enumerate()
+                .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))?;
+            let value = *data.series.get(s)?.1.get(cat)?;
+            Some(format!(
+                "{} · {}: {}",
+                series_name(s),
+                category(cat),
+                number(value)
+            ))
+        }
+        ChartKind::Pie => {
+            let point = pie_hit(layout.plot, chart, data, x, y)?;
+            let values = &data.series.first()?.1;
+            let value = *values.get(point)?;
+            let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
+            Some(format!(
+                "{}: {} ({:.0}%)",
+                category(point),
+                number(value),
+                100.0 * value / total
+            ))
+        }
+    }
+}
+
+/// The legend entry, if any, whose swatch or words `(x, y)` lands on.
+fn legend_hit<'a>(
+    layout: &'a Layout,
+    x: f64,
+    y: f64,
+    measure: &Measure,
+) -> Option<&'a LegendEntry> {
+    layout.legend.iter().find(|entry| {
+        let (w, h) = measure(&entry.label);
+        Rect {
+            x: entry.swatch.x,
+            y: entry.text.1.min(entry.swatch.y),
+            w: entry.text.0 - entry.swatch.x + w,
+            h: h.max(SWATCH),
+        }
+        .contains(x, y)
+    })
+}
+
 /// Which mark, if any, a point in widget space hits — `(series, point)`, `point` always
 /// `Some` for `Bar`/`Pie` (`Pie`'s own `series` is always `0`) and always `None` for `Line`.
 /// `rect` is the chart's own frame, exactly what [`draw`] was given, and `measure` must be the
@@ -646,6 +1018,10 @@ pub fn mark_at(
     measure: &Measure,
 ) -> Option<(usize, Option<usize>)> {
     let layout = layout(rect, chart, data, measure);
+    // A legend entry names the mark it is the colour of, swatch and words alike.
+    if let Some(entry) = legend_hit(&layout, x, y, measure) {
+        return Some((entry.series, entry.point));
+    }
     match data.kind {
         ChartKind::Bar => bar_hit(&layout, data, x, y).map(|(s, p)| (s, Some(p))),
         ChartKind::Line => line_hit(&layout, data, x, y).map(|s| (s, None)),
@@ -688,9 +1064,24 @@ mod tests {
             categories: vec!["a".into(), "b".into()],
             series: vec![("Votes".into(), vec![100.0, 80.0])],
         };
-        // The first bar is the left half of the plot, near its bottom (a full-height bar).
-        let hit = mark_at(FRAME, &chart, &data, 30.0, 90.0, &measure);
+        // The middle of the first bar, near its bottom (a full-height bar).
+        let laid = layout(FRAME, &chart, &data, &measure);
+        let bars = bar_layout(laid.plot, &data).unwrap();
+        let first = bar_rect(&laid, &bars, &data, 0, 0).unwrap();
+        let hit = mark_at(
+            FRAME,
+            &chart,
+            &data,
+            first.x + first.w / 2.0,
+            90.0,
+            &measure,
+        );
         assert_eq!(hit, Some((0, Some(0))));
+        // The band either side of a capped bar is air, not the bar.
+        assert_eq!(
+            mark_at(FRAME, &chart, &data, first.x - 2.0, 90.0, &measure),
+            None
+        );
         // Well outside the plot area hits nothing.
         assert_eq!(mark_at(FRAME, &chart, &data, 500.0, 500.0, &measure), None);
     }
@@ -782,6 +1173,118 @@ mod tests {
         chart.x_axis.label = Some("Party".into());
         chart.y_axis.gridlines = true;
         assert_eq!(layout(FRAME, &chart, &data, &measure).plot, plain);
+    }
+
+    fn two_series() -> ChartData {
+        ChartData {
+            kind: ChartKind::Bar,
+            categories: vec!["Jan".into(), "Feb".into()],
+            series: vec![
+                ("Sales".into(), vec![100.0, 80.0]),
+                ("Costs".into(), vec![40.0, 30.0]),
+            ],
+        }
+    }
+
+    /// The `dataviz` mark spec: a bar never fills its slot, and two bars of one group are
+    /// separated by the surface rather than touching.
+    #[test]
+    fn bars_are_capped_and_two_of_a_group_stand_a_gap_apart() {
+        let wide = Rect { w: 900.0, ..FRAME };
+        let data = two_series();
+        let laid = layout(wide, &bare(ChartKind::Bar), &data, &measure);
+        let bars = bar_layout(laid.plot, &data).unwrap();
+        let a = bar_rect(&laid, &bars, &data, 0, 0).unwrap();
+        let b = bar_rect(&laid, &bars, &data, 1, 0).unwrap();
+        assert_eq!(a.w, BAR_MAX);
+        assert!((b.x - (a.x + a.w) - BAR_GAP).abs() < 1e-9);
+    }
+
+    /// A legend takes its edge out of the plot, and a click on an entry names what it is the
+    /// colour of — the series for a bar, the slice for a pie.
+    #[test]
+    fn a_legend_takes_its_edge_and_its_entries_name_their_marks() {
+        let data = two_series();
+        let mut chart = bare(ChartKind::Bar);
+        let without = layout(FRAME, &chart, &data, &measure).plot;
+        for (position, narrower) in [(Legend::End, true), (Legend::Bottom, false)] {
+            chart.legend = Some(position);
+            let laid = layout(FRAME, &chart, &data, &measure);
+            assert_eq!(laid.legend.len(), 2, "{position:?}");
+            match narrower {
+                true => assert!(laid.plot.w < without.w && laid.plot.h == without.h),
+                false => assert!(laid.plot.h < without.h),
+            }
+            let costs = &laid.legend[1];
+            let hit = mark_at(
+                FRAME,
+                &chart,
+                &data,
+                costs.swatch.x + 1.0,
+                costs.swatch.y + 1.0,
+                &measure,
+            );
+            assert_eq!(hit, Some((1, None)), "{position:?}");
+        }
+        let pie = ChartData {
+            kind: ChartKind::Pie,
+            ..two_series()
+        };
+        chart.kind = ChartKind::Pie;
+        chart.legend = Some(Legend::End);
+        let laid = layout(FRAME, &chart, &pie, &measure);
+        let names: Vec<&str> = laid.legend.iter().map(|e| e.label.as_str()).collect();
+        assert_eq!(names, ["Jan", "Feb"], "a pie's legend names its slices");
+        assert_eq!((laid.legend[1].series, laid.legend[1].point), (0, Some(1)));
+    }
+
+    /// A legend that would crowd a small chart out is left off rather than squeezing the plot
+    /// to a sliver.
+    #[test]
+    fn a_legend_too_big_for_its_chart_is_left_off() {
+        let tiny = Rect {
+            w: 60.0,
+            h: 40.0,
+            ..FRAME
+        };
+        let mut chart = bare(ChartKind::Bar);
+        chart.legend = Some(Legend::End);
+        assert!(
+            layout(tiny, &chart, &two_series(), &measure)
+                .legend
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_title_takes_a_band_off_the_top() {
+        let data = two_series();
+        let mut chart = bare(ChartKind::Bar);
+        let without = layout(FRAME, &chart, &data, &measure).plot;
+        chart.title = Some("Quarter".into());
+        let laid = layout(FRAME, &chart, &data, &measure);
+        let band = laid.title.expect("room for a title");
+        assert!(band.y < laid.plot.y && laid.plot.h < without.h);
+    }
+
+    /// The tooltip names the mark under the pointer, in the reader's words rather than the
+    /// file's.
+    #[test]
+    fn a_tooltip_names_the_series_the_category_and_the_value() {
+        let data = two_series();
+        let chart = bare(ChartKind::Bar);
+        let laid = layout(FRAME, &chart, &data, &measure);
+        let bars = bar_layout(laid.plot, &data).unwrap();
+        let costs_feb = bar_rect(&laid, &bars, &data, 1, 1).unwrap();
+        let said = describe(
+            FRAME,
+            &chart,
+            &data,
+            costs_feb.x + costs_feb.w / 2.0,
+            costs_feb.y + costs_feb.h - 1.0,
+            &measure,
+        );
+        assert_eq!(said.as_deref(), Some("Costs · Feb: 30"));
     }
 
     /// The plot is scaled to the top *tick*, not to the tallest bar — that is what puts the

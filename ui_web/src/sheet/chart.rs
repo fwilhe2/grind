@@ -19,7 +19,9 @@
 //! **Read-only, for now.** The GTK shell lets a click on a bar assign it a colour; here a
 //! chart is a picture. `doc/chart-format.md`'s shell section names that gap.
 
-use grind_sheet::{Chart, ChartAxis, ChartData, ChartKind, axis_ticks, effective_color};
+use grind_sheet::{
+    Chart, ChartAxis, ChartData, ChartKind, ChartLegend, axis_ticks, effective_color,
+};
 
 /// How far the plot is inset from the frame, in the SVG's own units (which are CSS pixels,
 /// since the `<svg>` is sized in them and its `viewBox` matches).
@@ -47,6 +49,10 @@ pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
         "<svg viewBox=\"0 0 {w:.1} {h:.1}\" preserveAspectRatio=\"none\" \
          xmlns=\"http://www.w3.org/2000/svg\">"
     );
+    // The chart's own title and legend take their bands first — the GTK painter's order — and
+    // the plot and its axes are drawn in what is left, translated there as one group.
+    let (x0, y0, w, h) = dress(&mut out, chart, data, w, h);
+    out.push_str(&format!("<g transform=\"translate({x0:.1} {y0:.1})\">"));
     let ticks = axis_ticks(max_value(data));
     let (x_axis, y_axis) = axes(chart, data);
     let plot = plot_rect(&x_axis, &y_axis, &ticks, w, h);
@@ -61,8 +67,135 @@ pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
         ticks_text(&mut out, &x_axis, &y_axis, data, &ticks, plot);
     }
     titles(&mut out, &x_axis, &y_axis, w, h);
-    out.push_str("</svg>");
+    out.push_str("</g></svg>");
     out
+}
+
+/// A legend swatch's side, the gap to its words, the gap between two entries in a row, and the
+/// gap between the legend and the plot — the GTK painter's own spacing.
+const SWATCH: f64 = 10.0;
+const SWATCH_GAP: f64 = 6.0;
+const ENTRY_GAP: f64 = 14.0;
+const LEGEND_GAP: f64 = 10.0;
+
+/// The chart's own title and legend, written into `out`, and the frame left for the plot —
+/// `(x, y, w, h)`. A legend that would take more than its share of a small chart is left off,
+/// which is the GTK painter's rule too.
+fn dress(out: &mut String, chart: &Chart, data: &ChartData, w: f64, h: f64) -> Plot {
+    let (mut x0, mut y0, mut fw, mut fh) = (0.0, 0.0, w, h);
+    if let Some(title) = &chart.title
+        && h > 4.0 * TICK_H
+    {
+        out.push_str(&format!(
+            "<text class=\"chart-title\" text-anchor=\"middle\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
+            w / 2.0,
+            INSET + TICK_H,
+            escape(title)
+        ));
+        y0 += TICK_H + INSET + 6.0;
+        fh -= TICK_H + INSET + 6.0;
+    }
+    let Some(position) = chart.legend else {
+        return (x0, y0, fw, fh);
+    };
+    let items = legend_items(chart, data);
+    if items.is_empty() {
+        return (x0, y0, fw, fh);
+    }
+    let text_w = |label: &str| label.chars().count() as f64 * TICK_CHAR_W;
+    let line = TICK_H + 4.0;
+    let entry = |out: &mut String, x: f64, y: f64, label: &str, color: &str| {
+        out.push_str(&format!(
+            "<rect class=\"swatch\" rx=\"2\" x=\"{x:.1}\" y=\"{:.1}\" width=\"{SWATCH}\" \
+             height=\"{SWATCH}\" fill=\"{color}\"/><text class=\"legend\" x=\"{:.1}\" \
+             y=\"{:.1}\">{}</text>",
+            y + (TICK_H - SWATCH) / 2.0,
+            x + SWATCH + SWATCH_GAP,
+            y + TICK_H - 2.0,
+            escape(label)
+        ));
+    };
+    match position {
+        ChartLegend::Start | ChartLegend::End => {
+            let width =
+                SWATCH + SWATCH_GAP + items.iter().map(|i| text_w(&i.0)).fold(0.0, f64::max);
+            let height = items.len() as f64 * line;
+            if width + LEGEND_GAP > fw * 0.45 || height > fh {
+                return (x0, y0, fw, fh);
+            }
+            let x = match position {
+                ChartLegend::End => x0 + fw - INSET - width,
+                _ => x0 + INSET,
+            };
+            let mut y = y0 + (fh - height) / 2.0;
+            for (label, color) in &items {
+                entry(out, x, y, label, color);
+                y += line;
+            }
+            if let ChartLegend::Start = position {
+                x0 += width + LEGEND_GAP;
+            }
+            fw -= width + LEGEND_GAP;
+        }
+        ChartLegend::Top | ChartLegend::Bottom => {
+            let widths: Vec<f64> = items
+                .iter()
+                .map(|i| SWATCH + SWATCH_GAP + text_w(&i.0))
+                .collect();
+            let total = widths.iter().sum::<f64>() + ENTRY_GAP * (items.len() - 1) as f64;
+            // One row, centred. A legend too wide for it is left off rather than wrapped: this
+            // pane estimates the width of text rather than measuring it, and a second row
+            // placed on an estimate is one that overlaps.
+            if total > fw - 2.0 * INSET || line + LEGEND_GAP > fh * 0.35 {
+                return (x0, y0, fw, fh);
+            }
+            let y = match position {
+                ChartLegend::Top => y0 + INSET,
+                _ => y0 + fh - INSET - line,
+            };
+            let mut x = x0 + (fw - total) / 2.0;
+            for ((label, color), width) in items.iter().zip(&widths) {
+                entry(out, x, y, label, color);
+                x += width + ENTRY_GAP;
+            }
+            if let ChartLegend::Top = position {
+                y0 += line + LEGEND_GAP;
+            }
+            fh -= line + LEGEND_GAP;
+        }
+    }
+    (x0, y0, fw, fh)
+}
+
+/// What a legend names and in which colour: a series each for a bar or a line, a slice each for
+/// a pie — [`effective_color`] resolving both, so a swatch is the colour of what it names.
+fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, String)> {
+    match data.kind {
+        ChartKind::Pie => grind_sheet::pie_slices(data, chart.clockwise)
+            .into_iter()
+            .map(|slice| {
+                let name = data
+                    .categories
+                    .get(slice.point)
+                    .filter(|name| !name.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}", slice.point + 1));
+                (name, effective_color(chart, 0, Some(slice.point)))
+            })
+            .collect(),
+        ChartKind::Bar | ChartKind::Line => data
+            .series
+            .iter()
+            .enumerate()
+            .map(|(i, (name, _))| {
+                let name = match name.is_empty() {
+                    true => format!("Series {}", i + 1),
+                    false => name.clone(),
+                };
+                (name, effective_color(chart, i, None))
+            })
+            .collect(),
+    }
 }
 
 /// A pie has no axes, so nothing an axis carries costs it any of its circle — the same rule
@@ -435,6 +568,30 @@ mod tests {
     }
 
     /// A category called `<script>` is text, and has to leave as text.
+    /// A title and a legend are drawn, and a legend's words are escaped like every other piece
+    /// of a document's text — the swatch carrying the colour, the words in ink.
+    #[test]
+    fn a_title_and_a_legend_are_drawn_and_the_plot_moves_over_for_them() {
+        let data = ChartData {
+            kind: ChartKind::Bar,
+            categories: vec!["a".into(), "b".into()],
+            series: vec![
+                ("Sales <net>".into(), vec![1.0, 2.0]),
+                ("Costs".into(), vec![3.0, 4.0]),
+            ],
+        };
+        let mut plain = chart(ChartKind::Bar);
+        plain.series.push(plain.series[0].clone());
+        let mut dressed = plain.clone();
+        dressed.title = Some("Q1".into());
+        dressed.legend = Some(ChartLegend::End);
+        let drawn = svg(&dressed, &data, 400.0, 200.0);
+        assert!(drawn.contains("class=\"chart-title\"") && drawn.contains(">Q1</text>"));
+        assert_eq!(drawn.matches("class=\"swatch\"").count(), 2);
+        assert!(drawn.contains("Sales &lt;net&gt;"));
+        assert!(!svg(&plain, &data, 400.0, 200.0).contains("swatch"));
+    }
+
     #[test]
     fn a_categorys_own_name_is_escaped() {
         let mut data = data(ChartKind::Bar);

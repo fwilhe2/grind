@@ -1853,6 +1853,13 @@ enum Command {
         /// Which way a pie runs from twelve o'clock (default true)
         #[arg(long, value_name = "BOOL")]
         clockwise: Option<bool>,
+        /// The chart's own title; with `--from`, a single series' name is the default
+        #[arg(long, value_name = "TEXT")]
+        title: Option<String>,
+        /// Where the legend sits, or none; defaults to the end when there is more than one
+        /// series to tell apart, or a pie's slices
+        #[arg(value_enum, long)]
+        legend: Option<LegendArg>,
         /// Which sheet the ranges (and the chart itself) are on; defaults to the first
         #[arg(long)]
         sheet: Option<String>,
@@ -1911,6 +1918,12 @@ enum Command {
         /// Which way a pie runs from twelve o'clock
         #[arg(long, value_name = "BOOL")]
         clockwise: Option<bool>,
+        /// The chart's own title; pass an empty string to clear it
+        #[arg(long, value_name = "TEXT")]
+        title: Option<String>,
+        /// Where the legend sits, or none
+        #[arg(value_enum, long)]
+        legend: Option<LegendArg>,
         /// The x axis' own title; pass an empty string to clear it
         #[arg(long, value_name = "TEXT")]
         x_axis_label: Option<String>,
@@ -2014,6 +2027,29 @@ enum ChartType {
     Bar,
     Line,
     Pie,
+}
+
+/// Where `--legend` puts a chart's legend, or `none` — ODF's own words (`chart:legend-position`),
+/// `end` being the right-hand side of a left-to-right chart.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum LegendArg {
+    None,
+    End,
+    Bottom,
+    Top,
+    Start,
+}
+
+impl From<LegendArg> for Option<grind_sheet::ChartLegend> {
+    fn from(legend: LegendArg) -> Self {
+        match legend {
+            LegendArg::None => None,
+            LegendArg::End => Some(grind_sheet::ChartLegend::End),
+            LegendArg::Bottom => Some(grind_sheet::ChartLegend::Bottom),
+            LegendArg::Top => Some(grind_sheet::ChartLegend::Top),
+            LegendArg::Start => Some(grind_sheet::ChartLegend::Start),
+        }
+    }
 }
 
 impl From<ChartType> for grind_sheet::ChartKind {
@@ -3065,6 +3101,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             categories,
             series,
             clockwise,
+            title,
+            legend,
             sheet,
             x,
             y,
@@ -3114,6 +3152,15 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             if let Some(clockwise) = clockwise {
                 spec.clockwise = *clockwise;
             }
+            if let Some(title) = title {
+                spec.title = Some(title.clone());
+            }
+            // Asked of the spec as it finally stands, since `--series` may have changed how
+            // many things there are to tell apart.
+            spec.legend = match legend {
+                Some(legend) => (*legend).into(),
+                None => spec.default_legend(),
+            };
             spec.x_axis = axis(
                 Some(&spec.x_axis),
                 x_axis_label,
@@ -3139,6 +3186,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             categories,
             series,
             clockwise,
+            title,
+            legend,
             x_axis_label,
             y_axis_label,
             x_tick_labels,
@@ -3168,6 +3217,13 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             }
             if let Some(clockwise) = clockwise {
                 spec.clockwise = *clockwise;
+            }
+            if let Some(title) = title {
+                // `App::edit_chart` reads an empty title as none.
+                spec.title = Some(title.clone());
+            }
+            if let Some(legend) = legend {
+                spec.legend = (*legend).into();
             }
             spec.x_axis = axis(
                 Some(&chart.x_axis),
@@ -3200,10 +3256,11 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        "{i}\t{:?}\t{}\t{series}\t{}",
+                        "{i}\t{:?}\t{}\t{series}\t{}\t{}",
                         chart.kind,
                         chart.categories.as_deref().unwrap_or("-"),
-                        axes(chart)
+                        axes(chart),
+                        dress(chart)
                     )
                 })
                 .collect();
@@ -3353,6 +3410,31 @@ fn axis(
 
 /// A chart's two axes, for one column of `chart-list` — the title if it has one, then a letter
 /// per thing switched on, so a chart that carries nothing prints `-` rather than a blank.
+/// `chart-list`'s last column: the chart's own title, its legend's position and a pie's
+/// direction — `title:Q1 legend:end`, or `-` for a chart with none of them.
+fn dress(chart: &grind_sheet::Chart) -> String {
+    let mut parts = Vec::new();
+    if let Some(title) = &chart.title {
+        parts.push(format!("title:{title}"));
+    }
+    if let Some(legend) = chart.legend {
+        parts.push(format!("legend:{}", legend.token()));
+    }
+    if chart.kind == grind_sheet::ChartKind::Pie {
+        parts.push(
+            match chart.clockwise {
+                true => "clockwise",
+                false => "counter-clockwise",
+            }
+            .to_owned(),
+        );
+    }
+    match parts.is_empty() {
+        true => "-".to_owned(),
+        false => parts.join(" "),
+    }
+}
+
 fn axes(chart: &grind_sheet::Chart) -> String {
     let one = |name: &str, axis: &grind_sheet::ChartAxis| {
         let mut flags = String::new();

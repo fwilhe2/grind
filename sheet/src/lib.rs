@@ -46,9 +46,9 @@ pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
 pub use chart::{
-    Axis as ChartAxis, Chart, ChartData, ChartKind, Guess as ChartGuess, Series as ChartSeries,
-    Shape as ChartShape, Slice, Spec as ChartSpec, Ticks, axis_ticks, effective_color,
-    pie_slice_at, pie_slices, series_color,
+    Axis as ChartAxis, Chart, ChartData, ChartKind, Guess as ChartGuess, Legend as ChartLegend,
+    Series as ChartSeries, Shape as ChartShape, Slice, Spec as ChartSpec, Ticks, axis_ticks,
+    effective_color, pie_slice_at, pie_slices, series_color,
 };
 pub use filter::Filter;
 pub use model::{CellValue, Document, Pos, Sheet};
@@ -1904,7 +1904,7 @@ impl App {
     ) -> Result<chart::Guess> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
-        Ok(chart::guess(s, start, end, shape))
+        Ok(chart::guess(s, start, end, shape, state.doc.null_date))
     }
 
     /// Every chart on a sheet, in document order.
@@ -2022,6 +2022,13 @@ impl App {
         chart.x_axis = spec.x_axis.clone();
         chart.y_axis = spec.y_axis.clone();
         chart.clockwise = spec.clockwise;
+        chart.title = spec
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+            .map(str::to_owned);
+        chart.legend = spec.legend;
         Ok(())
     }
 

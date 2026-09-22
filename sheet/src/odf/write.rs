@@ -820,6 +820,23 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
         esc(&chart.height),
         chart.kind.class()
     );
+    // The schema's order: title, (subtitle, footer), legend, then the plot area (rng:462-485).
+    // No position on either — both are optional (rng:1722-1733), and LibreOffice lays out a
+    // title and a legend that say nothing about where they sit.
+    if let Some(title) = &chart.title {
+        let _ = writeln!(
+            out,
+            "          <chart:title><text:p>{}</text:p></chart:title>",
+            esc(title)
+        );
+    }
+    if let Some(legend) = chart.legend {
+        let _ = writeln!(
+            out,
+            "          <chart:legend chart:legend-position=\"{}\"/>",
+            legend.token()
+        );
+    }
     out.push_str("          <chart:plot-area>\n");
     write_axis(out, "x", chart.categories.as_deref(), &chart.x_axis);
     write_axis(out, "y", None, &chart.y_axis);

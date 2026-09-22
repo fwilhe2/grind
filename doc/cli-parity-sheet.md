@@ -89,7 +89,8 @@ stops ratcheting.
   JSON report. Not a command of its own, because the answer is only interesting *after* an
   edit — asking it of an untouched document is what `grind sheet recalc --dry-run` is for.
 - `add_chart` — `grind sheet chart-add [--from <range>] [--type bar|line|pie] [--categories
-  <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [--x-axis-label <text>]
+  <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [--title <text>] [--legend
+  none|end|bottom|top|start] [--x-axis-label <text>]
   [--y-axis-label <text>] [--x-tick-labels <bool>] [--y-tick-labels <bool>] [--x-gridlines
   <bool>] [--y-gridlines <bool>]` (`doc/chart-format.md`) — one `chart::Spec`, with every flag
   given overriding what `--from` read
@@ -99,8 +100,8 @@ stops ratcheting.
   the CLI says the same things with `--series` and `--categories` rather than with a second
   vocabulary for them
 - `edit_chart` — `grind sheet chart-edit <index> [--type bar|line|pie]
-  [--categories <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [the same
-  axis flags]` — what a chart *is*, changed after the fact in the vocabulary a user types;
+  [--categories <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [--title
+  <text>] [--legend none|end|bottom|top|start] [the same axis flags]` — what a chart *is*, changed after the fact in the vocabulary a user types;
   every flag left off keeps what the chart already has, and its position stays
   `chart-reshape`'s
 - `charts` — `grind sheet chart-list`

@@ -678,6 +678,19 @@ input[type="text"] {
   font: 11px system-ui, sans-serif;
 }
 
+/* The chart's own title is its one heading; a legend's words are ink, never the series'
+   colour — the swatch beside them carries that. */
+.chart .chart-title {
+  fill: CanvasText;
+  font: 600 12px system-ui, sans-serif;
+}
+
+.chart .legend {
+  fill: CanvasText;
+  opacity: 0.85;
+  font: 10px system-ui, sans-serif;
+}
+
 /* --- sheet tabs ---------------------------------------------------------- */
 
 #tabs {

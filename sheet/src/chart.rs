@@ -75,12 +75,12 @@ pub struct Series {
 /// three things: a title, whether its tick labels are drawn, and whether it rules gridlines
 /// across the plot. Each is a distinct element or attribute in ODF, cited on its own field.
 ///
-/// This is deliberately *not* the chart's own title or its legend, both of which stay out
-/// (`doc/chart-format.md`'s scope line) — an axis' own title is a different element.
+/// This is not the chart's own title or its legend, which are [`Chart::title`] and
+/// [`Chart::legend`] — an axis' own title is a different element.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Axis {
     /// This axis' own `chart:title` (rng:422-434), plain text. A different element from
-    /// `chart:chart`'s own title, which this build never reads or writes.
+    /// `chart:chart`'s own title ([`Chart::title`]), though the two share a definition.
     pub label: Option<String>,
     /// Whether the tick labels along this axis are drawn — the categories on x, the value
     /// scale on y. `chart:display-label` (rng:10069), a `style:chart-properties` attribute on
@@ -128,10 +128,50 @@ impl Axis {
     }
 }
 
+/// Where a chart's legend sits — `chart:legend-position` (rng:700-707), in ODF's own
+/// writing-direction words: `End` is the right-hand side of a left-to-right chart.
+///
+/// The schema's four corner positions (`top-start` and so on, rng:718-725) read as the edge
+/// they are on, and a legend that states no position at all reads as `End`, where LibreOffice
+/// puts one (`doc/chart-format.md`, The chart's own title and legend).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Legend {
+    Start,
+    End,
+    Top,
+    Bottom,
+}
+
+impl Legend {
+    /// Every position, in the order a picker offers them — the one a new chart gets first.
+    pub const ALL: [Legend; 4] = [Legend::End, Legend::Bottom, Legend::Top, Legend::Start];
+
+    /// The `chart:legend-position` token.
+    pub fn token(self) -> &'static str {
+        match self {
+            Legend::Start => "start",
+            Legend::End => "end",
+            Legend::Top => "top",
+            Legend::Bottom => "bottom",
+        }
+    }
+
+    /// The position a `chart:legend-position` token names — the corners by the edge they are
+    /// on, and anything else unrecognised as `End` (§9's tolerance: a legend is still a legend).
+    pub fn from_token(token: &str) -> Self {
+        match token {
+            "start" => Legend::Start,
+            "top" | "top-start" | "top-end" => Legend::Top,
+            "bottom" | "bottom-start" | "bottom-end" => Legend::Bottom,
+            _ => Legend::End,
+        }
+    }
+}
+
 /// A chart, as this build models it — `doc/chart-format.md`'s scope line is the whole of what
-/// is missing: no chart-level title, no subtitle, no legend, one categories range and one
-/// values range per series. An axis' own title, tick labels and gridlines are in scope — see
-/// [`Axis`].
+/// is missing: no subtitle, no footer, one categories range and one values range per series.
+/// The chart's own title and legend are in scope, and so are an axis' own title, tick labels
+/// and gridlines — see [`Axis`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chart {
     pub kind: ChartKind,
@@ -161,6 +201,13 @@ pub struct Chart {
     /// every pie before it had one.
     #[serde(default = "clockwise_by_default")]
     pub clockwise: bool,
+    /// The chart's own `chart:title` (rng:466, rng:934) — plain text, and a different element
+    /// from an axis' own title ([`Axis::label`]), though the two share a definition.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The chart's `chart:legend` (rng:475, rng:694), and where it sits; `None` is no legend.
+    #[serde(default)]
+    pub legend: Option<Legend>,
 }
 
 fn clockwise_by_default() -> bool {
@@ -181,6 +228,8 @@ impl Chart {
             x_axis: Axis::default(),
             y_axis: Axis::default(),
             clockwise: clockwise_by_default(),
+            title: None,
+            legend: None,
         }
     }
 }
@@ -205,6 +254,10 @@ pub struct Spec {
     /// A pie's direction ([`Chart::clockwise`]); carried whatever the kind, so turning a pie
     /// into a bar and back does not lose it.
     pub clockwise: bool,
+    /// The chart's own title ([`Chart::title`]).
+    pub title: Option<String>,
+    /// Its legend ([`Chart::legend`]).
+    pub legend: Option<Legend>,
 }
 
 impl Spec {
@@ -217,7 +270,16 @@ impl Spec {
             x_axis: Axis::default(),
             y_axis: Axis::default(),
             clockwise: clockwise_by_default(),
+            title: None,
+            legend: None,
         }
+    }
+
+    /// The legend a chart of this spec gets when nobody said: one when there is more than one
+    /// thing to tell apart — two or more series, or a pie's slices — and none for a single bar
+    /// or line series, whose one colour the title already names.
+    pub fn default_legend(&self) -> Option<Legend> {
+        (self.kind == ChartKind::Pie || self.series.len() > 1).then_some(Legend::End)
     }
 
     /// An existing chart, as the spec that would make it — what an *Edit Chart* dialog opens on.
@@ -233,6 +295,8 @@ impl Spec {
             x_axis: chart.x_axis.clone(),
             y_axis: chart.y_axis.clone(),
             clockwise: chart.clockwise,
+            title: chart.title.clone(),
+            legend: chart.legend,
         }
     }
 }
@@ -278,7 +342,13 @@ pub struct Guess {
 ///
 /// `shape`, when given, replaces the three answers about the block and the rest follows from it
 /// — how a dialog lets a person say "no, the series are the rows".
-pub fn guess(sheet: &crate::Sheet, start: Pos, end: Pos, shape: Option<Shape>) -> Guess {
+pub fn guess(
+    sheet: &crate::Sheet,
+    start: Pos,
+    end: Pos,
+    shape: Option<Shape>,
+    null_date: i64,
+) -> Guess {
     let (start, end) = match start == end {
         true => region(sheet, start),
         false => (start, end),
@@ -352,6 +422,21 @@ pub fn guess(sheet: &crate::Sheet, start: Pos, end: Pos, shape: Option<Shape>) -
             }
         }
     }
+    // One series needs no legend, and is what the chart is *of*: its name is the title. More
+    // than one is what a legend is for.
+    if let [(_, Some(label))] = spec.series.as_slice() {
+        let pos = a1::parse(label).ok().and_then(|reference| {
+            Some(Pos::new(
+                reference.start.row?.index,
+                reference.start.col?.index,
+            ))
+        });
+        if let Some(pos) = pos {
+            let text = crate::render(sheet, pos, null_date);
+            spec.title = (!text.trim().is_empty()).then(|| text.trim().to_owned());
+        }
+    }
+    spec.legend = spec.default_legend();
     Guess {
         start,
         end,
@@ -880,7 +965,7 @@ mod tests {
     /// and a column of figures per series.
     #[test]
     fn a_table_down_the_page_is_a_series_per_column() {
-        let guessed = guess(&table(DOWN), Pos::new(0, 0), Pos::new(4, 2), None);
+        let guessed = guess(&table(DOWN), Pos::new(0, 0), Pos::new(4, 2), None, 0);
         assert_eq!(
             guessed.shape,
             Shape {
@@ -895,6 +980,9 @@ mod tests {
             series_of(&guessed.spec),
             [("B2:B5", Some("B1")), ("C2:C5", Some("C1"))]
         );
+        // Two series are told apart by a legend, and no one of them is the title.
+        assert_eq!(guessed.spec.legend, Some(Legend::End));
+        assert_eq!(guessed.spec.title, None);
     }
 
     /// The bug this function exists for: months across the top are the categories, and each
@@ -902,7 +990,7 @@ mod tests {
     /// x axis and five unlabelled bars of each.
     #[test]
     fn a_table_across_the_page_is_a_series_per_row() {
-        let guessed = guess(&table(ACROSS), Pos::new(0, 0), Pos::new(2, 5), None);
+        let guessed = guess(&table(ACROSS), Pos::new(0, 0), Pos::new(2, 5), None, 0);
         assert!(guessed.shape.by_rows);
         assert_eq!(guessed.spec.categories.as_deref(), Some("B1:F1"));
         assert_eq!(
@@ -917,7 +1005,7 @@ mod tests {
         let mut rows: Vec<&[&str]> = ACROSS.to_vec();
         rows.push(&[]);
         rows.push(&["", "", "", "", "", "", "", "unrelated"]);
-        let guessed = guess(&table(&rows), Pos::new(1, 3), Pos::new(1, 3), None);
+        let guessed = guess(&table(&rows), Pos::new(1, 3), Pos::new(1, 3), None, 0);
         assert_eq!(
             (guessed.start, guessed.end),
             (Pos::new(0, 0), Pos::new(2, 5))
@@ -934,7 +1022,7 @@ mod tests {
             );
             sheet.set_kind(Pos::new(row, 0), crate::model::NumberKind::Date);
         }
-        let guessed = guess(&sheet, Pos::new(0, 0), Pos::new(4, 2), None);
+        let guessed = guess(&sheet, Pos::new(0, 0), Pos::new(4, 2), None, 0);
         assert!(guessed.shape.label_column, "a date column names its rows");
         assert_eq!(guessed.spec.kind, ChartKind::Line);
         assert_eq!(guessed.spec.series.len(), 2);
@@ -949,13 +1037,16 @@ mod tests {
             &["2022", "7"],
             &["2023", "6"],
         ];
-        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None);
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None, 0);
         assert!(guessed.shape.label_column);
         assert_eq!(guessed.spec.categories.as_deref(), Some("A2:A4"));
         assert_eq!(series_of(&guessed.spec), [("B2:B4", Some("B1"))]);
+        // One series is what the chart is of: its name is the title, and it needs no legend.
+        assert_eq!(guessed.spec.title.as_deref(), Some("Revenue"));
+        assert_eq!(guessed.spec.legend, None);
         // Figures that do not count are figures.
         let rows: &[&[&str]] = &[&["A", "B"], &["3", "5"], &["1", "7"], &["8", "6"]];
-        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None);
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None, 0);
         assert!(!guessed.shape.label_column);
         assert_eq!(guessed.spec.series.len(), 2);
     }
@@ -963,7 +1054,7 @@ mod tests {
     #[test]
     fn a_bare_column_of_figures_is_one_series_with_nothing_naming_it() {
         let rows: &[&[&str]] = &[&["3"], &["1"], &["4"]];
-        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(2, 0), None);
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(2, 0), None, 0);
         assert_eq!(guessed.spec.categories, None);
         assert_eq!(series_of(&guessed.spec), [("A1:A3", None)]);
     }
@@ -981,6 +1072,7 @@ mod tests {
             Pos::new(0, 0),
             Pos::new(2, 5),
             Some(columns),
+            0,
         );
         assert_eq!(guessed.shape, columns);
         assert_eq!(guessed.spec.categories.as_deref(), Some("A2:A3"));
@@ -991,7 +1083,7 @@ mod tests {
     #[test]
     fn a_block_with_no_figures_in_it_charts_nothing() {
         let rows: &[&[&str]] = &[&["a", "b"], &["c", "d"]];
-        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(1, 1), None);
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(1, 1), None, 0);
         assert!(guessed.spec.series.is_empty());
         assert_eq!(guessed.spec.categories, None);
     }
