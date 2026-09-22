@@ -3973,12 +3973,13 @@ mod imp {
                     let role = roles.then(|| viewport.role(row, col)).flatten();
                     let color = role
                         .and_then(|role| crate::theme::role_color(role, palette))
-                        .or_else(|| {
-                            style
-                                .and_then(|s| s.color.as_deref())
-                                .and_then(crate::theme::color)
-                        })
-                        .unwrap_or(palette.foreground);
+                        .unwrap_or_else(|| {
+                            crate::theme::ink(
+                                style.and_then(|s| s.color.as_deref()),
+                                style.and_then(|s| s.background.as_deref()),
+                                palette,
+                            )
+                        });
                     let align = style
                         .and_then(|s| s.align.as_deref())
                         .and_then(aligned)

@@ -93,8 +93,11 @@ pub fn rank(rows: &[Row], needle: &str) -> Vec<Match> {
     scored.into_iter().map(|(_, _, found)| found).collect()
 }
 
-/// An accelerator list as a reader spells it — `Ctrl+Shift+F`, and nothing at all when the
-/// verb has no key of its own, which is most of them.
+/// An accelerator list as a reader spells it — **GTK's own label**, `Shift+Ctrl+F`, which is
+/// exactly what the primary menu and the shortcuts window show for the same verb. The palette
+/// used to spell them by hand (`Ctrl+Shift+f`), and a verb spelled two ways in two places is a
+/// verb a reader has to learn twice. Nothing at all when the verb has no key of its own, which
+/// is most of them.
 ///
 /// The first accelerator only: `redo` has two on purpose (`doc/sheet-shell.md`), and a row
 /// that lists both is teaching a choice nobody has to make.
@@ -102,15 +105,40 @@ pub fn keys(accels: &[&str]) -> String {
     let Some(accel) = accels.first() else {
         return String::new();
     };
-    accel
-        .replace("<Control>", "Ctrl+")
-        .replace("<Shift>", "Shift+")
-        .replace("<Alt>", "Alt+")
-        .replace("KP_", "")
-        .replace("plus", "+")
-        .replace("minus", "−")
-        .replace("equal", "=")
-        .replace("question", "?")
+    // GTK's own `accelerator_get_label` is the spelling to match, and it needs a GTK that has
+    // been initialised — so this is its format, restated for the keys this table uses, where a
+    // test with no display can hold it: modifiers as Shift, Ctrl, Alt in that order, a letter in
+    // capitals, and a symbol key by the character it types.
+    let (mut shift, mut ctrl, mut alt) = (false, false, false);
+    let mut rest = *accel;
+    while let Some(after) = rest.strip_prefix('<') {
+        let Some((modifier, tail)) = after.split_once('>') else {
+            break;
+        };
+        match modifier {
+            "Shift" => shift = true,
+            "Control" | "Primary" | "Ctrl" => ctrl = true,
+            "Alt" => alt = true,
+            _ => {}
+        }
+        rest = tail;
+    }
+    let key = match rest {
+        "plus" | "KP_Add" => "+".to_owned(),
+        "minus" | "KP_Subtract" => "-".to_owned(),
+        "equal" => "=".to_owned(),
+        "question" => "?".to_owned(),
+        key if key.starts_with("KP_") => key["KP_".len()..].to_owned(),
+        key if key.chars().count() == 1 => key.to_uppercase(),
+        key => key.to_owned(),
+    };
+    let mut label = String::new();
+    for (on, name) in [(shift, "Shift+"), (ctrl, "Ctrl+"), (alt, "Alt+")] {
+        if on {
+            label.push_str(name);
+        }
+    }
+    label + &key
 }
 
 /// The title with its matched characters emphasised, as Pango markup.
@@ -378,11 +406,15 @@ mod tests {
 
     #[test]
     fn an_accelerator_is_shown_the_way_a_reader_says_it() {
-        assert_eq!(keys(&["<Control><Shift>f"]), "Ctrl+Shift+f");
+        assert_eq!(keys(&["<Control><Shift>f"]), "Shift+Ctrl+F");
         assert_eq!(keys(&["F9"]), "F9");
+        assert_eq!(keys(&["<Control>n"]), "Ctrl+N");
+        assert_eq!(keys(&["<Control>question"]), "Ctrl+?");
+        assert_eq!(keys(&["<Control>plus", "<Control>equal"]), "Ctrl++");
+        assert_eq!(keys(&["<Control>KP_0"]), "Ctrl+0");
         assert_eq!(keys(&[]), "");
         // Two spellings of one key: the first is the one to teach.
-        assert_eq!(keys(&["<Control><Shift>z", "<Control>y"]), "Ctrl+Shift+z");
+        assert_eq!(keys(&["<Control><Shift>z", "<Control>y"]), "Shift+Ctrl+Z");
     }
 
     /// A title's own characters are escaped and the emphasis is not — the one way this can be

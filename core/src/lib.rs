@@ -25,6 +25,7 @@
 use std::fmt;
 
 pub mod build_info;
+pub mod color;
 pub mod kind;
 pub mod layout;
 pub mod lint;

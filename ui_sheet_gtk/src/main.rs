@@ -1257,12 +1257,15 @@ impl Ui {
             return self.toast("Select the rows to format, including their headings");
         }
 
-        let header = gtk::CheckButton::builder()
-            .label("Has header row")
+        // A boxed list of Adwaita rows, the shape every other dialog in this window has — a
+        // switch, a choice and an entry, each a row a reader can take in at a glance.
+        let header = adw::SwitchRow::builder()
+            .title("Header row")
+            .subtitle("The first row names the columns")
             .active(true)
             .build();
-        // The totals row's aggregate, "None" first — one dropdown rather than a checkbox plus
-        // a second control, since "no totals row" is one more entry in the same list. The
+        // The totals row's aggregate, "None" first — one dropdown rather than a switch plus a
+        // second control, since "no totals row" is one more entry in the same list. The
         // labels are `TotalsFunction::label`, so this window cannot call one of them something
         // the terminal or the CLI does not.
         let mut totals_labels = vec!["None".to_owned()];
@@ -1271,24 +1274,23 @@ impl Ui {
                 .iter()
                 .map(|f| f.label().to_owned()),
         );
-        let totals = gtk::DropDown::from_strings(
-            &totals_labels.iter().map(String::as_str).collect::<Vec<_>>(),
-        );
-        let totals_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        totals_row.append(&gtk::Label::new(Some("Totals row")));
-        totals_row.append(&totals);
-        let name = gtk::Entry::builder()
-            .placeholder_text("Table1")
+        let totals = adw::ComboRow::builder()
+            .title("Totals row")
+            .model(&gtk::StringList::new(
+                &totals_labels.iter().map(String::as_str).collect::<Vec<_>>(),
+            ))
+            .build();
+        let name = adw::EntryRow::builder()
+            .title("Name (optional)")
             .activates_default(true)
             .build();
-        let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        name_row.append(&gtk::Label::new(Some("Name")));
-        name_row.append(&name);
-
-        let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let body = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        body.add_css_class("boxed-list");
         body.append(&header);
-        body.append(&totals_row);
-        body.append(&name_row);
+        body.append(&totals);
+        body.append(&name);
 
         let dialog = adw::AlertDialog::new(Some("Format as Table"), None);
         dialog.set_extra_child(Some(&body));

@@ -245,6 +245,52 @@ pub fn reference_attributes(text: &str, dark: bool) -> gtk::pango::AttrList {
     attributes
 }
 
+/// The ink a cell's text is drawn in — `color` and `fill` being the document's own
+/// `fo:color` and `fo:background-color`, either of which it may not have said. **Nothing here
+/// is written**: this decides how a document's colours are shown against a theme, never what
+/// they are.
+///
+/// - **No colour of its own** is ODF's *automatic*: the theme's ink, unless the document's own
+///   fill makes that unreadable — then black or white, whichever reads
+///   ([`grind_core::color::automatic_ink`]). White theme text on a silver heading row is the
+///   case that made this necessary.
+/// - **A colour of its own, on the theme's ground in a dark theme**, is lifted along its own
+///   hue until it reads ([`grind_core::color::legible`]): navy chosen on white paper is
+///   invisible on a dark sheet, and a lighter navy is still the colour the document chose.
+/// - **A colour of its own on a fill of its own**, or in a light theme, is the document's
+///   decision about its own paper, and is drawn as it is.
+pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::RGBA {
+    use grind_core::color as core;
+    let own = color.and_then(self::color);
+    let fill = fill.and_then(self::color);
+    match (own, fill) {
+        (None, None) => palette.foreground,
+        (None, Some(fill)) => rgba(core::automatic_ink(rgb8(fill), rgb8(palette.foreground))),
+        (Some(own), None) if is_dark(palette) => rgba(core::legible(
+            rgb8(own),
+            rgb8(palette.background),
+            core::TEXT,
+        )),
+        (Some(own), _) => own,
+    }
+}
+
+/// A colour as the core's three bytes ([`grind_core::color::Rgb`]), alpha dropped: a cell's
+/// colour is opaque in ODF, and a theme's is compared as it lands.
+fn rgb8(c: gdk::RGBA) -> grind_core::color::Rgb {
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    (byte(c.red()), byte(c.green()), byte(c.blue()))
+}
+
+fn rgba((r, g, b): grind_core::color::Rgb) -> gdk::RGBA {
+    gdk::RGBA::new(
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        1.0,
+    )
+}
+
 /// Whether the running theme is a dark one, which is all the reference palette needs to
 /// know. Read from the background rather than from a setting, so a high-contrast or
 /// hand-rolled theme is classified by what it actually looks like.
@@ -325,6 +371,40 @@ mod tests {
 
     /// Roles are read by colour first, so two of them sharing one is the mode failing at the
     /// thing it exists to do.
+    /// Every palette colour a document can give its text reads on a dark sheet, a fill it chose
+    /// gets automatic ink that reads on it, and in a light theme the document's colours are
+    /// drawn exactly as they are.
+    #[test]
+    fn a_documents_ink_reads_on_whatever_it_is_drawn_on() {
+        use grind_core::color::{TEXT, contrast};
+        let dark = ground(
+            gdk::RGBA::new(0.12, 0.12, 0.12, 1.0),
+            gdk::RGBA::new(0.93, 0.93, 0.93, 1.0),
+        );
+        let light = ground(gdk::RGBA::WHITE, gdk::RGBA::BLACK);
+        for (name, hex) in grind_sheet::style::PALETTE {
+            let drawn = ink(Some(hex), None, &dark);
+            assert!(
+                contrast(rgb8(drawn), rgb8(dark.background)) >= TEXT,
+                "{name} text is unreadable on a dark sheet"
+            );
+            assert_eq!(ink(Some(hex), None, &light), color(hex).unwrap(), "{name}");
+            // Automatic ink on the document's own fill, in either theme.
+            for palette in [&dark, &light] {
+                let on_fill = ink(None, Some(hex), palette);
+                let fill = rgb8(color(hex).unwrap());
+                assert!(
+                    contrast(rgb8(on_fill), fill) >= TEXT
+                        || contrast(rgb8(on_fill), fill)
+                            >= contrast((0, 0, 0), fill).max(contrast((255, 255, 255), fill)),
+                    "automatic ink on {name} does not read"
+                );
+            }
+        }
+        // The silver heading row that started it: white theme ink gives way to black.
+        assert_eq!(ink(None, Some("#dddddd"), &dark), gdk::RGBA::BLACK);
+    }
+
     #[test]
     fn the_roles_do_not_share_a_colour() {
         let palette = ground(WHITE, BLACK);

@@ -76,12 +76,7 @@ impl Rgb {
 
     /// A colour parsed from `#rrggbb`, which is the only form ODF stores (§5.1).
     pub fn parse(hex: &str) -> Option<Self> {
-        let digits = hex.strip_prefix('#')?;
-        if digits.len() != 6 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        let byte = |at: usize| u8::from_str_radix(&digits[at..at + 2], 16).ok();
-        Some(Rgb(byte(0)?, byte(2)?, byte(4)?))
+        grind_core::color::parse(hex).map(Rgb::from)
     }
 
     /// WCAG relative luminance — the perceptual weight of a colour, on 0.0 to 1.0.
@@ -90,26 +85,14 @@ impl Rgb {
     /// **user's own accent colour** is legible on this shell's grounds, and that decision has to
     /// be made at run time on a machine nobody here can see (see [`accent_for`]).
     pub fn luminance(self) -> f64 {
-        let channel = |value: u8| {
-            let v = f64::from(value) / 255.0;
-            match v <= 0.040_45 {
-                true => v / 12.92,
-                false => ((v + 0.055) / 1.055).powf(2.4),
-            }
-        };
-        0.2126 * channel(self.0) + 0.7152 * channel(self.1) + 0.0722 * channel(self.2)
+        grind_core::color::luminance(self.into())
     }
 
     /// The WCAG contrast ratio between two colours, from 1.0 (identical) to 21.0 (black on
     /// white). 3.0 is the floor for a line or a shape you have to be able to see; 4.5 is the one
     /// for small text.
     pub fn contrast(self, other: Rgb) -> f64 {
-        let (a, b) = (self.luminance(), other.luminance());
-        let (light, dark) = match a > b {
-            true => (a, b),
-            false => (b, a),
-        };
-        (light + 0.05) / (dark + 0.05)
+        grind_core::color::contrast(self.into(), other.into())
     }
 
     /// Hue, saturation and lightness — the space a tint ramp is built in.
@@ -119,48 +102,26 @@ impl Rgb {
     /// blend towards white: blending desaturates, and an accent that desaturates on a dark theme
     /// stops looking like the colour the user chose.
     pub fn hsl(self) -> (f64, f64, f64) {
-        let (r, g, b) = (
-            f64::from(self.0) / 255.0,
-            f64::from(self.1) / 255.0,
-            f64::from(self.2) / 255.0,
-        );
-        let max = r.max(g).max(b);
-        let min = r.min(g).min(b);
-        let l = (max + min) / 2.0;
-        if (max - min).abs() < f64::EPSILON {
-            return (0.0, 0.0, l);
-        }
-        let d = max - min;
-        let s = match l > 0.5 {
-            true => d / (2.0 - max - min),
-            false => d / (max + min),
-        };
-        let h = if (max - r).abs() < f64::EPSILON {
-            ((g - b) / d).rem_euclid(6.0)
-        } else if (max - g).abs() < f64::EPSILON {
-            (b - r) / d + 2.0
-        } else {
-            (r - g) / d + 4.0
-        };
-        (h * 60.0, s, l)
+        grind_core::color::hsl(self.into())
     }
 
     /// The inverse of [`Rgb::hsl`].
     pub fn from_hsl(h: f64, s: f64, l: f64) -> Self {
-        let (h, s, l) = (h.rem_euclid(360.0), s.clamp(0.0, 1.0), l.clamp(0.0, 1.0));
-        let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-        let x = c * (1.0 - ((h / 60.0).rem_euclid(2.0) - 1.0).abs());
-        let m = l - c / 2.0;
-        let (r, g, b) = match h as u32 / 60 {
-            0 => (c, x, 0.0),
-            1 => (x, c, 0.0),
-            2 => (0.0, c, x),
-            3 => (0.0, x, c),
-            4 => (x, 0.0, c),
-            _ => (c, 0.0, x),
-        };
-        let byte = |v: f64| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-        Rgb(byte(r), byte(g), byte(b))
+        grind_core::color::from_hsl(h, s, l).into()
+    }
+}
+
+/// The core's three bytes ([`grind_core::color`]), which is where the arithmetic on a colour
+/// lives — this type is the Windows edge of it, carrying [`Rgb::colorref`].
+impl From<grind_core::color::Rgb> for Rgb {
+    fn from((r, g, b): grind_core::color::Rgb) -> Self {
+        Rgb(r, g, b)
+    }
+}
+
+impl From<Rgb> for grind_core::color::Rgb {
+    fn from(Rgb(r, g, b): Rgb) -> Self {
+        (r, g, b)
     }
 }
 
@@ -557,14 +518,7 @@ pub mod space {
 ///
 /// The threshold is WCAG's floor for small text, because that is what this is.
 pub fn automatic_ink(ground: Rgb, theme: Theme) -> Rgb {
-    if theme.text.contrast(ground) >= 4.5 {
-        return theme.text;
-    }
-    let (black, white) = (Rgb(0, 0, 0), Rgb(0xff, 0xff, 0xff));
-    match black.contrast(ground) > white.contrast(ground) {
-        true => black,
-        false => white,
-    }
+    grind_core::color::automatic_ink(ground.into(), theme.text.into()).into()
 }
 
 /// Which of the three grounds a strip control is standing on right now.
