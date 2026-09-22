@@ -24,6 +24,9 @@ use super::keymap::Selection;
 /// `A1` for a single cell; `B2:C4 · Sum 21215.51 · Count 6 · Average 3535.9` for a range that
 /// holds something; just the address for one that does not. A single cell is left alone
 /// deliberately: it has nothing to add up and every other spreadsheet stays quiet about it.
+///
+/// The numbers are spelled the document's way ([`App::display_number`]), so a German document's
+/// sum reads `21215,51`, as its cells do.
 pub fn selection_text(app: &App, sheet: usize, selection: Selection) -> String {
     let (start, end) = selection.rect();
     if selection.is_single() {
@@ -52,14 +55,14 @@ pub fn selection_text(app: &App, sheet: usize, selection: Selection) -> String {
     if count == 0.0 {
         return address;
     }
-    let mut parts = vec![address, format!("Count {}", show(count))];
+    let mut parts = vec![address, format!("Count {}", app.display_number(count))];
     // Sum and Average of no numbers are not zero, they are nothing — `AVERAGE` says so with
     // `#DIV/0!`, which is why both are read back as an optional number and offered together.
     if let Some(sum) = of(format!("=SUM({range})"))
         && let Some(average) = of(format!("=AVERAGE({range})"))
     {
-        parts.insert(1, format!("Sum {}", show(sum)));
-        parts.push(format!("Average {}", show(average)));
+        parts.insert(1, format!("Sum {}", app.display_number(sum)));
+        parts.push(format!("Average {}", app.display_number(average)));
     }
     parts.join("  \u{00b7}  ")
 }
@@ -186,10 +189,6 @@ fn strip_brackets(expression: &str) -> &str {
         .unwrap_or(expression)
 }
 
-fn show(n: f64) -> String {
-    grind_sheet::formula::value::format_number(n)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +282,21 @@ mod tests {
         assert_eq!(formula_bar_text(&app, 0, Selection::at(Pos::new(9, 9))), "");
         // It follows the *active* cell of a range, not its corner.
         assert_eq!(formula_bar_text(&app, 0, from((0, 1), (1, 1))), "10");
+    }
+
+    /// A German document's sum is spelled the way its cells are — the separator is the
+    /// document's, and the arithmetic is the same arithmetic.
+    #[test]
+    fn a_german_document_adds_up_in_german() {
+        let app = book();
+        app.enter(0, Pos::new(4, 1), "0.5", grind_sheet::RecalcMode::Document)
+            .unwrap();
+        app.set_locale(grind_sheet::locale::Locale::parse("de-DE"))
+            .unwrap();
+        assert_eq!(
+            selection_text(&app, 0, from((1, 1), (4, 1))),
+            "B2:B5  \u{b7}  Sum 60,5  \u{b7}  Count 4  \u{b7}  Average 15,125"
+        );
     }
 
     #[test]

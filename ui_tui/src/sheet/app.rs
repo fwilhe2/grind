@@ -985,7 +985,7 @@ impl App {
             false => format!("={formula}"),
         };
         self.status = match self.core.preview(self.sheet, self.active, &canonical) {
-            Ok(value) => format!("{formula} \u{2192} {}", show_value(&value)),
+            Ok(value) => format!("{formula} \u{2192} {}", show_value(&self.core, &value)),
             Err(e) => e.to_string(),
         };
     }
@@ -1599,14 +1599,14 @@ impl App {
         if count == 0.0 {
             return address;
         }
-        let mut parts = vec![address, format!("Count {}", show(count))];
+        let mut parts = vec![address, format!("Count {}", show(&self.core, count))];
         // Sum and Average of no numbers are not zero, they are nothing — `AVERAGE` says so with
         // `#DIV/0!`, which is why both are read back as an optional number and offered together.
         if let Some(sum) = of(format!("=SUM({range})"))
             && let Some(average) = of(format!("=AVERAGE({range})"))
         {
-            parts.insert(1, format!("Sum {}", show(sum)));
-            parts.push(format!("Avg {}", show(average)));
+            parts.insert(1, format!("Sum {}", show(&self.core, sum)));
+            parts.push(format!("Avg {}", show(&self.core, average)));
         }
         parts.join("  \u{00b7}  ")
     }
@@ -1913,21 +1913,18 @@ const NAME_BOX: Style = Style::new()
     .add_modifier(Modifier::BOLD);
 const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 
-/// A number as a status bar says it: no trailing zeroes, and no exponent for anything a
-/// spreadsheet is likely to hold.
-fn show(n: f64) -> String {
-    if n == n.trunc() && n.abs() < 1e15 {
-        return format!("{n:.0}");
-    }
-    let text = format!("{n:.4}");
-    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+/// A number as a status bar says it: at most four decimals, since a terminal is short of width,
+/// spelled the document's way ([`CoreApp::display_number`]) — so a German document's sum reads
+/// `1234,5`, as its cells do.
+fn show(core: &CoreApp, n: f64) -> String {
+    core.display_number((n * 1e4).round() / 1e4)
 }
 
 /// One evaluated value, spelled for a status line.
-fn show_value(value: &CellValue) -> String {
+fn show_value(core: &CoreApp, value: &CellValue) -> String {
     match value {
         CellValue::Empty => "(empty)".to_owned(),
-        CellValue::Number(n) => show(*n),
+        CellValue::Number(n) => show(core, *n),
         CellValue::Text(text) => text.clone(),
         CellValue::Bool(true) => "TRUE".to_owned(),
         CellValue::Bool(false) => "FALSE".to_owned(),
@@ -2687,6 +2684,33 @@ mod tests {
         let status = status_line(&mut app, 80, 8);
         assert!(status.ends_with("A3"), "{status:?}");
         assert!(!status.contains("Sum"), "{status:?}");
+    }
+
+    /// A German document adds up in German — the separator is the document's, the four-decimal
+    /// cut is still this terminal's — and `:eval` answers the same way.
+    #[test]
+    fn a_german_document_adds_up_in_german() {
+        let mut app = app();
+        app.core
+            .set_locale(grind_sheet::locale::Locale::parse("de-DE"))
+            .expect("sets");
+        for (row, value) in [(0u32, "10"), (1, "20"), (2, "0,5")] {
+            app.core
+                .enter(0, Pos::new(row, 0), value, RecalcMode::No)
+                .expect("enters");
+        }
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('j'));
+        // Wide enough for both halves: at 80 the Visual hint and a four-decimal average do not
+        // fit together, in any locale, and the arithmetic is the half that gives way.
+        let status = status_line(&mut app, 120, 8);
+        assert!(status.contains("Sum 30,5"), "{status:?}");
+        assert!(status.contains("Avg 10,1667"), "{status:?}");
+
+        press(&mut app, KeyCode::Esc);
+        app.run_command("eval 1/4");
+        assert_eq!(app.status, "1/4 \u{2192} 0,25");
     }
 
     /// Autocomplete while typing a formula, over `grind_sheet::formula::assist` — so an offer

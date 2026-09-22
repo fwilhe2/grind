@@ -369,7 +369,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                     let preview = match grind_sheet::formula::display::from_display(&text) {
                         Ok(canonical) => app
                             .preview(grid.sheet(), grid.selection().active, &canonical)
-                            .map(|value| show_value(&value))
+                            .map(|value| show_value(&app, &value))
                             .unwrap_or_else(|error| error.to_string()),
                         Err(error) => error.message,
                     };
@@ -509,11 +509,12 @@ fn byte_offset(text: &str, position: i32) -> usize {
         .map_or(text.len(), |(byte, _)| byte)
 }
 
-/// A previewed value, spelled the way the cell would spell it with no format.
-fn show_value(value: &CellValue) -> String {
+/// A previewed value, spelled the way the cell would spell it with no format — in the
+/// document's own locale, so a German document's `= 1,5` is what typing it back would read.
+fn show_value(app: &App, value: &CellValue) -> String {
     match value {
         CellValue::Empty => String::new(),
-        CellValue::Number(n) => show(*n),
+        CellValue::Number(n) => app.display_number(*n),
         CellValue::Bool(true) => "TRUE".to_owned(),
         CellValue::Bool(false) => "FALSE".to_owned(),
         CellValue::Text(text) => text.clone(),
@@ -980,7 +981,8 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
 }
 
 /// `B2:C4  ·  Sum 21215.51  ·  Count 6  ·  Average 3535.9`, or just the address when the
-/// selection holds nothing.
+/// selection holds nothing. The numbers are spelled the document's way
+/// ([`App::display_number`]), so a German document's sum reads `21215,51`, as its cells do.
 fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
     let (start, end) = selection.rect();
     if selection.is_single() {
@@ -1013,20 +1015,16 @@ fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
     if count == 0.0 {
         return address;
     }
-    let mut parts = vec![address, format!("Count {}", show(count))];
+    let mut parts = vec![address, format!("Count {}", app.display_number(count))];
     // Sum and Average of no numbers are not zero, they are nothing — AVERAGE says so with
     // #DIV/0!, which is why both are read back as an optional number.
     if let Some(sum) = of(format!("=SUM({range})"))
         && let Some(average) = of(format!("=AVERAGE({range})"))
     {
-        parts.insert(1, format!("Sum {}", show(sum)));
-        parts.push(format!("Average {}", show(average)));
+        parts.insert(1, format!("Sum {}", app.display_number(sum)));
+        parts.push(format!("Average {}", app.display_number(average)));
     }
     parts.join("  ·  ")
-}
-
-fn show(n: f64) -> String {
-    grind_sheet::formula::value::format_number(n)
 }
 
 #[cfg(test)]
@@ -1049,6 +1047,28 @@ mod tests {
         // Not a formula, and a formula that will not parse: the entry stays.
         assert_eq!(friendly_line("12"), None);
         assert_eq!(friendly_line("=SUM("), None);
+    }
+
+    /// A German document's status bar and result chip speak German, as its cells do: the
+    /// separator is the document's, and the arithmetic is the same arithmetic.
+    #[test]
+    fn a_german_document_adds_up_in_german() {
+        let app = App::new();
+        app.set_locale(grind_sheet::locale::Locale::parse("de-DE"))
+            .unwrap();
+        for (row, value) in [(0, "10"), (1, "20"), (2, "0,5")] {
+            app.enter(0, Pos::new(row, 1), value, grind_sheet::RecalcMode::No)
+                .unwrap();
+        }
+        let selection = Selection {
+            anchor: Pos::new(0, 1),
+            active: Pos::new(2, 1),
+        };
+        assert_eq!(
+            status_text(&app, 0, selection),
+            "B1:B3  ·  Sum 30,5  ·  Count 3  ·  Average 10,1666666666667"
+        );
+        assert_eq!(show_value(&app, &CellValue::Number(0.25)), "0,25");
     }
 
     /// The name box's whole ambiguity, pinned: a word is a name, an address is a place, and

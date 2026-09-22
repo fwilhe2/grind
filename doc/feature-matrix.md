@@ -151,7 +151,9 @@ host may not speak (`doc/tui-shell.md`).
 window's autocomplete read from; a completion popup is not a thing a pipe has.
 ᵈ As the live result of the formula being typed, before it is committed.
 ᵉ `grind sheet eval` over the range. All three status bars generate the three formulas and ask
-`App::preview`, rather than keeping a second summing loop.
+`App::preview`, rather than keeping a second summing loop, and spell the answers through
+`App::display_number`, so a German document's sum reads `1234,5` as its cells do. `eval` stays
+ISO, as a script reads a number (`doc/cli-parity-sheet.md`).
 ᶠ `:find`, then `n`/`N`, with every match marked in the grid. **Replace has no row anywhere** and
 that is the core rather than the clients: `App::replace` exists for text and has no spreadsheet
 twin, so a shell that offered one would be putting a capability where the CLI could not reach it.
