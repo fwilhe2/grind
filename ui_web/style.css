@@ -359,6 +359,13 @@ input[type="text"] {
   position: relative;
 }
 
+/* A heading with a button keeps clear of it: the text is clipped where the button begins,
+   and ellipsed so that a clipped heading says it is one. Its alignment is the document's. */
+.grid td.has-filter {
+  padding-right: calc(1rem + 5px);
+  text-overflow: ellipsis;
+}
+
 .filter-btn {
   position: absolute;
   top: 50%;
@@ -460,6 +467,32 @@ input[type="text"] {
 
 .block {
   margin: 0 0 var(--block-gap, 14px);
+}
+
+/* A table: a grid of cells with a rule round each, the columns equal shares of the measure
+   (`text/table.rs`). The rules are drawn by the cells' right and bottom edges and the grid's
+   own top and left, so two neighbours share one line rather than doubling it. */
+.table {
+  display: grid;
+  margin: 0 0 var(--block-gap, 14px);
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.tcell {
+  padding: 6px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+/* Inside a cell the paragraph gap is between paragraphs only. */
+.tcell > .block:last-child {
+  margin-bottom: 0;
+}
+
+.tcell > .h {
+  margin-top: 0;
 }
 
 /* Collapsed against the gap the block above already left — the same rule the GTK
@@ -619,6 +652,11 @@ input[type="text"] {
 
 .head.corner {
   z-index: 2;
+}
+
+/* Where a hidden column run was folded away — the accent bar `ui_sheet_gtk` draws. */
+.head.after-hidden {
+  box-shadow: inset 3px 0 0 AccentColor;
 }
 
 .head.current {
@@ -1085,6 +1123,13 @@ input[type="text"] {
   align-items: center;
   justify-content: center;
   padding: 2rem 1rem;
+}
+
+/* The pane takes focus on load so the keyboard has somewhere to be, and it is a region rather
+   than a control: a focus ring round the whole page read as a black frame nobody asked for. The
+   cards inside it keep theirs. */
+.welcome:focus {
+  outline: none;
 }
 
 .welcome-inner {

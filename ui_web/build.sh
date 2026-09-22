@@ -48,6 +48,11 @@ fi
 
 cargo build -p grind-web --target wasm32-unknown-unknown "${cargo_flags[@]}"
 
+# Where cargo put it — `CARGO_TARGET_DIR` when it is set, as it is in `scripts/claude-vm.sh`'s VM.
+# Reading `target/` regardless bundled whatever wasm was last built *there*, which in the VM is
+# a stale one from the host: the page loaded, every check passed, and none of the change was in it.
+target_dir="${CARGO_TARGET_DIR:-$root/target}"
+
 rm -rf "$dist"
 mkdir -p "$dist"
 
@@ -56,7 +61,7 @@ wasm-bindgen \
     --no-typescript \
     --out-dir "$dist" \
     --out-name grind_web \
-    "$root/target/wasm32-unknown-unknown/$profile/grind_web.wasm"
+    "$target_dir/wasm32-unknown-unknown/$profile/grind_web.wasm"
 
 # The page is static; it only ever needed the module next to it.
 cp "$root/ui_web/index.html" "$root/ui_web/style.css" "$dist/"

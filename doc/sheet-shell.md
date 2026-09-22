@@ -681,6 +681,9 @@ that said something untrue, or two controls saying the same thing.
   format with neither; the locale for General; and no currency button is pressed on a cell that is
   not a currency — a pressed € over a General cell said it was in euros. The sample is captioned
   *Preview*, since without one it read as the popover's title.
+* **The filter list orders numbers by value** — it listed `2,250.00 €` before `220.00 €`, by
+  display text. The list is `grind_sheet::filter::offered` now, shared with the browser's
+  dropdown; text keeps the model's code-point order, since any other is a collation decision.
 * **`GTK_A11Y=none` aborted the window on its first click** (`theme::heard`, which `doc/text-shell.md`
   records for both shells).
 

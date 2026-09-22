@@ -123,9 +123,18 @@ pub fn classes(piece: &Piece) -> String {
 
 /// The inline style a piece's formatting asks for: the values the *document* chose, which is
 /// the half a class cannot carry. Empty when it chose none.
-pub fn css(piece: &Piece) -> String {
+///
+/// `dark` is whether the page is painted dark, which a colour the document chose has to be
+/// readable against ([`crate::ink`]) — and a highlight's text with it, since the dark theme's
+/// white ink across a yellow highlight is the other half of the same bug.
+pub fn css(piece: &Piece, dark: bool) -> String {
     let mut css = String::new();
-    if let Some(color) = &piece.props.color {
+    let fill = piece
+        .props
+        .background
+        .as_deref()
+        .filter(|_| !piece.selected);
+    if let Some(color) = crate::ink::color(piece.props.color.as_deref(), fill, dark) {
         css.push_str(&format!("color:{color};"));
     }
     // A highlight loses to the selection, which has to stay legible as a selection.
@@ -260,7 +269,7 @@ mod tests {
             href: None,
             selected: false,
         };
-        let inline = css(&piece);
+        let inline = css(&piece, false);
         assert!(inline.contains("color:#ff4136;"), "{inline}");
         assert!(inline.contains("background-color:#ffdc00;"), "{inline}");
         // Under a selection the highlight steps aside, or neither reads.
@@ -268,6 +277,6 @@ mod tests {
             selected: true,
             ..piece
         };
-        assert!(!css(&selected).contains("background-color"));
+        assert!(!css(&selected, false).contains("background-color"));
     }
 }

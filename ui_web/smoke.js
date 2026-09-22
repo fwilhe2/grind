@@ -426,7 +426,9 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   await frame();
   check("opening a document works with no filesystem", shown(), "from a file");
-  check("and the sheet's own name is shown", byId("summary").textContent.startsWith("Opened"), true);
+  // On its tab — the status line no longer repeats it, since the tab beside it already says it.
+  check("and the sheet's own name is shown", byId("tabs").textContent.includes("Opened"), true);
+  check("and one cell leaves the status line quiet", byId("summary").textContent, "");
   check("the name travels with it", byId("name").textContent, "opened.fods");
 
   // --- the word processor -------------------------------------------------

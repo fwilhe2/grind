@@ -136,10 +136,9 @@ is taken from `compositionend` instead, which is the one event that carries what
 produced. **What is still missing is the rest of an input method**: the same event ought to
 deliver an IME's committed text, but a candidate window has no editable host to position itself
 against — this shell has no `contenteditable` by decision — so CJK input is *unverified* rather
-than working, and is written here as a gap until somebody types into it. **A table's text is
-shown and its grid is not**: the core carries tables now (`doc/text-core.md`) and this pane
-stacks a cell's blocks like any other block, so a table reads as a run of paragraphs here where
-`grind-text-gtk` draws it as a grid. No footnotes or fields, because the core has
+than working, and is written here as a gap until somebody types into it. **A table is drawn as a
+grid** since the UX pass below, and cannot be *inserted* here — `grind text table` and the GTK
+window's Insert Table… can. No footnotes or fields, because the core has
 none. No pages, no print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. An
 image sitting *mid-sentence* (`text:anchor-type="char"`) still draws as the placeholder
 character, and an image is fit to the column rather than to its own `svg:width` — both are
@@ -181,6 +180,40 @@ because `confirm` is the only modal a page has without building one. A runtime t
 at all — a sandboxed frame without `allow-modals`, and every headless test harness — goes ahead:
 the `confirm` helper tells "answered no" from "did not ask" through `Reflect` rather than through
 the typed binding, which coerces the second into the first.
+
+## The UX pass — the same review the GNOME windows had
+
+Screenshots of the page in a real (headless) Chromium, light and dark, rather than jsdom's
+zero-sized rectangles — which is what found most of this, and what found that **every build in
+the development VM had been bundling a stale module**: `build.sh` and `smoke.sh` read the wasm
+from `target/` whatever `CARGO_TARGET_DIR` said, so the page loaded, every check passed and none
+of the change was in it. Both read `CARGO_TARGET_DIR` now, as `scripts/run.sh` already did.
+
+* **A document's colours read on a dark page** (`ink.rs`) — `ui_sheet_gtk`'s `theme::ink` rule
+  over the same `grind_core::color`: a navy word was invisible on the dark ground in both panes,
+  and a heading row the document filled silver kept the dark theme's white text across it. The
+  page repaints when the reader switches schemes, since these colours are computed rather than
+  left to the stylesheet.
+* **The page follows the caret.** `follow_caret` measured the caret's `offsetTop`, which is from
+  its block (`position: relative` for the bullet) rather than from the pane, so PageDown walked
+  the caret off the bottom and the page never moved.
+* **A hidden column is hidden.** A zero-width `<col>` does not size a `max-content` table's
+  column — its cells' text does — so the column the document hid was drawn at full width. It is
+  left out now, and the heading after the fold carries an accent edge and a tooltip.
+* **A filtered heading ends where its button begins** (`td.has-filter`), rather than running
+  under it — the GNOME grid's fix, and the same screenshot.
+* **The filter list orders numbers by value** — `2,250.00 €` came before `220.00 €` in both this
+  pane and the GNOME window. `grind_sheet::filter::offered` is the list for every shell now; text
+  keeps the model's code-point order, since anything else is the collation `doc/not-doing.md`
+  gates.
+* **The status line says Sum, Count and Average** for a range and nothing for one cell, as the
+  other windows' do — it said `Budget · 20×10 used · 3×2 selected`. The text pane's is in words
+  (`Heading 1 · 90 words`), the address moved to its tooltip.
+* **Formatting at a bare caret**: Bold, then type, is bold — it answered *Select some text
+  first*. The pending style is the `resume` `type_markdown` already carried; moving forgets it.
+* **Double-click selects a word, triple-click the paragraph** — `grind_text::word::around`, the
+  GNOME window's answer.
+* **Tables are grids** (above), and the welcome page lost a focus ring drawn round the whole page.
 
 ## How to see it
 

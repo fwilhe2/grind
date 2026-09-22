@@ -16,7 +16,9 @@ set -euo pipefail
 profile="${1:-release}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$root/ui_web/.smoke"
-module="$root/target/wasm32-unknown-unknown/$profile/grind_web.wasm"
+# `CARGO_TARGET_DIR` when it is set, for `build.sh`'s reason: a smoke test of a stale module
+# passes and proves nothing.
+module="${CARGO_TARGET_DIR:-$root/target}/wasm32-unknown-unknown/$profile/grind_web.wasm"
 
 if [ ! -f "$module" ]; then
     echo "missing $module — run: ui_web/build.sh $profile" >&2

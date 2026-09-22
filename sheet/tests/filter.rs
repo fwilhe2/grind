@@ -11,6 +11,8 @@
 
 use std::path::PathBuf;
 
+use grind_sheet::{App, CellValue, Filter, Pos};
+
 fn sample() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/samples/table.fods")
 }
@@ -75,5 +77,37 @@ fn a_filter_survives_our_own_round_trip() {
     assert!(
         String::from_utf8_lossy(&bytes).contains("table:visibility=\"filter\""),
         "and the file says which rows they are"
+    );
+}
+
+/// What a dropdown lists: every distinct value, the hidden ones included, numbers by value —
+/// `2,250` after `220`, which ordering by display text got backwards — and text in the model's
+/// own order, since ordering it any other way is a collation decision (`doc/not-doing.md`).
+#[test]
+fn a_dropdown_offers_numbers_by_value_and_text_in_the_models_order() {
+    let app = App::new();
+    let cells = [
+        CellValue::Text("Amount".into()),
+        CellValue::Number(2250.0),
+        CellValue::Number(220.0),
+        CellValue::Text("b".into()),
+        CellValue::Number(220.0),
+        CellValue::Text("B".into()),
+        CellValue::Empty,
+        CellValue::Number(-3.5),
+    ];
+    for (row, value) in cells.iter().enumerate() {
+        app.set_cell(0, Pos::new(row as u32, 0), value.clone())
+            .expect("sets");
+    }
+    let filter = Filter::new("f", Pos::new(0, 0), Pos::new(7, 0));
+    let viewport = app.get_viewport(0, 0..8, 0..1).expect("reads");
+    assert_eq!(
+        grind_sheet::filter::offered(&viewport, &filter, 0, 500),
+        ["", "-3.5", "220", "2250", "B", "b"]
+    );
+    assert_eq!(
+        grind_sheet::filter::offered(&viewport, &filter, 0, 2),
+        ["", "-3.5"]
     );
 }

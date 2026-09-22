@@ -280,6 +280,7 @@ impl Ui {
 
         let selection = self.selection.get();
         let editing = self.editing.get();
+        let dark = crate::ink::page_is_dark();
 
         // The column widths the document chose, as `<col>` elements: one declaration per
         // column, which is what `table-layout: fixed` sizes from.
@@ -287,13 +288,19 @@ impl Ui {
         let corner_col = self.dom.document.create_element("col")?;
         corner_col.set_attribute("style", "width:3.5rem")?;
         self.dom.cols.append_child(&corner_col)?;
-        for col in cols.clone() {
+        //
+        // A hidden column is **left out** of all three — the `<col>`, the header and the cells —
+        // rather than given a width of nothing. A zero-width `<col>` was what this did, and a
+        // `max-content` table sizes a column from what is in it, so the column the document
+        // hid was drawn at full width with its heading and its values in it. Leaving it out is
+        // the column's own answer to a filtered row's `display: none`.
+        let shown: Vec<u32> = cols
+            .clone()
+            .filter(|col| !hidden_cols.contains(col))
+            .collect();
+        for &col in &shown {
             let declaration = self.dom.document.create_element("col")?;
-            let width = match hidden_cols.contains(&col) {
-                true => 0.0,
-                false => widths.size(col),
-            };
-            declaration.set_attribute("style", &format!("width:{width:.1}px"))?;
+            declaration.set_attribute("style", &format!("width:{:.1}px", widths.size(col)))?;
             self.dom.cols.append_child(&declaration)?;
         }
 
@@ -302,7 +309,7 @@ impl Ui {
         self.dom.head.set_text_content(None);
         let corner = self.corner()?;
         self.dom.head.append_child(&corner)?;
-        for col in cols.clone() {
+        for &col in &shown {
             let cell = self.dom.document.create_element("th")?;
             cell.set_class_name(
                 match selection.contains(Pos::new(selection.active.row, col)) {
@@ -310,6 +317,18 @@ impl Ui {
                     false => "head col",
                 },
             );
+            // The one trace a hidden run leaves: an accent edge on the heading after it, with
+            // a tooltip saying what is there and how to have it back.
+            if col > 0 && hidden_cols.contains(&(col - 1)) {
+                cell.class_list().add_1("after-hidden")?;
+                cell.set_attribute(
+                    "title",
+                    &format!(
+                        "Column {} is hidden — Ctrl+K, Unhide columns",
+                        lex::column_name(col - 1)
+                    ),
+                )?;
+            }
             cell.set_attribute("data-col", &col.to_string())?;
             cell.set_text_content(Some(&lex::column_name(col)));
             self.dom.head.append_child(&cell)?;
@@ -337,7 +356,7 @@ impl Ui {
             header.set_text_content(Some(&(row + 1).to_string()));
             line.append_child(&header)?;
 
-            for col in cols.clone() {
+            for &col in &shown {
                 let pos = Pos::new(row, col);
                 let cell = self.dom.document.create_element("td")?;
                 let active = pos == selection.active;
@@ -370,7 +389,7 @@ impl Ui {
                         }
                     }
                     None => {
-                        let css = css_of(viewport.style(row, col), numeric);
+                        let css = css_of(viewport.style(row, col), numeric, dark);
                         if !css.is_empty() {
                             cell.set_attribute("style", &css)?;
                         }
@@ -398,6 +417,9 @@ impl Ui {
                     && (filter.start.col..=filter.end.col).contains(&col)
                 {
                     let field = col - filter.start.col;
+                    // Room for the button at the cell's end, so the heading is clipped before
+                    // it rather than running underneath (`Differenc▾e`).
+                    cell.class_list().add_1("has-filter")?;
                     let button = self.dom.document.create_element("button")?;
                     button.set_attribute("type", "button")?;
                     button.set_class_name(match filter.keep.contains_key(&field) {
@@ -526,20 +548,10 @@ impl Ui {
             .message
             .set_text_content(Some(&self.message.borrow()));
 
-        let (rows, cols) = self.app.used_extent(sheet).unwrap_or((0, 0));
         let (start, end) = selection.rect();
-        let span = match start == end {
-            true => String::new(),
-            false => format!(
-                " · {}×{} selected",
-                end.row - start.row + 1,
-                end.col - start.col + 1
-            ),
-        };
-        self.dom.summary.set_text_content(Some(&format!(
-            "{} · {rows}×{cols} used{span}",
-            self.app.sheet_name(sheet).unwrap_or_default(),
-        )));
+        self.dom
+            .summary
+            .set_text_content(Some(&summary(&self.app, sheet, start, end)));
 
         Ok(())
     }
@@ -1868,7 +1880,58 @@ fn anchor_edges(viewport: &grind_sheet::Viewport, row: u32, col: u32) -> String 
     edges.join(" ")
 }
 
-fn css_of(style: Option<&CellStyle>, numeric: bool) -> String {
+/// The status line's reading of a selection: `B8:C10 · Sum 9,391.13 · Count 4 · Average …`,
+/// the range alone when it holds nothing, and **nothing for one cell** — the address box above
+/// the grid is already saying where that is, and the tab below it which sheet.
+///
+/// It used to read `Budget · 20×10 used · 3×2 selected`: the sheet's name the tab beside it was
+/// showing, the used extent — a number about the file that nobody selecting cells is asking —
+/// and a size where every other spreadsheet puts the sum. The aggregates are `App::preview` over
+/// generated formulas, the way `ui_sheet_gtk`'s and `ui_win32`'s status bars do it: `COUNTA`,
+/// since a status bar's Count is of what is there rather than of numbers, and Sum and Average
+/// only when there is a number to add. The range is clamped to the used extent first, so a
+/// whole-column selection does not walk a million rows.
+fn summary(app: &App, sheet: usize, start: Pos, end: Pos) -> String {
+    if start == end {
+        return String::new();
+    }
+    let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
+    let Ok((rows, cols)) = app.used_extent(sheet) else {
+        return address;
+    };
+    let end = Pos::new(
+        end.row.min(rows.saturating_sub(1)),
+        end.col.min(cols.saturating_sub(1)),
+    );
+    if rows == 0 || cols == 0 || end.row < start.row || end.col < start.col {
+        return address;
+    }
+    let range = format!("[.{}:.{}]", a1::format(None, start), a1::format(None, end));
+    // Evaluated one row past the used extent, since somewhere inside the range would be a
+    // circular reference.
+    let at = Pos::new(rows, 0);
+    let of = |formula: String| match app.preview(sheet, at, &formula) {
+        Ok(CellValue::Number(n)) => Some(n),
+        _ => None,
+    };
+    let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
+    if count == 0.0 {
+        return address;
+    }
+    let mut parts = vec![address];
+    if let Some(sum) = of(format!("=SUM({range})"))
+        && let Some(average) = of(format!("=AVERAGE({range})"))
+    {
+        parts.push(format!("Sum {}", app.display_number(sum)));
+        parts.push(format!("Count {}", app.display_number(count)));
+        parts.push(format!("Average {}", app.display_number(average)));
+    } else {
+        parts.push(format!("Count {}", app.display_number(count)));
+    }
+    parts.join(" · ")
+}
+
+fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     let mut css = String::new();
     // A number right-aligns unless the document says otherwise — the convention
     // every spreadsheet has, and the reason it is here rather than in the core is
@@ -1887,7 +1950,9 @@ fn css_of(style: Option<&CellStyle>, numeric: bool) -> String {
     set(&mut css, "font-weight", &style.font_weight);
     set(&mut css, "font-style", &style.font_style);
     set(&mut css, "font-size", &style.font_size);
-    set(&mut css, "color", &style.color);
+    // The document's colour, made to read on the page it lands on (`crate::ink`).
+    let ink = crate::ink::color(style.color.as_deref(), style.background.as_deref(), dark);
+    set(&mut css, "color", &ink);
     set(&mut css, "background-color", &style.background);
     set(&mut css, "text-align", &style.align);
     // `automatic` is ODF's "you decide", which in CSS is saying nothing at all.
@@ -2098,6 +2163,26 @@ mod tests {
     }
 
     #[test]
+    fn the_status_line_adds_up_a_range_and_is_quiet_for_one_cell() {
+        let app = App::new();
+        for (row, value) in [(0, "10"), (1, "20.5"), (2, "Label")] {
+            app.enter(0, Pos::new(row, 1), value, RecalcMode::Document)
+                .expect("enters");
+        }
+        assert_eq!(summary(&app, 0, Pos::new(0, 1), Pos::new(0, 1)), "");
+        assert_eq!(
+            summary(&app, 0, Pos::new(0, 1), Pos::new(2, 1)),
+            "B1:B3 · Sum 30.5 · Count 3 · Average 15.25"
+        );
+        assert_eq!(
+            summary(&app, 0, Pos::new(2, 1), Pos::new(2, 2)),
+            "B3:C3 · Count 1",
+            "text counts and does not add"
+        );
+        assert_eq!(summary(&app, 0, Pos::new(5, 5), Pos::new(6, 6)), "F6:G7");
+    }
+
+    #[test]
     fn a_style_becomes_the_css_the_document_asked_for() {
         let style = CellStyle {
             font_weight: Some("bold".into()),
@@ -2105,7 +2190,7 @@ mod tests {
             borders: [Some("0.06pt solid #000000".into()), None, None, None],
             ..CellStyle::default()
         };
-        let css = css_of(Some(&style), false);
+        let css = css_of(Some(&style), false, false);
         assert!(css.contains("font-weight:bold;"), "{css}");
         assert!(css.contains("background-color:#ffdc00;"), "{css}");
         assert!(css.contains("border-left:0.06pt solid #000000;"), "{css}");
@@ -2114,13 +2199,13 @@ mod tests {
 
     #[test]
     fn a_number_right_aligns_until_the_document_says_otherwise() {
-        assert_eq!(css_of(None, true), "text-align:right;");
-        assert_eq!(css_of(None, false), "");
+        assert_eq!(css_of(None, true, false), "text-align:right;");
+        assert_eq!(css_of(None, false, false), "");
         let centred = CellStyle {
             align: Some("center".into()),
             ..CellStyle::default()
         };
-        let css = css_of(Some(&centred), true);
+        let css = css_of(Some(&centred), true, false);
         assert!(css.contains("text-align:center;"), "{css}");
         assert!(!css.contains("text-align:right;"), "{css}");
     }
@@ -2133,12 +2218,15 @@ mod tests {
             vertical_align: Some("automatic".into()),
             ..CellStyle::default()
         };
-        assert_eq!(css_of(Some(&style), false), "");
+        assert_eq!(css_of(Some(&style), false, false), "");
         let middle = CellStyle {
             vertical_align: Some("middle".into()),
             ..CellStyle::default()
         };
-        assert_eq!(css_of(Some(&middle), false), "vertical-align:middle;");
+        assert_eq!(
+            css_of(Some(&middle), false, false),
+            "vertical-align:middle;"
+        );
     }
 
     /// A range anchor is outlined on its boundary cells only — `doc/view-modes.md`'s "a range

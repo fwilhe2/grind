@@ -30,6 +30,50 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{Pos, Sheet};
 
+/// The distinct values a field's column holds, in the order a dropdown lists them — what every
+/// shell's filter popover offers, here so that no two of them order it differently.
+///
+/// Each value is the cell's **display text**, which is what [`Filter::keep`] matches on, and the
+/// values the filter is currently hiding are included, since they are the ones somebody opened
+/// the list to bring back. The heading row is not one of its own values.
+///
+/// **The order is by value where a value has one**: the empty cell first, then numbers — dates
+/// and times among them — from smallest to largest, then everything else in the model's own
+/// code-point order. Ordering the numbers by their display text put `2,250.00 €` before
+/// `220.00 €`, in both windows that had a dropdown; ordering *text* by anything but code points
+/// would be the collation decision `doc/not-doing.md` gates sorting on, so it is not made here.
+///
+/// At most `limit` values, since a column of a hundred thousand distinct ones is not a list.
+pub fn offered(cells: &crate::Viewport, filter: &Filter, field: u32, limit: usize) -> Vec<String> {
+    let col = filter.column(field);
+    let mut seen = BTreeSet::new();
+    let mut values: Vec<(u8, f64, String)> = Vec::new();
+    for row in filter.first_data_row()..=filter.end.row {
+        let Some(text) = cells.text(row, col) else {
+            continue;
+        };
+        if !seen.insert(text.to_owned()) {
+            continue;
+        }
+        let (class, number) = match cells.get(row, col) {
+            _ if text.is_empty() => (0, 0.0),
+            Some(crate::CellValue::Number(n)) => (1, *n),
+            _ => (2, 0.0),
+        };
+        values.push((class, number, text.to_owned()));
+    }
+    values.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.total_cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    values
+        .into_iter()
+        .map(|(_, _, text)| text)
+        .take(limit)
+        .collect()
+}
+
 /// An autofilter over a rectangle of one sheet.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Filter {

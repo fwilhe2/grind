@@ -37,18 +37,10 @@ const EMPTY_LABEL: &str = "(empty)";
 
 /// The distinct values a field's column holds, in the order the list shows them.
 ///
-/// A `BTreeSet` so the order is the model's own — [`Filter::keep`] stores its values the
-/// same way, and a list that reordered itself between openings is its own small bug. Pure,
-/// and the reason the popover below has nothing to decide.
+/// [`grind_sheet::filter::offered`]'s list — numbers by value, text in the model's own order,
+/// the hidden values included — so every shell's dropdown lists a column the same way.
 pub fn field_values(cells: &Viewport, filter: &Filter, field: u32) -> Vec<String> {
-    let col = filter.column(field);
-    (filter.first_data_row()..=filter.end.row)
-        .filter_map(|row| cells.text(row, col))
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .take(MAX_VALUES)
-        .collect()
+    grind_sheet::filter::offered(cells, filter, field, MAX_VALUES)
 }
 
 /// What the dropdown decided, handed back to whoever opened it.

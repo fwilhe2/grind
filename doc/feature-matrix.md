@@ -131,7 +131,7 @@ than as a cursor on a hidden row.
 | Recalculate | ● | ● | ● | ● | ● |
 | Stale-value warning | ● | ● | ● | ● | ● |
 | Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ |
-| Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ○ | ● |
+| Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● |
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● |
 | Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ |
@@ -150,7 +150,7 @@ host may not speak (`doc/tui-shell.md`).
 ᶜ `grind sheet functions --long` is the same four columns the Win32 dialog and the GNOME
 window's autocomplete read from; a completion popup is not a thing a pipe has.
 ᵈ As the live result of the formula being typed, before it is committed.
-ᵉ `grind sheet eval` over the range. All three status bars generate the three formulas and ask
+ᵉ `grind sheet eval` over the range. All four status bars generate the three formulas and ask
 `App::preview`, rather than keeping a second summing loop, and spell the answers through
 `App::display_number`, so a German document's sum reads `1234,5` as its cells do. `eval` stays
 ISO, as a script reads a number (`doc/cli-parity-sheet.md`).
@@ -325,7 +325,7 @@ the table it was made from (`doc/chart-format.md`, The shell).
 | **Tables** | | | | | |
 | Insert a table | ● | ● | ● | ○ | ○ |
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ |
-| **Draws** a table as a grid | — | ● | ● ᵠ | ○ ᵖ | ○ ᵖ |
+| **Draws** a table as a grid | — | ● | ● ᵠ | ● | ○ ᵖ |
 | Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ |
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
@@ -354,9 +354,9 @@ depths; there is no Tab.
 ᵖ **Free, and that is the point of the model.** A cell holds *blocks* and a block carries the
 coordinate of the cell it is in (`grind_text::Cell`), so `p12` is the twelfth block whether it is
 in a table or not — every caret motion, every formatting edit and every address already worked
-inside a cell before any client knew tables existed. What the two clients marked ○ do not do is
-*draw the grid*: they stack a cell's blocks like any other, so the text is all there and the
-shape is not.
+inside a cell before any client knew tables existed. What the client marked ○ does not do is
+*draw the grid*: it stacks a cell's blocks like any other, so the text is all there and the
+shape is not. (`grind-web` was the second such client until its UX pass — `ui_web/src/text/table.rs`.)
 ᵠ Box-drawing rules, every column the same width. `grind_text::Faces` is handed a block's kind
 and not its cell, so `grind-tui` builds a map of which block is in which cell once per frame and
 reads it back — the shape `ui_text_gtk/src/view.rs`'s `Column` has, and required rather than

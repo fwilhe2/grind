@@ -35,6 +35,7 @@
 pub mod code;
 pub mod command;
 pub mod import;
+pub mod ink;
 pub mod palette;
 pub mod problems;
 pub mod sheet;
@@ -1551,6 +1552,16 @@ fn wire_window(shell: &Rc<Shell>, window: &web_sys::Window) -> Result<(), JsValu
     listen(window, "resize", move |_: Event| {
         request_repaint(&resize.pending);
     })?;
+
+    // A switch between light and dark while the page is open. The stylesheet follows by itself;
+    // a colour the *document* chose is computed against the page it lands on (`ink.rs`), so it
+    // has to be drawn again to follow.
+    if let Ok(Some(scheme)) = window.match_media("(prefers-color-scheme: dark)") {
+        let flip = shell.clone();
+        listen(&scheme, "change", move |_: Event| {
+            request_repaint(&flip.pending);
+        })?;
+    }
 
     // The browser's answer to "save before closing?". A page may ask for the prompt but not
     // word it, so there is nothing to phrase here.

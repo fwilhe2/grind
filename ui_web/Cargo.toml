@@ -65,6 +65,8 @@ features = [
   "HtmlSelectElement",
   "KeyboardEvent",
   "Location",
+  # `prefers-color-scheme`, which a document's own colours are made to read against (`ink.rs`).
+  "MediaQueryList",
   "MouseEvent",
   "Navigator",
   "Node",

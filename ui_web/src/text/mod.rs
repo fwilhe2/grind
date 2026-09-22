@@ -19,6 +19,7 @@
 
 pub mod keymap;
 mod runs;
+mod table;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -243,16 +244,24 @@ struct Column<'a> {
     faces: &'a Faces,
     /// The flow's width, in the same CSS pixels [`Face`] answers in.
     width: f64,
+    /// The width of every block that sits in a table cell ([`table::measures`]) — a cell's
+    /// lines are broken at the cell's width, and a motion has to be answered at that width too.
+    cells: HashMap<usize, f64>,
 }
 
 impl grind_text::Faces for Column<'_> {
-    fn of(&self, _index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
+    fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
+        let width = self.cells.get(&index).copied().unwrap_or(self.width);
         (
-            (self.width - indent_of(kind)) as f32,
+            (width - indent_of(kind)).max(1.0) as f32,
             self.faces.of(kind, style),
         )
     }
 }
+
+/// A table being drawn: its `table:name`, its grid element, and the cell elements made so far
+/// by (row, column).
+type OpenTable = (String, Element, HashMap<(u32, u32), Element>);
 
 /// The elements this pane writes to. No document state — that is all in the core.
 struct Dom {
@@ -402,7 +411,6 @@ impl Ui {
     }
 
     fn render(&self) -> Result<(), JsValue> {
-        let width = self.width();
         let caret = self.caret.get();
         let selection = self.selection();
         // ponytail: the whole document is rendered, not the part on screen. A grid needs a
@@ -410,15 +418,22 @@ impl Ui {
         // somebody typed, and windowing one costs a scroll-position-to-block map that only
         // pays for itself on documents nobody has written yet. Named in `doc/text-shell.md`.
         let viewport = self.app.get_viewport(0..self.app.block_count());
+        // The same lookup a click and a motion ask, so a cell's lines are drawn broken where
+        // the caret will think they are.
+        let column = self.column_over(&viewport);
+        // The table being drawn, if the last block was in one: its name, its grid element, and
+        // the cell elements made so far — a cell holding two paragraphs is two blocks, and both
+        // go in the one cell.
+        let mut open: Option<OpenTable> = None;
+        let columns = table::columns(viewport.iter().filter_map(|block| block.cell.as_ref()));
 
         self.dom.flow.set_text_content(None);
         for block in viewport.iter() {
             let face = self.faces.of(&block.kind, block.style.as_deref());
             let indent = indent_of(&block.kind);
-            let Ok(layout) = self
-                .app
-                .layout_block(block.index, (width - indent) as f32, face)
-            else {
+            let (measure, _) =
+                grind_text::Faces::of(&column, block.index, &block.kind, block.style.as_deref());
+            let Ok(layout) = self.app.layout_block(block.index, measure, face) else {
                 continue;
             };
 
@@ -468,7 +483,40 @@ impl Ui {
                 }
                 element.append_child(&row)?;
             }
-            self.dom.flow.append_child(&element)?;
+            let parent: Element = match &block.cell {
+                None => {
+                    open = None;
+                    self.dom.flow.clone().into()
+                }
+                Some(cell) => {
+                    if open.as_ref().is_none_or(|(name, ..)| *name != cell.table) {
+                        let grid = self.dom.document.create_element("div")?;
+                        grid.set_class_name("table");
+                        let count = columns.get(&cell.table).copied().unwrap_or(1);
+                        grid.set_attribute(
+                            "style",
+                            &format!("grid-template-columns:repeat({count}, minmax(0, 1fr))"),
+                        )?;
+                        self.dom.flow.append_child(&grid)?;
+                        open = Some((cell.table.clone(), grid, HashMap::new()));
+                    }
+                    let Some((_, grid, cells)) = open.as_mut() else {
+                        continue;
+                    };
+                    match cells.get(&(cell.row, cell.column)) {
+                        Some(existing) => existing.clone(),
+                        None => {
+                            let box_ = self.dom.document.create_element("div")?;
+                            box_.set_class_name("tcell");
+                            box_.set_attribute("style", &table::placement(cell))?;
+                            grid.append_child(&box_)?;
+                            cells.insert((cell.row, cell.column), box_.clone());
+                            box_
+                        }
+                    }
+                }
+            };
+            parent.append_child(&element)?;
         }
 
         self.render_chrome();
@@ -536,7 +584,7 @@ impl Ui {
             let slice = slice.trim_end_matches('\n');
             let span = self.dom.document.create_element("span")?;
             span.set_class_name(&runs::classes(&piece));
-            let css = runs::css(&piece);
+            let css = runs::css(&piece, crate::ink::page_is_dark());
             if !css.is_empty() {
                 span.set_attribute("style", &css)?;
             }
@@ -572,22 +620,42 @@ impl Ui {
         url
     }
 
+    /// The status line, in words: what the caret is in and how long the document is —
+    /// `Heading 1 · 90 words`, `Body text · 90 words · 12 characters selected`. It used to lead
+    /// with the caret's address (`p1+0 · 90 words · 22 blocks`), which is the palette's to take
+    /// and now its tooltip; `ui_text_gtk`'s status bar made the same change.
     fn render_chrome(&self) {
         let caret = self.caret.get();
         let counts = self.app.counts();
         let selected = match self.selection() {
-            Some((from, to)) if from.block == to.block => {
-                format!(" · {} selected", to.offset - from.offset)
-            }
-            Some((from, to)) => format!(" · {} blocks selected", to.block - from.block + 1),
+            Some((from, to)) if from.block == to.block => match to.offset - from.offset {
+                1 => " · 1 character selected".to_owned(),
+                n => format!(" · {n} characters selected"),
+            },
+            Some((from, to)) => format!(" · {} paragraphs selected", to.block - from.block + 1),
             None => String::new(),
         };
-        self.dom.summary.set_text_content(Some(&format!(
-            "{} · {} words · {} blocks{selected}",
-            loc::format_offset(caret.block, caret.offset),
-            counts.words,
-            counts.blocks
-        )));
+        let here = self
+            .block_at(caret.block)
+            .map(|block| describe(&block.kind, block.style.as_deref()))
+            .unwrap_or_default();
+        let words = match counts.words {
+            1 => "1 word".to_owned(),
+            n => format!("{n} words"),
+        };
+        let line = match here.is_empty() {
+            true => format!("{words}{selected}"),
+            false => format!("{here} · {words}{selected}"),
+        };
+        self.dom.summary.set_text_content(Some(&line));
+        let _ = self.dom.summary.set_attribute(
+            "title",
+            &format!(
+                "At {} — {} blocks",
+                loc::format_offset(caret.block, caret.offset),
+                counts.blocks
+            ),
+        );
         self.dom
             .message
             .set_text_content(Some(&self.message.borrow()));
@@ -628,6 +696,24 @@ impl Ui {
                 false
             }
         }
+    }
+
+    /// Select the word around the caret, or — with `block` — its whole paragraph.
+    fn select_around(&self, block: bool) {
+        let caret = self.caret.get();
+        let text = self.app.input_text(caret.block).unwrap_or_default();
+        let (start, end) = match block {
+            true => (0, text.chars().count()),
+            false => grind_text::word::around(&text, caret.offset),
+        };
+        self.anchor.set(Some(Caret {
+            block: caret.block,
+            offset: start,
+        }));
+        self.set_caret(Caret {
+            block: caret.block,
+            offset: end,
+        });
     }
 
     fn select_all(&self) {
@@ -807,24 +893,41 @@ impl Ui {
     /// everywhere in it — [`App::char_style`] is what "already on everywhere" means, since it
     /// reports only what the whole span *agrees* about.
     fn toggle_char(&self, field: fn(&mut CharStyle) -> &mut Option<String>, on: &str, off: &str) {
-        let Some((from, to)) = self.selection() else {
-            return self.set_message("Select some text first".to_owned());
-        };
-        let mut style = self.app.char_style(from, to).unwrap_or_default();
+        let mut style = self.style_here();
         let slot = field(&mut style);
         let already = slot.as_deref().is_some_and(|value| value != off);
         *slot = match already {
             true => Some(off.to_owned()),
             false => Some(on.to_owned()),
         };
+        self.set_char_style(style);
+    }
+
+    /// Write `style` over the selection — or, with nothing selected, hold it for the next
+    /// character typed at the caret, which is what Bold-then-type means in every word
+    /// processor. It used to answer "Select some text first", so the most common way of asking
+    /// for bold did nothing; `ui_text_gtk` made the same change. The pending style is the
+    /// `resume` [`App::type_markdown`] already carries, and moving the caret forgets it.
+    fn set_char_style(&self, style: CharStyle) {
+        let Some((from, to)) = self.selection() else {
+            *self.resume.borrow_mut() = Some(style);
+            let _ = self.refresh_tools();
+            return;
+        };
         self.write_char_style(from, to, &style);
     }
 
-    fn set_char_style(&self, style: CharStyle) {
-        let Some((from, to)) = self.selection() else {
-            return self.set_message("Select some text first".to_owned());
-        };
-        self.write_char_style(from, to, &style);
+    /// What the tool row shows and what a toggle changes: the selection's agreed style, the
+    /// style pending at the caret, or what the character before the caret carries.
+    fn style_here(&self) -> CharStyle {
+        if let Some((from, to)) = self.selection() {
+            return self.app.char_style(from, to).unwrap_or_default();
+        }
+        if let Some(pending) = self.resume.borrow().clone() {
+            return pending;
+        }
+        let caret = self.caret.get();
+        self.app.char_style(caret, caret).unwrap_or_default()
     }
 
     fn write_char_style(&self, from: Caret, to: Caret, style: &CharStyle) {
@@ -836,16 +939,13 @@ impl Ui {
     /// A colour from the swatch grid — `"color"` for the letters, `"highlight"` for behind
     /// them.
     pub fn set_color(&self, target: &str, hex: Option<String>) {
-        let Some((from, to)) = self.selection() else {
-            return self.set_message("Select some text first".to_owned());
-        };
-        let mut style = self.app.char_style(from, to).unwrap_or_default();
+        let mut style = self.style_here();
         match target {
             "color" => style.color = hex,
             "highlight" => style.background = hex,
             _ => return,
         }
-        self.write_char_style(from, to, &style);
+        self.set_char_style(style);
     }
 
     /// Change what the block under the caret *is* — every block the selection touches, since
@@ -887,14 +987,9 @@ impl Ui {
     /// Show what the caret — or the selection — already is, on the tool row.
     pub fn refresh_tools(&self) -> Result<(), JsValue> {
         let document = &self.dom.document;
-        // The toggles report what the *selection* agrees about, which is what
-        // `App::char_style` answers. With nothing selected they read plain — honestly, since
-        // the toggles are also disabled in that state: this shell formats a selection, and
-        // there is no pending style a caret carries into the next keystroke.
-        let style = match self.selection() {
-            Some((from, to)) => self.app.char_style(from, to).unwrap_or_default(),
-            None => CharStyle::default(),
-        };
+        // The toggles report what the selection agrees about, or — with nothing selected —
+        // what the next character typed will carry, which is what pressing one there changes.
+        let style = self.style_here();
         let on =
             |value: &Option<String>, off: &str| value.as_deref().is_some_and(|value| value != off);
         set_pressed(document, "t-bold", on(&style.font_weight, "normal"));
@@ -957,10 +1052,15 @@ impl Ui {
 
     /// Scroll the least it takes to keep the caret on screen.
     ///
-    /// Arithmetic against `offsetTop` rather than `scrollIntoView`, because the caret is only
-    /// ever a *line* out of view and the browser's own version jumps the page around — and
-    /// because a headless run reports every offset as zero, where this does nothing at all
-    /// rather than throwing.
+    /// Arithmetic rather than `scrollIntoView`, because the caret is only ever a *line* out of
+    /// view and the browser's own version jumps the page around — and because a headless run
+    /// reports every rectangle as zero, where this does nothing at all rather than throwing.
+    ///
+    /// The caret's place on the page is its client rectangle less the pane's, plus how far the
+    /// pane is already scrolled. It used to be `offsetTop`, which is measured from the nearest
+    /// *positioned* ancestor — a block (`.block` is `position: relative` for its bullet), not
+    /// the pane — so every caret sat a few pixels from "the top", and PageDown walked the caret
+    /// off the bottom of the screen with the page never following it.
     fn follow_caret(&self) {
         let Some(caret) = self
             .dom
@@ -970,10 +1070,12 @@ impl Ui {
         else {
             return;
         };
-        let top = f64::from(caret.offset_top());
+        let scroll = f64::from(self.dom.pane.scroll_top());
+        let top = caret.get_bounding_client_rect().top()
+            - self.dom.pane.get_bounding_client_rect().top()
+            + scroll;
         let height = f64::from(caret.offset_height()).max(1.0);
         let view = f64::from(self.dom.pane.client_height());
-        let scroll = f64::from(self.dom.pane.scroll_top());
         let wanted = match scroll {
             _ if top < scroll => top,
             _ if top + height > scroll + view => top + height - view,
@@ -1154,7 +1256,15 @@ impl Ui {
         caret
     }
 
+    /// Move the caret, forgetting any style pending for the next character — a Bold pressed
+    /// with nothing selected belongs to where it was pressed. Typing is the one move that keeps
+    /// it ([`Ui::place_caret`]).
     fn set_caret(&self, caret: Caret) {
+        *self.resume.borrow_mut() = None;
+        self.place_caret(caret);
+    }
+
+    fn place_caret(&self, caret: Caret) {
         self.caret.set(caret);
         // Nothing in the core changed, so nothing will tell the page to repaint.
         self.request_repaint();
@@ -1170,9 +1280,24 @@ impl Ui {
     /// How each block is set — this pane's [`grind_text::Faces`], rebuilt per question because
     /// the flow's width is read from the DOM and can change under a resize between two of them.
     fn column(&self) -> Column<'_> {
+        let viewport = self.app.get_viewport(0..self.app.block_count());
+        self.column_over(&viewport)
+    }
+
+    /// [`Ui::column`] over a viewport the caller already read — the renderer's, which reads the
+    /// whole document anyway.
+    fn column_over(&self, viewport: &grind_text::Viewport) -> Column<'_> {
+        let width = self.width();
         Column {
             faces: &self.faces,
-            width: self.width(),
+            width,
+            cells: table::measures(
+                &viewport
+                    .iter()
+                    .map(|block| (block.index, block.cell.as_ref()))
+                    .collect::<Vec<_>>(),
+                width,
+            ),
         }
     }
 
@@ -1207,7 +1332,7 @@ impl Ui {
             Ok(typed) => {
                 self.goal_x.set(None);
                 *self.resume.borrow_mut() = typed.resume;
-                self.set_caret(typed.caret);
+                self.place_caret(typed.caret);
             }
             Err(error) => self.set_message(error.to_string()),
         }
@@ -1442,6 +1567,13 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
         if let Err(error) = click.on_click(&event, event.shift_key()) {
             web_sys::console::error_1(&error);
         }
+        // A second press selects the word, a third the paragraph — `detail` is the browser's
+        // own count, so the double-click speed is the reader's. The word is
+        // `grind_text::word::around`'s, so this pane and `grind-text-gtk` agree where one ends.
+        if event.detail() >= 2 && !event.shift_key() {
+            click.dragging.set(false);
+            click.select_around(event.detail() >= 3);
+        }
     })?;
 
     // Dragging: every move with the button down extends the selection, which is the same
@@ -1464,6 +1596,50 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
     listen(&window, "mouseup", move |_: MouseEvent| {
         release.dragging.set(false);
     })
+}
+
+/// What the status line calls a block — the tool row's own labels (`index.html`'s `#t-block`),
+/// so the two never name one thing twice. A named style that is not one of the two this pane
+/// draws is shown after it, with ODF's `_20_` escaping undone.
+fn describe(kind: &BlockKind, style: Option<&str>) -> String {
+    let name = match (kind, style) {
+        (BlockKind::Paragraph, Some(named @ ("Title" | "Subtitle"))) => return named.to_owned(),
+        (BlockKind::Paragraph, _) => "Body text".to_owned(),
+        (BlockKind::Heading { level }, _) => format!("Heading {level}"),
+        (BlockKind::ListItem { depth: 1 }, _) => "List item".to_owned(),
+        (BlockKind::ListItem { depth }, _) => format!("List item, level {depth}"),
+    };
+    match style {
+        Some(style) => format!("{name} — {}", readable_style(style)),
+        None => name,
+    }
+}
+
+/// `Text_20_body` as its author wrote it: *Text body*.
+fn readable_style(name: &str) -> String {
+    let mut out = String::new();
+    let mut rest = name;
+    while let Some(at) = rest.find('_') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at + 1..];
+        let decoded = tail
+            .get(..3)
+            .filter(|code| code.ends_with('_'))
+            .and_then(|code| u8::from_str_radix(&code[..2], 16).ok())
+            .filter(u8::is_ascii);
+        match decoded {
+            Some(byte) => {
+                out.push(char::from(byte));
+                rest = &tail[3..];
+            }
+            None => {
+                out.push('_');
+                rest = tail;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The space under a block, and the extra above a heading — written into the page once, so
@@ -1489,6 +1665,21 @@ pub fn declare_spacing(document: &Document) -> Result<(), JsValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_status_line_names_a_block_the_way_the_tool_row_does() {
+        assert_eq!(describe(&BlockKind::Paragraph, None), "Body text");
+        assert_eq!(
+            describe(&BlockKind::Heading { level: 2 }, None),
+            "Heading 2"
+        );
+        assert_eq!(describe(&BlockKind::Paragraph, Some("Title")), "Title");
+        assert_eq!(
+            describe(&BlockKind::Paragraph, Some("Text_20_body")),
+            "Body text — Text body"
+        );
+        assert_eq!(readable_style("snake_case"), "snake_case");
+    }
 
     fn block(kind: BlockKind, style: Option<&str>) -> BlockView {
         BlockView {
