@@ -12,6 +12,7 @@
 #   scripts/claude-vm.sh shell              # a bash prompt in the VM
 #   scripts/claude-vm.sh exec cargo test    # one command, non-interactive
 #   scripts/claude-vm.sh creds              # re-copy the host credential (after a re-login)
+#   scripts/claude-vm.sh upgrade            # pull a newer image: delete, re-create, re-provision
 #   scripts/claude-vm.sh status | stop | down
 #
 # The machine is scripts/claude-vm/claude.smolfile: Rust + LibreOffice + jing on Debian 13,
@@ -29,7 +30,11 @@
 # delete your uncommitted work. Commit or stash before you turn it loose, the same as ever.
 #
 # It is also the only machine here that can run the whole test suite: `jing` is in the image,
-# so R2's schema validation actually runs, and `soffice` is too, so loops C, D and E do.
+# so R2's schema validation actually runs, and `soffice` is too, so loops C, D and E do. The
+# image has since grown the rest of CI as well — GTK and Xvfb, Wine and cargo-xwin, the wasm
+# target and a matched wasm-bindgen, `reuse`, the two packagers — so every check this
+# repository has now runs in here. `upgrade` is how that reached an existing machine:
+# `latest` is resolved once, at create, so the tag moving does not touch a VM that exists.
 # Its `cargo` is Debian's glibc and its target directory is the VM's own (/workspace/target,
 # on the storage disk) — the host's target/ is never touched, and neither build invalidates
 # the other.
@@ -166,8 +171,37 @@ up() {
     [ "$have" = "$(want_state)" ] || provision
 }
 
+# The only way a newer image reaches this machine, and the reason it is a verb rather than a
+# sentence in the documentation: the Smolfile's `latest` is resolved once, at `create`, and
+# the layers then live on the machine's own storage disk. `start` re-resolves nothing, there
+# is no `machine update --image`, and `machine prune` frees layers *that machine* no longer
+# references rather than fetching new ones. So an upgrade is a delete and a create — which
+# is also why `up` alone is not enough and why a moving `latest` is safe to depend on.
+#
+# What it costs is all on the VM's own disk: /workspace/target, the cargo registry cache and
+# the credential copy go, so the next `cargo test` in there is a cold build. /work is a host
+# mount and is not in that list — the repository is untouched, exactly as with `down`.
+# Anything else you left inside the VM is not, so this is the one verb worth reading twice.
+upgrade() {
+    if exists; then
+        note "deleting $NAME — its target directory and cargo cache go with it (/work does not)"
+        smolvm machine delete --name "$NAME" -f >&2
+    fi
+    up
+    # What the pull actually landed. `machine images` is the obvious thing to print here and
+    # is not worth it: it truncates the reference to a column width and reports no digest, so
+    # two different builds of `latest` look identical in it. The machine itself is asked
+    # instead, and the two versions an upgrade is usually chasing are the answer. Both pipes
+    # are inside the guest or read to EOF — see `state` for why that distinction matters.
+    local have
+    have=$(vm bash -lc 'rustc --version; soffice --version 2>/dev/null | head -1' 2>/dev/null \
+           | tr -d '\r' | tr '\n' ' ' || true)
+    note "image: ${have:-could not be read back}"
+}
+
 case "${1:-claude}" in
     up)     up ;;
+    upgrade) upgrade ;;
     creds)  up >/dev/null; copy_credentials ;;
     claude) up >/dev/null; shift || true; vm_tty claude "$@" ;;
     # The reason this file exists, spelled as its own verb so it is chosen rather than
@@ -188,6 +222,6 @@ case "${1:-claude}" in
     # Deletes the VM and everything on its disk — the cargo cache, the target directory and
     # the credential copy. /work is a host mount, so the repository is not in that list.
     down)   smolvm machine delete --name "$NAME" -f ;;
-    -h|--help|help) sed -n '5,40p' "$0" ;;
-    *)      die "unknown verb: $1 (try: up, claude, yolo, shell, exec, creds, status, stop, down)" ;;
+    -h|--help|help) sed -n '5,44p' "$0" ;;   # the header block, down to the `Needs smolvm` line
+    *)      die "unknown verb: $1 (try: up, claude, yolo, shell, exec, creds, upgrade, status, stop, down)" ;;
 esac

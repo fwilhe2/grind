@@ -443,15 +443,28 @@ repository — `doc/claude-vm.md` is normative for it, including the two measure
 it works around. It is also this workspace's **best test machine**, which was not the reason
 it was built: `ghcr.io/fwilhe2/rust-libreoffice:latest` carries `jing`, so R2's schema
 validation actually runs there instead of skipping the way it does on a host without one, and
-`soffice` too, so loops C, D and E need no `scripts/soffice-docker`. Needs `smolvm` and
+`soffice` too, so loops C, D and E need no `scripts/soffice-docker`. **The image has since
+grown the rest of CI as well** — GTK 4 and libadwaita with Xvfb, the `x86_64-pc-windows-msvc`
+target with `cargo-xwin`, `llvm-windres` and Wine, the wasm target with a matched
+`wasm-bindgen-cli`, `reuse`, and the two packagers — so everything CI gates on now runs in
+there, `artifacts.yml`'s Windows job excepted, and `doc/claude-vm.md` has the table of which
+is which. Needs `smolvm` and
 `/dev/kvm`; the VM keeps its own `CARGO_TARGET_DIR`, so it never fights the host's `target/`.
 
 ```sh
 scripts/claude-vm.sh up                 # create + boot + provision (idempotent)
 scripts/claude-vm.sh yolo               # the agent, no permission prompts, one directory of world
 scripts/claude-vm.sh exec cargo test -p grind-sheet --test kb   # jing included
+scripts/claude-vm.sh upgrade            # pull a newer image (delete + re-create; /work untouched)
 scripts/claude-vm.sh shell | status | stop | down
 ```
+
+`latest` is resolved **once, at `machine create`** — the layers then live on the machine's own
+disk and nothing re-resolves them, so the tag moving is invisible to a VM that exists and a
+machine stays as reproducible as a pinned one. `upgrade` is the only thing that asks for a
+newer build, and it costs the VM's `target/` and cargo cache to take it. The *oracle* stays
+pinned by digest regardless (`ci/libreoffice-image`): loop E's `FLOOR` is a fact about one
+`soffice` build, and this VM's is a convenience rather than that.
 
 The corpus tests need a LibreOffice checkout and skip with a notice without one:
 

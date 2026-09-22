@@ -16,6 +16,7 @@ scripts/claude-vm.sh claude             # the agent, in /work
 scripts/claude-vm.sh yolo               # the same, --dangerously-skip-permissions
 scripts/claude-vm.sh shell              # a bash prompt in there
 scripts/claude-vm.sh exec cargo test    # one command
+scripts/claude-vm.sh upgrade            # pull a newer image into the machine
 scripts/claude-vm.sh status | stop | down
 ```
 
@@ -34,9 +35,24 @@ VM at all. `yolo` is a verb rather than a flag people copy-paste because running
 the intended use and running it on the host still is not.
 
 **The image is the better test machine.** `ghcr.io/fwilhe2/rust-libreoffice:latest` carries
-Rust 1.98, LibreOffice 26.8 **and `jing`** on Debian 13. The host has no `jing`, so R2's
+Rust 1.98.1, LibreOffice 26.8 **and `jing`** on Debian 13. The host has no `jing`, so R2's
 schema validation silently skips there; in the VM it runs. `soffice` is on `PATH`, so loops
 C, D and E run without `scripts/soffice-docker`. The VM is where `cargo test` says the most.
+
+It has since grown past that, and the rest of CI is now in it too — so the claim is no
+longer "the tests" but **every check this repository has**:
+
+| In the image | What it lets the VM run |
+|---|---|
+| `jing`, `soffice` (Calc + Writer, `-l10n-de`) | R2's schema validation, loops C, D and E |
+| `libgtk-4-dev`, `libadwaita-1-dev`, Xvfb, DejaVu + Liberation fonts | `cargo test -p grind-sheet-gtk` / `-p grind-text-gtk`, and `--render-to` |
+| `x86_64-pc-windows-msvc`, `cargo-xwin`, `llvm-windres`, Wine 10 (amd64 hosts only) | `scripts/run.sh win32` — link the Windows shell and run it. No `wine32:i386`, which costs nothing: the shell this repository builds is 64-bit |
+| `wasm32-unknown-unknown`, `wasm-bindgen-cli` 0.2.127, `binaryen`, node | `ui_web/build.sh` and `ui_web/smoke.sh` |
+| `reuse` | `reuse lint`, which CI gates on |
+| `cargo-deb`, `cargo-generate-rpm`, `cargo-bloat`, `twiggy` | what `artifacts.yml`'s jobs do after the release build |
+
+The one thing it is still not is CI itself: `artifacts.yml`'s Windows job needs a real
+`windows-latest`, and Wine is for looking at a frame, not for signing off on one.
 
 ## What it does not protect against
 
@@ -70,6 +86,30 @@ worse than none:
 Changing the Smolfile does not reach a machine that already exists — `down` then `up` for
 that. Changing what *provisioning* writes does: bump `PROVISION` in the script and the next
 verb re-does it.
+
+## `upgrade`, and why a moving `latest` is safe to depend on
+
+The image reference is a tag, not a digest, and that is deliberate — this is a toolbox, not
+an oracle. (The *oracle* is pinned by digest and always will be: loop E's `FLOOR` is a fact
+about one `soffice` build, which is what `ci/libreoffice-image` is for. A VM whose `soffice`
+drifted under a developer would be a bad place to read that number, and `scripts/soffice-tests.sh`
+against the pinned image is still the answer when the number is the question.)
+
+What makes the tag safe is that **it is resolved exactly once, at `machine create`**. The
+layers then live on the machine's own storage disk; `start` re-resolves nothing, there is no
+`machine update --image`, and `machine prune` frees layers the machine no longer references
+rather than fetching new ones. A machine is therefore as reproducible after the tag moves as
+before it — the tag moving is invisible until somebody asks for it.
+
+`upgrade` is asking for it: delete, create, pull, provision, and then print the `rustc` and
+`soffice` versions the new layers actually contain, because that is the question an upgrade
+was run to answer. (`smolvm machine images` is the obvious thing to print and is not worth
+it — it truncates the reference to a column width and reports no digest, so two different
+builds of `latest` look identical in it.)
+
+The cost is on the VM's own disk and nowhere else: `/workspace/target`, the cargo registry
+cache and the credential copy all go, so the first `cargo test` afterwards is a cold build.
+`/work` is a host mount and is not in that list, exactly as with `down`.
 
 ## Two measured smolvm quirks (1.16.2)
 

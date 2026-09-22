@@ -7,10 +7,23 @@
 # (installing the agent, handing it a credential) is the script's, because it is idempotent
 # work that wants a shell and an exit code rather than a TOML list.
 
-# Rust 1.98 + LibreOffice 26.8 + git + curl + jing, Debian 13. Everything this workspace's
-# tests ask of a machine: `cargo test` needs the toolchain, loops C/D/E need `soffice` on
-# PATH, and R2's schema validation needs `jing` — which the host has not got, so the VM is
-# the *better* place to run `cargo test -p grind-sheet --test kb` rather than merely a safer one.
+# Rust 1.98.1 + LibreOffice Calc and Writer + jing, on Debian 13. Everything this
+# workspace's tests ask of a machine: `cargo test` needs the toolchain, loops C/D/E need
+# `soffice` on PATH, and R2's schema validation needs `jing` — which the host has not got,
+# so the VM is the *better* place to run `cargo test -p grind-sheet --test kb` rather than
+# merely a safer one.
+#
+# The image has since grown past that, and the rest of this workspace's CI is now in it too:
+# `libgtk-4-dev` + `libadwaita-1-dev` with Xvfb (the two GTK shells, tests and `--render-to`
+# both), the `x86_64-pc-windows-msvc` target with `cargo-xwin`, `llvm-windres` and Wine
+# (`scripts/run.sh win32`), `wasm32-unknown-unknown` with a matched `wasm-bindgen-cli`
+# (`ui_web/build.sh`), `reuse`, and `cargo-deb`/`cargo-generate-rpm`/`cargo-bloat`/`twiggy`
+# (what `artifacts.yml` runs). Everything CI gates on runs in here now; that workflow's
+# Windows job is the one thing that still wants a real windows-latest.
+#
+# `latest` is resolved once, at `machine create`, and the layers then live on the machine's
+# own storage disk — nothing re-resolves it afterwards. `scripts/claude-vm.sh upgrade` is
+# what pulls a newer build of it; the tag moving does not reach a machine that exists.
 image = "ghcr.io/fwilhe2/rust-libreoffice:latest"
 
 # This workspace is large and the tests are the point of the machine; anything less and the
