@@ -160,12 +160,21 @@ pub fn draw(
     // Text in ink, identity in the swatch beside it: a light series colour is illegible as
     // text, and a legend that coloured its words would be one only some readers could read.
     for entry in &layout.legend {
-        let swatch = gsk::RoundedRect::from_rect(bounds(entry.swatch), 2.0);
-        snapshot.push_rounded_clip(&swatch);
-        snapshot.append_color(
-            &(paint.color)(entry.series, entry.point),
-            &bounds(entry.swatch),
-        );
+        let color = (paint.color)(entry.series, entry.point);
+        // A line is keyed by a stroke of itself rather than by a square of its colour.
+        let (key, round) = match data.kind {
+            ChartKind::Line => (
+                Rect {
+                    y: entry.swatch.y + entry.swatch.h / 2.0 - 1.0,
+                    h: 2.0,
+                    ..entry.swatch
+                },
+                1.0,
+            ),
+            ChartKind::Bar | ChartKind::Pie => (entry.swatch, 2.0),
+        };
+        snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bounds(key), round));
+        snapshot.append_color(&color, &bounds(key));
         snapshot.pop();
         place(
             widget,
@@ -511,19 +520,12 @@ fn category_ticks(layout: &Layout, data: &ChartData) -> Vec<f64> {
     if categories == 0 {
         return Vec::new();
     }
-    match data.kind {
-        // A line's first and last points sit *on* the plot's edges (`line_points`).
-        ChartKind::Line if categories > 1 => {
-            let step = plot.w / (categories - 1) as f64;
-            (0..categories).map(|i| plot.x + i as f64 * step).collect()
-        }
-        _ => {
-            let step = plot.w / categories as f64;
-            (0..categories)
-                .map(|i| plot.x + (i as f64 + 0.5) * step)
-                .collect()
-        }
-    }
+    // Every kind puts a category in the middle of its own band — a line's points as much as a
+    // bar's group — so the first category's name is not drawn over the value axis' zero.
+    let step = plot.w / categories as f64;
+    (0..categories)
+        .map(|i| plot.x + (i as f64 + 0.5) * step)
+        .collect()
 }
 
 /// Gridlines, ruled before anything else is drawn. The y axis' run across at each value tick,
@@ -797,7 +799,7 @@ fn line_points(layout: &Layout, data: &ChartData, series: usize) -> Option<Vec<(
     if categories < 2 {
         return None;
     }
-    let step = plot.w / (categories - 1) as f64;
+    let step = plot.w / categories as f64;
     let (_, values) = data.series.get(series)?;
     if values.len() < 2 {
         return None;
@@ -806,7 +808,7 @@ fn line_points(layout: &Layout, data: &ChartData, series: usize) -> Option<Vec<(
         values
             .iter()
             .enumerate()
-            .map(|(i, &value)| (plot.x + i as f64 * step, value_y(layout, value)))
+            .map(|(i, &value)| (plot.x + (i as f64 + 0.5) * step, value_y(layout, value)))
             .collect(),
     )
 }
@@ -1094,10 +1096,11 @@ mod tests {
             categories: vec!["a".into(), "b".into()],
             series: vec![("Votes".into(), vec![100.0, 0.0])],
         };
-        // At the left edge, the line sits at the top of the plot (the max value, which is
+        // At its first point, the line sits at the top of the plot (the max value, which is
         // also a tick — `axis_ticks(100)` tops out at exactly 100).
-        let plot = layout(FRAME, &chart, &data, &measure).plot;
-        let hit = mark_at(FRAME, &chart, &data, plot.x, plot.y, &measure);
+        let laid = layout(FRAME, &chart, &data, &measure);
+        let (x, y) = line_points(&laid, &data, 0).unwrap()[0];
+        let hit = mark_at(FRAME, &chart, &data, x, y, &measure);
         assert_eq!(hit, Some((0, None)));
     }
 

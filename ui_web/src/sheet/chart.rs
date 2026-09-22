@@ -285,18 +285,12 @@ fn category_x(data: &ChartData, plot: Plot) -> Vec<f64> {
     if count == 0 {
         return Vec::new();
     }
-    match data.kind {
-        ChartKind::Line if count > 1 => {
-            let step = plot.2 / (count - 1) as f64;
-            (0..count).map(|i| plot.0 + i as f64 * step).collect()
-        }
-        _ => {
-            let step = plot.2 / count as f64;
-            (0..count)
-                .map(|i| plot.0 + (i as f64 + 0.5) * step)
-                .collect()
-        }
-    }
+    // Every kind in the middle of its own band, a line's points as much as a bar's group —
+    // the GTK painter's rule, which keeps the first category's name off the value axis' zero.
+    let step = plot.2 / count as f64;
+    (0..count)
+        .map(|i| plot.0 + (i as f64 + 0.5) * step)
+        .collect()
 }
 
 fn grid(
@@ -363,7 +357,7 @@ fn lines(
     if count < 2 {
         return;
     }
-    let step = plot.2 / (count - 1) as f64;
+    let step = plot.2 / count as f64;
     for (s, (_, values)) in data.series.iter().enumerate() {
         if values.len() < 2 {
             continue;
@@ -374,7 +368,7 @@ fn lines(
             .map(|(i, value)| {
                 format!(
                     "{:.1},{:.1}",
-                    plot.0 + i as f64 * step,
+                    plot.0 + (i as f64 + 0.5) * step,
                     value_y(*value, ticks, plot)
                 )
             })

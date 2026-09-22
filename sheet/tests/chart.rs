@@ -829,3 +829,43 @@ fn a_legend_in_a_corner_or_nowhere_in_particular_reads_as_an_edge() {
         assert_eq!(back.charts(0).unwrap()[0].legend, Some(read), "{written:?}");
     }
 }
+
+/// A preview is `add_chart`/`edit_chart` without the write: it draws what they would make —
+/// an edit's hand-picked colour included — and leaves the document and its history alone.
+#[test]
+fn a_preview_draws_what_an_edit_would_make_and_writes_nothing() {
+    let app = App::new();
+    filled(&app);
+    add(&app, ChartKind::Bar, &[("B2:B4", Some("B1"))]);
+    let mut series = app.charts(0).unwrap()[0].series.clone();
+    series[0].color = Some("#abcdef".to_owned());
+    app.set_chart_style(0, 0, ChartAxis::default(), ChartAxis::default(), series)
+        .unwrap();
+    let before = app.save_bytes(Form::Flat).unwrap();
+
+    let line = grind_sheet::ChartSpec {
+        kind: ChartKind::Line,
+        ..grind_sheet::ChartSpec::of(&app.charts(0).unwrap()[0])
+    };
+    let (chart, data) = app.preview_chart(0, &line, Some(0)).unwrap();
+    assert_eq!(chart.kind, ChartKind::Line);
+    assert_eq!(chart.series[0].color.as_deref(), Some("#abcdef"));
+    assert_eq!(data.series[0].1, vec![100.0, 80.0, 60.0]);
+    let (fresh, _) = app.preview_chart(0, &line, None).unwrap();
+    assert_eq!(
+        fresh.series[0].color, None,
+        "a new chart starts from the cycle"
+    );
+
+    let bad = grind_sheet::ChartSpec {
+        series: vec![("B2:".to_owned(), None)],
+        ..line
+    };
+    assert!(app.preview_chart(0, &bad, None).is_err());
+    assert_eq!(
+        app.save_bytes(Form::Flat).unwrap(),
+        before,
+        "nothing was written"
+    );
+    assert_eq!(app.charts(0).unwrap().len(), 1);
+}

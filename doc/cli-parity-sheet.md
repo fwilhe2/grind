@@ -114,6 +114,10 @@ stops ratcheting.
   bar or line series, one bar, or one pie slice gets, overriding `series_color`'s default
   cycle
   (`doc/chart-format.md`)
+- `preview_chart` — not exposed: it is `chart-add`/`chart-edit` without the write, and what it
+  returns is something to *draw*. The CLI's preview of a chart is to add it and `chart-list` it
+  — or to add it to a copy — and it has no drawing surface to show the rest on, for the reason
+  `chart_data` below has none.
 - `chart_data` — not exposed: nothing here draws a chart. `chart-list`'s ranges are read
   back through `charts`; `grind-sheet-gtk` is the shell that resolves them against the live
   sheet and draws one, and the CLI has no drawing surface of its own to reach this from.

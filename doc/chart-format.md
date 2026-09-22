@@ -299,15 +299,35 @@ Because a tick label's own width moves the plot, `draw` and `mark_at` both take 
 contribution to a chart's layout and exactly the shape `doc/text-layout.md` settled on for a
 page of text. Measuring differently in the two would put the click somewhere the picture is not.
 
-A toolbar button (**Chart**, labelled rather than icon-only — there is no chart icon in the
-Adwaita icon theme, and the name this button first carried is not in it at all, so it drew as
-the missing-image glyph) opens the dialog: chart kind, categories range, a repeatable list of
-series (`RANGE[=LABEL]`, the same vocabulary `chart-add --series` already takes), and a group
-per axis — title, tick labels, gridlines. **One dialog does both jobs**: inserting prefills
-from the current selection when it spans more than one row and column (first column categories,
-first row each series' own label, one series per remaining column) and calls `App::add_chart`;
-editing prefills from the chart itself and calls `App::edit_chart`, one undo step, leaving the
-position a drag put it at alone.
+**The dialog is built around a live preview** (`ui_sheet_gtk/src/chart_dialog.rs`), reached
+from the cells' context menu (*Insert Chart…*) or the palette. **One dialog does both jobs**,
+insert and edit, and its top third is the chart — drawn by the same `chart::draw` the grid uses,
+from `App::preview_chart`, which is `add_chart`/`edit_chart` without the write, so what the
+dialog shows and what lands on the sheet cannot differ. Below it, three buttons pick the type
+(a glyph and a word each, since Adwaita has no chart icons), and three groups of ordinary
+Adwaita rows say the rest:
+
+- **Data** asks what the chart is of in the table's own terms — the block, whether the series
+  run in columns or rows, and whether the first row and first column are labels — which are
+  `ChartShape`'s three answers, turned into ranges by `App::suggest_chart` (the core's
+  `chart::guess`, the same reading `chart-add --from` makes). Opening *Insert Chart* on any cell
+  of a table reads the whole table; a table with months across its top charts them along the x
+  axis without being told. The ranges themselves — `RANGE=LABEL`, `chart-add --series`'s own
+  vocabulary — are folded away under *Ranges*, for anybody who wants a series the table's shape
+  does not give. A range that does not parse turns its row red and the preview says why.
+- **Labels**: the chart's title, its legend (None, Right, Bottom, Top, Left — ODF's
+  start/end, in the words of a left-to-right window), and for a pie whether it runs clockwise.
+  A title and a legend follow the table until the person picks their own.
+- **Axes**: one expander per axis — title, labels, gridlines — hidden for a pie.
+
+Insert and Apply sit in the header bar, Cancel opposite, Enter in any text row inserts, and the
+write is one undo step. **A new chart goes beside the block it was made from** — a column's gap
+to the right of its last column, level with its first row (`Grid::anchor_beside`, from the
+sheet's own track sizes with the zoom taken back out) — and is scrolled into view
+(`Grid::reveal_chart`). It used to land at a fixed spot near the top-left corner, on top of the
+figures it had just been made from. **Editing** opens on the chart as it is: its ranges shown as
+typed, the table they span shown as the range, and nothing re-read until the person changes the
+range or how it is read, so opening and applying a chart leaves it exactly as it was.
 
 **Editing an existing chart is a double-click or a right-click.** A double-click anywhere on a
 chart opens that dialog (the cell editor never opens underneath it, since a chart takes the
@@ -319,11 +339,19 @@ sheet is.
 
 **Assigning a colour by hand is a click, not a dialog**:
 `ui_sheet_gtk/src/chart.rs`'s `mark_at` shares the exact geometry `draw` paints from,
-so a click on a bar, a slice or a line names the same mark the picture shows; a press that
-never moved (`Grid`'s own click-vs-drag distinction, reused from the chart-drag gesture) opens
-a palette popover — the same swatches a cell's fill-colour button offers
+so a click on a bar, a slice, a line or a legend entry names the same mark the picture shows; a
+press that never moved (`Grid`'s own click-vs-drag distinction, reused from the chart-drag
+gesture) opens a palette popover — the same swatches a cell's fill-colour button offers
 (`formatting::palette_grid`, factored out for this) — and picking one calls
-`App::set_chart_style`, one undo step.
+`App::set_chart_style`, one undo step. **A colour is a series**, so a click on a bar colours its
+whole series; the popover's *Only this bar* check is the deliberate exception. A pie's slice is
+always its own.
+
+**Hovering a mark names it**: a tooltip reads `Sales · Feb: 20` over a bar or a line and
+`Feb: 20 (33%)` over a slice (`chart::describe`, the same hit-test again), which is how a figure
+comes off a chart without a label on every bar. A chart's resize handle shows on the chart under
+the pointer, with a move or resize cursor to say what a press would do, rather than on every
+chart all the time.
 
 **Repositioning is a drag, not a dialog** — the feature this shell exists to get right where
 LibreOffice's own frame-handle-and-recompute feel does not. Pressing on a chart's body starts a
@@ -334,11 +362,12 @@ rect becomes ODF lengths and one call to `App::reshape_chart` — one undo entry
 drag took, the same principle `Grid::commit_resize` already applies to a column or row. Nothing
 is written mid-drag, which is what makes the drag itself smooth.
 
-**Not built**: no visual feedback beyond the accent outline and handle already used for a
-resize, no keyboard-driven repositioning — a mouse is what "dragged", "clicked" and
-"right-clicked" all mean here — and no way to reach a chart's own dialog from the keyboard at
-all, which is the a11y gap this feature leaves and the CLI's `chart-edit` covers for a script
-but not for a person.
+**From the keyboard**, *Edit a Chart…* in the palette opens the dialog on the sheet's chart,
+or offers the sheet's charts by title when there are several — which closes the gap this
+section used to name, that a chart's dialog could not be reached without a pointer at all.
+**Not built**: keyboard-driven repositioning and resizing (a mouse is what "dragged" means
+here, and `chart-reshape` is the keyboard's way), and a chart the keyboard can select and delete
+without the context menu.
 
 ## What this build does not carry
 

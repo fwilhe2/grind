@@ -49,6 +49,10 @@ use crate::keymap::{Dir, Selection};
 /// screen and consistent everywhere else.
 const PX_PER_MM: f64 = 96.0 / 25.4;
 
+/// The gap between a new chart and the block it was made from, in millimetres — about a
+/// third of a default column, enough to read as "beside" rather than "stuck to".
+const CHART_MARGIN_MM: f64 = 6.0;
+
 /// The narrowest a drag may make a track. Zero is legal in ODF and means *hidden*, which is
 /// a feature with its own UI rather than something to arrive at by dragging past the edge.
 const MIN_TRACK: f64 = 6.0;
@@ -204,6 +208,22 @@ impl Grid {
     /// from: the same button clears one and creates one, so it has to say which.
     pub fn has_filter(&self) -> bool {
         self.imp().filter().is_some()
+    }
+
+    /// Where a new chart of the block `start..=end` goes, as ODF lengths `(x, y)`: beside it —
+    /// a column's gap to the right of its last column, level with its first row — so a chart
+    /// never lands on the figures it was made from. The sheet's own track sizes decide it,
+    /// hidden tracks at zero, and the zoom comes back out: a chart's place is a length on the
+    /// sheet, not a pixel on this screen.
+    pub fn anchor_beside(&self, start: Pos, end: Pos) -> (String, String) {
+        self.imp().anchor_beside(start, end)
+    }
+
+    /// Scroll so the chart at `index` on this sheet is in view — its top-left corner, and as
+    /// much of the rest as the window holds. What an Insert Chart does once it has inserted,
+    /// since a chart that lands out of sight is one the user has to go looking for.
+    pub fn reveal_chart(&self, index: usize) {
+        self.imp().reveal_chart(index);
     }
 
     pub fn selection(&self) -> Selection {
@@ -763,6 +783,10 @@ mod imp {
         pub resize: Cell<Option<Resize>>,
         /// A chart being moved or resized, and which chart it is.
         pub chart_drag: Cell<Option<ChartDrag>>,
+        /// The chart under the pointer, if any — the one that shows its resize handle. A handle
+        /// on every chart all the time is a sheet of blue squares; one on the chart a person is
+        /// pointing at is an affordance.
+        pub hovered_chart: Cell<Option<usize>>,
         /// Where that drag currently puts the chart, in widget space — painted in its place
         /// until the pointer is released and it becomes `App::reshape_chart`.
         pub chart_drag_rect: Cell<Option<Rect>>,
@@ -902,6 +926,7 @@ mod imp {
                 drag: Cell::new(None),
                 resize: Cell::new(None),
                 chart_drag: Cell::new(None),
+                hovered_chart: Cell::new(None),
                 chart_drag_rect: Cell::new(None),
                 filling: Cell::new(false),
                 fill_to: Cell::new(None),
@@ -1254,10 +1279,19 @@ mod imp {
                 widget,
                 move |_, x, y| {
                     grid.imp().pointer.set(Some((x, y)));
+                    let chart = grid.imp().chart_hit(x, y);
+                    let hovered = chart.map(|(index, _, _)| index);
+                    if grid.imp().hovered_chart.replace(hovered) != hovered {
+                        grid.queue_draw();
+                    }
                     let geom = grid.imp().geom();
                     let (_, corner) = grid.imp().selection.get().rect();
                     let hit = geom.hit(x, y);
                     let cursor = match hit {
+                        // A chart is over the cells, so it answers first: its corner resizes
+                        // it and the rest of it moves it.
+                        _ if matches!(chart, Some((_, true, _))) => Some("nwse-resize"),
+                        _ if chart.is_some() => Some("move"),
                         Hit::ColEdge(_) => Some("col-resize"),
                         Hit::RowEdge(_) => Some("row-resize"),
                         Hit::HiddenCols(_, _) | Hit::HiddenRows(_, _) => Some("pointer"),
@@ -1277,7 +1311,12 @@ mod imp {
             motion.connect_leave(glib::clone!(
                 #[weak(rename_to = grid)]
                 widget,
-                move |_| grid.imp().pointer.set(None)
+                move |_| {
+                    grid.imp().pointer.set(None);
+                    if grid.imp().hovered_chart.take().is_some() {
+                        grid.queue_draw();
+                    }
+                }
             ));
             widget.add_controller(motion);
 
@@ -2736,16 +2775,19 @@ mod imp {
                         color: &color,
                     },
                 );
-                // The resize handle, the same square the fill handle is — a chart being
-                // dragged also gets an accent outline, so the whole shape being moved reads
-                // as one thing rather than the drag being invisible until it lands.
+                // The resize handle, the same square the fill handle is, on the chart under the
+                // pointer or being dragged — a chart being dragged also gets an accent outline,
+                // so the whole shape being moved reads as one thing rather than the drag being
+                // invisible until it lands.
                 if dragging == Some(index) {
                     outline(f.snapshot, at, f.palette.accent, 2.0);
                 }
-                f.snapshot.append_color(
-                    &f.palette.accent,
-                    &rect(at.x + at.w - HANDLE, at.y + at.h - HANDLE, HANDLE, HANDLE),
-                );
+                if dragging == Some(index) || self.hovered_chart.get() == Some(index) {
+                    f.snapshot.append_color(
+                        &f.palette.accent,
+                        &rect(at.x + at.w - HANDLE, at.y + at.h - HANDLE, HANDLE, HANDLE),
+                    );
+                }
             }
         }
 
@@ -3488,6 +3530,56 @@ mod imp {
             }
             self.obj()
                 .announce(&message, gtk::AccessibleAnnouncementPriority::Medium);
+        }
+
+        pub fn anchor_beside(&self, start: Pos, end: Pos) -> (String, String) {
+            let geom = self.geom();
+            let zoom = self.zoom.get();
+            let to_mm = |px: f64| px / zoom / PX_PER_MM;
+            let x = to_mm(geom.cols.offset_of(end.col + 1)) + CHART_MARGIN_MM;
+            let y = to_mm(geom.rows.offset_of(start.row));
+            (style::mm_length(x), style::mm_length(y))
+        }
+
+        pub fn reveal_chart(&self, index: usize) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let Some(chart) = app
+                .charts(self.sheet.get())
+                .ok()
+                .and_then(|charts| charts.get(index).cloned())
+            else {
+                return;
+            };
+            let geom = self.geom();
+            let Some(at) = self.chart_widget_rect(&geom, &chart) else {
+                return;
+            };
+            // Content space, where the adjustments live: the widget-space rectangle with the
+            // scroll put back and the headers taken off.
+            let (left, top) = (
+                at.x - geom.header_w + geom.scroll_x,
+                at.y - geom.header_h + geom.scroll_y,
+            );
+            let page_w = (f64::from(self.obj().width()) - geom.header_w).max(1.0);
+            let page_h = (f64::from(self.obj().height()) - geom.header_h).max(1.0);
+            let fit = |from: f64, size: f64, scroll: f64, page: f64| {
+                if from < scroll {
+                    from
+                } else if from + size > scroll + page {
+                    // As much as fits, and never the top-left corner scrolled away.
+                    (from + size - page).min(from)
+                } else {
+                    scroll
+                }
+            };
+            let x = fit(left, at.w, geom.scroll_x, page_w);
+            let y = fit(top, at.h, geom.scroll_y, page_h);
+            if (x, y) != (geom.scroll_x, geom.scroll_y) {
+                self.stop_glide();
+                self.scroll_to(x.max(0.0), y.max(0.0));
+            }
         }
 
         fn scroll_into_view(&self, pos: Pos) {

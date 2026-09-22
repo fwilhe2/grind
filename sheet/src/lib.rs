@@ -1861,14 +1861,13 @@ impl App {
         width: &str,
         height: &str,
     ) -> Result<()> {
-        let mut chart = Chart::new(
-            spec.kind,
+        let mut chart = self.charted(sheet, spec, None)?;
+        (chart.x, chart.y, chart.width, chart.height) = (
             x.to_owned(),
             y.to_owned(),
             width.to_owned(),
             height.to_owned(),
         );
-        self.fill_chart(sheet, spec, &mut chart)?;
 
         self.mutate(|state| {
             let sheet_len = state
@@ -1993,17 +1992,51 @@ impl App {
     /// colours down. A series whose range *changed* starts again from the default cycle,
     /// since a colour chosen for the fourth bar of one range means nothing on another.
     pub fn edit_chart(&self, sheet: usize, index: usize, spec: &chart::Spec) -> Result<()> {
-        let old = self.chart(sheet, index)?;
-        let mut chart = old.clone();
+        let chart = self.charted(sheet, spec, Some(index))?;
+        self.replace_chart(sheet, index, chart)
+    }
+
+    /// What a spec **would** draw, and the data it would draw it from — nothing written. A
+    /// chart dialog's preview asks this on every change, so what it shows is exactly what
+    /// [`Self::add_chart`] or, given `editing`, [`Self::edit_chart`] would make: the same
+    /// ranges resolved the same way, and an edit's hand-picked colours kept by the same rule.
+    pub fn preview_chart(
+        &self,
+        sheet: usize,
+        spec: &chart::Spec,
+        editing: Option<usize>,
+    ) -> Result<(Chart, ChartData)> {
+        let chart = self.charted(sheet, spec, editing)?;
+        let data = ChartData::read(self, &chart)?;
+        Ok((chart, data))
+    }
+
+    /// The chart a spec makes — a new one, or the chart at `editing` changed to it, keeping
+    /// its place and every colour picked by hand on a series still pointing at the same range.
+    /// Shared by [`Self::add_chart`], [`Self::edit_chart`] and [`Self::preview_chart`], so a
+    /// preview cannot draw anything the other two would not write.
+    fn charted(&self, sheet: usize, spec: &chart::Spec, editing: Option<usize>) -> Result<Chart> {
+        let old = editing.map(|index| self.chart(sheet, index)).transpose()?;
+        let mut chart = old.clone().unwrap_or_else(|| {
+            Chart::new(
+                spec.kind,
+                "0cm".to_owned(),
+                "0cm".to_owned(),
+                "10cm".to_owned(),
+                "8cm".to_owned(),
+            )
+        });
         self.fill_chart(sheet, spec, &mut chart)?;
         chart.kind = spec.kind;
-        for new in &mut chart.series {
-            if let Some(old) = old.series.iter().find(|old| old.values == new.values) {
-                new.color = old.color.clone();
-                new.point_colors = old.point_colors.clone();
+        if let Some(old) = old {
+            for new in &mut chart.series {
+                if let Some(old) = old.series.iter().find(|old| old.values == new.values) {
+                    new.color = old.color.clone();
+                    new.point_colors = old.point_colors.clone();
+                }
             }
         }
-        self.replace_chart(sheet, index, chart)
+        Ok(chart)
     }
 
     /// Everything a spec says, resolved into `chart` — shared by [`Self::add_chart`] and
