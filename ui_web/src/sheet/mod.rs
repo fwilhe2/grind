@@ -303,6 +303,17 @@ impl Ui {
             declaration.set_attribute("style", &format!("width:{:.1}px", widths.size(col)))?;
             self.dom.cols.append_child(&declaration)?;
         }
+        // **The table is as wide as its columns add up to**, stated. `table-layout: fixed` sizes
+        // columns from the `<col>`s only when the table has a width of its own; with the
+        // stylesheet's `max-content` the browser sized them from what was *in* them, so a column
+        // the document made 0.6in wide grew to fit a long label, and a number too wide for its
+        // column was never too wide — every other shell drew the document's width and this one
+        // quietly did not. With it, a cell's content is clipped at the document's width, and a
+        // number that no longer fits is `###` (`hash_overflowing`).
+        let total: f64 = shown.iter().map(|&col| widths.size(col)).sum();
+        if let Some(table) = self.dom.cols.parent_element() {
+            table.set_attribute("style", &format!("width:calc(3.5rem + {total:.1}px)"))?;
+        }
 
         // Column headers. Rebuilt with the body, because a horizontal scroll
         // changes which letters are over which cells.
@@ -338,6 +349,9 @@ impl Ui {
         // cost is bounded by the window rather than the document, which is what the
         // viewport is for.
         self.dom.body.set_text_content(None);
+        // Every number drawn, to be checked once the rows are in the page — only then has the
+        // browser laid them out and can say whether one overflows (`hash_overflowing`).
+        let mut numbers: Vec<web_sys::Element> = Vec::new();
         for row in rows.clone() {
             let line = self.dom.document.create_element("tr")?;
             if hidden.contains(&row) {
@@ -376,6 +390,9 @@ impl Ui {
                 };
                 cell.set_text_content(Some(&text));
                 let numeric = matches!(viewport.get(row, col), Some(CellValue::Number(_)));
+                if numeric && !(active && editing) {
+                    numbers.push(cell.clone());
+                }
                 // `doc/view-modes.md`, both overlays, in two attributes and no extra
                 // elements: the stylesheet draws the marker and the hint with
                 // `content: attr(…)`, so a mode costs one attribute per cell rather than a
@@ -438,6 +455,7 @@ impl Ui {
             }
             self.dom.body.append_child(&line)?;
         }
+        hash_overflowing(&numbers)?;
 
         self.render_charts(&widths, &heights)?;
         self.render_tabs()?;
@@ -2141,6 +2159,32 @@ fn wire_filter_menu(ui: &Rc<Ui>) -> Result<(), JsValue> {
         let ticked = apply.filter_ticked();
         apply.apply_filter(filter_ui::Chosen::Keep(ticked));
     })
+}
+
+/// A number that does not fit its cell is **`###`**, never part of itself — `numfmt::overflow`,
+/// the rule every shell in the suite draws. The stylesheet clips a cell's content, so without this
+/// `3,710.00 €` in a narrow column read `3,710.0` with nothing to say a digit and the currency
+/// had gone.
+///
+/// Measured after the rows are in the page, since only then has the browser laid them out: a
+/// cell whose content is wider than its box (`scrollWidth > clientWidth`) is measured once more
+/// with ten hashes in its own font, and given as many as its room holds. The box's horizontal
+/// padding is taken off both, since both widths include it. Nothing happens where nothing is laid
+/// out — jsdom reports every width as zero, so the smoke test sees the numbers unchanged.
+fn hash_overflowing(cells: &[web_sys::Element]) -> Result<(), JsValue> {
+    /// `.grid td`'s `padding: 0 4px`, both sides.
+    const PADDING: f64 = 8.0;
+    for cell in cells {
+        let (scroll, client) = (cell.scroll_width(), cell.client_width());
+        if client <= 0 || scroll <= client {
+            continue;
+        }
+        cell.set_text_content(Some("##########"));
+        let hash = (f64::from(cell.scroll_width()) - PADDING) / 10.0;
+        let room = f64::from(client) - PADDING;
+        cell.set_text_content(Some(&grind_sheet::numfmt::overflow(room, hash)));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

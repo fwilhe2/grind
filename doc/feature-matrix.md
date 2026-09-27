@@ -182,6 +182,7 @@ borders, which that window does not draw either.
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ |
 | **Drawn**: wrapped text | — | ● | ○ | ● | ○ |
+| **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● |
 
 ᵃ **A real gap, and this table is where it became visible.** Nothing in `ui_sheet_gtk` writes
 `CellStyle::borders`; the strip carries bold, italic, three alignments, wrap, two colour
@@ -206,6 +207,16 @@ nothing, which is why that row is full: every cell's text comes out of `App::get
 already spelled the document's way, and every typed number goes through the core's typing
 rule. A new document in the GNOME window states the desktop's locale; `grind sheet new` states
 none unless told.
+
+**One rule for a number that does not fit.** Part of a number is a different number —
+`2026-08-16` cut to `2026-08-1` is the first of August, `3,710.00 €` cut to `3,710.0…` has lost a
+digit and its currency — so a number, date or time too wide for its column is drawn as `###`, as
+many whole hashes as the column holds, in every client: `grind_sheet::numfmt::overflow`, measured
+in each shell's own unit and decided by the **value** being a number, never by where it is
+aligned. Text that does not fit ends in `…`. Before 2026-09-27 the four clients had three answers:
+the GNOME window hashed a number only when it was right-aligned, the Windows window ellipsized
+every cell, and the browser clipped without a mark — and did not honour a column's width at all
+once its content was wider, since a `max-content` table sizes its columns from what is in them.
 
 ## 6. Spreadsheet — structure, charts and interchange
 

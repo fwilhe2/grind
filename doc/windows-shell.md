@@ -677,6 +677,11 @@ things had to move together, and the split is the point of it:
 - **All of it is portable** and tested on Linux — six tests in `text/geom.rs`, including the empty
   table that used to be the gap.
 
+**A number is never elided.** `DrawTextW`'s `DT_END_ELLIPSIS` applied to every cell, so a
+currency one pixel too wide came out as `3,710.0…` — a magnitude with a digit missing. A number
+that does not fit is measured in its own font against the room `draw_text` leaves and drawn as
+`grind_sheet::numfmt::overflow`'s hashes; text keeps its ellipsis (`doc/feature-matrix.md` §5).
+
 ## Milestones
 
 Ordered on the same insight `doc/sheet-shell.md` used: **the read-only grid is the highest-risk

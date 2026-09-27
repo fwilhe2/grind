@@ -253,7 +253,9 @@ pub fn pad(text: &str, width: usize, align: Align, fit: Fit) -> String {
     let needed = text.width();
     let kept = match (needed <= room, fit) {
         (true, _) => text.to_owned(),
-        (false, Fit::Number) => "#".repeat(room),
+        // The suite's one rule for it (`numfmt::overflow`), in this shell's unit: a cell.
+        (false, Fit::Number) if room > 0 => grind_sheet::numfmt::overflow(room as f64, 1.0),
+        (false, Fit::Number) => String::new(),
         (false, Fit::Text) => {
             // Leave a cell for the ellipsis, which is one cell wide.
             let mut kept = String::new();

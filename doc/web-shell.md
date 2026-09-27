@@ -215,6 +215,14 @@ of the change was in it. Both read `CARGO_TARGET_DIR` now, as `scripts/run.sh` a
   GNOME window's answer.
 * **Tables are grids** (above), and the welcome page lost a focus ring drawn round the whole page.
 
+**The grid honours the document's column widths, and a number never overflows.** The table was
+`table-layout: fixed` and `width: max-content`, and the second won: a column the document made
+0.6in wide grew to fit whatever was in it, so this was the one client where a long label or a
+long number widened its column rather than being cut at it. The table is given the width its
+`<col>`s add up to now, text cut at a column ends in `…`, and a number that no longer fits is
+`###` — `hash_overflowing`, measured once the rows are in the page, over
+`grind_sheet::numfmt::overflow` (`doc/feature-matrix.md` §5).
+
 ## How to see it
 
 ```sh

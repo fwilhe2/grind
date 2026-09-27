@@ -622,6 +622,10 @@ input[type="text"] {
      cell size the shell measures every frame. Same gap M8 left in the GTK grid. */
   overflow: hidden;
   white-space: nowrap;
+  /* Text cut at the column says it was cut, as in every other shell. A number never reaches
+     this: one that does not fit is `###` (`hash_overflowing`), since part of a number is a
+     different number. */
+  text-overflow: ellipsis;
   text-align: left;
   font-weight: normal;
   vertical-align: middle;

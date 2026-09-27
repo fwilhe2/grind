@@ -430,16 +430,27 @@ mod windows_impl {
                         look.background.is_some(),
                         theme,
                     );
+                    // A number that does not fit is **never** elided: `DrawTextW`'s ellipsis
+                    // turned `3,710.00 €` into `3,710.0…`, a magnitude with a digit missing.
+                    // Measured in the cell's own font (the bold one is selected above), against
+                    // exactly the room `draw_text` leaves — its padding either side and the one
+                    // pixel it keeps off the right edge — and drawn as `numfmt::overflow`'s
+                    // hashes, the rule every shell in the suite draws.
+                    let pad = crate::sheet::geom::scale(PAD, g.dpi);
+                    let room = f64::from(text_right - text_left) - 2.0 * pad.round() - 1.0;
+                    let hashes;
+                    let text = match grind_sheet::numfmt::is_number(value)
+                        && f64::from(gdi::text_width(dc, text)) > room
+                    {
+                        true => {
+                            let hash = f64::from(gdi::text_width(dc, "#"));
+                            hashes = grind_sheet::numfmt::overflow(room, hash);
+                            hashes.as_str()
+                        }
+                        false => text,
+                    };
                     draw_text(
-                        dc,
-                        text,
-                        text_left,
-                        top,
-                        text_right,
-                        bottom,
-                        look.align,
-                        ink,
-                        crate::sheet::geom::scale(PAD, g.dpi),
+                        dc, text, text_left, top, text_right, bottom, look.align, ink, pad,
                     );
                 }
             }

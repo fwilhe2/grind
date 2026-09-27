@@ -263,7 +263,9 @@ screenshot first. No capability moved.
 - **A number is never cut.** A ten-cell column drew `2026-08-16` as `2026-08-1` — the first of
   August — and `3,710.00 €` as `3,710.00`. A number, date or time that does not fit is `###`, what
   LibreOffice and Excel draw and the one spelling nobody reads as a value; text that does not fit
-  ends in `…`, the other shells' own mark (`sheet/geom.rs`, `Fit`). The honest cost, written down:
+  ends in `…`, the other shells' own mark (`sheet/geom.rs`, `Fit`). The hashes are
+  `grind_sheet::numfmt::overflow`, the rule all four shells now draw — see "One rule for a number
+  that does not fit" in `doc/feature-matrix.md` §5. The honest cost, written down:
   at this shell's ten cells to the inch a default column holds nine characters, so the sample
   document shows five `###` that the windows draw in full — `:width` widens one.
 - **A tab is drawn.** It was measured as one cell and drawn as none, so `name⇥value` read

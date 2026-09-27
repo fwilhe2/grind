@@ -4041,17 +4041,15 @@ mod imp {
                     };
 
                     // A number that does not fit is never truncated — a wrong magnitude
-                    // read as a right one is worse than no reading at all.
-                    if !fits && align == Align::Right {
-                        // As many hashes as the cell holds rather than a fixed ten, which is
-                        // the same sign either way and the only one that stays whole: ten of
-                        // them in a cell too narrow for ten are drawn clipped through the
-                        // middle of a glyph, and a half-drawn `#` reads as a broken font
-                        // rather than as a column that needs widening.
+                    // read as a right one is worse than no reading at all. Decided by the
+                    // *value*, not by where it sits: a centred or left-aligned number used to
+                    // fall through to the text path below and be cut or spill like a word.
+                    // As many whole hashes as the cell holds, `numfmt::overflow` — the rule
+                    // every shell in the suite draws.
+                    if !fits && !wrapping && grind_sheet::numfmt::is_number(value) {
                         layout.set_text("#");
                         let hash = f64::from(layout.pixel_size().0).max(1.0);
-                        let count = ((cell.w - 2.0 * pad) / hash).floor().clamp(1.0, 200.0);
-                        layout.set_text(&"#".repeat(count as usize));
+                        layout.set_text(&grind_sheet::numfmt::overflow(cell.w - 2.0 * pad, hash));
                         let (w, h) = layout.pixel_size();
                         draw_text(
                             f.snapshot,

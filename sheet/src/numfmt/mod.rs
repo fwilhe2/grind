@@ -756,6 +756,34 @@ fn clock(serial: f64) -> String {
     )
 }
 
+/// What a **number that does not fit its column** is drawn as — every shell's answer, in one
+/// place: as many `#` as the room holds, and never part of the number.
+///
+/// Any part of a number is a different value. `2026-08-16` cut to `2026-08-1` is the first of
+/// August, `3,710.00 €` cut to `3,710.00` has lost its currency, and `12,345` cut from the left is
+/// `2,345`; an ellipsis at least says something is missing but still shows a magnitude that may be
+/// wrong. `###` is what LibreOffice and Excel draw, and the one spelling nobody reads as a value —
+/// widening the column shows it. Text is not covered: a word cut short, with an ellipsis, is still
+/// the start of the right word.
+///
+/// `room` and `hash` are in whatever unit the shell measures in — pixels, Pango units, terminal
+/// cells — and `hash` is how wide one `#` is in the cell's own font. At least one, so a column too
+/// narrow for even that still says it is too narrow, and never so many that a pathological width
+/// builds a huge string.
+pub fn overflow(room: f64, hash: f64) -> String {
+    let count = match hash > 0.0 && room.is_finite() {
+        true => (room / hash).floor().clamp(1.0, 256.0) as usize,
+        false => 1,
+    };
+    "#".repeat(count)
+}
+
+/// Whether a cell's value is one [`overflow`] covers: a number, which includes every date, time,
+/// percentage and currency, since the model holds all of them as one.
+pub fn is_number(value: &CellValue) -> bool {
+    matches!(value, CellValue::Number(_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1053,5 +1081,16 @@ mod tests {
         let number = old.parts[1].clone();
         old.parts = trailing_currency(number, "$");
         assert!(old.is_preset());
+    }
+
+    #[test]
+    fn a_number_that_does_not_fit_is_hashes_as_wide_as_the_room() {
+        assert_eq!(overflow(9.0, 1.0), "#########");
+        assert_eq!(overflow(50.0, 7.0), "#######", "whole hashes only");
+        assert_eq!(overflow(3.0, 7.0), "#", "never nothing");
+        assert_eq!(overflow(1e9, 1.0).len(), 256, "never unbounded");
+        assert_eq!(overflow(10.0, 0.0), "#", "a font that measured nothing");
+        assert!(is_number(&CellValue::Number(45000.0)));
+        assert!(!is_number(&CellValue::Text("3,710.00".into())));
     }
 }

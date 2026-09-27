@@ -687,6 +687,12 @@ that said something untrue, or two controls saying the same thing.
 * **`GTK_A11Y=none` aborted the window on its first click** (`theme::heard`, which `doc/text-shell.md`
   records for both shells).
 
+**A number that does not fit is `###` whatever its alignment.** The grid already hashed a number
+too wide for its cell, but decided by *alignment*: a centred or left-aligned number fell through
+to the text path and was cut or spilled like a word. It is decided by the value now, and the
+count is `grind_sheet::numfmt::overflow`, the rule every client draws (`doc/feature-matrix.md`
+§5).
+
 ## The gaps, written down
 
 **The code view is read-only** (`doc/dsl.md` §6, D9), and is the one thing in this window that
