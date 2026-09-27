@@ -655,11 +655,27 @@ record for theirs, and it found most of the same things.
   strip's toggles already *showed* the pending style (`text_style_here`); pressing one now sets
   it (`text_write_style`), and any caret move forgets it.
 
-Still owed from the same review: **a table in the text pane is not drawn as a grid** — its cells
-stack as paragraphs, so an empty table is a tall blank gap. `ui_text_gtk/src/geom.rs` and
-`ui_web/src/text/table.rs` are the two answers to copy; here it touches `text/geom.rs`'s `Flow`
-(a slot needs an x and a width), the click, the caret's `Faces` and the painter, which is a
-milestone rather than a line in this one.
+**A table in the text pane is drawn as a grid** — the one item that review left owed, since it was
+a milestone rather than a line. Its cells used to stack as paragraphs, so an empty table was a
+tall blank gap with nothing round it. Now `text/geom.rs` lays a table out with `ui_text_gtk`'s
+answers: equal columns across the measure (the model carries no widths), each row as tall as its
+tallest cell, a merged cell as wide as the columns it spans, and a rule round every cell at the
+GTK window's weight — the text's ink at 28% of the way from the page (`text::draw::RULE_INK`),
+not the grid pane's hairline, which measured 228 on 255 and all but hid an empty table. Four
+things had to move together, and the split is the point of it:
+
+- **`Flow` places as well as stacks.** A `Slot` carries the width its lines were broken at and a
+  table's blocks are `place`d at their cell's box; `at(x, y)` settles a tie between the cells of
+  one row by `x`, and `visible` scans rather than binary-searches, since the second block of a tall
+  cell sits below the first block of the cell beside it and the tops are no longer in order.
+- **The caret measures what the painter drew.** `text::geom::across` is every cell block's left
+  edge and width, rebuilt with the flow and handed to `metrics::Faces` — read by index, never by
+  asking the document, because `Faces::of` runs under `App`'s read lock. It is what keeps a
+  Down-arrow inside a wrapped cell landing under the column it left, which was checked by driving
+  the window under Wine rather than assumed.
+- **A list item in a cell keeps its indent inside the cell**, so its bullet stays in the cell.
+- **All of it is portable** and tested on Linux — six tests in `text/geom.rs`, including the empty
+  table that used to be the gap.
 
 ## Milestones
 
@@ -791,11 +807,10 @@ for a grid format strip, which would also be where these three move.
 
 **Not drawn, kept intact.** A **chart** in a file is read, kept and written back untouched, and
 nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
-than a stub. A **table** in a text document is the second: the core carries one now
-(`doc/text-core.md`) and a cell holds blocks, so this pane already *edits* one correctly — every
-caret motion and format reaches inside a cell, because `p12` is the twelfth block whether it is
-in a table or not — and what is missing is the grid round it, which is GDI rectangles and a
-second look at `text/geom.rs`'s `Flow`.
+than a stub. A **table** in a text document used to be the second, and is not
+any more: it is drawn as a grid (the UX pass section above). What this pane still cannot do to
+one is *make* it — no Insert Table, which the CLI, `grind-text-gtk` and `grind-tui` have — or
+merge cells or set a column width, which nothing in the suite can.
 
 **Images are decoded and drawn now, not just kept.** `image.rs` is WIC — `IWICImagingFactory`
 over an `IStream` `SHCreateMemStream` wraps the bytes in, a format converter to premultiplied

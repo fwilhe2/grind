@@ -46,6 +46,7 @@
 
 #![cfg(windows)]
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -739,6 +740,10 @@ struct Text {
     /// Where every block sits, measured. Rebuilt whenever the document, the width or the DPI
     /// changes and **not** per paint — a paint re-lays-out only the blocks it can see.
     flow: Flow,
+    /// Where every block in a table cell sits across the column and the width it is set at
+    /// (`text::geom::across`), rebuilt with `flow` and read by [`Text::faces`] — which is how a
+    /// caret motion inside a cell measures the cell rather than the whole column.
+    across: HashMap<usize, text::geom::Across>,
     /// The caret and the other end of the selection. Presentation state: the core is never told
     /// about it, exactly as the grid's `Selection` is never told to `grind_sheet::App`.
     caret: Caret,
@@ -829,10 +834,14 @@ impl Text {
     /// estimated height for blocks nobody has looked at, replaced by the real one as they scroll
     /// past. The trigger is a document where a resize is visibly slow, and not before.
     fn reflow(&mut self) {
+        let dpi = self.page.dpi;
+        let (_, column) = self.page.text_column();
+        // Before the faces, which read it: a cell's measure is a fact about the table's shape
+        // and the column, and nothing about how tall anything is.
+        self.across = text::geom::across(&self.app, column, dpi);
         let Some(faces) = self.faces() else {
             return;
         };
-        let dpi = self.page.dpi;
         // A picture is measured from its own decoded pixels rather than as a line of text —
         // `flow_of`'s own doc comment is the rule, and this closure is `image.rs`'s answer to
         // it: fit the column, keep the aspect ratio, never larger than the picture's own size,
@@ -857,7 +866,7 @@ impl Text {
                 _ => Some(picture_h),
             }
         };
-        self.flow = text::geom::flow_of(&self.app, &faces, dpi, &picture);
+        self.flow = text::geom::flow_of(&self.app, &faces, column, dpi, &picture);
     }
 
     /// Whether anything is selected at all.
@@ -899,6 +908,7 @@ impl Text {
             fonts,
             width,
             scale(text::geom::INDENT, self.page.dpi),
+            &self.across,
         ))
     }
 
@@ -1079,16 +1089,16 @@ impl Text {
 
     /// Which caret position a point in the window is nearest.
     ///
-    /// **Nearest, never nothing** — [`Flow::at_y`]'s rule, carried through to the offset:
+    /// **Nearest, never nothing** — [`Flow::at`]'s rule, carried through to the offset:
     /// a click in the margin of a line lands at that line's near end, because a document has no
     /// "outside" and a caret that refuses to move is a bug nobody can see the cause of.
     fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
         let body = self.page.body();
         let document_y = y - body.y + self.page.scroll;
-        let block = self.flow.at_y(document_y)?;
+        let (column_x, _) = self.page.text_column();
+        let block = self.flow.at(x - column_x, document_y)?;
         let slot = self.flow.slot(block).copied()?;
         let layout = self.layout_of(block)?;
-        let (column_x, _) = self.page.text_column();
         let local_y = (document_y - slot.top).max(0.0);
         let line = layout
             .lines()
@@ -1233,6 +1243,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
             ..Page::default()
         },
         flow: Flow::default(),
+        across: HashMap::new(),
         caret: START,
         anchor: START,
         goal_x: None,
@@ -6015,6 +6026,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             theme: state.theme,
             faces: &faces,
             blocks: &blocks,
+            cells: state.flow.cells(),
             height: state.flow.height(),
             selection: state.range(),
             caret: state.caret,

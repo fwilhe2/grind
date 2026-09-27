@@ -659,13 +659,25 @@ mod windows_impl {
         /// [`Spec`] equality — [`spec_for`] decides which face a block wants and this finds the
         /// one built for it, so the decision is written down once.
         all: Vec<Face<'a>>,
+        /// The measure of every block that is in a table cell — `text::geom::across`, built once
+        /// per reflow beside the flow that placed those blocks. A cell's text breaks at the cell's
+        /// width, and every caret motion asks through here, so a Down-arrow inside a cell is
+        /// measured where the ink is. Read by index and never by asking the document, since
+        /// `grind_text::Faces::of` is called while `App` holds its read lock.
+        cells: &'a HashMap<usize, crate::text::geom::Across>,
     }
 
     impl<'a> Faces<'a> {
-        pub fn new(fonts: &'a Fonts, width: f64, indent: f64) -> Self {
+        pub fn new(
+            fonts: &'a Fonts,
+            width: f64,
+            indent: f64,
+            cells: &'a HashMap<usize, crate::text::geom::Across>,
+        ) -> Self {
             Faces {
                 width: width as f32,
                 indent: indent as f32,
+                cells,
                 all: super::faces()
                     .into_iter()
                     .map(|spec| Face::new(fonts, spec))
@@ -689,7 +701,10 @@ mod windows_impl {
     }
 
     impl grind_text::Faces for Faces<'_> {
-        fn of(&self, _index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
+        fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
+            if let Some(cell) = self.cells.get(&index) {
+                return ((cell.width as f32).max(1.0), self.face(kind, style));
+            }
             let indent = match kind {
                 BlockKind::ListItem { depth } => *depth as f32 * self.indent,
                 _ => 0.0,

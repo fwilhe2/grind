@@ -26,6 +26,16 @@ use grind_text::style::CharStyle;
 pub const CARET_W: f64 = 2.0;
 pub const WASH: f64 = 0.30;
 
+/// How far a table's rule moves the page towards the text's own ink — `ui_text_gtk`'s
+/// `Palette::rule`, the foreground at 28%, so a table is one weight in both desktop windows.
+///
+/// Deliberately not the grid pane's `grid_line`: that is the hairline of an *infinite* sheet and
+/// is meant to recede, where a table in a document is structure a reader follows across a row.
+/// Measured in the first frames that drew one, `grid_line` came out 228 on 255 — an empty table
+/// all but vanished, which was the bug this replaced in a quieter form. This one is quieter than
+/// the text and stronger than the furniture, in either palette.
+pub const RULE_INK: f64 = 0.28;
+
 /// One run of uniform formatting, clipped to a line.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Piece<'a> {
@@ -158,7 +168,7 @@ mod windows_impl {
     use crate::sheet::geom::{Rect, scale};
     use crate::theme::{Rgb, Theme};
 
-    use super::super::geom::{Page, Slot, StripHit};
+    use super::super::geom::{CellBox, Page, RULE, Slot, StripHit};
     use super::{CARET_W, WASH, bullet, drawable, line_x, pieces, selected_range};
 
     /// One block, ready to draw: where it goes, what is in it, and how its lines broke.
@@ -179,6 +189,10 @@ mod windows_impl {
         pub faces: &'a Faces<'a>,
         /// The blocks on screen, in document order, and nothing else — architecture rule 1.
         pub blocks: &'a [Painted<'a>],
+        /// Every table cell's box (`Flow::cells`) — the grid's rules, drawn under the text. All of
+        /// them rather than the ones on screen, because a box is four numbers and the painter
+        /// skips the ones outside the body by itself.
+        pub cells: &'a [CellBox],
         /// How tall the whole document measured — `Flow::height`, which is what the page card is
         /// drawn to and what the scrollbar already reports. The blocks above are only the ones on
         /// screen, so this cannot be derived from them.
@@ -255,7 +269,7 @@ mod windows_impl {
         }
 
         let body = page.body();
-        let (column_x, column_w) = page.text_column();
+        let (column_x, _) = page.text_column();
 
         // **The page** (W10): the document's own surface, standing on the window's backdrop.
         // Drawn before anything on it and clipped to the body by hand, since GDI's clipping
@@ -287,6 +301,35 @@ mod windows_impl {
                 );
             }
         }
+        // **A table's grid**, under its text — `ui_text_gtk`'s rule, at `RULE_INK`. Each edge is
+        // a one-pixel band *on* the box's outer line (right and bottom at `left + width` and
+        // `top + height`), which is where the neighbour's left and top edges are too: a shared
+        // edge is drawn twice onto the same pixels, and so stays one pixel.
+        let rule = scale(RULE, page.dpi).round().max(1.0) as i32;
+        let rule_ink = theme.background.blend(theme.text, super::RULE_INK);
+        for cell in frame.cells {
+            let shift = body.y - page.scroll;
+            if cell.bottom() + shift < body.y || cell.top + shift > body.y + body.h {
+                continue;
+            }
+            let (l, t) = (
+                (column_x + cell.left).round() as i32,
+                (cell.top + shift).round() as i32,
+            );
+            let (r, b) = (
+                (column_x + cell.right_edge()).round() as i32,
+                (cell.bottom() + shift).round() as i32,
+            );
+            for (x0, y0, x1, y1) in [
+                (l, t, r + rule, t + rule),
+                (l, b, r + rule, b + rule),
+                (l, t, l + rule, b + rule),
+                (r, t, r + rule, b + rule),
+            ] {
+                gdi::fill(dc, x0, y0, x1, y1, rule_ink);
+            }
+        }
+
         let (from, to) = frame.selection;
         // The chrome's own font, small and never the document's — used here for the name
         // overlay's marks and again below for the banner and the status bar. One `Font`, so a
@@ -306,7 +349,7 @@ mod windows_impl {
             // `text::geom::flow_of`'s picture hook a second time — `image.rs`'s own `ponytail`
             // names the cost and the trigger for a cache.
             if let Some((image, caption)) = grind_text::picture_of(painted.view) {
-                let width = (column_w - painted.slot.indent).max(1.0);
+                let width = painted.slot.width;
                 if let Some(decoded) = crate::image::decode(&image.data) {
                     let (w, h) = (f64::from(decoded.width), f64::from(decoded.height));
                     let draw_w = width.min(w);

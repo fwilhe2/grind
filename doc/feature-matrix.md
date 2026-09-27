@@ -325,7 +325,7 @@ the table it was made from (`doc/chart-format.md`, The shell).
 | **Tables** | | | | | |
 | Insert a table | ● | ● | ● | ○ | ○ |
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ |
-| **Draws** a table as a grid | — | ● | ● ᵠ | ● | ○ ᵖ |
+| **Draws** a table as a grid | — | ● | ● ᵠ | ● | ● ᵖ |
 | Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ |
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
@@ -354,9 +354,11 @@ depths; there is no Tab.
 ᵖ **Free, and that is the point of the model.** A cell holds *blocks* and a block carries the
 coordinate of the cell it is in (`grind_text::Cell`), so `p12` is the twelfth block whether it is
 in a table or not — every caret motion, every formatting edit and every address already worked
-inside a cell before any client knew tables existed. What the client marked ○ does not do is
-*draw the grid*: it stacks a cell's blocks like any other, so the text is all there and the
-shape is not. (`grind-web` was the second such client until its UX pass — `ui_web/src/text/table.rs`.)
+inside a cell before any client knew tables existed. **Every client now also draws the grid.**
+`grind-web` stacked a cell's blocks like any other paragraph until its UX pass
+(`ui_web/src/text/table.rs`), and `grind-win32` did until the pass after that
+(`ui_win32/src/text/geom.rs`'s `across` and `lay_out_table`, `ui_text_gtk`'s answers carried over
+to GDI).
 ᵠ Box-drawing rules, every column the same width. `grind_text::Faces` is handed a block's kind
 and not its cell, so `grind-tui` builds a map of which block is in which cell once per frame and
 reads it back — the shape `ui_text_gtk/src/view.rs`'s `Column` has, and required rather than
@@ -409,12 +411,12 @@ of a client's own job is missing.
 8. **Charts are CLI-and-GNOME to author, and only the browser joins them in drawing one.**
 9. **An image can be inserted from the CLI and from `grind-text-gtk`**, and only those two
    clients draw one.
-10. **Two clients out of five draw a table.** Every one of them *edits* one correctly, because a
-    cell holds blocks and a block is addressed the way every other block is (§7 ᵖ). Only
-    `grind-text-gtk` and `grind-tui` also draw the grid — in pixels and in box-drawing characters
-    respectively, from the same `Faces` seam — while the browser and the Windows pane show a
-    table's text as a run of paragraphs with nothing round it. The same shape as row 8: the
-    content is there and the drawing is not.
+10. ~~**Two clients out of five draw a table.**~~ **Closed** (2026-09-27): all five draw the grid
+    now — `grind-text-gtk` and the Windows pane in pixels, the browser as a CSS grid and
+    `grind-tui` in box-drawing characters, each over the same `Faces` seam — and every one of
+    them edits inside a cell, because a cell holds blocks (§7 ᵖ). What is left is narrower:
+    the browser and the Windows pane cannot *insert* one (§7), and no client can merge cells or
+    set a column width (ᵗ).
 11. **Find and replace are lopsided, and the lopsidedness moved.** Over *cells*, `grind-tui` is
     now the only client that can find at all and **nobody** can replace — which makes it the one
     row in this file where the gap is the *core's* rather than a client's: `App::replace` exists
