@@ -20,6 +20,7 @@ pub mod assist;
 pub mod clip;
 pub mod currency;
 pub mod draw;
+pub mod format;
 pub mod geom;
 pub mod keymap;
 pub mod state;

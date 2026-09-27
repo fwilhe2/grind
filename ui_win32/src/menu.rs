@@ -116,14 +116,33 @@ pub enum Command {
     CurrencyEuro,
     CurrencyDollar,
     CurrencyPound,
+    /// Align the selection's text to one side of its cells, or centre it — `fo:text-align`,
+    /// written `start`/`center`/`end` (§16.5, relative to the writing direction). The grid's
+    /// alone, and the format strip's three alignment toggles (`sheet/format.rs`): pressing the
+    /// alignment a cell already has takes it off.
+    AlignLeft,
+    AlignCenter,
+    AlignRight,
+    /// *Cell Background* — the grid's fill, `fo:background-color` on a cell, over the same palette
+    /// as *Text Colour*. A verb of its own rather than [`Command::PickHighlight`] under another
+    /// label, because a run's highlight and a cell's fill are two properties that merely share an
+    /// attribute name, and one command id with two labels is one the menu cannot spell.
+    PickBackground,
+    /// *Number Format* — the nine kinds `grind sheet format` takes, one click each
+    /// (`sheet/format.rs`'s `KINDS`).
+    NumberFormat,
+    /// One decimal fewer, or more, over a number, percentage or currency — Excel's *Decrease* and
+    /// *Increase Decimal* (`sheet/format.rs`'s `stepped`).
+    FewerDecimals,
+    MoreDecimals,
     SheetAdd,
     SheetRename,
     SheetDelete,
     SheetNext,
     SheetPrevious,
-    /// Toggle bold/italic/underline across the selection — the text pane's, and left out of
-    /// `Format` on the grid by [`applies_to`] rather than a no-op if it somehow arrives there
-    /// anyway (a stale accelerator, say — `do_command`'s per-pane no-ops are the safety net).
+    /// Toggle bold or italic across the selection — **both panes'**: a run's `CharStyle` in the
+    /// text pane, a cell's `CellStyle` on the grid, and Ctrl+B means bold in either. Underline and
+    /// the two after it are the text pane's alone, since a cell style has no underline to toggle.
     Bold,
     Italic,
     Underline,
@@ -223,6 +242,13 @@ impl Command {
         Command::CurrencyEuro,
         Command::CurrencyDollar,
         Command::CurrencyPound,
+        Command::AlignLeft,
+        Command::AlignCenter,
+        Command::AlignRight,
+        Command::PickBackground,
+        Command::NumberFormat,
+        Command::FewerDecimals,
+        Command::MoreDecimals,
         Command::SheetAdd,
         Command::SheetRename,
         Command::SheetDelete,
@@ -313,12 +339,12 @@ pub struct Menu {
 
 /// The menu bar.
 ///
-/// Seven menus and nothing that is not a verb. Format holds the text pane's toggles and block
-/// kinds even now that W5b's drawn strip reaches the same four — those items *read and write* a
-/// property of the selection, exactly what a strip is for, but a menu they can also start from
-/// costs nothing and is where Ctrl+B/I/U were reachable first. Over the grid it is the three
-/// currencies and nothing else, since `applies_to` says every other item in it is the text
-/// pane's alone. View holds W6's three shared panes: the
+/// Seven menus and nothing that is not a verb. Format holds every control of either pane's
+/// format strip even though the strips reach them too — those items *read and write* a property of
+/// the selection, exactly what a strip is for, but a menu they can also start from costs nothing,
+/// carries the keys, and is how the strip's verbs are reached from the keyboard. Each pane sees its
+/// own: bold, italic, a text colour and Clear are both panes', and `applies_to` keeps the rest to
+/// the one pane that has the property. View holds W6's three shared panes: the
 /// source, the check, and the two overlays only the grid can draw. What is deliberately absent:
 /// anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was removed for being one,
 /// and the argument carries.
@@ -471,22 +497,10 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "F&ormat",
         items: &[
-            // The grid's, and over it the whole of this menu: a cell's currency, one click, the
-            // same three the other windows offer (`numfmt::CURRENCIES`). Over the text pane
-            // `applies_to` drops them and the separator after them with them.
-            Item::Verb {
-                command: Command::CurrencyEuro,
-                label: "Currency: Eu&ro (€)",
-            },
-            Item::Verb {
-                command: Command::CurrencyDollar,
-                label: "Currency: US &Dollar ($)",
-            },
-            Item::Verb {
-                command: Command::CurrencyPound,
-                label: "Currency: Pound Sterlin&g (£)",
-            },
-            Item::Separator,
+            // One menu over both panes, and `items_for` drops what the pane showing has no
+            // answer for — collapsing the separators it leaves, so each pane sees its own groups
+            // in the order its strip draws them: the weight of the text, its alignment, its
+            // colours, the number it shows, and Clear on its own.
             Item::Verb {
                 command: Command::Bold,
                 label: "&Bold\tCtrl+B",
@@ -509,6 +523,19 @@ pub const MENUS: &[Menu] = &[
             },
             Item::Separator,
             Item::Verb {
+                command: Command::AlignLeft,
+                label: "&Align Left",
+            },
+            Item::Verb {
+                command: Command::AlignCenter,
+                label: "Ce&nter",
+            },
+            Item::Verb {
+                command: Command::AlignRight,
+                label: "Align Righ&t",
+            },
+            Item::Separator,
+            Item::Verb {
                 command: Command::PickFamily,
                 label: "&Font…",
             },
@@ -524,6 +551,38 @@ pub const MENUS: &[Menu] = &[
                 command: Command::PickHighlight,
                 label: "&Highlight…",
             },
+            Item::Verb {
+                command: Command::PickBackground,
+                label: "Cell Backgr&ound…",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::NumberFormat,
+                label: "Number &Format…",
+            },
+            Item::Verb {
+                command: Command::FewerDecimals,
+                label: "Decrease Decimal&s",
+            },
+            Item::Verb {
+                command: Command::MoreDecimals,
+                label: "Increase Deci&mals",
+            },
+            // The currency verbs, one click each, the same three the other windows offer
+            // (`numfmt::CURRENCIES`) — a number format, so they sit with the number format.
+            Item::Verb {
+                command: Command::CurrencyEuro,
+                label: "Currency: Eu&ro (€)",
+            },
+            Item::Verb {
+                command: Command::CurrencyDollar,
+                label: "Currency: US &Dollar ($)",
+            },
+            Item::Verb {
+                command: Command::CurrencyPound,
+                label: "Currency: Pound Sterlin&g (£)",
+            },
+            Item::Separator,
             Item::Verb {
                 command: Command::ClearFormatting,
                 label: "C&lear Formatting",
@@ -759,6 +818,15 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
+        // A cell's alignment, fill and number format are `CellStyle` and `numfmt::Format` — the
+        // grid's format strip (`sheet/format.rs`); a run of text has none of the three.
+        | Command::AlignLeft
+        | Command::AlignCenter
+        | Command::AlignRight
+        | Command::PickBackground
+        | Command::NumberFormat
+        | Command::FewerDecimals
+        | Command::MoreDecimals
         // CSV is cells: fields land in a grid and a range comes out of one, so both are the
         // spreadsheet's even though they sit in the File menu with the universal verbs.
         | Command::ImportCsv
@@ -766,16 +834,18 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleRoles => matches!(kind, Spreadsheet),
-        Command::Bold
-        | Command::Italic
-        | Command::Underline
+        // Bold, italic, a text colour and Clear mean the same thing to a run and to a cell, and each
+        // pane answers them over its own style — `CharStyle` there, `CellStyle` here — so they are
+        // both panes' verbs, and Ctrl+B is bold wherever the window is.
+        Command::Bold | Command::Italic | Command::PickColor | Command::ClearFormatting => {
+            matches!(kind, Spreadsheet | Text)
+        }
+        Command::Underline
         | Command::Strike
         | Command::Code
         | Command::PickFamily
         | Command::PickSize
-        | Command::PickColor
         | Command::PickHighlight
-        | Command::ClearFormatting
         | Command::Title
         | Command::Subtitle
         | Command::Paragraph
@@ -904,6 +974,12 @@ mod tests {
 
     /// A Win32 menu underlines the letter after `&`, and a menu with two items claiming the
     /// same one in the same menu makes Alt-navigation ambiguous.
+    ///
+    /// Checked **per surface** — over the items [`items_for`] actually shows on each pane — since
+    /// that is the only place two letters can collide: the grid's *Number Format* and the text
+    /// pane's *Font* are never on one menu, and a whole-table check would force one of them onto
+    /// a letter its own words do not have. Every item still needs a mnemonic on every surface it
+    /// appears on.
     #[test]
     fn every_menu_has_distinct_mnemonics() {
         let mnemonic = |label: &str| {
@@ -917,13 +993,23 @@ mod tests {
         for menu in MENUS {
             let title = mnemonic(menu.title).unwrap_or_else(|| panic!("{}", menu.title));
             assert!(titles.insert(title), "two menus answer Alt+{title}");
-            let mut keys = HashSet::new();
-            for item in menu.items {
-                let Item::Verb { label, .. } = item else {
-                    continue;
-                };
-                let key = mnemonic(label).unwrap_or_else(|| panic!("{label} has no mnemonic"));
-                assert!(keys.insert(key), "{}: two items answer {key}", menu.title);
+            for surface in [
+                Surface::Welcome,
+                Surface::Document(grind_core::DocumentKind::Spreadsheet),
+                Surface::Document(grind_core::DocumentKind::Text),
+            ] {
+                let mut keys = HashSet::new();
+                for item in items_for(menu, surface) {
+                    let Item::Verb { label, .. } = item else {
+                        continue;
+                    };
+                    let key = mnemonic(label).unwrap_or_else(|| panic!("{label} has no mnemonic"));
+                    assert!(
+                        keys.insert(key),
+                        "{} on {surface:?}: two items answer {key}",
+                        menu.title
+                    );
+                }
             }
         }
     }
@@ -1032,16 +1118,12 @@ mod tests {
     fn formatting_and_the_outline_are_the_text_panes_alone() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
         for command in [
-            Command::Bold,
-            Command::Italic,
             Command::Underline,
             Command::Strike,
             Command::Code,
             Command::PickFamily,
             Command::PickSize,
-            Command::PickColor,
             Command::PickHighlight,
-            Command::ClearFormatting,
             Command::Title,
             Command::Subtitle,
             Command::Paragraph,
@@ -1178,10 +1260,10 @@ mod tests {
         assert!(items_for(menu("&Data"), Surface::Document(Text)).is_empty());
     }
 
-    /// `Format` over the grid is the three currencies and nothing else — every other item in it
-    /// is the text pane's — and over the text pane it has none of them.
+    /// `Format` over the grid is exactly its strip's verbs in the strip's order, plus the three
+    /// currencies beside the number format — and over the text pane none of the grid's own.
     #[test]
-    fn format_on_the_grid_is_the_currencies() {
+    fn format_on_the_grid_is_its_strip() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
         let over = |kind| {
             items_for(menu("F&ormat"), Surface::Document(kind))
@@ -1192,12 +1274,52 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        assert_eq!(over(Spreadsheet), Command::CURRENCIES.to_vec());
-        assert!(!over(Text).iter().any(|c| c.currency().is_some()));
+        assert_eq!(
+            over(Spreadsheet),
+            [
+                Command::Bold,
+                Command::Italic,
+                Command::AlignLeft,
+                Command::AlignCenter,
+                Command::AlignRight,
+                Command::PickColor,
+                Command::PickBackground,
+                Command::NumberFormat,
+                Command::FewerDecimals,
+                Command::MoreDecimals,
+                Command::CurrencyEuro,
+                Command::CurrencyDollar,
+                Command::CurrencyPound,
+                Command::ClearFormatting,
+            ]
+        );
+        let text = over(Text);
+        assert!(!text.iter().any(|c| c.currency().is_some()));
+        for grid_only in [
+            Command::AlignLeft,
+            Command::PickBackground,
+            Command::NumberFormat,
+            Command::MoreDecimals,
+        ] {
+            assert!(!text.contains(&grid_only), "{grid_only:?}");
+        }
     }
 
-    /// Each currency verb is the `numfmt::CURRENCIES` entry at its own index, and its label
-    /// names that symbol — so the menu cannot say `$` and write `£`.
+    /// The four verbs both panes answer, each over its own style.
+    #[test]
+    fn bold_italic_colour_and_clear_are_both_panes() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for command in [
+            Command::Bold,
+            Command::Italic,
+            Command::PickColor,
+            Command::ClearFormatting,
+        ] {
+            assert!(applies_to(command, Text), "{command:?}");
+            assert!(applies_to(command, Spreadsheet), "{command:?}");
+        }
+    }
+
     #[test]
     fn every_currency_item_names_the_currency_it_writes() {
         for (index, command) in Command::CURRENCIES.iter().enumerate() {

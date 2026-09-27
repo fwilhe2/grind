@@ -166,7 +166,7 @@ mod windows_impl {
     use crate::metrics::Faces;
     use crate::sheet::draw::{Align, draw_text};
     use crate::sheet::geom::{Rect, scale};
-    use crate::theme::{Rgb, Theme};
+    use crate::theme::Theme;
 
     use super::super::geom::{CellBox, Page, RULE, Slot, StripHit};
     use super::{CARET_W, WASH, bullet, drawable, line_x, pieces, selected_range};
@@ -571,45 +571,28 @@ mod windows_impl {
     /// and write; a control only decides whether to wash its own ground or draw a swatch before
     /// drawing the same label every one of its callers agrees on.
     fn draw_strip(dc: HDC, page: &Page, theme: Theme, frame: &Frame) {
-        use crate::theme::{Interaction, control_fill};
+        use crate::strip;
+        use crate::theme::Interaction;
 
         const LABELS: [&str; 5] = ["B", "I", "U", "S", "M"];
         let strip = page.strip();
         let (left, top, right, bottom) = strip.edges();
         gdi::fill(dc, left, top, right, bottom, theme.backdrop);
 
-        let radius = scale(crate::theme::space::RADIUS, page.dpi).round() as i32;
         let state = |hit: StripHit| match (frame.pressed == Some(hit), frame.hover == Some(hit)) {
             (true, _) => Interaction::Pressed,
             (false, true) => Interaction::Hover,
             (false, false) => Interaction::Rest,
         };
-        // One control, drawn: its ground if it has one in this state, then its label. `filled`
-        // is the difference between a *toggle* — transparent until you point at it, so five in a
-        // row read as one group — and a *picker*, which is a field and looks like one.
+        let look = |hit: StripHit| strip::Look {
+            theme,
+            dpi: page.dpi,
+            state: state(hit),
+        };
+        // One control's ground — `strip::button_ground`, shared with the grid's strip so the two
+        // panes' controls are one kind of thing.
         let button = |rect: Rect, hit: StripHit, checked: bool, filled: bool| {
-            let (l, t, r, b) = rect.edges();
-            if let Some(fill) = control_fill(theme, state(hit), checked, filled) {
-                let border = match checked {
-                    true => theme.accent.blend(fill, 0.55),
-                    false => match filled {
-                        true => theme.stroke,
-                        false => fill,
-                    },
-                };
-                gdi::round_rect(
-                    dc,
-                    RECT {
-                        left: l,
-                        top: t,
-                        right: r,
-                        bottom: b,
-                    },
-                    radius,
-                    fill,
-                    border,
-                );
-            }
+            strip::button_ground(dc, rect, look(hit), checked, filled);
         };
 
         // The five emphasis toggles. A pressed-in toggle is drawn in the accent's own ink as well
@@ -639,38 +622,8 @@ mod windows_impl {
             draw_text(dc, LABELS[index], l, t, r, b, Align::Center, ink, 0.0);
         }
 
-        let pad = scale(crate::theme::space::GAP + 2.0, page.dpi);
         let picker = |rect: Rect, hit: StripHit, label: &str, set: bool| {
-            button(rect, hit, false, true);
-            let (l, t, r, b) = rect.edges();
-            let chevron = scale(14.0, page.dpi).round() as i32;
-            draw_text(
-                dc,
-                label,
-                l,
-                t,
-                r - chevron,
-                b,
-                Align::Left,
-                match set {
-                    true => theme.text,
-                    // Nothing set is a *placeholder*, and Fluent's placeholders are the tertiary
-                    // ink — the difference between "this text is set in Consolas" and "this
-                    // picker sets the family" was invisible before W10, since both were drawn in
-                    // the same grey.
-                    false => theme.text_tertiary,
-                },
-                pad,
-            );
-            // Drawn, not typed: see `gdi::triangle_down`, which is here because a rendered
-            // frame came back with a missing-glyph box where `▾` should have been.
-            gdi::triangle_down(
-                dc,
-                r - chevron / 2,
-                (t + b) / 2 - scale(1.0, page.dpi).round() as i32,
-                scale(7.0, page.dpi).round() as i32,
-                theme.text_tertiary,
-            );
+            strip::picker(dc, rect, look(hit), label, set);
         };
         picker(
             page.strip_family(),
@@ -687,7 +640,7 @@ mod windows_impl {
 
         let color = page.strip_color();
         button(color, StripHit::Color, false, false);
-        draw_swatch(
+        strip::swatch(
             dc,
             color,
             theme,
@@ -698,7 +651,7 @@ mod windows_impl {
         );
         let highlight = page.strip_highlight();
         button(highlight, StripHit::Highlight, false, false);
-        draw_swatch(
+        strip::swatch(
             dc,
             highlight,
             theme,
@@ -717,94 +670,7 @@ mod windows_impl {
         // tall, one pixel wide, in the middle of the gap — which says "a different kind of thing
         // follows" without putting a border round anything.
         for next in [page.strip_family(), color, clear] {
-            let rule = page.strip_separator(next);
-            let (l, t, r, b) = rule.edges();
-            gdi::fill(dc, l, t, r.max(l + 1), b, theme.divider);
-        }
-    }
-
-    /// One colour swatch: an **A** with the colour it carries shown the way that colour is used —
-    /// as a bar under the letter for the text colour, and as the ground behind it for the
-    /// highlight. So the two swatches are told apart by what they *do* rather than by a label,
-    /// and neither needs a glyph beyond the one letter.
-    ///
-    /// Every ornament here is drawn or is an ASCII letter, which is the rule the chevron above
-    /// arrived at the hard way: a `▓` for the highlight came back from a rendered frame as a
-    /// missing-glyph box under the face Wine substitutes.
-    ///
-    /// *Automatic* — no colour set — draws the bar in the theme's own ink, since that is what
-    /// automatic resolves to, with a hairline round it so an empty swatch is still a swatch; a
-    /// highlight with nothing set draws no ground at all, which is what no highlight looks like.
-    fn draw_swatch(
-        dc: HDC,
-        rect: Rect,
-        theme: Theme,
-        hex: Option<&str>,
-        ground: bool,
-        font_px: i32,
-        face: &str,
-    ) {
-        let (left, top, right, bottom) = rect.edges();
-        let inset = ((right - left) / 5).max(2);
-        let bar = (rect.h / 6.0).round().max(3.0) as i32;
-        let fill = hex.and_then(crate::theme::Rgb::parse);
-        if ground {
-            // Hollow when nothing is set, which is what no highlight looks like — and still a
-            // control rather than a bare letter floating on the strip.
-            gdi::round_rect(
-                dc,
-                RECT {
-                    left: left + inset,
-                    top: top + inset,
-                    right: right - inset,
-                    bottom: bottom - bar - inset / 2,
-                },
-                2,
-                fill.unwrap_or(theme.backdrop),
-                fill.unwrap_or(theme.stroke),
-            );
-        }
-        {
-            let font = Font::new(face, font_px, false);
-            let _font = Selected::font(dc, &font);
-            // On a highlight the letter has to read against the *document's* colour, which can be
-            // any of `PALETTE`'s — so it is chosen for contrast rather than fixed, the same
-            // question `Theme::on_accent` answers for the accent.
-            let ink = match (ground, fill) {
-                (true, Some(colour)) => match colour.contrast(theme.text) > 3.0 {
-                    true => theme.text,
-                    false => Rgb(0, 0, 0),
-                },
-                _ => theme.text,
-            };
-            draw_text(
-                dc,
-                "A",
-                left,
-                top,
-                right,
-                bottom - bar,
-                Align::Center,
-                ink,
-                0.0,
-            );
-        }
-        if !ground {
-            gdi::round_rect(
-                dc,
-                RECT {
-                    left: left + inset,
-                    top: bottom - bar - inset,
-                    right: right - inset,
-                    bottom: bottom - inset,
-                },
-                1,
-                fill.unwrap_or(theme.text),
-                match fill {
-                    Some(colour) => colour,
-                    None => theme.stroke,
-                },
-            );
+            strip::separator(dc, page.strip_separator(next), theme);
         }
     }
 

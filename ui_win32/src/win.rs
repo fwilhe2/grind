@@ -111,7 +111,8 @@ use crate::problems;
 use crate::sheet::assist;
 use crate::sheet::clip;
 use crate::sheet::currency;
-use crate::sheet::draw::{self, Frame};
+use crate::sheet::draw::{self, FormatStrip, Frame};
+use crate::sheet::format;
 use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::state::{self, Outcome, Seed};
@@ -489,6 +490,11 @@ struct Sheet {
     /// stored on a cell, which is what keeps opening one on every R7 document and saving again
     /// byte-identical (a stored classification goes stale; a derived one cannot).
     overlays: grind_sheet::view::Overlays,
+    /// Which format-strip control the pointer is over, and which one is held down — the text
+    /// pane's `hover`/`pressed` pair, for the grid's strip: a press acts on *release*, so it can
+    /// be taken back by moving off the control, and a control responds to the pointer at all.
+    format_hover: Option<format::Control>,
+    format_pressed: Option<format::Control>,
 }
 
 /// What a click on the strip landed on. The two fields there are *drawn* until somebody clicks
@@ -551,6 +557,9 @@ impl Sheet {
             .unwrap_or_default();
         hidden_rows.extend(self.app.hidden_rows(self.sheet).unwrap_or_default());
         self.geom = GridGeom {
+            // The format strip is one Fluent strip tall, like the name box's strip under it and
+            // the text pane's own — three bands of chrome that measure the same in one window.
+            format_h: scale(draw::STRIP_H, dpi),
             strip_h: scale(draw::STRIP_H, dpi),
             banner_h: banner_h(self.banner.as_deref(), dpi),
             hint_h: hint_h(&self.hint, dpi),
@@ -1288,6 +1297,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         imported: None,
         sheet: 0,
         geom: GridGeom {
+            format_h: draw::STRIP_H,
             strip_h: draw::STRIP_H,
             banner_h: 0.0,
             hint_h: 0.0,
@@ -1324,6 +1334,8 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         field_brush: None,
         surrogate: None,
         overlays: grind_sheet::view::Overlays::NONE,
+        format_hover: None,
+        format_pressed: None,
     }
 }
 
@@ -1595,7 +1607,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         // *selection* rather than the pane is set here rather than in `build_menu`, which runs
         // only when the pane changes: the currency the active cell has now.
         WM_INITMENUPOPUP => {
-            check_currency(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
+            check_format(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
             LRESULT(0)
         }
         // A character, after the keyboard layout and after the IME — which is why a printable
@@ -2017,9 +2029,11 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
                 Command::Copy,
                 Command::Paste,
                 Command::ClearCells,
+                Command::NumberFormat,
                 Command::CurrencyEuro,
                 Command::CurrencyDollar,
                 Command::CurrencyPound,
+                Command::ClearFormatting,
             ],
         }
     };
@@ -2293,6 +2307,17 @@ fn mouse_move(hwnd: HWND, lparam: LPARAM) {
     // SAFETY: no nested loop inside.
     let moved = unsafe {
         with_sheet(hwnd, |state| {
+            // The format strip's hover, asked on every move and repainted only when the answer
+            // *changes* — the text pane's rule, which keeps a move across the grid to one
+            // comparison. `WM_MOUSELEAVE` is not tracked: the strip is inside the client area, and
+            // a pointer leaving the window through it is answered by the next move anywhere.
+            let hover = state.geom.format_hit(x, y);
+            if hover != state.format_hover {
+                state.format_hover = hover;
+                if state.drag.is_none() {
+                    return true;
+                }
+            }
             if state.drag.is_none() {
                 return false;
             }
@@ -2631,6 +2656,24 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     // typed into would turn out to be the one that was just clicked.
     commit_edit(hwnd, None);
     let (x, y) = point(lparam);
+    // The format strip (`sheet/format.rs`): **pressed here, done on release**, exactly as the
+    // text pane's strip is — see `format_button_up`.
+    // SAFETY: one borrow; the hit test is arithmetic over the geometry and dispatches nothing.
+    let control = unsafe { with_sheet(hwnd, |state| state.geom.format_hit(x, y)) }.flatten();
+    if let Some(control) = control {
+        // SAFETY: one borrow; assigning fields dispatches nothing. `SetCapture` and `SetFocus`
+        // send messages, which is why they come after it.
+        unsafe {
+            with_sheet(hwnd, |state| {
+                state.format_pressed = Some(control);
+                state.format_hover = Some(control);
+            });
+            let _ = SetCapture(hwnd);
+            let _ = SetFocus(Some(hwnd));
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
+        return;
+    }
     // A sheet tab (`sheet::tabs`): the sheet it names comes to the front, and `+` adds one.
     // SAFETY: one borrow, released before `sheet_add` opens its prompt.
     let tab = unsafe { with_sheet(hwnd, |state| sheet_tab_at(state, x, y)) }.flatten();
@@ -2746,11 +2789,26 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
         welcome_button_down(hwnd, x, y);
         return;
     }
+    let (x, y) = point(lparam);
+    // **A double-click on a format strip is two clicks**, in either pane. Windows turns the
+    // second press of a quick pair into `WM_LBUTTONDBLCLK` instead of `WM_LBUTTONDOWN`, so a strip
+    // that only listened for the press lost it: `+.0` clicked twice stepped once, and on the text
+    // pane the second press fell through to the page and selected a word in the document. Treated
+    // as a press here, and the release that follows activates it, exactly like the first.
     if is_text(hwnd) {
-        text_double_click(hwnd, lparam);
+        // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
+        let on_strip = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y).is_some()) };
+        match on_strip {
+            Some(true) => text_button_down(hwnd, lparam),
+            _ => text_double_click(hwnd, lparam),
+        }
         return;
     }
-    let (x, y) = point(lparam);
+    // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
+    if unsafe { with_sheet(hwnd, |state| state.geom.format_hit(x, y).is_some()) } == Some(true) {
+        button_down(hwnd, lparam);
+        return;
+    }
     // A double-click on a tab renames the sheet, as it does in every spreadsheet — the first
     // click has already brought it to the front.
     // SAFETY: one borrow, released before the rename prompt's nested loop.
@@ -2812,10 +2870,27 @@ fn button_up(hwnd: HWND) {
         }
         return;
     }
+    // A strip control that was pressed and is still under the pointer is *now* activated.
+    // Released before the verb runs, because two of them open a modal chooser and a borrow may
+    // not be held across one (decision 7).
     // SAFETY: no nested loop inside.
+    let pressed = unsafe {
+        with_sheet(hwnd, |state| {
+            state.drag = None;
+            state
+                .format_pressed
+                .take()
+                .filter(|control| state.format_hover == Some(*control))
+        })
+    }
+    .flatten();
+    // SAFETY: the borrow above is released.
     unsafe {
-        with_sheet(hwnd, |state| state.drag = None);
         let _ = ReleaseCapture();
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+    if let Some(control) = pressed {
+        format_control(hwnd, control);
     }
 }
 
@@ -3242,17 +3317,26 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FunctionList => function_list(hwnd),
         Command::ExplainFormula => explain_formula(hwnd),
         Command::ToggleFriendly => toggle_friendly(hwnd),
-        // The text pane's, and this one has no selection, block or outline to work with.
-        Command::Bold
-        | Command::Italic
-        | Command::Underline
+        // The format strip's verbs, from the menu or a key — the same `format_control` a click on
+        // the strip reaches, so the two cannot mean different things.
+        Command::Bold => format_control(hwnd, format::Control::Bold),
+        Command::Italic => format_control(hwnd, format::Control::Italic),
+        Command::AlignLeft => format_control(hwnd, format::Control::AlignLeft),
+        Command::AlignCenter => format_control(hwnd, format::Control::AlignCenter),
+        Command::AlignRight => format_control(hwnd, format::Control::AlignRight),
+        Command::PickColor => format_control(hwnd, format::Control::Color),
+        Command::PickBackground => format_control(hwnd, format::Control::Background),
+        Command::NumberFormat => format_control(hwnd, format::Control::Number),
+        Command::FewerDecimals => format_control(hwnd, format::Control::FewerDecimals),
+        Command::MoreDecimals => format_control(hwnd, format::Control::MoreDecimals),
+        Command::ClearFormatting => format_control(hwnd, format::Control::Clear),
+        // The text pane's, and this one has no run, block or outline to work with.
+        Command::Underline
         | Command::Strike
         | Command::Code
         | Command::PickFamily
         | Command::PickSize
-        | Command::PickColor
         | Command::PickHighlight
-        | Command::ClearFormatting
         | Command::Title
         | Command::Subtitle
         | Command::Paragraph
@@ -3839,10 +3923,169 @@ fn set_currency(hwnd: HWND, index: usize) {
     refresh(hwnd);
 }
 
-/// Check the currency item the active cell's format names, and uncheck the other two, in
-/// whichever menu is opening. `MF_BYCOMMAND` on a popup that holds none of the three — File,
-/// say — finds nothing and changes nothing, so this needs no idea of *which* menu it is.
-fn check_currency(hwnd: HWND, popup: HMENU) {
+/// What one format-strip control does, once it has been pressed and released over itself —
+/// and what the same verb in the Format menu or on a key does, since those arrive here too.
+///
+/// Every write is one `App::set_style` or `App::set_format` over the selection cut to the sheet in
+/// use (`currency::target`, which is `ui_sheet_gtk`'s `Grid::target`), so one Ctrl+Z takes back a
+/// formatted column. *Clear* is the one control that makes two calls, the same pair the GNOME
+/// strip's Clear makes — the core has one "plain again" per kind of property.
+fn format_control(hwnd: HWND, control: format::Control) {
+    use format::Control;
+    match control {
+        Control::Color => format_pick_color(hwnd, false),
+        Control::Background => format_pick_color(hwnd, true),
+        Control::Number => format_pick_number(hwnd),
+        Control::FewerDecimals => format_step_decimals(hwnd, -1),
+        Control::MoreDecimals => format_step_decimals(hwnd, 1),
+        Control::Clear => format_write(hwnd, |state, start, end| {
+            state.app.set_style(state.sheet, start, end, None)?;
+            state.app.set_format(state.sheet, start, end, None)
+        }),
+        toggle => format_write(hwnd, |state, start, end| {
+            let style = active_style(state);
+            match format::toggled(&style, toggle) {
+                Some(written) => state.app.set_style(state.sheet, start, end, written),
+                None => Ok(0),
+            }
+        }),
+    }
+}
+
+/// Run one formatting write over the selection's target rectangle, and say so in the notice bar
+/// when the core refuses it — a million-cell request the target did not cut, say — rather than
+/// doing nothing where somebody can see nothing happened.
+fn format_write(
+    hwnd: HWND,
+    write: impl FnOnce(&mut Sheet, Pos, Pos) -> grind_sheet::Result<usize>,
+) {
+    // SAFETY: one borrow; the core's writes notify, and the observer posts rather than sends.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = currency::target(start, end, used);
+            match write(state, start, end) {
+                Ok(_) => state.say(None),
+                Err(error) => state.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// The active cell's own style, or the plain one — what every toggle reads before it writes.
+fn active_style(state: &Sheet) -> grind_sheet::style::CellStyle {
+    state
+        .app
+        .style_at(state.sheet, state.selection.active)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// *Text Colour* and *Cell Background* — `dialog::choose` over *Automatic* and
+/// `grind_core::style::PALETTE`, the text pane's own picker and the same palette every shell and
+/// `grind sheet style --color` offer, opening on the active cell's own colour.
+fn format_pick_color(hwnd: HWND, background: bool) {
+    // SAFETY: one borrow, released before the chooser's nested loop.
+    let Some(style) = (unsafe { with_sheet(hwnd, |state| active_style(state)) }) else {
+        return;
+    };
+    let current = match background {
+        true => style.background.as_deref(),
+        false => style.color.as_deref(),
+    };
+    let items = crate::strip::colour_choices();
+    let initial = crate::strip::colour_row(current);
+    let title = match background {
+        true => format::Control::Background.name(),
+        false => format::Control::Color.name(),
+    };
+    let Some(choice) = dialog::choose(hwnd, title, &items, initial) else {
+        return;
+    };
+    let value = (choice != 0).then(|| grind_core::style::PALETTE[choice - 1].1.to_owned());
+    format_write(hwnd, |state, start, end| {
+        let written = format::coloured(&active_style(state), background, value);
+        state.app.set_style(state.sheet, start, end, written)
+    });
+}
+
+/// *Number Format* — `dialog::choose` over `format::KINDS`, opening on the row the active cell
+/// already is, and one click is the whole request (`format::format_for_kind`).
+fn format_pick_number(hwnd: HWND) {
+    // SAFETY: one borrow, released before the chooser's nested loop.
+    let Some(current) = (unsafe {
+        with_sheet(hwnd, |state| {
+            state
+                .app
+                .format_at(state.sheet, state.selection.active)
+                .ok()
+                .flatten()
+        })
+    }) else {
+        return;
+    };
+    let items: Vec<String> = format::KINDS
+        .iter()
+        .map(|(label, _)| (*label).to_owned())
+        .collect();
+    let initial = format::kind_of(current.as_ref()).unwrap_or(0);
+    let Some(choice) = dialog::choose(hwnd, format::Control::Number.name(), &items, initial) else {
+        return;
+    };
+    format_write(hwnd, |state, start, end| {
+        let current = state
+            .app
+            .format_at(state.sheet, state.selection.active)
+            .ok()
+            .flatten();
+        let written = format::format_for_kind(
+            current.as_ref(),
+            choice,
+            grind_sheet::locale::from_environment(),
+        );
+        state.app.set_format(state.sheet, start, end, written)
+    });
+}
+
+/// One decimal more or fewer — `format::stepped`, starting a plain cell from the decimals it
+/// *shows*, read off the viewport the way a renderer reads it.
+fn format_step_decimals(hwnd: HWND, step: i8) {
+    format_write(hwnd, |state, start, end| {
+        let active = state.selection.active;
+        let current = state.app.format_at(state.sheet, active).ok().flatten();
+        let shown = state
+            .app
+            .get_viewport(
+                state.sheet,
+                active.row..active.row + 1,
+                active.col..active.col + 1,
+            )
+            .ok()
+            .and_then(|view| {
+                view.text(active.row, active.col)
+                    .map(|text| format::decimals_shown(text, state.app.locale().as_ref()))
+            })
+            .unwrap_or(0);
+        match format::stepped(
+            current.as_ref(),
+            step,
+            shown,
+            grind_sheet::locale::from_environment(),
+        ) {
+            Some(written) => state.app.set_format(state.sheet, start, end, Some(written)),
+            None => Ok(0),
+        }
+    });
+}
+
+/// Check the format items that describe the active cell — the currency its format names, and the
+/// strip's toggles that are in — and uncheck the rest, in whichever menu is opening.
+/// `MF_BYCOMMAND` on a popup that holds none of them — File, say — finds nothing and changes
+/// nothing, so this needs no idea of *which* menu it is.
+fn check_format(hwnd: HWND, popup: HMENU) {
     // SAFETY: one borrow; nothing inside dispatches. `None` off the grid, where no currency item
     // is ever shown.
     let Some(chosen) = (unsafe {
@@ -3857,8 +4100,8 @@ fn check_currency(hwnd: HWND, popup: HMENU) {
     }) else {
         return;
     };
-    for (index, command) in Command::CURRENCIES.iter().enumerate() {
-        let flag = match chosen == Some(index) {
+    let check = |command: Command, on: bool| {
+        let flag = match on {
             true => MF_CHECKED,
             false => MF_UNCHECKED,
         };
@@ -3866,6 +4109,24 @@ fn check_currency(hwnd: HWND, popup: HMENU) {
         unsafe {
             let _ = CheckMenuItem(popup, u32::from(command.id()), (MF_BYCOMMAND | flag).0);
         }
+    };
+    for (index, command) in Command::CURRENCIES.iter().enumerate() {
+        check(*command, chosen == Some(index));
+    }
+    // The strip's five toggles, checked as the strip draws them pressed — so the menu and the
+    // strip cannot disagree about whether the active cell is bold.
+    // SAFETY: one borrow; nothing inside dispatches.
+    let Some(style) = (unsafe { with_sheet(hwnd, |state| active_style(state)) }) else {
+        return;
+    };
+    for (command, control) in [
+        (Command::Bold, format::Control::Bold),
+        (Command::Italic, format::Control::Italic),
+        (Command::AlignLeft, format::Control::AlignLeft),
+        (Command::AlignCenter, format::Control::AlignCenter),
+        (Command::AlignRight, format::Control::AlignRight),
+    ] {
+        check(command, format::pressed(&style, control));
     }
 }
 
@@ -4353,6 +4614,13 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
+        | Command::AlignLeft
+        | Command::AlignCenter
+        | Command::AlignRight
+        | Command::PickBackground
+        | Command::NumberFormat
+        | Command::FewerDecimals
+        | Command::MoreDecimals
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
@@ -4481,11 +4749,28 @@ fn draw_frame(dc: HDC, state: &Sheet) {
     let friendly = (state.friendly && !editing)
         .then(|| assist::friendly_line(&formula))
         .flatten();
+    // The format strip reads the **active** cell, which is what every spreadsheet's toolbar shows
+    // and what makes a toggle over a mixed selection predictable (`sheet/format.rs`).
+    let active = state.selection.active;
+    let style = state
+        .app
+        .style_at(state.sheet, active)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let number = state.app.format_at(state.sheet, active).ok().flatten();
     let tabs = draw::paint(
         dc,
         &Frame {
             geom: &state.geom,
             theme: state.theme,
+            format: FormatStrip {
+                style: &style,
+                number: &format::face(number.as_ref()),
+                number_set: number.is_some(),
+                hover: state.format_hover,
+                pressed: state.format_pressed,
+            },
             viewport: &viewport,
             sheets: &sheets,
             sheet: state.sheet,
@@ -5351,6 +5636,14 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
+        // A cell's alignment, fill and number format: a run of text has none of the three.
+        | Command::AlignLeft
+        | Command::AlignCenter
+        | Command::AlignRight
+        | Command::PickBackground
+        | Command::NumberFormat
+        | Command::FewerDecimals
+        | Command::MoreDecimals
         // CSV is cells in both directions, so neither means anything here — and `applies_to`
         // keeps both out of this pane's File menu rather than leaving them to be no-ops.
         | Command::ImportCsv
@@ -5641,22 +5934,8 @@ fn text_pick_color(hwnd: HWND, highlight: bool) {
         true => style.background.clone(),
         false => style.color.clone(),
     };
-    let items: Vec<String> = std::iter::once("Automatic".to_owned())
-        .chain(
-            grind_core::style::PALETTE
-                .iter()
-                .map(|(name, _)| (*name).to_owned()),
-        )
-        .collect();
-    let initial = current
-        .as_deref()
-        .and_then(|hex| {
-            grind_core::style::PALETTE
-                .iter()
-                .position(|(_, value)| *value == hex)
-        })
-        .map(|index| index + 1)
-        .unwrap_or(0);
+    let items = crate::strip::colour_choices();
+    let initial = crate::strip::colour_row(current.as_deref());
     let title = match highlight {
         true => "Highlight",
         false => "Text Colour",

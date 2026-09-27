@@ -707,6 +707,8 @@ Measured rather than argued, and measurable from Linux: compiling both spellings
 
 | **W11** | **The welcome screen** — *done* | `welcome.rs` (portable: the cards, the layout, the hit test, the keyboard) plus its GDI half; `Pane::Welcome`, so a window with no document is neither application rather than the spreadsheet one; `menu::Surface`, which is what the menu bar asks about now; `Command::NewSheet`/`NewText` replacing the kind-locked `New`, and `Command::Welcome` to go back; `main.rs`'s `resolve` answering `None` for "nobody said" | **Met.** `grind-win32` with no arguments opens on three cards — New Spreadsheet, New Text Document, Open a Document… — navigable by arrows, Tab and Enter as well as the pointer, with the menu bar reduced to File and Help; clicking a card turns the window into that document and the bar back into the full one; File ▸ Welcome Screen returns, asking about unsaved work on the way. `--sheet` and `--text` still skip it. 228 tests on Linux, and `--render-to` with no file draws the pane in both palettes, which is how it was looked at at all — the first frame had the bug below in it |
 
+| **W12** | **The grid's format strip** — *done* | `sheet/format.rs` (portable: the controls, what each reads off the active cell, the read-change-write a toggle makes, the nine number kinds and what picking one writes, the decimal steps, the picker's face); `strip.rs` (portable layout, GDI painting) now drawn by **both** panes; a format band over the name box; `Command::AlignLeft/Center/Right`, `PickBackground`, `NumberFormat`, `FewerDecimals`, `MoreDecimals`; Bold, Italic, Text Colour and Clear Formatting made both panes' verbs | **Met.** The row `doc/feature-matrix.md` §8 ranked first — *this window can barely format a cell* — is closed: under Wine a label was made bold with a click and with Ctrl+B, a currency stepped from two decimals to four with two quick clicks, turned into a percentage and back with one Ctrl+Z, coloured blue on yellow, and cleared; the saved file projects as `style B3 bold=#true color="#0074d9" background="#ffdc00"` and lints clean. The Format menu is the strip's verbs in the strip's order, checked as the strip draws them. 276 tests on Linux. The text pane renders **byte-identical** to its frames from before its painting moved into `strip.rs`, in both palettes. Two bugs found by *running* it — see below |
+
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
 with no shaping engine behind it, and decision 3 is a bet that GDI's non-shaping answer is good
@@ -793,17 +795,19 @@ this shell's whole half of it, and is compiled out with the crate's `xlsx` featu
 
 R10 allows per-shell feature gaps and requires them to be named. These are the named ones.
 
-**A cell's formatting, but for its currency.** The grid has no format strip, so it cannot set
-bold, an alignment, a colour, a border or any number format but one: **Format ▸ Currency**,
-`numfmt::CURRENCIES`' three (euro, US dollar, pound sterling) as three menu items and the same
-three on the cells' context menu, one click each as in the GNOME window's picker. The item
-naming the active cell's currency is checked when a menu opens (`WM_INITMENUPOPUP`, since the
-bar itself is rebuilt only when the pane changes). `sheet/currency.rs` is the portable half: a
-cell that is already a currency keeps its decimals, grouping and locale and changes only its
-symbol, anything else gets two decimals and grouped thousands, and a whole row or column is cut
-to the sheet in use before `App::set_format`, which refuses a million cells. Menu items for a
-property rather than a strip is decision 4 bent, and deliberately only this far: the rest waits
-for a grid format strip, which would also be where these three move.
+**Wrap and borders, on the grid.** The format strip (W12) carries everything else the GNOME
+strip does, and leaves these two out on purpose rather than by omission. *Wrap* would set
+`fo:wrap-option` on a cell this window then draws on one line — a toggle whose effect cannot be
+seen is worse than no toggle, and the fix is drawing wrapped text (and the row auto-height that
+comes with it, `ui_sheet_gtk`'s M10), not a button. *Borders* this window does not draw either
+(`doc/feature-matrix.md` §5), and the GNOME strip has no border control to mirror. A decimal count
+beyond one step at a time, a grouping toggle and a currency other than `numfmt::CURRENCIES`' three
+are `grind sheet format`'s; this strip's number picker is one click per kind.
+
+**A colour picker with no colours in it.** Both panes' *Text Colour*, *Highlight* and *Cell
+Background* open `dialog::choose` over the palette's **names** — capitalised now, and one list
+(`strip::colour_choices`) — with no swatch beside each. An owner-drawn `LISTBOX` row would carry
+one; it is the next thing this chooser wants, and the reason it is named here.
 
 **Not drawn, kept intact.** A **chart** in a file is read, kept and written back untouched, and
 nothing here draws one — the same position `grind-tui` takes, and it is a deliberate stop rather
@@ -1527,6 +1531,19 @@ which is why the *title* looked fine on a light backdrop and the subtitle and th
 One line fixes it, and the reason it is recorded here is the reason `doc/windows-shell.md` keeps
 this list at all: it is invisible in review. Nothing in `welcome.rs` is wrong on its own, the
 missing call is in a file that does not exist, and the only way to see it is to look at a frame.
+
+### W12 found two, and one of them had been shipping since W10
+
+1. **A double-click on a strip was one click.** Windows turns the second press of a quick pair into
+   `WM_LBUTTONDBLCLK` rather than `WM_LBUTTONDOWN`, and neither pane's strip listened for it: `+.0`
+   clicked twice stepped once, and on the *text* pane — where this had been true since W10 gave
+   the strip press-and-release — the second press fell through to the page's own double-click and
+   selected a word in the document. A double-click on either strip is a second press now, the
+   rule the welcome screen's cards already had.
+2. **Two numbers read as struck through** in a scaled-down screenshot, and were not: zoomed, the
+   glyphs are clean. Recorded because the same misreading cost a debugging detour on the text pane
+   the day before — a caret that looked off by thirty pixels and measured exact. **Measure a
+   screenshot, never eyeball a scaled one.**
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

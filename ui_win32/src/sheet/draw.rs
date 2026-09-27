@@ -147,7 +147,7 @@ pub fn one_line(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 #[cfg(windows)]
-pub use windows_impl::{Frame, draw_text, paint};
+pub use windows_impl::{FormatStrip, Frame, draw_text, paint};
 
 #[cfg(windows)]
 mod windows_impl {
@@ -160,6 +160,9 @@ mod windows_impl {
     use super::{Align, Appearance, GridGeom, Selection, Theme};
     use crate::gdi::{self, Font, Selected};
     use crate::sheet::assist::{Ink, Piece};
+    use crate::sheet::format::{self, Control, Shape};
+    use crate::strip;
+    use crate::theme::Interaction;
     use crate::theme::Rgb;
 
     /// The padding between a cell's edge and its text, in pixels at 100%.
@@ -194,10 +197,28 @@ mod windows_impl {
     /// returns, which is one character.
     const MARKER_W: f64 = 14.0;
 
+    /// What the format strip shows: the active cell's own style and number format, read fresh
+    /// for this frame, and where the pointer is on the strip.
+    ///
+    /// Presentation state like the selection — the core is never told which of its answers a
+    /// button was drawn pressed in response to.
+    pub struct FormatStrip<'a> {
+        pub style: &'a grind_sheet::style::CellStyle,
+        /// The number picker's face — `sheet::format::face`, already worked out by the window.
+        pub number: &'a str,
+        /// Whether that face is a format rather than *General*: a picker with nothing set shows
+        /// its placeholder in the tertiary ink, the text strip's own "Font" rule.
+        pub number_set: bool,
+        pub hover: Option<Control>,
+        pub pressed: Option<Control>,
+    }
+
     /// Everything the painter needs that is not geometry or colour.
     pub struct Frame<'a> {
         pub geom: &'a GridGeom,
         pub theme: Theme,
+        /// The format strip across the top — `sheet/format.rs`'s controls over the active cell.
+        pub format: FormatStrip<'a>,
         pub viewport: &'a grind_sheet::Viewport,
         /// The sheets' names, in order, and which one is on screen — the tabs the status bar's
         /// left half is (`super::tabs`).
@@ -534,7 +555,9 @@ mod windows_impl {
             corner(dc, frame);
         }
 
-        // The strip along the top, with the two read-outs in it: where the selection is, and
+        draw_format(dc, frame);
+
+        // The strip under it, with the two read-outs in it: where the selection is, and
         // what is in the cell.
         //
         // No line under it, and that is W10 rather than an omission: the strip, the header band
@@ -1017,6 +1040,127 @@ mod windows_impl {
             gdi::fill(dc, left, bottom - weight, right, bottom, muted);
             gdi::fill(dc, left, top, left + weight, bottom, muted);
             gdi::fill(dc, right - weight, top, right, bottom, muted);
+        }
+    }
+
+    /// The format strip (`sheet/format.rs`): every control in [`format::CONTROLS`]' order, at the
+    /// rectangles `GridGeom::format_controls` gave it, painted by the same `crate::strip`
+    /// functions the text pane's strip uses — so a toggle, a swatch, a picker and a button are one
+    /// kind of thing in both panes.
+    ///
+    /// Bold's label is bold and Italic's italic, as on the text strip: the control shows what it
+    /// does. The three alignments are **drawn** — four lines, ragged on the side they are not
+    /// aligned to, the icon every word processor and spreadsheet uses — rather than lettered,
+    /// since `L`, `C` and `R` name a direction without showing one.
+    fn draw_format(dc: HDC, frame: &Frame) {
+        let g = frame.geom;
+        let theme = frame.theme;
+        let band = g.format_rect();
+        if band.h <= 0.0 {
+            return;
+        }
+        {
+            let (left, top, right, bottom) = band.edges();
+            gdi::fill(dc, left, top, right, bottom, theme.backdrop);
+        }
+        let strip_view = &frame.format;
+        let look = |control: Control| strip::Look {
+            theme,
+            dpi: g.dpi,
+            state: match (
+                strip_view.pressed == Some(control),
+                strip_view.hover == Some(control),
+            ) {
+                (true, _) => Interaction::Pressed,
+                (false, true) => Interaction::Hover,
+                (false, false) => Interaction::Rest,
+            },
+        };
+        let placed = g.format_controls();
+        for (place, &(control, shape, _)) in placed.iter().zip(format::CONTROLS.iter()) {
+            if let Some(rule) = place.separator {
+                strip::separator(dc, rule, theme);
+            }
+            let rect = place.rect;
+            match shape {
+                Shape::Toggle => {
+                    let on = format::pressed(strip_view.style, control);
+                    strip::button_ground(dc, rect, look(control), on, false);
+                    let ink = match on {
+                        true => theme.accent,
+                        false => theme.text,
+                    };
+                    match control {
+                        Control::Bold | Control::Italic => {
+                            let font = Font::styled(
+                                frame.face,
+                                frame.body_px,
+                                control == Control::Bold,
+                                control == Control::Italic,
+                                false,
+                                false,
+                            );
+                            let text = if control == Control::Bold { "B" } else { "I" };
+                            strip::label(dc, rect, text, &font, ink);
+                        }
+                        _ => align_icon(dc, rect, control, ink, g.dpi),
+                    }
+                }
+                Shape::Swatch => {
+                    strip::button_ground(dc, rect, look(control), false, false);
+                    let background = control == Control::Background;
+                    let value = match background {
+                        true => strip_view.style.background.as_deref(),
+                        false => strip_view.style.color.as_deref(),
+                    };
+                    strip::swatch(
+                        dc,
+                        rect,
+                        theme,
+                        value.filter(|v| *v != "transparent"),
+                        background,
+                        frame.body_px,
+                        frame.face,
+                    );
+                }
+                Shape::Picker => {
+                    strip::picker(
+                        dc,
+                        rect,
+                        look(control),
+                        strip_view.number,
+                        strip_view.number_set,
+                    );
+                }
+                Shape::Button => {
+                    strip::button_ground(dc, rect, look(control), false, true);
+                    let font = Font::new(frame.face, frame.body_px, false);
+                    strip::label(dc, rect, control.label(), &font, theme.text);
+                }
+            }
+        }
+    }
+
+    /// The alignment icon: four lines, alternately long and short, flush to the side the text is
+    /// aligned to — or centred.
+    fn align_icon(dc: HDC, rect: crate::sheet::geom::Rect, control: Control, ink: Rgb, dpi: u32) {
+        let unit = |v: f64| crate::sheet::geom::scale(v, dpi).round() as i32;
+        let (long, short, thick, step) = (unit(14.0), unit(9.0), unit(1.5).max(1), unit(4.0));
+        let height = step * 3 + thick;
+        let (left, top, right, bottom) = rect.edges();
+        let (cx, y0) = ((left + right) / 2, (top + bottom - height) / 2);
+        for line in 0..4 {
+            let w = match line % 2 {
+                0 => long,
+                _ => short,
+            };
+            let x = match control {
+                Control::AlignLeft => cx - long / 2,
+                Control::AlignRight => cx + long / 2 - w,
+                _ => cx - w / 2,
+            };
+            let y = y0 + line * step;
+            gdi::fill(dc, x, y, x + w, y + thick, ink);
         }
     }
 

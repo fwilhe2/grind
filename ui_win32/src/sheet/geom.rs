@@ -305,6 +305,12 @@ impl Sizes {
     }
 }
 
+/// The number picker's width at 100% — room for `Date Time` or `General` and the chevron.
+pub const NUMBER_W: f64 = 104.0;
+
+/// The two decimal buttons' width at 100% — `.00` and a little air, not a square.
+pub const DECIMALS_W: f64 = 40.0;
+
 /// Everything needed to place a cell: the header band, the two axes' sizes, and which track is
 /// at the top-left corner of the view.
 ///
@@ -315,7 +321,13 @@ impl Sizes {
 /// arithmetic and the convention agree here.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridGeom {
-    /// The strip along the top of the window that holds the name box and, beside it, the
+    /// The **format strip** at the very top — `doc/windows-shell.md` decision 4's drawn strip for
+    /// a property of the selection, over the grid at last (`sheet/format.rs`). Above the name box
+    /// and the formula bar rather than below them, which is where a spreadsheet keeps its
+    /// formatting and what keeps the formula bar against the cells it reads; and where the text
+    /// pane's own strip is, so the two panes' strips sit in one place in one window.
+    pub format_h: f64,
+    /// The strip under it that holds the name box and, beside it, the
     /// formula bar. Everything below is offset by it, which is why it is part of the geometry
     /// rather than a constant the painter knows.
     pub strip_h: f64,
@@ -355,7 +367,7 @@ impl GridGeom {
     /// bands are showing. Named because five rectangles below depend on it and a banner that
     /// moved four of them would be a very confusing bug.
     pub fn header_top(&self) -> f64 {
-        self.strip_h + self.banner_h + self.hint_h
+        self.format_h + self.strip_h + self.banner_h + self.hint_h
     }
 
     /// The rectangle the cells occupy — the client area less the strip, the banner, the headers
@@ -369,13 +381,55 @@ impl GridGeom {
         }
     }
 
-    /// The strip across the top of the window.
-    pub fn strip_rect(&self) -> Rect {
+    /// The format strip, across the very top of the window.
+    pub fn format_rect(&self) -> Rect {
         Rect {
             x: 0.0,
             y: 0.0,
             w: self.width,
-            h: self.strip_h.min(self.height),
+            h: self.format_h.min(self.height),
+        }
+    }
+
+    /// Every control on the format strip, where it goes and the separator before it —
+    /// [`crate::strip::lay_out`] over [`format::CONTROLS`](crate::sheet::format::CONTROLS), in that
+    /// order, so an index into one is an index into the other.
+    pub fn format_controls(&self) -> Vec<crate::strip::Placed> {
+        use crate::sheet::format::{CONTROLS, Control, Shape};
+        let widths: Vec<(f64, bool)> = CONTROLS
+            .iter()
+            .map(|&(control, shape, group)| {
+                let width = match (shape, control) {
+                    (Shape::Toggle | Shape::Swatch, _) => crate::theme::space::CONTROL_H,
+                    (Shape::Picker, _) => NUMBER_W,
+                    // The text strip's own, so the one verb both strips carry is one size.
+                    (Shape::Button, Control::Clear) => crate::text::geom::CLEAR_W,
+                    (Shape::Button, _) => DECIMALS_W,
+                };
+                (width, group)
+            })
+            .collect();
+        crate::strip::lay_out(self.format_rect(), self.dpi, &widths)
+    }
+
+    /// Which format-strip control a point is on, if any.
+    pub fn format_hit(&self, x: f64, y: f64) -> Option<crate::sheet::format::Control> {
+        if !self.format_rect().contains(x, y) {
+            return None;
+        }
+        let index = crate::strip::hit(&self.format_controls(), x, y)?;
+        crate::sheet::format::CONTROLS
+            .get(index)
+            .map(|(control, ..)| *control)
+    }
+
+    /// The strip under the format strip, holding the name box and the formula bar.
+    pub fn strip_rect(&self) -> Rect {
+        Rect {
+            x: 0.0,
+            y: self.format_h,
+            w: self.width,
+            h: self.strip_h.min((self.height - self.format_h).max(0.0)),
         }
     }
 
@@ -383,7 +437,7 @@ impl GridGeom {
     pub fn banner_rect(&self) -> Rect {
         Rect {
             x: 0.0,
-            y: self.strip_h,
+            y: self.format_h + self.strip_h,
             w: self.width,
             h: self.banner_h,
         }
@@ -394,7 +448,7 @@ impl GridGeom {
     pub fn hint_rect(&self) -> Rect {
         Rect {
             x: 0.0,
-            y: self.strip_h + self.banner_h,
+            y: self.format_h + self.strip_h + self.banner_h,
             w: self.width,
             h: self.hint_h,
         }
@@ -412,7 +466,7 @@ impl GridGeom {
         let h = scale(crate::theme::space::CONTROL_H, self.dpi).min(self.strip_h);
         Rect {
             x: margin,
-            y: ((self.strip_h - h) / 2.0).max(0.0),
+            y: self.format_h + ((self.strip_h - h) / 2.0).max(0.0),
             w: (self.header_w * 3.0).min((self.width - margin * 2.0).max(0.0)),
             h,
         }
@@ -652,6 +706,7 @@ mod tests {
 
     fn geom() -> GridGeom {
         GridGeom {
+            format_h: 0.0,
             strip_h: 0.0,
             banner_h: 0.0,
             hint_h: 0.0,
@@ -1021,5 +1076,57 @@ mod tests {
         let a = g.cell_rect(0, 0).edges();
         let b = g.cell_rect(0, 1).edges();
         assert_eq!(a.2, b.0, "A's right edge is B's left edge");
+    }
+
+    /// The format strip is the top band, and every band under it moves down by exactly its
+    /// height — the name box, the formula bar, the notice bar, the assist band and the headers.
+    #[test]
+    fn the_format_strip_is_the_top_band_and_pushes_the_rest_down() {
+        let mut g = geom();
+        g.strip_h = crate::sheet::draw::STRIP_H;
+        g.banner_h = 30.0;
+        let before = (
+            g.name_box_rect(),
+            g.formula_rect(),
+            g.banner_rect(),
+            g.hint_rect(),
+            g.body(),
+        );
+        g.format_h = 44.0;
+        assert_eq!(g.format_rect().y, 0.0);
+        assert_eq!(g.strip_rect().y, 44.0);
+        assert_eq!(g.name_box_rect().y, before.0.y + 44.0);
+        assert_eq!(g.formula_rect().y, before.1.y + 44.0);
+        assert_eq!(g.banner_rect().y, before.2.y + 44.0);
+        assert_eq!(g.hint_rect().y, before.3.y + 44.0);
+        assert_eq!(g.body().y, before.4.y + 44.0);
+        assert_eq!(g.body().h, before.4.h - 44.0);
+        // A click on the strip is chrome, never a cell or the select-all corner.
+        assert_eq!(g.hit(4.0, 10.0), Hit::Chrome);
+    }
+
+    #[test]
+    fn every_format_control_is_on_the_strip_and_findable() {
+        use crate::sheet::format::CONTROLS;
+        let mut g = geom();
+        g.format_h = 44.0;
+        g.strip_h = 44.0;
+        let placed = g.format_controls();
+        assert_eq!(placed.len(), CONTROLS.len());
+        for (p, (control, ..)) in placed.iter().zip(CONTROLS) {
+            let strip = g.format_rect();
+            assert!(p.rect.y >= strip.y && p.rect.y + p.rect.h <= strip.y + strip.h);
+            assert!(
+                p.rect.x + p.rect.w <= g.width,
+                "{control:?} fits an 800-wide window"
+            );
+            let (x, y) = (p.rect.x + p.rect.w / 2.0, p.rect.y + p.rect.h / 2.0);
+            assert_eq!(g.format_hit(x, y), Some(control));
+        }
+        // Five groups, four separators between them.
+        assert_eq!(placed.iter().filter(|p| p.separator.is_some()).count(), 4);
+        // Not the name box's strip: that band belongs to the two read-outs.
+        let name = g.name_box_rect();
+        assert_eq!(g.format_hit(name.x + 1.0, name.y + 1.0), None);
     }
 }

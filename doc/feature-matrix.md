@@ -160,19 +160,21 @@ twin, so a shell that offered one would be putting a capability where the CLI co
 
 ## 5. Spreadsheet — formatting
 
-The single largest divergence in the suite is this table's last column.
+This table's last column was the single largest divergence in the suite until W12 gave the
+Windows grid its format strip (`ui_win32/src/sheet/format.rs`); what is left of it is wrap and
+borders, which that window does not draw either.
 
 | | CLI | Sheet GTK | TUI | Web | Win32 |
 |---|---|---|---|---|---|
-| Bold, italic | ● | ● | ● | ● | ○ |
-| Alignment | ● | ● | ● | ● | ○ |
-| Wrap text | ● | ● | ● | ● | ○ |
-| Borders | ● | ○ ᵃ | ● | ● | ○ |
-| Text colour, cell background | ● | ● | ● | ● | ○ |
-| Clear formatting | ● | ● | ● | ● | ○ |
-| Number formats — the eight presets | ● | ● | ● | ● | ○ |
+| Bold, italic | ● | ● | ● | ● | ● |
+| Alignment | ● | ● | ● | ● | ● |
+| Wrap text | ● | ● | ● | ● | ○ ˣ |
+| Borders | ● | ○ ᵃ | ● | ● | ○ ˣ |
+| Text colour, cell background | ● | ● | ● | ● | ● |
+| Clear formatting | ● | ● | ● | ● | ● |
+| Number formats — the eight presets | ● | ● | ● | ● | ● |
 | Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ |
-| Read a cell's style / format back | ● | ● | ● | ● | ○ |
+| Read a cell's style / format back | ● | ● | ● | ● | ● |
 | A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ |
 | Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ |
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● |
@@ -188,9 +190,12 @@ borders. `grind sheet style --border` and the browser's two palette verbs both s
 ᵇ `:format number [n]` takes a decimal count and `:format currency [eur|usd|gbp]` one of the three
 currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `grind sheet format`'s.
 ᶜ More / fewer decimals, and the three currencies of `numfmt::CURRENCIES` as three menu entries.
-ʷ The three currencies of `numfmt::CURRENCIES` only — Format ▸ Currency and the cells' context
-menu, one click each, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
-No other number format and no decimal count; row 1 of §8 is the rest.
+ʷ One decimal more or fewer at a time (the strip's `-.0`/`+.0`, and Format ▸ Increase/Decrease
+Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Currency and the cells'
+context menu, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
+No grouping toggle and no other symbol.
+ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
+nor borders, and a control whose effect cannot be seen is not offered.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).
 ᵉ A border's *line style* is ignored, so `dashed` and `double` draw solid.
 ᶠ Above the number popover's settings: the active cell as they would show it, from
@@ -375,16 +380,11 @@ one, and no client sets a column width, because the model carries no table style
 Everything here is reachable from the CLI, which is R9 doing its job. The order is by how much
 of a client's own job is missing.
 
-1. **`grind-win32` can barely format a cell.** Not bold, not an alignment, not a colour, and of
-   the number formats only a currency — `ui_win32` never calls `App::set_style`, and calls
-   `App::set_format` only for the Format menu's three currencies (§5 ʷ). It
-   *draws* alignment, bold, italic, text colour and background, so a document formatted
-   elsewhere looks right and nothing in this window can produce one. `doc/windows-shell.md`
-   decision 4 anticipates exactly this — "a property of the selection goes on the format strip
-   (which is W5's, since `CharStyle` **and** `CellStyle` bound it)" — and W5b built the
-   `CharStyle` half only. No milestone claims the other half and no line of "What it will not
-   do" names it, so it is currently a gap by omission rather than by decision: the single
-   largest hole in this matrix, and the only one that was invisible in all five shell documents.
+1. ~~**`grind-win32` can barely format a cell.**~~ **Closed** (2026-09-27, W12): the grid has
+   the format strip decision 4 always gave it — bold, italic, alignment, both colours, the
+   number presets, a decimal step and Clear, each a read of the active cell and one
+   `App::set_style` or `App::set_format`, the same verbs in the Format menu. What is left is
+   wrap and borders (§5 ˣ), which this window does not draw, and so does not offer.
 2. **`grind-sheet-gtk` has no borders control** (§5 ᵃ). The one formatting property the most
    complete spreadsheet shell cannot write, and both the browser and the terminal can.
 3. **`grind-win32` cannot colour a run either**, and `grind-tui` approximates one. Colour and

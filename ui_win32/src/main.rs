@@ -55,6 +55,9 @@ mod notice;
 mod problems;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod sheet;
+// The format strip both panes draw — its layout portable, its painting `cfg(windows)`.
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod strip;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod surrogate;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
