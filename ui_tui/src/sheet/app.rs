@@ -1548,12 +1548,14 @@ impl App {
     }
 
     /// What the title bar calls this document.
+    /// What a pane's title calls the document — its file's **name**, as the title bar does,
+    /// rather than the whole path, which on any real machine pushed the pane's own word off the
+    /// end of its border. An imported workbook goes by the name `:w` would give it.
     fn document_name(&self) -> String {
-        self.path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .or_else(|| self.imported.clone())
-            .unwrap_or_else(|| "untitled".to_owned())
+        match (&self.path, &self.imported) {
+            (None, Some(imported)) => chrome::file_name(Some(Path::new(imported))),
+            (path, _) => chrome::file_name(path.as_deref()),
+        }
     }
 
     /// Where the selection is, and what it adds up to — the right-hand end of the status bar.
@@ -1712,7 +1714,12 @@ impl App {
         let mut painted = 0u16;
         for (col, width) in &cols {
             header.push(Span::styled(
-                geom::pad(&lex::column_name(*col), usize::from(*width), Align::Centre),
+                geom::pad(
+                    &lex::column_name(*col),
+                    usize::from(*width),
+                    Align::Centre,
+                    geom::Fit::Text,
+                ),
                 match *col == self.active.col {
                     true => HEADER_ACTIVE,
                     false => HEADER,
@@ -1791,7 +1798,15 @@ impl App {
                     false => usize::from(*width),
                 };
                 spans.push(Span::styled(
-                    geom::pad(text, width, alignment(cell, numeric)),
+                    geom::pad(
+                        text,
+                        width,
+                        alignment(cell, numeric),
+                        match numeric {
+                            true => geom::Fit::Number,
+                            false => geom::Fit::Text,
+                        },
+                    ),
                     style,
                 ));
             }
@@ -1833,7 +1848,8 @@ impl App {
         // The name box, then what the cell holds — an `fx` badge when that is a formula, which is
         // the one thing a reader needs to know before reading the rest of the line.
         let mut formula_line = vec![Span::styled(format!(" {addr} "), NAME_BOX)];
-        if content.starts_with('=') {
+        let is_formula = content.starts_with('=');
+        if is_formula {
             formula_line.push(Span::styled(
                 " fx ",
                 Style::default()
@@ -1849,6 +1865,23 @@ impl App {
             Style::default().add_modifier(Modifier::DIM),
         ));
         frame.render_widget(Line::from(formula_line), formula_area);
+        // The terminal's own cursor, at the insertion point, while a cell is being typed into —
+        // without it Left and Right moved an insertion point nobody could see.
+        if let Mode::Insert { buf, cursor } = &self.mode {
+            use unicode_width::UnicodeWidthStr;
+            let before: String = buf[..(*cursor).min(buf.len())].iter().collect();
+            let badge = match is_formula {
+                true => " fx ".width(),
+                false => 1,
+            };
+            let x =
+                usize::from(formula_area.x) + format!(" {addr} ").width() + badge + before.width();
+            let right = usize::from(formula_area.x + formula_area.width.saturating_sub(1));
+            frame.set_cursor_position((
+                u16::try_from(x.min(right)).unwrap_or(formula_area.x),
+                formula_area.y,
+            ));
+        }
 
         if band {
             frame.render_widget(Line::from(self.assist.line(false)), assist_area);
@@ -1893,6 +1926,9 @@ impl App {
             .style(chrome::status_style()),
             status_area,
         );
+        if let Mode::Command { buf } = &self.mode {
+            frame.set_cursor_position(chrome::command_cursor(status_area, mode, buf));
+        }
     }
 }
 
@@ -1961,15 +1997,17 @@ fn toggle(field: &mut Option<String>, value: &str) {
 fn role_color(role: grind_sheet::view::CellRole) -> Color {
     use grind_sheet::view::CellRole as R;
     match role {
-        R::InputNamed => Color::Blue,
+        R::InputNamed => Color::LightBlue,
         R::InputUnnamed => Color::Cyan,
         R::ConstantUnnamed => Color::Yellow,
-        // Not `Color::Reset`: the cell may be drawn reversed, and a role that is "whatever
-        // the terminal was doing" reads as a role that is missing.
-        R::ComputedLocal | R::Empty => Color::White,
+        // The terminal's own ink — `ui_sheet_gtk`'s "the default foreground" for a formula. It
+        // was `Color::White`, on the worry that the default would read as no role on a reversed
+        // cell; what it did instead was erase every formula on a light terminal, where white is
+        // the ground. Reversed, the default ink is exactly what the ordinary cursor looks like.
+        R::ComputedLocal | R::Empty => Color::Reset,
         R::ComputedCrossSheet => Color::Green,
         R::Label => Color::DarkGray,
-        R::Error => Color::Red,
+        R::Error => Color::LightRed,
         R::Stale => Color::Magenta,
     }
 }
@@ -1992,18 +2030,13 @@ fn terminal_style(style: Option<&CellStyle>) -> Style {
     if on(&style.font_style, "normal") {
         out = out.add_modifier(Modifier::ITALIC);
     }
-    if let Some(color) = style
-        .color
-        .as_deref()
-        .and_then(crate::text::app::nearest_color)
-    {
+    // A cell's colours as `crate::ink` reads them: ones that hold on a light terminal and a dark
+    // one, and ODF's automatic ink on a fill the document chose.
+    let (ink, fill) = crate::ink::colours(style.color.as_deref(), style.background.as_deref());
+    if let Some(color) = ink {
         out = out.fg(color);
     }
-    if let Some(color) = style
-        .background
-        .as_deref()
-        .and_then(crate::text::app::nearest_color)
-    {
+    if let Some(color) = fill {
         out = out.bg(color);
     }
     out
@@ -2050,6 +2083,63 @@ mod tests {
         )
     }
 
+    /// No role is drawn in a colour one of the two grounds erases. `ComputedLocal` was white, and
+    /// every formula vanished under `:roles` in a light terminal; blue and red are near-invisible
+    /// on a dark one (`crate::ink`'s measurement).
+    #[test]
+    fn every_role_reads_on_a_light_terminal_and_a_dark_one() {
+        for role in grind_sheet::view::CellRole::ALL {
+            let colour = role_color(role);
+            assert!(
+                !matches!(
+                    colour,
+                    Color::White
+                        | Color::Black
+                        | Color::Blue
+                        | Color::Red
+                        | Color::LightGreen
+                        | Color::LightYellow
+                        | Color::LightCyan
+                ),
+                "{role:?} is {colour:?}"
+            );
+        }
+    }
+
+    /// Where the terminal's own cursor is after one frame, or `None` when it is hidden.
+    fn cursor(app: &mut App, width: u16, height: u16) -> Option<(u16, u16)> {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let backend = terminal.backend();
+        let at = backend.cursor_position();
+        backend.cursor_visible().then_some((at.x, at.y))
+    }
+
+    /// While a cell is being typed into, the terminal's cursor stands at the insertion point on
+    /// the formula line and follows Left — it used to be hidden, so an arrow key moved something
+    /// nobody could see. In Normal mode there is no cursor: the active cell is the cursor.
+    #[test]
+    fn the_insertion_point_is_the_terminals_own_cursor() {
+        let mut app = app();
+        assert_eq!(cursor(&mut app, 40, 12), None, "Normal mode draws none");
+        type_str(&mut app, "i=SU");
+        let (x, _) = cursor(&mut app, 40, 12).expect("shown while typing");
+        // ` A1 ` (4 cells), the ` fx ` badge (4), then `=SU`.
+        assert_eq!(x, 4 + 4 + 3);
+        press(&mut app, KeyCode::Left);
+        press(&mut app, KeyCode::Left);
+        // The row is the formula line's, which is one lower once the completion band has gone.
+        let (x, _) = cursor(&mut app, 40, 12).expect("still shown");
+        assert_eq!(x, 4 + 4 + 1, "follows Left");
+        press(&mut app, KeyCode::Esc);
+        type_str(&mut app, ":wq");
+        let (x, row) = cursor(&mut app, 40, 12).expect("the command line has one too");
+        assert_eq!(row, 11, "on the status bar");
+        // The chip (` COMMAND ` or whatever it says), a space, the colon, `wq`.
+        let chip = chrome::Mode::Command.chip().content.chars().count() as u16;
+        assert_eq!(x, chip + 2 + 2);
+    }
+
     /// `:wq` quits once the write succeeded, and `:q` after a `:w` has nothing to lose.
     #[test]
     fn writing_then_quitting_quits() {
@@ -2091,7 +2181,7 @@ mod tests {
             summary: "Imported from Excel: 1 sheet, 3 cells; nothing was lost.".into(),
         }));
         assert!(app.status.contains(":w budget.fods"), "{}", app.status);
-        assert_eq!(app.document_name(), "/tmp/budget.fods");
+        assert_eq!(app.document_name(), "budget.fods");
         type_str(&mut app, ":q");
         press(&mut app, KeyCode::Enter);
         assert!(!app.should_quit(), "an import is unsaved");

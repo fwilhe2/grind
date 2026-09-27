@@ -159,16 +159,19 @@ impl Code {
             )];
             let cursor = index == self.line;
             for piece in projection.line_pieces(index) {
-                let mut style = match piece.kind {
-                    Some(kind) => Style::default().fg(colour(kind)),
-                    None => Style::default(),
+                // The cursor's line sets its token colours aside and is one reversed bar
+                // (`crate::pick::SELECTED`): reversed one token at a time it was a row of blocks in
+                // five colours, which read as five things selected rather than one line.
+                let style = match (cursor, piece.kind) {
+                    (false, Some(kind)) => Style::default().fg(colour(kind)),
+                    _ => Style::default(),
                 };
-                if cursor {
-                    style = style.add_modifier(Modifier::REVERSED);
-                }
                 spans.push(Span::styled(piece.text.to_owned(), style));
             }
-            lines.push(Line::from(spans));
+            lines.push(match cursor {
+                true => crate::pick::selected_row(spans, usize::from(area.width).saturating_sub(2)),
+                false => Line::from(spans),
+            });
         }
 
         // What this line *is*, in the document's own vocabulary. The whole point of the pane: a
@@ -203,7 +206,7 @@ fn colour(kind: TokenKind) -> Color {
         TokenKind::Property => Color::Magenta,
         TokenKind::Text => Color::Green,
         TokenKind::Number => Color::Yellow,
-        TokenKind::Keyword => Color::Blue,
+        TokenKind::Keyword => Color::LightBlue,
         TokenKind::Comment => Color::DarkGray,
     }
 }

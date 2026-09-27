@@ -1729,8 +1729,11 @@ impl App {
             let piece: String = chars[start.min(chars.len())..end.min(chars.len())]
                 .iter()
                 .collect();
-            // A line break ends the line; it is not a character to draw.
-            let piece = piece.trim_end_matches('\n').to_string();
+            // A line break ends the line; it is not a character to draw. A tab is one, but a
+            // terminal draws it as nothing, so it is drawn as the cells `Cells` measured it at.
+            let piece = piece
+                .trim_end_matches('\n')
+                .replace('\t', &" ".repeat(crate::text::TAB));
             let selected = within
                 .as_ref()
                 .is_some_and(|sel| sel.start <= start && end <= sel.end);
@@ -1785,11 +1788,7 @@ impl App {
             return;
         }
         if self.problems.is_open() {
-            let title = self
-                .path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "untitled".to_owned());
+            let title = self.document_name();
             self.problems.draw(frame, area, &title);
             return;
         }
@@ -1996,14 +1995,17 @@ impl App {
             .style(chrome::status_style()),
             status_area,
         );
+        if let Mode::Command { buf } = &self.mode {
+            frame.set_cursor_position(chrome::command_cursor(status_area, mode, buf));
+        }
     }
 
     /// What the title bar calls this document.
+    /// What a pane's title calls the document — its file's **name**, as the title bar does,
+    /// rather than the whole path, which on any real machine pushed the pane's own word off the
+    /// end of its border.
     fn document_name(&self) -> String {
-        self.path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "untitled".to_owned())
+        chrome::file_name(self.path.as_deref())
     }
 
     /// Which section the caret is in — the last heading at or before it, as `\u{a7}2.1 Costs`.
@@ -2156,53 +2158,16 @@ fn terminal_style(props: &CharStyle) -> Style {
     if props.font_family.is_some() {
         style = style.add_modifier(Modifier::DIM);
     }
-    if let Some(color) = props.color.as_deref().and_then(nearest_color) {
+    // A run's colour and highlight as `crate::ink` reads them — ones that hold on a light
+    // terminal and a dark one, and ODF's automatic ink on a highlight with no colour of its own.
+    let (ink, fill) = crate::ink::colours(props.color.as_deref(), props.background.as_deref());
+    if let Some(color) = ink {
         style = style.fg(color);
     }
-    if let Some(color) = props.background.as_deref().and_then(nearest_color) {
+    if let Some(color) = fill {
         style = style.bg(color);
     }
     style
-}
-
-/// The terminal colour nearest an ODF `#rrggbb`, by squared distance in RGB.
-///
-/// Eight hues and their bright halves — the palette every terminal has, rather than the 256
-/// some do and the true colour others do: a shell that assumed more would look wrong on the
-/// terminals that have less, and the point of a colour here is that it is *distinguishable*.
-pub fn nearest_color(hex: &str) -> Option<Color> {
-    let hex = hex.trim().strip_prefix('#')?;
-    if hex.len() != 6 {
-        return None;
-    }
-    let channel = |at: usize| {
-        u8::from_str_radix(hex.get(at..at + 2)?, 16)
-            .ok()
-            .map(i32::from)
-    };
-    let (r, g, b) = (channel(0)?, channel(2)?, channel(4)?);
-    const TERMINAL: [(Color, (i32, i32, i32)); 16] = [
-        (Color::Black, (0, 0, 0)),
-        (Color::Red, (170, 0, 0)),
-        (Color::Green, (0, 170, 0)),
-        (Color::Yellow, (170, 85, 0)),
-        (Color::Blue, (0, 0, 170)),
-        (Color::Magenta, (170, 0, 170)),
-        (Color::Cyan, (0, 170, 170)),
-        (Color::Gray, (170, 170, 170)),
-        (Color::DarkGray, (85, 85, 85)),
-        (Color::LightRed, (255, 85, 85)),
-        (Color::LightGreen, (85, 255, 85)),
-        (Color::LightYellow, (255, 255, 85)),
-        (Color::LightBlue, (85, 85, 255)),
-        (Color::LightMagenta, (255, 85, 255)),
-        (Color::LightCyan, (85, 255, 255)),
-        (Color::White, (255, 255, 255)),
-    ];
-    TERMINAL
-        .iter()
-        .min_by_key(|(_, (tr, tg, tb))| (r - tr).pow(2) + (g - tg).pow(2) + (b - tb).pow(2))
-        .map(|(color, _)| *color)
 }
 
 /// What the gutter calls a block: its kind, or the one named paragraph style this shell has a
@@ -3010,6 +2975,33 @@ mod tests {
 
     /// Formatting is *drawn*, not spelled: the terminal's own bold, with no markers on screen
     /// to shift every caret after them.
+    /// A tab is drawn as the cells it was measured at, and a caret after it sits on the character
+    /// it is before. It used to draw as nothing — `name⇥value` read `namevalue` — and every caret
+    /// after it stood one column right of its character.
+    #[test]
+    fn a_tab_is_drawn_as_wide_as_it_was_measured() {
+        let mut app = app(&["name\tvalue"]);
+        let rows = render(&mut app, 40, 6);
+        assert!(rows[1].contains("name    value"), "{:?}", rows[1]);
+        // The caret on the `v`, just after the tab: the reversed cell is the one holding `v`.
+        app.caret = Caret {
+            block: 0,
+            offset: 5,
+        };
+        let mut terminal = Terminal::new(TestBackend::new(40, 6)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let at = GUTTER + 4 + crate::text::TAB as u16;
+        assert_eq!(buffer[(at, 1)].symbol(), "v");
+        assert!(
+            buffer[(at, 1)]
+                .style()
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "the caret is on the v"
+        );
+    }
+
     #[test]
     fn a_bold_run_is_drawn_bold_and_no_markers_are_shown() {
         let mut app = app(&["hello world"]);
@@ -3083,15 +3075,6 @@ mod tests {
                 .as_deref(),
             grind_core::style::palette("red")
         );
-    }
-
-    /// The sixteen a terminal has, nearest by hue — a document's own hex has to land on one.
-    #[test]
-    fn a_document_colour_lands_on_a_colour_the_terminal_has() {
-        assert_eq!(nearest_color("#ff4136"), Some(Color::LightRed));
-        assert_eq!(nearest_color("#001f3f"), Some(Color::Black));
-        assert_eq!(nearest_color("#ffffff"), Some(Color::White));
-        assert_eq!(nearest_color("not a colour"), None);
     }
 
     #[test]

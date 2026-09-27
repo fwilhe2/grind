@@ -83,6 +83,18 @@ impl Mode {
     }
 }
 
+/// Where the terminal's own cursor goes on a status bar whose left end is `mode`'s chip and then
+/// ` :{typed}` — the command line — so a `:` command being typed shows where the next character
+/// lands, the way every other line editor does. Measured in cells, like everything drawn here.
+pub fn command_cursor(area: ratatui::layout::Rect, mode: Mode, typed: &str) -> (u16, u16) {
+    use unicode_width::UnicodeWidthStr;
+    let chip = mode.chip().content.width();
+    // The space the bar puts after the chip, then the colon itself.
+    let x = usize::from(area.x) + chip + 2 + typed.width();
+    let right = usize::from(area.x + area.width.saturating_sub(1));
+    (u16::try_from(x.min(right)).unwrap_or(area.x), area.y)
+}
+
 /// The title bar's ground — the reader's own blue, which is the one colour every terminal theme
 /// has and every terminal theme makes readable under white.
 pub fn title_style() -> Style {

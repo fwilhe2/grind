@@ -69,14 +69,24 @@ use unicode_width::UnicodeWidthChar;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Cells;
 
+/// How many cells a `text:tab` is — the browser's four spaces and the Windows pane's
+/// `TAB_SPACES`, so a tab is one width across the suite. A fixed width rather than a tab *stop*,
+/// because a stop is a paragraph property this build does not read (`doc/text-core.md`).
+///
+/// Drawn as that many spaces (`text/app.rs`), because a terminal draws a tab character as
+/// nothing at all: measured as one cell and drawn as none, `name⇥value` read `namevalue` and
+/// every caret after the tab stood a column right of the character it was on.
+pub const TAB: usize = 4;
+
 impl Metrics for Cells {
     fn advances(&self, text: &str, _style: &TextStyle, out: &mut Vec<f32>) {
         let mut x = 0.0;
         for c in text.chars() {
-            // A control character has no width here; `\t` and `\n` reach us as themselves and
-            // are one cell each so that a caret can sit either side of one.
+            // A control character has no width here; `\t` and `\n` reach us as themselves. A
+            // break is one cell so that a caret can sit either side of it, and a tab is [`TAB`].
             x += match c {
-                '\t' | '\n' => 1.0,
+                '\t' => TAB as f32,
+                '\n' => 1.0,
                 _ => c.width().unwrap_or(0) as f32,
             };
             out.push(x);
@@ -113,8 +123,8 @@ mod tests {
     }
 
     #[test]
-    fn a_tab_or_a_break_is_one_cell_so_a_caret_can_sit_beside_it() {
-        assert_eq!(widths("a\tb"), vec![1.0, 2.0, 3.0]);
+    fn a_tab_is_four_cells_and_a_break_one_so_a_caret_can_sit_beside_it() {
+        assert_eq!(widths("a\tb"), vec![1.0, 5.0, 6.0]);
         assert_eq!(widths("a\nb"), vec![1.0, 2.0, 3.0]);
     }
 

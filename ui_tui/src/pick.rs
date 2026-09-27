@@ -25,6 +25,25 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
+/// How a selected row is marked in every list pane — this one, `problems.rs` and the code view:
+/// the whole row reversed, one bar from edge to edge, the way a terminal list marks its cursor.
+pub const SELECTED: Style = Style::new().add_modifier(Modifier::REVERSED);
+
+/// A selected row: `spans` with their own colours set aside, padded to `width` cells and drawn as
+/// one [`SELECTED`] bar. Padded because a `Line`'s style stops where its text does — measured, by
+/// `the_selected_row_is_one_bar_across_the_pane` — and a highlight that ends mid-pane reads as a
+/// highlight of the words rather than of the row.
+pub fn selected_row(spans: Vec<Span<'_>>, width: usize) -> Line<'_> {
+    use unicode_width::UnicodeWidthStr;
+    let used: usize = spans.iter().map(|span| span.content.width()).sum();
+    let mut spans: Vec<Span> = spans
+        .into_iter()
+        .map(|span| Span::raw(span.content))
+        .collect();
+    spans.push(Span::raw(" ".repeat(width.saturating_sub(used))));
+    Line::from(spans).style(SELECTED)
+}
+
 /// One row: what it says, where it goes, and how far in it is drawn.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
@@ -110,6 +129,7 @@ impl Pick {
     /// for is what they are reading.
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, what: &str) {
         let height = usize::from(area.height).saturating_sub(2).max(1);
+        let inner = usize::from(area.width).saturating_sub(2);
         self.scroll = self.scroll.min(self.selected);
         if self.selected >= self.scroll + height {
             self.scroll = self.selected + 1 - height;
@@ -125,17 +145,23 @@ impl Pick {
         let end = (self.scroll + height).min(self.rows.len());
         for index in self.scroll..end {
             let row = &self.rows[index];
-            let mark = match index == self.selected {
-                true => Style::default().add_modifier(Modifier::REVERSED),
-                false => Style::default(),
-            };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!(" {:width$}", row.address, width = 9),
-                    mark.fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(format!("{}{}", "  ".repeat(row.depth), row.label), mark),
-            ]));
+            let address = format!(" {:width$}", row.address, width = 9);
+            let label = format!("{}{}", "  ".repeat(row.depth), row.label);
+            // The selected row is **one bar across the whole pane** — `SELECTED`, on the `Line`
+            // rather than on each span, since a coloured span reversed is a block of its own colour
+            // and the row read as two different highlights side by side.
+            lines.push(match index == self.selected {
+                true => selected_row(vec![Span::raw(address), Span::raw(label)], inner),
+                false => Line::from(vec![
+                    Span::styled(
+                        address,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(label),
+                ]),
+            });
         }
 
         let footer = match self.rows.is_empty() {
@@ -254,5 +280,40 @@ mod tests {
             "a window of two rows scrolled to the cursor: {shown}"
         );
         assert!(shown.contains("3 of 3"), "{shown}");
+    }
+
+    /// The selected row is one bar from border to border, and nothing else on screen is
+    /// reversed — it used to be a cyan block beside a black one, stopping where the text did.
+    #[test]
+    fn the_selected_row_is_one_bar_across_the_pane() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut pick = Pick::default();
+        pick.open("Outline", rows(), Some("\u{a7}1.1"));
+        let mut terminal = Terminal::new(TestBackend::new(44, 6)).expect("a test terminal");
+        terminal
+            .draw(|frame| pick.draw(frame, frame.area(), "headings"))
+            .expect("draws");
+        let buffer = terminal.backend().buffer().clone();
+        let reversed = |x: u16, y: u16| {
+            buffer[(x, y)]
+                .style()
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        };
+        // Row 2 is `§1.1`, inside the border: every cell of it, and none of the rows beside it.
+        for x in 1..43 {
+            assert!(reversed(x, 2), "cell {x} of the selected row");
+            assert!(
+                !reversed(x, 1) && !reversed(x, 3),
+                "cell {x} of its neighbours"
+            );
+        }
+        assert_eq!(
+            buffer[(2, 2)].fg,
+            ratatui::style::Color::Reset,
+            "no colour of its own"
+        );
     }
 }

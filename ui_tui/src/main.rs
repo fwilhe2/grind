@@ -23,6 +23,7 @@ mod chrome;
 mod code;
 mod help;
 mod import;
+mod ink;
 mod pick;
 mod problems;
 mod sheet;
@@ -35,6 +36,7 @@ use std::sync::Arc;
 
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::cursor::SetCursorStyle;
 use ratatui::crossterm::event::{self, Event};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{
@@ -257,8 +259,11 @@ fn event_loop<S: Shell>(terminal: &mut Tui, redraw: &RedrawFlag, shell: &mut S) 
 fn setup_terminal() -> io::Result<Tui> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    // The alternate screen keeps the user's scrollback intact.
-    execute!(stdout, EnterAlternateScreen)?;
+    // The alternate screen keeps the user's scrollback intact. The cursor is a **bar**: it is only
+    // ever shown where text is being typed — the formula line and the `:` line — and a bar
+    // between two characters is what an insertion point looks like in every editor that
+    // distinguishes one from a block cursor over a character.
+    execute!(stdout, EnterAlternateScreen, SetCursorStyle::BlinkingBar)?;
 
     // From here on a panic would leave the terminal unusable, so teardown runs first.
     let previous_hook = std::panic::take_hook();
@@ -276,5 +281,9 @@ fn setup_terminal() -> io::Result<Tui> {
 /// the way out, and there is nothing useful left to do about them.
 fn restore_terminal() {
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    let _ = execute!(
+        io::stdout(),
+        SetCursorStyle::DefaultUserShape,
+        LeaveAlternateScreen
+    );
 }

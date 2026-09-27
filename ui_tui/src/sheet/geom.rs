@@ -23,7 +23,7 @@
 use std::collections::{HashMap, HashSet};
 
 use grind_core::style::{length_mm, mm_length};
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// A column nobody sized, in terminal cells — including the one column separator every cell
 /// keeps, so nine characters are visible.
@@ -228,26 +228,51 @@ pub enum Align {
     Right,
 }
 
-/// Pad or truncate `text` to exactly `width` **terminal cells**, one trailing space as the column
+/// What a cell's text *is*, for the one question [`pad`] asks when it does not fit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Fit {
+    /// Words, which may be cut — with an ellipsis saying so.
+    Text,
+    /// A number, a date or a time, which may **not** be: any part of `2026-08-16` or `3,710.00 €`
+    /// is a different value (`2026-08-1` is the first of August), so one that does not fit is
+    /// drawn as `###` across its column — what LibreOffice and Excel draw, and the one spelling
+    /// nobody reads as a value. Widening the column (`:width`) shows it.
+    Number,
+}
+
+/// Pad or cut `text` to exactly `width` **terminal cells**, one trailing space as the column
 /// separator, with the text pushed to one side of what is left.
 ///
 /// Measured with `unicode-width` rather than `chars().count()`: a CJK ideograph is two cells and a
 /// combining mark is none, so counting characters would draw a column of Japanese one cell wider
-/// per character than the header above it. Truncation stops on a whole character and then pads,
-/// so a wide character never half-lands in the last cell.
-pub fn pad(text: &str, width: usize, align: Align) -> String {
+/// per character than the header above it. A cut stops on a whole character and then pads, so a
+/// wide character never half-lands in the last cell — and **says it is a cut**: text that does not
+/// fit ends in `…`, the other shells' own mark, and a number becomes `###` ([`Fit::Number`]).
+pub fn pad(text: &str, width: usize, align: Align, fit: Fit) -> String {
     let room = width.saturating_sub(1);
-    let mut kept = String::new();
-    let mut used = 0usize;
-    for c in text.chars() {
-        let w = c.width().unwrap_or(0);
-        if used + w > room {
-            break;
+    let needed = text.width();
+    let kept = match (needed <= room, fit) {
+        (true, _) => text.to_owned(),
+        (false, Fit::Number) => "#".repeat(room),
+        (false, Fit::Text) => {
+            // Leave a cell for the ellipsis, which is one cell wide.
+            let mut kept = String::new();
+            let mut used = 0usize;
+            for c in text.chars() {
+                let w = c.width().unwrap_or(0);
+                if used + w + 1 > room {
+                    break;
+                }
+                used += w;
+                kept.push(c);
+            }
+            if room > 0 {
+                kept.push('\u{2026}');
+            }
+            kept
         }
-        used += w;
-        kept.push(c);
-    }
-    let spare = room - used;
+    };
+    let spare = room.saturating_sub(kept.width());
     let (before, after) = match align {
         Align::Left => (0, spare),
         Align::Right => (spare, 0),
@@ -371,12 +396,42 @@ mod tests {
 
     #[test]
     fn a_number_sits_right_and_text_left_measured_in_cells() {
-        assert_eq!(pad("12", 6, Align::Right), "   12 ");
-        assert_eq!(pad("ab", 6, Align::Left), "ab    ");
-        assert_eq!(pad("ab", 7, Align::Centre), "  ab   ");
+        assert_eq!(pad("12", 6, Align::Right, Fit::Number), "   12 ");
+        assert_eq!(pad("ab", 6, Align::Left, Fit::Text), "ab    ");
+        assert_eq!(pad("ab", 7, Align::Centre, Fit::Text), "  ab   ");
         for align in [Align::Left, Align::Centre, Align::Right] {
-            assert_eq!(pad("overlong text", 6, align).width(), 6);
+            for fit in [Fit::Text, Fit::Number] {
+                assert_eq!(pad("overlong text", 6, align, fit).width(), 6);
+            }
         }
+    }
+
+    /// **The screenshot this answers**: a ten-cell column drew `2026-08-16` as `2026-08-1` and
+    /// `3,710.00 €` as `3,710.00` — a different date, and a different kind of number. A number
+    /// that does not fit is `###`, and text that does not fit says so with an ellipsis.
+    #[test]
+    fn a_cut_says_it_is_a_cut_and_a_number_is_never_cut() {
+        assert_eq!(
+            pad("2026-08-16", 10, Align::Right, Fit::Number),
+            "######### "
+        );
+        assert_eq!(
+            pad("3,710.00 €", 10, Align::Right, Fit::Number),
+            "######### "
+        );
+        assert_eq!(pad("612.34 €", 10, Align::Right, Fit::Number), " 612.34 € ");
+        assert_eq!(
+            pad("Groceries actual", 10, Align::Left, Fit::Text),
+            "Grocerie\u{2026} "
+        );
+        // Exactly full is not a cut.
+        assert_eq!(
+            pad("123456789", 10, Align::Right, Fit::Number),
+            "123456789 "
+        );
+        assert_eq!(pad("abcdefghi", 10, Align::Left, Fit::Text), "abcdefghi ");
+        // A column too narrow for anything still keeps its separator.
+        assert_eq!(pad("abc", 1, Align::Left, Fit::Text), " ");
     }
 
     /// The half of the old `ponytail` that was about *characters*: two ideographs are four cells,
@@ -384,14 +439,14 @@ mod tests {
     #[test]
     fn a_wide_character_takes_two_cells_of_its_column() {
         let text = "\u{4e16}\u{754c}\u{4e16}\u{754c}\u{4e16}";
-        let padded = pad(text, 10, Align::Left);
+        let padded = pad(text, 10, Align::Left, Fit::Text);
         assert_eq!(padded.width(), 10, "{padded:?}");
         assert_eq!(
             padded.chars().filter(|c| *c == '\u{4e16}').count(),
             2,
-            "four cells of ideograph fit in nine, not nine of them: {padded:?}"
+            "four ideographs and an ellipsis fit in nine cells, not nine ideographs: {padded:?}"
         );
         // And never half a character in the last cell.
-        assert_eq!(pad("\u{4e16}", 2, Align::Left).width(), 2);
+        assert_eq!(pad("\u{4e16}", 2, Align::Left, Fit::Text).width(), 2);
     }
 }

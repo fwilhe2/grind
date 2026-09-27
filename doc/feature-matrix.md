@@ -343,7 +343,7 @@ clipboard nor a register.
 key, no menu item. On Win32 the toggle exists in `text_emphasise` and nothing calls it with
 `Emphasis::Strike` or `::Code`. `grind-text-gtk`'s format bar has a Monospace toggle, which is
 the same thing under the name the document uses: `` `code` `` is a *family*, not a fifth boolean.
-ʰ Sixteen colours, nearest match; one font at one size, so a code run is *dimmed* instead.
+ʰ Sixteen colours, chosen to read on a light terminal and a dark one (`ui_tui/src/ink.rs`); one font at one size, so a code run is *dimmed* instead.
 ⁱ Both, and the size reaches the line's *height* as well as its width — `metrics::size_units` is
 one parse feeding the measuring attribute, `Metrics::line_height` and the drawing attribute, so a
 24pt word makes room for itself. A size in a unit with no resolution here (`5cm`) is left alone.

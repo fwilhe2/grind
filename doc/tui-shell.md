@@ -164,8 +164,9 @@ half does not depend on it**: a fenced block says `pre` in the gutter beside its
 is plain text every terminal draws.
 
 Sixteen colours, so a
-document's `#ff4136` is drawn as the nearest of them — `nearest_color` in
-`ui_tui/src/text/app.rs`, by squared distance in RGB.
+document's `#ff4136` is drawn as one of them — `ui_tui/src/ink.rs`, by the rule "The UX pass"
+below gives: a text colour as its hue family's member that reads on a light *and* a dark
+terminal, a fill as its nearest, and ODF's automatic ink on a fill.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here
 draws one.
 
@@ -239,6 +240,56 @@ one without a protocol the host may not speak, and vi's register is the conventi
 this shell already has. Markdown-while-typing costs two undo steps rather than one (an erase
 and a style), which is the honest price of not inventing a compound action for a shell's own
 convenience.
+
+## The UX pass — in a real terminal, light and dark
+
+The review the other three shells had, and the first time this one was looked at in a terminal
+rather than through `TestBackend`: `grind-tui` in an `xterm` on an Xvfb display, driven by
+synthetic key presses, at 80×24 and 120×36, on a white theme and a dark one. Every item below was a
+screenshot first. No capability moved.
+
+- **A document's colours read in either terminal** (`ink.rs`, shared by both halves). The other
+  shells know which ground they paint on; a terminal does not say, so this rule has to hold on
+  both. Navy text had become terminal *black* — invisible on every dark theme — and a heading row
+  filled silver kept a dark theme's light ink on a white fill. A text colour is now its hue
+  family's member among the seven named colours that clear a contrast of 2.5 on white *and* on a
+  dark ground (measured, and a test holds it); a grey, black or white of its own is the terminal's
+  own ink; a fill is its nearest named colour at xterm's values, so silver is a light-grey band
+  rather than a white one that erased it; and text with no colour of its own on a fill is ODF's
+  automatic ink over `grind_core::color`, the rule every other shell's `ink` applies.
+- **`:roles` erased every formula on a light terminal.** A computed cell was drawn `White`; it is
+  the terminal's own ink now, and no role may be a colour one of the two grounds erases (a test).
+  The code view's keywords and the error marks moved off blue and red for the same measurement.
+- **A number is never cut.** A ten-cell column drew `2026-08-16` as `2026-08-1` — the first of
+  August — and `3,710.00 €` as `3,710.00`. A number, date or time that does not fit is `###`, what
+  LibreOffice and Excel draw and the one spelling nobody reads as a value; text that does not fit
+  ends in `…`, the other shells' own mark (`sheet/geom.rs`, `Fit`). The honest cost, written down:
+  at this shell's ten cells to the inch a default column holds nine characters, so the sample
+  document shows five `###` that the windows draw in full — `:width` widens one.
+- **A tab is drawn.** It was measured as one cell and drawn as none, so `name⇥value` read
+  `namevalue` and every caret after it stood a column right of its character. It is four cells —
+  the browser's and the Windows pane's width — and drawn as four spaces (`text::TAB`).
+- **Typing has a visible insertion point.** The grid's formula line kept a caret it never drew,
+  so Left and Right moved something nobody could see, and the `:` line had none either. Both now
+  place the terminal's **own** cursor, as a bar — the shape an insertion point has in every editor
+  that tells one from a block — restored to the reader's own shape on the way out. The text pane
+  keeps its reversed caret, which was always visible.
+- **A selected row is one bar.** The outline, the problems pane and the code view each reversed
+  their spans one at a time, so a coloured address or token reversed into a block of its own
+  colour — a cyan block beside a black one, stopping where the text did. `pick::selected_row` is
+  the whole row, edge to edge, with the row's own colours set aside on it.
+- **A pane is titled with the file's name**, as the title bar is, rather than its whole path.
+
+What the pass left, and why:
+
+- **The mouse.** Decision 1 says a terminal has no pointer, and nearly every terminal in use sends
+  mouse events: a click to move the cursor and a wheel to scroll are what a reader tries first.
+  That is a change to a normative decision rather than a fix, so it is named here rather than made.
+- **Ten cells to the inch** is what makes the `###` above common; twelve would match what a window's
+  inch holds, at the price of one column fewer on an 80-column terminal. Also a decision.
+- **The terminal cursor as the focus point everywhere** — a screen magnifier or braille display
+  follows the hardware cursor, and in Normal mode this shell hides it and draws its own. Placing it
+  on the active cell and the text caret is the accessibility floor this pass stopped short of.
 
 ## How to see it
 

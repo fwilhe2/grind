@@ -102,6 +102,7 @@ impl Problems {
     /// asked for is what they are reading.
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, title: &str) {
         let height = usize::from(area.height).saturating_sub(2).max(1);
+        let inner = usize::from(area.width).saturating_sub(2);
         self.scroll = self.scroll.min(self.selected);
         if self.selected >= self.scroll + height {
             self.scroll = self.selected + 1 - height;
@@ -117,23 +118,31 @@ impl Problems {
         let end = (self.scroll + height).min(self.report.len());
         for index in self.scroll..end {
             let diagnostic = &self.report.diagnostics[index];
-            let mut style = Style::default().fg(colour(diagnostic.severity));
-            if index == self.selected {
-                style = style.add_modifier(Modifier::REVERSED);
-            }
             let at = match diagnostic.at.is_empty() {
                 true => String::new(),
                 false => format!("{} ", diagnostic.at),
             };
-            lines.push(Line::from(vec![
-                Span::styled(format!(" {} ", mark(diagnostic.severity)), style),
-                Span::styled(at, Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(diagnostic.message.clone()),
-                Span::styled(
-                    format!(" [{}]", diagnostic.rule),
-                    Style::default().add_modifier(Modifier::DIM),
+            let severity = format!(" {} ", mark(diagnostic.severity));
+            let rule = format!(" [{}]", diagnostic.rule);
+            // One bar across the pane for the selected row (`crate::pick::SELECTED`), with the
+            // row's own colours set aside on it — a reversed coloured span is a block of its colour.
+            lines.push(match index == self.selected {
+                true => crate::pick::selected_row(
+                    vec![
+                        Span::raw(severity),
+                        Span::raw(at),
+                        Span::raw(diagnostic.message.clone()),
+                        Span::raw(rule),
+                    ],
+                    inner,
                 ),
-            ]));
+                false => Line::from(vec![
+                    Span::styled(severity, Style::default().fg(colour(diagnostic.severity))),
+                    Span::styled(at, Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(diagnostic.message.clone()),
+                    Span::styled(rule, Style::default().add_modifier(Modifier::DIM)),
+                ]),
+            });
         }
 
         let footer = match self.report.is_empty() {
@@ -172,7 +181,7 @@ pub fn mark(severity: Severity) -> char {
 /// reader chose a palette and this is not the window that ignores it.
 fn colour(severity: Severity) -> Color {
     match severity {
-        Severity::Error => Color::Red,
+        Severity::Error => Color::LightRed,
         Severity::Warning => Color::Yellow,
         Severity::Hint => Color::Cyan,
     }
