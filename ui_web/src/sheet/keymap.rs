@@ -102,6 +102,9 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
             "r" | "R" => Some(Action::Run("edit.fill-right")),
             // The filter key both LibreOffice Calc and Excel use.
             "l" | "L" if chord.shift => Some(Action::Run("sheet.filter")),
+            // Replace's key in both other spreadsheets. Ctrl+F is not here: it opens the
+            // palette, which `lib.rs` catches before any pane sees a key.
+            "h" | "H" => Some(Action::Run("edit.replace")),
             "Home" => Some(Action::Move {
                 motion: Motion::SheetStart,
                 extend: chord.shift,
@@ -136,6 +139,8 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
         "End" => motion(Motion::RowEnd),
         "F2" => Some(Action::Begin(None)),
         "F9" => Some(Action::Run("sheet.recalc")),
+        "F3" if chord.shift => Some(Action::Run("edit.find-previous")),
+        "F3" => Some(Action::Run("edit.find-next")),
         "Delete" | "Backspace" => Some(Action::Run("edit.clear")),
         // A printable key starts an edit and *is* its first character. The browser
         // spells every named key with more than one character, which is exactly the
@@ -242,6 +247,28 @@ mod tests {
         for key in ["Shift", "CapsLock", "F5", "ArrowLeftFake"] {
             assert_eq!(action_for(&plain(key), false), None, "{key}");
         }
+    }
+
+    #[test]
+    fn f3_steps_through_the_last_find_and_ctrl_h_replaces() {
+        assert_eq!(
+            action_for(&plain("F3"), false),
+            Some(Action::Run("edit.find-next"))
+        );
+        let back = Chord {
+            shift: true,
+            ..plain("F3")
+        };
+        assert_eq!(
+            action_for(&back, false),
+            Some(Action::Run("edit.find-previous"))
+        );
+        assert_eq!(
+            action_for(&primary("h"), false),
+            Some(Action::Run("edit.replace"))
+        );
+        // While editing, F3 is the input's business, like every other key.
+        assert_eq!(action_for(&plain("F3"), true), None);
     }
 
     #[test]

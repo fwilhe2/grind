@@ -76,6 +76,7 @@ because a page has no icon theme to ask.
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
 | View modes | Ctrl+K → *Show what each cell is* / *Show where names live*: `doc/view-modes.md`'s two overlays, as one attribute per cell and no extra elements | Ctrl+K → *Show where bookmarks are* (§3.6) |
 | Code view | Ctrl+K → *Show the source*: `doc/dsl.md` §6's read-only projection, one `<div>` per line, a class per `TokenKind`, the selection's own line drawn as current and clicking a line selecting what it projects | the same |
+| Find and replace | **the palette is the find box**: two or more characters list the cells holding them *after* the verbs (so `bold` still puts *Bold* first), picking one goes there, and **F3** / **Shift+F3** step on through the rest across every sheet, wrapping. **Ctrl+F** opens the same palette, since the browser's own find sees only the cells on screen. **Ctrl+H** is *Replace in every cell…* — two prompts, then `App::replace` in one undo step, with the count and any formula it left alone in the message line | — |
 | Problems | Ctrl+K → *Check the document*: `grind lint`'s findings, one row each, clicking one goes where it points | the same pane, the same rows |
 | Assertable output | `ui_web/smoke.js` — the real wasm module against the real page, in jsdom, no browser | the same |
 
@@ -121,7 +122,9 @@ the two gaps this line used to name.
 it is not the conditional-formatting gap the next sentence names. No conditional formatting
 UI. **CSV is built both ways** and carries the same named gap every other window does: no
 dialog for an import's seven options, so a file that needs `--text`, a locale or a delimiter
-the sniffer got wrong is `grind sheet import-csv`'s (R9). No find/replace. No freeze panes, no
+the sniffer got wrong is `grind sheet import-csv`'s (R9). Find and replace carry the options
+the CLI names but no control for them — match case, whole cell, one sheet, a range — so those
+are `grind sheet find`/`replace`'s, and nothing marks every hit in the grid at once. No freeze panes, no
 zoom. A chart is a picture:
 it cannot be created, edited, moved or recoloured from this shell, which the GTK window can do
 and `grind sheet chart-*` can do everywhere.

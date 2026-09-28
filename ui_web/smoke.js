@@ -512,6 +512,44 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("the address box goes where it is told", byId("address").value, "B2");
 
+  // --- find and replace (`grind_sheet::find`) --------------------------------
+  //
+  // The palette is the find box: a word lists the cells holding it after the verbs, F3 steps
+  // on from there, and Ctrl+H asks twice and replaces in every cell as one undo step.
+  await enter("apples");
+  await enter("Apples pie");
+  palette("f", { ctrlKey: true });
+  check("Ctrl+F opens the palette over a sheet", byId("palette").hidden, false);
+  paletteType("apples");
+  const holding = paletteRows().filter((row) => row.startsWith("Opened.B"));
+  check("it lists the cells holding the word, whatever their case", holding.length, 2);
+  check("in reading order", holding[0].startsWith("Opened.B2"), true);
+  paletteEnter();
+  await frame();
+  check("picking one goes there", byId("address").value, "B2");
+  check("and says where it is among them", byId("message").textContent.startsWith("1 of 2"), true);
+  press("F3");
+  await frame();
+  check("F3 steps on", byId("address").value, "B3");
+  press("F3");
+  await frame();
+  check("and wraps", byId("address").value, "B2");
+  press("F3", { shiftKey: true });
+  await frame();
+  check("Shift+F3 steps back, wrapping too", byId("address").value, "B3");
+
+  const answers = ["apples", "Pears"];
+  const realPrompt = dom.window.prompt;
+  dom.window.prompt = () => answers.shift();
+  press("h", { ctrlKey: true });
+  await frame();
+  dom.window.prompt = realPrompt;
+  check("Ctrl+H replaces in every cell", shown(), "Pears pie");
+  check("and says how many", byId("message").textContent.startsWith("Replaced in 2 cells"), true);
+  press("z", { ctrlKey: true });
+  await frame();
+  check("one Ctrl+Z takes the whole replace back", shown(), "Apples pie");
+
   // --- formatting -----------------------------------------------------------
   //
   // The toolbar and the palette run the same command id, so this checks both.

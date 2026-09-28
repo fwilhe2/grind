@@ -22,8 +22,8 @@
 //! away again when it is done — so it adds nothing to the chrome that stays on screen.
 //!
 //! The hits are asked for again at every step rather than kept, because the document may have
-//! been edited between two presses of Enter. [`step`] is the part that decides which hit is
-//! next, and it is pure.
+//! been edited between two presses of Enter. Which hit is next is `grind_sheet::find::step`,
+//! shared with the browser's F3.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,7 +32,7 @@ use std::sync::Arc;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use grind_sheet::find::Search;
+use grind_sheet::find::{Search, Towards, step};
 use grind_sheet::{App, Pos, RecalcMode};
 use gtk::glib;
 
@@ -41,33 +41,6 @@ use crate::keymap::Selection;
 
 /// A cell, in the order the core reports hits: sheet, then row, then column.
 pub type Place = (usize, Pos);
-
-/// Which way a step goes: `Here` is "the first hit at or after where I am", which is what
-/// typing into the entry wants — the hit under the cursor stays selected as the needle grows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Towards {
-    Here,
-    Next,
-    Previous,
-}
-
-/// Which of `hits` (in reading order) a step from `at` lands on, wrapping at either end.
-/// `None` only when there are none.
-pub fn step(hits: &[Place], at: Place, towards: Towards) -> Option<usize> {
-    let key = |(sheet, pos): Place| (sheet, pos.row, pos.col);
-    let at = key(at);
-    if hits.is_empty() {
-        return None;
-    }
-    Some(match towards {
-        Towards::Here => hits.iter().position(|hit| key(*hit) >= at).unwrap_or(0),
-        Towards::Next => hits.iter().position(|hit| key(*hit) > at).unwrap_or(0),
-        Towards::Previous => hits
-            .iter()
-            .rposition(|hit| key(*hit) < at)
-            .unwrap_or(hits.len() - 1),
-    })
-}
 
 /// What a replace tells the window, which owns the toasts.
 pub type Said = Box<dyn Fn(&str)>;
@@ -505,37 +478,5 @@ mod tests {
 
         find.search("nowhere");
         assert_eq!(find.count(), "No results");
-    }
-
-    #[test]
-    fn a_step_walks_the_sheets_in_reading_order_and_wraps() {
-        let hits = [at(0, 0, 3), at(0, 2, 0), at(1, 0, 0)];
-        assert_eq!(step(&hits, at(0, 0, 0), Towards::Here), Some(0));
-        assert_eq!(
-            step(&hits, at(0, 2, 0), Towards::Here),
-            Some(1),
-            "typing keeps the hit already under the cursor"
-        );
-        assert_eq!(
-            step(&hits, at(0, 2, 0), Towards::Next),
-            Some(2),
-            "onto sheet two"
-        );
-        assert_eq!(
-            step(&hits, at(1, 0, 0), Towards::Next),
-            Some(0),
-            "wraps forward"
-        );
-        assert_eq!(
-            step(&hits, at(0, 0, 3), Towards::Previous),
-            Some(2),
-            "wraps back"
-        );
-        assert_eq!(
-            step(&hits, at(0, 1, 9), Towards::Previous),
-            Some(0),
-            "a row before is before, whatever its column"
-        );
-        assert_eq!(step(&[], at(0, 0, 0), Towards::Next), None);
     }
 }

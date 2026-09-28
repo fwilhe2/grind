@@ -104,6 +104,37 @@ impl Search {
     }
 }
 
+/// Which way a step through the hits goes. `Here` is "the first hit at or after where I am",
+/// which is what typing a needle wants — the hit under the cursor stays put as the needle
+/// grows; `Next` and `Previous` are Enter and Shift+Enter, F3 and Shift+F3, `n` and `N`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Towards {
+    Here,
+    Next,
+    Previous,
+}
+
+/// Which of `hits` a step from `at` lands on, wrapping at either end — `None` only when there
+/// are none. `hits` is `(sheet, cell)` in the order [`crate::App::find`] reports them.
+///
+/// Here rather than in a shell because two find bars asked it, and "where does Shift+Enter
+/// go from a cell that is not a hit" is a question a second copy answers differently.
+pub fn step(hits: &[(usize, Pos)], at: (usize, Pos), towards: Towards) -> Option<usize> {
+    let key = |(sheet, pos): (usize, Pos)| (sheet, pos.row, pos.col);
+    let at = key(at);
+    if hits.is_empty() {
+        return None;
+    }
+    Some(match towards {
+        Towards::Here => hits.iter().position(|hit| key(*hit) >= at).unwrap_or(0),
+        Towards::Next => hits.iter().position(|hit| key(*hit) > at).unwrap_or(0),
+        Towards::Previous => hits
+            .iter()
+            .rposition(|hit| key(*hit) < at)
+            .unwrap_or(hits.len() - 1),
+    })
+}
+
 /// One cell a [`Search`] matched.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hit {
@@ -175,6 +206,39 @@ mod tests {
             search("été").replaced(text, "hiver").as_deref(),
             Some("Café hiver")
         );
+    }
+
+    #[test]
+    fn a_step_walks_the_sheets_in_reading_order_and_wraps() {
+        let at = |sheet, row, col| (sheet, Pos::new(row, col));
+        let hits = [at(0, 0, 3), at(0, 2, 0), at(1, 0, 0)];
+        assert_eq!(step(&hits, at(0, 0, 0), Towards::Here), Some(0));
+        assert_eq!(
+            step(&hits, at(0, 2, 0), Towards::Here),
+            Some(1),
+            "typing keeps the hit already under the cursor"
+        );
+        assert_eq!(
+            step(&hits, at(0, 2, 0), Towards::Next),
+            Some(2),
+            "onto sheet two"
+        );
+        assert_eq!(
+            step(&hits, at(1, 0, 0), Towards::Next),
+            Some(0),
+            "wraps forward"
+        );
+        assert_eq!(
+            step(&hits, at(0, 0, 3), Towards::Previous),
+            Some(2),
+            "wraps back"
+        );
+        assert_eq!(
+            step(&hits, at(0, 1, 9), Towards::Previous),
+            Some(0),
+            "a row before is before, whatever its column"
+        );
+        assert_eq!(step(&[], at(0, 0, 0), Towards::Next), None);
     }
 
     #[test]

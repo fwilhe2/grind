@@ -100,6 +100,23 @@ pub const SHEET: &[Command] = &[
         "Ctrl+A",
         false,
     ),
+    // Finding is the palette itself — type a word and the cells holding it are listed after
+    // the verbs — so these are the two steps after that and the one verb that writes.
+    cmd("edit.find-next", "Find next", "Edit", "F3", false),
+    cmd(
+        "edit.find-previous",
+        "Find previous",
+        "Edit",
+        "Shift+F3",
+        false,
+    ),
+    cmd(
+        "edit.replace",
+        "Replace in every cell…",
+        "Edit",
+        "Ctrl+H",
+        false,
+    ),
     // --- how it looks ---
     cmd("style.bold", "Bold", "Format", "Ctrl+B", true),
     cmd("style.italic", "Italic", "Format", "Ctrl+I", true),

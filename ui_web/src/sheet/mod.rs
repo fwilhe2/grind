@@ -27,6 +27,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use grind_sheet::find::{self, Search, Towards};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
@@ -188,6 +189,9 @@ pub struct Ui {
     /// it, so turning one off puts the page back exactly.
     overlays: Cell<grind_sheet::view::Overlays>,
     message: RefCell<String>,
+    /// The word the last cell picked from the palette was found by — what F3 and Shift+F3
+    /// step through, and what *Replace in every cell…* offers to replace.
+    needle: RefCell<String>,
     /// Which field the autofilter's popover is open for, when it is open (`filter_ui.rs`).
     /// `None` *is* "closed" — one fact rather than two that can disagree.
     filter_field: Cell<Option<u32>>,
@@ -217,6 +221,7 @@ impl Ui {
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             message: RefCell::new(String::new()),
+            needle: RefCell::new(String::new()),
             filter_field: Cell::new(None),
             filter_checks: RefCell::new(Vec::new()),
         });
@@ -716,13 +721,18 @@ impl Ui {
             "format.more" => self.step_decimals(1),
             "format.fewer" => self.step_decimals(-1),
 
+            "edit.find-next" => self.find_step(Towards::Next),
+            "edit.find-previous" => self.find_step(Towards::Previous),
+            "edit.replace" => self.replace(),
+
             "sheet.add" => self.add_sheet(),
             "sheet.rename" => self.rename_sheet(),
             "sheet.delete" => self.delete_sheet(),
 
-            id => match id.strip_prefix("goto:") {
-                Some(where_) => self.go_to(where_),
-                None => self.set_message(format!("No such command: {id}")),
+            id => match (id.strip_prefix("goto:"), id.strip_prefix("find:")) {
+                (Some(where_), _) => self.go_to(where_),
+                (_, Some(found)) => self.pick_found(found),
+                _ => self.set_message(format!("No such command: {id}")),
             },
         }
     }
@@ -773,6 +783,145 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- find and replace (`grind_sheet::find`) ---
+
+    /// What the palette offers *after* the verbs for a query: the cells holding it.
+    ///
+    /// After, not before like [`Ui::targets`] — a word somebody types is far more often a verb
+    /// than a cell's contents, and `bold` must still put *Bold* first however many cells say
+    /// "bold". Two characters at least, since one letter is in half the sheet. Each row is a
+    /// cell; when there are more than fit, the last row is all of them, stepped through with F3.
+    ///
+    /// This is the browser's whole find UI, and it is the palette's go-to rule applied once
+    /// more: **one box** rather than a find bar, which this page has no surface for. It is also
+    /// why Ctrl+F opens that box — the browser's own find can only see the cells on screen.
+    pub fn found(&self, query: &str) -> Vec<Entry> {
+        const SHOWN: usize = 5;
+        let query = query.trim();
+        if query.chars().count() < 2 {
+            return Vec::new();
+        }
+        let Ok(hits) = self.app.find(&Search::new(query)) else {
+            return Vec::new();
+        };
+        let mut out: Vec<Entry> = hits
+            .iter()
+            .take(SHOWN)
+            .map(|hit| {
+                let text: String = hit.text.chars().take(60).collect();
+                Entry::target(
+                    format!("find:{}\n{query}", hit.address()),
+                    format!("{} — {text}", hit.address()),
+                    "Cell",
+                )
+            })
+            .collect();
+        if hits.len() > SHOWN {
+            out.push(Entry::target(
+                format!("find:\n{query}"),
+                format!(
+                    "All {} cells holding “{query}” — F3 steps through them",
+                    hits.len()
+                ),
+                "Find",
+            ));
+        }
+        out
+    }
+
+    /// A cell picked from [`Ui::found`]: go there and remember the word, so F3 carries on.
+    /// No address means "the first hit from here", which is the *All N cells* row.
+    fn pick_found(&self, found: &str) {
+        let Some((address, needle)) = found.split_once('\n') else {
+            return;
+        };
+        *self.needle.borrow_mut() = needle.to_owned();
+        if address.is_empty() {
+            self.find_step(Towards::Here);
+        } else {
+            self.go_to(address);
+            self.say_where();
+        }
+    }
+
+    /// F3 and Shift+F3: the next or previous cell holding the remembered word, across every
+    /// sheet, wrapping at either end. The hits are asked for again each time, since the
+    /// document may have changed since the last press.
+    fn find_step(&self, towards: Towards) {
+        let needle = self.needle.borrow().clone();
+        if needle.is_empty() {
+            return self.set_message("Nothing to find yet — Ctrl+F, then type".to_owned());
+        }
+        let hits = self.hits(&needle);
+        let here = (self.sheet.get(), self.selection.get().active);
+        let Some(index) = find::step(&hits, here, towards) else {
+            return self.set_message(format!("No cell holds “{needle}”"));
+        };
+        let (sheet, pos) = hits[index];
+        if sheet != self.sheet.get() {
+            self.sheet.set(sheet);
+            self.scroll.set(Pos::new(0, 0));
+        }
+        self.set_selection(Selection::at(pos));
+        let _ = self.dom.surface.focus();
+        self.set_message(format!(
+            "{} of {} · F3 next, Shift+F3 previous",
+            index + 1,
+            hits.len()
+        ));
+    }
+
+    /// "3 of 7" for the cell the selection is on, after a jump that was not a step.
+    fn say_where(&self) {
+        let needle = self.needle.borrow().clone();
+        let hits = self.hits(&needle);
+        let here = (self.sheet.get(), self.selection.get().active);
+        if let Some(index) = hits.iter().position(|hit| *hit == here) {
+            self.set_message(format!(
+                "{} of {} · F3 next, Shift+F3 previous",
+                index + 1,
+                hits.len()
+            ));
+        }
+    }
+
+    fn hits(&self, needle: &str) -> Vec<(usize, Pos)> {
+        self.app
+            .find(&Search::new(needle))
+            .map(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect())
+            .unwrap_or_default()
+    }
+
+    /// *Replace in every cell…* — two questions, then `App::replace` over every sheet in one
+    /// undo step. Prompts rather than a form, the way *Rename this sheet…* already asks: this
+    /// page has no dialog surface, and a replace is two words.
+    fn replace(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let offered = self.needle.borrow().clone();
+        let Ok(Some(what)) = window.prompt_with_message_and_default("Replace what?", &offered)
+        else {
+            return;
+        };
+        if what.is_empty() {
+            return;
+        }
+        let Ok(Some(with)) =
+            window.prompt_with_message_and_default(&format!("Replace “{what}” with"), "")
+        else {
+            return;
+        };
+        *self.needle.borrow_mut() = what.clone();
+        match self
+            .app
+            .replace(&Search::new(what.as_str()), &with, RecalcMode::Document)
+        {
+            Ok(done) => self.set_message(replaced(&what, &done)),
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     // --- the code view (doc/dsl.md §6, D9) ---
@@ -1787,6 +1936,32 @@ impl Ui {
     }
 }
 
+/// What a replace says in the message line — pure, so it is tested on the host.
+fn replaced(what: &str, done: &find::Replaced) -> String {
+    let mut said = match done.cells {
+        0 if done.refused.is_empty() => format!("No cell holds “{what}”"),
+        0 => "Nothing replaced".to_owned(),
+        1 => "Replaced in 1 cell — Ctrl+Z takes it back".to_owned(),
+        n => format!("Replaced in {n} cells — Ctrl+Z takes them back"),
+    };
+    if let Some((hit, _)) = done.refused.first() {
+        said.push_str(&match done.refused.len() {
+            1 => format!(
+                "; {} was left alone, since its formula would not parse",
+                hit.address()
+            ),
+            n => format!(
+                "; {n} formulas were left alone, since they would not parse (first {})",
+                hit.address()
+            ),
+        });
+    }
+    if done.recalc.is_some_and(|recalc| recalc.spoiled > 0) {
+        said.push_str(" — not recalculated, since that would spoil a saved value");
+    }
+    said
+}
+
 /// The border this shell draws when asked for one.
 ///
 /// LibreOffice's own hairline, in the three-part form ODF stores (`doc/ods-format.md` §5.4) —
@@ -2190,6 +2365,35 @@ fn hash_overflowing(cells: &[web_sys::Element]) -> Result<(), JsValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The message line after a replace, over a real `App` — the one piece of the browser's
+    /// find that is this shell's own words rather than the core's answer.
+    #[test]
+    fn a_replace_says_how_many_cells_and_which_it_left_alone() {
+        let app = App::new();
+        for (row, input) in ["Apples", "apples pie", "=SUM([.A9])"].iter().enumerate() {
+            app.enter(0, Pos::new(row as u32, 0), input, RecalcMode::No)
+                .expect("enters");
+        }
+        let done = app
+            .replace(&Search::new("apples"), "Pears", RecalcMode::No)
+            .expect("replaces");
+        assert_eq!(
+            replaced("apples", &done),
+            "Replaced in 2 cells — Ctrl+Z takes them back"
+        );
+        let done = app
+            .replace(&Search::new("SUM("), "SUM", RecalcMode::No)
+            .expect("replaces");
+        assert_eq!(
+            replaced("SUM(", &done),
+            "Nothing replaced; Sheet1.A3 was left alone, since its formula would not parse"
+        );
+        let done = app
+            .replace(&Search::new("nowhere"), "x", RecalcMode::No)
+            .expect("replaces");
+        assert_eq!(replaced("nowhere", &done), "No cell holds “nowhere”");
+    }
 
     #[test]
     fn a_selection_is_a_rectangle_whichever_way_it_was_dragged() {

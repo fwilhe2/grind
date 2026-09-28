@@ -420,6 +420,10 @@ impl Shell {
             Mode::Welcome => (command::WELCOME, Vec::new()),
         };
         entries.extend(command::filter(table, query));
+        // The cells holding the query, *after* the verbs (`sheet::Ui::found` says why).
+        if self.mode.get() == Mode::Sheet {
+            entries.extend(self.sheet.found(query));
+        }
         entries
     }
 
@@ -1239,6 +1243,14 @@ fn wire_palette(shell: &Rc<Shell>) -> Result<(), JsValue> {
     let listener = Closure::wrap(Box::new(move |event: KeyboardEvent| {
         let primary = event.ctrl_key() || event.meta_key();
         match event.key().as_str() {
+            // Ctrl+F is the palette too, over a spreadsheet: typing a word there lists the cells
+            // holding it (`sheet::Ui::found`), where the browser's own find would only ever
+            // see the cells that happen to be on screen.
+            "f" | "F" if primary && keys.mode.get() == Mode::Sheet && !keys.palette.is_open() => {
+                event.prevent_default();
+                event.stop_propagation();
+                keys.open_palette();
+            }
             "k" | "K" if primary => {
                 event.prevent_default();
                 event.stop_propagation();
