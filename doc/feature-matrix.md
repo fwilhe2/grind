@@ -140,8 +140,8 @@ than as a cursor on a hidden row.
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ |
 | Every calculated cell, searchable | ● | ● | ○ | ○ | ○ |
-| Find over cells | ● | ○ | ● ᶠ | ○ | ○ |
-| Replace over cells | ● | ○ | ● ᶠ | ○ | ○ |
+| Find over cells | ● | ● ᵍ | ● ᶠ | ○ | ○ |
+| Replace over cells | ● | ● ᵍ | ● ᶠ | ○ | ○ |
 
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
@@ -158,6 +158,9 @@ ISO, as a script reads a number (`doc/cli-parity-sheet.md`).
 half's own spelling — for replace. Both are `App::find`/`App::replace` (`grind_sheet::find`),
 which search each cell's *input text* and send a replaced cell back through the typing rule, so
 the terminal and `grind sheet find`/`replace` cannot disagree about what a match is.
+ᵍ A find bar, Ctrl+F and Ctrl+H (`ui_sheet_gtk/src/find.rs`), over the same two calls —
+*Replace* is `App::replace` narrowed to one cell by `Search::range`, which `--in` reaches from
+the CLI. It does not mark every hit in the grid, as the terminal does.
 
 ## 5. Spreadsheet — formatting
 
@@ -432,9 +435,9 @@ of a client's own job is missing.
 11. **Find and replace are a CLI-and-terminal pair, over cells and over text alike.** The core
     half over cells is **closed** (2026-09-28): `App::find` and `App::replace` exist for the
     spreadsheet now (`grind_sheet::find`), reached as `grind sheet find`/`replace` and as
-    `grind-tui`'s `:find` and `:s/old/new/`, so what was the one row where the gap was the
-    *core's* is an ordinary client gap again — the GNOME window, the browser and the Windows
-    grid each owe a find bar over a method that exists. Over *text*, find and replace exist on
+    `grind-tui`'s `:find` and `:s/old/new/`, and **the GNOME window's find bar** (Ctrl+F /
+    Ctrl+H), so what was the one row where the gap was the *core's* is an ordinary client gap
+    again — the browser and the Windows grid each owe a find bar over a method that exists. Over *text*, find and replace exist on
     the CLI and in the terminal, and find in `grind-text-gtk`.
 12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
     it is a decision about `grind_text::Action` rather than about the CLI.

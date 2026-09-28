@@ -89,6 +89,40 @@ fn case_whole_cell_and_one_sheet_narrow_it() {
 }
 
 #[test]
+fn a_range_narrows_it_to_a_rectangle_and_replace_to_one_cell() {
+    let app = book();
+    let column_b = Search {
+        range: Some((p("B1"), p("B9"))),
+        ..Search::new("3")
+    };
+    assert_eq!(addresses(&app, &column_b), ["Sheet1.B1"]);
+
+    // One cell is a range with both corners on it — what a find bar's Replace button is.
+    let one = Search {
+        sheet: Some(1),
+        range: Some((p("A1"), p("A1"))),
+        ..Search::new("apples")
+    };
+    let done = app.replace(&one, "Plums", RecalcMode::No).unwrap();
+    assert_eq!(done.cells, 1);
+    assert_eq!(
+        app.get(0, p("A1")).unwrap(),
+        CellValue::Text("Apples".into())
+    );
+    assert_eq!(
+        app.get(1, p("A1")).unwrap(),
+        CellValue::Text("Plums are red".into())
+    );
+
+    // A range past the end of the sheet walks nothing that is not there.
+    let far = Search {
+        range: Some((p("Z100"), p("ZZ9999"))),
+        ..Search::new("a")
+    };
+    assert!(app.find(&far).unwrap().is_empty());
+}
+
+#[test]
 fn an_empty_needle_finds_and_replaces_nothing() {
     let app = book();
     assert!(app.find(&Search::new("")).unwrap().is_empty());

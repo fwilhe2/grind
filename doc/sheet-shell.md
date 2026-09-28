@@ -587,8 +587,9 @@ Stated as one sentence, which is the sentence to hold this window to:
   `Filter Rows` is. See `sheet/src/table_format.rs`.
 - **Sheet tab context menu** (`chrome::tab_menu_model`): Rename… · Delete, on the tab, which is
   the only spelling that says *which* sheet.
-- **Primary menu**: the four file verbs, the four things done to a document as a whole
-  (Recalculate, Check the Document, Find a Calculation…, Names…, Document Settings…), and Find a Command ·
+- **Primary menu**: the four file verbs, the things done to a document as a whole
+  (Find and Replace…, Recalculate, Check the Document, Find a Calculation…, Names…, Document
+  Settings…), and Find a Command ·
   Keyboard Shortcuts · About. **Nothing about the selection**, which is the HIG's own rule for
   a primary menu and the thing that finally sizes it.
 - **Command palette**: Ctrl+K, the search button, or the menu. Type three letters, Enter.
@@ -711,6 +712,25 @@ default here as everywhere. A dialog rather than a docked panel for `Calculation
 list is consulted, acted on and closed, and `lint.rs` says so. **Nothing about the rules is in
 this shell** — a diagnostic arrives with its own address, and jumping to one is `a1`'s job.
 
+**Find and replace** — Ctrl+F, or Ctrl+H with the replace row already open (`find.rs`). A
+`gtk::SearchBar` under the formula bar, the word processor's shape: it searches every sheet as
+it is typed, "2 of 7", Enter and Shift+Enter walking the hits in reading order and wrapping,
+Escape handing the keyboard back to the grid with the hit still selected. *Aa* and *Whole Cell*
+are `--match-case` and `--whole-cell`. *Replace* changes the cell under the cursor and steps on;
+*Replace All* is every sheet in one undo step, announced with an Undo toast. **Nothing about
+matching is in this shell**: every question is `App::find` and every write `App::replace`, and
+*Replace* is that same call narrowed to one cell by `Search::range` — which is why the core grew
+a range rather than this file growing a second copy of "a replaced formula that will not parse
+is left alone". It is none of the four surfaces below: it is transient, opened by a verb in the
+table and gone again when it is done. Not built: marking *every* hit in the grid the way
+`grind-tui` does (the grid has no layer for it yet), and replacing only inside a selection
+(`--in` has it; the bar has no control for it).
+
+Building it found a bug older than it: **the tab strip did not follow a jump to another
+sheet.** `Grid::set_sheet` changes no document, so the observer that rebuilds the strip never
+heard of it, and a lint finding or a calculation-explorer row on another sheet left the old tab
+pressed. `chrome::Tabs` now listens to the grid's selection signal, which `set_sheet` fires.
+
 It also carries the one bug this window has had since M10, written down because the shape of it
 recurs: **a handler that runs because the cursor moved must not move the cursor.** Marking the
 current line by placing the cursor on it made GTK deliver `notify::cursor-position` again — not
@@ -739,7 +759,8 @@ default is not 10pt · **moving over a filtered-out or manually hidden row**: th
 step onto a row that has no height, so the selection appears to stick until it passes the
 run (`keymap.rs` is pure and knows nothing about the document, so skipping them means
 handing it the hidden set — worth doing the first time it annoys somebody, not before).
-Sort, find/replace and print keep their existing not-doing rows and gates; **CSV left that
+Sort and print keep their existing not-doing rows and gates, and **find/replace left that
+list** (above); **CSV left that
 list** and has its own section below. The chart's
 own gaps moved again: creating one from the GUI — now from a dialog built around a live
 preview, which reads the table the way `chart-add --from` does and puts the chart beside it —

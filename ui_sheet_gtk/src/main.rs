@@ -27,6 +27,7 @@ mod chart_dialog;
 mod chrome;
 mod code;
 mod filter_ui;
+mod find;
 mod formatting;
 mod formula_ux;
 mod geom;
@@ -178,6 +179,8 @@ struct Ui {
     tabs: Rc<chrome::Tabs>,
     strip: Rc<formatting::Strip>,
     formula_bar: Rc<chrome::FormulaBar>,
+    /// Ctrl+F and Ctrl+H (`find.rs`).
+    find: Rc<find::Find>,
     undo: gtk::Button,
     redo: gtk::Button,
     path: RefCell<Option<PathBuf>>,
@@ -277,6 +280,10 @@ impl Ui {
         view.add_top_bar(&chrome::format_bar(&strip.widget));
         let formula_bar = chrome::formula_bar(&grid, app, true);
         view.add_top_bar(&formula_bar.widget);
+        // Under the formula bar, so the bar that shows a found cell's formula is directly
+        // above the one that found it. Hidden until Ctrl+F: it is not a fifth surface.
+        let find = find::Find::new(app, &grid);
+        view.add_top_bar(&find.bar);
         view.add_top_bar(&banner);
         view.add_bottom_bar(&chrome::bottom_bar(
             &tabs.widget,
@@ -307,6 +314,7 @@ impl Ui {
             tabs,
             strip,
             formula_bar,
+            find,
             undo,
             redo,
             path: RefCell::new(path),
@@ -343,6 +351,15 @@ impl Ui {
                 }
             }
         ));
+
+        // A finished replace is announced with an Undo button, the window's own toast for
+        // an edit that touched more than the cell in front of somebody.
+        let weak = Rc::downgrade(self);
+        self.find.connect_said(move |text| {
+            if let Some(ui) = weak.upgrade() {
+                ui.undoable_toast(text);
+            }
+        });
 
         self.grid.connect_notice(glib::clone!(
             #[strong(rename_to = ui)]
@@ -1803,6 +1820,18 @@ fn actions() -> Vec<Verb> {
         verb("lint", &["F8"], "Check the Document", "Document", |ui| {
             lint::present(&ui.window, &ui.app, &ui.grid)
         }),
+        // Ctrl+F and Ctrl+H, the two keys every spreadsheet gives them — Ctrl+H is the same
+        // bar with its replace row already open, not a second dialog.
+        verb("find", &["<Control>f"], "Find…", "Document", |ui| {
+            ui.find.open(false)
+        }),
+        verb(
+            "find-replace",
+            &["<Control>h"],
+            "Find and Replace…",
+            "Document",
+            |ui| ui.find.open(true),
+        ),
         verb(
             "calculations",
             &["<Control><Shift>f"],
@@ -1959,6 +1988,7 @@ fn primary_menu() -> gio::Menu {
     menu.append_section(None, &interchange);
 
     let document = gio::Menu::new();
+    document.append(Some("Find and Replace…"), Some("win.find-replace"));
     document.append(Some("Recalculate"), Some("win.recalc"));
     document.append(Some("Check the Document"), Some("win.lint"));
     document.append(Some("Find a Calculation…"), Some("win.calculations"));

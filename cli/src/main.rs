@@ -3516,18 +3516,37 @@ struct SearchArgs {
     /// Only this sheet; defaults to every sheet
     #[arg(long)]
     sheet: Option<String>,
+    /// Only the cells in this range, e.g. B2:D40 or Notes.A1:A9 — a sheet named in it
+    /// narrows the search to that sheet as well
+    #[arg(long = "in", value_name = "RANGE")]
+    within: Option<String>,
 }
 
 impl SearchArgs {
     fn resolve(&self, app: &App, needle: &str) -> Result<grind_sheet::find::Search, String> {
+        let mut sheet = match &self.sheet {
+            Some(name) => Some(a1::sheet(app, name).say()?),
+            None => None,
+        };
+        let mut range = None;
+        if let Some(within) = &self.within {
+            let reference = a1::parse(within).say()?;
+            let (on, start, end) = a1::resolve(app, &reference).say()?;
+            // An unqualified range is on every sheet searched; a qualified one names its own.
+            if reference.start.sheet.is_some() {
+                if sheet.is_some_and(|sheet| sheet != on) {
+                    return Err(format!("{within} is not on the sheet --sheet names"));
+                }
+                sheet = Some(on);
+            }
+            range = Some((start, end));
+        }
         Ok(grind_sheet::find::Search {
             needle: needle.to_owned(),
             match_case: self.match_case,
             whole_cell: self.whole_cell,
-            sheet: match &self.sheet {
-                Some(name) => Some(a1::sheet(app, name).say()?),
-                None => None,
-            },
+            sheet,
+            range,
         })
     }
 }

@@ -31,6 +31,10 @@ pub struct Search {
     pub whole_cell: bool,
     /// One sheet, or `None` for every sheet in the document.
     pub sheet: Option<usize>,
+    /// Only the cells inside this rectangle, both corners included, on whichever sheets are
+    /// searched — how a find bar replaces the one cell it is on, and how a replace stays
+    /// inside a selection. `None` is the whole of each sheet.
+    pub range: Option<(Pos, Pos)>,
 }
 
 impl Search {

@@ -817,7 +817,36 @@ impl Tabs {
             rebuilding: Rc::new(Cell::new(false)),
         });
         tabs.refresh();
+        // Follow the grid when something *else* changes its sheet — a find bar's hit, a lint
+        // finding, a row in the calculation explorer. `set_sheet` changes no document, so the
+        // observer that rebuilds this strip never hears of it, and the tab would go on
+        // highlighting the sheet that is no longer in front. It does reset the selection,
+        // which is the signal this listens for.
+        let weak = Rc::downgrade(&tabs);
+        grid.connect_selection_changed(move |_| {
+            if let Some(tabs) = weak.upgrade() {
+                tabs.follow();
+            }
+        });
         tabs
+    }
+
+    /// Press the tab of the sheet the grid is showing, without rebuilding the strip.
+    fn follow(&self) {
+        let current = self.grid.sheet();
+        self.rebuilding.set(true);
+        let mut child = self.strip.first_child();
+        let mut index = 0;
+        while let Some(widget) = child {
+            if let Some(button) = widget.downcast_ref::<gtk::ToggleButton>()
+                && button.is_active() != (index == current)
+            {
+                button.set_active(index == current);
+            }
+            child = widget.next_sibling();
+            index += 1;
+        }
+        self.rebuilding.set(false);
     }
 
     /// Rebuild the strip from the document. Called on every change rather than on the ones

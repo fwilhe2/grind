@@ -2377,8 +2377,15 @@ fn hits(doc: &Document, search: &find::Search) -> Result<Vec<find::Hit>> {
     }
     for sheet in sheets {
         let s = &doc.sheets[sheet];
-        for row in 0..s.used_rows() {
-            for col in 0..s.used_cols() {
+        // The used extent, narrowed to the search's range when it has one — never widened, so
+        // a range past the end of the sheet walks nothing that is not there.
+        let (mut rows, mut cols) = (0..s.used_rows(), 0..s.used_cols());
+        if let Some((start, end)) = search.range {
+            rows = rows.start.max(start.row)..rows.end.min(end.row.saturating_add(1));
+            cols = cols.start.max(start.col)..cols.end.min(end.col.saturating_add(1));
+        }
+        for row in rows {
+            for col in cols.clone() {
                 let pos = Pos::new(row, col);
                 let text = input_of(doc, sheet, pos)?;
                 if !search.occurrences(&text).is_empty() {
