@@ -196,7 +196,9 @@ text colour and cell background, a number-format picker whose face says what the
 `%`, `€`, `Date`), fewer/more decimals and Clear — every control a read of the active cell and one
 `set_style`/`set_format` over the selection, the same verbs in the Format menu (checked as the
 strip draws them) and Ctrl+B/I on the grid. Wrap and borders are its named gaps: this window
-draws neither.
+draws neither. Edit ▸ Find…/Replace… and F3/Shift+F3 are find and replace over cells —
+`dialog::prompt` for the word, the notice bar for where it landed, and `App::find`/`replace` and
+`grind_sheet::find::step` underneath, the same three calls the GNOME bar and the browser make.
 
 **W9 is formula literacy, and the chrome that carries it.** The pure half of "help somebody
 typing a formula" is now the core's — `grind_sheet::formula::assist`, which holds `prefix_at`,

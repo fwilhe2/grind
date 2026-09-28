@@ -99,8 +99,7 @@ sentence; `--strict` fails a conversion that lost anything. It is one way in: a 
 as a new, unsaved document, so nothing can write back over the `.xlsx`, and *writing* Excel
 never will be a feature.
 
-Not there yet: sort (it needs a locale-collation decision first), find/replace in the windows
-(the CLI and the terminal have it), freeze panes,
+Not there yet: sort (it needs a locale-collation decision first), freeze panes,
 printing. Fonts are a named gap — nothing here picks a typeface for you yet.
 
 ## What the word processor can do
@@ -235,7 +234,7 @@ keyboard-shortcut list read out of the menus themselves, an icon and a version b
 reads, and the code view, the linter's findings and the view overlays that every other shell has.
 
 What it does **not** have is written down rather than left to be discovered: no charts drawn, no
-row auto-height, no point mode, no filter or find/replace UI, no recent-files list, no greying of
+row auto-height, no point mode, no filter UI, no recent-files list, no greying of
 verbs that are unavailable right now, message boxes in the system's light colours under a dark
 theme, and no text shaping — GDI measures and draws, which keeps the caret and the ink in one
 engine at the cost of ligatures and the complex scripts. No installer: the window offers itself in

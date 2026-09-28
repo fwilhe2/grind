@@ -105,9 +105,78 @@ pub fn nothing_to_explain(address: &str) -> String {
     format!("{address} holds no formula to explain. F2 opens the cell to write one.")
 }
 
+/// Where a find landed: which of how many, and the two keys that go on from here.
+pub fn found(index: usize, count: usize, needle: &str) -> String {
+    format!(
+        "{} of {} holding “{needle}”. F3 finds the next, Shift+F3 the previous.",
+        index + 1,
+        counted(count, "cell", "cells")
+    )
+}
+
+/// A find with nothing to land on. Names the way out, which is the word itself.
+pub fn not_found(needle: &str) -> String {
+    format!("No cell holds “{needle}”. Ctrl+F asks for another word.")
+}
+
+/// What a replace did. `refused` is the first formula it left alone and how many it left, when
+/// it left any — a cell that matched and did not change is worth a sentence, since otherwise it
+/// reads as a replace that missed one.
+pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
+    let done = match cells {
+        0 => "Nothing replaced".to_owned(),
+        n => format!("Replaced in {}", counted(n, "cell", "cells")),
+    };
+    let left = match refused {
+        None => String::new(),
+        Some((first, 1)) => format!("; {first} was left alone, since its formula would not parse"),
+        Some((first, n)) => format!(
+            "; {n} formulas were left alone, since they would not parse — the first is {first}"
+        ),
+    };
+    match cells {
+        0 => format!("{done}{left}."),
+        _ => format!("{done}{left}. Ctrl+Z takes it back."),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_find_says_where_it_is_and_how_to_go_on() {
+        assert_eq!(
+            found(1, 7, "tax"),
+            "2 of 7 cells holding “tax”. F3 finds the next, Shift+F3 the previous."
+        );
+        assert_eq!(
+            found(0, 1, "tax"),
+            "1 of 1 cell holding “tax”. F3 finds the next, Shift+F3 the previous."
+        );
+        assert_eq!(
+            not_found("tax"),
+            "No cell holds “tax”. Ctrl+F asks for another word."
+        );
+    }
+
+    #[test]
+    fn a_replace_counts_and_names_what_it_left_alone() {
+        assert_eq!(
+            replaced(3, None),
+            "Replaced in 3 cells. Ctrl+Z takes it back."
+        );
+        assert_eq!(
+            replaced(1, Some(("Sheet1.B3", 1))),
+            "Replaced in 1 cell; Sheet1.B3 was left alone, since its formula would not parse. \
+             Ctrl+Z takes it back."
+        );
+        assert_eq!(
+            replaced(0, Some(("Sheet1.B3", 2))),
+            "Nothing replaced; 2 formulas were left alone, since they would not parse — the \
+             first is Sheet1.B3."
+        );
+    }
 
     #[test]
     fn one_is_singular_and_everything_else_is_not() {

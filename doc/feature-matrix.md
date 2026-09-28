@@ -140,8 +140,8 @@ than as a cursor on a hidden row.
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ |
 | Every calculated cell, searchable | ● | ● | ○ | ○ | ○ |
-| Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ○ |
-| Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ○ |
+| Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ |
+| Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ |
 
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
@@ -165,6 +165,9 @@ the CLI. It does not mark every hit in the grid, as the terminal does.
 cells holding it after the verbs, F3/Shift+F3 step through them, Ctrl+F opens it, and Ctrl+H
 replaces through two prompts. The step is `grind_sheet::find::step`, the GNOME bar's own. No
 match-case or whole-cell control.
+ⁱ Edit ▸ Find… (Ctrl+F), Find Next/Previous (F3/Shift+F3) and Replace… (Ctrl+H), the questions
+asked through `dialog::prompt` and the answers said on the notice bar (`notice::found`,
+`notice::replaced`). The same step as the other two. No match-case or whole-cell control.
 
 ## 5. Spreadsheet — formatting
 
@@ -436,14 +439,13 @@ of a client's own job is missing.
     them edits inside a cell, because a cell holds blocks (§7 ᵖ). What is left is narrower:
     the browser and the Windows pane cannot *insert* one (§7), and no client can merge cells or
     set a column width (ᵗ).
-11. **Find and replace are a CLI-and-terminal pair, over cells and over text alike.** The core
-    half over cells is **closed** (2026-09-28): `App::find` and `App::replace` exist for the
-    spreadsheet now (`grind_sheet::find`), reached as `grind sheet find`/`replace` and as
-    `grind-tui`'s `:find` and `:s/old/new/`, and **the GNOME window's find bar** (Ctrl+F /
-    Ctrl+H), so what was the one row where the gap was the *core's* is an ordinary client gap
-    again — and the browser has it too, in its palette, which leaves the Windows grid owing a
-    find bar over a method that exists. Over *text*, find and replace exist on
-    the CLI and in the terminal, and find in `grind-text-gtk`.
+11. ~~**Find and replace over cells were the core's gap.**~~ **Closed** (2026-09-28): `App::find`
+    and `App::replace` exist for the spreadsheet (`grind_sheet::find`), and every client reaches
+    them — `grind sheet find`/`replace`, `grind-tui`'s `:find` and `:s/old/new/`, the GNOME
+    window's find bar, the browser's palette and F3, and the Windows grid's Edit menu and F3 —
+    with `grind_sheet::find::step` deciding where the next hit is for the three that step. What
+    is left is narrower, and over *text*: find and replace there exist on the CLI and in the
+    terminal, and find alone in `grind-text-gtk`.
 12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
     it is a decision about `grind_text::Action` rather than about the CLI.
 13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.

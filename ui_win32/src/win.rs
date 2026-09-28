@@ -123,7 +123,7 @@ use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use crate::welcome;
 use grind_core::DocumentKind;
-use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv};
+use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
 use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
@@ -457,6 +457,9 @@ struct Sheet {
     /// What the notice bar says, or `None` for a document with nothing to say about itself.
     /// Always set through [`Sheet::say`], which is what keeps it and `geom.banner_h` agreeing.
     banner: Option<String>,
+    /// The word Edit ▸ Find… last asked for — what F3 and Shift+F3 step through, and what
+    /// Replace… offers to replace. Empty until somebody has searched.
+    needle: String,
     /// What is being offered to somebody typing a formula, and which offer Tab would take —
     /// `sheet/assist.rs`, recomputed from the editor's text on every keystroke rather than
     /// updated in place.
@@ -1322,6 +1325,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         mode: state::Mode::default(),
         dirty: false,
         banner: None,
+        needle: String::new(),
         assist: assist::Assist::default(),
         hint: Vec::new(),
         // **On**, which is `ui_sheet_gtk`'s own default (`chrome::formula_bar(.., true)`) and is
@@ -3292,6 +3296,10 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::Paste => paste(hwnd),
         Command::ClearCells => clear_cells(hwnd),
         Command::GoTo => open_name_box(hwnd),
+        Command::Find => find(hwnd),
+        Command::FindNext => find_step(hwnd, find::Towards::Next),
+        Command::FindPrevious => find_step(hwnd, find::Towards::Previous),
+        Command::Replace => replace(hwnd),
         Command::ImportCsv => import_csv(hwnd),
         Command::ExportCsv => export_csv(hwnd),
         Command::Recalculate => recalculate(hwnd),
@@ -4162,6 +4170,112 @@ fn format_table_totals(hwnd: HWND) {
 /// so the two questions an import cannot skip are already answered. Every other knob is
 /// `grind sheet import-csv`'s (R9), and `csv::Import::sniffed` is where the choice of which ones
 /// a window sets is written down.
+/// Edit ▸ Find… — ask for a word, then land on the first cell holding it at or after the
+/// cursor, across every sheet. The prompt runs a nested message loop, so the word it offers is
+/// read in one borrow and the search is a second (decision 7).
+fn find(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompt.
+    let Some(offered) = (unsafe { with_sheet(hwnd, |state| state.needle.clone()) }) else {
+        return;
+    };
+    let Some(needle) = dialog::prompt(hwnd, "Find", "Find in every sheet:", &offered) else {
+        return;
+    };
+    if needle.is_empty() {
+        return;
+    }
+    // SAFETY: a fresh borrow, taken after the dialog has closed.
+    unsafe {
+        with_sheet(hwnd, |state| state.needle = needle);
+    }
+    find_step(hwnd, find::Towards::Here);
+}
+
+/// F3 / Shift+F3, and the landing half of Find…: `App::find` for the remembered word, and
+/// `grind_sheet::find::step` for which of its hits is next — the same step the GNOME bar and
+/// the browser take, so all three agree about where Shift+F3 goes from a cell that is not a hit.
+/// The hits are asked for again every time, since the document may have changed between two
+/// presses.
+fn find_step(hwnd: HWND, towards: find::Towards) {
+    // SAFETY: one borrow, and no dialog on either side of it.
+    let asked = unsafe {
+        with_sheet(hwnd, |state| {
+            if state.needle.is_empty() {
+                return false;
+            }
+            let hits: Vec<(usize, Pos)> = state
+                .app
+                .find(&find::Search::new(state.needle.as_str()))
+                .map(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect())
+                .unwrap_or_default();
+            let here = (state.sheet, state.selection.active);
+            let said = match find::step(&hits, here, towards) {
+                Some(index) => {
+                    let (sheet, pos) = hits[index];
+                    state.sheet = sheet;
+                    state.selection = Selection::at(pos);
+                    notice::found(index, hits.len(), &state.needle)
+                }
+                None => notice::not_found(&state.needle),
+            };
+            state.say(Some(said));
+            true
+        })
+    };
+    match asked {
+        // Nothing searched for yet: F3 means "find", which is where the word comes from.
+        Some(false) => find(hwnd),
+        Some(true) => refresh(hwnd),
+        None => {}
+    }
+}
+
+/// Edit ▸ Replace… — what, then with what, then `App::replace` over every sheet in one undo
+/// step. Two prompts rather than a dialog of its own, since `dialog::prompt` is the one text
+/// question this shell has and a replace is two words; neither is asked with anything borrowed.
+fn replace(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompts.
+    let Some(offered) = (unsafe { with_sheet(hwnd, |state| state.needle.clone()) }) else {
+        return;
+    };
+    let Some(what) = dialog::prompt(hwnd, "Replace", "Replace what:", &offered) else {
+        return;
+    };
+    if what.is_empty() {
+        return;
+    }
+    let Some(with) = dialog::prompt(hwnd, "Replace", &format!("Replace “{what}” with:"), "")
+    else {
+        return;
+    };
+    // SAFETY: a fresh borrow, taken after both dialogs have closed.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let said = match state.app.replace(
+                &find::Search::new(what.as_str()),
+                &with,
+                RecalcMode::Document,
+            ) {
+                Ok(done) => match done.recalc.filter(|recalc| recalc.spoiled > 0) {
+                    Some(recalc) => notice::recalc_skipped(recalc.spoiled),
+                    None if done.cells == 0 && done.refused.is_empty() => notice::not_found(&what),
+                    None => {
+                        let first = done.refused.first().map(|(hit, _)| hit.address());
+                        notice::replaced(
+                            done.cells,
+                            first.as_deref().map(|first| (first, done.refused.len())),
+                        )
+                    }
+                },
+                Err(error) => error.to_string(),
+            };
+            state.needle = what;
+            state.say(Some(said));
+        });
+    }
+    refresh(hwnd);
+}
+
 fn import_csv(hwnd: HWND) {
     // The dialog runs a nested message loop, so nothing may be borrowed across it (decision 7).
     let Some(path) = dialog::open_csv_path(hwnd) else {
@@ -4602,6 +4716,10 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::Paste
         | Command::ClearCells
         | Command::GoTo
+        | Command::Find
+        | Command::FindNext
+        | Command::FindPrevious
+        | Command::Replace
         | Command::ImportCsv
         | Command::ExportCsv
         | Command::Recalculate
@@ -5644,6 +5762,11 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::NumberFormat
         | Command::FewerDecimals
         | Command::MoreDecimals
+        // Find and replace search cells (`App::find`); this pane's own find is a named gap.
+        | Command::Find
+        | Command::FindNext
+        | Command::FindPrevious
+        | Command::Replace
         // CSV is cells in both directions, so neither means anything here — and `applies_to`
         // keeps both out of this pane's File menu rather than leaving them to be no-ops.
         | Command::ImportCsv

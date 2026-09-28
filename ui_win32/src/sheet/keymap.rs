@@ -66,6 +66,9 @@ pub enum Key {
     Backspace,
     /// Amend the cell rather than replace it — Excel's, and everybody's.
     F2,
+    /// Find the next cell holding the last word searched for — Shift+F3 the previous. Every
+    /// Windows program's, since Notepad.
+    F3,
     /// Go to an address — the name box's key, and Excel's.
     F5,
     /// Check the document — the "next problem" key every IDE has, and the one every shell in
@@ -148,6 +151,7 @@ const VK_RIGHT: u32 = 0x27;
 const VK_DOWN: u32 = 0x28;
 const VK_DELETE: u32 = 0x2e;
 const VK_F2: u32 = 0x71;
+const VK_F3: u32 = 0x72;
 const VK_F5: u32 = 0x74;
 const VK_F8: u32 = 0x77;
 const VK_F9: u32 = 0x78;
@@ -173,6 +177,7 @@ pub fn key_for(vk: u32) -> Key {
         VK_BACK => Key::Backspace,
         VK_DELETE => Key::Delete,
         VK_F2 => Key::F2,
+        VK_F3 => Key::F3,
         VK_F5 => Key::F5,
         VK_F8 => Key::F8,
         VK_F9 => Key::F9,
@@ -501,6 +506,7 @@ mod tests {
             (VK_DOWN, vk::VK_DOWN, "VK_DOWN"),
             (VK_DELETE, vk::VK_DELETE, "VK_DELETE"),
             (VK_F2, vk::VK_F2, "VK_F2"),
+            (VK_F3, vk::VK_F3, "VK_F3"),
             (VK_F5, vk::VK_F5, "VK_F5"),
             (VK_F8, vk::VK_F8, "VK_F8"),
             (VK_F9, vk::VK_F9, "VK_F9"),

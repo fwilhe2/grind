@@ -886,7 +886,18 @@ filter rather than an empty one with buttons and no conditions. Beside it, *Form
 with Totals…* is that composite having first asked which aggregate the totals row carries —
 `dialog::choose` over `TotalsFunction::ALL`, the listbox this shell already opens for every
 other one-of-a-short-list question, and a second verb rather than a prompt on the first so the
-plain one keeps its zero-prompt shape. No **find/replace over cells**.
+plain one keeps its zero-prompt shape. **Find and replace over cells** are the Edit menu's:
+*Find…* (Ctrl+F) asks for a word through `dialog::prompt` and lands on the first cell holding it
+at or after the cursor, *Find Next* and *Find Previous* (F3, Shift+F3 — every Windows program's)
+step on across every sheet and wrap, and *Replace…* (Ctrl+H) asks what and with what and calls
+`App::replace` over every sheet in one undo step. Where it landed and what a replace did are the
+notice bar's (`notice::found`, `notice::replaced`), since that bar already says what an import
+did; a formula the replace would break is left alone and named there. Every match is
+`App::find`'s and every next hit `grind_sheet::find::step`'s, the GNOME bar's and the browser's
+own. Prompts rather than the system's `FindTextW` dialog, for decision 7's reason: that dialog
+is modeless, and a second window with its own message routing is exactly what this shell keeps
+out of `win.rs`. Named gaps: no match-case or whole-cell control (the CLI has both), no marking
+of every hit, and **no find in the text pane** — `App::find_ignoring_case` is there to call.
 No **conditional formatting UI**, which exists in no shell — the banding *Format as Table*
 paints is static cell styling, applied once, not a live rule. No **command palette**, by
 decision 4.

@@ -75,6 +75,17 @@ pub enum Command {
     /// Put the caret in the name box. A menu item as well as F5, because a verb nobody can
     /// find is a verb this shell does not have.
     GoTo,
+    /// Ask for a word, then select the first cell holding it at or after the cursor, across
+    /// every sheet — `App::find`, whose matching rule (`grind_sheet::find`) is the one every
+    /// other shell's find uses. The grid's alone: a text document has no cells.
+    Find,
+    /// The next or previous cell holding the word [`Command::Find`] last asked for, wrapping
+    /// at either end — `grind_sheet::find::step`, the GNOME bar's and the browser's F3.
+    FindNext,
+    FindPrevious,
+    /// Ask what and with what, then `App::replace` in every cell of every sheet — one undo
+    /// step, and a formula it would break left alone and named on the notice bar.
+    Replace,
     /// Read a delimited file in at the cursor — a file dialog, then `App::import_csv` with
     /// `csv::Import::sniffed`, one undo step. The grid's alone: a text document has no cells
     /// for fields to land in.
@@ -230,6 +241,10 @@ impl Command {
         Command::Paste,
         Command::ClearCells,
         Command::GoTo,
+        Command::Find,
+        Command::FindNext,
+        Command::FindPrevious,
+        Command::Replace,
         Command::ImportCsv,
         Command::ExportCsv,
         Command::Recalculate,
@@ -425,6 +440,23 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ClearCells,
                 label: "&Delete\tDel",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::Find,
+                label: "&Find…\tCtrl+F",
+            },
+            Item::Verb {
+                command: Command::FindNext,
+                label: "Find &Next\tF3",
+            },
+            Item::Verb {
+                command: Command::FindPrevious,
+                label: "Find Pre&vious\tShift+F3",
+            },
+            Item::Verb {
+                command: Command::Replace,
+                label: "R&eplace…\tCtrl+H",
             },
             Item::Separator,
             Item::Verb {
@@ -743,6 +775,10 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('E'), true, true) => Some(Command::ExplainFormula),
         (Key::Char('L'), true, true) => Some(Command::ToggleFilter),
         (Key::F8, false, false) => Some(Command::CheckDocument),
+        (Key::Char('F'), true, false) => Some(Command::Find),
+        (Key::Char('H'), true, false) => Some(Command::Replace),
+        (Key::F3, false, false) => Some(Command::FindNext),
+        (Key::F3, false, true) => Some(Command::FindPrevious),
         _ => None,
     }
 }
@@ -827,6 +863,12 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::NumberFormat
         | Command::FewerDecimals
         | Command::MoreDecimals
+        // Find and replace search *cells*: `App::find` is the spreadsheet's. The word processor's
+        // own find is a named gap in this window (`doc/windows-shell.md`).
+        | Command::Find
+        | Command::FindNext
+        | Command::FindPrevious
+        | Command::Replace
         // CSV is cells: fields land in a grid and a range comes out of one, so both are the
         // spreadsheet's even though they sit in the File menu with the universal verbs.
         | Command::ImportCsv
