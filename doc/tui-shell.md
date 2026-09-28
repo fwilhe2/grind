@@ -87,7 +87,7 @@ shorter than one being edited.
 | Fill | `:down`, `:right` — the selection's leading line replicated, references shifted | — |
 | Interchange | `:csv-in <file>` — at the cursor, delimiter sniffed from the file's own content (`csv::Import::sniffed`, the options every window imports with); `:csv-out <file>` — the selection or the whole used sheet, and `.tsv` writes tabs (`csv::Dialect::for_name`) | — |
 | Evaluate | `:eval <formula>` — what it would come to, storing nothing | — |
-| Find | `:find <text>`, then `n`/`N`; every match marked in the grid | `:find <text>`, then `n`/`N`; every match marked in the line; `:s/old/new/` |
+| Find | `:find <text>`, then `n`/`N`; every match marked in the grid; `:s/old/new/` | `:find <text>`, then `n`/`N`; every match marked in the line; `:s/old/new/` |
 | Outline | — | `:outline` — a pane, one row per heading, indented; `Enter` goes to one |
 | View modes | `:roles` — what each cell is, coloured and marked with one glyph; `:names` — a named cell underlined, the name and the formula read through its names on the formula line | `:names` — where each bookmark anchors, after the line it falls on |
 | Problems | `:lint`, `:lint hints` — what the document says about itself; `j`/`k` moves, `Enter` goes to the finding | the same pane, the same keys |
@@ -183,10 +183,7 @@ filter in the file folds its rows away, and nothing creates one on its own — `
 does create one, as one facet of the composite it applies (`App::format_table`,
 `sheet/src/table_format.rs`), the same way the GTK shell's dialog does. No conditional
 formatting UI: the banding `:format-table` paints is static cell styling, applied once, not a
-live rule. `:find` searches
-cells and there is **no replace** over them, because the core has none — `App::replace` exists
-for text and has no spreadsheet twin, and inventing one in a shell would put a capability
-somewhere the CLI could not reach (rule 4). No charts, no autofit — a column's ideal width is
+live rule. No charts, no autofit — a column's ideal width is
 `ui_sheet_gtk`'s measurement of the text in it, and this shell would need the same pass.
 
 **The document.** No pages, no print, no zoom, no RTL (`doc/text-layout.md`). No footnotes or

@@ -140,8 +140,8 @@ than as a cursor on a hidden row.
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ |
 | Every calculated cell, searchable | ● | ● | ○ | ○ | ○ |
-| Find over cells | ○ | ○ | ● ᶠ | ○ | ○ |
-| Replace over cells | ○ | ○ | ○ | ○ | ○ |
+| Find over cells | ● | ○ | ● ᶠ | ○ | ○ |
+| Replace over cells | ● | ○ | ● ᶠ | ○ | ○ |
 
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
@@ -154,9 +154,10 @@ window's autocomplete read from; a completion popup is not a thing a pipe has.
 `App::preview`, rather than keeping a second summing loop, and spell the answers through
 `App::display_number`, so a German document's sum reads `1234,5` as its cells do. `eval` stays
 ISO, as a script reads a number (`doc/cli-parity-sheet.md`).
-ᶠ `:find`, then `n`/`N`, with every match marked in the grid. **Replace has no row anywhere** and
-that is the core rather than the clients: `App::replace` exists for text and has no spreadsheet
-twin, so a shell that offered one would be putting a capability where the CLI could not reach it.
+ᶠ `:find`, then `n`/`N`, with every match marked in the grid, and `:s/old/new/` — the text
+half's own spelling — for replace. Both are `App::find`/`App::replace` (`grind_sheet::find`),
+which search each cell's *input text* and send a replaced cell back through the typing rule, so
+the terminal and `grind sheet find`/`replace` cannot disagree about what a match is.
 
 ## 5. Spreadsheet — formatting
 
@@ -428,12 +429,13 @@ of a client's own job is missing.
     them edits inside a cell, because a cell holds blocks (§7 ᵖ). What is left is narrower:
     the browser and the Windows pane cannot *insert* one (§7), and no client can merge cells or
     set a column width (ᵗ).
-11. **Find and replace are lopsided, and the lopsidedness moved.** Over *cells*, `grind-tui` is
-    now the only client that can find at all and **nobody** can replace — which makes it the one
-    row in this file where the gap is the *core's* rather than a client's: `App::replace` exists
-    for text and has no spreadsheet twin, so a shell offering one would be putting a capability
-    where the CLI could not reach it. Over *text*, find and replace exist on the CLI and in the
-    terminal, and nowhere else.
+11. **Find and replace are a CLI-and-terminal pair, over cells and over text alike.** The core
+    half over cells is **closed** (2026-09-28): `App::find` and `App::replace` exist for the
+    spreadsheet now (`grind_sheet::find`), reached as `grind sheet find`/`replace` and as
+    `grind-tui`'s `:find` and `:s/old/new/`, so what was the one row where the gap was the
+    *core's* is an ordinary client gap again — the GNOME window, the browser and the Windows
+    grid each owe a find bar over a method that exists. Over *text*, find and replace exist on
+    the CLI and in the terminal, and find in `grind-text-gtk`.
 12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
     it is a decision about `grind_text::Action` rather than about the CLI.
 13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
@@ -444,7 +446,7 @@ Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` 
 shell document, and none of them is reachable from the CLI either.
 
 **Spreadsheet.** Conditional formatting · merged-cell rendering (the model carries no spans) ·
-freeze panes · sort · find/replace over cells · autosave · printing · pivot tables · macros
+freeze panes · sort · autosave · printing · pivot tables · macros
 (`doc/not-doing.md` §1 — the generator is the answer, and `grind build` is a CLI verb by R11).
 
 **Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style

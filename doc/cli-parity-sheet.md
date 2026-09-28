@@ -48,6 +48,9 @@ stops ratcheting.
 - `set_formula` — `grind sheet set` with a value starting `=`, through `App::enter`
 - `clear_formula` — `grind sheet clear --formula-only`
 - `clear_range` — `grind sheet clear <range>`
+- `replace` — `grind sheet replace <needle> <replacement>`, with `find`'s three narrowing flags
+  and `--recalc`. One undo step for the whole document; every changed cell is re-read by the
+  typing rule, and a formula the replace would break is left alone and named on stderr
 - `set_style` — `grind sheet style` (and `grind sheet style <range>` with no options to clear one)
 - `set_format` — `grind sheet format` (and `grind sheet format <range> general` to clear one)
 - `set_col_width` — `grind sheet width <columns> <length>` (and `--clear` to drop one)
@@ -157,6 +160,9 @@ stops ratcheting.
 ## Reading
 
 - `get` — `grind sheet get`
+- `find` — `grind sheet find <needle>`, one `Sheet1.B2<TAB>input text` line per cell;
+  `--match-case`, `--whole-cell` and `--sheet <name>` narrow it. What it searches is each
+  cell's input text — the formula bar's — so `SUM` finds `=SUM(B2:B9)`
 - `get_viewport` — `grind sheet view` (its display text is what `view` prints; `--raw` prints the
   stored values instead)
 - `get_viewport_with` — `grind sheet view --roles` / `--names` / `--formulas`, which print

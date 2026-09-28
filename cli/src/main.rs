@@ -1833,6 +1833,37 @@ enum Command {
         inline: bool,
     },
 
+    /// Print every cell holding some text, with its address
+    ///
+    /// What is searched is what a formula bar shows: a formula in display syntax
+    /// (=SUM(B2:B4)), a date in ISO, a number in the document's own spelling. Case is ignored
+    /// unless --match-case says otherwise.
+    Find {
+        file: PathBuf,
+        #[arg(allow_hyphen_values = true)]
+        needle: String,
+        #[command(flatten)]
+        search: SearchArgs,
+    },
+
+    /// Replace some text in every cell holding it, as one undo step
+    ///
+    /// Each changed cell is re-read as if the replaced text had been typed into it, so a
+    /// formula stays a formula and a number stays a number. A formula the replace would
+    /// break is left alone and named on stderr; the rest is still replaced.
+    Replace {
+        file: PathBuf,
+        #[arg(allow_hyphen_values = true)]
+        needle: String,
+        #[arg(allow_hyphen_values = true)]
+        replacement: String,
+        #[command(flatten)]
+        search: SearchArgs,
+        /// Recalculate the document in the same undo step, unless that would spoil a cell
+        #[arg(long)]
+        recalc: bool,
+    },
+
     /// List every calculated cell in a document — its formula, its result, what it calls
     ///
     /// Plain arithmetic counts: =A1/2 calls no function and is still a calculation.
@@ -3062,6 +3093,41 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             Ok(Report::Text(TextReport { lines: vec![line] }))
         }
 
+        Command::Find {
+            file,
+            needle,
+            search,
+        } => {
+            let app = load(file, cli)?;
+            let search = search.resolve(&app, needle)?;
+            let hits = app.find(&search).say()?;
+            Ok(Report::Text(TextReport {
+                lines: hits
+                    .iter()
+                    .map(|hit| format!("{}\t{}", hit.address(), hit.text))
+                    .collect(),
+            }))
+        }
+
+        Command::Replace {
+            file,
+            needle,
+            replacement,
+            search,
+            recalc,
+        } => {
+            let app = load(file, cli)?;
+            let search = search.resolve(&app, needle)?;
+            let done = app.replace(&search, replacement, mode(*recalc)).say()?;
+            for (hit, reason) in &done.refused {
+                eprintln!(
+                    "grind: {} left as it was — the replaced formula would not parse: {reason}",
+                    hit.address()
+                );
+            }
+            finish(&app, cli, file, done.cells > 0)
+        }
+
         Command::Calculations { file, filter } => {
             let app = load(file, cli)?;
             let needle = filter.as_deref().unwrap_or_default();
@@ -3438,6 +3504,34 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
 
 /// `chart-add`/`chart-list`/`chart-remove`'s own `--sheet`/positional sheet argument,
 /// defaulting to the first — the same default `a1::as_definition` gives a named range.
+/// What `sheet find` and `sheet replace` share: how a needle matches, and where.
+#[derive(clap::Args)]
+struct SearchArgs {
+    /// Match `Total` only, not `total` as well
+    #[arg(long)]
+    match_case: bool,
+    /// The needle must be the cell's whole content, not a piece of it
+    #[arg(long)]
+    whole_cell: bool,
+    /// Only this sheet; defaults to every sheet
+    #[arg(long)]
+    sheet: Option<String>,
+}
+
+impl SearchArgs {
+    fn resolve(&self, app: &App, needle: &str) -> Result<grind_sheet::find::Search, String> {
+        Ok(grind_sheet::find::Search {
+            needle: needle.to_owned(),
+            match_case: self.match_case,
+            whole_cell: self.whole_cell,
+            sheet: match &self.sheet {
+                Some(name) => Some(a1::sheet(app, name).say()?),
+                None => None,
+            },
+        })
+    }
+}
+
 fn chart_sheet(app: &App, name: Option<&str>) -> Result<usize, String> {
     match name {
         Some(name) => a1::sheet(app, name).say(),

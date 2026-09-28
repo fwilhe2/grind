@@ -357,6 +357,10 @@ run clear "$book" J3
 run clear "$book" A21:B22                                   # the pasted rows, in one step
 run clear "$book" B9 --formula-only
 
+say "find and replace: every cell holding some text, then one category renamed"
+sheet find "$book" 'sum('                                  # the formula bar's text, so a formula
+run replace "$book" Entertainment Leisure --whole-cell      # one undo step, however many cells
+
 say "convert: the same document as flat XML"
 "$GRIND" convert "$book" "$out/sample.fods" >/dev/null   # suite level, like info
 

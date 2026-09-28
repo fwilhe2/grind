@@ -25,6 +25,7 @@ Spreadsheet:
   :format general|int|number [n]|percent|currency|date|time|datetime
   :general                :recalc
   :find <text>            — every cell whose text or formula holds it; n / N step
+  :s/old/new/             — replace it in every cell, one undo step
   :down  :right           — fill the selection from its first cell (references shift)
   :eval <formula>         — what it would come to, storing nothing
   :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers

@@ -24,6 +24,7 @@ pub mod action;
 pub mod chart;
 pub mod csv;
 pub mod filter;
+pub mod find;
 pub mod formula;
 pub mod graph;
 pub mod grid;
@@ -798,6 +799,73 @@ impl App {
         })
     }
 
+    // --- find and replace ---
+
+    /// Every cell a [`find::Search`] matches, in reading order — sheet by sheet, then row by
+    /// row. What is searched is each cell's [`App::input_text`]; [`find`]'s module comment is
+    /// why.
+    ///
+    /// Bounded by each sheet's used extent, which is the rectangle the document occupies — the
+    /// ODF sheet limit is a million rows and none of them is worth walking.
+    pub fn find(&self, search: &find::Search) -> Result<Vec<find::Hit>> {
+        let state = self.state.read().unwrap();
+        hits(&state.doc, search)
+    }
+
+    /// Replace every occurrence [`App::find`] would report, in one undo step.
+    ///
+    /// Each rewritten cell goes back in through the typing rule, as if the replaced text had
+    /// been typed into it: a formula stays a formula (its display form converted with
+    /// [`formula::display::from_display`], the step every shell takes on Enter), a date cell
+    /// reads its ISO spelling back, and `12` replaced into `123` is a number. A cell whose
+    /// replaced text is a formula that will not parse is **left alone** and listed in
+    /// [`find::Replaced::refused`] — neither silently turned into text nor stored as a formula
+    /// nothing can evaluate — and the rest of the replace still happens.
+    ///
+    /// Bounded by [`MAX_FORMATTED_CELLS`] cells changed, because that is the size of the undo
+    /// entry. With [`RecalcMode::Document`] the ripple lands in the same entry, as
+    /// [`App::enter_range`]'s does.
+    pub fn replace(
+        &self,
+        search: &find::Search,
+        with: &str,
+        recalc: RecalcMode,
+    ) -> Result<find::Replaced> {
+        self.mutate(|state| {
+            let mut refused = Vec::new();
+            let mut edits = Vec::new();
+            for hit in hits(&state.doc, search)? {
+                let Some(input) = search.replaced(&hit.text, with) else {
+                    continue;
+                };
+                let input = match input.starts_with('=') {
+                    true => match formula::display::from_display(&input) {
+                        Ok(canonical) => canonical,
+                        Err(e) => {
+                            refused.push((hit, e.to_string()));
+                            continue;
+                        }
+                    },
+                    false => input,
+                };
+                edits.push(typed(&state.doc, hit.sheet, hit.pos, &input).1);
+            }
+            if edits.len() as u64 > MAX_FORMATTED_CELLS {
+                return Err(Error::TooLarge(edits.len() as u64));
+            }
+            let cells = edits.len();
+            let recalc = match cells {
+                0 => None,
+                _ => commit(state, search.sheet.unwrap_or(0), edits, recalc)?,
+            };
+            Ok(find::Replaced {
+                cells,
+                refused,
+                recalc,
+            })
+        })
+    }
+
     // --- sheets ---
     //
     // Adding and removing a sheet shifts every later index, which the undo stack survives
@@ -1418,31 +1486,7 @@ impl App {
     /// wrote with `office:date-value` and no style of its own still round-trips.
     pub fn input_text(&self, sheet: usize, pos: Pos) -> Result<String> {
         let state = self.state.read().unwrap();
-        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
-        if let Some(formula) = s.formula(pos) {
-            // A formula that will not parse is shown as it is stored, which is the honest
-            // answer and still editable.
-            return Ok(formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned()));
-        }
-        Ok(match s.get(pos) {
-            CellValue::Empty => String::new(),
-            CellValue::Number(n) => match date_kind(s, pos) {
-                Some(kind) => {
-                    numfmt::general(&CellValue::Number(n), Some(kind), state.doc.null_date)
-                }
-                // In the document's own spelling, so what the formula bar puts in front of
-                // somebody is what the typing rule reads back as the same number.
-                None => numfmt::spell_number(n, state.doc.locale.as_ref()),
-            },
-            CellValue::Bool(true) => "TRUE".to_owned(),
-            CellValue::Bool(false) => "FALSE".to_owned(),
-            // The typing rule itself decides whether the `'` is needed, so there is one
-            // rule rather than a copy of it.
-            CellValue::Text(text) => match typed(&state.doc, sheet, pos, &text).0 {
-                Entered::Text => text,
-                _ => format!("'{text}"),
-            },
-        })
+        input_of(&state.doc, sheet, pos)
     }
 
     /// What the cell *displays* — a formula's result, formatted, rather than its source.
@@ -2316,6 +2360,67 @@ fn entered_kind(value: &CellValue) -> Entered {
         CellValue::Bool(_) => Entered::Bool,
         CellValue::Text(_) => Entered::Text,
     }
+}
+
+/// [`App::find`] under a lock somebody else already holds.
+fn hits(doc: &Document, search: &find::Search) -> Result<Vec<find::Hit>> {
+    let sheets = match search.sheet {
+        Some(sheet) => {
+            doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            sheet..sheet + 1
+        }
+        None => 0..doc.sheets.len(),
+    };
+    let mut hits = Vec::new();
+    if search.needle.is_empty() {
+        return Ok(hits);
+    }
+    for sheet in sheets {
+        let s = &doc.sheets[sheet];
+        for row in 0..s.used_rows() {
+            for col in 0..s.used_cols() {
+                let pos = Pos::new(row, col);
+                let text = input_of(doc, sheet, pos)?;
+                if !search.occurrences(&text).is_empty() {
+                    hits.push(find::Hit {
+                        sheet,
+                        sheet_name: s.name.clone(),
+                        pos,
+                        text,
+                    });
+                }
+            }
+        }
+    }
+    Ok(hits)
+}
+
+/// [`App::input_text`] under a lock somebody else already holds — [`App::find`] and
+/// [`App::replace`] ask it of every cell in a sheet and must not take the lock once per cell.
+fn input_of(doc: &Document, sheet: usize, pos: Pos) -> Result<String> {
+    let s = doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+    if let Some(formula) = s.formula(pos) {
+        // A formula that will not parse is shown as it is stored, which is the honest
+        // answer and still editable.
+        return Ok(formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned()));
+    }
+    Ok(match s.get(pos) {
+        CellValue::Empty => String::new(),
+        CellValue::Number(n) => match date_kind(s, pos) {
+            Some(kind) => numfmt::general(&CellValue::Number(n), Some(kind), doc.null_date),
+            // In the document's own spelling, so what the formula bar puts in front of
+            // somebody is what the typing rule reads back as the same number.
+            None => numfmt::spell_number(n, doc.locale.as_ref()),
+        },
+        CellValue::Bool(true) => "TRUE".to_owned(),
+        CellValue::Bool(false) => "FALSE".to_owned(),
+        // The typing rule itself decides whether the `'` is needed, so there is one
+        // rule rather than a copy of it.
+        CellValue::Text(text) => match typed(doc, sheet, pos, &text).0 {
+            Entered::Text => text,
+            _ => format!("'{text}"),
+        },
+    })
 }
 
 fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Action) {

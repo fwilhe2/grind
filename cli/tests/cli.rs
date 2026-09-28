@@ -124,6 +124,37 @@ fn new_refuses_to_overwrite_without_force() {
     assert_eq!(ok(&["get", &s(&file), "A1"]).trim(), "");
 }
 
+/// Find and replace over cells: what is searched is the formula bar's text, a replace is
+/// read back by the typing rule, and a formula the replace would break is named and left alone.
+#[test]
+fn find_and_replace_reach_every_cell_through_the_typing_rule() {
+    let dir = Sandbox::new("find");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    ok(&["set", &s(&file), "A1", "Apples"]);
+    ok(&["set", &s(&file), "B1", "3"]);
+    ok(&["set", &s(&file), "B2", "4"]);
+    ok(&["set", &s(&file), "B3", "=SUM([.B1:.B2])"]);
+
+    assert_eq!(ok(&["find", &s(&file), "sum"]), "Sheet1.B3\t=SUM(B1:B2)\n");
+    assert_eq!(ok(&["find", &s(&file), "apples", "--match-case"]), "");
+
+    ok(&["replace", &s(&file), "B2)", "B2)*2", "--recalc"]);
+    assert_eq!(ok(&["get", &s(&file), "B3"]).trim(), "14");
+
+    let output = sheet(&["replace", &s(&file), "SUM(", "SUM"]);
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Sheet1.B3 left as it was"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        ok(&["get", &s(&file), "B3", "--formula"]).trim(),
+        "=SUM([.B1:.B2])*2"
+    );
+}
+
 #[test]
 fn values_and_a_formula_survive_being_written_and_read_back() {
     let dir = Sandbox::new("roundtrip");

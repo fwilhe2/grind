@@ -99,7 +99,8 @@ sentence; `--strict` fails a conversion that lost anything. It is one way in: a 
 as a new, unsaved document, so nothing can write back over the `.xlsx`, and *writing* Excel
 never will be a feature.
 
-Not there yet: sort (it needs a locale-collation decision first), find/replace, freeze panes,
+Not there yet: sort (it needs a locale-collation decision first), find/replace in the windows
+(the CLI and the terminal have it), freeze panes,
 printing. Fonts are a named gap — nothing here picks a typeface for you yet.
 
 ## What the word processor can do

@@ -29,6 +29,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use grind_sheet::find::Search;
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::CellStyle;
@@ -267,35 +268,22 @@ impl App {
 
     // --- find (`:find`, then `n` / `N`) ---
 
-    /// Every cell whose **input text** holds `needle`, across every sheet, in reading order.
-    ///
-    /// The input text and not the displayed value, which is the same choice `yank` makes and for
-    /// the same reason: searching for `SUM` should find `=SUM(B2:B9)`, and searching for `2026`
-    /// should find the date somebody typed rather than only the sheets whose format spells the
-    /// year out. Case is ignored, because nobody searching a spreadsheet means otherwise.
-    ///
-    /// Bounded by `used_extent`, which is the rectangle the document actually occupies — the ODF
-    /// sheet limit is a million rows and none of them is worth walking.
+    /// Every cell `App::find` reports for `needle`, across every sheet, in reading order —
+    /// each cell's input text, ignoring case (`grind_sheet::find` is why), so this pane and
+    /// `grind sheet find` cannot disagree about what a match is.
     fn cmd_find(&mut self, needle: &str) {
         if needle.is_empty() {
             self.find = Find::default();
             self.status = "find cleared".to_owned();
             return;
         }
-        let wanted = needle.to_lowercase();
-        let mut hits = Vec::new();
-        for sheet in 0..self.core.sheet_count() {
-            let (rows, cols) = self.core.used_extent(sheet).unwrap_or((0, 0));
-            for row in 0..rows {
-                for col in 0..cols {
-                    let pos = Pos::new(row, col);
-                    let text = self.core.input_text(sheet, pos).unwrap_or_default();
-                    if !text.is_empty() && text.to_lowercase().contains(&wanted) {
-                        hits.push((sheet, pos));
-                    }
-                }
+        let hits: Vec<(usize, Pos)> = match self.core.find(&Search::new(needle)) {
+            Ok(hits) => hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect(),
+            Err(e) => {
+                self.status = e.to_string();
+                return;
             }
-        }
+        };
         // Start on the first hit at or after the cursor, so `:find` from halfway down a column
         // goes forwards like every other search anybody has ever used.
         let here = (self.sheet, self.active.row, self.active.col);
@@ -315,6 +303,40 @@ impl App {
                 );
             }
         }
+    }
+
+    /// `:s/old/new/` — every cell holding `old`, across every sheet, as one undo step. Each
+    /// changed cell is read back by the typing rule; a formula it would break is left alone and
+    /// named in the status line rather than silently turned into text.
+    fn cmd_substitute(&mut self, rest: &str) {
+        let mut parts = rest.splitn(2, '/');
+        let (Some(needle), Some(with)) = (parts.next(), parts.next()) else {
+            self.status = "usage: :s/old/new/".to_owned();
+            return;
+        };
+        let with = with.strip_suffix('/').unwrap_or(with);
+        if needle.is_empty() {
+            self.status = "usage: :s/old/new/".to_owned();
+            return;
+        }
+        // The last `:find`'s marks would be lying about a grid the replace just rewrote.
+        self.find = Find::default();
+        self.status = match self
+            .core
+            .replace(&Search::new(needle), with, RecalcMode::Document)
+        {
+            Ok(done) => match done.refused.first() {
+                None if done.cells == 0 => format!("no cell holds {needle}"),
+                None => format!("replaced in {} cell(s)", done.cells),
+                Some((hit, _)) => format!(
+                    "replaced in {} cell(s); {} formula(s) would not parse and were left alone \u{2014} first {}",
+                    done.cells,
+                    done.refused.len(),
+                    hit.address()
+                ),
+            },
+            Err(e) => e.to_string(),
+        };
     }
 
     /// `n` / `N` — the next or previous match, wrapping round the ends the way vi's do.
@@ -895,6 +917,9 @@ impl App {
             _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
             _ if cmd.starts_with("fill ") => self.cmd_color(cmd[5..].trim(), true),
             _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
+            // vi's substitution, the text half's own spelling of the same verb: every cell,
+            // one undo step, because that is what `App::replace` is.
+            _ if cmd.starts_with("s/") => self.cmd_substitute(&cmd[2..]),
             _ if cmd.starts_with("format ") => self.cmd_format(cmd[7..].trim()),
             _ if cmd.starts_with("eval ") => self.cmd_eval(cmd[5..].trim()),
             _ if cmd.starts_with("width ") => self.cmd_width(Some(cmd[6..].trim())),
@@ -2681,6 +2706,38 @@ mod tests {
 
     /// `:find`, then vi's own two keys — the first client in the suite that can search cells at
     /// all (`doc/feature-matrix.md` §4 had a row of ○).
+    #[test]
+    fn substitute_replaces_in_every_cell_as_one_undo_step() {
+        let mut app = filled();
+        app.core
+            .enter(0, Pos::new(2, 1), "=[.B2]*2", RecalcMode::No)
+            .expect("a formula");
+        app.run_command("s/1200/1300/");
+        assert_eq!(app.status, "replaced in 1 cell(s)");
+        // A number stays a number, and the formula reading it was recalculated in the same step.
+        assert_eq!(
+            app.core.get(0, Pos::new(1, 1)).unwrap(),
+            CellValue::Number(1300.0)
+        );
+        assert_eq!(
+            app.core.get(0, Pos::new(2, 1)).unwrap(),
+            CellValue::Number(2600.0)
+        );
+        assert!(app.core.undo());
+        assert_eq!(
+            app.core.get(0, Pos::new(1, 1)).unwrap(),
+            CellValue::Number(1200.0)
+        );
+
+        // A formula the replace would break is named, and left as it was.
+        app.run_command("s/*/ /");
+        assert!(app.status.contains("first Sheet1.B3"), "{}", app.status);
+        assert_eq!(app.core.input_text(0, Pos::new(2, 1)).unwrap(), "=B2*2");
+
+        app.run_command("s/nowhere/x/");
+        assert_eq!(app.status, "no cell holds nowhere");
+    }
+
     #[test]
     fn find_marks_every_match_and_n_steps_through_them() {
         let mut app = filled();

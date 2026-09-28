@@ -162,7 +162,7 @@ document's own **column widths** (`ui_tui/src/sheet/geom.rs` — whole terminal 
 the suite's one-inch default column, and the `ponytail` that measured padding in `char`s is gone
 with it) and folds hidden tracks away on both axes; there is a formula **completion band** over
 `grind_sheet::formula::assist` (Tab accepts, Enter still commits), `:find` + `n`/`N` over cells
-with every match marked, `:down`/`:right`, `:eval`, `:width`/`:height`/`:hide`/`:show`, `:name`,
+with every match marked, `:s/old/new/` over `App::replace`, `:down`/`:right`, `:eval`, `:width`/`:height`/`:hide`/`:show`, `:name`,
 CSV both ways, and selection arithmetic on the status bar through `App::preview`. The word
 processor half **draws a table as a grid** in box-drawing characters — `Measures` is its
 `grind_text::Faces`, building the block-to-cell map once per frame because `Faces::of` is called
