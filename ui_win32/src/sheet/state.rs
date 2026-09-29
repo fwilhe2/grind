@@ -200,41 +200,21 @@ pub fn to_store(text: &str) -> Result<String, DisplayError> {
 
 /// Where a caret goes inside the editor for a byte offset the parser reported.
 ///
-/// `EM_SETSEL` counts **UTF-16 code units** and a `DisplayError` is a byte offset into UTF-8,
-/// so this is the conversion between them. Out-of-range offsets land at the end rather than
-/// panicking: an error position is a hint about where to look, not an invariant.
+/// `EM_SETSEL` counts **UTF-16 code units** and a `DisplayError` is a byte offset into UTF-8, so
+/// this is [`grind_core::utf16::units_before`] — shared with the macOS shell, whose `NSRange`
+/// counts the same units — in the `i32` the control's messages take.
 pub fn caret_at(text: &str, byte: usize) -> i32 {
-    let at = byte.min(text.len());
-    let units: usize = text
-        .get(..at)
-        .unwrap_or(text)
-        .chars()
-        .map(char::len_utf16)
-        .sum();
-    i32::try_from(units).unwrap_or(i32::MAX)
+    i32::try_from(grind_core::utf16::units_before(text, byte)).unwrap_or(i32::MAX)
 }
 
 /// The same conversion the other way: where the editor's caret is, as a **byte** offset.
 ///
 /// `EM_GETSEL` reports UTF-16 units and everything that reads the text — `sheet/assist.rs`'s
 /// completion and signature hint, `formula::display` — counts bytes, so one of the two has to
-/// convert and this is where. A unit past the end lands at the end, and one that falls *inside* a
-/// surrogate pair lands on the character it is half of rather than between its bytes: a caret is
-/// a place in text, and there is no place inside a character.
+/// convert and this is where: [`grind_core::utf16::byte_of`], with a negative count (a control
+/// with no selection) at the start.
 pub fn byte_at(text: &str, units: i32) -> usize {
-    let Ok(want) = usize::try_from(units) else {
-        return 0;
-    };
-    let mut seen = 0usize;
-    for (byte, c) in text.char_indices() {
-        // Past it, or *inside* it: either way this character's own start is the answer, which is
-        // what keeps a caret between two units of one surrogate pair from splitting it.
-        if seen + c.len_utf16() > want {
-            return byte;
-        }
-        seen += c.len_utf16();
-    }
-    text.len()
+    usize::try_from(units).map_or(0, |units| grind_core::utf16::byte_of(text, units))
 }
 
 #[cfg(test)]
@@ -422,40 +402,16 @@ mod tests {
         assert!(!error.message.is_empty());
     }
 
-    /// `EM_SETSEL` counts UTF-16 units and the parser counts UTF-8 bytes; a formula with a
-    /// non-ASCII sheet name in it is where the difference shows.
+    /// The conversion itself is `grind_core::utf16`'s and tested there; what is this shell's is
+    /// the `i32` either side of it, which is what `EM_GETSEL` and `EM_SETSEL` carry.
     #[test]
-    fn a_caret_offset_is_converted_from_bytes_to_units() {
-        assert_eq!(caret_at("=SUM(B2", 5), 5);
+    fn a_caret_offset_is_converted_in_the_controls_own_integers() {
         // `ä` is two bytes and one unit.
         assert_eq!(caret_at("=ä+1", 3), 2);
-        // Past the end is the end, not a panic.
-        assert_eq!(caret_at("=A1", 99), 3);
-        assert_eq!(caret_at("", 4), 0);
-    }
-
-    /// And back, which is what reading `EM_GETSEL` needs. Every offset a caret can really be at
-    /// round-trips; the ones it cannot — inside a character — land on a boundary rather than
-    /// splitting one, because there is no place inside a character for a caret to be.
-    #[test]
-    fn a_caret_offset_converts_back_from_units_to_bytes() {
-        for text in ["=SUM(B2)", "=ä+1", "=\"\u{1f600}\"&A1", ""] {
-            for (byte, _) in text
-                .char_indices()
-                .chain(std::iter::once((text.len(), ' ')))
-            {
-                let units = caret_at(text, byte);
-                assert_eq!(byte_at(text, units), byte, "{text:?} at {byte}");
-            }
-        }
-        // An emoji is one character and *two* units, and the unit between its halves is not a
-        // place — it lands on the character rather than between its bytes.
-        let text = "=\u{1f600}";
-        assert_eq!(byte_at(text, 1), 1);
-        assert_eq!(byte_at(text, 2), 1);
-        assert_eq!(byte_at(text, 3), text.len());
+        assert_eq!(byte_at("=ä+1", 2), 3);
         // Nonsense from a control that has no selection, and past the end.
         assert_eq!(byte_at("=A1", -1), 0);
         assert_eq!(byte_at("=A1", 99), 3);
+        assert_eq!(caret_at("=A1", 99), 3);
     }
 }

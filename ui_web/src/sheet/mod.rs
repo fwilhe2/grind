@@ -27,6 +27,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use grind_core::utf16;
 use grind_sheet::find::{self, Search, Towards};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
@@ -1628,7 +1629,7 @@ impl Ui {
         // Focusing an `<input>` selects it in some browsers, and the caret belongs
         // after what is there or the next keystroke deletes the seed — the same trap
         // `ui_sheet_gtk`'s `Grid::begin` documents, in a different toolkit.
-        let end = text.chars().count() as u32;
+        let end = utf16::units_before(&text, text.len()) as u32;
         self.dom.formula.set_selection_range(end, end)?;
         self.set_message(String::new());
         self.refresh_assist()
@@ -1643,15 +1644,12 @@ impl Ui {
             return self.render_assist();
         }
         let text = self.dom.formula.value();
-        // `selection_start` counts in the same units the rest of this file already treats a
-        // caret position as (`begin`'s and `commit`'s own `chars().count()`), not strict
-        // UTF-16 — formula text is overwhelmingly ASCII, and a second, more careful caret
-        // arithmetic for the rare astral character is not worth a second convention.
-        let caret_chars = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
-        let caret = text
-            .char_indices()
-            .nth(caret_chars)
-            .map_or(text.len(), |(byte, _)| byte);
+        // `selection_start` counts UTF-16 code units, as every DOM offset does, and the assist
+        // counts bytes — `grind_core::utf16` is the conversion, the one `ui_win32`'s
+        // `EM_GETSEL` goes through too. Counting `char`s instead put the caret one place off
+        // for every emoji before it.
+        let units = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
+        let caret = utf16::byte_of(&text, units);
         let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
         self.assist.borrow_mut().refresh(&text, caret, &names);
         self.render_assist()
@@ -1688,7 +1686,7 @@ impl Ui {
         next.push_str(&replacement);
         next.push_str(&text[span.end..]);
         let caret_byte = span.start + replacement.len();
-        let caret = next[..caret_byte].chars().count() as u32;
+        let caret = utf16::units_before(&next, caret_byte) as u32;
         self.dom.formula.set_value(&next);
         self.dom.formula.focus()?;
         self.dom.formula.set_selection_range(caret, caret)?;
@@ -1720,7 +1718,7 @@ impl Ui {
                     Err(error) => {
                         // The edit stays open, with the caret on the problem.
                         self.set_message(format!("{} (at {})", error.message, error.at));
-                        let at = text[..error.at.min(text.len())].chars().count() as u32;
+                        let at = utf16::units_before(&text, error.at) as u32;
                         self.dom.formula.focus()?;
                         self.dom.formula.set_selection_range(at, at)?;
                         return Ok(());

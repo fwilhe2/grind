@@ -578,7 +578,8 @@ ui_win32/
                           over a real `App`
       state.rs          * Ready / Enter / Edit, the editing state machine, and the two
                           conversions an edit needs (display syntax, and UTF-8 bytes <-> the
-                          UTF-16 units EM_GETSEL/EM_SETSEL count, both ways)
+                          UTF-16 units EM_GETSEL/EM_SETSEL count, both ways — the latter
+                          `grind_core::utf16` since the Mac's M1, in the control's `i32`)
       assist.rs         * W9: what to offer somebody typing a formula and what the call under
                           the caret wants next, over `grind_sheet::formula::assist`; the runs
                           the band draws; the keys a list of offers claims; and the function
