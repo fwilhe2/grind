@@ -676,7 +676,9 @@ things had to move together, and the split is the point of it:
   the window under Wine rather than assumed.
 - **A list item in a cell keeps its indent inside the cell**, so its bullet stays in the cell.
 - **All of it is portable** and tested on Linux — six tests in `text/geom.rs`, including the empty
-  table that used to be the gap.
+  table that used to be the gap. Since `doc/macos-shell.md`'s M1 the flow, the table layout,
+  `across` and those tests are `grind_text::flow`'s, shared with `ui_text_gtk`; `text/geom.rs`
+  keeps this pane's numbers (`spacing`) and thin `flow_of`/`across` wrappers over them.
 
 **A number is never elided.** `DrawTextW`'s `DT_END_ELLIPSIS` applied to every cell, so a
 currency one pixel too wide came out as `3,710.0…` — a magnitude with a digit missing. A number

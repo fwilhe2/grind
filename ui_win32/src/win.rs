@@ -919,7 +919,7 @@ impl Text {
         Some(Faces::new(
             fonts,
             width,
-            scale(text::geom::INDENT, self.page.dpi),
+            text::geom::spacing(self.page.dpi),
             &self.across,
         ))
     }

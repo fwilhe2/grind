@@ -385,7 +385,7 @@ inside a cell before any client knew tables existed. **Every client now also dra
 `grind-web` stacked a cell's blocks like any other paragraph until its UX pass
 (`ui_web/src/text/table.rs`), and `grind-win32` did until the pass after that
 (`ui_win32/src/text/geom.rs`'s `across` and `lay_out_table`, `ui_text_gtk`'s answers carried over
-to GDI).
+to GDI — and both desktop windows' copies are one `grind_text::flow` since the macOS shell's M1).
 ᵠ Box-drawing rules, every column the same width. `grind_text::Faces` is handed a block's kind
 and not its cell, so `grind-tui` builds a map of which block is in which cell once per frame and
 reads it back — the shape `ui_text_gtk/src/view.rs`'s `Column` has, and required rather than

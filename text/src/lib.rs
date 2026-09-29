@@ -29,7 +29,8 @@
 //! supplies font metrics through [`Metrics`] and nothing else — plus, through [`Faces`], which
 //! of them each block is set in, because a heading and the paragraph under it are not the same
 //! font and a motion by line crosses between them. Pagination is still gated, and layout is
-//! left-to-right only by explicit decision.
+//! left-to-right only by explicit decision. The stacking above the lines — where each block
+//! sits down a continuous page, and a table's on its grid — is [`flow`], for the same reason.
 //!
 //! **Character formatting is direct formatting** ([`style`]). A run carries the properties an
 //! `office:automatic-styles` entry set on it — bold, italic, a family, a size, a colour — and
@@ -45,6 +46,7 @@
 //! reads here as formatting lost; pages.
 
 pub mod action;
+pub mod flow;
 pub mod format;
 pub mod lint;
 pub mod loc;

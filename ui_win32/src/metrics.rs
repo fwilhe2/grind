@@ -229,6 +229,7 @@ mod windows_impl {
     use grind_text::style::CharStyle;
 
     use crate::gdi::Font;
+    use crate::text::geom::{Across, Spacing};
     use crate::theme::Rgb;
 
     use super::{BODY_FACE, Spec, fold_advances, spec_for};
@@ -649,12 +650,13 @@ mod windows_impl {
     /// measured the paragraph below it with the heading's font. This shell inherits the fix and
     /// must not re-introduce it by reaching for `Uniform`.
     pub struct Faces<'a> {
-        width: f32,
-        /// How much narrower each nesting level of a list is. **The indent comes out of the
-        /// column**, so a list item is measured to less than the measure — and it has to be the
-        /// same subtraction the flow makes when it places the text, or a wrapped list item would
-        /// break its lines in one place and draw them in another.
-        indent: f32,
+        /// The text column's width, before any indent comes out of it.
+        column: f64,
+        /// The pane's numbers at this monitor's scaling. **The indent comes out of the column**,
+        /// so a list item is measured to less than the measure — and it is
+        /// [`Spacing::measure`], the very function the flow places the text with, or a wrapped
+        /// list item would break its lines in one place and draw them in another.
+        spacing: Spacing,
         /// Every face a block can be set in, body first. A flat list because the lookup is
         /// [`Spec`] equality — [`spec_for`] decides which face a block wants and this finds the
         /// one built for it, so the decision is written down once.
@@ -664,19 +666,19 @@ mod windows_impl {
         /// width, and every caret motion asks through here, so a Down-arrow inside a cell is
         /// measured where the ink is. Read by index and never by asking the document, since
         /// `grind_text::Faces::of` is called while `App` holds its read lock.
-        cells: &'a HashMap<usize, crate::text::geom::Across>,
+        cells: &'a HashMap<usize, Across>,
     }
 
     impl<'a> Faces<'a> {
         pub fn new(
             fonts: &'a Fonts,
-            width: f64,
-            indent: f64,
-            cells: &'a HashMap<usize, crate::text::geom::Across>,
+            column: f64,
+            spacing: Spacing,
+            cells: &'a HashMap<usize, Across>,
         ) -> Self {
             Faces {
-                width: width as f32,
-                indent: indent as f32,
+                column,
+                spacing,
                 cells,
                 all: super::faces()
                     .into_iter()
@@ -702,14 +704,11 @@ mod windows_impl {
 
     impl grind_text::Faces for Faces<'_> {
         fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
-            if let Some(cell) = self.cells.get(&index) {
-                return ((cell.width as f32).max(1.0), self.face(kind, style));
-            }
-            let indent = match kind {
-                BlockKind::ListItem { depth } => *depth as f32 * self.indent,
-                _ => 0.0,
+            let width = match self.cells.get(&index) {
+                Some(cell) => cell.width,
+                None => self.spacing.measure(kind, self.column),
             };
-            ((self.width - indent).max(1.0), self.face(kind, style))
+            ((width as f32).max(1.0), self.face(kind, style))
         }
     }
 
