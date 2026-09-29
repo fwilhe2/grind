@@ -26,6 +26,7 @@ pub mod clip;
 pub mod csv;
 pub mod filter;
 pub mod find;
+pub mod format;
 pub mod formula;
 pub mod graph;
 pub mod grid;

@@ -35,6 +35,7 @@ use libadwaita::prelude::*;
 use gtk::{gdk, glib};
 
 use grind_sheet::App;
+use grind_sheet::format::{self, Toggle};
 use grind_sheet::locale::Locale;
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{self, CellStyle};
@@ -93,14 +94,15 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     let updating = Rc::new(Cell::new(false));
 
     // Each control is one field, and every one of them goes through `restyle`, so "read the
-    // active cell, change one thing, write the rectangle" exists once.
+    // active cell, change one thing, write the rectangle" exists once — and what the change
+    // *is* is `grind_sheet::format`'s, shared with every other shell's strip.
     let field = |grid: &Grid, app: &Arc<App>, updating: &Rc<Cell<bool>>| {
         let (grid, app, updating) = (grid.clone(), app.clone(), updating.clone());
-        move |set: &dyn Fn(&mut CellStyle)| {
+        move |write: &dyn Fn(&CellStyle) -> Option<CellStyle>| {
             if updating.get() {
                 return;
             }
-            restyle(&grid, &app, set);
+            restyle(&grid, &app, write);
         }
     };
 
@@ -122,7 +124,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         Swatches::new(
             &gtk::Label::new(Some("A")).upcast(),
             "Text Colour",
-            move |value| apply(&|style| style.color = value.clone()),
+            move |value| apply(&|style| format::coloured(style, false, value.clone())),
         )
     };
     let background = {
@@ -130,7 +132,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         Swatches::new(
             &gtk::Image::from_icon_name("color-select-symbolic").upcast(),
             "Cell Background",
-            move |value| apply(&|style| style.background = value.clone()),
+            move |value| apply(&|style| format::coloured(style, true, value.clone())),
         )
     };
 
@@ -158,31 +160,23 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
 
     // --- writing ---
 
-    let apply = field(grid, app, &updating);
-    bold.connect_toggled(move |button| {
-        let on = button.is_active();
-        apply(&|style| style.font_weight = on.then(|| "bold".to_owned()));
-    });
-
-    let apply = field(grid, app, &updating);
-    italic.connect_toggled(move |button| {
-        let on = button.is_active();
-        apply(&|style| style.font_style = on.then(|| "italic".to_owned()));
-    });
-
-    let apply = field(grid, app, &updating);
-    wrap.connect_toggled(move |button| {
-        let on = button.is_active();
-        apply(&|style| style.wrap = on.then(|| "wrap".to_owned()));
-    });
-
-    // §16.5's values are relative to the writing direction, which is why `start`/`end` are
-    // stored rather than left/right — the same spelling `sheet style --align` writes.
-    for (button, value) in [(&left, "start"), (&center, "center"), (&right, "end")] {
-        let apply = field(grid, app, &updating);
+    // A toggle button already knows its new state, so it asks for that state rather than a
+    // flip. §16.5's alignment values are relative to the writing direction, which is why
+    // `start`/`end` are what `Toggle` writes rather than left/right — the same spelling
+    // `sheet style --align` writes.
+    let toggles = [
+        (bold.clone(), Toggle::Bold),
+        (italic.clone(), Toggle::Italic),
+        (wrap.clone(), Toggle::Wrap),
+        (left.clone(), Toggle::AlignStart),
+        (center.clone(), Toggle::AlignCenter),
+        (right.clone(), Toggle::AlignEnd),
+    ];
+    for (button, toggle) in &toggles {
+        let (apply, toggle) = (field(grid, app, &updating), *toggle);
         button.connect_toggled(move |button| {
             let on = button.is_active();
-            apply(&|style| style.align = on.then(|| value.to_owned()));
+            apply(&|style| toggle.set(style, on));
         });
     }
 
@@ -215,7 +209,6 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     let refresh = {
         let (app, picker, updating) = (app.clone(), picker.clone(), updating.clone());
         let face = numbers.clone();
-        let toggles = (bold, italic, wrap, left, center, right);
         let colors = (color, background);
         let grid = grid.downgrade();
         move || {
@@ -229,17 +222,9 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
                 _ => return,
             };
             updating.set(true);
-            let (bold, italic, wrap, left, center, right) = &toggles;
-            bold.set_active(style.font_weight.as_deref() == Some("bold"));
-            italic.set_active(matches!(
-                style.font_style.as_deref(),
-                Some("italic" | "oblique")
-            ));
-            wrap.set_active(style.wrap.as_deref() == Some("wrap"));
-            let align = style.align.as_deref();
-            left.set_active(matches!(align, Some("start" | "left")));
-            center.set_active(align == Some("center"));
-            right.set_active(matches!(align, Some("end" | "right")));
+            for (button, toggle) in &toggles {
+                button.set_active(toggle.is_on(&style));
+            }
             // A cell with no colour of its own shows the **theme's**, not a swatch's own
             // default — a red swatch over an unstyled cell is a claim about the cell.
             colors.0.show(style.color.as_deref(), true);
@@ -267,22 +252,19 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
 /// Read the active cell's style, change one field, write it over the whole rectangle.
 ///
 /// The read is what makes "bold as well" work: `App::set_style` replaces, deliberately (its
-/// docs say so), and this is the read-merge-write its docs promise instead of a merge policy
-/// in the core.
-fn restyle(grid: &Grid, app: &Arc<App>, set: &dyn Fn(&mut CellStyle)) {
+/// docs say so), and `write` is one of `grind_sheet::format`'s read-merge-writes — which also
+/// answer `None` for a style that sets nothing, so un-bolding the only styled cell leaves no
+/// empty `style:style` behind.
+fn restyle(grid: &Grid, app: &Arc<App>, write: &dyn Fn(&CellStyle) -> Option<CellStyle>) {
     let Some((sheet, start, end)) = grid.target() else {
         return;
     };
-    let mut style = app
+    let style = app
         .style_at(sheet, grid.selection().active)
         .ok()
         .flatten()
         .unwrap_or_default();
-    set(&mut style);
-    // A style that sets nothing *is* no style, and the core spells that `None` — otherwise
-    // un-bolding the only styled cell would leave an empty `style:style` behind.
-    let style = (!style.is_plain()).then_some(style);
-    if let Err(error) = app.set_style(sheet, start, end, style) {
+    if let Err(error) = app.set_style(sheet, start, end, write(&style)) {
         grid.report(Notice::Refused(error.to_string()));
     }
 }

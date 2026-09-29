@@ -192,7 +192,8 @@ the **clipboard**: `CF_UNICODETEXT`, tab- and CRLF-separated, over `App::input_t
 `clipboard.rs` is the only file that opens it and `grind_sheet::clip` the portable codec either
 side, so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the
 same way Delete already did. And the grid has its **format strip** (W12, `sheet/format.rs` over
-`strip.rs`, the layout and painting both panes' strips now share): Bold, Italic, three alignments,
+`strip.rs`, the layout and painting both panes' strips now share, and over `grind_sheet::format`
+for what a toggle, a colour or a decimal step writes): Bold, Italic, three alignments,
 text colour and cell background, a number-format picker whose face says what the cell is (`123`,
 `%`, `€`, `Date`), fewer/more decimals and Clear — every control a read of the active cell and one
 `set_style`/`set_format` over the selection, the same verbs in the Format menu (checked as the

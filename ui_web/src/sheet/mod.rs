@@ -29,6 +29,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use grind_core::utf16;
 use grind_sheet::find::{self, Search, Towards};
+use grind_sheet::format::{self, Toggle};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
@@ -681,7 +682,7 @@ impl Ui {
     /// Every verb this pane answers, by the id the palette, the toolbar and the keyboard all
     /// name it with ([`crate::command::SHEET`]).
     pub fn run(&self, id: &str) {
-        let style = |set: fn(&mut CellStyle)| self.merge_style(set);
+        let style = |write: fn(&CellStyle) -> Option<CellStyle>| self.merge_style(write);
         match id {
             "sheet.recalc" => self.recalc(),
             "view.roles" => self.overlay(true),
@@ -698,15 +699,19 @@ impl Ui {
             "sheet.format-table" => self.format_table(None),
             "sheet.format-table-totals" => self.format_table_with_totals(),
 
-            "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
-            "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
-            "style.align-left" => style(|s| set(&mut s.align, "start")),
-            "style.align-center" => style(|s| set(&mut s.align, "center")),
-            "style.align-right" => style(|s| set(&mut s.align, "end")),
-            "style.align-clear" => style(|s| s.align = None),
-            "style.wrap" => style(|s| toggle(&mut s.wrap, "wrap")),
-            "style.border" => style(|s| s.set_border(Some(BORDER.to_owned()))),
-            "style.border-clear" => style(|s| s.set_border(None)),
+            "style.bold" => style(|s| Toggle::Bold.flipped(s)),
+            "style.italic" => style(|s| Toggle::Italic.flipped(s)),
+            // The alignments *set* rather than flip here, with a command of their own to clear
+            // them, because a palette row has no pressed state to flip from.
+            "style.align-left" => style(|s| Toggle::AlignStart.set(s, true)),
+            "style.align-center" => style(|s| Toggle::AlignCenter.set(s, true)),
+            "style.align-right" => style(|s| Toggle::AlignEnd.set(s, true)),
+            "style.align-clear" => style(|s| format::restyled(s, |s| s.align = None)),
+            "style.wrap" => style(|s| Toggle::Wrap.flipped(s)),
+            "style.border" => {
+                style(|s| format::restyled(s, |s| s.set_border(Some(BORDER.to_owned()))))
+            }
+            "style.border-clear" => style(|s| format::restyled(s, |s| s.set_border(None))),
             "style.clear" => self.set_style_of_selection(None),
 
             "format.general" => self.set_format_of_selection(None),
@@ -1014,17 +1019,18 @@ impl Ui {
     /// Read the active cell's style, change one field, write the whole rectangle.
     ///
     /// `App::set_style` *replaces* rather than merges, deliberately (`sheet/src/lib.rs`) — so
-    /// the merge policy is here, where "make this bold as well" is a sentence about what is
-    /// under the cursor rather than about every cell in the range.
-    fn merge_style(&self, change: impl Fn(&mut CellStyle)) {
-        let mut style = self
+    /// the merge is here, where "make this bold as well" is a sentence about what is under the
+    /// cursor rather than about every cell in the range. `write` is one of
+    /// `grind_sheet::format`'s, which answer `None` for a style that sets nothing: un-bolding the
+    /// only bold cell used to leave an empty `style:style` behind.
+    fn merge_style(&self, write: impl Fn(&CellStyle) -> Option<CellStyle>) {
+        let style = self
             .app
             .style_at(self.sheet.get(), self.selection.get().active)
             .ok()
             .flatten()
             .unwrap_or_default();
-        change(&mut style);
-        self.set_style_of_selection(Some(style));
+        self.set_style_of_selection(write(&style));
     }
 
     fn set_style_of_selection(&self, style: Option<CellStyle>) {
@@ -1055,31 +1061,25 @@ impl Ui {
         self.set_format_of_selection(Some(numfmt::preset(Kind::Currency, 2, true, symbol)));
     }
 
-    /// More or fewer decimal places, keeping whatever kind the cell already had — General
-    /// becomes a plain number, which is what pressing it on an unformatted cell means.
-    fn step_decimals(&self, by: i16) {
-        let current = self
-            .app
-            .format_at(self.sheet.get(), self.selection.get().active)
-            .ok()
-            .flatten();
-        let (kind, decimals, grouping, symbol) = match &current {
-            Some(format) => format.preset_params(),
-            None => (Kind::Number, 2, false, String::new()),
-        };
-        let decimals = (i16::from(decimals) + by).clamp(0, 10) as u8;
-        let symbol = match symbol.is_empty() {
-            true => CURRENCY.to_owned(),
-            false => symbol,
-        };
-        self.set_format_of_selection(Some(numfmt::preset(kind, decimals, grouping, &symbol)));
+    /// More or fewer decimal places — `grind_sheet::format::stepped`, which keeps whatever
+    /// kind the cell already had and starts a plain cell from the decimals it *shows*. A date,
+    /// text, or a format this build did not write has no decimals to step, and nothing is
+    /// written: this used to turn a date into a number format with decimals.
+    fn step_decimals(&self, by: i8) {
+        let (sheet, at) = (self.sheet.get(), self.selection.get().active);
+        let current = self.app.format_at(sheet, at).ok().flatten();
+        let shown = self.app.value_text(sheet, at).unwrap_or_default();
+        let shown = format::decimals_shown(&shown, self.app.locale().as_ref());
+        if let Some(stepped) = format::stepped(current.as_ref(), by, shown, None) {
+            self.set_format_of_selection(Some(stepped));
+        }
     }
 
     /// A colour picked from the swatch grid — `"color"` for the text, `"fill"` for behind it.
     pub fn set_color(&self, target: &str, hex: Option<String>) {
         match target {
-            "color" => self.merge_style(|s| s.color = hex.clone()),
-            "fill" => self.merge_style(|s| s.background = hex.clone()),
+            "color" => self.merge_style(|s| format::coloured(s, false, hex.clone())),
+            "fill" => self.merge_style(|s| format::coloured(s, true, hex.clone())),
             _ => {}
         }
     }
@@ -1094,23 +1094,15 @@ impl Ui {
             .ok()
             .flatten()
             .unwrap_or_default();
-        set_pressed(
-            document,
-            "s-bold",
-            style.font_weight.as_deref() == Some("bold"),
-        );
-        set_pressed(
-            document,
-            "s-italic",
-            style.font_style.as_deref() == Some("italic"),
-        );
-        set_pressed(document, "s-wrap", style.wrap.as_deref() == Some("wrap"));
-        for (id, value) in [
-            ("s-align-left", "start"),
-            ("s-align-center", "center"),
-            ("s-align-right", "end"),
+        for (id, toggle) in [
+            ("s-bold", Toggle::Bold),
+            ("s-italic", Toggle::Italic),
+            ("s-wrap", Toggle::Wrap),
+            ("s-align-left", Toggle::AlignStart),
+            ("s-align-center", Toggle::AlignCenter),
+            ("s-align-right", Toggle::AlignEnd),
         ] {
-            set_pressed(document, id, style.align.as_deref() == Some(value));
+            set_pressed(document, id, toggle.is_on(&style));
         }
         set_swatch(document, "s-color-bar", style.color.as_deref());
         set_swatch(document, "s-fill-bar", style.background.as_deref());
@@ -1959,17 +1951,6 @@ const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
 
 /// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
 /// opposed to a value a picker sets.
-fn toggle(field: &mut Option<String>, value: &str) {
-    *field = match field.as_deref() == Some(value) {
-        true => None,
-        false => Some(value.to_owned()),
-    };
-}
-
-fn set(field: &mut Option<String>, value: &str) {
-    *field = Some(value.to_owned());
-}
-
 /// Which of the format `<select>`'s options a cell's format *is* — the command id, so the
 /// toolbar reports in the same vocabulary it commands in.
 ///
