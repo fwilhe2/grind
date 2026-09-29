@@ -120,6 +120,38 @@ pub fn wraps(style: Option<&CellStyle>) -> bool {
     style.is_some_and(|style| style.wrap.as_deref() == Some("wrap"))
 }
 
+/// The size a cell that names none is set in, in points — `style:default-style`'s `fo:font-size`
+/// in every document LibreOffice writes, and what a spreadsheet has meant by "no size given"
+/// since long before ODF.
+pub const DEFAULT_FONT_PT: f64 = 10.0;
+
+/// A cell's `fo:font-size` as a multiple of [`DEFAULT_FONT_PT`], or `None` when it names no size
+/// this build reads (a percentage, a length in another unit).
+///
+/// **A multiple, not an absolute**, because a shell draws its default cell in its own UI font at
+/// its own size, and a cell the document made twice as large has to come out twice as large as
+/// *that* — which an absolute 20pt would not, beside a 13pt system font. One parse for drawing
+/// and measuring alike, so a cell cannot be drawn at one size and measured at another.
+pub fn font_scale(font_size: Option<&str>) -> Option<f64> {
+    font_size
+        .and_then(|size| size.strip_suffix("pt"))
+        .and_then(|points| points.trim().parse::<f64>().ok())
+        .filter(|points| *points > 0.0)
+        .map(|points| points / DEFAULT_FONT_PT)
+}
+
+/// The four properties of a cell's style that change how *wide* its text is, as the text style
+/// `grind_core::layout` measures with. No family: the model does not carry one for a cell
+/// (LibreOffice rewrites it into a font-face reference).
+pub fn text_style(style: Option<&CellStyle>) -> grind_core::style::TextStyle {
+    grind_core::style::TextStyle {
+        font_family: None,
+        font_size: style.and_then(|s| s.font_size.clone()),
+        font_weight: style.and_then(|s| s.font_weight.clone()),
+        font_style: style.and_then(|s| s.font_style.clone()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +205,18 @@ mod tests {
         assert_eq!(valign(Some(&bottom)), VAlign::Bottom);
         let automatic = styled(|s| s.vertical_align = Some("automatic".into()));
         assert_eq!(valign(Some(&automatic)), VAlign::Middle);
+    }
+
+    #[test]
+    fn a_font_size_is_a_multiple_of_the_default() {
+        assert_eq!(font_scale(Some("20pt")), Some(2.0));
+        assert_eq!(font_scale(Some("10pt")), Some(1.0));
+        assert_eq!(font_scale(Some("120%")), None, "not a size this reads");
+        assert_eq!(font_scale(Some("0pt")), None);
+        assert_eq!(font_scale(None), None);
+        let big = styled(|s| s.font_size = Some("14pt".into()));
+        assert_eq!(text_style(Some(&big)).font_size.as_deref(), Some("14pt"));
+        assert_eq!(text_style(None), grind_core::style::TextStyle::default());
     }
 
     #[test]

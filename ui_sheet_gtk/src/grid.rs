@@ -672,11 +672,6 @@ mod imp {
     const FIT_SLACK: f64 = 2.0;
     /// Space above and below it, which is what makes the default row taller than a line.
     const ROW_PAD: f64 = 8.0;
-    /// The size a cell that names none is, in points — `style:default-style`'s
-    /// `fo:font-size` in every document LibreOffice writes, and what a spreadsheet has meant
-    /// by "no size given" since long before ODF. A cell's own size is drawn as a multiple of
-    /// it rather than as an absolute; [`font`] is where that happens and why.
-    const DEFAULT_FONT_PT: f64 = 10.0;
     /// How much sheet is measured for natural row heights. A row above the view still
     /// displaces the ones below it, so this pass cannot be limited to what is on screen —
     /// past this much document every row keeps the default height instead.
@@ -1762,12 +1757,7 @@ mod imp {
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
                         continue;
                     };
-                    let text_style = grind_core::style::TextStyle {
-                        font_family: None,
-                        font_size: style.font_size.clone(),
-                        font_weight: style.font_weight.clone(),
-                        font_style: style.font_style.clone(),
-                    };
+                    let text_style = look::text_style(Some(style));
                     // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
                     // mandatory break, which is what the un-wrapped case wants (a cell whose
                     // only reason to be here is an oversized font).
@@ -4521,7 +4511,7 @@ mod imp {
     /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
     /// nothing here to set a family from.
     ///
-    /// **The size is a multiple of [`DEFAULT_FONT_PT`], not an absolute**, and that is the
+    /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute**, and that is the
     /// whole point of this function. A document says what it means twice over: once per cell
     /// in `fo:font-size`, and once for every cell that names none in
     /// `style:default-style` — which this build does not read (the `ponytail:` in
@@ -4578,7 +4568,7 @@ mod imp {
         any.then_some(attrs)
     }
 
-    /// A cell's `fo:font-size` as a multiple of [`DEFAULT_FONT_PT`], or `None` when it names
+    /// A cell's `fo:font-size` as a multiple of [`look::DEFAULT_FONT_PT`], or `None` when it names
     /// none.
     ///
     /// A length in points, which is what a spreadsheet's font size always is. A
@@ -4595,11 +4585,7 @@ mod imp {
     /// parse either way, which is the point: a cell drawn at one size and measured at another
     /// is exactly the drift `doc/text-layout.md` decision 3 warns a shell into.
     pub(super) fn scale_of(font_size: Option<&str>) -> Option<f64> {
-        font_size
-            .and_then(|size| size.strip_suffix("pt"))
-            .and_then(|points| points.parse::<f64>().ok())
-            .filter(|points| *points > 0.0)
-            .map(|points| points / DEFAULT_FONT_PT)
+        look::font_scale(font_size)
     }
 
     /// Draw `layout` aligned within `cell`, clipped to `paint` — which is the same
