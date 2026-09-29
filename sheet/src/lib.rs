@@ -30,6 +30,7 @@ pub mod graph;
 pub mod grid;
 pub mod lint;
 pub mod model;
+pub mod nav;
 pub mod numfmt;
 pub mod odf;
 pub mod projection;
