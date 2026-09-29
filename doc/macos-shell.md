@@ -354,6 +354,27 @@ Each hoist is its own commit, and **each is proved a refactor rather than argued
 `--render-to` from `ui_win32` (under Wine, `env -u DISPLAY`) and from both GTK windows,
 byte-identical before and after. The precedent is `formula::assist` and `grind_text::format::Change`.
 
+### What M1 did
+
+**Done.** Every row above is answered, one commit each, and two rows grew on the way because the
+Mac would have copied something the table had not listed:
+
+| Row | Became | What the hoist found |
+|---|---|---|
+| Navigation | `grind_sheet::nav` | The GTK step added without saturating and the Windows one saturated; the hoist saturates |
+| Tracks | `grind_sheet::tracks` | The union of both copies' methods; the millimetre conversion is a function, so `ui_win32` keeps its own order of arithmetic |
+| Aggregates | `grind_sheet::summary` | The terminal keeps its own spelling over the same numbers |
+| Clipboard | `grind_sheet::clip`, the line ending a parameter | The browser and the terminal pasted a formula back as `#NAME?`: neither turned display syntax into ODF's |
+| `Flow` | `grind_text::flow`, with each shell's numbers as a `Spacing` and cell measures from one `across` map | Three drifts: GTK left two gaps above a table, only Windows indented a list item inside a cell, only GTK gave `Title`/`Subtitle` a heading's space. The GTK frame changed by exactly the first, proved against the old code with that one line changed |
+| UTF-16 | `grind_core::utf16` | Windows' copy put the caret at the end of a formula for a byte inside a character; the browser counted `char`s where the DOM counts UTF-16 units, and could panic on a parse error's offset. It is the third caller |
+| The kind rule | `grind_core::kind::reconcile`, and `DocumentKind::label` for `describe` | `describe` was a copy of `label` that called a presentation a "document" |
+| Edit modes | **Mirrored**, with a `ponytail:` on both machines naming the fourth copy | No one abstract key type fits: GTK's `Key` carries its character, Windows takes `WM_KEYDOWN` and `WM_CHAR` apart and asks its accelerators first, and the Mac gets selectors from its field editor. The machines also differ on purpose — pointing and F4 exist only in GTK |
+| — what a commit stores | `grind_sheet::formula::display::to_input` | Five copies of the same four-line match, one of them `App::replace`'s |
+| Format toggles | `grind_sheet::format` — `Toggle`, `restyled`, `coloured`, `stepped` | The browser left an empty `style:style` behind, read `oblique` as not italic, and stepped a date's decimals into a number format |
+
+So the Mac's `sheet/state.rs` (M4) is the one copy it writes on purpose, and it starts from
+`to_input`, `nav` and `format` rather than from either shell.
+
 ## Milestones
 
 Every milestone lands green: `cargo fmt --check`, clippy for the host **and both Apple targets**,
@@ -362,7 +383,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | # | Milestone | Exit criterion |
 |---|---|---|
 | **M0** | **Plan and wiring** — this document; `ui_mac/` with `args.rs` and `main.rs`; a workspace member (not a default member); `macos.yml`; `-p grind-mac` in `ci.yml`'s host lists; `ui_mac` in `cli/tests/packaging.rs`'s `UNPACKAGED`; the deployment target | The Linux half is **met** (see *Evidence*). The runner half is **the first run of `macos.yml`'s `probe` job**: the core works on macOS, CoreText draws headless and reproducibly, a window opens and can be snapshotted on both OS versions, and synthesized events reach a text field. Each answer goes into *Evidence*, and a "no" rewrites the decision that depended on it before M2 starts |
-| **M1** | The hoists above | All suites green; Win32 and GTK frames byte-identical before and after each |
+| **M1** | The hoists above — *done* (*What M1 did*) | All suites green; Win32 and GTK frames byte-identical before and after each — **met**, with the one GTK frame change the `Flow` hoist made on purpose, proved separately |
 | **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26 |
 | **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20` |
 | **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched |
@@ -517,13 +538,19 @@ Measured on 2026-09-29, on the Linux development machine, before any AppKit code
 | The portable half tests on Linux | `cargo test -p grind-mac`: 22 passed — argument handling including AppKit's own launch arguments, the type flags, the bytes deciding over the extension, and the workbook and CSV sniffs |
 | AppKit's launch arguments do not become files | `grind-mac -AppleLanguages '(de)' examples/quote.grind` resolves to the projection, a spreadsheet, and to nothing else |
 
-**To be filled in by the first run of `macos.yml`'s `probe` job**, on `macos-15` and `macos-26`.
-Each row is a question the job answers in its artifact (`probe/probe.txt`, `probe/core.txt`,
-`probe/machine.txt`, and the PNGs):
+**The first run of `macos.yml`'s `probe` job** was run 36620879811, on the M0 commit, and it
+was green on both `macos-15` and `macos-26`. Green settles only what the job *asserts*: the core
+question below (the step ends in `test … = 9`), and that CoreText draws into a bitmap with no
+application object and a window, a content view and a key event can all be built — the probe
+exits non-zero otherwise. Everything else it *prints*, and those answers are in its artifacts and
+its job summary, **neither of which can be read without signing in**. From the next run the
+Summary step also emits each answer file as a workflow annotation, which the public API serves to
+anyone (`/repos/fwilhe2/grind/check-runs/<job>/annotations`), so a session with no credentials can
+fill this table in. Until then each row below is still open unless it says otherwise:
 
 | Question | What depends on the answer |
 |---|---|
-| Does the suite's core run on macOS — `grind sheet set`, `recalc`, `view`, `lint` — and does `=SUM` give 9? | Everything; `ui_win32`'s W0 found a stack overflow this way |
+| Does the suite's core run on macOS — `grind sheet set`, `recalc`, `view`, `lint` — and does `=SUM` give 9? **Yes**, on both, asserted by the step | Everything; `ui_win32`'s W0 found a stack overflow this way |
 | Does CoreText draw into a `CGBitmapContext` with no application object, and are two renders the same bytes? | Decision 9's `--render-to` |
 | What are the caret offsets of `é`, `e◌́`, a ZWJ family and `क्षि`? Are they one stop each? | Decision 4 |
 | Is there a screen, does a window become visible and key, and does the application become active? | Decision 9's `--drive`, and M2 onward |

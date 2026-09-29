@@ -41,6 +41,14 @@
 //! [`super::assist`], asked *before* this table, because the three keys a completion list claims
 //! — Tab, Up/Down, Escape — all already mean something in this one, and a state machine that had
 //! to know whether a popup was up would be two questions in one match.
+//!
+//! ponytail: `ui_sheet_gtk/src/state.rs` is this machine mirrored rather than shared, and the
+//! macOS shell will be a third — `doc/macos-shell.md`'s M1 found no one abstract key type that
+//! fits a GTK `Key` carrying its character, this file's two messages with the accelerators asked
+//! first, and the Mac's selectors. What is not about keys is shared:
+//! `grind_sheet::formula::display::to_input` is what a commit stores. **The trigger is a fourth
+//! copy**, or two of them answering one keystroke differently for a reason that is not their
+//! input model.
 
 use crate::menu::{self, Command};
 

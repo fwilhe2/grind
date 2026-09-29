@@ -28,6 +28,15 @@
 //! keep moving it. That is why the mode enum has three variants and the behaviour has four:
 //! "am I pointing" is a question about the *text*, and a flag would go stale the moment
 //! someone moved the caret.
+//!
+//! ponytail: `ui_win32/src/sheet/state.rs` is this machine mirrored rather than shared, and the
+//! macOS shell will be a third. `doc/macos-shell.md`'s M1 asked whether one abstract key type
+//! fits all three shells' inputs, and it does not: this one takes a `Key` that already carries
+//! its character, Windows' takes a `WM_KEYDOWN` and a `WM_CHAR` separately and asks its menu
+//! accelerators first, and the Mac gets *selectors* from its field editor. What is not about
+//! keys is shared — `grind_sheet::formula::display::to_input` is what a commit stores, and
+//! `grind_sheet::nav` the motions. **The trigger is a fourth copy**, or the first time two of
+//! them answer the same keystroke differently for a reason that is not their input model.
 
 use std::ops::Range;
 

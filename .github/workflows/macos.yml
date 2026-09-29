@@ -123,6 +123,17 @@ jobs:
             cat probe/machine.txt probe/probe.txt 2>/dev/null
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # The same answers as annotations, one per file. The summary and the artifact both need
+          # a signed-in reader; an annotation is served by the public API to anyone
+          # (`/repos/<owner>/<repo>/check-runs/<job>/annotations`), which is how a session with
+          # no credentials fills in doc/macos-shell.md's Evidence. `%` and line breaks are the
+          # two characters a workflow command must escape.
+          for file in machine core probe; do
+            if [ -f "probe/$file.txt" ]; then
+              body="$(sed -e 's/%/%25/g' "probe/$file.txt" | awk 'BEGIN { ORS = "%0A" } { print }')"
+              echo "::notice title=${{ matrix.os }} $file.txt::$body"
+            fi
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
