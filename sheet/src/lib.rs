@@ -35,6 +35,7 @@ pub mod odf;
 pub mod projection;
 pub mod style;
 pub mod table_format;
+pub mod tracks;
 pub mod view;
 
 /// What this crate takes from `grind-core` and hands on under its own name.

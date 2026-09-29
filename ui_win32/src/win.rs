@@ -113,7 +113,7 @@ use crate::sheet::clip;
 use crate::sheet::currency;
 use crate::sheet::draw::{self, FormatStrip, Frame};
 use crate::sheet::format;
-use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
+use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, mm_to_px, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
@@ -574,14 +574,14 @@ impl Sheet {
                 MAX_COLS,
                 &widths,
                 &hidden_cols,
-                dpi,
+                mm_to_px(dpi),
             ),
             rows: Sizes::from_lengths(
                 scale(draw::ROW_H, dpi),
                 MAX_ROWS,
                 &heights,
                 &hidden_rows,
-                dpi,
+                mm_to_px(dpi),
             ),
             first_row: self.geom.first_row,
             first_col: self.geom.first_col,
