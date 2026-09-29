@@ -31,6 +31,7 @@ pub mod formula;
 pub mod graph;
 pub mod grid;
 pub mod lint;
+pub mod look;
 pub mod model;
 pub mod nav;
 pub mod numfmt;

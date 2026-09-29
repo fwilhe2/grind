@@ -632,8 +632,7 @@ pub fn cell_menu_model() -> gio::Menu {
 mod imp {
     use super::*;
 
-    use grind_sheet::formula::value::FormulaError;
-    use grind_sheet::{CellValue, Pos};
+    use grind_sheet::Pos;
     use gtk::graphene;
     use gtk::gsk;
     use gtk::pango;
@@ -3969,9 +3968,9 @@ mod imp {
                         });
                     let align = style
                         .and_then(|s| s.align.as_deref())
-                        .and_then(aligned)
-                        .unwrap_or_else(|| alignment(value));
-                    let valign = valigned(style.and_then(|s| s.vertical_align.as_deref()));
+                        .and_then(look::by_style)
+                        .unwrap_or_else(|| look::by_type(value));
+                    let valign = look::valign(style);
                     let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
 
                     let mut cell = geom.cell_rect(row, col);
@@ -4200,8 +4199,8 @@ mod imp {
                 let style = viewport.style(row, col);
                 let align = style
                     .and_then(|s| s.align.as_deref())
-                    .and_then(aligned)
-                    .or_else(|| value.map(alignment))
+                    .and_then(look::by_style)
+                    .or_else(|| value.map(look::by_type))
                     .unwrap_or(Align::Right);
                 layout.set_text(&anchor.name);
                 let (hint_w, hint_h) = layout.pixel_size();
@@ -4511,43 +4510,9 @@ mod imp {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Align {
-        Left,
-        Center,
-        Right,
-    }
-
-    /// Where a cell's text sits in it vertically. Middle unless the cell says otherwise —
-    /// which is the same default `style:vertical-align="automatic"` means for a value.
-    #[derive(Clone, Copy, PartialEq, Eq, Default)]
-    enum VAlign {
-        Top,
-        #[default]
-        Middle,
-        Bottom,
-    }
-
-    /// `fo:text-align` as this grid draws it (§16.5, and `core/src/style.rs` keeps the ODF
-    /// spelling verbatim). `start`/`end` are relative to the writing direction, and this grid
-    /// is left-to-right; anything else — `justify`, a value from a newer ODF — falls back to
-    /// the value's own rule rather than guessing.
-    fn aligned(value: &str) -> Option<Align> {
-        match value {
-            "start" | "left" => Some(Align::Left),
-            "center" => Some(Align::Center),
-            "end" | "right" => Some(Align::Right),
-            _ => None,
-        }
-    }
-
-    fn valigned(value: Option<&str>) -> VAlign {
-        match value {
-            Some("top") => VAlign::Top,
-            Some("bottom") => VAlign::Bottom,
-            _ => VAlign::Middle,
-        }
-    }
+    // Where a cell's text sits — across by the style or else by the value's type, and down by
+    // the style — is `grind_sheet::look`'s, shared with every shell that draws a grid.
+    use grind_sheet::look::{self, Align, VAlign};
 
     /// A cell's font as Pango attributes, or `None` when neither the cell nor the zoom has
     /// anything to say about one.
@@ -4635,20 +4600,6 @@ mod imp {
             .and_then(|points| points.parse::<f64>().ok())
             .filter(|points| *points > 0.0)
             .map(|points| points / DEFAULT_FONT_PT)
-    }
-
-    /// What a value's type says about where it sits in its cell.
-    ///
-    /// The spreadsheet convention, and it carries information: a number that reads as text
-    /// is visibly left-aligned, which is how a user spots the import that went wrong.
-    /// Errors are centred, as LibreOffice and Excel both draw them.
-    fn alignment(value: &CellValue) -> Align {
-        match value {
-            CellValue::Number(_) => Align::Right,
-            CellValue::Bool(_) => Align::Center,
-            CellValue::Text(s) if FormulaError::from_name(s).is_some() => Align::Center,
-            _ => Align::Left,
-        }
     }
 
     /// Draw `layout` aligned within `cell`, clipped to `paint` — which is the same

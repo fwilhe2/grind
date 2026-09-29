@@ -16,6 +16,7 @@
 //! (`doc/windows-shell.md`, decision 5). It is not linked here because it does not exist off
 //! Windows, and this crate's documentation is built on Linux.
 
+use grind_sheet::look;
 use grind_sheet::model::CellValue;
 use grind_sheet::style::CellStyle;
 
@@ -50,13 +51,8 @@ pub fn ground(background: Option<Rgb>, theme: Theme, selected: bool, active: boo
     }
 }
 
-/// Which end of the cell the text sits at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Align {
-    Left,
-    Center,
-    Right,
-}
+/// Which end of the cell the text sits at — `grind_sheet::look`'s, which also decides it.
+pub use grind_sheet::look::Align;
 
 /// How one cell is drawn, resolved from what the document says and what it leaves open.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -74,49 +70,18 @@ pub struct Appearance {
 impl Appearance {
     /// What the document asks for, with the spreadsheet's own defaults underneath.
     ///
-    /// The default alignment is by **type**, which is ODF's behaviour and everyone else's: a
-    /// number, a boolean and a date go to the right and a label to the left, so that a column
-    /// of figures lines up on its digits. `fo:text-align` overrides it when the document sets
-    /// one; `start`/`end` are the writing-direction spellings and this shell is LTR by decision
-    /// (`doc/text-layout.md` excludes RTL), so they resolve to left and right.
+    /// Where the text sits and whether it is bold or italic are `grind_sheet::look`'s rules —
+    /// numbers right, text left, a boolean or an error centred, unless the style says otherwise
+    /// — shared with every shell that draws a grid. What is this shell's is the colour, parsed
+    /// into GDI's [`Rgb`].
     pub fn of(value: &CellValue, style: Option<&CellStyle>) -> Self {
-        let default = match value {
-            CellValue::Number(_) | CellValue::Bool(_) => Align::Right,
-            CellValue::Text(_) | CellValue::Empty => Align::Left,
-        };
-        let Some(style) = style else {
-            return Self {
-                align: default,
-                bold: false,
-                italic: false,
-                text: None,
-                background: None,
-            };
-        };
-        let align = match style.align.as_deref() {
-            Some("left") | Some("start") => Align::Left,
-            Some("right") | Some("end") => Align::Right,
-            Some("center") => Align::Center,
-            // `justify` on a cell means nothing this shell can honour with one line of text,
-            // and an unknown value is a document being tolerated rather than obeyed (R5).
-            _ => default,
-        };
         Self {
-            align,
-            // A weight is `bold`, `normal`, or a hundreds number — and 600 and up is bold
-            // everywhere else, so it is bold here.
-            bold: match style.font_weight.as_deref() {
-                Some("bold") => true,
-                Some(other) => other.parse::<u32>().is_ok_and(|weight| weight >= 600),
-                None => false,
-            },
-            italic: matches!(
-                style.font_style.as_deref(),
-                Some("italic") | Some("oblique")
-            ),
-            text: style.color.as_deref().and_then(Rgb::parse),
+            align: look::align(value, style),
+            bold: look::is_bold(style),
+            italic: look::is_italic(style),
+            text: style.and_then(|s| s.color.as_deref()).and_then(Rgb::parse),
             // `transparent` is a real value and it means *no fill*, not black.
-            background: match style.background.as_deref() {
+            background: match style.and_then(|s| s.background.as_deref()) {
                 Some("transparent") | None => None,
                 Some(hex) => Rgb::parse(hex),
             },
@@ -1287,15 +1252,17 @@ mod tests {
         assert!(matches!(one_line("plain"), std::borrow::Cow::Borrowed(_)));
     }
 
+    /// `grind_sheet::look`'s rule, which this pane used to break for a boolean — it went right,
+    /// where `doc/sheet-shell.md` and every other grid centre one.
     #[test]
-    fn a_number_goes_right_and_a_label_goes_left() {
+    fn a_number_goes_right_a_label_left_and_a_boolean_in_the_middle() {
         assert_eq!(
             Appearance::of(&CellValue::Number(1.0), None).align,
             Align::Right
         );
         assert_eq!(
             Appearance::of(&CellValue::Bool(true), None).align,
-            Align::Right
+            Align::Center
         );
         assert_eq!(
             Appearance::of(&CellValue::Text("hi".into()), None).align,
