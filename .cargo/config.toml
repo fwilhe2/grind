@@ -2,10 +2,12 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Windows build settings, and both of these are load-bearing rather than preferences.
-# `doc/windows-shell.md` is the argument for the first and the measurement behind the second.
+# Platform build settings, and each of them is load-bearing rather than a preference.
 #
-# Only the msvc targets are named, so nothing here touches the Linux, wasm or GTK builds.
+# The two Windows flags below: `doc/windows-shell.md` is the argument for the first and the
+# measurement behind the second. Only the msvc targets are named there, so they touch nothing
+# else. The macOS deployment target at the end is `doc/macos-shell.md`'s, and only the Apple
+# targets read it.
 
 [target.x86_64-pc-windows-msvc]
 rustflags = [
@@ -42,3 +44,11 @@ rustflags = [
     "-C", "target-feature=+crt-static",
     "-C", "link-arg=/STACK:8388608",
 ]
+
+# The oldest macOS this suite runs on (`doc/macos-shell.md`, decision 11) — the oldest one
+# GitHub still runs, because a floor that is never run is a claim that is never checked. Read
+# by rustc for the Apple targets only, and ignored everywhere else. `[env]` does not override a
+# value already set in the environment, so a one-off build for an older Mac is still one
+# variable away.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "15.0"

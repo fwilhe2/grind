@@ -74,7 +74,7 @@ const META: &str = include_str!("../../suite/Cargo.toml");
 
 /// The members that ship no binary, each with the reason. A crate here is *not* a package that
 /// was forgotten.
-const UNPACKAGED: [(&str, &str); 8] = [
+const UNPACKAGED: [(&str, &str); 9] = [
     (
         "suite",
         "the meta-package: no binary, and its own test below holds it to the other four",
@@ -100,6 +100,14 @@ const UNPACKAGED: [(&str, &str); 8] = [
     (
         "ui_win32",
         "a Windows executable; artifacts.yml builds and uploads it, and a .deb would be unrunnable",
+    ),
+    // The same reason, one platform over: a Mach-O binary in a `.deb` would install something no
+    // Linux machine can run. What packaging means for it — an `.app` bundle, a DMG, a Homebrew
+    // tap, and which of them are signed — is M10's question in `doc/macos-shell.md`, answered on
+    // a macOS runner rather than here.
+    (
+        "ui_mac",
+        "a macOS application; built on a macOS runner, and a .deb would be unrunnable",
     ),
 ];
 

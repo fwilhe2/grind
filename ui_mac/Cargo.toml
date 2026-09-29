@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-mac"
+version = "0.0.0"
+description = "An ODF-native office suite — the macOS shell"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "grind-mac"
+path = "src/main.rs"
+
+# The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
+[features]
+default = ["xlsx"]
+xlsx = ["dep:grind-xlsx"]
+
+[dependencies]
+grind-core = { path = "../core" }
+grind-xlsx = { path = "../xlsx", optional = true }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSData",
+    "NSDate",
+    "NSDictionary",
+    "NSGeometry",
+    "NSRunLoop",
+    "NSString",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "NSApplication",
+    "NSBitmapImageRep",
+    "NSControl",
+    "NSEvent",
+    "NSGraphics",
+    "NSGraphicsContext",
+    "NSImageRep",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSScreen",
+    "NSTextField",
+    "NSView",
+    "NSWindow",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFAttributedString",
+    "CFCGTypes",
+    "CFDictionary",
+    "CFString",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGImage",
+] }
+objc2-core-text = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-graphics",
+    "CTFont",
+    "CTLine",
+    "CTStringAttributes",
+] }

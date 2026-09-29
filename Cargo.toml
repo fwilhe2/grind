@@ -15,6 +15,7 @@ members = [
     "ui_tui",
     "ui_web",
     "ui_win32",
+    "ui_mac",
     "suite",
 ]
 # What bare `cargo build` / `cargo test` walk: everything that needs no system package.

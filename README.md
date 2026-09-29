@@ -249,7 +249,13 @@ executable is built and tested on `windows-latest` in CI and kept as an artifact
 development it is linked with `cargo-xwin` and run under Wine, which is how most of its bugs were
 found — every one of them was one glance at a screenshot and none was visible in review.
 
-**The macOS client has not been started.** Nothing about it is written or scheduled.
+**The macOS client is planned, and has no window yet.** `doc/macos-shell.md` is the plan: one
+`Grind.app` for both document types, written in Rust over AppKit. AppKit draws the chrome — the
+menu bar, the toolbar, the sidebar and the document windows — and the shell draws only the grid
+and the page, measured and drawn by CoreText. It follows the Windows shell's way of being
+developed on Linux, with one change. There is no Wine for AppKit, so the AppKit half is
+type-checked and linted here (`cargo check --target aarch64-apple-darwin` needs no SDK) and is
+linked, run, rendered and driven on GitHub's macOS runners.
 
 ### The browser
 
