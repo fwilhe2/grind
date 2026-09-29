@@ -23,7 +23,7 @@ use libadwaita::prelude::*;
 use gtk::{gio, glib};
 
 use grind_sheet::formula::friendly;
-use grind_sheet::{App, CellValue, Pos, a1};
+use grind_sheet::{App, CellValue, a1};
 
 use crate::grid::{Grid, Notice};
 use crate::keymap::{Dir, Selection};
@@ -938,7 +938,8 @@ pub fn tab_menu_model() -> gio::Menu {
 ///
 /// The aggregates are `App::preview` over generated formulas rather than a second summing
 /// loop here — `SUM`, `COUNTA` (a status bar's Count is non-empty, not numeric) and
-/// `AVERAGE` — so what the bar says and what a cell would say cannot differ.
+/// `AVERAGE` — so what the bar says and what a cell would say cannot differ. They are
+/// `grind_sheet::summary`'s, shared with every other shell's status bar.
 ///
 /// Debounced, because a drag changes the selection on every motion event and each change
 /// costs a walk of the range. ponytail: the walk runs on the main thread, so a selection
@@ -1045,56 +1046,21 @@ pub fn bottom_bar(tabs: &impl IsA<gtk::Widget>, status: &impl IsA<gtk::Widget>) 
     bar
 }
 
-/// `B2:C4  ·  Sum 21215.51  ·  Count 6  ·  Average 3535.9`, the range alone when it holds
-/// nothing, and **nothing at all for one cell** — the name box is already saying where that is. The numbers are spelled the document's way
-/// ([`App::display_number`]), so a German document's sum reads `21215,51`, as its cells do.
+/// `grind_sheet::summary`'s sentence for a range, and **nothing at all for one cell** — the name
+/// box is already saying where that is.
 fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
-    let (start, end) = selection.rect();
     if selection.is_single() {
         // One cell has nothing to add up, and every other spreadsheet stays quiet about it.
         return String::new();
     }
-    let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
-    // Clamped to the used extent first: a whole-column selection must not ask the evaluator
-    // to walk a million empty rows.
-    let Ok((rows, cols)) = app.used_extent(sheet) else {
-        return address;
-    };
-    let end = Pos::new(
-        end.row.min(rows.saturating_sub(1)),
-        end.col.min(cols.saturating_sub(1)),
-    );
-    if rows == 0 || cols == 0 || end.row < start.row || end.col < start.col {
-        return address;
-    }
-
-    let range = format!("[.{}:.{}]", a1::format(None, start), a1::format(None, end));
-    // Evaluated at a cell one past the used extent: a formula is evaluated *as if* it sat
-    // somewhere, and somewhere inside the range would be a circular reference.
-    let at = Pos::new(rows, 0);
-    let of = |formula: String| match app.preview(sheet, at, &formula) {
-        Ok(CellValue::Number(n)) => Some(n),
-        _ => None,
-    };
-    let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
-    if count == 0.0 {
-        return address;
-    }
-    let mut parts = vec![address, format!("Count {}", app.display_number(count))];
-    // Sum and Average of no numbers are not zero, they are nothing — AVERAGE says so with
-    // #DIV/0!, which is why both are read back as an optional number.
-    if let Some(sum) = of(format!("=SUM({range})"))
-        && let Some(average) = of(format!("=AVERAGE({range})"))
-    {
-        parts.insert(1, format!("Sum {}", app.display_number(sum)));
-        parts.push(format!("Average {}", app.display_number(average)));
-    }
-    parts.join("  ·  ")
+    let (start, end) = selection.rect();
+    grind_sheet::summary::status_text(app, sheet, start, end)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grind_sheet::Pos;
 
     /// The regression that made friendly mode look broken on any sheet but the first: the
     /// buffer's display form has to be converted before it is explained, or a

@@ -9,75 +9,25 @@
 //! everything here can be asserted on the development machine against a document built in the
 //! test, with no window anywhere. What is left for the window is putting the string on screen.
 //!
-//! The aggregates go through [`grind_sheet::App::preview`] over generated formulas — `SUM`,
-//! `COUNTA` and `AVERAGE` — rather than through a second summing loop, so what the bar says and
-//! what a cell would say cannot differ. `ui_sheet_gtk/src/chrome.rs` does the same for the same
-//! reason; the shape below is deliberately its shape.
+//! The aggregates are `grind_sheet::summary`'s — [`grind_sheet::App::preview`] over generated
+//! formulas, hoisted out of this file, `ui_sheet_gtk/src/chrome.rs` and `ui_tui` when the macOS
+//! shell was about to be the fourth caller (`doc/macos-shell.md`, M1).
 
-use grind_sheet::model::CellValue;
-use grind_sheet::{App, Pos, a1};
+use grind_sheet::{App, a1, summary};
 
 use super::keymap::Selection;
 
 /// Where the selection is, and what it adds up to.
 ///
 /// Nothing for a single cell — the name box is already saying where it is, and a status bar
-/// that repeated it was two read-outs of one fact; `B2:C4 · Sum 21215.51 · Count 6 · Average
-/// 3535.9` for a range that holds something; just the address for one that does not.
-///
-/// The numbers are spelled the document's way ([`App::display_number`]), so a German document's
-/// sum reads `21215,51`, as its cells do.
+/// that repeated it was two read-outs of one fact; otherwise `grind_sheet::summary`'s sentence,
+/// `B2:C4 · Sum 21215.51 · Count 6 · Average 3535.9`, which this file used to spell itself.
 pub fn selection_text(app: &App, sheet: usize, selection: Selection) -> String {
-    let (start, end) = selection.rect();
     if selection.is_single() {
         return String::new();
     }
-    let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
-    let Ok((rows, cols)) = app.used_extent(sheet) else {
-        return address;
-    };
-    // Clamped to the used extent first: a whole-column selection — which is what clicking a
-    // header gives — must not ask the evaluator to walk a million empty rows.
-    let Some((start, end)) = clamp(start, end, rows, cols) else {
-        return address;
-    };
-
-    let range = format!("[.{}:.{}]", a1::format(None, start), a1::format(None, end));
-    // Evaluated at a cell one past the used extent: a formula is evaluated *as if* it sat
-    // somewhere, and anywhere inside the range would be a circular reference.
-    let at = Pos::new(rows, 0);
-    let of = |formula: String| match app.preview(sheet, at, &formula) {
-        Ok(CellValue::Number(n)) => Some(n),
-        _ => None,
-    };
-    // A status bar's Count is non-empty rather than numeric, which is `COUNTA`.
-    let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
-    if count == 0.0 {
-        return address;
-    }
-    let mut parts = vec![address, format!("Count {}", app.display_number(count))];
-    // Sum and Average of no numbers are not zero, they are nothing — `AVERAGE` says so with
-    // `#DIV/0!`, which is why both are read back as an optional number and offered together.
-    if let Some(sum) = of(format!("=SUM({range})"))
-        && let Some(average) = of(format!("=AVERAGE({range})"))
-    {
-        parts.insert(1, format!("Sum {}", app.display_number(sum)));
-        parts.push(format!("Average {}", app.display_number(average)));
-    }
-    parts.join("  \u{00b7}  ")
-}
-
-/// The selection's rectangle, cut down to what the sheet actually uses, or `None` when the two
-/// do not overlap at all.
-///
-/// Separate from [`selection_text`] because it is the part with an off-by-one in it: `rows` and
-/// `cols` are *one past* the last used track, and a sheet that uses nothing gives zero for both.
-pub fn clamp(start: Pos, end: Pos, rows: u32, cols: u32) -> Option<(Pos, Pos)> {
-    if rows == 0 || cols == 0 || start.row >= rows || start.col >= cols {
-        return None;
-    }
-    let end = Pos::new(end.row.min(rows - 1), end.col.min(cols - 1));
-    (end.row >= start.row && end.col >= start.col).then_some((start, end))
+    let (start, end) = selection.rect();
+    summary::status_text(app, sheet, start, end)
 }
 
 /// What the name box shows for a selection: what it is called, or where it is.
@@ -171,6 +121,7 @@ fn strip_brackets(expression: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grind_sheet::Pos;
 
     /// A three-by-two block of numbers with a label over it, which is enough for every
     /// aggregate and for the clamp.
@@ -211,29 +162,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_range_of_numbers_is_summed_counted_and_averaged() {
-        let app = book();
-        let text = selection_text(&app, 0, from((1, 1), (3, 1)));
-        assert_eq!(
-            text,
-            "B2:B4  \u{b7}  Sum 60  \u{b7}  Count 3  \u{b7}  Average 20"
-        );
-    }
-
-    /// The aggregates come from the evaluator, so a range holding text counts it and does not
-    /// sum it — `COUNTA` is non-empty, `SUM` ignores text. Getting this from `App::preview`
-    /// rather than from a loop here is what makes that true without this file knowing it.
-    #[test]
-    fn a_label_is_counted_and_not_summed() {
-        let app = book();
-        let text = selection_text(&app, 0, from((0, 1), (3, 1)));
-        assert!(text.starts_with("B1:B4"), "{text}");
-        assert!(text.contains("Sum 60"), "{text}");
-        assert!(text.contains("Count 4"), "{text}");
-        assert!(text.contains("Average 20"), "{text}");
-    }
-
     /// The bar shows what would be typed back in, not what the cell displays — which for a
     /// formula is the display syntax rather than the ODF one the document stores.
     #[test]
@@ -264,27 +192,6 @@ mod tests {
         assert_eq!(formula_bar_text(&app, 0, from((0, 1), (1, 1))), "10");
     }
 
-    /// A German document's sum is spelled the way its cells are — the separator is the
-    /// document's, and the arithmetic is the same arithmetic.
-    #[test]
-    fn a_german_document_adds_up_in_german() {
-        let app = book();
-        app.enter(0, Pos::new(4, 1), "0.5", grind_sheet::RecalcMode::Document)
-            .unwrap();
-        app.set_locale(grind_sheet::locale::Locale::parse("de-DE"))
-            .unwrap();
-        assert_eq!(
-            selection_text(&app, 0, from((1, 1), (4, 1))),
-            "B2:B5  \u{b7}  Sum 60,5  \u{b7}  Count 4  \u{b7}  Average 15,125"
-        );
-    }
-
-    #[test]
-    fn a_range_holding_nothing_is_just_an_address() {
-        let app = book();
-        assert_eq!(selection_text(&app, 0, from((6, 4), (8, 5))), "E7:F9");
-    }
-
     /// Clicking a column header selects a million rows. Reading them would walk the whole
     /// sheet, so the range handed to the evaluator is the used extent's.
     #[test]
@@ -296,16 +203,6 @@ mod tests {
             "the address is honest: {text}"
         );
         assert!(text.contains("Sum 60"), "the arithmetic is not: {text}");
-    }
-
-    #[test]
-    fn the_clamp_answers_nothing_when_the_selection_is_past_the_end() {
-        assert_eq!(
-            clamp(Pos::new(0, 0), Pos::new(9, 9), 4, 2),
-            Some((Pos::new(0, 0), Pos::new(3, 1)))
-        );
-        assert_eq!(clamp(Pos::new(5, 0), Pos::new(9, 9), 4, 2), None);
-        assert_eq!(clamp(Pos::new(0, 0), Pos::new(9, 9), 0, 0), None);
     }
 
     #[test]

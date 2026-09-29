@@ -35,6 +35,7 @@ pub mod numfmt;
 pub mod odf;
 pub mod projection;
 pub mod style;
+pub mod summary;
 pub mod table_format;
 pub mod tracks;
 pub mod view;
