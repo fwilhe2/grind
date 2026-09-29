@@ -109,7 +109,6 @@ use crate::metrics::{Faces, Fonts};
 use crate::notice;
 use crate::problems;
 use crate::sheet::assist;
-use crate::sheet::clip;
 use crate::sheet::currency;
 use crate::sheet::draw::{self, FormatStrip, Frame};
 use crate::sheet::format;
@@ -123,6 +122,7 @@ use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use crate::welcome;
 use grind_core::DocumentKind;
+use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
 use grind_text::{Caret, Layout, markdown};
 
@@ -3379,8 +3379,8 @@ fn history(hwnd: HWND, undo: bool) {
 }
 
 /// Put the selection on the clipboard as `CF_UNICODETEXT`, tab- and CRLF-separated
-/// (`sheet::clip::rect_text`), and with `cut`, clear it afterwards — one `App::clear_range`, so
-/// it is one undo step like Delete's.
+/// (`grind_sheet::clip::rect_text`), and with `cut`, clear it afterwards — one
+/// `App::clear_range`, so it is one undo step like Delete's.
 ///
 /// What travels is each cell's `App::input_text` — the raw number, or a formula in display
 /// form — rather than what the cell *displays*, for the reason `doc/windows-shell.md` decision
@@ -3392,7 +3392,8 @@ fn copy(hwnd: HWND, cut: bool) {
     unsafe {
         with_sheet(hwnd, |state| {
             let (start, end) = state.selection.rect();
-            let text = clip::rect_text(&state.app, state.sheet, start, end, App::input_text);
+            let text =
+                clip::rect_text(&state.app, state.sheet, start, end, App::input_text, "\r\n");
             clipboard::set_text(hwnd, &text);
             if cut && let Err(error) = state.app.clear_range(state.sheet, start, end) {
                 state.say(Some(error.to_string()));
@@ -3403,8 +3404,8 @@ fn copy(hwnd: HWND, cut: bool) {
 }
 
 /// Read the clipboard and fill from the selection's top-left corner — `App::enter_range` under
-/// `sheet::clip::parse_rows`, one undo step for the whole rectangle. Nothing happens when the
-/// clipboard holds no text, which is what makes pasting an image or a file list silently do
+/// `grind_sheet::clip::parse_rows`, one undo step for the whole rectangle. Nothing happens when
+/// the clipboard holds no text, which is what makes pasting an image or a file list silently do
 /// nothing rather than write garbage into a cell.
 fn paste(hwnd: HWND) {
     let Some(text) = clipboard::get_text(hwnd) else {

@@ -329,9 +329,10 @@ must not depend on.
 plus `clear_range` for cut and `enter_range` under the paste. `clipboard.rs` is the only file
 that opens the clipboard, on `gdi.rs`'s pattern: one `OpenClipboard`/`CloseClipboard` pair per
 call, closed on every path including the early returns, so a half-finished copy cannot leave it
-open for the rest of the process. `sheet/clip.rs` is the portable half either side of it — the
-codec between a rectangle of `App::input_text` and a `String` — tested on Linux the way
-`sheet/keymap.rs` is. This is the one place where the Windows shell is *ahead* rather than
+open for the rest of the process. `grind_sheet::clip` is the portable half either side of it —
+the codec between a rectangle of `App::input_text` and a `String`, tested on any host. It was
+`sheet/clip.rs` here until the macOS shell would have made it a fifth copy, and was hoisted in
+that shell's M1. This is the one place where the Windows shell is *ahead* rather than
 behind: `grind-tui` has only its own vi register (a terminal cannot reach a system clipboard
 without a protocol the host may not speak) and `grind-text-gtk` has no clipboard at all.
 
@@ -1346,7 +1347,7 @@ Added in W4, once the clipboard existed:
 | Copy puts the selection on the clipboard as `App::input_text`, tab- and CRLF-separated | Under Xvfb, driven by XTEST: Ctrl+C on A4 (`Transport`) then Ctrl+V on the empty A19 shows `Transport` there, with `App::input_text` — not the display value — as the round trip |
 | Cut clears the source in the same step, as one undo entry | Ctrl+X on B3 (`500.00 €`) empties it immediately; pasting it into B19 restores `500` and every formula reading B3 (`Total`, `Spend ratio`) recalculates against the new layout |
 | The Edit menu carries Cut/Copy/Paste, and Ctrl+X/C/V reach them ahead of the grid's own use of those letters | `menu::accelerator` consulted before `sheet/keymap.rs`'s navigation table, same as every other verb; `every_accelerator_names_a_command_that_is_in_a_menu` extended to the three |
-| The portable codec round-trips through `App::enter_range`, including a formula and a cell holding a literal tab | `sheet/clip.rs`'s own tests, on Linux — no window, no clipboard, no `cfg(windows)` |
+| The portable codec round-trips through `App::enter_range`, including a formula and a cell holding a literal tab | `grind_sheet::clip`'s own tests (hoisted from `sheet/clip.rs`), on Linux — no window, no clipboard, no `cfg(windows)` |
 | `clipboard.rs` is Windows-only, holds every `OpenClipboard`/`CloseClipboard` pair, and adds only the three namespaces it needs | `#![cfg(windows)]`; `cargo tree` after W4 shows the three new feature-gated modules and no new crate |
 | The shell still imports only OS DLLs, with the clipboard API in it | `objdump -p`: adds nothing beyond `user32` and `KERNEL32`, which already carried `OpenClipboard`/`SetClipboardData`/`GetClipboardData` and `GlobalAlloc`/`GlobalLock` |
 | The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 107 passed |

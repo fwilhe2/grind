@@ -554,26 +554,18 @@ impl App {
     ///
     /// The cells' *input* text, not their displayed text: a formula yanks as a formula, which
     /// is what somebody copying `=SUM(A1:A9)` means, and it is what `put` feeds back to
-    /// `App::enter_range` — so a round trip through the register is lossless.
+    /// `App::enter_range` — so a round trip through the register is lossless. The codec is
+    /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
     fn yank(&mut self) {
         let (start, end) = self.rect();
-        let mut out = String::new();
-        for row in start.row..=end.row {
-            if row > start.row {
-                out.push('\n');
-            }
-            for col in start.col..=end.col {
-                if col > start.col {
-                    out.push('\t');
-                }
-                let text = self
-                    .core
-                    .input_text(self.sheet, Pos::new(row, col))
-                    .unwrap_or_default();
-                // A tab or a newline inside a cell would read back as a cell boundary.
-                out.push_str(&text.replace(['\t', '\n'], " "));
-            }
-        }
+        let out = grind_sheet::clip::rect_text(
+            &self.core,
+            self.sheet,
+            start,
+            end,
+            CoreApp::input_text,
+            "\n",
+        );
         let cells = (end.row - start.row + 1) * (end.col - start.col + 1);
         self.register = out;
         self.leave_visual();
@@ -587,11 +579,9 @@ impl App {
             self.status = "nothing yanked".to_string();
             return;
         }
-        let rows: Vec<Vec<String>> = self
-            .register
-            .split('\n')
-            .map(|line| line.split('\t').map(str::to_owned).collect())
-            .collect();
+        // Display syntax back to ODF's (`grind_sheet::clip`) — without it a formula yanked here
+        // was put back as `#NAME?`.
+        let rows = grind_sheet::clip::parse_rows(&self.register);
         match self
             .core
             .enter_range(self.sheet, self.active, &rows, RecalcMode::Document)

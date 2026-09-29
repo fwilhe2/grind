@@ -2426,15 +2426,9 @@ mod imp {
                 .set_text(&self.rect_text(&app, start, end, App::value_text));
         }
 
-        /// Every cell in a rectangle, tab- and newline-separated, by whatever `get` reads
-        /// for one — `App::input_text` for `copy`, `App::value_text` for `copy_value`. What
-        /// travels is the raw number or the formula in display form, not what the cell
-        /// *displays*: pasted back here it reproduces the cells exactly, and pasted into
-        /// another spreadsheet `1234.5` is a number where `1,234.50 €` is a guess about that
-        /// program's locale — `copy_value` is the one place that guess is exactly the point.
-        ///
-        /// ponytail: a cell holding a tab or a newline has them replaced with spaces, so the
-        /// rectangle survives. The upgrade is quoting, in a codec shared with `sheet paste`.
+        /// Every cell in a rectangle, tab- and newline-separated, by whatever `get` reads for
+        /// one — `App::input_text` for `copy`, `App::value_text` for `copy_value`. The codec is
+        /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
         fn rect_text(
             &self,
             app: &App,
@@ -2442,20 +2436,7 @@ mod imp {
             end: Pos,
             get: impl Fn(&App, usize, Pos) -> grind_sheet::Result<String>,
         ) -> String {
-            let sheet = self.sheet.get();
-            (start.row..=end.row)
-                .map(|row| {
-                    (start.col..=end.col)
-                        .map(|col| {
-                            get(app, sheet, Pos::new(row, col))
-                                .unwrap_or_default()
-                                .replace(['\t', '\n', '\r'], " ")
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\t")
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
+            grind_sheet::clip::rect_text(app, self.sheet.get(), start, end, get, "\n")
         }
 
         /// Extend the selection's first row (`Dir::Down`) or first column (`Dir::Right`)
@@ -2572,21 +2553,8 @@ mod imp {
                     move |result| {
                         let Ok(Some(text)) = result else { return };
                         // Display form back to canonical, cell by cell — the same step
-                        // `commit` takes for a single cell. A formula that will not parse
-                        // is passed through as typed, which `enter_range` then stores
-                        // verbatim rather than losing.
-                        let rows: Vec<Vec<String>> = text
-                            .lines()
-                            .map(|line| {
-                                line.split('\t')
-                                    .map(|cell| match cell.starts_with('=') {
-                                        true => display::from_display(cell)
-                                            .unwrap_or_else(|_| cell.to_owned()),
-                                        false => cell.to_owned(),
-                                    })
-                                    .collect()
-                            })
-                            .collect();
+                        // `commit` takes for a single cell (`grind_sheet::clip`).
+                        let rows = grind_sheet::clip::parse_rows(&text);
                         let imp = grid.imp();
                         let app = imp.app.borrow().clone();
                         let Some(app) = app else { return };

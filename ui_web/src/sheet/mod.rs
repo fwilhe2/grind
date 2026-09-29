@@ -1125,42 +1125,31 @@ impl Ui {
     // --- the clipboard ---
 
     /// The selection as tab-separated text — the shape every spreadsheet on every platform
-    /// reads, so a range copied here pastes into one of them and back.
+    /// reads, so a range copied here pastes into one of them and back. The codec is
+    /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
     ///
     /// The cells' *input* text, not their displayed text: a formula copies as a formula, which
     /// is what a user who copies `=SUM(A1:A9)` means. It is also what `paste_text` feeds back
     /// to `App::enter_range`, so a round trip through the clipboard is lossless.
     pub fn clipboard_text(&self) -> Option<String> {
         let (start, end) = self.rect();
-        let sheet = self.sheet.get();
-        let mut out = String::new();
-        for row in start.row..=end.row {
-            if row > start.row {
-                out.push('\n');
-            }
-            for col in start.col..=end.col {
-                if col > start.col {
-                    out.push('\t');
-                }
-                let text = self.app.input_text(sheet, Pos::new(row, col)).ok()?;
-                // A tab or a newline *inside* a cell would be read back as a cell boundary.
-                // Spaces are the lossy-but-legible answer; a quoting scheme would be a second
-                // dialect of TSV that nothing else reads.
-                out.push_str(&text.replace(['\t', '\n'], " "));
-            }
-        }
-        Some(out)
+        let text = grind_sheet::clip::rect_text(
+            &self.app,
+            self.sheet.get(),
+            start,
+            end,
+            App::input_text,
+            "\n",
+        );
+        Some(text)
     }
 
     /// Tab-separated text, entered as a rectangle from the active cell — one undo step,
     /// because `App::enter_range` is one action.
     pub fn paste_text(&self, text: &str) {
-        let rows: Vec<Vec<String>> = text
-            .replace("\r\n", "\n")
-            .trim_end_matches('\n')
-            .split('\n')
-            .map(|line| line.split('\t').map(str::to_owned).collect())
-            .collect();
+        // Display syntax back to ODF's (`grind_sheet::clip`) — without it a formula copied here
+        // pasted back as `#NAME?`.
+        let rows = grind_sheet::clip::parse_rows(text);
         if rows.is_empty() {
             return;
         }

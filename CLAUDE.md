@@ -189,9 +189,9 @@ handler fails the build. Beside the strip is a **notice bar** for a state the do
 a recalculation this build refused to perform, a formula that would not parse, a rename that
 carried four references with it — whose every sentence is a pure function in `notice.rs`. And now
 the **clipboard**: `CF_UNICODETEXT`, tab- and CRLF-separated, over `App::input_text` —
-`clipboard.rs` is the only file that opens it and `sheet/clip.rs` the portable codec either side,
-so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the same
-way Delete already did. And the grid has its **format strip** (W12, `sheet/format.rs` over
+`clipboard.rs` is the only file that opens it and `grind_sheet::clip` the portable codec either
+side, so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the
+same way Delete already did. And the grid has its **format strip** (W12, `sheet/format.rs` over
 `strip.rs`, the layout and painting both panes' strips now share): Bold, Italic, three alignments,
 text colour and cell background, a number-format picker whose face says what the cell is (`123`,
 `%`, `€`, `Date`), fewer/more decimals and Clear — every control a read of the active cell and one
