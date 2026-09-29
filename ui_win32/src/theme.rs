@@ -536,11 +536,17 @@ pub fn automatic_ink(ground: Rgb, theme: Theme) -> Rgb {
 /// ground (or a selection wash over it) when it does not; `filled` says which.
 pub fn document_ink(own: Option<Rgb>, ground: Rgb, filled: bool, theme: Theme) -> Rgb {
     match own {
+        // Automatic against wherever the text lands, the theme's ground or a selection wash
+        // over it included — not only against a fill the document chose.
         None => automatic_ink(ground, theme),
-        Some(own) if !filled && theme.mode == Mode::Dark => {
-            grind_core::color::legible(own.into(), ground.into(), grind_core::color::TEXT).into()
-        }
-        Some(own) => own,
+        Some(own) => grind_core::color::document_ink(
+            Some(own.into()),
+            filled.then_some(ground.into()),
+            ground.into(),
+            theme.text.into(),
+            theme.mode == Mode::Dark,
+        )
+        .into(),
     }
 }
 

@@ -260,18 +260,20 @@ pub fn reference_attributes(text: &str, dark: bool) -> gtk::pango::AttrList {
 /// - **A colour of its own on a fill of its own**, or in a light theme, is the document's
 ///   decision about its own paper, and is drawn as it is.
 pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::RGBA {
-    use grind_core::color as core;
     let own = color.and_then(self::color);
     let fill = fill.and_then(self::color);
     match (own, fill) {
+        // The page's own ink and a document's own colour are handed back as they were, rather
+        // than through three bytes and back — a theme's ink need not be 8-bit.
         (None, None) => palette.foreground,
-        (None, Some(fill)) => rgba(core::automatic_ink(rgb8(fill), rgb8(palette.foreground))),
-        (Some(own), None) if is_dark(palette) => rgba(core::legible(
-            rgb8(own),
+        (Some(own), Some(_)) => own,
+        _ => rgba(grind_core::color::document_ink(
+            own.map(rgb8),
+            fill.map(rgb8),
             rgb8(palette.background),
-            core::TEXT,
+            rgb8(palette.foreground),
+            is_dark(palette),
         )),
-        (Some(own), _) => own,
     }
 }
 
