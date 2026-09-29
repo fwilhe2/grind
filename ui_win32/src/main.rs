@@ -143,7 +143,7 @@ fn resolve(command: Command) -> Result<Opening, String> {
         // error rather than an override.
         Some(file) => {
             let found = sniff(file)?;
-            let kind = args::reconcile(kind, found, &file.display().to_string())?;
+            let kind = grind_core::kind::reconcile(kind, found, &file.display().to_string())?;
             Ok((Some(kind), path, render))
         }
         // Nothing to read, so the flag is the only opinion there is — and when there is no flag
@@ -324,9 +324,9 @@ fn main() -> std::process::ExitCode {
                     "grind-win32 runs on Windows only. Here it would {}.",
                     match (kind, path.as_ref()) {
                         (Some(kind), Some(path)) =>
-                            format!("open {} as a {}", path.display(), args::describe(kind)),
+                            format!("open {} as a {}", path.display(), kind.label()),
                         (Some(kind), None) => {
-                            format!("start an empty {}", args::describe(kind))
+                            format!("start an empty {}", kind.label())
                         }
                         // No file and no flag: the welcome screen, which is the whole of this
                         // change visible from the one platform that cannot draw it.

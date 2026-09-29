@@ -79,7 +79,7 @@ fn resolve(command: Command) -> Result<Opening, String> {
     match &path {
         Some(file) => {
             let found = sniff(file)?;
-            let kind = args::reconcile(kind, found, &file.display().to_string())?;
+            let kind = grind_core::kind::reconcile(kind, found, &file.display().to_string())?;
             Ok((Some(kind), path, render))
         }
         None => Ok((kind, None, render)),
@@ -91,9 +91,9 @@ fn intent(opening: &Opening) -> String {
     let (kind, path, render) = opening;
     let what = match (kind, path) {
         (Some(kind), Some(path)) => {
-            format!("open {} as a {}", path.display(), args::describe(*kind))
+            format!("open {} as a {}", path.display(), kind.label())
         }
-        (Some(kind), None) => format!("start an empty {}", args::describe(*kind)),
+        (Some(kind), None) => format!("start an empty {}", kind.label()),
         (None, _) => "show the welcome window".to_owned(),
     };
     match render {

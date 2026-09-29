@@ -139,36 +139,6 @@ fn is_user_default(arg: &str) -> bool {
     chars.next() == Some('-') && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
 }
 
-/// Reconcile what the user asked for with what the file turned out to be.
-///
-/// ponytail: the third copy of this rule, after `ui_tui/src/main.rs` and
-/// `ui_win32/src/args.rs`. `doc/macos-shell.md`'s M1 hoists it into `grind_core::kind` with the
-/// others whose trigger the Mac shell pulls. It is here until then because M0 is wiring, and a
-/// hoist mixed into wiring is two changes to review as one.
-pub fn reconcile(
-    asked: Option<DocumentKind>,
-    found: DocumentKind,
-    shown: &str,
-) -> Result<DocumentKind, String> {
-    match asked {
-        Some(asked) if asked != found => Err(format!(
-            "{shown} is a {}, not a {}",
-            describe(found),
-            describe(asked)
-        )),
-        _ => Ok(found),
-    }
-}
-
-/// What a document type is called in a sentence.
-pub fn describe(kind: DocumentKind) -> &'static str {
-    match kind {
-        DocumentKind::Spreadsheet => "spreadsheet",
-        DocumentKind::Text => "text document",
-        _ => "document",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,28 +276,5 @@ mod tests {
             Some(PathBuf::from("/Users/florian/My Book.fods"))
         );
         assert_eq!(open(&["./-odd.fods"]).1, Some(PathBuf::from("./-odd.fods")));
-    }
-
-    #[test]
-    fn a_file_that_agrees_with_the_flag_is_fine() {
-        let found = DocumentKind::Text;
-        assert_eq!(
-            reconcile(Some(DocumentKind::Text), found, "a.fodt"),
-            Ok(found)
-        );
-        assert_eq!(reconcile(None, found, "a.fodt"), Ok(found));
-    }
-
-    #[test]
-    fn a_file_that_contradicts_the_flag_is_an_error() {
-        let error = reconcile(
-            Some(DocumentKind::Text),
-            DocumentKind::Spreadsheet,
-            "book.fods",
-        )
-        .unwrap_err();
-        assert!(error.contains("book.fods"), "{error}");
-        assert!(error.contains("spreadsheet"), "{error}");
-        assert!(error.contains("text document"), "{error}");
     }
 }
