@@ -42,8 +42,6 @@
 //! — Tab, Up/Down, Escape — all already mean something in this one, and a state machine that had
 //! to know whether a popup was up would be two questions in one match.
 
-use grind_sheet::formula::display::{self, DisplayError};
-
 use crate::menu::{self, Command};
 
 use super::keymap::{self, Dir, Key, Mods};
@@ -179,23 +177,6 @@ fn editing(mode: Mode, key: Key, mods: Mods) -> Outcome {
 pub fn typed(mode: Mode, c: char, mods: Mods) -> Option<Seed> {
     let usable = mode == Mode::Ready && !mods.ctrl && !mods.alt && !c.is_control();
     usable.then_some(Seed::Char(c))
-}
-
-/// What the editor holds, as the string [`grind_sheet::App::enter`] takes.
-///
-/// The one conversion between the two, and the whole difference: a formula is typed in **display
-/// syntax** (`=SUM(B2:B4)`) and stored in ODF's (`=SUM([.B2:.B4])`). Everything else is passed
-/// through untouched, because the typing rule that decides what `12`, `'12` and `TRUE` mean is
-/// the core's and there must not be a second copy of it here.
-///
-/// A formula that will not parse is an `Err` and **does not commit** — the edit stays open with
-/// the caret on the problem, because silently storing `=SUM(B2` as a piece of text is how a
-/// spreadsheet loses somebody's work.
-pub fn to_store(text: &str) -> Result<String, DisplayError> {
-    match text.starts_with('=') {
-        true => display::from_display(text),
-        false => Ok(text.to_owned()),
-    }
 }
 
 /// Where a caret goes inside the editor for a byte offset the parser reported.
@@ -383,23 +364,6 @@ mod tests {
             on_key(Mode::Ready, Key::Escape, Mods::default()),
             Outcome::Passthrough
         );
-    }
-
-    #[test]
-    fn a_formula_is_converted_and_everything_else_is_passed_through() {
-        assert_eq!(to_store("=SUM(B2:B4)").unwrap(), "=SUM([.B2:.B4])");
-        assert_eq!(to_store("12").unwrap(), "12");
-        assert_eq!(to_store("'=not a formula").unwrap(), "'=not a formula");
-        assert_eq!(to_store("").unwrap(), "");
-    }
-
-    /// A formula that will not parse comes back as an error with a place to put the caret,
-    /// rather than being stored as a string that looks like a formula and is not one.
-    #[test]
-    fn a_broken_formula_reports_where_it_broke() {
-        let error = to_store("=SUM(B2").unwrap_err();
-        assert!(error.at <= "=SUM(B2".len(), "{error:?}");
-        assert!(!error.message.is_empty());
     }
 
     /// The conversion itself is `grind_core::utf16`'s and tested there; what is this shell's is

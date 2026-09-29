@@ -1324,7 +1324,7 @@ Added in W3, once cells could be typed into:
 | Claim | How it was checked |
 |---|---|
 | A value typed lands in the document, formatted, with the cursor moved on | Under Xvfb, driven by XTEST: `12` and Enter into E14 draws `12` right-aligned in that cell — a number, not the control's own left-aligned text — and leaves the cursor on E15 |
-| A formula is typed in **display syntax** and stored in ODF's | `=SUM(B3:B4)` typed into E16 shows `720`, and `grind sheet view` on the saved file agrees. The conversion is `state::to_store`, which is `formula::display::from_display` and nothing else |
+| A formula is typed in **display syntax** and stored in ODF's | `=SUM(B3:B4)` typed into E16 shows `720`, and `grind sheet view` on the saved file agrees. The conversion was `state::to_store`, which is `formula::display::from_display` and nothing else — `formula::display::to_input` since the Mac's M1, shared with every shell |
 | A formula that will not parse does **not** commit | `=SUM(` and Enter leaves the editor open with the caret on the problem and the notice bar reading *"Not a formula: expected a value. Esc leaves the cell as it was."*; Escape then leaves the cell exactly as it was |
 | Escape throws an edit away and Enter does not | `999` then Escape leaves the cell empty and closes the editor; the same text then Enter stores it |
 | F2 and a double-click open the cell rather than replace it | A double-click on B3 opens the editor holding `500` — `App::input_text`, so a formula would come back in display syntax and a date in the ISO spelling that types back in |

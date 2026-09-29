@@ -820,7 +820,7 @@ impl App {
     ///
     /// Each rewritten cell goes back in through the typing rule, as if the replaced text had
     /// been typed into it: a formula stays a formula (its display form converted with
-    /// [`formula::display::from_display`], the step every shell takes on Enter), a date cell
+    /// [`formula::display::to_input`], the step every shell takes on Enter), a date cell
     /// reads its ISO spelling back, and `12` replaced into `123` is a number. A cell whose
     /// replaced text is a formula that will not parse is **left alone** and listed in
     /// [`find::Replaced::refused`] — neither silently turned into text nor stored as a formula
@@ -842,15 +842,12 @@ impl App {
                 let Some(input) = search.replaced(&hit.text, with) else {
                     continue;
                 };
-                let input = match input.starts_with('=') {
-                    true => match formula::display::from_display(&input) {
-                        Ok(canonical) => canonical,
-                        Err(e) => {
-                            refused.push((hit, e.to_string()));
-                            continue;
-                        }
-                    },
-                    false => input,
+                let input = match formula::display::to_input(&input) {
+                    Ok(input) => input,
+                    Err(e) => {
+                        refused.push((hit, e.to_string()));
+                        continue;
+                    }
                 };
                 edits.push(typed(&state.doc, hit.sheet, hit.pos, &input).1);
             }

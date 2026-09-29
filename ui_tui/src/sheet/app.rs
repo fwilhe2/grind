@@ -784,15 +784,12 @@ impl App {
         if before == text {
             self.status.clear();
         } else {
-            let input = match text.starts_with('=') {
-                true => match display::from_display(&text) {
-                    Ok(canonical) => canonical,
-                    Err(e) => {
-                        self.status = format!("{} (at {})", e.message, e.at);
-                        return;
-                    }
-                },
-                false => text,
+            let input = match display::to_input(&text) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.status = format!("{} (at {})", e.message, e.at);
+                    return;
+                }
             };
             match self
                 .core

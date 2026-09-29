@@ -2302,16 +2302,13 @@ mod imp {
                 self.move_after_commit(active, direction);
                 return;
             }
-            let input = match text.starts_with('=') {
-                true => match display::from_display(&text) {
-                    Ok(canonical) => canonical,
-                    Err(e) => {
-                        self.editor.set_position(caret_at(&text, e.at));
-                        self.notice(Notice::BadFormula(e.message, e.at));
-                        return;
-                    }
-                },
-                false => text,
+            let input = match display::to_input(&text) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.editor.set_position(caret_at(&text, e.at));
+                    self.notice(Notice::BadFormula(e.message, e.at));
+                    return;
+                }
             };
 
             // `RecalcMode::Document` is what makes a GUI feel live: the ripple lands in the

@@ -3069,7 +3069,7 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
         return;
     }
     let text = window_text(edit);
-    let store = match state::to_store(&text) {
+    let store = match grind_sheet::formula::display::to_input(&text) {
         Ok(store) => store,
         // A formula that will not parse **does not commit**: the edit stays open with the caret
         // on the problem, because silently storing `=SUM(B2` as a piece of text is how a

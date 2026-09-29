@@ -41,8 +41,8 @@ pub fn name_box_text(app: &App, sheet: usize, selection: Selection) -> String {
 /// line here rather than a rule of this shell's own: a formula comes back in **display syntax**
 /// (`=SUM(B2:B4)`, not ODF's `=SUM([.B2:.B4])`), a date comes back in the ISO spelling that can
 /// be typed straight back in, and text that would otherwise be read as a number comes back with
-/// its leading `\'`. What the bar shows is therefore exactly what [`super::state::to_store`]
-/// takes, and the two cannot drift.
+/// its leading `\'`. What the bar shows is therefore exactly what
+/// [`grind_sheet::formula::display::to_input`] takes, and the two cannot drift.
 pub fn formula_bar_text(app: &App, sheet: usize, selection: Selection) -> String {
     app.input_text(sheet, selection.active).unwrap_or_default()
 }

@@ -1712,19 +1712,16 @@ impl Ui {
         let before = self.app.input_text(sheet, active).unwrap_or_default();
 
         if before != text {
-            let input = match text.starts_with('=') {
-                true => match display::from_display(&text) {
-                    Ok(canonical) => canonical,
-                    Err(error) => {
-                        // The edit stays open, with the caret on the problem.
-                        self.set_message(format!("{} (at {})", error.message, error.at));
-                        let at = utf16::units_before(&text, error.at) as u32;
-                        self.dom.formula.focus()?;
-                        self.dom.formula.set_selection_range(at, at)?;
-                        return Ok(());
-                    }
-                },
-                false => text,
+            let input = match display::to_input(&text) {
+                Ok(input) => input,
+                Err(error) => {
+                    // The edit stays open, with the caret on the problem.
+                    self.set_message(format!("{} (at {})", error.message, error.at));
+                    let at = utf16::units_before(&text, error.at) as u32;
+                    self.dom.formula.focus()?;
+                    self.dom.formula.set_selection_range(at, at)?;
+                    return Ok(());
+                }
             };
             match self.app.enter(sheet, active, &input, RecalcMode::Document) {
                 Ok(outcome) => self.set_message(match outcome.recalc.filter(|r| r.spoiled > 0) {
