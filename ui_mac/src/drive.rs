@@ -20,7 +20,13 @@
 //! wait 0.5             let the run loop turn for that many seconds
 //! snap bold            the window as `bold.png` in the output directory
 //! save                 File ▸ Save, and wait for it to land
+//! mark ´               an input method's marked text, as `setMarkedText:` hands it over
+//! commit é             an input method's commit, as `insertText:replacementRange:`
 //! ```
+//!
+//! `mark` and `commit` call the key view's `NSTextInputClient` methods directly, which is what an
+//! input method does: the runner has no input method a script could select, and this proves the
+//! protocol where it cannot prove the experience (*What the runner cannot speak for*).
 //!
 //! The transcript a drive prints, and the assertions made afterwards on the saved document through
 //! the CLI, are what make it a test; the snapshots are for a person to look at.
@@ -44,6 +50,10 @@ pub enum Step {
     /// A snapshot of the window, under this name.
     Snap(String),
     Save,
+    /// Marked text, all of it the input method's selection's end — what a dead key leaves.
+    Mark(String),
+    /// Text an input method commits.
+    Commit(String),
 }
 
 /// A key and its modifiers, as `NSEvent` wants them: the characters it produces and the
@@ -128,6 +138,7 @@ const ANSI: &[(char, u16)] = &[
     ('m', 0x2e),
     ('.', 0x2f),
     ('`', 0x32),
+    (' ', 0x31),
 ];
 
 /// The stroke a character is typed with: its ANSI key when it has one, and code zero otherwise —
@@ -218,6 +229,8 @@ pub fn parse(script: &str) -> Result<Vec<Step>, (usize, String)> {
             "snap" if is_name(rest) => Step::Snap(rest.to_owned()),
             "snap" => return Err(fail(format!("`{rest}` is not a snapshot name"))),
             "save" if rest.is_empty() => Step::Save,
+            "mark" if !rest.is_empty() => Step::Mark(rest.to_owned()),
+            "commit" if !rest.is_empty() => Step::Commit(rest.to_owned()),
             other => return Err(fail(format!("`{other}` is not a step"))),
         };
         steps.push(step);
@@ -240,17 +253,21 @@ pub use mac::replay;
 /// takes, in-process and so with no Accessibility or Input Monitoring permission.
 #[cfg(target_os = "macos")]
 mod mac {
-    use objc2::MainThreadMarker;
     use objc2::rc::Retained;
+    use objc2::runtime::NSObjectProtocol;
+    use objc2::{MainThreadMarker, msg_send, sel};
     use objc2_app_kit::{
         NSApplication, NSBitmapImageFileType, NSDocument, NSEvent, NSEventMask,
-        NSEventModifierFlags, NSEventType, NSView, NSWindow,
+        NSEventModifierFlags, NSEventType, NSResponder, NSView, NSWindow,
     };
-    use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSDictionary, NSPoint, NSString};
+    use objc2_foundation::{
+        NSDate, NSDefaultRunLoopMode, NSDictionary, NSPoint, NSRange, NSString,
+    };
 
     use super::{Step, Stroke, parse, stroke_for};
     use crate::args::Drive;
     use crate::document::Document;
+    use crate::text::input::NOT_FOUND;
 
     /// Let the run loop turn for `seconds`, dispatching whatever arrives — how a drive waits for
     /// a window to draw, a menu action to land or a save to finish.
@@ -359,6 +376,42 @@ mod mac {
         Err("a menu step names at least one item".into())
     }
 
+    /// The key view, when it takes text from an input method — the page does; the grid does not.
+    fn input_client(app: &NSApplication) -> Result<Retained<NSResponder>, String> {
+        let responder = window(app)?
+            .firstResponder()
+            .ok_or("nothing has the keyboard")?;
+        match responder.respondsToSelector(sel!(setMarkedText:selectedRange:replacementRange:)) {
+            true => Ok(responder),
+            false => Err("what has the keyboard takes no input method's text".into()),
+        }
+    }
+
+    /// `setMarkedText:selectedRange:replacementRange:`, with the input method's caret after the
+    /// marked text and nothing to replace.
+    fn mark(app: &NSApplication, text: &str) -> Result<(), String> {
+        let client = input_client(app)?;
+        let text = NSString::from_str(text);
+        let end = text.length();
+        // SAFETY: the responder answers this selector (asked above), which takes an object and
+        // two ranges and returns nothing.
+        unsafe {
+            let _: () = msg_send![&*client, setMarkedText: &*text, selectedRange: NSRange::new(end, 0), replacementRange: NSRange::new(NOT_FOUND, 0)];
+        }
+        Ok(())
+    }
+
+    /// `insertText:replacementRange:`, replacing nothing — an input method's commit.
+    fn commit(app: &NSApplication, text: &str) -> Result<(), String> {
+        let client = input_client(app)?;
+        let text = NSString::from_str(text);
+        // SAFETY: as above; this selector takes an object and a range.
+        unsafe {
+            let _: () = msg_send![&*client, insertText: &*text, replacementRange: NSRange::new(NOT_FOUND, 0)];
+        }
+        Ok(())
+    }
+
     /// The window, frame and all, as a PNG — for a person to look at; the assertions are made on
     /// the saved document. Caching a view into a bitmap needs no Screen Recording permission.
     fn snap(app: &NSApplication, drive: &Drive, name: &str) -> Result<(), String> {
@@ -429,6 +482,8 @@ mod mac {
                     Ok(())
                 }
                 Step::Snap(name) => snap(&app, drive, name),
+                Step::Mark(text) => mark(&app, text),
+                Step::Commit(text) => commit(&app, text),
                 Step::Save => match document {
                     // SAFETY: `saveDocument:` is an action, and a nil sender is allowed.
                     Some(document) => {
@@ -500,6 +555,15 @@ mod tests {
     }
 
     #[test]
+    fn an_input_method_marks_and_commits() {
+        assert_eq!(
+            parse("mark \u{b4}\ncommit \u{e9}").unwrap(),
+            [Step::Mark("\u{b4}".into()), Step::Commit("\u{e9}".into())]
+        );
+        assert_eq!(stroke_for(' ').code, 0x31, "the space bar");
+    }
+
+    #[test]
     fn a_capital_is_typed_with_shift() {
         let stroke = stroke_for('T');
         assert!(stroke.mods.shift);
@@ -526,6 +590,7 @@ mod tests {
         assert!(parse("snap ../escape").is_err(), "a name, not a path");
         assert!(parse("save now").is_err());
         assert!(parse("type").is_err());
+        assert!(parse("mark").is_err(), "marked text is some text");
         assert_eq!(parse("# only a comment\n\n").unwrap(), vec![]);
     }
 }
