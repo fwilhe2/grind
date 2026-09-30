@@ -270,8 +270,9 @@ The script parser is portable (`drive.rs`) and tested on Linux. Only the replay 
 
 The floor is what `ui_sheet_gtk`'s M9 and `ui_win32`'s system caret are. The page view speaks
 `NSAccessibility`'s text-area protocol: its value, the selected range and the insertion line. A
-move on the grid posts an announcement. Both are read back in-process on the runner by
-`tests/appkit.rs`, so the floor is asserted rather than hoped for. The named upgrade is
+move on the grid posts an announcement. Both are read back in-process on the runner by a
+drive's `a11y` step (M9 — planned as `tests/appkit.rs`, which a binary crate cannot build), so the
+floor is asserted rather than hoped for. The named upgrade is
 `accesskit_macos` (objc2-based and maintained, at 0.27 as this is written), which is the answer
 the day a full element tree for the grid matters.
 
@@ -339,8 +340,9 @@ ui_mac/
 ```
 
 **AppKit must be called from the main thread**, and the Rust test harness runs tests on worker
-threads. The `[M]` assertions that need an application object are therefore in one
-`harness = false` integration test with a `main` of its own, which on Linux compiles to nothing.
+threads. The `[M]` assertions that need an application object are therefore made by drives, which
+run the real application on its main thread (*What M9 built* says why not a `harness = false`
+test); the `[M]` unit tests are the ones that need no application — CoreText's, in `metrics.rs`.
 
 ## M1 — hoist before copying
 
@@ -646,7 +648,7 @@ as much of it as possible is a test, and most of those tests are portable:
   M0, retired in M2.*
 - **`artifacts.yml` → `macos`** (`macos-26`): one release build of both slices, then everything
   that has something to say about the binary, as later steps. That is `cargo test -p grind-mac`
-  (the `[M]` tests and `tests/appkit.rs`), the bundle, M10's checks, the renders twice each, the
+  (the `[M]` unit tests), the bundle, M10's checks, the renders twice each, the
   drive scripts in `ui_mac/tests/drives/`, the DMG and its upload, the size record, and
   `cargo bloat` **last**, for the reason `CLAUDE.md` gives. *From M2.*
 - **`artifacts.yml` → `macos-floor`** (`macos-15`, `needs: macos`): the same `.app`, downloaded
