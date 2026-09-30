@@ -68,20 +68,6 @@ fn indent_of(kind: &BlockKind) -> u16 {
     }
 }
 
-/// The bullet a list item's first line wears, sitting in the last two cells of its own indent.
-///
-/// One glyph per depth, cycling — the convention every word processor uses, and it is *drawn*
-/// rather than inserted: a marker in the text would be a character the core never measured, which
-/// puts every caret after it in the wrong column (`doc/tui-shell.md`, decision 2). This is
-/// outside the block's measure altogether, which is why it is allowed where `**` is not.
-fn bullet_of(depth: u32) -> &'static str {
-    match depth.max(1) % 3 {
-        1 => "\u{2022} ",
-        2 => "\u{25e6} ",
-        _ => "\u{2023} ",
-    }
-}
-
 /// How wide each block is measured, and in what — this shell's [`grind_text::Faces`].
 ///
 /// Two things make a block narrower than the window: a **list item**'s own depth, which
@@ -2011,7 +1997,11 @@ const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 fn indent_text(kind: &BlockKind, indent: u16, first: bool) -> String {
     match (first, kind) {
         (true, BlockKind::ListItem { depth }) => {
-            let bullet = bullet_of(*depth);
+            // One glyph per depth, cycling (`grind_text::paint::bullet`, every page's), and a
+            // space after it, in the last two cells of the indent. *Drawn* rather than inserted:
+            // a marker in the text would be a character the core never measured, which puts
+            // every caret after it in the wrong column (`doc/tui-shell.md`, decision 2).
+            let bullet = format!("{} ", grind_text::paint::bullet(*depth));
             format!(
                 "{}{bullet}",
                 " ".repeat(usize::from(indent).saturating_sub(bullet.chars().count()))

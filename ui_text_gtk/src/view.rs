@@ -240,7 +240,7 @@ mod imp {
 
     use std::collections::HashMap;
 
-    use grind_core::layout::{Layout, Line};
+    use grind_core::layout::Layout;
     use grind_text::{BlockKind, loc};
     use gtk::graphene;
     use gtk::pango;
@@ -626,13 +626,14 @@ mod imp {
                     _ => palette.foreground,
                 };
 
-                if let BlockKind::ListItem { .. } = block.kind {
+                if let BlockKind::ListItem { depth } = block.kind {
                     // A bullet is drawn rather than inserted: the character is not in the
                     // document, and putting one there would make it a character the caret
-                    // could sit inside and a `p12+0` that means something else.
+                    // could sit inside and a `p12+0` that means something else. One mark per
+                    // depth, cycling — `grind_text::paint::bullet`, the same in every window.
                     draw_at(
                         snapshot,
-                        face.draw("\u{2022}"),
+                        face.draw(grind_text::paint::bullet(depth)),
                         x - BULLET_GAP,
                         y,
                         palette.dim,
@@ -641,28 +642,19 @@ mod imp {
 
                 // The selection's band, one rectangle per line it crosses, drawn under the
                 // text so a run painted over it stays legible.
-                if let Some((from, to)) = selection
-                    && slot.index >= from.block
-                    && slot.index <= to.block
+                if let Some((start, end)) = selection
+                    .and_then(|(from, to)| grind_text::paint::covered(slot.index, from, to))
                 {
-                    let start = if slot.index == from.block {
-                        from.offset
-                    } else {
-                        0
-                    };
-                    let end = if slot.index == to.block {
-                        to.offset
-                    } else {
-                        text.len()
-                    };
                     for line in layout.lines() {
-                        if let Some((left, width)) = selection_span(&layout, line, start, end) {
+                        if let Some((left, right)) =
+                            grind_text::paint::band(&layout, line, start, end)
+                        {
                             snapshot.append_color(
                                 &palette.selection,
                                 &rect(
                                     x + f64::from(left),
                                     y + f64::from(line.top),
-                                    f64::from(width),
+                                    f64::from(right - left),
                                     f64::from(line.height),
                                 ),
                             );
@@ -1434,36 +1426,6 @@ mod imp {
         }
     }
 
-    /// The highlighted band's left edge and width for one line of a selection spanning
-    /// `start..end` (both block-relative character offsets), or `None` where the line has
-    /// nothing selected on it.
-    ///
-    /// `Layout::x_at` resolves an offset sitting exactly at a soft break to **the next
-    /// line's** start (`grind_core::layout::Line::line_at`'s own doc comment) — the right
-    /// convention for a caret walking off a wrapped line, and the wrong one for *this* line's
-    /// own right edge: asking it for `line.end` on every line but the last would silently
-    /// hand back 0, collapsing every one of them to a zero-width band. `Line::width` is that
-    /// same distance with no such ambiguity, so it stands in whenever the selection reaches
-    /// all the way to this line's own end.
-    fn selection_span(
-        layout: &Layout,
-        line: &Line,
-        start: usize,
-        end: usize,
-    ) -> Option<(f32, f32)> {
-        let from_x = start.max(line.start);
-        let to_x = end.min(line.end);
-        if from_x >= to_x {
-            return None;
-        }
-        let left = layout.x_at(from_x);
-        let right = match to_x == line.end {
-            true => line.width,
-            false => layout.x_at(to_x),
-        };
-        Some((left, right - left))
-    }
-
     /// Whether a block is a picture, optionally followed by its caption's plain text.
     ///
     /// `grind_text::picture_of`'s own doc comment has the rest; this is a re-export under this
@@ -1619,44 +1581,6 @@ mod imp {
             K::BackSpace => Key::Backspace,
             K::Delete | K::KP_Delete => Key::Delete,
             _ => Key::Other,
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use grind_core::layout::{Fixed, Fragment, wrap};
-        use grind_core::style::TextStyle;
-
-        /// The bug a screenshot found: a selection spanning a soft line break (a `text:tab`
-        /// and `text:line-break` inside one paragraph both force one — `p12` typed as
-        /// `printf 'name\tvalue\nsecond line'` is exactly this) drew every line but the
-        /// selection's *last* as a zero-width band, because `Layout::x_at(line.end)`
-        /// resolves that boundary offset to the **next** line rather than this one's own
-        /// right edge.
-        #[test]
-        fn a_selection_ending_at_a_soft_break_still_highlights_that_lines_own_width() {
-            let style = TextStyle::default();
-            let layout = wrap(
-                &[Fragment {
-                    text: "name\tvalue\nsecond line",
-                    style: &style,
-                }],
-                1000.0,
-                &Fixed,
-            );
-            assert_eq!(
-                layout.lines().len(),
-                2,
-                "the line break forces a second visual line"
-            );
-            let first = &layout.lines()[0];
-            let (_, width) = selection_span(&layout, first, 0, layout.len())
-                .expect("the whole block, including its first line, is selected");
-            assert!(
-                width > 0.0,
-                "the first line's own highlight must not collapse to zero"
-            );
         }
     }
 }
