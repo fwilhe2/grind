@@ -134,6 +134,28 @@ impl Sidebar {
         }
     }
 
+    /// Choose the first row whose title holds `text`, as a click would — what a drive's
+    /// `sidebar` step does.
+    pub fn choose(&self, text: &str) -> Result<(), String> {
+        let at = self
+            .ivars()
+            .rows
+            .borrow()
+            .iter()
+            .position(|row| !row.is_heading() && row.title.contains(text))
+            .ok_or_else(|| format!("no sidebar row says {text}"))?;
+        let table = self
+            .ivars()
+            .table
+            .borrow()
+            .as_ref()
+            .and_then(Weak::load)
+            .ok_or("the sidebar has no table")?;
+        // Selecting a row posts the same notification a click does, which goes where it says.
+        table.selectRowIndexes_byExtendingSelection(&NSIndexSet::indexSetWithIndex(at), false);
+        Ok(())
+    }
+
     /// Read the rows again, and keep the row that says where the document is selected.
     pub fn refresh(&self) {
         let list = self.ivars();

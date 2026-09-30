@@ -22,6 +22,7 @@
 //! save                 File ▸ Save, and wait for it to land
 //! mark ´               an input method's marked text, as `setMarkedText:` hands it over
 //! commit é             an input method's commit, as `insertText:replacementRange:`
+//! sidebar Data.C3      the sidebar row whose title holds this, chosen as a click chooses it
 //! ```
 //!
 //! `mark` and `commit` call the key view's `NSTextInputClient` methods directly, which is what an
@@ -54,6 +55,8 @@ pub enum Step {
     Mark(String),
     /// Text an input method commits.
     Commit(String),
+    /// The sidebar row whose title holds this text, chosen.
+    Sidebar(String),
 }
 
 /// A key and its modifiers, as `NSEvent` wants them: the characters it produces and the
@@ -231,6 +234,7 @@ pub fn parse(script: &str) -> Result<Vec<Step>, (usize, String)> {
             "save" if rest.is_empty() => Step::Save,
             "mark" if !rest.is_empty() => Step::Mark(rest.to_owned()),
             "commit" if !rest.is_empty() => Step::Commit(rest.to_owned()),
+            "sidebar" if !rest.is_empty() => Step::Sidebar(rest.to_owned()),
             other => return Err(fail(format!("`{other}` is not a step"))),
         };
         steps.push(step);
@@ -603,6 +607,10 @@ mod mac {
                 Step::Snap(name) => snap(&app, drive, name),
                 Step::Mark(text) => mark(&app, text),
                 Step::Commit(text) => commit(&app, text),
+                Step::Sidebar(text) => document
+                    .and_then(|document| document.downcast_ref::<Document>())
+                    .ok_or_else(|| "there is no document".to_owned())
+                    .and_then(|document| document.choose_place(text)),
                 Step::Save => match document {
                     // SAFETY: `saveDocument:` is an action, and a nil sender is allowed.
                     Some(document) => {
@@ -710,6 +718,11 @@ mod tests {
         assert!(parse("save now").is_err());
         assert!(parse("type").is_err());
         assert!(parse("mark").is_err(), "marked text is some text");
+        assert!(parse("sidebar").is_err(), "a row is named by some text");
+        assert_eq!(
+            parse("sidebar Data.C3").unwrap(),
+            [Step::Sidebar("Data.C3".into())]
+        );
         assert_eq!(parse("# only a comment\n\n").unwrap(), vec![]);
     }
 }

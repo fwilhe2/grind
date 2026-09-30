@@ -423,6 +423,14 @@ mod mac {
             }
         }
 
+        /// Choose the sidebar row whose title holds `text` — a drive's `sidebar` step.
+        pub fn choose_place(&self, text: &str) -> Result<(), String> {
+            match self.ivars().sidebar.borrow().as_ref() {
+                Some(list) => list.choose(text),
+                None => Err("this window has no sidebar".into()),
+            }
+        }
+
         /// View ▸ Show Source: the source pane opened, or closed.
         pub fn toggle_source(&self) {
             if let Some((item, pane)) = self.ivars().source.borrow().as_ref() {
