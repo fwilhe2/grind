@@ -92,6 +92,10 @@ pub struct Pane {
     pub(crate) find_bar: RefCell<Option<FindBar>>,
     /// Whether formulas are read in plain English — View ▸ Friendly Formulas (M8).
     pub friendly: Cell<bool>,
+    /// Which of `doc/view-modes.md`'s overlays are drawn — View ▸ Cell Roles and Names (M8).
+    /// Asked for on every paint and never written: a save with every overlay on is the bytes
+    /// a save with none would be.
+    pub overlays: Cell<grind_sheet::view::Overlays>,
 }
 
 impl Pane {
@@ -117,6 +121,7 @@ impl Pane {
             sheet_list: RefCell::new(None),
             find_bar: RefCell::new(None),
             friendly: Cell::new(true),
+            overlays: Cell::new(grind_sheet::view::Overlays::NONE),
         })
     }
 
@@ -253,6 +258,20 @@ impl Pane {
         }
         for listener in self.listeners.borrow().iter() {
             listener(Selection::default());
+        }
+    }
+
+    /// View ▸ Cell Roles or Names, on or off — a redraw and nothing else: an overlay is read
+    /// fresh on every paint and never stored in the document.
+    pub fn toggle_overlay(&self, roles: bool) {
+        let mut overlays = self.overlays.get();
+        match roles {
+            true => overlays.roles = !overlays.roles,
+            false => overlays.names = !overlays.names,
+        }
+        self.overlays.set(overlays);
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
         }
     }
 
@@ -420,6 +439,7 @@ define_class!(
                 palette: &palette,
                 metrics: &pane.text,
                 hairline: hairline(self),
+                overlays: pane.overlays.get(),
             };
             // The dirty rectangle in the sheet's own coordinates: the view keeps a margin the
             // header bands float over.
@@ -646,6 +666,7 @@ define_class!(
                 palette: &palette,
                 metrics: &pane.text,
                 hairline: hairline(self),
+                overlays: pane.overlays.get(),
             };
             let ops = paint::column_header(
                 &pane.grid.borrow(),
@@ -701,6 +722,7 @@ define_class!(
                 palette: &palette,
                 metrics: &pane.text,
                 hairline: hairline(self),
+                overlays: pane.overlays.get(),
             };
             let ops = paint::row_header(
                 &pane.grid.borrow(),

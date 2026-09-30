@@ -33,12 +33,17 @@ use grind_text::{App, BlockKind, Caret, Faces, RunView};
 use super::face;
 use super::geom::{CARET_W, RULE, bullet_x};
 use super::state::Page;
+use crate::metrics::{Family, Font};
 use crate::ops::Op;
 use crate::sheet::geom::Rect;
 
 /// How far a table's rule moves the page towards the ink — the other two windows' 28%, so a
 /// table is one weight in every window that draws one.
 pub const RULE_INK: f64 = 0.28;
+
+/// How much of the margin a bookmark's name may take, and the gap it keeps from the text.
+pub const NAME_ROOM: f64 = 120.0;
+pub const NAME_GAP: f64 = 6.0;
 
 /// How thick a composition's underline is, and its selected clause's.
 pub const MARKED: f64 = 1.0;
@@ -72,6 +77,18 @@ impl Palette {
         dark: true,
     };
 
+    /// The ink most of the way to the page — a label that is present and not read.
+    pub fn muted(&self) -> Rgb {
+        let mix = |page: u8, ink: u8| {
+            (f64::from(page) + (f64::from(ink) - f64::from(page)) * 0.45).round() as u8
+        };
+        (
+            mix(self.page.0, self.ink.0),
+            mix(self.page.1, self.ink.1),
+            mix(self.page.2, self.ink.2),
+        )
+    }
+
     /// A table's rule: the ink, [`RULE_INK`] of the way over the page.
     pub fn rule(&self) -> Rgb {
         let mix = |page: u8, ink: u8| {
@@ -100,6 +117,8 @@ pub struct Frame<'a> {
     /// Whether the caret is drawn — off while the view is not the key view, as every Mac text
     /// view's is.
     pub caret: bool,
+    /// View ▸ Names: each bookmark's name in the margin beside its line (M8).
+    pub names: bool,
     pub palette: &'a Palette,
 }
 
@@ -354,6 +373,37 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
                     }
                 }
             }
+            // `doc/view-modes.md`'s name overlay: every bookmark anchored on this line, named in
+            // the margin beside it — never spliced into the text the way `grind text view
+            // --names` prints it, which would move every offset after it, and never over the
+            // ink, which a name drawn at its own offset would be. Muted: a label on the
+            // document's structure, not a thing to act on.
+            if frame.names {
+                for (offset, name) in &block.marks {
+                    if layout.line_at(*offset) != number {
+                        continue;
+                    }
+                    let room = column_x - NAME_GAP;
+                    if room <= 0.0 {
+                        continue;
+                    }
+                    ops.push(Op::Run {
+                        x: (column_x - NAME_ROOM).max(0.0),
+                        top,
+                        text: format!("\u{2039}{name}\u{203a}"),
+                        font: Font {
+                            size: face::BODY_PT * 0.85,
+                            bold: false,
+                            italic: false,
+                            family: Family::System,
+                        },
+                        color: palette.muted(),
+                        underline: false,
+                        strike: false,
+                        clip: Rect::new(0.0, top, room, height),
+                    });
+                }
+            }
             // The caret, over the text it sits in, on the line `Layout` resolved it to — at a
             // soft break the offset is on two lines and only the core knows which it meant.
             if frame.caret
@@ -467,6 +517,7 @@ mod tests {
             view: Rect::new(0.0, 0.0, 400.0, 400.0),
             state,
             caret: true,
+            names: false,
             palette: &Palette::LIGHT,
         })
     }
@@ -687,5 +738,44 @@ mod tests {
                 color::contrast(rule, palette.page) < color::contrast(palette.ink, palette.page)
             );
         }
+    }
+
+    /// View ▸ Names: a bookmark's name in the margin beside its line, and only when asked.
+    #[test]
+    fn a_bookmark_is_named_in_the_margin_when_asked() {
+        let setup = setup(&["intro text", "more"]);
+        setup.app.set_bookmark("intro", Some(0)).unwrap();
+        let drawn = |names: bool| {
+            let column = Column {
+                faces: &setup.faces,
+                width: 20.0,
+                spacing: spacing(),
+                across: &setup.across,
+            };
+            let ops = frame(&Frame {
+                app: &setup.app,
+                flow: &setup.flow,
+                faces: &column,
+                column_x: 200.0,
+                view: Rect::new(0.0, 0.0, 400.0, 400.0),
+                state: &Page::default(),
+                caret: false,
+                names,
+                palette: &Palette::LIGHT,
+            });
+            runs(&ops)
+        };
+        assert!(
+            drawn(false)
+                .iter()
+                .all(|(text, ..)| !text.contains("intro\u{203a}"))
+        );
+        let named = drawn(true);
+        let (_, x, top) = named
+            .iter()
+            .find(|(text, ..)| text == "\u{2039}intro\u{203a}")
+            .expect("the name is drawn");
+        assert!(*x < 200.0, "in the margin, left of the text");
+        assert_eq!(*top, spacing().top, "on the bookmark's own line");
     }
 }

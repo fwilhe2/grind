@@ -79,6 +79,12 @@ pub enum Command {
     /// All 110 functions, with their plain-English names, and the chosen one's call written
     /// into the cell — Excel for Mac's Insert ▸ Function… (M8).
     InsertFunction,
+    /// `doc/view-modes.md`'s role overlay: a marker at each cell's leading edge saying what the
+    /// cell *is* — an input, a formula, a label, a number nobody named (M8).
+    CellRoles,
+    /// The name overlay: an outline round each defined name's range, or each bookmark's name
+    /// beside its line on a page (M8).
+    Names,
 }
 
 /// A cell alignment.
@@ -142,6 +148,8 @@ impl Command {
             Command::FriendlyFormulas,
             Command::ExplainFormula,
             Command::InsertFunction,
+            Command::CellRoles,
+            Command::Names,
         ]);
         all
     }
@@ -179,6 +187,7 @@ impl Command {
         let text = kind == DocumentKind::Text;
         match self {
             Command::NewSheet | Command::NewText => true,
+            Command::Names => sheet || text,
             Command::Mark(Emphasis::Bold | Emphasis::Italic)
             | Command::TextColor(_)
             | Command::Background(_)
@@ -194,7 +203,8 @@ impl Command {
             | Command::Decimals(_)
             | Command::FriendlyFormulas
             | Command::ExplainFormula
-            | Command::InsertFunction => sheet,
+            | Command::InsertFunction
+            | Command::CellRoles => sheet,
         }
     }
 }
@@ -639,6 +649,9 @@ pub static MENUS: &[Menu] = &[
             Item::Separator,
             command("Friendly Formulas", None, Command::FriendlyFormulas),
             command("Explain Formula", None, Command::ExplainFormula),
+            Item::Separator,
+            command("Cell Roles", None, Command::CellRoles),
+            command("Names", None, Command::Names),
             Item::Separator,
             standard("Enter Full Screen", key("f", CTRL_CMD), "toggleFullScreen:"),
         ],

@@ -155,6 +155,13 @@ impl Delegate {
                 }
                 return;
             }
+            // The overlays (M8), on either pane.
+            Command::CellRoles | Command::Names => {
+                if let Some(document) = self.front_document() {
+                    document.toggle_overlay(command);
+                }
+                return;
+            }
             // Formula literacy (M8), on the front document's grid.
             Command::FriendlyFormulas | Command::ExplainFormula | Command::InsertFunction => {
                 if let Some(pane) = self.front_pane() {

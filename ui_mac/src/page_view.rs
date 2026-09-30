@@ -74,6 +74,8 @@ pub struct TextPane {
     stale: Cell<bool>,
     /// Told whenever the caret, the selection or the document changed — the toolbar.
     listeners: RefCell<Vec<Box<dyn Fn()>>>,
+    /// View ▸ Names: each bookmark named in the margin (M8). Drawn, never written.
+    pub names: Cell<bool>,
 }
 
 impl TextPane {
@@ -89,6 +91,7 @@ impl TextPane {
             busy: Cell::new(false),
             stale: Cell::new(false),
             listeners: RefCell::new(Vec::new()),
+            names: Cell::new(false),
         })
     }
 
@@ -168,6 +171,12 @@ impl TextPane {
             callback();
         }
         self.tell();
+    }
+
+    /// View ▸ Names, on or off.
+    pub fn toggle_names(&self) {
+        self.names.set(!self.names.get());
+        self.redraw();
     }
 
     fn redraw(&self) {
@@ -453,6 +462,7 @@ define_class!(
                     view: rect(dirty),
                     state: &state,
                     caret: focused,
+                    names: pane.names.get(),
                     palette: &palette,
                 })
             });

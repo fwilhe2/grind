@@ -396,6 +396,16 @@ mod mac {
             }
         }
 
+        /// View ▸ Cell Roles and Names, on whichever pane this document has.
+        pub fn toggle_overlay(&self, command: crate::menu::Command) {
+            let roles = command == crate::menu::Command::CellRoles;
+            if let Some(pane) = self.pane() {
+                pane.toggle_overlay(roles);
+            } else if let (Some(page), false) = (self.page(), roles) {
+                page.toggle_names();
+            }
+        }
+
         /// Whether a Format command's item is ticked here.
         pub fn format_checked(&self, command: crate::menu::Command) -> bool {
             match (self.pane(), self.page()) {

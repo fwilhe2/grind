@@ -26,6 +26,7 @@ use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
 use grind_core::style::TextStyle;
 use grind_sheet::nav::Selection;
+use grind_sheet::view::{CellRole, Hue, NameAnchor, Overlays};
 use grind_sheet::{App, Pos, look, numfmt};
 
 use super::geom::{self, Grid, HEADER_H, HEADER_W, Rect};
@@ -90,6 +91,8 @@ pub struct Look<'a> {
     pub palette: &'a Palette,
     pub metrics: &'a dyn Metrics,
     pub hairline: f64,
+    /// Which of `doc/view-modes.md`'s overlays are on — View ▸ Cell Roles and Names (M8).
+    pub overlays: Overlays,
 }
 
 /// A `Rect` kept only when there is something of it left inside `view`.
@@ -201,7 +204,8 @@ pub fn cells(
     }];
     let rows = grid.rows_in(view.y, view.h);
     let cols = grid.cols_in(view.x, view.w);
-    let Ok(viewport) = app.get_viewport(sheet, rows.clone(), cols.clone()) else {
+    let Ok(viewport) = app.get_viewport_with(sheet, rows.clone(), cols.clone(), look.overlays)
+    else {
         return ops;
     };
 
@@ -250,9 +254,25 @@ pub fn cells(
             let Some(text) = viewport.text(row, col).filter(|text| !text.is_empty()) else {
                 continue;
             };
-            let cell = grid.cell(row, col);
+            let mut cell = grid.cell(row, col);
             if cell.is_empty() {
                 continue;
+            }
+            // The role overlay reserves a margin at the cell's leading edge for its marker,
+            // rather than drawing over what the cell shows — a label is left-aligned text and
+            // the two would collide. `role` is `None` whenever the read did not ask for roles.
+            let role = viewport
+                .role(row, col)
+                .filter(|role| !role.marker().is_empty());
+            if let (Some(role), Some(ink)) = (role, role.and_then(|role| role_color(role, palette)))
+            {
+                ops.push(marker(role, cell, ink, metrics));
+                cell = Rect::new(
+                    cell.x + MARKER_W,
+                    cell.y,
+                    (cell.w - MARKER_W).max(0.0),
+                    cell.h,
+                );
             }
             let value = viewport.get(row, col).cloned().unwrap_or_default();
             let style = viewport.style(row, col);
@@ -271,7 +291,79 @@ pub fn cells(
             ops.push(cell_text(one_line(text), &value, style, cell, ink, metrics));
         }
     }
+    ops.extend(name_outlines(grid, &view, viewport.names(), palette));
     ops.extend(selection_outline(grid, &view, selection, palette.accent));
+    ops
+}
+
+/// How wide the margin is that the role overlay reserves at a cell's leading edge.
+pub const MARKER_W: f64 = 12.0;
+
+/// `a` moved `by` of the way towards `b`.
+fn mix(a: Rgb, b: Rgb, by: f64) -> Rgb {
+    let one = |a: u8, b: u8| (f64::from(a) + (f64::from(b) - f64::from(a)) * by).round() as u8;
+    (one(a.0, b.0), one(a.1, b.1), one(a.2, b.2))
+}
+
+/// The colour a role's marker is drawn in: `CellRole::hue`, with a palette colour lifted to be
+/// legible on a dark page the way a document's own colour is (`color::document_ink`), the ink
+/// as the page's own, and a quieter ink for a label.
+pub fn role_color(role: CellRole, palette: &Palette) -> Option<Rgb> {
+    match role.hue() {
+        Hue::None => None,
+        Hue::Palette(name) => grind_core::style::palette(name)
+            .and_then(color::parse)
+            .map(|hue| {
+                color::document_ink(Some(hue), None, palette.page, palette.ink, palette.dark)
+            }),
+        Hue::Ink => Some(palette.ink),
+        Hue::Quiet => Some(mix(palette.ink, palette.page, 0.4)),
+    }
+}
+
+/// A role's marker in the margin it reserves — `CellRole::marker`, the core's glyph, so no shell
+/// invents a table of its own; a glyph ships with every colour, since a mode whose whole output
+/// is colour excludes anyone who cannot tell colours apart.
+fn marker(role: CellRole, cell: Rect, ink: Rgb, metrics: &dyn Metrics) -> Op {
+    let style = header_style();
+    let line_h = f64::from(metrics.line_height(&style));
+    Op::Text {
+        x: cell.x + 2.0,
+        top: cell.y + (cell.h - line_h) / 2.0,
+        text: role.marker().to_owned(),
+        style,
+        color: ink,
+        clip: Rect::new(cell.x, cell.y, MARKER_W.min(cell.w), cell.h),
+    }
+}
+
+/// The name overlay: an outline round every defined name's range, in the ink moved most of the
+/// way to the page — a label on the document's own structure, quieter than the selection, which
+/// is a thing to act on. `names` is empty whenever the read did not ask for them.
+fn name_outlines(grid: &Grid, view: &Rect, names: &[NameAnchor], palette: &Palette) -> Vec<Op> {
+    let muted = mix(palette.ink, palette.page, 0.55);
+    let mut ops = Vec::new();
+    for anchor in names {
+        let (Some(last_row), Some(last_col)) = (
+            anchor.rows.end.checked_sub(1),
+            anchor.cols.end.checked_sub(1),
+        ) else {
+            continue;
+        };
+        let first = grid.cell(anchor.rows.start, anchor.cols.start);
+        let last = grid.cell(last_row, last_col);
+        let (l, t, r, b) = (first.x, first.y, last.right(), last.bottom());
+        for rect in [
+            Rect::new(l, t, r - l, 1.0),
+            Rect::new(l, b - 1.0, r - l, 1.0),
+            Rect::new(l, t, 1.0, b - t),
+            Rect::new(r - 1.0, t, 1.0, b - t),
+        ] {
+            if let Some(rect) = within(rect, view) {
+                ops.push(Op::Fill { rect, color: muted });
+            }
+        }
+    }
     ops
 }
 
@@ -513,6 +605,7 @@ mod tests {
         palette: &Palette::LIGHT,
         metrics: &Fixed,
         hairline: HAIR,
+        overlays: Overlays::NONE,
     };
 
     fn drawn(app: &App) -> Vec<Op> {
@@ -779,5 +872,73 @@ mod tests {
     #[test]
     fn a_line_break_in_a_cell_is_a_space_on_one_line() {
         assert_eq!(one_line("rent\nincrease"), "rent increase");
+    }
+
+    /// View ▸ Cell Roles: a marker in the role's colour at the cell's leading edge, and the
+    /// cell's own text moved clear of it; with the overlay off, neither.
+    #[test]
+    fn a_role_marker_takes_its_margin_and_the_text_moves_over() {
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "Rent", RecalcMode::Document)
+            .unwrap();
+        let grid = Grid::of(&app, 0);
+        let view = Rect::new(0.0, 0.0, 500.0, 200.0);
+        let plain_ops = cells(&app, 0, &grid, view, Selection::default(), &LOOK);
+        let plain = texts(&plain_ops);
+        let roles = Look {
+            overlays: Overlays::ROLES,
+            ..LOOK
+        };
+        let marked_ops = cells(&app, 0, &grid, view, Selection::default(), &roles);
+        let marked = texts(&marked_ops);
+        let label = CellRole::Label.marker();
+        assert!(plain.iter().all(|(text, ..)| *text != label));
+        let at = |texts: &[(&str, f64, f64)], what: &str| {
+            texts
+                .iter()
+                .find(|(text, ..)| *text == what)
+                .map(|(_, x, _)| *x)
+        };
+        assert!(at(&marked, label).is_some(), "{marked:?}");
+        assert_eq!(
+            at(&marked, "Rent").unwrap() - at(&plain, "Rent").unwrap(),
+            MARKER_W
+        );
+    }
+
+    #[test]
+    fn a_defined_name_is_outlined_only_when_asked() {
+        let app = App::new();
+        app.enter(0, Pos::new(1, 1), "5", RecalcMode::Document)
+            .unwrap();
+        app.set_name("rate", "[$Sheet1.$B$2]").unwrap();
+        let grid = Grid::of(&app, 0);
+        let view = Rect::new(0.0, 0.0, 500.0, 200.0);
+        let muted = mix(Palette::LIGHT.ink, Palette::LIGHT.page, 0.55);
+        let count = |look: &Look| {
+            cells(&app, 0, &grid, view, Selection::default(), look)
+                .iter()
+                .filter(|op| matches!(op, Op::Fill { color, .. } if *color == muted))
+                .count()
+        };
+        assert_eq!(count(&LOOK), 0);
+        let names = Look {
+            overlays: Overlays::NAMES,
+            ..LOOK
+        };
+        assert_eq!(count(&names), 4, "four edges round B2");
+    }
+
+    #[test]
+    fn every_drawn_role_has_a_colour_in_both_appearances() {
+        for palette in [Palette::LIGHT, Palette::DARK] {
+            for role in CellRole::ALL {
+                assert_eq!(
+                    role_color(role, &palette).is_none(),
+                    role == CellRole::Empty,
+                    "{role:?}"
+                );
+            }
+        }
     }
 }

@@ -200,6 +200,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 palette: &palette,
                 metrics: &text,
                 hairline: 1.0 / SCALE,
+                overlays: grind_sheet::view::Overlays::NONE,
             };
             // The cursor where a window opens with it, at A1, so a frame shows what the window
             // would.
@@ -247,6 +248,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 view: sheet::geom::Rect::new(0.0, 0.0, FRAME.0, FRAME.1),
                 state: &state,
                 caret: true,
+                names: false,
                 palette: &palette,
             });
             let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {

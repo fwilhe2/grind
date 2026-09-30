@@ -127,6 +127,8 @@ impl Pane {
     pub fn format_checked(&self, command: Command) -> bool {
         match command {
             Command::FriendlyFormulas => self.friendly.get(),
+            Command::CellRoles => self.overlays.get().roles,
+            Command::Names => self.overlays.get().names,
             _ => cells::checked(command, &self.active()),
         }
     }
@@ -245,7 +247,10 @@ impl TextPane {
 
     /// Whether the command's menu item is ticked.
     pub fn format_checked(&self, command: Command) -> bool {
-        page::checked(command, &self.here(), &self.block_kind())
+        match command {
+            Command::Names => self.names.get(),
+            _ => page::checked(command, &self.here(), &self.block_kind()),
+        }
     }
 
     /// The font the font panel is shown: the run's own family, or the block's face.
