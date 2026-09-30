@@ -393,7 +393,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave — *built, and not yet run* (*What M4 built*) | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched. **The Linux half is met; the runner half is `mac-frames.sh`'s editing section** |
 | **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` — *built, and not yet run* (*What M5 built*) | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine. **The Linux half is met; the runner half is `mac-frames.sh`'s pasteboard section** |
 | **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid — *built, and not yet run* (*What M6 built*) | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2. **The Linux half is met, and the probe measured the CoreText half (*Evidence*); the runner half is `metrics.rs`'s Mac-only tests and `mac-frames.sh`'s page section** |
-| **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …` |
+| **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting — *built, and not yet run* (*What M7 built*) | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …`. **The Linux half is met; the runner half is `mac-frames.sh`'s formatting section** |
 | **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical |
 | **M9** | The welcome window and Open Recent; context menus; the accessibility floor | `tests/appkit.rs`'s accessibility assertions pass; the welcome window renders in both appearances |
 | **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such** |
@@ -524,6 +524,35 @@ it; a picture is outlined where it goes rather than drawn (`CGImageSource` is th
 `flow::lay_out`'s picture hook is where it goes); Edit ▸ Find over the page, the text sidebar
 (headings and bookmarks), paragraph kinds from a menu and every formatting control, which are
 M7's and M8's; and a notice banner for an edit the core refuses, which beeps instead.
+
+### What M7 built
+
+Built and type-checked, not yet run. Two hoists came first. `grind_text::format::{here, apply}`
+is where a formatting bar reads and writes — the selection's agreed style, or with nothing
+selected the style the next character typed takes — which `ui_text_gtk`, `ui_web` and
+`ui_win32` each had; hoisting it found that three of them turned a toggle *off* by writing
+`normal` or `none` where the GNOME window removed the property, and every shell now removes it.
+`grind_sheet::format::Preset` is the number picker's nine rows, out of `ui_win32`.
+
+| File | Half | What it is |
+|---|---|---|
+| `menu.rs` | portable | Format ▸ Font, Text, Text Color, Background Color, Number and Paragraph, then Clear Formatting — TextEdit's and Pages' shape, the platform's ⌘B/⌘I/⌘U/⌘T/⇧⌘C, and `Command::applies`, which kind of document each verb means something in |
+| `sheet/format.rs` `text/format.rs` | portable | What each command writes on either pane and when its item is ticked, over the cores' vocabularies; and the font panel's answer read as the difference between the font it was shown and the one it gave back |
+| `tools.rs` | portable | The toolbar as data, with decision 3's test made mechanical: every segment and pop-up row is a menu command with the same title, every colour well has its colour submenu, and nothing on it is a verb |
+| `formatting.rs` | Mac | Both panes' `format`, `changeFont:`, `changeColor:` and Show Fonts; `Formats`, the one trait the toolbar speaks to |
+| `toolbar.rs` | Mac | The `NSToolbar`: segmented controls, pop-ups and colour wells, every one reading the selection before it shows |
+| `app.rs` | Mac | Format commands reach the front document; `validateMenuItem:` greys and ticks |
+| `drive.rs` | both | A ⌘-key or a menu step sends its action along AppKit's documented path from the window when the window cannot be key, which on a runner it never is |
+
+Two bugs M7 found in what M3–M5 built, both of the kind only a runner shows: the delegate found
+the front document through `currentDocument`, which is nil when no window is main — so Go To,
+and every Format command, reached nothing in a drive — and a drive's ⌘-key went to a nil
+target that starts at the key window, so Copy, Save and Undo did nothing either. Both are
+very likely why `artifacts.yml`'s `macos` job has been red since M3.
+
+What M7 leaves: a cell's font family (the font panel can choose one and a `CellStyle` cannot
+hold it, so it is left out rather than approximated); borders; a paragraph kind over several
+blocks is one ⌘Z per block; and the toolbar's controls have not been seen, only compiled.
 
 ## Conventions made mechanical
 
@@ -681,7 +710,7 @@ every row, identically on macOS 15.7.9 and 26.6.2 (arm64) unless a row says othe
 | Does the suite's core run on macOS — `grind sheet set`, `recalc`, `view`, `lint` — and does `=SUM` give 9? | **Yes**, on both, asserted by the step | Everything; `ui_win32`'s W0 found a stack overflow this way |
 | Does CoreText draw into a `CGBitmapContext` with no application object, and are two renders the same bytes? | **Yes**, and yes (`headless-identical: true`; 8,983 bytes on 15, 9,023 on 26 — the same drawing, not the same pixels, across versions) | Decision 9's `--render-to` |
 | What are the caret offsets of `é`, `e◌́`, a ZWJ family and `क्षि`? Are they one stop each? | **One stop each.** `é` is `[0, 12.62]` and `e◌́` `[0, 0, 12.62]` — the same width; the family (5 characters, 8 UTF-16 units) is `0` at every unit and `27.00` after the last; the conjunct (4 characters) `0` inside and `23.40` after it (`23.30` on 26). `fold` makes each one advance, on its last character. `metrics.rs`'s Mac-only tests now hold the page's own `Metrics` to this on every run | Decision 4 |
-| Is there a screen, does a window become visible and key, and does the application become active? | **One screen, at a backing scale of 1** — not Retina. The window **becomes visible but never key**, and the application **never active**: a runner's session has no user to hand focus to | Decision 9's `--drive`, and M2 onward. A drive must not assume a key window (`drive.rs` falls back to the first window), and anything drawn only while the window is key — the page's caret — is absent from a drive's snapshots, which is the platform being honest rather than a bug |
+| Is there a screen, does a window become visible and key, and does the application become active? | **One screen, at a backing scale of 1** — not Retina. The window **becomes visible but never key**, and the application **never active**: a runner's session has no user to hand focus to | Decision 9's `--drive`, and M2 onward. A drive must not assume a key window: `drive.rs` falls back to the first window, sends a ⌘-key's action along AppKit's own path from it (M7), and the delegate finds the front document without a main window. Anything drawn only while the window is key — the page's caret — is absent from a drive's snapshots, which is the platform being honest rather than a bug |
 | Does caching the frame view give a picture of the window? | **Yes** (7,119 and 7,320 bytes) | `--drive`'s `snap` |
 | Do synthesized key events reach a focused `NSTextField`? | **Yes** — `"hi"` typed, in a window that was not key | `--drive` itself |
 | Does `screencapture` work from a job step? | **Yes** (about 79 KB) | Nothing depends on it; it is a second opinion |
