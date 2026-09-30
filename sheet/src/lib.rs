@@ -36,6 +36,7 @@ pub mod model;
 pub mod nav;
 pub mod numfmt;
 pub mod odf;
+pub mod place;
 pub mod projection;
 pub mod style;
 pub mod summary;
