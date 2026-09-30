@@ -76,14 +76,14 @@ mod mac {
     use std::sync::Arc;
 
     use grind_core::{DocumentKind, Form};
-    use objc2::rc::{Allocated, Retained};
+    use objc2::rc::{Allocated, Retained, Weak as ObjcWeak};
     use objc2::runtime::{AnyClass, AnyObject};
     use objc2::{
         ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
     };
     use objc2_app_kit::{
-        NSBackingStoreType, NSDocument, NSDocumentController, NSOpenPanel, NSTextField, NSWindow,
-        NSWindowController, NSWindowStyleMask,
+        NSBackingStoreType, NSDocument, NSDocumentChangeType, NSDocumentController, NSOpenPanel,
+        NSTextField, NSWindow, NSWindowController, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSArray, NSCocoaErrorDomain, NSData, NSDictionary, NSError, NSInteger,
@@ -93,7 +93,7 @@ mod mac {
     use super::{SHEET, TEXT, kind_of, sniff};
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
-    use crate::{accessory, sidebar};
+    use crate::{accessory, banner, grid_view, sidebar};
 
     /// What a document holds: one of the suite's two `App`s.
     pub enum Content {
@@ -237,6 +237,17 @@ mod mac {
                         let grid = scroll.documentView();
                         window.makeFirstResponder(grid.as_deref().map(|view| &**view));
                         accessory::attach(&window, &pane, mtm);
+                        pane.set_banner(banner::attach(&window, &pane, mtm));
+                        // Every change the core reports marks the document edited, which is what
+                        // the Edited dot and the autosave timer read. An open is not a change: the
+                        // observer is attached after the document was read.
+                        let me = ObjcWeak::new(self);
+                        pane.on_change(move || {
+                            if let Some(document) = me.load() {
+                                document.updateChangeCount(NSDocumentChangeType::ChangeDone);
+                            }
+                        });
+                        grid_view::watch(&pane);
                         *self.ivars().pane.borrow_mut() = Some(pane);
                     }
                     // The page is M6's; until then a text document opens to a window that says
@@ -268,9 +279,21 @@ mod mac {
                 }
             }
 
-            /// Off until M4 builds editing; the document is read-only before then.
+            /// **Autosave in place** — the Mac convention since 10.7, and the user's choice
+            /// (decision 5). Safe here for three reasons the decision gives: an untouched document
+            /// is never written, since only a change the core reports marks it edited; an import
+            /// is untitled, so its autosave goes to `~/Library/Autosave Information` and never
+            /// beside the workbook; and every save is `App::save_bytes`, so R6's splicing makes an
+            /// autosave one line of diff like any other save.
             #[unsafe(method(autosavesInPlace))]
             fn autosaves_in_place() -> bool {
+                true
+            }
+
+            /// No `NSUndoManager`: undo is the core's (architecture rule 2), and the grid answers
+            /// `undo:` and `redo:` itself.
+            #[unsafe(method(hasUndoManager))]
+            fn has_undo_manager(&self) -> bool {
                 false
             }
 

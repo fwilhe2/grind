@@ -23,10 +23,12 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSAlert, NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
-    NSEventModifierFlags, NSMenu, NSMenuItem,
+    NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationPolicy,
+    NSApplicationDelegate, NSEventModifierFlags, NSMenu, NSMenuItem, NSTextField,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString};
+use objc2_foundation::{
+    NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+};
 
 use crate::Opening;
 use crate::document::{Controller, Document};
@@ -105,16 +107,20 @@ impl Delegate {
         let kind = match command {
             Command::NewSheet => DocumentKind::Spreadsheet,
             Command::NewText => DocumentKind::Text,
-            Command::GoTo => {
-                // The front document's name box, when the front document is a spreadsheet.
-                let pane = self
-                    .ivars()
-                    .controller
-                    .currentDocument()
-                    .and_then(|document| document.downcast::<Document>().ok())
-                    .and_then(|document| document.pane());
-                if let Some(pane) = pane {
-                    pane.focus_name_box();
+            // The rest act on the front document's grid, when the front document is a
+            // spreadsheet; with none, they do nothing.
+            Command::GoTo | Command::AddSheet | Command::RenameSheet | Command::DeleteSheet => {
+                if let Some(pane) = self.front_pane() {
+                    match command {
+                        Command::GoTo => pane.focus_name_box(),
+                        Command::AddSheet => pane.add_sheet(),
+                        Command::RenameSheet => {
+                            if let Some(name) = ask_sheet_name(self.mtm(), &pane.sheet_name()) {
+                                pane.rename_sheet(&name);
+                            }
+                        }
+                        _ => pane.delete_sheet(),
+                    }
                 }
                 return;
             }
@@ -122,6 +128,15 @@ impl Delegate {
         if let Err(message) = self.ivars().controller.new_document(kind) {
             alert(self.mtm(), "The document could not be made.", &message);
         }
+    }
+
+    /// The front document's grid, when the front document is a spreadsheet with a window.
+    fn front_pane(&self) -> Option<std::rc::Rc<crate::grid_view::Pane>> {
+        self.ivars()
+            .controller
+            .currentDocument()
+            .and_then(|document| document.downcast::<Document>().ok())
+            .and_then(|document| document.pane())
     }
 
     fn launch(&self, opening: Opening) {
@@ -161,6 +176,26 @@ fn alert(mtm: MainThreadMarker, message: &str, detail: &str) {
     alert.setMessageText(&NSString::from_str(message));
     alert.setInformativeText(&NSString::from_str(detail));
     alert.runModal();
+}
+
+/// Ask for a sheet's new name, starting from `current` — an alert with a field in it, the
+/// platform's own shape for one line of input. `None` when it is cancelled.
+fn ask_sheet_name(mtm: MainThreadMarker, current: &str) -> Option<String> {
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str("Rename Sheet"));
+    alert.setInformativeText(&NSString::from_str(
+        "Every formula, name and chart that refers to this sheet follows the new name.",
+    ));
+    alert.addButtonWithTitle(&NSString::from_str("Rename"));
+    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+    let field = NSTextField::textFieldWithString(&NSString::from_str(current), mtm);
+    field.setFrame(NSRect::new(
+        NSPoint::new(0.0, 0.0),
+        NSSize::new(240.0, 24.0),
+    ));
+    alert.setAccessoryView(Some(&field));
+    alert.window().setInitialFirstResponder(Some(&field));
+    (alert.runModal() == NSAlertFirstButtonReturn).then(|| field.stringValue().to_string())
 }
 
 /// A selector by name, as `menu.rs` spells it.

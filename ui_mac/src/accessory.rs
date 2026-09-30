@@ -5,6 +5,13 @@
 //! The titlebar accessory: the name box and the status bar's read-out — decision 3's surface for
 //! the two read-outs of *where* and *what* (M3), and where M4's formula field joins them.
 //!
+//! Between them (M4) is the formula read-out: the active cell as it would be typed back in —
+//! a formula in display syntax — and, while a cell is being edited, what the editor holds.
+//!
+//! ponytail: the read-out is not itself an editor. Decision 3's formula *field* edits in place;
+//! this one follows the cell editor, which is where typing happens. The upgrade is making it a
+//! second view onto the same edit, the way `ui_win32`'s one `EDIT` is both.
+//!
 //! An `NSTitlebarAccessoryViewController` at the title bar's bottom edge, so it takes on the
 //! window's own material and, on macOS 26, its Liquid Glass, with nothing here knowing. Both
 //! read-outs are `grind_sheet::place`'s, the words every other shell's name box and status bar
@@ -27,9 +34,11 @@ use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize, NSString};
 
 use crate::grid_view::Pane;
 
-/// The bar's height, and the name box's width — room for `AA1048576` or a short name.
+/// The bar's height, the name box's width — room for `AA1048576` or a short name — and the
+/// status read-out's, room for a sum, a count and an average.
 const BAR_H: f64 = 30.0;
 const NAME_W: f64 = 120.0;
+const STATUS_W: f64 = 300.0;
 
 define_class!(
     /// The name box's target: what Return in the box does. A control holds its target weakly, so
@@ -94,11 +103,21 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
     bar.addSubview(&name);
     pane.set_name_box(&name);
 
+    let formula = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+    formula.setFrame(rect(
+        NAME_W + 16.0,
+        7.0,
+        (width - NAME_W - STATUS_W - 32.0).max(0.0),
+        16.0,
+    ));
+    formula.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+    bar.addSubview(&formula);
+
     let status = NSTextField::labelWithString(&NSString::from_str(""), mtm);
-    status.setFrame(rect(NAME_W + 16.0, 7.0, width - NAME_W - 24.0, 16.0));
+    status.setFrame(rect(width - STATUS_W - 8.0, 7.0, STATUS_W, 16.0));
     status.setAlignment(NSTextAlignment::Right);
     status.setTextColor(Some(&NSColor::secondaryLabelColor()));
-    status.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+    status.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
     bar.addSubview(&status);
 
     let controller = NSTitlebarAccessoryViewController::new(mtm);
@@ -107,6 +126,7 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
     window.addTitlebarAccessoryViewController(&controller);
 
     pane.keep(target.into_super());
+    pane.listen_text(move |text| formula.setStringValue(&NSString::from_str(text)));
     let weak = Rc::downgrade(pane);
     pane.listen(move |selection| {
         let Some(pane) = weak.upgrade() else { return };

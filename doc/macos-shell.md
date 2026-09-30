@@ -386,7 +386,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M1** | The hoists above — *done* (*What M1 did*) | All suites green; Win32 and GTK frames byte-identical before and after each — **met**, with the one GTK frame change the `Flow` hoist made on purpose, proved separately |
 | **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe — *built, and not yet run* (*What M2 built*) | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26. **The Linux half is met; the runner half is the first run of `artifacts.yml`'s `macos` job** (`.github/scripts/mac-frames.sh`) |
 | **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar — *built, and not yet run* (*What M3 built*) | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20`. **The Linux half is met; the runner half is `mac-frames.sh`'s selection drive**, which checks the transcript after every step |
-| **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched |
+| **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave — *built, and not yet run* (*What M4 built*) | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched. **The Linux half is met; the runner half is `mac-frames.sh`'s editing section** |
 | **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine |
 | **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2 |
 | **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …` |
@@ -445,6 +445,27 @@ now keeps the active cell at A1 in every shell — the GNOME window had put it a
 
 Go To (⌘L) is a new `Command` — the keyboard into the name box — because a drive, like a person,
 can only reach the box through a key.
+
+### What M4 built
+
+Built and type-checked, not yet run — the same caveat as M2 and M3. One more hoist came first:
+`App::fresh_sheet_name`, since the Windows pane's Add Sheet had been suggesting a name the core
+then refused.
+
+| File | Half | What it is |
+|---|---|---|
+| `sheet/state.rs` | portable | The edit-mode machine, fed selectors — the third copy M1 decided to mirror, with its `ponytail:` naming a fourth as the trigger |
+| `notice.rs` | portable | Every sentence the banner says, with ⌘ for keys and a test that none says Ctrl |
+| `editor.rs` | Mac | One `NSTextField` over the active cell; its delegate's `control:textView:doCommandBySelector:` goes through `sheet/state.rs`; a commit is `display::to_input` and `App::enter`, and a formula that will not parse keeps the edit open with the caret on the problem |
+| `banner.rs` | Mac | A second titlebar accessory, hidden with nothing to say; Recalculate Anyway is its one button |
+| `grid_view.rs` | Mac | Typing starts an edit, a double-click or ⌃U amends the cell, `undo:` and `redo:` are the core's and validated by `can_undo`/`can_redo`, and the core's observer reaches the pane through a registry the main thread owns — the observer must be `Send + Sync`, and a pane holding views is not |
+| `document.rs` | Mac | Autosave in place on, no undo manager, and every change the core reports marking the document edited — which is what keeps an untouched open from writing anything |
+| `sidebar.rs` `menu.rs` | both | Insert ▸ Sheet, Format ▸ Rename Sheet…, Edit ▸ Delete Sheet, where Excel for Mac has them, with the sidebar's list following every change |
+
+What M4 leaves: the formula field edits only through the cell editor (the read-out follows it —
+a `ponytail:` in `accessory.rs`); an undo back to the saved state still leaves the Edited dot,
+since the core's observer says *changed* rather than *which way*; and ⌃U inside the editor is the
+field editor's, so toggling Enter and Edit mode there is not yet reachable.
 
 ## Conventions made mechanical
 

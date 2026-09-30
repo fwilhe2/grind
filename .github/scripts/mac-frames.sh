@@ -17,7 +17,11 @@
 #   3. M3's: a drive moves the selection with the arrows, grows it with Shift, collapses it with
 #      Esc and sends it to G20 through Go To and the name box, and the transcript has to say so
 #      after each step — keys that took the path a real key takes, through the user's own
-#      bindings.
+#      bindings;
+#   4. M4's: an untouched open writes nothing, bytes and modification time; a driven edit —
+#      a number and a formula typed in display syntax — is saved in place, lints clean and
+#      reads back as typed; and an edited import leaves its workbook, and the folder beside it,
+#      alone.
 #
 # Every step is bounded: a GUI process that manages to put an alert up on a runner would
 # otherwise wait for a click until the job's own limit.
@@ -118,3 +122,59 @@ expect 3 'B2:B3 (active B3)'
 expect 4 'B3'
 expect 7 'G20'
 echo "   arrows, Shift, Esc and a typed place all land where they should"
+
+echo "== editing and saving"
+# An untouched open writes nothing: the bytes and the modification time both stay.
+cp "$out/sample/sample.fods" "$out/untouched.fods"
+before_sum="$(shasum "$out/untouched.fods" | cut -d' ' -f1)"
+before_time="$(stat -f %m "$out/untouched.fods")"
+printf 'wait 2\n' > "$out/wait.drive"
+bounded 120 "$mac" "$out/untouched.fods" --drive "$out/wait.drive" --out "$out/untouched" \
+    > /dev/null || fail "the drive that only opens a document failed"
+[ "$(shasum "$out/untouched.fods" | cut -d' ' -f1)" = "$before_sum" ] \
+    || fail "opening a document and touching nothing changed its bytes"
+[ "$(stat -f %m "$out/untouched.fods")" = "$before_time" ] \
+    || fail "opening a document and touching nothing rewrote it"
+echo "   an untouched open writes nothing"
+
+# A driven edit is stored the way a typed one is — display syntax in, ODF's out — and saved in
+# place: the file lints clean and reads back as typed.
+cp "$out/sample/sample.fods" "$out/edited.fods"
+cat > "$out/edit.drive" <<'EOF'
+key cmd+l
+type Z90
+key return
+type 42
+key return
+key cmd+l
+type Z91
+key return
+type =Z90*2
+key return
+key cmd+s
+wait 2
+EOF
+bounded 120 "$mac" "$out/edited.fods" --drive "$out/edit.drive" --out "$out/edited" \
+    > "$out/edit.txt" || fail "the editing drive failed: $(cat "$out/edit.txt")"
+"$grind" lint "$out/edited.fods" || fail "the saved document does not lint clean"
+[ "$("$grind" sheet view "$out/edited.fods" Z90:Z91 | tr -d ' \r' | paste -sd, -)" = "42,84" ] \
+    || fail "the saved document does not hold what was typed: $("$grind" sheet view "$out/edited.fods" Z90:Z91)"
+# Typed in display syntax, stored in ODF's.
+"$grind" sheet project "$out/edited.fods" | grep -F 'formula="=[.Z90]*2"' | grep -q 'cell Z91' \
+    || fail "the formula was not stored as a formula"
+echo "   a typed number and formula are saved in place, lint clean, and project as typed"
+
+# An imported workbook is untitled: editing it writes nothing beside it and nothing into it,
+# autosave included.
+workbook="xlsx/tests/data/sample.xlsx"
+if [ -f "$workbook" ]; then
+    cp "$workbook" "$out/imported.xlsx"
+    source_sum="$(shasum "$out/imported.xlsx" | cut -d' ' -f1)"
+    printf 'type 7\nkey return\nwait 8\n' > "$out/import.drive"
+    bounded 120 "$mac" "$out/imported.xlsx" --drive "$out/import.drive" --out "$out/imported" \
+        > /dev/null || fail "the drive that edits an imported workbook failed"
+    [ "$(shasum "$out/imported.xlsx" | cut -d' ' -f1)" = "$source_sum" ] \
+        || fail "an imported workbook was written to"
+    [ ! -e "$out/imported.fods" ] || fail "an import was saved beside its workbook"
+    echo "   an edited import leaves its workbook alone"
+fi

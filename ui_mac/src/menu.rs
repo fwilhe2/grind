@@ -36,16 +36,32 @@ pub enum Command {
     /// The keyboard into the name box, to type a place — `g20`, `Data.B2:C9`, a defined name —
     /// and go there (M3). ⌘L, the precedent `doc/macos-shell.md` names.
     GoTo,
+    /// A sheet, after the last, under `App::fresh_sheet_name` (M4) — Insert ▸ Sheet, where Excel
+    /// for Mac has it.
+    AddSheet,
+    /// The sheet showing, renamed, with every reference that named it following
+    /// (`App::rename_sheet`) — Format ▸ Rename Sheet….
+    RenameSheet,
+    /// The sheet showing, deleted — one ⌘Z brings it back, so there is no confirmation to click
+    /// through. Edit ▸ Delete Sheet.
+    DeleteSheet,
 }
 
 impl Command {
-    pub const ALL: [Command; 3] = [Command::NewSheet, Command::NewText, Command::GoTo];
+    pub const ALL: [Command; 6] = [
+        Command::NewSheet,
+        Command::NewText,
+        Command::GoTo,
+        Command::AddSheet,
+        Command::RenameSheet,
+        Command::DeleteSheet,
+    ];
 
     /// Whether the command asks for more before it acts — which is what an ellipsis in its title
     /// promises, and what the tests hold the titles to.
     #[cfg(test)]
     pub fn asks(self) -> bool {
-        matches!(self, Command::GoTo)
+        matches!(self, Command::GoTo | Command::RenameSheet)
     }
 
     /// The item's tag: the command's place in [`Command::ALL`], so no two share one.
@@ -263,7 +279,19 @@ pub static MENUS: &[Menu] = &[
             standard("Select All", key("a", CMD), "selectAll:"),
             Item::Separator,
             command("Go To…", key("l", CMD), Command::GoTo),
+            Item::Separator,
+            command("Delete Sheet", None, Command::DeleteSheet),
         ],
+    },
+    Menu {
+        title: "Insert",
+        role: Role::Plain,
+        items: &[command("Sheet", None, Command::AddSheet)],
+    },
+    Menu {
+        title: "Format",
+        role: Role::Plain,
+        items: &[command("Rename Sheet…", None, Command::RenameSheet)],
     },
     Menu {
         title: "View",

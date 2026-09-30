@@ -156,6 +156,7 @@ the code, and this table is an index rather than a second source of truth.
 | **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `CLAUDE.md` |
 | **Loop C's `back` direction** | Skips formula-bearing documents. | `roundtrip.rs` |
 | **Named expressions** | One flat map, so a sheet-local name is visible document-wide. | `model.rs:258` |
+| **Autosave** | The macOS shell only, by platform convention (`doc/macos-shell.md` decision 5): `NSDocument` saves in place as it goes, and Versions and Revert keep what came before. Every other client saves when it is asked to — a GNOME, Windows, terminal or browser user expects that, and a save there is one line of diff (R6) because they asked for it. An import is never autosaved beside its workbook in either case: it opens untitled. | `ui_mac/src/document.rs` |
 | **Deleting a sheet** | Formulas naming it are not rewritten, so they go stale and recalculate to an error. Visible rather than silent: every write warns, `sheet recalc` counts it, and `grind sheet lint`'s `missing-sheet` names each one. *Renaming* one no longer belongs here — it carries its formulas, named expressions and chart ranges with it (`doc/dsl.md` §6.5, D10). | `App::remove_sheet` |
 
 ### The word processor

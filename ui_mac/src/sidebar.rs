@@ -26,6 +26,7 @@ use objc2_foundation::{
 };
 
 use crate::grid_view::Pane;
+use crate::notice;
 
 /// The sidebar's width when it first opens.
 const WIDTH: f64 = 180.0;
@@ -91,6 +92,44 @@ impl SheetList {
     }
 }
 
+impl Pane {
+    /// The showing sheet's name.
+    pub fn sheet_name(&self) -> String {
+        self.app.sheet_name(self.sheet.get()).unwrap_or_default()
+    }
+
+    /// Insert ▸ Sheet: a sheet after the last, under the first free `SheetN`, shown.
+    pub fn add_sheet(&self) {
+        match self.app.add_sheet(&self.app.fresh_sheet_name()) {
+            Ok(index) => self.show_sheet(index),
+            Err(error) => self.say(Some((&error.to_string(), None))),
+        }
+    }
+
+    /// Format ▸ Rename Sheet…: every reference that named the sheet follows it, and the banner
+    /// says how many did — one ⌘Z takes the whole rename back.
+    pub fn rename_sheet(&self, name: &str) {
+        match self.app.rename_sheet(self.sheet.get(), name) {
+            Ok(0) => self.say(None),
+            Ok(count) => self.say(Some((&notice::references_renamed(count), None))),
+            // The core's own sentence — an empty name, a duplicate — not a second copy of the
+            // rule.
+            Err(error) => self.say(Some((&error.to_string(), None))),
+        }
+    }
+
+    /// Edit ▸ Delete Sheet. The last sheet stays, and the banner says why.
+    pub fn delete_sheet(&self) {
+        if self.app.sheet_count() <= 1 {
+            self.say(Some((&notice::last_sheet(), None)));
+            return;
+        }
+        if let Err(error) = self.app.remove_sheet(self.sheet.get()) {
+            self.say(Some((&error.to_string(), None)));
+        }
+    }
+}
+
 fn rect(w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h))
 }
@@ -125,6 +164,7 @@ pub fn split(
         false,
     );
     pane.keep(list.into_super());
+    pane.set_sheet_list(&table);
 
     let scroll = NSScrollView::initWithFrame(NSScrollView::alloc(mtm), rect(WIDTH, height));
     scroll.setDocumentView(Some(&table));

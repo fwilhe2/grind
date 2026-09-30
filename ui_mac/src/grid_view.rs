@@ -22,7 +22,8 @@
 //! bands float over that margin, so at rest they cover nothing but it.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::collections::HashMap;
+use std::rc::{Rc, Weak as RcWeak};
 use std::sync::Arc;
 
 use grind_core::color::{self, Rgb};
@@ -32,24 +33,34 @@ use objc2::runtime::{AnyObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorSpace, NSEvent, NSEventGestureAxis,
-    NSEventModifierFlags, NSGraphicsContext, NSScrollView, NSTextField, NSView,
+    NSEventModifierFlags, NSGraphicsContext, NSMenuItem, NSScrollView, NSTableView, NSTextField,
+    NSView,
 };
 use objc2_core_graphics::CGContext;
-use objc2_foundation::{NSArray, NSObject, NSPoint, NSRect, NSSize};
+use objc2_foundation::{
+    NSArray, NSAttributedString, NSIndexSet, NSObject, NSPoint, NSRect, NSSize, NSString,
+};
 
+use crate::banner::Banner;
+use crate::editor::Edit;
 use crate::keys;
 use crate::metrics::{BASE_PT, CoreText};
 use crate::render;
 use crate::sheet::geom::{Grid, HEADER_H, HEADER_W, Rect};
 use crate::sheet::paint::{self, Look, Op, Palette};
 use crate::sheet::select;
+use crate::sheet::state::{self, Mode, Seed};
 
 /// Something told the new selection whenever it changes.
 type Listener = Box<dyn Fn(Selection)>;
+/// Something told the text being edited, or the active cell's, whenever it changes.
+type TextListener = Box<dyn Fn(&str)>;
 
 /// What every view of one spreadsheet window draws from and answers to: the document, which sheet
 /// is showing, where its cells are, the fonts it is measured in, and the selection.
 pub struct Pane {
+    /// This pane, weakly — what an object the pane creates (the editor's delegate) holds.
+    me: RcWeak<Pane>,
     pub app: Arc<grind_sheet::App>,
     pub sheet: Cell<usize>,
     pub grid: RefCell<Grid>,
@@ -67,12 +78,23 @@ pub struct Pane {
     name_box: RefCell<Option<Weak<NSTextField>>>,
     /// The two bands, which change size with the sheet.
     bands: RefCell<Option<(Weak<ColumnHeader>, Weak<RowHeader>)>>,
+    /// The cell being edited, if one is (`editor.rs`).
+    pub(crate) edit: RefCell<Option<Edit>>,
+    /// The notice banner, once the window has one (`banner.rs`).
+    pub(crate) banner: RefCell<Option<Banner>>,
+    /// Told the text being edited as it changes: the formula read-out.
+    text_listeners: RefCell<Vec<TextListener>>,
+    /// Told that the document changed — which is what marks it edited, and what autosave reads.
+    on_change: RefCell<Option<Box<dyn Fn()>>>,
+    /// The sidebar's list of sheets, which a sheet added, renamed or deleted changes.
+    sheet_list: RefCell<Option<Weak<NSTableView>>>,
 }
 
 impl Pane {
     pub fn new(app: Arc<grind_sheet::App>) -> Rc<Pane> {
         let grid = Grid::of(&app, 0);
-        Rc::new(Pane {
+        Rc::new_cyclic(|me| Pane {
+            me: me.clone(),
             app,
             sheet: Cell::new(0),
             grid: RefCell::new(grid),
@@ -84,7 +106,105 @@ impl Pane {
             kept: RefCell::new(Vec::new()),
             name_box: RefCell::new(None),
             bands: RefCell::new(None),
+            edit: RefCell::new(None),
+            banner: RefCell::new(None),
+            text_listeners: RefCell::new(Vec::new()),
+            on_change: RefCell::new(None),
+            sheet_list: RefCell::new(None),
         })
+    }
+
+    /// The sidebar's list of sheets.
+    pub fn set_sheet_list(&self, table: &Retained<NSTableView>) {
+        *self.sheet_list.borrow_mut() = Some(Weak::from_retained(table));
+    }
+
+    /// The sidebar's list, with the showing sheet's row selected. Selecting a row programmatically
+    /// posts the same notification a click does, and `show_sheet` of the sheet already showing is
+    /// nothing.
+    fn mark_sheet(&self, reload: bool) {
+        let Some(table) = self.sheet_list.borrow().as_ref().and_then(Weak::load) else {
+            return;
+        };
+        if reload {
+            table.reloadData();
+        }
+        table.selectRowIndexes_byExtendingSelection(
+            &NSIndexSet::indexSetWithIndex(self.sheet.get()),
+            false,
+        );
+    }
+
+    /// This pane, weakly.
+    pub fn me(&self) -> RcWeak<Pane> {
+        self.me.clone()
+    }
+
+    /// The grid view, while it exists.
+    pub fn grid_view(&self) -> Option<Retained<GridView>> {
+        self.grid_view.borrow().as_ref().and_then(Weak::load)
+    }
+
+    /// The window's banner.
+    pub fn set_banner(&self, banner: Banner) {
+        *self.banner.borrow_mut() = Some(banner);
+    }
+
+    /// Call `listener` with the text being edited — or the active cell's — from now on.
+    pub fn listen_text(&self, listener: impl Fn(&str) + 'static) {
+        listener(&self.edit_text());
+        self.text_listeners.borrow_mut().push(Box::new(listener));
+    }
+
+    /// Tell the text listeners what the edit, or the active cell, now says.
+    pub fn edit_changed(&self) {
+        let text = self.edit_text();
+        for listener in self.text_listeners.borrow().iter() {
+            listener(&text);
+        }
+    }
+
+    /// What to do when the document changes — the document marks itself edited.
+    pub fn on_change(&self, callback: impl Fn() + 'static) {
+        *self.on_change.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// The core said the document changed (architecture rule 3: it pushes, shells never poll):
+    /// read the sheet's axes again — an edit may have widened the used extent — resize the views,
+    /// redraw them, tell the listeners, and mark the document edited.
+    pub fn document_changed(&self) {
+        // A sheet deleted — or one taken back by an undo — may be the one showing.
+        let count = self.app.sheet_count().max(1);
+        if self.sheet.get() >= count {
+            self.sheet.set(count - 1);
+            self.selection.set(Selection::default());
+        }
+        self.mark_sheet(true);
+        let grid = Grid::of(&self.app, self.sheet.get());
+        let (w, h) = grid.size();
+        *self.grid.borrow_mut() = grid;
+        if let Some(view) = self.grid_view() {
+            view.setFrameSize(NSSize::new(HEADER_W + w, HEADER_H + h));
+        }
+        if let Some((columns, rows)) = self.bands.borrow().as_ref() {
+            if let Some(columns) = columns.load() {
+                columns.setFrameSize(NSSize::new(w, HEADER_H));
+            }
+            if let Some(rows) = rows.load() {
+                rows.setFrameSize(NSSize::new(HEADER_W, h));
+            }
+        }
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
+        }
+        let selection = self.selection.get();
+        for listener in self.listeners.borrow().iter() {
+            listener(selection);
+        }
+        self.edit_changed();
+        if let Some(callback) = self.on_change.borrow().as_ref() {
+            callback();
+        }
     }
 
     /// Show another sheet: its own axes, the views resized to them, the cursor home and the view
@@ -109,6 +229,7 @@ impl Pane {
                 rows.setFrameSize(NSSize::new(HEADER_W, h));
             }
         }
+        self.mark_sheet(false);
         // Another sheet is another selection, even when both are at A1: the listeners' words
         // depend on the sheet, so they are told whether or not the cell moved.
         self.selection.set(Selection::default());
@@ -173,7 +294,44 @@ impl Pane {
         for listener in self.listeners.borrow().iter() {
             listener(selection);
         }
+        self.edit_changed();
     }
+}
+
+thread_local! {
+    /// The panes the core may tell about a change, by the address of each — see [`Changed`].
+    static PANES: RefCell<HashMap<usize, RcWeak<Pane>>> = RefCell::new(HashMap::new());
+}
+
+/// The core's observer, which has to be `Send + Sync` because the core does not say which thread
+/// a change arrives on — and a pane, holding views, is the main thread's alone. So the observer
+/// holds only the pane's address, and finds the pane in a registry the main thread owns. Every
+/// edit in this shell is made on the main thread, so every notification arrives there; one that
+/// did not would find no registry and change nothing, rather than touch AppKit from elsewhere.
+struct Changed(usize);
+
+impl grind_core::Observer for Changed {
+    fn changed(&self) {
+        if MainThreadMarker::new().is_none() {
+            return;
+        }
+        let pane = PANES.with(|panes| panes.borrow().get(&self.0).and_then(RcWeak::upgrade));
+        if let Some(pane) = pane {
+            pane.document_changed();
+        }
+    }
+}
+
+/// Have the core tell `pane` about every change to its document from now on.
+pub fn watch(pane: &Rc<Pane>) {
+    let id = Rc::as_ptr(pane) as usize;
+    PANES.with(|panes| {
+        let mut panes = panes.borrow_mut();
+        // A pane that is gone leaves its address behind; drop those as new ones arrive.
+        panes.retain(|_, pane| pane.strong_count() > 0);
+        panes.insert(id, Rc::downgrade(pane));
+    });
+    pane.app.set_observer(Arc::new(Changed(id)));
 }
 
 /// A colour AppKit resolves for the current drawing appearance, as three bytes. A colour with no
@@ -297,9 +455,19 @@ define_class!(
         }
 
         /// A key goes to the text system, which answers with what it means for this user — a
-        /// selector, handled below, or text, which is an edit and M4's.
+        /// selector, handled below, or text, which starts an edit. ⌃U, Excel for Mac's key for
+        /// editing the active cell, is bound to nothing in the standard bindings, so it is read
+        /// here first.
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
+            let control = event.modifierFlags().contains(NSEventModifierFlags::Control);
+            let u = event
+                .charactersIgnoringModifiers()
+                .is_some_and(|keys| keys.to_string() == "u");
+            if control && u {
+                self.ivars().begin_edit(Seed::Cell);
+                return;
+            }
             self.interpretKeyEvents(&NSArray::from_slice(&[event]));
         }
 
@@ -313,14 +481,53 @@ define_class!(
             }
         }
 
-        /// Typing into a cell is M4's; until then text reaching the grid is swallowed quietly
-        /// rather than beeped at, since it is not a mistake.
+        /// Text typed on the grid starts an edit, seeded with it — whatever an input method
+        /// committed, which may be a word.
         #[unsafe(method(insertText:))]
-        fn insert_text(&self, _text: &AnyObject) {}
+        fn insert_text(&self, text: &AnyObject) {
+            let typed = text
+                .downcast_ref::<NSString>()
+                .map(|text| text.to_string())
+                .or_else(|| {
+                    text.downcast_ref::<NSAttributedString>()
+                        .map(|text| text.string().to_string())
+                })
+                .unwrap_or_default();
+            if let Some(seed) = state::typed(Mode::Ready, &typed) {
+                self.ivars().begin_edit(seed);
+            }
+        }
 
+        /// A click selects; a double-click opens the cell to amend it.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             self.click(event, shifted(event));
+            if event.clickCount() == 2 {
+                self.ivars().begin_edit(Seed::Cell);
+            }
+        }
+
+        /// Edit ▸ Undo — the core's history, never AppKit's (architecture rule 2).
+        #[unsafe(method(undo:))]
+        fn undo(&self, _sender: Option<&AnyObject>) {
+            self.ivars().app.undo();
+        }
+
+        #[unsafe(method(redo:))]
+        fn redo(&self, _sender: Option<&AnyObject>) {
+            self.ivars().app.redo();
+        }
+
+        /// Undo and Redo are grey when the core has nothing to take back or bring back — the
+        /// named gap `ui_win32` has, closed by the platform's own mechanism.
+        #[unsafe(method(validateMenuItem:))]
+        fn validate_menu_item(&self, item: &NSMenuItem) -> bool {
+            let app = &self.ivars().app;
+            match item.action().map(|action| action.name().to_str().unwrap_or_default().to_owned()) {
+                Some(name) if name == "undo:" => app.can_undo(),
+                Some(name) if name == "redo:" => app.can_redo(),
+                _ => true,
+            }
         }
 
         #[unsafe(method(mouseDragged:))]

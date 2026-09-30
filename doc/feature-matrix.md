@@ -456,8 +456,10 @@ Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` 
 shell document, and none of them is reachable from the CLI either.
 
 **Spreadsheet.** Conditional formatting · merged-cell rendering (the model carries no spans) ·
-freeze panes · sort · autosave · printing · pivot tables · macros
+freeze panes · sort · printing · pivot tables · macros
 (`doc/not-doing.md` §1 — the generator is the answer, and `grind build` is a CLI verb by R11).
+**Autosave is no longer in this list**: the macOS shell has it, by platform convention, and no
+other client does (`doc/not-doing.md` §3, *Autosave*).
 
 **Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style
 *definitions* (a named character style is kept and never interpreted) · pages · printing · an
