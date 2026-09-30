@@ -19,13 +19,13 @@ use std::ffi::CString;
 use std::process::ExitCode;
 
 use grind_core::DocumentKind;
-use objc2::rc::Retained;
+use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationPolicy,
     NSApplicationDelegate, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags,
-    NSMenu, NSMenuItem, NSPopUpButton, NSTextField,
+    NSMenu, NSMenuItem, NSPopUpButton, NSTextField, NSWindow,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -34,11 +34,14 @@ use objc2_foundation::{
 use crate::Opening;
 use crate::document::{Controller, Document};
 use crate::menu::{self, Action, COMMAND_SELECTOR, Command, Item, MENUS, Menu, Role};
+use crate::welcome_window::{self, Picked};
 
 /// What the delegate was launched to do, until it has done it.
 pub struct Launch {
     opening: RefCell<Option<Opening>>,
     controller: Retained<Controller>,
+    /// The welcome window, while it exists (decision 6).
+    welcome: RefCell<Option<Retained<NSWindow>>>,
 }
 
 define_class!(
@@ -63,6 +66,15 @@ define_class!(
         #[unsafe(method(applicationShouldOpenUntitledFile:))]
         fn should_open_untitled_file(&self, _app: &NSApplication) -> bool {
             false
+        }
+
+        /// A Dock click with no window open brings the welcome window back (decision 6).
+        #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
+        fn should_handle_reopen(&self, _app: &NSApplication, visible: bool) -> bool {
+            if !visible {
+                self.show_welcome();
+            }
+            true
         }
 
         /// A document application keeps running with no windows, which is the Mac convention
@@ -106,6 +118,7 @@ impl Delegate {
         let this = Delegate::alloc(mtm).set_ivars(Launch {
             opening: RefCell::new(Some(opening)),
             controller,
+            welcome: RefCell::new(None),
         });
         // SAFETY: `init` is `NSObject`'s designated initialiser.
         unsafe { msg_send![super(this), init] }
@@ -153,6 +166,10 @@ impl Delegate {
                 if let Some(document) = self.front_document() {
                     document.format(command);
                 }
+                return;
+            }
+            Command::Welcome => {
+                self.show_welcome();
                 return;
             }
             Command::ShowSource => {
@@ -237,10 +254,11 @@ impl Delegate {
         let opened = match (&opening.path, opening.kind) {
             (Some(path), _) => controller.open_path(path).map(Some),
             (None, Some(kind)) => controller.new_document(kind).map(|()| None),
-            // The welcome window is M9's; until then an empty spreadsheet is the launch.
-            (None, None) => controller
-                .new_document(DocumentKind::Spreadsheet)
-                .map(|()| None),
+            // Nothing named: the choice, not a guess (decision 6).
+            (None, None) => {
+                self.show_welcome();
+                Ok(None)
+            }
         };
         let app = NSApplication::sharedApplication(mtm);
         match (opened, &opening.drive) {
@@ -259,6 +277,53 @@ impl Delegate {
             (Ok(_), None) => {}
         }
         app.activate();
+    }
+}
+
+impl Delegate {
+    /// The welcome window, in front: the one there is, or a new one listing the system's recent
+    /// documents.
+    fn show_welcome(&self) {
+        let mtm = self.mtm();
+        if let Some(window) = self.ivars().welcome.borrow().as_ref() {
+            window.makeKeyAndOrderFront(None);
+            return;
+        }
+        let recent: Vec<std::path::PathBuf> = self
+            .ivars()
+            .controller
+            .recentDocumentURLs()
+            .iter()
+            .filter_map(|url| url.to_file_path())
+            .take(crate::welcome::RECENT_MAX)
+            .collect();
+        let me = Weak::from_retained(&self.retain());
+        let window = welcome_window::show(
+            recent,
+            move |picked| {
+                let Some(delegate) = me.load() else { return };
+                delegate.picked(picked);
+            },
+            mtm,
+        );
+        *self.ivars().welcome.borrow_mut() = Some(window);
+    }
+
+    /// A choice made in the welcome window: the menu item it is, run.
+    fn picked(&self, picked: Picked) {
+        *self.ivars().welcome.borrow_mut() = None;
+        match picked {
+            Picked::Choice(choice) => match choice.action() {
+                Action::Command(command) => self.perform(command),
+                // SAFETY: an action, and a nil sender is allowed.
+                _ => unsafe { self.ivars().controller.openDocument(None) },
+            },
+            Picked::Recent(path) => {
+                if let Err(message) = self.ivars().controller.open_path(&path) {
+                    alert(self.mtm(), "The document could not be opened.", &message);
+                }
+            }
+        }
     }
 }
 

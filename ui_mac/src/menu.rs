@@ -88,6 +88,9 @@ pub enum Command {
     /// The document as its projection, in a pane beside it (D9, M8) — ⌥⌘U, Safari's key for
     /// showing a page's source.
     ShowSource,
+    /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
+    /// keeps its own.
+    Welcome,
 }
 
 /// A cell alignment.
@@ -154,6 +157,7 @@ impl Command {
             Command::CellRoles,
             Command::Names,
             Command::ShowSource,
+            Command::Welcome,
         ]);
         all
     }
@@ -190,7 +194,7 @@ impl Command {
         let sheet = kind == DocumentKind::Spreadsheet;
         let text = kind == DocumentKind::Text;
         match self {
-            Command::NewSheet | Command::NewText => true,
+            Command::NewSheet | Command::NewText | Command::Welcome => true,
             Command::Names | Command::ShowSource => sheet || text,
             Command::Mark(Emphasis::Bold | Emphasis::Italic)
             | Command::TextColor(_)
@@ -669,6 +673,8 @@ pub static MENUS: &[Menu] = &[
             standard("Zoom", None, "performZoom:"),
             Item::Separator,
             standard("Bring All to Front", None, "arrangeInFront:"),
+            Item::Separator,
+            command("Welcome to Grind", key("1", SHIFT_CMD), Command::Welcome),
         ],
     },
     Menu {
@@ -982,8 +988,10 @@ mod tests {
             );
             assert!(
                 !command.applies(DocumentKind::Presentation)
-                    || command == Command::NewSheet
-                    || command == Command::NewText
+                    || matches!(
+                        command,
+                        Command::NewSheet | Command::NewText | Command::Welcome
+                    )
             );
         }
         assert!(Command::Mark(Emphasis::Bold).applies(sheet));

@@ -82,6 +82,8 @@ mod tools;
 mod watch;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod welcome;
+#[cfg(target_os = "macos")]
+mod welcome_window;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -265,7 +267,21 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             std::fs::write(target, png::encode(w, h, &rgba))
                 .map_err(|error| format!("{}: {error}", target.display()))
         }
-        _ => Err("the welcome window is drawn from M9 on; name a document or --sheet".into()),
+        // Nothing named: the welcome window, with no recent documents — a frame is a function
+        // of its command line alone, and this machine's recent list is not on it.
+        _ => {
+            let palette = match dark {
+                true => welcome::Palette::DARK,
+                false => welcome::Palette::LIGHT,
+            };
+            let ops = welcome::frame(&welcome::Welcome::default(), &palette);
+            let text = metrics::CoreText::new(metrics::BASE_PT);
+            let (w, h, rgba) = render::bitmap(welcome::WIDTH, welcome::HEIGHT, SCALE, |context| {
+                render::draw(context, &ops, &text)
+            })?;
+            std::fs::write(target, png::encode(w, h, &rgba))
+                .map_err(|error| format!("{}: {error}", target.display()))
+        }
     }
 }
 

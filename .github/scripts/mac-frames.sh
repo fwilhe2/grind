@@ -437,3 +437,23 @@ bounded 120 "$mac" "$out/overlaid.fods" --drive "$out/overlays.drive" --out "$ou
 [ "$(shasum "$out/overlaid.fods" | cut -d' ' -f1)" = "$before" ] \
     || fail "a save with every overlay on changed the document"
 say "   every overlay on and the source open, a save writes the bytes that were read"
+
+say "== the welcome window"
+# M9's: with nothing named, --render-to draws the welcome window — twice in each appearance, the
+# same bytes, and the two appearances different.
+for look in light dark; do
+    for n in 1 2; do
+        frame="$out/welcome-$look-$n.png"
+        if [ "$look" = dark ]; then
+            bounded 60 "$mac" --render-to "$frame" --dark
+        else
+            bounded 60 "$mac" --render-to "$frame"
+        fi
+        is_png "$frame" || fail "$frame is not a PNG"
+    done
+    cmp -s "$out/welcome-$look-1.png" "$out/welcome-$look-2.png" \
+        || fail "two $look renders of the welcome window differ"
+done
+cmp -s "$out/welcome-light-1.png" "$out/welcome-dark-1.png" \
+    && fail "the welcome window's dark frame is its light one"
+say "   the welcome window renders reproducibly in both appearances"
