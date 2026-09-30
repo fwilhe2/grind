@@ -34,7 +34,7 @@ use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSEvent, NSFontManager,
-    NSGraphicsContext, NSMenuItem, NSScrollView, NSTextInputClient, NSView,
+    NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextInputClient, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -522,6 +522,24 @@ define_class!(
             }
             let at = located(self, event);
             self.ivars().click(at, event.clickCount(), shifted(event));
+        }
+
+        /// A right-click: the page's context menu, from `menu.rs`'s table. Outside the
+        /// selection it puts the caret there first, so the menu acts on what was clicked.
+        #[unsafe(method_id(menuForEvent:))]
+        fn menu_for_event(&self, event: &NSEvent) -> Option<Retained<NSMenu>> {
+            let pane = self.ivars();
+            if let Some(caret) = pane.hit(located(self, event)) {
+                let inside = pane
+                    .state
+                    .borrow()
+                    .selection()
+                    .is_some_and(|(from, to)| from <= caret && caret <= to);
+                if !inside {
+                    pane.go_to(caret);
+                }
+            }
+            Some(crate::app::context_menu(&crate::menu::PAGE_CONTEXT, self.mtm()))
         }
 
         #[unsafe(method(mouseDragged:))]

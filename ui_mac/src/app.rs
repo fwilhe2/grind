@@ -454,6 +454,12 @@ fn build(menu: &'static Menu, app: &NSApplication, mtm: MainThreadMarker) -> Ret
     built
 }
 
+/// A context menu (M9) from `menu.rs`'s table — built by the same function as the menu bar,
+/// so a row and its bar twin are one kind of item.
+pub fn context_menu(menu: &'static Menu, mtm: MainThreadMarker) -> Retained<NSMenu> {
+    build(menu, &NSApplication::sharedApplication(mtm), mtm)
+}
+
 /// The whole menu bar: each of [`MENUS`] under a top-level item of its own.
 fn menu_bar(app: &NSApplication, mtm: MainThreadMarker) -> Retained<NSMenu> {
     let bar = NSMenu::new(mtm);

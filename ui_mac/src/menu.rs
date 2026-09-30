@@ -684,6 +684,56 @@ pub static MENUS: &[Menu] = &[
     },
 ];
 
+/// The grid's context menu (M9): what a right-click on the cells offers — the clipboard, the
+/// two toggles a cell has, the colours, and Clear. Every row is a menu-bar item with the same
+/// title and action, which a test holds, so the two can never disagree about what a verb is
+/// called.
+pub static GRID_CONTEXT: Menu = Menu {
+    title: "Cells",
+    role: Role::Plain,
+    items: &[
+        standard("Cut", key("x", CMD), "cut:"),
+        standard("Copy", key("c", CMD), "copy:"),
+        standard("Paste", key("v", CMD), "paste:"),
+        standard("Delete", None, "delete:"),
+        Item::Separator,
+        command("Bold", key("b", CMD), Command::Mark(Emphasis::Bold)),
+        command("Italic", key("i", CMD), Command::Mark(Emphasis::Italic)),
+        Item::Submenu {
+            title: "Background Color",
+            menu: &BACKGROUND,
+        },
+        command("Clear Formatting", None, Command::ClearFormatting),
+        Item::Separator,
+        command("Function…", None, Command::InsertFunction),
+    ],
+};
+
+/// The page's context menu: the clipboard, the three emphases a person reaches for, what the
+/// paragraph is, and Clear.
+pub static PAGE_CONTEXT: Menu = Menu {
+    title: "Text",
+    role: Role::Plain,
+    items: &[
+        standard("Cut", key("x", CMD), "cut:"),
+        standard("Copy", key("c", CMD), "copy:"),
+        standard("Paste", key("v", CMD), "paste:"),
+        Item::Separator,
+        command("Bold", key("b", CMD), Command::Mark(Emphasis::Bold)),
+        command("Italic", key("i", CMD), Command::Mark(Emphasis::Italic)),
+        command(
+            "Underline",
+            key("u", CMD),
+            Command::Mark(Emphasis::Underline),
+        ),
+        Item::Submenu {
+            title: "Paragraph",
+            menu: &PARAGRAPH,
+        },
+        command("Clear Formatting", None, Command::ClearFormatting),
+    ],
+};
+
 /// Every item in `menus` and their submenus, depth first.
 #[cfg(test)]
 pub fn every_item(menus: &'static [Menu]) -> Vec<&'static Item> {
@@ -998,5 +1048,31 @@ mod tests {
         assert!(!Command::Mark(Emphasis::Underline).applies(sheet));
         assert!(!Command::Number(Preset::Currency).applies(text));
         assert!(Command::Block(Block::Heading(2)).applies(text));
+    }
+
+    /// A context menu row is a menu-bar row: the same title for the same action, so a verb has
+    /// one name whichever surface it is chosen from — and the keys shown are the bar's own.
+    #[test]
+    fn every_context_row_is_a_menu_bar_row() {
+        let bar: Vec<(&str, Option<Key>, Action)> = entries();
+        for context in [&GRID_CONTEXT, &PAGE_CONTEXT] {
+            for item in context.items {
+                match item {
+                    Item::Entry { title, key, action } => assert!(
+                        bar.contains(&(*title, *key, *action)),
+                        "{}: {title}",
+                        context.title
+                    ),
+                    Item::Submenu { menu, .. } => assert!(
+                        every_item(MENUS)
+                            .iter()
+                            .any(|i| matches!(i, Item::Submenu { menu: m, .. } if std::ptr::eq(*m, *menu))),
+                        "{}: a submenu the bar has",
+                        context.title
+                    ),
+                    Item::Separator => {}
+                }
+            }
+        }
     }
 }

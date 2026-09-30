@@ -32,7 +32,7 @@ use objc2::runtime::{AnyObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSColorSpace, NSEvent,
-    NSEventGestureAxis, NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenuItem,
+    NSEventGestureAxis, NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem,
     NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
@@ -593,10 +593,33 @@ define_class!(
         fn mouse_dragged(&self, event: &NSEvent) {
             self.click(event, true);
         }
+
+        /// A right-click, or a Control-click: the cells' context menu, from `menu.rs`'s table.
+        /// A click outside the selection moves it there first, as every Mac grid does, so the
+        /// menu acts on what was clicked.
+        #[unsafe(method_id(menuForEvent:))]
+        fn menu_for_event(&self, event: &NSEvent) -> Option<Retained<NSMenu>> {
+            self.context(event);
+            Some(crate::app::context_menu(&crate::menu::GRID_CONTEXT, self.mtm()))
+        }
     }
 );
 
 impl GridView {
+    fn context(&self, event: &NSEvent) {
+        let pane = self.ivars();
+        let at = located(self, event);
+        let (x, y) = (at.x - HEADER_W, at.y - HEADER_H);
+        let clicked = select::click(&pane.grid.borrow(), Selection::default(), x, y, false);
+        let (start, end) = pane.selection.get().rect();
+        let cell = clicked.active;
+        let inside =
+            (start.row..=end.row).contains(&cell.row) && (start.col..=end.col).contains(&cell.col);
+        if !inside {
+            pane.select(clicked);
+        }
+    }
+
     fn act(&self, action: keys::GridAction) {
         let pane = self.ivars();
         let visible = rect(self.visibleRect());
