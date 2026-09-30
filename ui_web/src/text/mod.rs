@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use grind_core::style::TextStyle;
+use grind_text::look::Role;
 use grind_text::style::CharStyle;
 use grind_text::{App, BlockKind, BlockView, Caret, Form, Metrics, loc};
 use wasm_bindgen::prelude::*;
@@ -58,10 +59,6 @@ const GAP: f64 = 0.85;
 /// The extra space above a heading, and how far one list level indents. Both in body sizes.
 const HEADING_GAP: f64 = 1.4;
 const INDENT: f64 = 1.6;
-
-/// How much bigger than the body each heading level is — the same six numbers the GTK shell
-/// uses, because a document should not change shape between two shells of one suite.
-const HEADING_SCALE: [f64; 6] = [1.8, 1.5, 1.3, 1.15, 1.05, 1.0];
 
 /// Where a paragraph wraps when the browser has not laid the page out yet.
 ///
@@ -171,11 +168,6 @@ impl Metrics for Face {
     }
 }
 
-/// How much bigger than the body a `Title` and a `Subtitle` are — the two *named* paragraph
-/// styles this shell gives a face of their own, matching `grind-text-gtk`'s.
-const TITLE_SCALE: f64 = 2.2;
-const SUBTITLE_SCALE: f64 = 1.3;
-
 /// The faces a document is set in: body text, one per heading level, and the two named
 /// paragraph styles that are not headings.
 struct Faces {
@@ -191,44 +183,31 @@ struct Faces {
 
 impl Faces {
     fn new(ctx: Option<Rc<CanvasRenderingContext2d>>) -> Self {
+        // Every size and weight is `grind_text::look`'s, so a document has one shape in every
+        // shell that draws a page. The code face is a pixel smaller than the body: a monospace
+        // face at the same size reads larger, which is this page's own optical correction.
+        let face =
+            |role: Role| Face::new(ctx.clone(), (BODY_PX * role.scale()).round(), role.bold());
         Faces {
-            body: Face::new(ctx.clone(), BODY_PX, false),
-            headings: HEADING_SCALE
-                .iter()
-                .map(|scale| Face::new(ctx.clone(), (BODY_PX * scale).round(), true))
+            body: face(Role::Body),
+            headings: (1..=grind_text::look::HEADING_SCALE.len() as u8)
+                .map(|level| face(Role::Heading(level)))
                 .collect(),
-            title: Face::new(ctx.clone(), (BODY_PX * TITLE_SCALE).round(), true),
-            subtitle: Face::new(ctx.clone(), (BODY_PX * SUBTITLE_SCALE).round(), false),
+            title: face(Role::Title),
+            subtitle: face(Role::Subtitle),
             code: Face::in_family(ctx, BODY_PX - 1.0, false, MONO_FAMILY),
         }
     }
 
-    /// The face a block is set in.
-    ///
-    /// **The named style is checked before the kind**, because `Title` and `Subtitle` are both
-    /// `BlockKind::Paragraph` with nothing else to key a face off — the same order
-    /// `ui_text_gtk`'s `Faces::of` uses, so a document has one shape in both windows.
-    ///
-    /// A heading deeper than the six levels there are faces for is set as the last of them
-    /// rather than refused: the reader is tolerant (R5), so a level-9 heading loads, and a
-    /// shell that panicked on one would undo that.
+    /// The face a block is set in — [`Role::of`], which decides which name wins over which kind
+    /// and what a heading deeper than six levels is set in, for every shell that draws a page.
     fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
-        match style {
-            Some("Title") => return &self.title,
-            Some("Subtitle") => return &self.subtitle,
-            Some(grind_text::markdown::PREFORMATTED) => return &self.code,
-            _ => {}
-        }
-        self.for_kind(kind)
-    }
-
-    fn for_kind(&self, kind: &BlockKind) -> &Face {
-        match kind {
-            BlockKind::Heading { level } => {
-                let index = (*level).max(1) as usize - 1;
-                self.headings.get(index).unwrap_or(&self.body)
-            }
-            _ => &self.body,
+        match Role::of(kind, style) {
+            Role::Body => &self.body,
+            Role::Heading(level) => &self.headings[usize::from(level) - 1],
+            Role::Title => &self.title,
+            Role::Subtitle => &self.subtitle,
+            Role::Code => &self.code,
         }
     }
 }
@@ -1711,12 +1690,5 @@ mod tests {
             indent_of(&BlockKind::ListItem { depth: 2 }),
             2.0 * INDENT * BODY_PX
         );
-    }
-
-    /// The two shells that draw pixels must agree about the shape of a document, or the
-    /// same file looks like two different ones.
-    #[test]
-    fn the_heading_scale_matches_the_gtk_shell() {
-        assert_eq!(HEADING_SCALE, [1.8, 1.5, 1.3, 1.15, 1.05, 1.0]);
     }
 }

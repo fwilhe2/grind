@@ -1173,7 +1173,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("heading-5", &[][..], |ui| ui.heading(5)),
         ("heading-6", &[][..], |ui| ui.heading(6)),
         // The two named paragraph styles this window can both apply and draw
-        // (`metrics.rs`'s `TITLE_SCALE`), and the only two it will ever apply — see `set_kind`.
+        // (`grind_text::look::TITLE_SCALE`), and the only two it will ever apply — see `set_kind`.
         ("title", &[][..], |ui| {
             ui.set_kind(BlockKind::Paragraph, Some("Title"))
         }),

@@ -51,6 +51,7 @@ pub mod flow;
 pub mod format;
 pub mod lint;
 pub mod loc;
+pub mod look;
 pub mod markdown;
 pub mod model;
 pub mod odf;
