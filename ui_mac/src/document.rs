@@ -93,7 +93,7 @@ mod mac {
     use super::{SHEET, TEXT, kind_of, sniff};
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
-    use crate::{accessory, banner, grid_view, sidebar};
+    use crate::{accessory, banner, find_bar, grid_view, sidebar};
 
     /// What a document holds: one of the suite's two `App`s.
     pub enum Content {
@@ -238,6 +238,7 @@ mod mac {
                         window.makeFirstResponder(grid.as_deref().map(|view| &**view));
                         accessory::attach(&window, &pane, mtm);
                         pane.set_banner(banner::attach(&window, &pane, mtm));
+                        pane.set_find_bar(find_bar::attach(&window, &pane, mtm));
                         // Every change the core reports marks the document edited, which is what
                         // the Edited dot and the autosave timer read. An open is not a change: the
                         // observer is attached after the document was read.

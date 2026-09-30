@@ -21,7 +21,9 @@
 #   4. M4's: an untouched open writes nothing, bytes and modification time; a driven edit —
 #      a number and a formula typed in display syntax — is saved in place, lints clean and
 #      reads back as typed; and an edited import leaves its workbook, and the folder beside it,
-#      alone.
+#      alone;
+#   5. M5's: a copy in the application is on the system pasteboard as the cells' tab-separated
+#      input text, and text another application put there pastes as a rectangle of cells.
 #
 # Every step is bounded: a GUI process that manages to put an alert up on a runner would
 # otherwise wait for a click until the job's own limit.
@@ -178,3 +180,24 @@ if [ -f "$workbook" ]; then
     [ ! -e "$out/imported.fods" ] || fail "an import was saved beside its workbook"
     echo "   an edited import leaves its workbook alone"
 fi
+
+echo "== the pasteboard"
+# Copy in the application, and the job's own `pbpaste` shows the rectangle's input text, tab- and
+# line-separated — cross-application interop, which `ui_win32` could not check under Wine.
+cp "$out/sample/sample.fods" "$out/pasteboard.fods"
+printf 'key shift+right\nkey shift+down\nkey cmd+c\nwait 0.5\n' > "$out/copy.drive"
+bounded 120 "$mac" "$out/pasteboard.fods" --drive "$out/copy.drive" --out "$out/copy" \
+    > /dev/null || fail "the copy drive failed"
+input() { "$grind" sheet get --input "$out/pasteboard.fods" "$1"; }
+expected="$(printf '%s\t%s\n%s\t%s' "$(input A1)" "$(input B1)" "$(input A2)" "$(input B2)")"
+[ "$(pbpaste)" = "$expected" ] || fail "pbpaste shows $(pbpaste | head -c 200), not the copied cells"
+echo "   a copy reaches the system pasteboard as the cells' tab-separated input text"
+
+# `pbcopy` in the job, Paste in the application, and the cells hold it once saved.
+printf 'pasted\tthere' | pbcopy
+printf 'key cmd+l\ntype Z97\nkey return\nkey cmd+v\nkey cmd+s\nwait 2\n' > "$out/paste.drive"
+bounded 120 "$mac" "$out/pasteboard.fods" --drive "$out/paste.drive" --out "$out/paste" \
+    > /dev/null || fail "the paste drive failed"
+[ "$(input Z97)" = "pasted" ] && [ "$(input AA97)" = "there" ] \
+    || fail "the pasted text did not land in Z97:AA97: $(input Z97) / $(input AA97)"
+echo "   text from another application pastes as a rectangle of cells"

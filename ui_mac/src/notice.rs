@@ -74,6 +74,41 @@ pub fn last_sheet() -> String {
     "A spreadsheet keeps at least one sheet. Add another first, then delete this one.".to_owned()
 }
 
+/// Where a find landed: which of how many, and the keys that go on from here.
+pub fn found(index: usize, count: usize, needle: &str) -> String {
+    format!(
+        "{} of {} holding “{needle}”. ⌘G finds the next, ⇧⌘G the previous.",
+        index + 1,
+        counted(count, "cell", "cells")
+    )
+}
+
+/// A find with nothing to land on. Names the way out, which is the word itself.
+pub fn not_found(needle: &str) -> String {
+    format!("No cell holds “{needle}”. ⌘F asks for another word.")
+}
+
+/// What Replace All did. `refused` is the first formula it left alone and how many it left —
+/// a cell that matched and did not change is worth a sentence, or it reads as a replace that
+/// missed one.
+pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
+    let done = match cells {
+        0 => "Nothing replaced".to_owned(),
+        n => format!("Replaced in {}", counted(n, "cell", "cells")),
+    };
+    let left = match refused {
+        None => String::new(),
+        Some((first, 1)) => format!("; {first} was left alone, since its formula would not parse"),
+        Some((first, n)) => format!(
+            "; {n} formulas were left alone, since they would not parse — the first is {first}"
+        ),
+    };
+    match cells {
+        0 => format!("{done}{left}."),
+        _ => format!("{done}{left}. ⌘Z takes it back."),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +124,10 @@ mod tests {
             references_renamed(1),
             references_renamed(4),
             last_sheet(),
+            found(0, 3, "rent"),
+            not_found("rent"),
+            replaced(0, None),
+            replaced(4, Some(("B7", 2))),
         ]
     }
 

@@ -30,12 +30,16 @@ mod app;
 mod args;
 #[cfg(target_os = "macos")]
 mod banner;
+#[cfg(target_os = "macos")]
+mod clipboard;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod document;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod drive;
 #[cfg(target_os = "macos")]
 mod editor;
+#[cfg(target_os = "macos")]
+mod find_bar;
 #[cfg(target_os = "macos")]
 mod grid_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]

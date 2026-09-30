@@ -85,7 +85,20 @@ impl Command {
 pub enum Action {
     /// A standard selector, sent to the first responder that answers it.
     Standard(&'static str),
+    /// A standard selector whose sender's tag says which of its jobs it is — Find's
+    /// `performFindPanelAction:`, whose tags are `NSFindPanelAction`'s.
+    Tagged(&'static str, isize),
     Command(Command),
+}
+
+/// `NSFindPanelAction`'s values, which Edit ▸ Find's items carry as their tags — what makes
+/// ⌘F, ⌘G, ⇧⌘G and ⌘E the platform's own Find in any view that answers
+/// `performFindPanelAction:`.
+pub mod find {
+    pub const SHOW: isize = 1;
+    pub const NEXT: isize = 2;
+    pub const PREVIOUS: isize = 3;
+    pub const USE_SELECTION: isize = 7;
 }
 
 /// The modifier keys of a key equivalent.
@@ -193,6 +206,14 @@ const fn standard(title: &'static str, key: Option<Key>, selector: &'static str)
     }
 }
 
+const fn tagged(title: &'static str, key: Option<Key>, selector: &'static str, tag: isize) -> Item {
+    Item::Entry {
+        title,
+        key,
+        action: Action::Tagged(selector, tag),
+    }
+}
+
 const fn command(title: &'static str, key: Option<Key>, command: Command) -> Item {
     Item::Entry {
         title,
@@ -211,6 +232,37 @@ static OPEN_RECENT: Menu = Menu {
     title: "Open Recent",
     role: Role::OpenRecent,
     items: &[standard("Clear Menu", None, "clearRecentDocuments:")],
+};
+
+static FIND: Menu = Menu {
+    title: "Find",
+    role: Role::Plain,
+    items: &[
+        tagged(
+            "Find…",
+            key("f", CMD),
+            "performFindPanelAction:",
+            find::SHOW,
+        ),
+        tagged(
+            "Find Next",
+            key("g", CMD),
+            "performFindPanelAction:",
+            find::NEXT,
+        ),
+        tagged(
+            "Find Previous",
+            key("g", SHIFT_CMD),
+            "performFindPanelAction:",
+            find::PREVIOUS,
+        ),
+        tagged(
+            "Use Selection for Find",
+            key("e", CMD),
+            "performFindPanelAction:",
+            find::USE_SELECTION,
+        ),
+    ],
 };
 
 static REVERT_TO: Menu = Menu {
@@ -278,6 +330,10 @@ pub static MENUS: &[Menu] = &[
             standard("Delete", None, "delete:"),
             standard("Select All", key("a", CMD), "selectAll:"),
             Item::Separator,
+            Item::Submenu {
+                title: "Find",
+                menu: &FIND,
+            },
             command("Go To…", key("l", CMD), Command::GoTo),
             Item::Separator,
             command("Delete Sheet", None, Command::DeleteSheet),
@@ -418,7 +474,7 @@ mod tests {
     #[test]
     fn every_standard_item_names_a_standard_selector() {
         for (title, _, action) in entries() {
-            if let Action::Standard(selector) = action {
+            if let Action::Standard(selector) | Action::Tagged(selector, _) = action {
                 assert!(KNOWN.contains(&selector), "{title}: {selector}");
                 assert!(selector.ends_with(':'), "{title}: an action takes a sender");
             }
@@ -493,6 +549,16 @@ mod tests {
             (Action::Standard("redo:"), "⇧⌘Z"),
             (Action::Standard("copy:"), "⌘C"),
             (Action::Standard("toggleSidebar:"), "⌃⌘S"),
+            (Action::Tagged("performFindPanelAction:", find::SHOW), "⌘F"),
+            (Action::Tagged("performFindPanelAction:", find::NEXT), "⌘G"),
+            (
+                Action::Tagged("performFindPanelAction:", find::PREVIOUS),
+                "⇧⌘G",
+            ),
+            (
+                Action::Tagged("performFindPanelAction:", find::USE_SELECTION),
+                "⌘E",
+            ),
         ] {
             assert_eq!(key_of(action).as_deref(), Some(spelled), "{action:?}");
         }
@@ -511,6 +577,8 @@ mod tests {
         for (title, _, action) in entries() {
             let asks = match action {
                 Action::Standard(selector) => ASKS.contains(&selector),
+                // Find… opens the bar that asks; the others act on the word already there.
+                Action::Tagged(_, tag) => tag == find::SHOW,
                 Action::Command(command) => command.asks(),
             };
             assert_eq!(title.ends_with('…'), asks, "{title}");

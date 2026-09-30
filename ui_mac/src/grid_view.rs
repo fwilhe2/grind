@@ -43,6 +43,7 @@ use objc2_foundation::{
 
 use crate::banner::Banner;
 use crate::editor::Edit;
+use crate::find_bar::FindBar;
 use crate::keys;
 use crate::metrics::{BASE_PT, CoreText};
 use crate::render;
@@ -88,6 +89,8 @@ pub struct Pane {
     on_change: RefCell<Option<Box<dyn Fn()>>>,
     /// The sidebar's list of sheets, which a sheet added, renamed or deleted changes.
     sheet_list: RefCell<Option<Weak<NSTableView>>>,
+    /// The find bar, once the window has one (`find_bar.rs`).
+    pub(crate) find_bar: RefCell<Option<FindBar>>,
 }
 
 impl Pane {
@@ -111,7 +114,13 @@ impl Pane {
             text_listeners: RefCell::new(Vec::new()),
             on_change: RefCell::new(None),
             sheet_list: RefCell::new(None),
+            find_bar: RefCell::new(None),
         })
+    }
+
+    /// The window's find bar.
+    pub fn set_find_bar(&self, bar: FindBar) {
+        *self.find_bar.borrow_mut() = Some(bar);
     }
 
     /// The sidebar's list of sheets.
@@ -507,6 +516,43 @@ define_class!(
             }
         }
 
+        /// Edit ▸ Copy, Cut, Paste and Delete — `clipboard.rs`.
+        #[unsafe(method(copy:))]
+        fn copy(&self, _sender: Option<&AnyObject>) {
+            self.ivars().copy();
+        }
+
+        #[unsafe(method(cut:))]
+        fn cut(&self, _sender: Option<&AnyObject>) {
+            self.ivars().cut();
+        }
+
+        #[unsafe(method(paste:))]
+        fn paste(&self, _sender: Option<&AnyObject>) {
+            self.ivars().paste();
+        }
+
+        #[unsafe(method(delete:))]
+        fn delete(&self, _sender: Option<&AnyObject>) {
+            self.ivars().clear();
+        }
+
+        /// Edit ▸ Select All: everything the sheet uses, the view going home.
+        #[unsafe(method(selectAll:))]
+        fn select_all(&self, _sender: Option<&AnyObject>) {
+            let pane = self.ivars();
+            pane.select(grind_sheet::nav::all(&pane.app, pane.sheet.get()));
+        }
+
+        /// Edit ▸ Find's four items, told apart by the sender's tag (`find_bar.rs`).
+        #[unsafe(method(performFindPanelAction:))]
+        fn perform_find_panel_action(&self, sender: Option<&AnyObject>) {
+            let tag = sender
+                .and_then(|sender| sender.downcast_ref::<NSMenuItem>())
+                .map_or(0, |item| item.tag());
+            self.ivars().find_panel_action(tag);
+        }
+
         /// Edit ▸ Undo — the core's history, never AppKit's (architecture rule 2).
         #[unsafe(method(undo:))]
         fn undo(&self, _sender: Option<&AnyObject>) {
@@ -526,6 +572,7 @@ define_class!(
             match item.action().map(|action| action.name().to_str().unwrap_or_default().to_owned()) {
                 Some(name) if name == "undo:" => app.can_undo(),
                 Some(name) if name == "redo:" => app.can_redo(),
+                Some(name) if name == "paste:" => Pane::can_paste(),
                 _ => true,
             }
         }
@@ -543,6 +590,12 @@ impl GridView {
         let visible = rect(self.visibleRect());
         let grid = pane.grid.borrow();
         let page = select::page(&grid, visible.y, visible.h - HEADER_H);
+        // The Delete keys empty the selection; every other action moves it.
+        if action == keys::GridAction::Clear {
+            drop(grid);
+            pane.clear();
+            return;
+        }
         let next = select::apply(
             &pane.app,
             pane.sheet.get(),

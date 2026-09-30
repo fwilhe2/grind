@@ -234,6 +234,7 @@ fn build(menu: &'static Menu, app: &NSApplication, mtm: MainThreadMarker) -> Ret
             Item::Entry { title, key, action } => {
                 let (sel, tag) = match action {
                     Action::Standard(name) => (selector(name), 0),
+                    Action::Tagged(name, tag) => (selector(name), *tag),
                     Action::Command(command) => (selector(COMMAND_SELECTOR), command.tag()),
                 };
                 let equivalent = key.map_or("", |key| key.key);

@@ -8,5 +8,6 @@
 
 pub mod geom;
 pub mod paint;
+pub mod search;
 pub mod select;
 pub mod state;

@@ -387,7 +387,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe — *built, and not yet run* (*What M2 built*) | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26. **The Linux half is met; the runner half is the first run of `artifacts.yml`'s `macos` job** (`.github/scripts/mac-frames.sh`) |
 | **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar — *built, and not yet run* (*What M3 built*) | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20`. **The Linux half is met; the runner half is `mac-frames.sh`'s selection drive**, which checks the transcript after every step |
 | **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave — *built, and not yet run* (*What M4 built*) | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched. **The Linux half is met; the runner half is `mac-frames.sh`'s editing section** |
-| **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine |
+| **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` — *built, and not yet run* (*What M5 built*) | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine. **The Linux half is met; the runner half is `mac-frames.sh`'s pasteboard section** |
 | **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2 |
 | **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …` |
 | **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical |
@@ -466,6 +466,25 @@ What M4 leaves: the formula field edits only through the cell editor (the read-o
 a `ponytail:` in `accessory.rs`); an undo back to the saved state still leaves the Edited dot,
 since the core's observer says *changed* rather than *which way*; and ⌃U inside the editor is the
 field editor's, so toggling Enter and Edit mode there is not yet reachable.
+
+### What M5 built
+
+Built and type-checked, not yet run. One more hoist came first, and it fixed a bug: `nav::target`,
+the rectangle an operation over a selection acts on, is the Windows pane's rule (only a whole
+row or column is cut to what the sheet uses) — the GNOME window had cut every rectangle, and the
+Windows pane's Copy had cut none, so copying a whole column there put a million lines on the
+clipboard.
+
+| File | Half | What it is |
+|---|---|---|
+| `sheet/search.rs` | portable | Where Find goes next: `App::find` and `find::step`, across sheets and wrapping |
+| `notice.rs` | portable | Found, not found and replaced, in ⌘-spelled sentences |
+| `menu.rs` | portable | Edit ▸ Find as the platform's own `performFindPanelAction:` with `NSFindPanelAction`'s tags — ⌘F, ⌘G, ⇧⌘G, ⌘E — tested for their keys like every other item |
+| `clipboard.rs` | Mac | Copy, Cut, Paste and Delete; the one file that touches `NSPasteboard`, writing the TSV as plain text and as tab-separated text, and reading plain text back through `App::enter_range` |
+| `find_bar.rs` | Mac | A third titlebar accessory: a search field, a replace field, Replace All and Done |
+
+Also mended while here: Edit ▸ Select All and the Delete keys reach the grid, which M3 and M4
+had named and not wired.
 
 ## Conventions made mechanical
 
