@@ -457,3 +457,23 @@ done
 cmp -s "$out/welcome-light-1.png" "$out/welcome-dark-1.png" \
     && fail "the welcome window's dark frame is its light one"
 say "   the welcome window renders reproducibly in both appearances"
+
+say "== the accessibility floor"
+# Decision 10's floor, read back in-process: the page is a text area whose value is the document
+# and whose selected range follows the caret; a move on the grid announces where it went.
+"$grind" text new "$out/spoken.fodt" > /dev/null
+printf 'type hello\nkey left\na11y\n' > "$out/spoken.drive"
+bounded 120 "$mac" "$out/spoken.fodt" --drive "$out/spoken.drive" --out "$out/spoken" \
+    > "$out/spoken.txt" || fail "the page's accessibility drive failed: $(cat "$out/spoken.txt")"
+cat "$out/spoken.txt"
+grep -q '^a11y: role "AXTextArea", value "hello", selected 4+0, line 0' "$out/spoken.txt" \
+    || fail "the page does not say it is a text area holding hello with the caret at 4"
+"$grind" sheet new "$out/spoken.fods" > /dev/null
+"$grind" sheet set "$out/spoken.fods" B1 42 > /dev/null
+printf 'key right\na11y\n' > "$out/announced.drive"
+bounded 120 "$mac" "$out/spoken.fods" --drive "$out/announced.drive" --out "$out/announced" \
+    > "$out/announced.txt" || fail "the grid's accessibility drive failed: $(cat "$out/announced.txt")"
+cat "$out/announced.txt"
+grep -q 'announced "B1, 42"' "$out/announced.txt" \
+    || fail "a move to B1 did not announce B1 and what it shows"
+say "   the page reads as a text area, and a move on the grid is announced"

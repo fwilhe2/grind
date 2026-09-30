@@ -33,15 +33,18 @@ use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
+    NSAccessibilityPostNotification, NSAccessibilitySelectedTextChangedNotification,
+    NSAccessibilityTextAreaRole, NSAccessibilityValueChangedNotification,
     NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSEvent, NSFontManager,
     NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextInputClient, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
-    NSArray, NSAttributedString, NSAttributedStringKey, NSPoint, NSRange, NSRect, NSSize, NSString,
-    NSUInteger,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSCopying, NSInteger, NSPoint, NSRange,
+    NSRect, NSSize, NSString, NSUInteger,
 };
 
+use crate::a11y;
 use crate::clipboard;
 use crate::grid_view::{located, ns_rect, rect, rgb, shifted};
 use crate::keys::{self, PageAction, Scroll};
@@ -184,6 +187,12 @@ impl TextPane {
             listener();
         }
         self.tell();
+        if let Some(view) = self.view() {
+            // SAFETY: as in `act_on`.
+            unsafe {
+                NSAccessibilityPostNotification(&view, NSAccessibilityValueChangedNotification)
+            };
+        }
     }
 
     /// Go to `caret` — a sidebar row, a Problems finding — and give the page the keyboard.
@@ -269,6 +278,16 @@ impl TextPane {
         self.redraw();
         self.reveal();
         self.tell();
+        if let Some(view) = self.view() {
+            // SAFETY: the view is an accessibility element, and the name a constant AppKit
+            // exports.
+            unsafe {
+                NSAccessibilityPostNotification(
+                    &view,
+                    NSAccessibilitySelectedTextChangedNotification,
+                )
+            };
+        }
     }
 
     /// What a selector does.
@@ -503,6 +522,42 @@ define_class!(
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
             self.interpretKeyEvents(&NSArray::from_slice(&[event]));
+        }
+
+        /// The accessibility floor (decision 10): the page is a text area whose value is the
+        /// document, a line a block, with the selection and the caret's line in it
+        /// (`a11y.rs`).
+        #[unsafe(method(isAccessibilityElement))]
+        fn is_accessibility_element(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method_id(accessibilityRole))]
+        fn accessibility_role(&self) -> Option<Retained<NSString>> {
+            // SAFETY: a constant AppKit exports.
+            Some(unsafe { NSAccessibilityTextAreaRole }.copy())
+        }
+
+        #[unsafe(method_id(accessibilityValue))]
+        fn accessibility_value(&self) -> Option<Retained<AnyObject>> {
+            let value = NSString::from_str(&a11y::page_value(&self.ivars().app));
+            Some(value.into_super().into())
+        }
+
+        #[unsafe(method(accessibilityNumberOfCharacters))]
+        fn accessibility_number_of_characters(&self) -> NSInteger {
+            a11y::page_value(&self.ivars().app).encode_utf16().count() as NSInteger
+        }
+
+        #[unsafe(method(accessibilitySelectedTextRange))]
+        fn accessibility_selected_text_range(&self) -> NSRange {
+            let pane = self.ivars();
+            ns_range(a11y::page_range(&pane.app, &pane.state.borrow()))
+        }
+
+        #[unsafe(method(accessibilityInsertionPointLineNumber))]
+        fn accessibility_insertion_point_line_number(&self) -> NSInteger {
+            a11y::page_line(&self.ivars().state.borrow()) as NSInteger
         }
 
         /// `NSResponder`'s older `insertText:`, which some senders still use — a Services menu

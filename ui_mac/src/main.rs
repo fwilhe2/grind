@@ -23,6 +23,8 @@
 
 // Portable, and reached from the AppKit half — which is not compiled off macOS, so on Linux the
 // only callers of much of this are the tests.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod a11y;
 #[cfg(target_os = "macos")]
 mod accessory;
 #[cfg(target_os = "macos")]

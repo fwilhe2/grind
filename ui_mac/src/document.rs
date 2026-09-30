@@ -423,6 +423,11 @@ mod mac {
             }
         }
 
+        /// What the grid last announced, for a drive's `a11y` step.
+        pub fn announced(&self) -> Option<String> {
+            self.pane().map(|pane| pane.announced.borrow().clone())
+        }
+
         /// Choose the sidebar row whose title holds `text` — a drive's `sidebar` step.
         pub fn choose_place(&self, text: &str) -> Result<(), String> {
             match self.ivars().sidebar.borrow().as_ref() {

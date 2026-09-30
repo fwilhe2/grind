@@ -31,12 +31,15 @@ use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSColorSpace, NSEvent,
-    NSEventGestureAxis, NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem,
-    NSScrollView, NSTextField, NSView,
+    NSAccessibilityAnnouncementKey, NSAccessibilityAnnouncementRequestedNotification,
+    NSAccessibilityPostNotificationWithUserInfo, NSAutoresizingMaskOptions, NSBeep, NSColor,
+    NSColorPanel, NSColorSpace, NSEvent, NSEventGestureAxis, NSEventModifierFlags, NSFontManager,
+    NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
-use objc2_foundation::{NSArray, NSAttributedString, NSObject, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{
+    NSArray, NSAttributedString, NSDictionary, NSObject, NSPoint, NSRect, NSSize, NSString,
+};
 
 use crate::banner::Banner;
 use crate::editor::Edit;
@@ -91,6 +94,9 @@ pub struct Pane {
     pub(crate) find_bar: RefCell<Option<FindBar>>,
     /// Whether formulas are read in plain English — View ▸ Friendly Formulas (M8).
     pub friendly: Cell<bool>,
+    /// What the last move announced (decision 10) — kept so a drive can read back what
+    /// VoiceOver was told.
+    pub announced: RefCell<String>,
     /// Which of `doc/view-modes.md`'s overlays are drawn — View ▸ Cell Roles and Names (M8).
     /// Asked for on every paint and never written: a save with every overlay on is the bytes
     /// a save with none would be.
@@ -121,6 +127,7 @@ impl Pane {
             find_bar: RefCell::new(None),
             friendly: Cell::new(true),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
+            announced: RefCell::new(String::new()),
         })
     }
 
@@ -320,6 +327,30 @@ impl Pane {
             listener(selection);
         }
         self.edit_changed();
+        self.announce(selection);
+    }
+
+    /// Say where the cursor went and what the cell shows — the accessibility floor's grid half,
+    /// `ui_sheet_gtk`'s `announce` in the Mac's terms.
+    fn announce(&self, selection: Selection) {
+        let said = crate::a11y::grid_announcement(&self.app, self.sheet.get(), selection);
+        if let Some(grid) = self.grid_view() {
+            let text = NSString::from_str(&said);
+            let value: &AnyObject = &text;
+            // SAFETY: the key is a constant AppKit exports, and its value a string.
+            let key: &NSString = unsafe { NSAccessibilityAnnouncementKey };
+            let info = NSDictionary::<NSString, AnyObject>::from_slices(&[key], &[value]);
+            // SAFETY: the grid view is an accessibility element; the name is AppKit's own, and
+            // the user info the dictionary its documentation asks for.
+            unsafe {
+                NSAccessibilityPostNotificationWithUserInfo(
+                    &grid,
+                    NSAccessibilityAnnouncementRequestedNotification,
+                    Some(&info),
+                )
+            };
+        }
+        *self.announced.borrow_mut() = said;
     }
 }
 

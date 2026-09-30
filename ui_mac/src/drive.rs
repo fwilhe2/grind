@@ -23,6 +23,7 @@
 //! mark ´               an input method's marked text, as `setMarkedText:` hands it over
 //! commit é             an input method's commit, as `insertText:replacementRange:`
 //! sidebar Data.C3      the sidebar row whose title holds this, chosen as a click chooses it
+//! a11y                 what the key view tells VoiceOver, read back in-process and printed
 //! ```
 //!
 //! `mark` and `commit` call the key view's `NSTextInputClient` methods directly, which is what an
@@ -57,6 +58,9 @@ pub enum Step {
     Commit(String),
     /// The sidebar row whose title holds this text, chosen.
     Sidebar(String),
+    /// The key view's accessibility attributes and the grid's last announcement, printed as an
+    /// `a11y:` line — decision 10's floor, asserted rather than hoped for.
+    Accessibility,
 }
 
 /// A key and its modifiers, as `NSEvent` wants them: the characters it produces and the
@@ -235,6 +239,7 @@ pub fn parse(script: &str) -> Result<Vec<Step>, (usize, String)> {
             "mark" if !rest.is_empty() => Step::Mark(rest.to_owned()),
             "commit" if !rest.is_empty() => Step::Commit(rest.to_owned()),
             "sidebar" if !rest.is_empty() => Step::Sidebar(rest.to_owned()),
+            "a11y" if rest.is_empty() => Step::Accessibility,
             other => return Err(fail(format!("`{other}` is not a step"))),
         };
         steps.push(step);
@@ -523,6 +528,37 @@ mod mac {
         Ok(())
     }
 
+    /// What the key view answers the questions a screen reader asks, and what the grid last
+    /// announced — one line, for a transcript.
+    fn accessibility(app: &NSApplication, document: Option<&NSDocument>) -> Result<String, String> {
+        let responder = window(app)?
+            .firstResponder()
+            .ok_or("nothing has the keyboard")?;
+        // SAFETY: every responder that is a view answers the informal NSAccessibility
+        // protocol these four selectors are from, with these return types.
+        let (role, value, range, line) = unsafe {
+            let role: Option<Retained<NSString>> = msg_send![&*responder, accessibilityRole];
+            let value: Option<Retained<AnyObject>> = msg_send![&*responder, accessibilityValue];
+            let range: NSRange = msg_send![&*responder, accessibilitySelectedTextRange];
+            let line: isize = msg_send![&*responder, accessibilityInsertionPointLineNumber];
+            (role, value, range, line)
+        };
+        let value = value
+            .and_then(|value| value.downcast::<NSString>().ok())
+            .map(|value| value.to_string());
+        let announced = document
+            .and_then(|document| document.downcast_ref::<Document>())
+            .and_then(Document::announced)
+            .unwrap_or_default();
+        Ok(format!(
+            "a11y: role {:?}, value {:?}, selected {}+{}, line {line}, announced {announced:?}",
+            role.map(|role| role.to_string()).unwrap_or_default(),
+            value.unwrap_or_default(),
+            range.location,
+            range.length,
+        ))
+    }
+
     /// The window, frame and all, as a PNG — for a person to look at; the assertions are made on
     /// the saved document. Caching a view into a bitmap needs no Screen Recording permission.
     fn snap(app: &NSApplication, drive: &Drive, name: &str) -> Result<(), String> {
@@ -607,6 +643,7 @@ mod mac {
                 Step::Snap(name) => snap(&app, drive, name),
                 Step::Mark(text) => mark(&app, text),
                 Step::Commit(text) => commit(&app, text),
+                Step::Accessibility => accessibility(&app, document).map(|line| println!("{line}")),
                 Step::Sidebar(text) => document
                     .and_then(|document| document.downcast_ref::<Document>())
                     .ok_or_else(|| "there is no document".to_owned())
@@ -719,6 +756,8 @@ mod tests {
         assert!(parse("type").is_err());
         assert!(parse("mark").is_err(), "marked text is some text");
         assert!(parse("sidebar").is_err(), "a row is named by some text");
+        assert_eq!(parse("a11y").unwrap(), [Step::Accessibility]);
+        assert!(parse("a11y now").is_err());
         assert_eq!(
             parse("sidebar Data.C3").unwrap(),
             [Step::Sidebar("Data.C3".into())]
