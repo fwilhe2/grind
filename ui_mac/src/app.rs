@@ -29,7 +29,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString};
 
 use crate::Opening;
-use crate::document::Controller;
+use crate::document::{Controller, Document};
 use crate::menu::{self, Action, COMMAND_SELECTOR, Command, Item, MENUS, Menu, Role};
 
 /// What the delegate was launched to do, until it has done it.
@@ -105,6 +105,19 @@ impl Delegate {
         let kind = match command {
             Command::NewSheet => DocumentKind::Spreadsheet,
             Command::NewText => DocumentKind::Text,
+            Command::GoTo => {
+                // The front document's name box, when the front document is a spreadsheet.
+                let pane = self
+                    .ivars()
+                    .controller
+                    .currentDocument()
+                    .and_then(|document| document.downcast::<Document>().ok())
+                    .and_then(|document| document.pane());
+                if let Some(pane) = pane {
+                    pane.focus_name_box();
+                }
+                return;
+            }
         };
         if let Err(message) = self.ivars().controller.new_document(kind) {
             alert(self.mtm(), "The document could not be made.", &message);

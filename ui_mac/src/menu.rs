@@ -33,10 +33,20 @@ pub enum Command {
     NewSheet,
     /// A new, empty text document.
     NewText,
+    /// The keyboard into the name box, to type a place — `g20`, `Data.B2:C9`, a defined name —
+    /// and go there (M3). ⌘L, the precedent `doc/macos-shell.md` names.
+    GoTo,
 }
 
 impl Command {
-    pub const ALL: [Command; 2] = [Command::NewSheet, Command::NewText];
+    pub const ALL: [Command; 3] = [Command::NewSheet, Command::NewText, Command::GoTo];
+
+    /// Whether the command asks for more before it acts — which is what an ellipsis in its title
+    /// promises, and what the tests hold the titles to.
+    #[cfg(test)]
+    pub fn asks(self) -> bool {
+        matches!(self, Command::GoTo)
+    }
 
     /// The item's tag: the command's place in [`Command::ALL`], so no two share one.
     pub fn tag(self) -> isize {
@@ -251,6 +261,8 @@ pub static MENUS: &[Menu] = &[
             standard("Paste", key("v", CMD), "paste:"),
             standard("Delete", None, "delete:"),
             standard("Select All", key("a", CMD), "selectAll:"),
+            Item::Separator,
+            command("Go To…", key("l", CMD), Command::GoTo),
         ],
     },
     Menu {
@@ -469,7 +481,10 @@ mod tests {
             "browseDocumentVersions:",
         ];
         for (title, _, action) in entries() {
-            let asks = matches!(action, Action::Standard(selector) if ASKS.contains(&selector));
+            let asks = match action {
+                Action::Standard(selector) => ASKS.contains(&selector),
+                Action::Command(command) => command.asks(),
+            };
             assert_eq!(title.ends_with('…'), asks, "{title}");
             assert!(
                 !title.ends_with("..."),

@@ -23,15 +23,15 @@ use objc2_core_graphics::{
 
 use crate::metrics::CoreText;
 use crate::sheet::geom::Rect;
-use crate::sheet::paint::Op;
+use crate::sheet::paint::{Op, WASH};
 
 fn cg_rect(rect: &Rect) -> CGRect {
     CGRect::new(CGPoint::new(rect.x, rect.y), CGSize::new(rect.w, rect.h))
 }
 
-fn fill_color(context: &CGContext, (r, g, b): Rgb) {
+fn fill_color(context: &CGContext, (r, g, b): Rgb, alpha: CGFloat) {
     let channel = |value: u8| CGFloat::from(value) / 255.0;
-    CGContext::set_rgb_fill_color(Some(context), channel(r), channel(g), channel(b), 1.0);
+    CGContext::set_rgb_fill_color(Some(context), channel(r), channel(g), channel(b), alpha);
 }
 
 /// Draw `ops`, in order, into `context`, which is flipped — origin top left.
@@ -53,7 +53,11 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
     for op in ops {
         match op {
             Op::Fill { rect, color } => {
-                fill_color(context, *color);
+                fill_color(context, *color, 1.0);
+                CGContext::fill_rect(context_ref, cg_rect(rect));
+            }
+            Op::Wash { rect, color } => {
+                fill_color(context, *color, WASH);
                 CGContext::fill_rect(context_ref, cg_rect(rect));
             }
             Op::Text {
@@ -69,7 +73,7 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
                 // The line takes its colour from the context
                 // (`kCTForegroundColorFromContextAttributeName`), so one cached font serves every
                 // colour a document uses.
-                fill_color(context, *color);
+                fill_color(context, *color, 1.0);
                 let line = text.line(string, style);
                 CGContext::set_text_position(context_ref, *x, *top + text.ascent(style));
                 // SAFETY: the context is live for the whole of this call.

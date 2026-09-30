@@ -66,12 +66,13 @@ pub fn sniff(name: &str, bytes: &[u8]) -> Result<DocumentKind, String> {
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::Controller;
+pub use mac::{Controller, Document};
 
 #[cfg(target_os = "macos")]
 mod mac {
     use std::cell::RefCell;
     use std::path::Path;
+    use std::rc::Rc;
     use std::sync::Arc;
 
     use grind_core::{DocumentKind, Form};
@@ -90,6 +91,7 @@ mod mac {
     };
 
     use super::{SHEET, TEXT, kind_of, sniff};
+    use crate::accessory;
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
 
@@ -128,6 +130,8 @@ mod mac {
     #[derive(Default)]
     pub struct State {
         content: RefCell<Option<Content>>,
+        /// The spreadsheet's views' shared state, once its window exists.
+        pane: RefCell<Option<Rc<Pane>>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
         imported: RefCell<Option<(String, Option<String>)>>,
     }
@@ -220,8 +224,14 @@ mod mac {
                 let window = window(mtm);
                 match self.ivars().content.borrow().as_ref() {
                     Some(Content::Sheet(app)) => {
-                        let scroll = sheet_view(Pane::new(app.clone()), window.frame().size, mtm);
+                        let pane = Pane::new(app.clone());
+                        let scroll = sheet_view(&pane, window.frame().size, mtm);
                         window.setContentView(Some(&scroll));
+                        // The grid takes the keyboard from the start, as a sheet's cursor does.
+                        let grid = scroll.documentView();
+                        window.makeFirstResponder(grid.as_deref().map(|view| &**view));
+                        accessory::attach(&window, &pane, mtm);
+                        *self.ivars().pane.borrow_mut() = Some(pane);
                     }
                     // The page is M6's; until then a text document opens to a window that says
                     // so, rather than to nothing at all.
@@ -298,6 +308,30 @@ mod mac {
                     .file_name()
                     .map_or(name.clone(), |file| file.to_string_lossy().into_owned()),
             )
+        }
+
+        /// The spreadsheet's pane, when this document is one with a window.
+        pub fn pane(&self) -> Option<Rc<Pane>> {
+            self.ivars().pane.borrow().clone()
+        }
+
+        /// Where the selection is, for a drive's transcript: the name box's word, and the range
+        /// when there is more than one cell.
+        pub fn selection_text(&self) -> String {
+            let Some(pane) = self.pane() else {
+                return "no grid".to_owned();
+            };
+            let selection = pane.selection.get();
+            let (start, end) = selection.rect();
+            let named = grind_sheet::place::name_box(&pane.app, pane.sheet.get(), selection);
+            match selection.is_single() {
+                true => named,
+                false => format!(
+                    "{}:{} (active {named})",
+                    grind_sheet::a1::format(None, start),
+                    grind_sheet::a1::format(None, end)
+                ),
+            }
         }
 
         /// Whether this document came from a workbook or a CSV, and so must stay untitled.

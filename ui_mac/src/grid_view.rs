@@ -12,6 +12,12 @@
 //! scrolling — elastic, with the system's own scrollers — and every view draws through
 //! `sheet::paint` and [`crate::render::draw`], the path `--render-to` takes too.
 //!
+//! **The selection is the pane's** (M3), and every input only asks `sheet::select` what it
+//! becomes: a key through `interpretKeyEvents:` and `doCommandBySelector:` — the user's own key
+//! bindings, read by `keys.rs` — a click and a drag on the grid, and a click on a header band. A
+//! change redraws the four views, scrolls the active cell into sight beside the bands, and tells
+//! whoever listens (the name box and the status bar).
+//!
 //! The grid view's own coordinates put the sheet's top-left cell at `(HEADER_W, HEADER_H)`: the
 //! bands float over that margin, so at rest they cover nothing but it.
 
@@ -20,27 +26,45 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use grind_core::color::{self, Rgb};
-use objc2::rc::Retained;
+use grind_sheet::nav::Selection;
+use objc2::rc::{Retained, Weak};
+use objc2::runtime::{AnyObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSColor, NSColorSpace, NSEventGestureAxis, NSGraphicsContext,
-    NSScrollView, NSView,
+    NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorSpace, NSEvent, NSEventGestureAxis,
+    NSEventModifierFlags, NSGraphicsContext, NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSArray, NSObject, NSPoint, NSRect, NSSize};
 
+use crate::keys;
 use crate::metrics::{BASE_PT, CoreText};
 use crate::render;
 use crate::sheet::geom::{Grid, HEADER_H, HEADER_W, Rect};
-use crate::sheet::paint::{self, Op, Palette};
+use crate::sheet::paint::{self, Look, Op, Palette};
+use crate::sheet::select;
 
-/// What every view of one spreadsheet window draws from: the document, which sheet is showing,
-/// where its cells are, and the fonts it is measured in.
+/// Something told the new selection whenever it changes.
+type Listener = Box<dyn Fn(Selection)>;
+
+/// What every view of one spreadsheet window draws from and answers to: the document, which sheet
+/// is showing, where its cells are, the fonts it is measured in, and the selection.
 pub struct Pane {
     pub app: Arc<grind_sheet::App>,
     pub sheet: Cell<usize>,
     pub grid: RefCell<Grid>,
     pub text: CoreText,
+    pub selection: Cell<Selection>,
+    /// The four views, held weakly — each holds the pane, and the scroll view holds them.
+    views: RefCell<Vec<Weak<NSView>>>,
+    /// The grid view itself, which is what scrolls a cell into sight.
+    grid_view: RefCell<Option<Weak<GridView>>>,
+    /// Told the new selection whenever it changes: the name box and the status bar.
+    listeners: RefCell<Vec<Listener>>,
+    /// Objects nothing else holds strongly — a control's target, which the control holds weakly.
+    kept: RefCell<Vec<Retained<NSObject>>>,
+    /// The name box, once the window has one — what Go To puts the keyboard in.
+    name_box: RefCell<Option<Weak<NSTextField>>>,
 }
 
 impl Pane {
@@ -51,7 +75,68 @@ impl Pane {
             sheet: Cell::new(0),
             grid: RefCell::new(grid),
             text: CoreText::new(BASE_PT),
+            selection: Cell::new(Selection::default()),
+            views: RefCell::new(Vec::new()),
+            grid_view: RefCell::new(None),
+            listeners: RefCell::new(Vec::new()),
+            kept: RefCell::new(Vec::new()),
+            name_box: RefCell::new(None),
         })
+    }
+
+    /// Remember the window's name box, for Go To.
+    pub fn set_name_box(&self, field: &Retained<NSTextField>) {
+        *self.name_box.borrow_mut() = Some(Weak::from_retained(field));
+    }
+
+    /// Go To: the keyboard into the name box, whose text a field selects as it takes focus, so
+    /// what is typed replaces it.
+    pub fn focus_name_box(&self) {
+        let Some(field) = self.name_box.borrow().as_ref().and_then(Weak::load) else {
+            return;
+        };
+        if let Some(window) = field.window() {
+            window.makeFirstResponder(Some(&field));
+        }
+    }
+
+    /// Keep `object` alive for as long as the pane is.
+    pub fn keep(&self, object: Retained<NSObject>) {
+        self.kept.borrow_mut().push(object);
+    }
+
+    /// Give the keyboard back to the grid — after the name box has sent the selection somewhere.
+    pub fn focus_grid(&self) {
+        let Some(grid) = self.grid_view.borrow().as_ref().and_then(Weak::load) else {
+            return;
+        };
+        if let Some(window) = grid.window() {
+            window.makeFirstResponder(Some(&grid));
+        }
+    }
+
+    /// Call `listener` with every new selection from now on, and once with the current one.
+    pub fn listen(&self, listener: impl Fn(Selection) + 'static) {
+        listener(self.selection.get());
+        self.listeners.borrow_mut().push(Box::new(listener));
+    }
+
+    /// Make `selection` the selection: redraw, scroll the active cell into sight, and say so.
+    pub fn select(&self, selection: Selection) {
+        if selection == self.selection.get() {
+            return;
+        }
+        self.selection.set(selection);
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
+        }
+        if let Some(grid) = self.grid_view.borrow().as_ref().and_then(Weak::load) {
+            let reveal = select::reveal(&self.grid.borrow(), selection);
+            grid.scrollRectToVisible(ns_rect(reveal));
+        }
+        for listener in self.listeners.borrow().iter() {
+            listener(selection);
+        }
     }
 }
 
@@ -70,8 +155,9 @@ fn rgb(color: &NSColor) -> Rgb {
 }
 
 /// The system's semantic colours, resolved in the appearance AppKit is drawing in — a view's
-/// `drawRect:` runs with the view's own `effectiveAppearance` current, so dark mode, high contrast
-/// and a window forced into one appearance all follow with nothing here knowing (decision 8).
+/// `drawRect:` runs with the view's own `effectiveAppearance` current, so dark mode, high contrast,
+/// the user's accent and a window forced into one appearance all follow with nothing here knowing
+/// (decision 8).
 fn palette() -> Palette {
     let page = rgb(&NSColor::textBackgroundColor());
     Palette {
@@ -80,6 +166,7 @@ fn palette() -> Palette {
         grid: rgb(&NSColor::gridColor()),
         header: rgb(&NSColor::controlBackgroundColor()),
         header_ink: rgb(&NSColor::secondaryLabelColor()),
+        accent: rgb(&NSColor::controlAccentColor()),
         dark: color::luminance(page) < 0.5,
     }
 }
@@ -101,6 +188,10 @@ fn rect(frame: NSRect) -> Rect {
     )
 }
 
+fn ns_rect(rect: Rect) -> NSRect {
+    NSRect::new(NSPoint::new(rect.x, rect.y), NSSize::new(rect.w, rect.h))
+}
+
 /// The context AppKit is drawing into right now, and `ops` put down on it.
 fn draw(ops: &[Op], pane: &Pane) {
     let Some(context) = NSGraphicsContext::currentContext() else {
@@ -108,6 +199,15 @@ fn draw(ops: &[Op], pane: &Pane) {
     };
     let cg: Retained<CGContext> = context.CGContext();
     render::draw(&cg, ops, &pane.text);
+}
+
+/// Where a mouse event happened, in `view`'s own coordinates.
+fn located(view: &NSView, event: &NSEvent) -> NSPoint {
+    view.convertPoint_fromView(event.locationInWindow(), None)
+}
+
+fn shifted(event: &NSEvent) -> bool {
+    event.modifierFlags().contains(NSEventModifierFlags::Shift)
 }
 
 define_class!(
@@ -129,9 +229,20 @@ define_class!(
             true
         }
 
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool {
+            true
+        }
+
         #[unsafe(method(drawRect:))]
         fn draw_rect(&self, dirty: NSRect) {
             let pane = self.ivars();
+            let palette = palette();
+            let look = Look {
+                palette: &palette,
+                metrics: &pane.text,
+                hairline: hairline(self),
+            };
             // The dirty rectangle in the sheet's own coordinates: the view keeps a margin the
             // header bands float over.
             let view = rect(dirty).offset(-HEADER_W, -HEADER_H);
@@ -140,20 +251,83 @@ define_class!(
                 pane.sheet.get(),
                 &pane.grid.borrow(),
                 view,
-                &palette(),
-                &pane.text,
-                hairline(self),
+                pane.selection.get(),
+                &look,
             )
             .into_iter()
             .map(|op| shift(op, HEADER_W, HEADER_H))
             .collect();
             draw(&ops, pane);
         }
+
+        /// A key goes to the text system, which answers with what it means for this user — a
+        /// selector, handled below, or text, which is an edit and M4's.
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            self.interpretKeyEvents(&NSArray::from_slice(&[event]));
+        }
+
+        #[unsafe(method(doCommandBySelector:))]
+        fn do_command_by_selector(&self, selector: Sel) {
+            let name = selector.name().to_str().unwrap_or_default();
+            match keys::grid_action(name) {
+                Some(action) => self.act(action),
+                // A key with no meaning here is the platform's beep, as in every other view.
+                None => NSBeep(),
+            }
+        }
+
+        /// Typing into a cell is M4's; until then text reaching the grid is swallowed quietly
+        /// rather than beeped at, since it is not a mistake.
+        #[unsafe(method(insertText:))]
+        fn insert_text(&self, _text: &AnyObject) {}
+
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            self.click(event, shifted(event));
+        }
+
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged(&self, event: &NSEvent) {
+            self.click(event, true);
+        }
     }
 );
 
+impl GridView {
+    fn act(&self, action: keys::GridAction) {
+        let pane = self.ivars();
+        let visible = rect(self.visibleRect());
+        let grid = pane.grid.borrow();
+        let page = select::page(&grid, visible.y, visible.h - HEADER_H);
+        let next = select::apply(
+            &pane.app,
+            pane.sheet.get(),
+            &grid,
+            pane.selection.get(),
+            action,
+            page,
+        );
+        drop(grid);
+        pane.select(next);
+    }
+
+    fn click(&self, event: &NSEvent, extend: bool) {
+        let pane = self.ivars();
+        let at = located(self, event);
+        let next = select::click(
+            &pane.grid.borrow(),
+            pane.selection.get(),
+            at.x - HEADER_W,
+            at.y - HEADER_H,
+            extend,
+        );
+        pane.select(next);
+    }
+}
+
 define_class!(
-    /// The column letters, floating over the grid's top margin.
+    /// The column letters, floating over the grid's top margin. A click selects the column.
     #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
     #[name = "GrindColumnHeader"]
@@ -170,21 +344,45 @@ define_class!(
         fn draw_rect(&self, dirty: NSRect) {
             let pane = self.ivars();
             let dirty = rect(dirty);
+            let palette = palette();
+            let look = Look {
+                palette: &palette,
+                metrics: &pane.text,
+                hairline: hairline(self),
+            };
             let ops = paint::column_header(
                 &pane.grid.borrow(),
                 dirty.x,
                 dirty.w,
-                &palette(),
-                &pane.text,
-                hairline(self),
+                pane.selection.get(),
+                &look,
             );
             draw(&ops, pane);
+        }
+
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            self.click(event, shifted(event));
+        }
+
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged(&self, event: &NSEvent) {
+            self.click(event, true);
         }
     }
 );
 
+impl ColumnHeader {
+    fn click(&self, event: &NSEvent, extend: bool) {
+        let pane = self.ivars();
+        let at = located(self, event);
+        let next = select::column_click(&pane.grid.borrow(), pane.selection.get(), at.x, extend);
+        pane.select(next);
+    }
+}
+
 define_class!(
-    /// The row numbers, floating over the grid's left margin.
+    /// The row numbers, floating over the grid's left margin. A click selects the row.
     #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
     #[name = "GrindRowHeader"]
@@ -201,18 +399,42 @@ define_class!(
         fn draw_rect(&self, dirty: NSRect) {
             let pane = self.ivars();
             let dirty = rect(dirty);
+            let palette = palette();
+            let look = Look {
+                palette: &palette,
+                metrics: &pane.text,
+                hairline: hairline(self),
+            };
             let ops = paint::row_header(
                 &pane.grid.borrow(),
                 dirty.y,
                 dirty.h,
-                &palette(),
-                &pane.text,
-                hairline(self),
+                pane.selection.get(),
+                &look,
             );
             draw(&ops, pane);
         }
+
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            self.click(event, shifted(event));
+        }
+
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged(&self, event: &NSEvent) {
+            self.click(event, true);
+        }
     }
 );
+
+impl RowHeader {
+    fn click(&self, event: &NSEvent, extend: bool) {
+        let pane = self.ivars();
+        let at = located(self, event);
+        let next = select::row_click(&pane.grid.borrow(), pane.selection.get(), at.y, extend);
+        pane.select(next);
+    }
+}
 
 define_class!(
     /// Where the two bands meet, over both, so neither's labels show through it.
@@ -258,6 +480,10 @@ fn shift(op: Op, dx: f64, dy: f64) -> Op {
             rect: rect.offset(dx, dy),
             color,
         },
+        Op::Wash { rect, color } => Op::Wash {
+            rect: rect.offset(dx, dy),
+            color,
+        },
         Op::Text {
             x,
             top,
@@ -282,51 +508,59 @@ fn frame(x: f64, y: f64, w: f64, h: f64) -> NSRect {
 
 /// The spreadsheet's scroll view, with the grid in it and the bands floating over it. The views
 /// hold `pane` between them, and the scroll view holds the views.
-pub fn sheet_view(pane: Rc<Pane>, size: NSSize, mtm: MainThreadMarker) -> Retained<NSScrollView> {
-    {
-        let scroll = NSScrollView::initWithFrame(
-            NSScrollView::alloc(mtm),
-            frame(0.0, 0.0, size.width, size.height),
-        );
-        scroll.setHasVerticalScroller(true);
-        scroll.setHasHorizontalScroller(true);
+pub fn sheet_view(pane: &Rc<Pane>, size: NSSize, mtm: MainThreadMarker) -> Retained<NSScrollView> {
+    let scroll = NSScrollView::initWithFrame(
+        NSScrollView::alloc(mtm),
+        frame(0.0, 0.0, size.width, size.height),
+    );
+    scroll.setHasVerticalScroller(true);
+    scroll.setHasHorizontalScroller(true);
+    scroll.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
 
-        let (w, h) = pane.grid.borrow().size();
-        let grid: Retained<GridView> = {
-            let this = GridView::alloc(mtm).set_ivars(pane.clone());
-            // SAFETY: `initWithFrame:` is `NSView`'s designated initialiser.
-            unsafe {
-                msg_send![super(this), initWithFrame: frame(0.0, 0.0, HEADER_W + w, HEADER_H + h)]
-            }
-        };
-        let columns: Retained<ColumnHeader> = {
-            let this = ColumnHeader::alloc(mtm).set_ivars(pane.clone());
-            // SAFETY: as above.
-            unsafe { msg_send![super(this), initWithFrame: frame(HEADER_W, 0.0, w, HEADER_H)] }
-        };
-        let rows: Retained<RowHeader> = {
-            let this = RowHeader::alloc(mtm).set_ivars(pane.clone());
-            // SAFETY: as above.
-            unsafe { msg_send![super(this), initWithFrame: frame(0.0, HEADER_H, HEADER_W, h)] }
-        };
-        let corner: Retained<Corner> = {
-            let this = Corner::alloc(mtm).set_ivars(pane.clone());
-            // SAFETY: as above.
-            unsafe { msg_send![super(this), initWithFrame: frame(0.0, 0.0, HEADER_W, HEADER_H)] }
-        };
-
-        scroll.setDocumentView(Some(&grid));
-        // The column band never moves down with the cells, and the row band never moves across.
-        scroll.addFloatingSubview_forAxis(&columns, NSEventGestureAxis::Vertical);
-        scroll.addFloatingSubview_forAxis(&rows, NSEventGestureAxis::Horizontal);
-        // The corner moves with neither: it is the scroll view's own, over its content's top
-        // left, added last so it is over both bands. A scroll view need not be flipped, so where
-        // its top is — and which margin stretches as it grows — is asked rather than assumed.
-        if !scroll.isFlipped() {
-            corner.setFrameOrigin(NSPoint::new(0.0, size.height - HEADER_H));
-            corner.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
+    let (w, h) = pane.grid.borrow().size();
+    let grid: Retained<GridView> = {
+        let this = GridView::alloc(mtm).set_ivars(pane.clone());
+        // SAFETY: `initWithFrame:` is `NSView`'s designated initialiser.
+        unsafe {
+            msg_send![super(this), initWithFrame: frame(0.0, 0.0, HEADER_W + w, HEADER_H + h)]
         }
-        scroll.addSubview(&corner);
-        scroll
+    };
+    let columns: Retained<ColumnHeader> = {
+        let this = ColumnHeader::alloc(mtm).set_ivars(pane.clone());
+        // SAFETY: as above.
+        unsafe { msg_send![super(this), initWithFrame: frame(HEADER_W, 0.0, w, HEADER_H)] }
+    };
+    let rows: Retained<RowHeader> = {
+        let this = RowHeader::alloc(mtm).set_ivars(pane.clone());
+        // SAFETY: as above.
+        unsafe { msg_send![super(this), initWithFrame: frame(0.0, HEADER_H, HEADER_W, h)] }
+    };
+    let corner: Retained<Corner> = {
+        let this = Corner::alloc(mtm).set_ivars(pane.clone());
+        // SAFETY: as above.
+        unsafe { msg_send![super(this), initWithFrame: frame(0.0, 0.0, HEADER_W, HEADER_H)] }
+    };
+
+    scroll.setDocumentView(Some(&grid));
+    // The column band never moves down with the cells, and the row band never moves across.
+    scroll.addFloatingSubview_forAxis(&columns, NSEventGestureAxis::Vertical);
+    scroll.addFloatingSubview_forAxis(&rows, NSEventGestureAxis::Horizontal);
+    // The corner moves with neither: it is the scroll view's own, over its content's top left,
+    // added last so it is over both bands. A scroll view need not be flipped, so where its top is
+    // — and which margin stretches as it grows — is asked rather than assumed.
+    if !scroll.isFlipped() {
+        corner.setFrameOrigin(NSPoint::new(0.0, size.height - HEADER_H));
+        corner.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
     }
+    scroll.addSubview(&corner);
+
+    *pane.views.borrow_mut() = vec![
+        Weak::from_retained(&grid.clone().into_super()),
+        Weak::from_retained(&columns.clone().into_super()),
+        Weak::from_retained(&rows.clone().into_super()),
+    ];
+    *pane.grid_view.borrow_mut() = Some(Weak::from_retained(&grid));
+    scroll
 }

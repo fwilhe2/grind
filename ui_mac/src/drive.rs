@@ -250,6 +250,7 @@ mod mac {
 
     use super::{Step, Stroke, parse, stroke_for};
     use crate::args::Drive;
+    use crate::document::Document;
     use crate::sheet::geom::{HEADER_H, HEADER_W};
 
     /// Let the run loop turn for `seconds`, dispatching whatever arrives — how a drive waits for
@@ -384,11 +385,15 @@ mod mac {
         std::fs::write(&path, png.to_vec()).map_err(|error| format!("{}: {error}", path.display()))
     }
 
-    /// One line of what the drive left behind after a step.
+    /// One line of what the drive left behind after a step: the window, whether the document is
+    /// edited, and where the selection is — what M3's drives assert on.
     fn transcript(app: &NSApplication, document: Option<&NSDocument>) -> String {
         let title = window(app).map_or_else(|_| "no window".to_owned(), |w| w.title().to_string());
         let edited = document.is_some_and(|document| document.isDocumentEdited());
-        format!("window {title:?}, edited {edited}")
+        let selection = document
+            .and_then(|document| document.downcast_ref::<Document>())
+            .map_or_else(|| "no grid".to_owned(), Document::selection_text);
+        format!("window {title:?}, edited {edited}, selection {selection}")
     }
 
     /// Replay `drive`'s script against the application `launch` just opened, and answer the

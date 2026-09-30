@@ -18,20 +18,29 @@
 //! uses, so the width that decides `###` and the width CoreText draws are one engine's answer
 //! (`metrics.rs`, decision 4).
 //!
-//! **What M2 does not draw**, each a named gap in `doc/macos-shell.md`: the selection (M3), a
-//! label spilling into the empty cells beside it (it is clipped to its own cell), borders, and
-//! the view-mode overlays (M8).
+//! **What it does not draw**, each a named gap in `doc/macos-shell.md`: a label spilling into the
+//! empty cells beside it (it is clipped to its own cell), borders, and the view-mode overlays
+//! (M8).
 
 use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
 use grind_core::style::TextStyle;
-use grind_sheet::{App, look, numfmt};
+use grind_sheet::nav::Selection;
+use grind_sheet::{App, Pos, look, numfmt};
 
 use super::geom::{self, Grid, HEADER_H, HEADER_W, Rect};
 
 /// How far a cell's text stands off its edges, across and down.
 pub const PAD_X: f64 = 4.0;
 pub const PAD_Y: f64 = 2.0;
+
+/// How strongly an [`Op::Wash`] tints what is under it — enough to read as selected, and little
+/// enough that a document's own red is still red. `ui_win32`'s wash, as an alpha rather than a
+/// blend, since CoreGraphics composites where GDI could not.
+pub const WASH: f64 = 0.22;
+
+/// How thick the selection's outline is.
+pub const OUTLINE: f64 = 2.0;
 
 /// The colours a frame is drawn in, already resolved.
 ///
@@ -51,6 +60,8 @@ pub struct Palette {
     /// `secondaryLabelColor`.
     pub header: Rgb,
     pub header_ink: Rgb,
+    /// The selection's outline and wash — `controlAccentColor`, the user's own accent.
+    pub accent: Rgb,
     /// Whether the page is dark, which is what lifts a document's own colours along their hue
     /// (`grind_core::color::document_ink`).
     pub dark: bool,
@@ -63,6 +74,7 @@ impl Palette {
         grid: (0xe6, 0xe6, 0xe6),
         header: (0xf5, 0xf5, 0xf5),
         header_ink: (0x6e, 0x6e, 0x73),
+        accent: (0x00, 0x7a, 0xff),
         dark: false,
     };
     pub const DARK: Palette = Palette {
@@ -71,6 +83,7 @@ impl Palette {
         grid: (0x38, 0x38, 0x38),
         header: (0x2a, 0x2a, 0x2a),
         header_ink: (0x98, 0x98, 0x9d),
+        accent: (0x0a, 0x84, 0xff),
         dark: true,
     };
 }
@@ -80,6 +93,8 @@ impl Palette {
 pub enum Op {
     /// A filled rectangle — a ground, a fill the document chose, a grid line, a header band.
     Fill { rect: Rect, color: Rgb },
+    /// A translucent tint over what is already down, at [`WASH`] — the selection.
+    Wash { rect: Rect, color: Rgb },
     /// One line of text whose box starts at `(x, top)`, set in `style`, drawn only inside
     /// `clip`. The renderer finds the baseline from the font it resolves `style` to — the same
     /// resolution [`Metrics`] measured with.
@@ -101,6 +116,10 @@ impl Op {
             Op::Fill { rect, color } => {
                 let rect = rect.offset(dx, dy).intersection(clip);
                 (!rect.is_empty()).then_some(Op::Fill { rect, color })
+            }
+            Op::Wash { rect, color } => {
+                let rect = rect.offset(dx, dy).intersection(clip);
+                (!rect.is_empty()).then_some(Op::Wash { rect, color })
             }
             Op::Text {
                 x,
@@ -124,6 +143,95 @@ impl Op {
     }
 }
 
+/// What a frame is drawn with: the colours, the fonts' measurements, and how thin a line is — one
+/// device pixel in points, half a point on a Retina screen.
+pub struct Look<'a> {
+    pub palette: &'a Palette,
+    pub metrics: &'a dyn Metrics,
+    pub hairline: f64,
+}
+
+/// A `Rect` kept only when there is something of it left inside `view`.
+fn within(rect: Rect, view: &Rect) -> Option<Rect> {
+    let rect = rect.intersection(view);
+    (!rect.is_empty()).then_some(rect)
+}
+
+/// The rectangle a selection covers on the grid, clamped to the shown part of the sheet — a whole
+/// column is a million rows, and the grid stops long before that.
+fn selection_rect(grid: &Grid, selection: Selection) -> Rect {
+    let (start, end) = selection.rect();
+    let end = Pos::new(
+        end.row.min(grid.shown_rows.saturating_sub(1)),
+        end.col.min(grid.shown_cols.saturating_sub(1)),
+    );
+    let first = grid.cell(start.row, start.col);
+    let last = grid.cell(end.row, end.col);
+    Rect::new(
+        first.x,
+        first.y,
+        last.right() - first.x,
+        last.bottom() - first.y,
+    )
+}
+
+/// The selection's wash: the whole range **but the active cell**, which is left out so it reads as
+/// the cell the cursor is in rather than one more selected cell — the GNOME window's rule and the
+/// Windows pane's. A single cell has no wash at all.
+fn selection_wash(grid: &Grid, view: &Rect, selection: Selection, color: Rgb) -> Vec<Op> {
+    if selection.is_single() {
+        return Vec::new();
+    }
+    let range = selection_rect(grid, selection);
+    let active = grid.cell(selection.active.row, selection.active.col);
+    [
+        Rect::new(range.x, range.y, range.w, active.y - range.y),
+        Rect::new(
+            range.x,
+            active.bottom(),
+            range.w,
+            range.bottom() - active.bottom(),
+        ),
+        Rect::new(range.x, active.y, active.x - range.x, active.h),
+        Rect::new(
+            active.right(),
+            active.y,
+            range.right() - active.right(),
+            active.h,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|rect| within(rect, view))
+    .map(|rect| Op::Wash { rect, color })
+    .collect()
+}
+
+/// The selection's outline, [`OUTLINE`] thick and straddling the range's edge.
+fn selection_outline(grid: &Grid, view: &Rect, selection: Selection, color: Rgb) -> Vec<Op> {
+    let range = selection_rect(grid, selection);
+    let half = OUTLINE / 2.0;
+    [
+        Rect::new(range.x - half, range.y - half, range.w + OUTLINE, OUTLINE),
+        Rect::new(
+            range.x - half,
+            range.bottom() - half,
+            range.w + OUTLINE,
+            OUTLINE,
+        ),
+        Rect::new(range.x - half, range.y - half, OUTLINE, range.h + OUTLINE),
+        Rect::new(
+            range.right() - half,
+            range.y - half,
+            OUTLINE,
+            range.h + OUTLINE,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|rect| within(rect, view))
+    .map(|rect| Op::Fill { rect, color })
+    .collect()
+}
+
 /// How wide `text` is set in `style` — the last cumulative advance.
 fn width(metrics: &dyn Metrics, text: &str, style: &TextStyle) -> f64 {
     let mut advances = Vec::new();
@@ -134,18 +242,18 @@ fn width(metrics: &dyn Metrics, text: &str, style: &TextStyle) -> f64 {
 /// The cells of `sheet` that meet `view` — a rectangle in the sheet's own coordinates, as a
 /// view's dirty rectangle is — in those same coordinates.
 ///
-/// Grounds first, then the grid lines, then the text, so a document's fill never covers a line
-/// and a line never crosses a word. `hairline` is one device pixel in points — half a point on a
-/// Retina screen — which is how thin a grid line is.
+/// Grounds first, then the grid lines, then the selection's wash, then the text, then the
+/// selection's outline — so a document's fill never covers a line, a line never crosses a word,
+/// and the outline is over everything it frames.
 pub fn cells(
     app: &App,
     sheet: usize,
     grid: &Grid,
     view: Rect,
-    palette: &Palette,
-    metrics: &dyn Metrics,
-    hairline: f64,
+    selection: Selection,
+    look: &Look,
 ) -> Vec<Op> {
+    let (palette, metrics, hairline) = (look.palette, look.metrics, look.hairline);
     let mut ops = vec![Op::Fill {
         rect: view,
         color: palette.page,
@@ -193,6 +301,8 @@ pub fn cells(
         }
     }
 
+    ops.extend(selection_wash(grid, &view, selection, palette.accent));
+
     // The text.
     for row in rows {
         for col in cols.clone() {
@@ -220,6 +330,7 @@ pub fn cells(
             ops.push(cell_text(one_line(text), &value, style, cell, ink, metrics));
         }
     }
+    ops.extend(selection_outline(grid, &view, selection, palette.accent));
     ops
 }
 
@@ -281,14 +392,11 @@ fn header_style() -> TextStyle {
 
 /// The column header band for the part of the sheet `x..x + w`, `x` in the sheet's coordinates
 /// and the band [`HEADER_H`] tall from zero.
-pub fn column_header(
-    grid: &Grid,
-    x: f64,
-    w: f64,
-    palette: &Palette,
-    metrics: &dyn Metrics,
-    hairline: f64,
-) -> Vec<Op> {
+///
+/// The selection's columns are tinted, so where the cursor is can be read off the band.
+pub fn column_header(grid: &Grid, x: f64, w: f64, selection: Selection, look: &Look) -> Vec<Op> {
+    let (palette, metrics, hairline) = (look.palette, look.metrics, look.hairline);
+    let (start, end) = selection.rect();
     let band = Rect::new(x, 0.0, w, HEADER_H);
     let mut ops = vec![
         Op::Fill {
@@ -310,6 +418,12 @@ pub fn column_header(
         let label = geom::column_label(col);
         let label_w = width(metrics, &label, &style);
         let clip = Rect::new(cell.x, 0.0, cell.w, HEADER_H);
+        if (start.col..=end.col).contains(&col) {
+            ops.push(Op::Wash {
+                rect: clip,
+                color: palette.accent,
+            });
+        }
         ops.push(Op::Fill {
             rect: Rect::new(cell.right() - hairline, 0.0, hairline, HEADER_H),
             color: palette.grid,
@@ -327,14 +441,11 @@ pub fn column_header(
 }
 
 /// The row header band for the part of the sheet `y..y + h`, [`HEADER_W`] wide from zero.
-pub fn row_header(
-    grid: &Grid,
-    y: f64,
-    h: f64,
-    palette: &Palette,
-    metrics: &dyn Metrics,
-    hairline: f64,
-) -> Vec<Op> {
+///
+/// The selection's rows are tinted, as the columns are.
+pub fn row_header(grid: &Grid, y: f64, h: f64, selection: Selection, look: &Look) -> Vec<Op> {
+    let (palette, metrics, hairline) = (look.palette, look.metrics, look.hairline);
+    let (start, end) = selection.rect();
     let band = Rect::new(0.0, y, HEADER_W, h);
     let mut ops = vec![
         Op::Fill {
@@ -355,6 +466,12 @@ pub fn row_header(
         }
         let label = geom::row_label(row);
         let label_w = width(metrics, &label, &style);
+        if (start.row..=end.row).contains(&row) {
+            ops.push(Op::Wash {
+                rect: Rect::new(0.0, cell.y, HEADER_W, cell.h),
+                color: palette.accent,
+            });
+        }
         ops.push(Op::Fill {
             rect: Rect::new(0.0, cell.bottom() - hairline, HEADER_W, hairline),
             color: palette.grid,
@@ -373,17 +490,16 @@ pub fn row_header(
 
 /// A whole frame `width` by `height`, scrolled to `(scroll_x, scroll_y)` — the corner, both
 /// header bands and the cells, placed where the window has them. What `--render-to` draws.
-#[allow(clippy::too_many_arguments)]
 pub fn frame(
     app: &App,
     sheet: usize,
     grid: &Grid,
     (width, height): (f64, f64),
     (scroll_x, scroll_y): (f64, f64),
-    palette: &Palette,
-    metrics: &dyn Metrics,
-    hairline: f64,
+    selection: Selection,
+    look: &Look,
 ) -> Vec<Op> {
+    let (palette, hairline) = (look.palette, look.hairline);
     let body_w = (width - HEADER_W).max(0.0);
     let body_h = (height - HEADER_H).max(0.0);
     let body = Rect::new(HEADER_W, HEADER_H, body_w, body_h);
@@ -393,13 +509,13 @@ pub fn frame(
     let mut ops = Vec::new();
     let view = Rect::new(scroll_x, scroll_y, body_w, body_h);
     let (dx, dy) = (HEADER_W - scroll_x, HEADER_H - scroll_y);
-    for op in cells(app, sheet, grid, view, palette, metrics, hairline) {
+    for op in cells(app, sheet, grid, view, selection, look) {
         ops.extend(op.placed(dx, dy, &body));
     }
-    for op in column_header(grid, scroll_x, body_w, palette, metrics, hairline) {
+    for op in column_header(grid, scroll_x, body_w, selection, look) {
         ops.extend(op.placed(dx, 0.0, &top));
     }
-    for op in row_header(grid, scroll_y, body_h, palette, metrics, hairline) {
+    for op in row_header(grid, scroll_y, body_h, selection, look) {
         ops.extend(op.placed(0.0, dy, &left));
     }
     // The corner, over the two bands' ends, with the lines that finish both.
@@ -433,7 +549,7 @@ mod tests {
         ops.iter()
             .filter_map(|op| match op {
                 Op::Text { text, x, top, .. } => Some((text.as_str(), *x, *top)),
-                Op::Fill { .. } => None,
+                Op::Fill { .. } | Op::Wash { .. } => None,
             })
             .collect()
     }
@@ -452,10 +568,29 @@ mod tests {
         app
     }
 
+    const LOOK: Look = Look {
+        palette: &Palette::LIGHT,
+        metrics: &Fixed,
+        hairline: HAIR,
+    };
+
     fn drawn(app: &App) -> Vec<Op> {
+        drawn_with(app, Selection::default())
+    }
+
+    fn drawn_with(app: &App, selection: Selection) -> Vec<Op> {
         let grid = Grid::of(app, 0);
         let view = Rect::new(0.0, 0.0, 500.0, 200.0);
-        cells(app, 0, &grid, view, &Palette::LIGHT, &Fixed, HAIR)
+        cells(app, 0, &grid, view, selection, &LOOK)
+    }
+
+    fn washes(ops: &[Op]) -> Vec<Rect> {
+        ops.iter()
+            .filter_map(|op| match op {
+                Op::Wash { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -572,10 +707,10 @@ mod tests {
     #[test]
     fn the_headers_are_labelled_and_centred_on_their_tracks() {
         let grid = Grid::of(&sheet(), 0);
-        let ops = column_header(&grid, 0.0, 2.0 * geom::COL_W, &Palette::LIGHT, &Fixed, HAIR);
+        let ops = column_header(&grid, 0.0, 2.0 * geom::COL_W, Selection::default(), &LOOK);
         let labels: Vec<&str> = texts(&ops).iter().map(|(t, ..)| *t).collect();
         assert_eq!(labels, ["A", "B"]);
-        let ops = row_header(&grid, 0.0, 2.0 * geom::ROW_H, &Palette::LIGHT, &Fixed, HAIR);
+        let ops = row_header(&grid, 0.0, 2.0 * geom::ROW_H, Selection::default(), &LOOK);
         let labels: Vec<&str> = texts(&ops).iter().map(|(t, ..)| *t).collect();
         assert_eq!(labels, ["1", "2"]);
     }
@@ -592,9 +727,8 @@ mod tests {
             &grid,
             (400.0, 300.0),
             (0.0, 0.0),
-            &Palette::LIGHT,
-            &Fixed,
-            HAIR,
+            Selection::default(),
+            &LOOK,
         );
         let (_, x, top) = *texts(&ops).iter().find(|(t, ..)| *t == "Rent").unwrap();
         assert_eq!(x, HEADER_W + PAD_X);
@@ -613,9 +747,8 @@ mod tests {
             &grid,
             (400.0, 300.0),
             (geom::COL_W, 0.0),
-            &Palette::LIGHT,
-            &Fixed,
-            HAIR,
+            Selection::default(),
+            &LOOK,
         );
         assert!(
             !texts(&ops).iter().any(|(t, ..)| *t == "Rent"),
@@ -626,6 +759,80 @@ mod tests {
             labels.contains(&"B") && !labels.contains(&"A"),
             "{labels:?}"
         );
+    }
+
+    /// One cell has an outline and no wash; a range is washed everywhere but its active cell.
+    #[test]
+    fn a_selection_is_washed_but_for_its_active_cell_and_outlined() {
+        let app = sheet();
+        assert!(washes(&drawn(&app)).is_empty(), "a single cell has no wash");
+        let outline = |ops: &[Op]| {
+            ops.iter()
+                .filter(
+                    |op| matches!(op, Op::Fill { color, .. } if *color == Palette::LIGHT.accent),
+                )
+                .count()
+        };
+        assert_eq!(outline(&drawn(&app)), 4, "four sides");
+
+        // B2:C3, with the cursor in B2.
+        let range = Selection {
+            anchor: Pos::new(2, 2),
+            active: Pos::new(1, 1),
+        };
+        let ops = drawn_with(&app, range);
+        let washed = washes(&ops);
+        let area: f64 = washed.iter().map(|rect| rect.w * rect.h).sum();
+        let cell = geom::COL_W * geom::ROW_H;
+        assert!(
+            (area - 3.0 * cell).abs() < 1e-9,
+            "three of the four cells: {washed:?}"
+        );
+        let active = Grid::of(&app, 0).cell(1, 1);
+        for rect in &washed {
+            assert!(
+                rect.intersection(&active).is_empty(),
+                "the active cell is left out"
+            );
+        }
+        // The wash is under the text, and the outline over it.
+        let first_text = ops
+            .iter()
+            .position(|op| matches!(op, Op::Text { .. }))
+            .unwrap();
+        let last_wash = ops
+            .iter()
+            .rposition(|op| matches!(op, Op::Wash { .. }))
+            .unwrap();
+        assert!(last_wash < first_text);
+        assert!(
+            matches!(ops.last(), Some(Op::Fill { color, .. }) if *color == Palette::LIGHT.accent)
+        );
+    }
+
+    /// A whole column is a million rows, and the outline stops where the grid does.
+    #[test]
+    fn a_whole_column_is_outlined_as_far_as_the_grid_goes() {
+        let app = sheet();
+        let grid = Grid::of(&app, 0);
+        let rect = selection_rect(&grid, Selection::whole_col(1));
+        assert_eq!(rect.y, 0.0);
+        assert_eq!(rect.bottom(), grid.size().1);
+    }
+
+    /// The selection's tracks are tinted in the header bands.
+    #[test]
+    fn the_headers_tint_the_selections_tracks() {
+        let grid = Grid::of(&sheet(), 0);
+        let range = Selection {
+            anchor: Pos::new(0, 1),
+            active: Pos::new(1, 2),
+        };
+        let columns = column_header(&grid, 0.0, 4.0 * geom::COL_W, range, &LOOK);
+        let tinted: Vec<f64> = washes(&columns).iter().map(|rect| rect.x).collect();
+        assert_eq!(tinted, [geom::COL_W, 2.0 * geom::COL_W], "B and C");
+        let rows = row_header(&grid, 0.0, 4.0 * geom::ROW_H, range, &LOOK);
+        assert_eq!(washes(&rows).len(), 2, "rows 1 and 2");
     }
 
     #[test]

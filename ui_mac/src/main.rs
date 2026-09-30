@@ -24,6 +24,8 @@
 // Portable, and reached from the AppKit half — which is not compiled off macOS, so on Linux the
 // only callers of much of this are the tests.
 #[cfg(target_os = "macos")]
+mod accessory;
+#[cfg(target_os = "macos")]
 mod app;
 mod args;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
@@ -34,6 +36,8 @@ mod drive;
 mod grid_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod import;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod keys;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod menu;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
@@ -144,7 +148,7 @@ const SCALE: f64 = 2.0;
 /// frame is a function of its command line alone and two renders are the same bytes.
 #[cfg(target_os = "macos")]
 fn render_to(opening: &Opening) -> Result<(), String> {
-    use sheet::paint::{self, Palette};
+    use sheet::paint::{self, Look, Palette};
 
     let Some((target, dark)) = &opening.render else {
         unreachable!("only a render reaches here")
@@ -165,16 +169,15 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 true => Palette::DARK,
                 false => Palette::LIGHT,
             };
-            let ops = paint::frame(
-                &app,
-                0,
-                &grid,
-                FRAME,
-                (0.0, 0.0),
-                &palette,
-                &text,
-                1.0 / SCALE,
-            );
+            let look = Look {
+                palette: &palette,
+                metrics: &text,
+                hairline: 1.0 / SCALE,
+            };
+            // The cursor where a window opens with it, at A1, so a frame shows what the window
+            // would.
+            let selection = grind_sheet::nav::Selection::default();
+            let ops = paint::frame(&app, 0, &grid, FRAME, (0.0, 0.0), selection, &look);
             let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {
                 render::draw(context, &ops, &text)
             })?;
