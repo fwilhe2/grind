@@ -16,7 +16,7 @@
 //! actually *done* to it.
 
 use crate::tracks::Sizes;
-use crate::{MAX_COLS, MAX_ROWS, Pos};
+use crate::{App, MAX_COLS, MAX_ROWS, Pos};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {
@@ -164,6 +164,28 @@ pub fn moved(
             active,
         },
         false => Selection::at(active),
+    }
+}
+
+/// Whether a cell of `sheet` holds anything — what [`moved`]'s `occupied` asks, answered by the
+/// document. One read per probe, which is what every shell did with its own copy of this.
+///
+/// ponytail: a data edge across a sparse million-row sheet is a million point reads. The fix is
+/// a used-extent walk in the core, not a cache in a shell.
+pub fn occupied(app: &App, sheet: usize) -> impl Fn(Pos) -> bool + '_ {
+    move |pos| app.get(sheet, pos).is_ok_and(|value| !value.is_empty())
+}
+
+/// Select All: everything `sheet` uses, **with the active cell at A1**, so the view goes home
+/// rather than to the far corner. An empty sheet selects the one cell it has.
+///
+/// The GNOME window put the active cell at the far corner and the Windows pane at A1, and the
+/// macOS shell would have been a third answer; this is the Windows one, which said why.
+pub fn all(app: &App, sheet: usize) -> Selection {
+    let (rows, cols) = app.used_extent(sheet).unwrap_or((0, 0));
+    Selection {
+        anchor: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
+        active: Pos::new(0, 0),
     }
 }
 
@@ -461,5 +483,31 @@ mod tests {
         let row = Selection::whole_row(7);
         assert_eq!(row.active, Pos::new(7, 0));
         assert_eq!(row.rect(), (Pos::new(7, 0), Pos::new(7, MAX_COLS - 1)));
+    }
+
+    #[test]
+    fn a_cell_is_occupied_when_the_document_holds_something_in_it() {
+        let app = App::new();
+        app.enter(0, Pos::new(2, 1), "x", crate::RecalcMode::Document)
+            .unwrap();
+        let occupied = occupied(&app, 0);
+        assert!(occupied(Pos::new(2, 1)));
+        assert!(!occupied(Pos::new(0, 0)));
+        assert!(!super::occupied(&app, 7)(Pos::new(2, 1)), "no such sheet");
+    }
+
+    #[test]
+    fn select_all_takes_what_is_used_and_goes_home() {
+        let app = App::new();
+        assert_eq!(
+            all(&app, 0),
+            Selection::at(Pos::new(0, 0)),
+            "an empty sheet"
+        );
+        app.enter(0, Pos::new(4, 2), "x", crate::RecalcMode::Document)
+            .unwrap();
+        let every = all(&app, 0);
+        assert_eq!(every.active, Pos::new(0, 0), "the view goes home");
+        assert_eq!(every.rect(), (Pos::new(0, 0), Pos::new(4, 2)));
     }
 }

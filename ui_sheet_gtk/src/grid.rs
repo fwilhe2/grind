@@ -189,13 +189,13 @@ impl Grid {
         self.imp().clear();
     }
 
-    /// Select the used extent — Ctrl+A's twin.
+    /// Select the used extent — Ctrl+A's twin, `grind_sheet::nav::all`: the active cell stays
+    /// at A1, so the view goes home rather than to the far corner.
     pub fn select_all(&self) {
-        let (rows, cols) = self.imp().used_extent();
-        self.set_selection(Selection {
-            anchor: Pos::new(0, 0),
-            active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
-        });
+        let Some(app) = self.imp().app.borrow().clone() else {
+            return;
+        };
+        self.set_selection(grind_sheet::nav::all(&app, self.imp().sheet.get()));
     }
 
     /// Filter the selection, or clear the filter the sheet already has (§9.4) — the
@@ -2012,16 +2012,10 @@ mod imp {
             };
             let selection = match action {
                 Action::Move { motion, extend } => {
-                    let app = self.app.borrow().clone();
-                    let sheet = self.sheet.get();
-                    // One cell read per probe. ponytail: a scan across a sparse million-row
-                    // sheet is a million point reads; the fix is a used-extent walk in the
-                    // core, not a cache here.
-                    let occupied = |pos: Pos| {
-                        app.as_ref()
-                            .and_then(|app| app.get(sheet, pos).ok())
-                            .is_some_and(|value| !value.is_empty())
+                    let Some(app) = self.app.borrow().clone() else {
+                        return glib::Propagation::Stop;
                     };
+                    let occupied = grind_sheet::nav::occupied(&app, self.sheet.get());
                     keymap::moved(
                         self.selection.get(),
                         motion,
@@ -2031,11 +2025,10 @@ mod imp {
                     )
                 }
                 Action::SelectAll => {
-                    let (rows, cols) = self.used_extent();
-                    Selection {
-                        anchor: Pos::new(0, 0),
-                        active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
-                    }
+                    let Some(app) = self.app.borrow().clone() else {
+                        return glib::Propagation::Stop;
+                    };
+                    grind_sheet::nav::all(&app, self.sheet.get())
                 }
                 Action::Copy => {
                     self.copy(false);
@@ -2121,13 +2114,10 @@ mod imp {
                 // where the eye already is.
                 None => Selection::at(self.selection.get().active),
             };
-            let app = self.app.borrow().clone();
-            let sheet = self.sheet.get();
-            let occupied = |pos: Pos| {
-                app.as_ref()
-                    .and_then(|app| app.get(sheet, pos).ok())
-                    .is_some_and(|value| !value.is_empty())
+            let Some(app) = self.app.borrow().clone() else {
+                return;
             };
+            let occupied = grind_sheet::nav::occupied(&app, self.sheet.get());
             let moved = keymap::moved(from, motion, extend, self.extent(), &occupied);
             self.set_pending(moved, pending.map(|p| p.span));
         }

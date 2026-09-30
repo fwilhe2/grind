@@ -614,13 +614,8 @@ impl Sheet {
         match action {
             keymap::Action::Move { motion, extend } => {
                 let extent = self.extent();
-                let selection = self.selection;
-                let (app, sheet) = (&self.app, self.sheet);
-                let occupied = |pos: Pos| {
-                    app.get(sheet, pos)
-                        .is_ok_and(|value| !matches!(value, grind_sheet::model::CellValue::Empty))
-                };
-                let to = keymap::moved(selection, motion, extend, extent, &occupied);
+                let occupied = grind_sheet::nav::occupied(&self.app, self.sheet);
+                let to = keymap::moved(self.selection, motion, extend, extent, &occupied);
                 // A hidden track is drawn as gone, so a cursor may not stop on one — see
                 // `keymap::onto_visible`, which is the rule and has the tests.
                 self.selection = keymap::onto_visible(to, motion, &self.geom.rows, &self.geom.cols);
@@ -628,11 +623,7 @@ impl Sheet {
             // Everything the sheet *uses*, with the active cell at A1 so that the view goes
             // home rather than to the far corner. An empty sheet selects the one cell it has.
             keymap::Action::SelectAll => {
-                let (rows, cols) = self.app.used_extent(self.sheet).unwrap_or((0, 0));
-                self.selection = Selection {
-                    anchor: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
-                    active: Pos::new(0, 0),
-                };
+                self.selection = grind_sheet::nav::all(&self.app, self.sheet)
             }
             keymap::Action::GoTo => {}
         }
