@@ -80,6 +80,8 @@ mod toolbar;
 mod tools;
 #[cfg(target_os = "macos")]
 mod watch;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod welcome;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
