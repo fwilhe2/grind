@@ -281,3 +281,69 @@ impl TextPane {
         manager.setSelectedFont_isMultiple(&self.panel_font(&manager), false);
     }
 }
+
+/// What the toolbar reads and writes on a pane — both panes answer it, so `toolbar.rs` knows
+/// nothing about either.
+pub trait Formats {
+    fn format(&self, command: Command);
+    fn checked(&self, command: Command) -> bool;
+    /// The colour the selection's text is and the one behind it, as a document stores them —
+    /// what the two wells show.
+    fn colors(&self) -> (Option<String>, Option<String>);
+    /// A colour from a well: the text's, or with `background` the fill's or highlight's.
+    fn set_color(&self, color: &NSColor, background: bool);
+    /// Call `listener` whenever what the toolbar shows may have changed.
+    fn watch(&self, listener: Box<dyn Fn()>);
+}
+
+impl Formats for Pane {
+    fn format(&self, command: Command) {
+        Pane::format(self, command);
+    }
+
+    fn checked(&self, command: Command) -> bool {
+        self.format_checked(command)
+    }
+
+    fn colors(&self) -> (Option<String>, Option<String>) {
+        let style = self.active().style;
+        (style.color, style.background)
+    }
+
+    fn set_color(&self, color: &NSColor, background: bool) {
+        let style =
+            grind_sheet::format::coloured(&self.active().style, background, Some(hex(rgb(color))));
+        self.write(Write::Style(style));
+    }
+
+    fn watch(&self, listener: Box<dyn Fn()>) {
+        self.listen(move |_| listener());
+    }
+}
+
+impl Formats for TextPane {
+    fn format(&self, command: Command) {
+        TextPane::format(self, command);
+    }
+
+    fn checked(&self, command: Command) -> bool {
+        self.format_checked(command)
+    }
+
+    fn colors(&self) -> (Option<String>, Option<String>) {
+        let here = self.here();
+        (here.color, here.background)
+    }
+
+    fn set_color(&self, color: &NSColor, background: bool) {
+        let value = Some(hex(rgb(color)));
+        self.apply(&[match background {
+            true => text_format::Change::Highlight(value),
+            false => text_format::Change::Color(value),
+        }]);
+    }
+
+    fn watch(&self, listener: Box<dyn Fn()>) {
+        self.listen(listener);
+    }
+}

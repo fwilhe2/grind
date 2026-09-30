@@ -72,6 +72,8 @@ pub struct TextPane {
     busy: Cell<bool>,
     /// A notification arrived while busy.
     stale: Cell<bool>,
+    /// Told whenever the caret, the selection or the document changed — the toolbar.
+    listeners: RefCell<Vec<Box<dyn Fn()>>>,
 }
 
 impl TextPane {
@@ -86,12 +88,24 @@ impl TextPane {
             on_change: RefCell::new(None),
             busy: Cell::new(false),
             stale: Cell::new(false),
+            listeners: RefCell::new(Vec::new()),
         })
     }
 
     /// What to do when the document changes — the document marks itself edited.
     pub fn on_change(&self, callback: impl Fn() + 'static) {
         *self.on_change.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// Call `listener` whenever the caret, the selection or the document changes.
+    pub fn listen(&self, listener: impl Fn() + 'static) {
+        self.listeners.borrow_mut().push(Box::new(listener));
+    }
+
+    fn tell(&self) {
+        for listener in self.listeners.borrow().iter() {
+            listener();
+        }
     }
 
     pub fn view(&self) -> Option<Retained<PageView>> {
@@ -153,6 +167,7 @@ impl TextPane {
         if let Some(callback) = self.on_change.borrow().as_ref() {
             callback();
         }
+        self.tell();
     }
 
     fn redraw(&self) {
@@ -218,6 +233,7 @@ impl TextPane {
         }
         self.redraw();
         self.reveal();
+        self.tell();
     }
 
     /// What a selector does.

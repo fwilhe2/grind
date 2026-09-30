@@ -91,9 +91,11 @@ mod mac {
     };
 
     use super::{SHEET, TEXT, kind_of, sniff};
+    use crate::formatting::Formats;
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
     use crate::page_view::{self, TextPane, page_view};
+    use crate::toolbar::{self, Toolbar};
     use crate::{accessory, banner, find_bar, grid_view, sidebar};
 
     /// What a document holds: one of the suite's two `App`s.
@@ -135,6 +137,8 @@ mod mac {
         pane: RefCell<Option<Rc<Pane>>>,
         /// The text document's page, once its window exists.
         page: RefCell<Option<Rc<TextPane>>>,
+        /// The toolbar's delegate, which the toolbar holds only weakly.
+        toolbar: RefCell<Option<Retained<Toolbar>>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
         imported: RefCell<Option<(String, Option<String>)>>,
     }
@@ -252,6 +256,13 @@ mod mac {
                             }
                         });
                         grid_view::watch(&pane);
+                        let formats: Rc<dyn Formats> = pane.clone();
+                        *self.ivars().toolbar.borrow_mut() = Some(toolbar::attach(
+                            &window,
+                            DocumentKind::Spreadsheet,
+                            formats,
+                            mtm,
+                        ));
                         *self.ivars().pane.borrow_mut() = Some(pane);
                     }
                     Some(Content::Text(app)) => {
@@ -271,6 +282,9 @@ mod mac {
                             }
                         });
                         page_view::watch(&pane);
+                        let formats: Rc<dyn Formats> = pane.clone();
+                        *self.ivars().toolbar.borrow_mut() =
+                            Some(toolbar::attach(&window, DocumentKind::Text, formats, mtm));
                         *self.ivars().page.borrow_mut() = Some(pane);
                     }
                     None => {

@@ -199,6 +199,7 @@ impl Tool {
     }
 
     /// Every command the item sends.
+    #[cfg(test)]
     pub fn commands(&self) -> Vec<Command> {
         match self {
             Tool::Segments { segments, .. } => segments.iter().map(|s| s.command).collect(),
@@ -206,11 +207,6 @@ impl Tool {
             Tool::Well { .. } => Vec::new(),
         }
     }
-}
-
-/// The tool whose id is `id`, in either toolbar.
-pub fn by_id(id: &str) -> Option<&'static Tool> {
-    SHEET.iter().chain(TEXT).find(|tool| tool.id() == id)
 }
 
 #[cfg(test)]
@@ -281,16 +277,19 @@ mod tests {
         }
     }
 
+    /// Within one toolbar no two items share an identifier, since the toolbar finds an item
+    /// by it; across the two, the same item has the same one.
     #[test]
-    fn ids_are_unique_and_found() {
-        let mut seen = HashSet::new();
-        for tool in SHEET.iter().chain(TEXT) {
-            if seen.insert(tool.id()) {
-                assert_eq!(by_id(tool.id()), Some(tool));
+    fn ids_are_unique_within_a_toolbar() {
+        for kind in [DocumentKind::Spreadsheet, DocumentKind::Text] {
+            let mut seen = HashSet::new();
+            for tool in tools(kind) {
+                assert!(seen.insert(tool.id()), "{} twice", tool.id());
+                assert!(!tool.label().is_empty());
             }
-            assert!(!tool.label().is_empty());
         }
-        assert_eq!(by_id("nothing"), None);
+        assert_eq!(TEXT_COLOR, TEXT[2]);
+        assert_eq!(TEXT_COLOR, SHEET[2]);
     }
 
     /// Only properties of the selection: every toolbar command is a formatting one.
