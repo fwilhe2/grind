@@ -6,6 +6,7 @@
 //! draws — every decision `page_view.rs` puts on the screen, tested on any host.
 
 pub mod face;
+pub mod format;
 pub mod geom;
 pub mod input;
 pub mod paint;

@@ -365,6 +365,32 @@ mod mac {
             self.ivars().pane.borrow().clone()
         }
 
+        /// Which kind of document this is.
+        pub fn kind(&self) -> Option<DocumentKind> {
+            match self.ivars().content.borrow().as_ref()? {
+                Content::Sheet(_) => Some(DocumentKind::Spreadsheet),
+                Content::Text(_) => Some(DocumentKind::Text),
+            }
+        }
+
+        /// A Format command, on whichever pane this document has (M7).
+        pub fn format(&self, command: crate::menu::Command) {
+            if let Some(pane) = self.pane() {
+                pane.format(command);
+            } else if let Some(page) = self.page() {
+                page.format(command);
+            }
+        }
+
+        /// Whether a Format command's item is ticked here.
+        pub fn format_checked(&self, command: crate::menu::Command) -> bool {
+            match (self.pane(), self.page()) {
+                (Some(pane), _) => pane.format_checked(command),
+                (_, Some(page)) => page.format_checked(command),
+                _ => false,
+            }
+        }
+
         /// The text document's page, when this document is one with a window.
         pub fn page(&self) -> Option<Rc<TextPane>> {
             self.ivars().page.borrow().clone()

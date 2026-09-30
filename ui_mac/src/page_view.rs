@@ -33,8 +33,8 @@ use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBeep, NSColor, NSEvent, NSGraphicsContext, NSMenuItem,
-    NSScrollView, NSTextInputClient, NSView,
+    NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSEvent, NSFontManager,
+    NSGraphicsContext, NSMenuItem, NSScrollView, NSTextInputClient, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -198,7 +198,10 @@ impl TextPane {
 
     /// Run `f` over the page's state and the document — a motion or an edit — then show where
     /// the caret went. The core's notification of an edit waits until `f` is done.
-    fn act_on(&self, f: impl FnOnce(&mut Page, &App, &dyn Faces) -> Result<(), Refused>) {
+    pub(crate) fn act_on(
+        &self,
+        f: impl FnOnce(&mut Page, &App, &dyn Faces) -> Result<(), Refused>,
+    ) {
         self.busy.set(true);
         let done = {
             let mut state = self.state.borrow_mut();
@@ -478,6 +481,32 @@ define_class!(
                     Ok(())
                 });
             }
+        }
+
+        /// Format ▸ Font ▸ Show Fonts: the panel told what the selection is set in first, so
+        /// it opens on it (M7).
+        #[unsafe(method(orderFrontFontPanel:))]
+        fn order_front_font_panel(&self, sender: Option<&AnyObject>) {
+            self.ivars().show_font(self.mtm());
+            // SAFETY: the sender is whatever sent this action, which is what the font
+            // manager's own action takes.
+            unsafe { NSFontManager::sharedFontManager(self.mtm()).orderFrontFontPanel(sender) };
+        }
+
+        /// The font panel's answer (`formatting.rs`).
+        #[unsafe(method(changeFont:))]
+        fn change_font(&self, _sender: Option<&AnyObject>) {
+            self.ivars().change_font(self.mtm());
+        }
+
+        /// The colour panel's colour, as the text's.
+        #[unsafe(method(changeColor:))]
+        fn change_color(&self, sender: Option<&AnyObject>) {
+            let color = sender
+                .and_then(|sender| sender.downcast_ref::<NSColorPanel>())
+                .map(NSColorPanel::color)
+                .unwrap_or_else(|| NSColorPanel::sharedColorPanel(self.mtm()).color());
+            self.ivars().change_color(&color);
         }
 
         #[unsafe(method(copy:))]

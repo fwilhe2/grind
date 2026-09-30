@@ -24,7 +24,8 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationPolicy,
-    NSApplicationDelegate, NSEventModifierFlags, NSMenu, NSMenuItem, NSTextField,
+    NSApplicationDelegate, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags,
+    NSMenu, NSMenuItem, NSTextField,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -84,6 +85,15 @@ define_class!(
                 self.perform(command);
             }
         }
+
+        /// A command is grey where it means nothing — Code over a spreadsheet, a number format
+        /// over a page, anything but New with no document — and ticked where the selection
+        /// already is what it would make it.
+        #[unsafe(method(validateMenuItem:))]
+        fn validate_menu_item(&self, item: &NSMenuItem) -> bool {
+            // A method body here may not return early, so the work is a function's.
+            self.validate(item)
+        }
     }
 );
 
@@ -101,6 +111,27 @@ impl Delegate {
         unsafe { msg_send![super(this), init] }
     }
 
+    /// `validateMenuItem:`'s answer.
+    fn validate(&self, item: &NSMenuItem) -> bool {
+        let ours = item
+            .action()
+            .is_some_and(|action| action.name().to_str() == Ok(COMMAND_SELECTOR));
+        let Some(command) = Command::from_tag(item.tag()).filter(|_| ours) else {
+            return true;
+        };
+        let document = self.front_document();
+        let applies = match document.as_ref().and_then(|document| document.kind()) {
+            Some(kind) => command.applies(kind),
+            None => matches!(command, Command::NewSheet | Command::NewText),
+        };
+        let on = applies && document.is_some_and(|document| document.format_checked(command));
+        item.setState(match on {
+            true => NSControlStateValueOn,
+            false => NSControlStateValueOff,
+        });
+        applies
+    }
+
     /// The whole of what a command does — matched exhaustively, so a command with no handler
     /// fails the build.
     fn perform(&self, command: Command) {
@@ -109,6 +140,21 @@ impl Delegate {
             Command::NewText => DocumentKind::Text,
             // The rest act on the front document's grid, when the front document is a
             // spreadsheet; with none, they do nothing.
+            // Formatting acts on whichever pane the front document has (M7).
+            Command::Mark(_)
+            | Command::Align(_)
+            | Command::Wrap
+            | Command::Number(_)
+            | Command::Decimals(_)
+            | Command::TextColor(_)
+            | Command::Background(_)
+            | Command::Block(_)
+            | Command::ClearFormatting => {
+                if let Some(document) = self.front_document() {
+                    document.format(command);
+                }
+                return;
+            }
             Command::GoTo | Command::AddSheet | Command::RenameSheet | Command::DeleteSheet => {
                 if let Some(pane) = self.front_pane() {
                     match command {
@@ -130,13 +176,29 @@ impl Delegate {
         }
     }
 
+    /// The document a command acts on: `currentDocument` — the main window's — and when no
+    /// window is main, the frontmost window's document, then the first there is.
+    ///
+    /// The fallback is not a nicety. A runner's application never becomes active, so no window
+    /// is ever main there (*Evidence*), and `currentDocument` alone left every command a drive
+    /// sent reaching nothing: Go To did not go.
+    fn front_document(&self) -> Option<Retained<Document>> {
+        let controller = &self.ivars().controller;
+        let app = NSApplication::sharedApplication(self.mtm());
+        controller
+            .currentDocument()
+            .or_else(|| {
+                app.orderedWindows()
+                    .iter()
+                    .find_map(|window| controller.documentForWindow(&window))
+            })
+            .or_else(|| controller.documents().firstObject())
+            .and_then(|document| document.downcast::<Document>().ok())
+    }
+
     /// The front document's grid, when the front document is a spreadsheet with a window.
     fn front_pane(&self) -> Option<std::rc::Rc<crate::grid_view::Pane>> {
-        self.ivars()
-            .controller
-            .currentDocument()
-            .and_then(|document| document.downcast::<Document>().ok())
-            .and_then(|document| document.pane())
+        self.front_document().and_then(|document| document.pane())
     }
 
     fn launch(&self, opening: Opening) {

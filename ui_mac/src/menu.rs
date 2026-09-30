@@ -19,6 +19,11 @@
 //! selector with the command's index as the item's tag, so the dispatcher in `app.rs` matches on
 //! [`Command`] exhaustively and a command with no handler fails the build.
 
+use grind_core::DocumentKind;
+use grind_core::style::PALETTE;
+use grind_sheet::format::Preset;
+use grind_text::markdown::Emphasis;
+
 /// The application's name, as the menu bar, the Dock and About say it.
 pub const APP_NAME: &str = "Grind";
 
@@ -45,17 +50,87 @@ pub enum Command {
     /// The sheet showing, deleted — one ⌘Z brings it back, so there is no confirmation to click
     /// through. Edit ▸ Delete Sheet.
     DeleteSheet,
+    /// One of the five character emphases (M7): on over the selection, or off where every
+    /// character already has it. Bold and Italic reach a cell as well; the other three are the
+    /// page's, since a `CellStyle` has no underline, strike or family of its own to set.
+    Mark(Emphasis),
+    /// A cell's alignment — one field with three answers (`grind_sheet::format::Toggle`).
+    Align(Align),
+    /// `fo:wrap-option` on the selected cells.
+    Wrap,
+    /// One of the number picker's nine formats over the selected cells.
+    Number(Preset),
+    /// One decimal fewer or more (`grind_sheet::format::stepped`).
+    Decimals(i8),
+    /// The text's own colour — a [`PALETTE`] entry by index, or `None` for *Automatic*.
+    TextColor(Option<u8>),
+    /// A cell's fill, or a run's highlight — a [`PALETTE`] entry, or `None` for none.
+    Background(Option<u8>),
+    /// What the blocks the selection touches are — a paragraph, a heading, a list item.
+    Block(Block),
+    /// Every character or cell property off at once, and a cell's number format with them.
+    ClearFormatting,
 }
 
+/// A cell alignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    Center,
+    Right,
+}
+
+/// A block kind Format ▸ Paragraph offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Block {
+    Body,
+    /// Levels 1 to 3 — the three every page in the suite gives a face of its own to set apart
+    /// from the body; deeper levels are the document's, reached through the CLI or a projection.
+    Heading(u8),
+    ListItem,
+}
+
+/// The five emphases, in the order the menu and the toolbar give them.
+pub const EMPHASES: [Emphasis; 5] = [
+    Emphasis::Bold,
+    Emphasis::Italic,
+    Emphasis::Underline,
+    Emphasis::Strike,
+    Emphasis::Code,
+];
+
 impl Command {
-    pub const ALL: [Command; 6] = [
-        Command::NewSheet,
-        Command::NewText,
-        Command::GoTo,
-        Command::AddSheet,
-        Command::RenameSheet,
-        Command::DeleteSheet,
-    ];
+    /// Every command, in the order the menus give them — tags are positions in this.
+    pub fn all() -> Vec<Command> {
+        let mut all = vec![
+            Command::NewSheet,
+            Command::NewText,
+            Command::GoTo,
+            Command::AddSheet,
+            Command::RenameSheet,
+            Command::DeleteSheet,
+        ];
+        all.extend(EMPHASES.map(Command::Mark));
+        all.extend([Align::Left, Align::Center, Align::Right].map(Command::Align));
+        all.push(Command::Wrap);
+        all.extend(Preset::ALL.map(Command::Number));
+        all.extend([Command::Decimals(-1), Command::Decimals(1)]);
+        let palette = || std::iter::once(None).chain((0..PALETTE.len() as u8).map(Some));
+        all.extend(palette().map(Command::TextColor));
+        all.extend(palette().map(Command::Background));
+        all.extend(
+            [
+                Block::Body,
+                Block::Heading(1),
+                Block::Heading(2),
+                Block::Heading(3),
+                Block::ListItem,
+            ]
+            .map(Command::Block),
+        );
+        all.push(Command::ClearFormatting);
+        all
+    }
 
     /// Whether the command asks for more before it acts — which is what an ellipsis in its title
     /// promises, and what the tests hold the titles to.
@@ -64,19 +139,43 @@ impl Command {
         matches!(self, Command::GoTo | Command::RenameSheet)
     }
 
-    /// The item's tag: the command's place in [`Command::ALL`], so no two share one.
+    /// The item's tag: the command's place in [`Command::all`], so no two share one.
     pub fn tag(self) -> isize {
-        Command::ALL
+        Command::all()
             .iter()
             .position(|command| *command == self)
-            .expect("every command is in ALL") as isize
+            .expect("every command is in all()") as isize
     }
 
     /// The command an item's tag names.
     pub fn from_tag(tag: isize) -> Option<Command> {
         usize::try_from(tag)
             .ok()
-            .and_then(|at| Command::ALL.get(at).copied())
+            .and_then(|at| Command::all().get(at).copied())
+    }
+
+    /// Whether the command means anything in a document of `kind` — what greys it otherwise.
+    /// The two News mean something everywhere, and every other verb belongs to one pane or,
+    /// for Bold, Italic, the colours and Clear, to both.
+    pub fn applies(self, kind: DocumentKind) -> bool {
+        let sheet = kind == DocumentKind::Spreadsheet;
+        let text = kind == DocumentKind::Text;
+        match self {
+            Command::NewSheet | Command::NewText => true,
+            Command::Mark(Emphasis::Bold | Emphasis::Italic)
+            | Command::TextColor(_)
+            | Command::Background(_)
+            | Command::ClearFormatting => sheet || text,
+            Command::Mark(_) | Command::Block(_) => text,
+            Command::GoTo
+            | Command::AddSheet
+            | Command::RenameSheet
+            | Command::DeleteSheet
+            | Command::Align(_)
+            | Command::Wrap
+            | Command::Number(_)
+            | Command::Decimals(_) => sheet,
+        }
     }
 }
 
@@ -274,6 +373,136 @@ static REVERT_TO: Menu = Menu {
     ],
 };
 
+static FONT: Menu = Menu {
+    title: "Font",
+    role: Role::Plain,
+    items: &[
+        standard("Show Fonts", key("t", CMD), "orderFrontFontPanel:"),
+        command("Bold", key("b", CMD), Command::Mark(Emphasis::Bold)),
+        command("Italic", key("i", CMD), Command::Mark(Emphasis::Italic)),
+        command(
+            "Underline",
+            key("u", CMD),
+            Command::Mark(Emphasis::Underline),
+        ),
+        command(
+            "Strikethrough",
+            key("x", SHIFT_CMD),
+            Command::Mark(Emphasis::Strike),
+        ),
+        command("Code", None, Command::Mark(Emphasis::Code)),
+        Item::Separator,
+        standard("Show Colors", key("c", SHIFT_CMD), "orderFrontColorPanel:"),
+    ],
+};
+
+static TEXT: Menu = Menu {
+    title: "Text",
+    role: Role::Plain,
+    items: &[
+        command("Align Left", key("{", CMD), Command::Align(Align::Left)),
+        command("Center", key("|", CMD), Command::Align(Align::Center)),
+        command("Align Right", key("}", CMD), Command::Align(Align::Right)),
+        Item::Separator,
+        command("Wrap Text", None, Command::Wrap),
+    ],
+};
+
+static TEXT_COLOR: Menu = Menu {
+    title: "Text Color",
+    role: Role::Plain,
+    items: &[
+        command("Automatic", None, Command::TextColor(None)),
+        Item::Separator,
+        command("Navy", None, Command::TextColor(Some(0))),
+        command("Blue", None, Command::TextColor(Some(1))),
+        command("Aqua", None, Command::TextColor(Some(2))),
+        command("Teal", None, Command::TextColor(Some(3))),
+        command("Purple", None, Command::TextColor(Some(4))),
+        command("Fuchsia", None, Command::TextColor(Some(5))),
+        command("Maroon", None, Command::TextColor(Some(6))),
+        command("Red", None, Command::TextColor(Some(7))),
+        command("Orange", None, Command::TextColor(Some(8))),
+        command("Yellow", None, Command::TextColor(Some(9))),
+        command("Olive", None, Command::TextColor(Some(10))),
+        command("Green", None, Command::TextColor(Some(11))),
+        command("Lime", None, Command::TextColor(Some(12))),
+        command("Black", None, Command::TextColor(Some(13))),
+        command("Gray", None, Command::TextColor(Some(14))),
+        command("Silver", None, Command::TextColor(Some(15))),
+        command("White", None, Command::TextColor(Some(16))),
+    ],
+};
+
+static BACKGROUND: Menu = Menu {
+    title: "Background Color",
+    role: Role::Plain,
+    items: &[
+        command("None", None, Command::Background(None)),
+        Item::Separator,
+        command("Navy", None, Command::Background(Some(0))),
+        command("Blue", None, Command::Background(Some(1))),
+        command("Aqua", None, Command::Background(Some(2))),
+        command("Teal", None, Command::Background(Some(3))),
+        command("Purple", None, Command::Background(Some(4))),
+        command("Fuchsia", None, Command::Background(Some(5))),
+        command("Maroon", None, Command::Background(Some(6))),
+        command("Red", None, Command::Background(Some(7))),
+        command("Orange", None, Command::Background(Some(8))),
+        command("Yellow", None, Command::Background(Some(9))),
+        command("Olive", None, Command::Background(Some(10))),
+        command("Green", None, Command::Background(Some(11))),
+        command("Lime", None, Command::Background(Some(12))),
+        command("Black", None, Command::Background(Some(13))),
+        command("Gray", None, Command::Background(Some(14))),
+        command("Silver", None, Command::Background(Some(15))),
+        command("White", None, Command::Background(Some(16))),
+    ],
+};
+
+static NUMBER: Menu = Menu {
+    title: "Number",
+    role: Role::Plain,
+    items: &[
+        command("General", None, Command::Number(Preset::General)),
+        command("Number", None, Command::Number(Preset::Number)),
+        command("Percent", None, Command::Number(Preset::Percent)),
+        command("Currency", None, Command::Number(Preset::Currency)),
+        command("Date", None, Command::Number(Preset::Date)),
+        command("Date and Time", None, Command::Number(Preset::DateTime)),
+        command("Time", None, Command::Number(Preset::Time)),
+        command("Boolean", None, Command::Number(Preset::Boolean)),
+        command("Text", None, Command::Number(Preset::Text)),
+        Item::Separator,
+        command("Increase Decimals", None, Command::Decimals(1)),
+        command("Decrease Decimals", None, Command::Decimals(-1)),
+    ],
+};
+
+static PARAGRAPH: Menu = Menu {
+    title: "Paragraph",
+    role: Role::Plain,
+    items: &[
+        command("Body", key("0", OPT_CMD), Command::Block(Block::Body)),
+        command(
+            "Heading 1",
+            key("1", OPT_CMD),
+            Command::Block(Block::Heading(1)),
+        ),
+        command(
+            "Heading 2",
+            key("2", OPT_CMD),
+            Command::Block(Block::Heading(2)),
+        ),
+        command(
+            "Heading 3",
+            key("3", OPT_CMD),
+            Command::Block(Block::Heading(3)),
+        ),
+        command("List Item", None, Command::Block(Block::ListItem)),
+    ],
+};
+
 /// The menu bar, left to right.
 pub static MENUS: &[Menu] = &[
     Menu {
@@ -347,7 +576,36 @@ pub static MENUS: &[Menu] = &[
     Menu {
         title: "Format",
         role: Role::Plain,
-        items: &[command("Rename Sheet…", None, Command::RenameSheet)],
+        items: &[
+            Item::Submenu {
+                title: "Font",
+                menu: &FONT,
+            },
+            Item::Submenu {
+                title: "Text",
+                menu: &TEXT,
+            },
+            Item::Submenu {
+                title: "Text Color",
+                menu: &TEXT_COLOR,
+            },
+            Item::Submenu {
+                title: "Background Color",
+                menu: &BACKGROUND,
+            },
+            Item::Submenu {
+                title: "Number",
+                menu: &NUMBER,
+            },
+            Item::Submenu {
+                title: "Paragraph",
+                menu: &PARAGRAPH,
+            },
+            Item::Separator,
+            command("Clear Formatting", None, Command::ClearFormatting),
+            Item::Separator,
+            command("Rename Sheet…", None, Command::RenameSheet),
+        ],
     },
     Menu {
         title: "View",
@@ -484,7 +742,7 @@ mod tests {
     #[test]
     fn every_command_is_in_exactly_one_menu() {
         let items = entries();
-        for command in Command::ALL {
+        for command in Command::all() {
             let count = items
                 .iter()
                 .filter(|(_, _, action)| *action == Action::Command(command))
@@ -549,6 +807,11 @@ mod tests {
             (Action::Standard("redo:"), "⇧⌘Z"),
             (Action::Standard("copy:"), "⌘C"),
             (Action::Standard("toggleSidebar:"), "⌃⌘S"),
+            (Action::Command(Command::Mark(Emphasis::Bold)), "⌘B"),
+            (Action::Command(Command::Mark(Emphasis::Italic)), "⌘I"),
+            (Action::Command(Command::Mark(Emphasis::Underline)), "⌘U"),
+            (Action::Standard("orderFrontFontPanel:"), "⌘T"),
+            (Action::Standard("orderFrontColorPanel:"), "⇧⌘C"),
             (Action::Tagged("performFindPanelAction:", find::SHOW), "⌘F"),
             (Action::Tagged("performFindPanelAction:", find::NEXT), "⌘G"),
             (
@@ -632,5 +895,55 @@ mod tests {
             .spelled(),
             "⌃⌘F"
         );
+    }
+    /// The colour menus are the palette, in its order, under its own names — what `grind sheet
+    /// style --color navy` and every other shell's swatch call them — after the one that sets
+    /// none.
+    #[test]
+    fn the_colour_menus_are_the_palette() {
+        for (menu, ctor) in [
+            (&TEXT_COLOR, Command::TextColor as fn(Option<u8>) -> Command),
+            (&BACKGROUND, Command::Background),
+        ] {
+            let entries: Vec<(&str, Action)> = menu
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Entry { title, action, .. } => Some((*title, *action)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(entries.len(), PALETTE.len() + 1, "{}", menu.title);
+            assert_eq!(entries[0].1, Action::Command(ctor(None)));
+            for (index, ((title, action), (name, hex))) in
+                entries[1..].iter().zip(PALETTE).enumerate()
+            {
+                assert_eq!(title.to_lowercase(), name);
+                assert_eq!(grind_core::style::palette(title), Some(hex));
+                assert_eq!(*action, Action::Command(ctor(Some(index as u8))));
+            }
+        }
+    }
+
+    /// Every verb means something in some document, and the two kinds share only what both
+    /// can hold: a cell has no underline and a paragraph no number format.
+    #[test]
+    fn every_command_applies_somewhere_and_only_where_it_can() {
+        let (sheet, text) = (DocumentKind::Spreadsheet, DocumentKind::Text);
+        for command in Command::all() {
+            assert!(
+                command.applies(sheet) || command.applies(text),
+                "{command:?}"
+            );
+            assert!(
+                !command.applies(DocumentKind::Presentation)
+                    || command == Command::NewSheet
+                    || command == Command::NewText
+            );
+        }
+        assert!(Command::Mark(Emphasis::Bold).applies(sheet));
+        assert!(!Command::Mark(Emphasis::Underline).applies(sheet));
+        assert!(!Command::Number(Preset::Currency).applies(text));
+        assert!(Command::Block(Block::Heading(2)).applies(text));
     }
 }
