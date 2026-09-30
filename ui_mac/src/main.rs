@@ -59,6 +59,8 @@ mod ops;
 #[cfg(target_os = "macos")]
 mod page_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod places;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod png;
 #[cfg(target_os = "macos")]
 mod render;
