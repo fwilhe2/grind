@@ -329,3 +329,65 @@ mod tests {
         assert_eq!(out, [99.0, 1.0, 2.0]);
     }
 }
+
+/// Decision 4's claims, measured through the page's own `Metrics` rather than by the probe —
+/// which measured them once, on 2026-09-30, on macOS 15 and 26 alike (*Evidence*). These run on
+/// the runner, where CoreText is, and are type-checked here.
+#[cfg(all(test, target_os = "macos"))]
+mod coretext {
+    use grind_core::layout::Metrics;
+    use grind_core::style::TextStyle;
+    use grind_text::look::Role;
+
+    use super::{BASE_PT, CoreText, Face};
+
+    fn advances(text: &str) -> Vec<f32> {
+        let fonts = CoreText::new(BASE_PT);
+        let face = Face {
+            text: &fonts,
+            role: Role::Body,
+        };
+        let mut out = Vec::new();
+        face.advances(text, &TextStyle::default(), &mut out);
+        assert_eq!(out.len(), text.chars().count(), "one advance per char");
+        assert!(out.windows(2).all(|pair| pair[0] <= pair[1]), "{out:?}");
+        out
+    }
+
+    /// A cluster of several characters is **one caret stop**: nothing inside it has a width of
+    /// its own, and the whole of it lands on its last character.
+    fn one_stop(text: &str) {
+        let out = advances(text);
+        let (last, inside) = out.split_last().expect("some text");
+        assert!(*last > 0.0, "{text}: {out:?}");
+        assert!(inside.iter().all(|x| *x == 0.0), "{text}: {out:?}");
+    }
+
+    #[test]
+    fn a_decomposed_e_is_as_wide_as_a_precomposed_one() {
+        let precomposed = advances("\u{e9}");
+        let decomposed = advances("e\u{301}");
+        assert!(
+            (precomposed[0] - decomposed[1]).abs() < 0.01,
+            "{precomposed:?} against {decomposed:?}"
+        );
+        one_stop("e\u{301}");
+    }
+
+    #[test]
+    fn a_zwj_family_is_one_caret_stop() {
+        one_stop("\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}");
+    }
+
+    #[test]
+    fn a_devanagari_conjunct_is_one_caret_stop() {
+        one_stop("\u{915}\u{94d}\u{937}\u{93f}");
+    }
+
+    /// Latin has a stop per letter, or the tests above would pass for any text.
+    #[test]
+    fn a_latin_word_has_a_stop_per_letter() {
+        let out = advances("Hello");
+        assert!(out.windows(2).all(|pair| pair[0] < pair[1]), "{out:?}");
+    }
+}

@@ -423,8 +423,11 @@ document writes, but nothing yet changes it), a label spilling into the empty ce
 cell's text is clipped to its own cell), borders, the welcome window (M9 — a launch with nothing
 named starts an empty spreadsheet), a text document's page (M6 — its window says so), and
 Info.plist document types (M10 — the document controller answers by the bytes, and the open panel
-shows every file, so M2 needs none). **The probe stays** until its printed answers are in
-*Evidence*: the next run publishes them as annotations, and retiring it first would lose them.
+shows every file, so M2 needs none). **The probe's answers are in
+*Evidence*** (run 36679496310), and it stays one step longer than planned: `artifacts.yml`'s
+`macos` job has been red since its first run, and until it is green the probe is the only Mac job
+that says anything works. `mac-frames.sh` now reports its own failure as an annotation, so the
+next red run says why.
 
 ### What M3 built
 
@@ -632,18 +635,17 @@ Measured on 2026-09-29, on the Linux development machine, before any AppKit code
 was green on both `macos-15` and `macos-26`. Green settles only what the job *asserts*: the core
 question below (the step ends in `test … = 9`), and that CoreText draws into a bitmap with no
 application object and a window, a content view and a key event can all be built — the probe
-exits non-zero otherwise. Everything else it *prints*, and those answers are in its artifacts and
-its job summary, **neither of which can be read without signing in**. From the next run the
-Summary step also emits each answer file as a workflow annotation, which the public API serves to
-anyone (`/repos/fwilhe2/grind/check-runs/<job>/annotations`), so a session with no credentials can
-fill this table in. Until then each row below is still open unless it says otherwise:
+exits non-zero otherwise. Everything else it *prints*, and from run 36679496310 (on `d85d6a0`,
+2026-09-30) the Summary step emits each answer file as a workflow annotation, which the public
+API serves to anyone (`/repos/fwilhe2/grind/check-runs/<job>/annotations`). That run answered
+every row, identically on macOS 15.7.9 and 26.6.2 (arm64) unless a row says otherwise:
 
-| Question | What depends on the answer |
-|---|---|
-| Does the suite's core run on macOS — `grind sheet set`, `recalc`, `view`, `lint` — and does `=SUM` give 9? **Yes**, on both, asserted by the step | Everything; `ui_win32`'s W0 found a stack overflow this way |
-| Does CoreText draw into a `CGBitmapContext` with no application object, and are two renders the same bytes? | Decision 9's `--render-to` |
-| What are the caret offsets of `é`, `e◌́`, a ZWJ family and `क्षि`? Are they one stop each? | Decision 4 |
-| Is there a screen, does a window become visible and key, and does the application become active? | Decision 9's `--drive`, and M2 onward |
-| Does caching the frame view give a picture of the window? | `--drive`'s `snap` |
-| Do synthesized key events reach a focused `NSTextField`? | `--drive` itself |
-| Does `screencapture` work from a job step? | Nothing depends on it; it is a second opinion |
+| Question | Answer | What depends on it |
+|---|---|---|
+| Does the suite's core run on macOS — `grind sheet set`, `recalc`, `view`, `lint` — and does `=SUM` give 9? | **Yes**, on both, asserted by the step | Everything; `ui_win32`'s W0 found a stack overflow this way |
+| Does CoreText draw into a `CGBitmapContext` with no application object, and are two renders the same bytes? | **Yes**, and yes (`headless-identical: true`; 8,983 bytes on 15, 9,023 on 26 — the same drawing, not the same pixels, across versions) | Decision 9's `--render-to` |
+| What are the caret offsets of `é`, `e◌́`, a ZWJ family and `क्षि`? Are they one stop each? | **One stop each.** `é` is `[0, 12.62]` and `e◌́` `[0, 0, 12.62]` — the same width; the family (5 characters, 8 UTF-16 units) is `0` at every unit and `27.00` after the last; the conjunct (4 characters) `0` inside and `23.40` after it (`23.30` on 26). `fold` makes each one advance, on its last character. `metrics.rs`'s Mac-only tests now hold the page's own `Metrics` to this on every run | Decision 4 |
+| Is there a screen, does a window become visible and key, and does the application become active? | **One screen, at a backing scale of 1** — not Retina. The window **becomes visible but never key**, and the application **never active**: a runner's session has no user to hand focus to | Decision 9's `--drive`, and M2 onward. A drive must not assume a key window (`drive.rs` falls back to the first window), and anything drawn only while the window is key — the page's caret — is absent from a drive's snapshots, which is the platform being honest rather than a bug |
+| Does caching the frame view give a picture of the window? | **Yes** (7,119 and 7,320 bytes) | `--drive`'s `snap` |
+| Do synthesized key events reach a focused `NSTextField`? | **Yes** — `"hi"` typed, in a window that was not key | `--drive` itself |
+| Does `screencapture` work from a job step? | **Yes** (about 79 KB) | Nothing depends on it; it is a second opinion |
