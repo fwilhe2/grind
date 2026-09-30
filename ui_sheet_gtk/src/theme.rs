@@ -155,25 +155,17 @@ pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
 /// than a shortcut: a computed cell is "black" in every financial model ever coloured by
 /// hand, and black in a dark theme is the foreground. A label is that foreground, muted.
 pub fn role_color(role: grind_sheet::view::CellRole, palette: &Palette) -> Option<gdk::RGBA> {
-    use grind_sheet::view::CellRole as R;
-    let named = |name: &str| {
-        grind_sheet::style::palette(name)
+    use grind_sheet::view::Hue;
+    // Which colour each role is — the financial-modelling convention — is the core's
+    // (`CellRole::hue`); what is this window's is resolving the ink and lifting a hue until it
+    // is legible on this theme's ground.
+    match role.hue() {
+        Hue::None => None,
+        Hue::Palette(name) => grind_sheet::style::palette(name)
             .and_then(|hex| hex.parse::<gdk::RGBA>().ok())
-            .map(|hue| readable(hue, palette))
-    };
-    match role {
-        R::Empty => None,
-        // The financial-modelling convention this borrows: inputs blue, formulas black,
-        // another sheet green. The named/unnamed split is ours, and it is one hue apart
-        // rather than a different colour — both are inputs.
-        R::InputNamed => named("blue"),
-        R::InputUnnamed => named("navy"),
-        R::ConstantUnnamed => named("orange"),
-        R::ComputedLocal => Some(palette.foreground),
-        R::ComputedCrossSheet => named("olive"),
-        R::Label => Some(with_alpha(palette.foreground, 0.6)),
-        R::Error => named("red"),
-        R::Stale => named("maroon"),
+            .map(|hue| readable(hue, palette)),
+        Hue::Ink => Some(palette.foreground),
+        Hue::Quiet => Some(with_alpha(palette.foreground, 0.6)),
     }
 }
 

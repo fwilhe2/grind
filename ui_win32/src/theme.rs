@@ -370,9 +370,10 @@ const DARK: Theme = Theme {
 };
 
 /// What colour `doc/view-modes.md`'s role overlay draws each [`grind_sheet::view::CellRole`] in
-/// — `ui_sheet_gtk::theme::role_color`'s mapping, unchanged: the financial-modelling convention
-/// it borrows (inputs blue, formulas the ordinary text colour, another sheet's a third hue) is a
-/// property of the *mode*, not of a toolkit, so the two shells agree on what a colour means.
+/// — `CellRole::hue`, the core's table since the Mac made it a third copy: the
+/// financial-modelling convention it borrows (inputs blue, formulas the ordinary text colour,
+/// another sheet's a third hue) is a property of the *mode*, not of a toolkit, so every shell
+/// agrees on what a colour means.
 /// `None` for [`grind_sheet::view::CellRole::Empty`] — the one role drawn as nothing at all.
 ///
 /// A name from `grind_core::style::PALETTE` rather than a literal, which is the one exception
@@ -381,18 +382,12 @@ const DARK: Theme = Theme {
 /// marker is the theme's ordinary text colour, and a label's is the theme's tertiary ink, which
 /// is Fluent's own name for "present, but not what you are reading".
 pub fn role_color(role: grind_sheet::view::CellRole, theme: Theme) -> Option<Rgb> {
-    use grind_sheet::view::CellRole as R;
-    let named = |name: &str| grind_core::style::palette(name).and_then(Rgb::parse);
-    match role {
-        R::Empty => None,
-        R::InputNamed => named("blue"),
-        R::InputUnnamed => named("navy"),
-        R::ConstantUnnamed => named("orange"),
-        R::ComputedLocal => Some(theme.text),
-        R::ComputedCrossSheet => named("olive"),
-        R::Label => Some(theme.text_tertiary),
-        R::Error => named("red"),
-        R::Stale => named("maroon"),
+    use grind_sheet::view::Hue;
+    match role.hue() {
+        Hue::None => None,
+        Hue::Palette(name) => grind_core::style::palette(name).and_then(Rgb::parse),
+        Hue::Ink => Some(theme.text),
+        Hue::Quiet => Some(theme.text_tertiary),
     }
 }
 
