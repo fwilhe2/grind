@@ -317,15 +317,19 @@ ui_mac/
     welcome.rs          *   the three choices and the layout of the window (M9)
     plist.rs            *   Info.plist, generated from the same table of types the tests read (M10)
     drive.rs           [~]  the drive-script parser, and its replay (M2)
-    sheet/{state,status,format,assist}.rs  *   the portable half of the grid, over the hoists
-    text/{status,keymap}.rs                *   the portable half of the page
+    ops.rs              *   a frame as a list of things to draw, for either pane (M2, M6)
+    sheet/{geom,paint,select,state,search}.rs  *   the portable half of the grid, over the hoists
+    text/{geom,face,state,input,paint}.rs      *   the portable half of the page (M6)
     app.rs             [M]  the application delegate and the menu bar built from `menu.rs`
-    document.rs        [M]  the NSDocument subclass holding an `App`
+    document.rs        [~]  the type names and the byte sniff; the NSDocument subclass holding an `App`
     grid_view.rs       [M]  the grid, inside an NSScrollView
-    page_view.rs       [M]  the page, and NSTextInputClient
-    toolbar.rs sidebar.rs clipboard.rs render.rs  [M]
+    page_view.rs       [M]  the page, and NSTextInputClient (M6)
+    watch.rs           [M]  the core's observer, bridged to either pane on the main thread
+    accessory.rs banner.rs editor.rs find_bar.rs sidebar.rs clipboard.rs  [M]
+    toolbar.rs         [M]  the format bar (M7)
     metrics.rs         [~]  CoreText behind `Metrics`; the UTF-16 fold is portable
-    cg.rs              [M]  CoreGraphics wrappers, the bitmap target and the PNG writer
+    render.rs          [M]  the `Op`s onto a CGContext, and the bitmap `--render-to` draws into
+    png.rs              *   the frame's PNG, written here so two renders are the same bytes
   tests/appkit.rs      [M]  `harness = false`, so it runs on the main thread AppKit requires
   data/                     grind.svg → Grind.icns (M10), Info.plist is generated
 ```
@@ -388,7 +392,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar — *built, and not yet run* (*What M3 built*) | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20`. **The Linux half is met; the runner half is `mac-frames.sh`'s selection drive**, which checks the transcript after every step |
 | **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave — *built, and not yet run* (*What M4 built*) | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched. **The Linux half is met; the runner half is `mac-frames.sh`'s editing section** |
 | **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` — *built, and not yet run* (*What M5 built*) | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine. **The Linux half is met; the runner half is `mac-frames.sh`'s pasteboard section** |
-| **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2 |
+| **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid — *built, and not yet run* (*What M6 built*) | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2. **The Linux half is met, and the probe measured the CoreText half (*Evidence*); the runner half is `metrics.rs`'s Mac-only tests and `mac-frames.sh`'s page section** |
 | **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …` |
 | **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical |
 | **M9** | The welcome window and Open Recent; context menus; the accessibility floor | `tests/appkit.rs`'s accessibility assertions pass; the welcome window renders in both appearances |
@@ -488,6 +492,38 @@ clipboard.
 
 Also mended while here: Edit ▸ Select All and the Delete keys reach the grid, which M3 and M4
 had named and not wired.
+
+### What M6 built
+
+Built and type-checked, not yet run — with one difference from M2–M5: the probe had by then
+measured the CoreText half on both OS versions (*Evidence*), so decision 4 rests on a
+measurement rather than on the documentation. Four hoists came first, each a copy the Mac
+would otherwise have been the third or fourth of: `grind_text::caret` (a character, a word and a
+click), `grind_text::look` (which face a block is set in), `grind_text::paint` (what a laid-out
+line is drawn as — the pieces, the selection band, the bullet) and `App::layout_composing` (an
+input method's composition, laid out as if typed).
+
+| File | Half | What it is |
+|---|---|---|
+| `ops.rs` | portable | The one drawing vocabulary for both panes — `Op` left `sheet/paint.rs` and gained `Run`, a piece of a line in a resolved `Font`, with its underline and strike |
+| `metrics.rs` | both | `Font`, the one currency between measuring and drawing; `Face`, the page's `Metrics` per role; CoreText's user fixed-pitch face and a family the document names; and Mac-only tests holding the shaping answers |
+| `text/geom.rs` | portable | The page's numbers: a `Spacing`, a column centred at a readable measure, a bullet hung in its indent |
+| `text/face.rs` | portable | A block's role and a run's own formatting resolved into one `Font`; `Column`, the page's `Faces`; `lay_out`, one layout for the view and for `--render-to` |
+| `text/state.rs` | portable | The caret, the selection and the composition; every motion and edit the page makes, over a real `grind_text::App` |
+| `text/input.rs` | portable | `NSTextInputClient`'s arithmetic: the caret's block as the string an input method sees, and every UTF-16 range converted once |
+| `text/paint.rs` | portable | A frame of the page as `Op`s: runs in their fonts, the selection, the caret, a table's rules, a bullet, and marked text **inline and underlined** — ahead of the Windows pane, whose composition is the system's floating box |
+| `keys.rs` | portable | The page's selector table beside the grid's, and `PAGE_UNANSWERED` with its reasons |
+| `page_view.rs` | Mac | The page in its scroll view, the input client, clicks by the count, the standard Edit selectors, and the core's notification held back while the view's own edit runs |
+| `watch.rs` | Mac | The observer registry `grid_view.rs` had, behind a trait, for both panes |
+| `drive.rs` | both | `mark` and `commit`, the two calls an input method makes; a click lands in whichever view the document has |
+
+What M6 leaves: the caret does not blink (a Mac text view's does; a timer is the whole of it,
+and it would make a drive's snapshots depend on when they were taken); a selection across
+blocks is shown to an input method as the caret alone, since the one block it sees cannot hold
+it; a picture is outlined where it goes rather than drawn (`CGImageSource` is the decoder, and
+`flow::lay_out`'s picture hook is where it goes); Edit ▸ Find over the page, the text sidebar
+(headings and bookmarks), paragraph kinds from a menu and every formatting control, which are
+M7's and M8's; and a notice banner for an edit the core refuses, which beeps instead.
 
 ## Conventions made mechanical
 
