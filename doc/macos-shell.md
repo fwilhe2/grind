@@ -314,7 +314,11 @@ ui_mac/
                             either a standard selector or a `Command` (M2)
     keys.rs             *   selector name → grid action / page action (M3, M6)
     notice.rs           *   every sentence the banner says, with keys spelled ⌘ (M4)
-    welcome.rs          *   the three choices and the layout of the window (M9)
+    welcome.rs          *   the three choices, the layout of the window and its frame (M9)
+    welcome_window.rs  [M]  the welcome window's view (M9)
+    a11y.rs             *   what the accessibility floor says (M9)
+    places.rs code.rs   *   the sidebar's rows and the source pane's lines (M8)
+    tools.rs            *   the toolbar as data (M7)
     plist.rs            *   Info.plist, generated from the same table of types the tests read (M10)
     drive.rs           [~]  the drive-script parser, and its replay (M2)
     ops.rs              *   a frame as a list of things to draw, for either pane (M2, M6)
@@ -330,7 +334,7 @@ ui_mac/
     metrics.rs         [~]  CoreText behind `Metrics`; the UTF-16 fold is portable
     render.rs          [M]  the `Op`s onto a CGContext, and the bitmap `--render-to` draws into
     png.rs              *   the frame's PNG, written here so two renders are the same bytes
-  tests/appkit.rs      [M]  `harness = false`, so it runs on the main thread AppKit requires
+  (tests/appkit.rs was planned here; a drive's `a11y` step is what M9 built instead)
   data/                     grind.svg → Grind.icns (M10), Info.plist is generated
 ```
 
@@ -395,7 +399,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid — *built, and not yet run* (*What M6 built*) | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2. **The Linux half is met, and the probe measured the CoreText half (*Evidence*); the runner half is `metrics.rs`'s Mac-only tests and `mac-frames.sh`'s page section** |
 | **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting — *built, and not yet run* (*What M7 built*) | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …`. **The Linux half is met; the runner half is `mac-frames.sh`'s formatting section** |
 | **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) — *built, and not yet run* (*What M8 built*) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical. **The Linux half is met; the runner half is `mac-frames.sh`'s eighth section** |
-| **M9** | The welcome window and Open Recent; context menus; the accessibility floor | `tests/appkit.rs`'s accessibility assertions pass; the welcome window renders in both appearances |
+| **M9** | The welcome window and Open Recent; context menus; the accessibility floor — *built, and not yet run* (*What M9 built*) | ~~`tests/appkit.rs`'s~~ **a drive's `a11y` step's** accessibility assertions pass; the welcome window renders in both appearances. **The Linux half is met; the runner half is `mac-frames.sh`'s last two sections** |
 | **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such** |
 | **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing |
 | **M12** | **The UX pass**, over a screen-sharing session into a runner (`mac-session.yml`), recorded the way `doc/windows-shell.md`'s is | Every item on *What the runner cannot speak for* is either checked or still named |
@@ -579,6 +583,31 @@ typing shows the old argument until the next keystroke; point mode (arrows build
 into a half-typed formula), which is the GNOME window's alone; the formula read-out is still a
 read-out rather than a second editor; every change re-lints the whole document for the Problems
 section (a `ponytail:` in `sidebar.rs`); and the source pane is read-only, as every shell's is.
+
+### What M9 built
+
+Built and type-checked, not yet run.
+
+| File | Half | What it is |
+|---|---|---|
+| `welcome.rs` | portable | Decision 6's window: the three choices, each a menu item's own action; the layout, the hit test and the keys; the system's recent documents under the cards; and a frame as `Op`s, so `--render-to` with nothing named draws it |
+| `welcome_window.rs` | Mac | The view that draws that frame in the system's colours and answers the keys by selector; shown at a launch with nothing named, on a Dock click with no window open, and from Window ▸ Welcome to Grind (⇧⌘1) |
+| `menu.rs` | portable | The grid's and the page's context menus as tables, every row held by a test to a menu-bar row with the same title, key and action |
+| `grid_view.rs` `page_view.rs` | Mac | `menuForEvent:` from those tables, the selection moved to what was clicked first; the page as an accessibility text area, and an announcement on every move on the grid |
+| `a11y.rs` | portable | The words the floor says: the page's value, its selected range in UTF-16, the caret's line, and what a move on the grid announces |
+| `drive.rs` | both | `a11y`, which asks the key view what VoiceOver would ask, in-process, and prints the answers |
+
+**`tests/appkit.rs` was not built, and the drive is its replacement.** It was planned as a
+`harness = false` integration test reading the accessibility attributes back on the main thread,
+but `grind-mac` is a binary crate, and an integration test of a binary can only run it, not reach
+into its views. A drive already runs the real application on the main thread with a document
+open, so the read-back is a drive step and `mac-frames.sh` asserts on the line it prints — the
+same assertion, made where the views exist.
+
+What M9 leaves: Open Recent needed nothing — `NSDocumentController` fills it, which M2's
+`clearRecentDocuments:` item was for; a line of the page's accessibility value is a block rather
+than a laid-out line (a `ponytail:` in `a11y.rs`, `accesskit_macos` the upgrade); and the grid is
+announced rather than described cell by cell, which is decision 10's floor and not its ceiling.
 
 ## Conventions made mechanical
 
