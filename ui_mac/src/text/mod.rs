@@ -7,5 +7,6 @@
 
 pub mod face;
 pub mod geom;
+pub mod input;
 pub mod paint;
 pub mod state;
