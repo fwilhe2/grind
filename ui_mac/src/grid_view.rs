@@ -737,7 +737,6 @@ define_class!(
     }
 );
 
-
 fn frame(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
 }
