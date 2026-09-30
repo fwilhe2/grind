@@ -29,7 +29,10 @@
 #      through `setMarkedText`, which the saved file has to project as bold and accented;
 #   7. M7's: a label made bold, a currency's decimals stepped, a cell coloured and cleared and
 #      another coloured and kept, all through the Format menu or its keys, and the projection
-#      says each; and on a page, a heading from the Paragraph menu and ⌘I-then-type in italic.
+#      says each; and on a page, a heading from the Paragraph menu and ⌘I-then-type in italic;
+#   8. M8's: `=SU`, ↓ and Tab take SUM from the assist's offers; choosing a Problems row in the
+#      sidebar lands on its cell on another sheet; and with every overlay on and the source pane
+#      open, a save writes the bytes that were read.
 #
 # **What it says is public.** A job's log needs admin rights to read, so the script reports its
 # own progress — and, when it fails, the last command's output — as one workflow annotation on
@@ -379,3 +382,58 @@ projected="$("$grind" text project "$out/headed.fodt" | grep -E '^(h|p) ')"
 [ "$projected" = "$(printf 'h 1 "Title"\np "*slanted*"')" ] \
     || fail "the page projects as $projected, not as a heading and an italic word"
 say "   a heading from the Paragraph menu, and ⌘I then typing is italic"
+
+say "== formula literacy, the sidebar and the overlays"
+# M8's: `=SU` offers SUBSTITUTE first, ↓ steps to SUM and Tab takes it; the call is finished by
+# hand and committed with Return, which the list never claims.
+"$grind" sheet new "$out/assisted.fods" > /dev/null
+cat > "$out/assist.drive" <<'DRIVE'
+type =SU
+key down
+key tab
+type 1;2)
+key return
+key cmd+s
+wait 2
+DRIVE
+bounded 120 "$mac" "$out/assisted.fods" --drive "$out/assist.drive" --out "$out/assisted" \
+    > "$out/assist.txt" || fail "the assist drive failed: $(cat "$out/assist.txt")"
+cat "$out/assist.txt"
+[ "$("$grind" sheet get --input "$out/assisted.fods" A1)" = "=SUM(1;2)" ] \
+    || fail "Tab did not take SUM: A1 holds $("$grind" sheet get --input "$out/assisted.fods" A1)"
+say "   =SU, ↓ and Tab take SUM, and Return commits the call"
+
+# Every Problems row jumps: a formula on a second sheet reading an empty cell is a finding at
+# Data.C3, and choosing its row from the first sheet lands the selection there.
+"$grind" sheet new "$out/problems.fods" > /dev/null
+"$grind" sheet add "$out/problems.fods" Data > /dev/null
+"$grind" sheet set "$out/problems.fods" 'Data.C3' '=[.Z99]*2' > /dev/null
+"$grind" lint "$out/problems.fods" | grep -q 'Data.C3' \
+    || fail "the fixture has no finding at Data.C3: $("$grind" lint "$out/problems.fods")"
+printf 'sidebar Data.C3\nwait 0.5\nsnap problems\n' > "$out/problems.drive"
+bounded 120 "$mac" "$out/problems.fods" --drive "$out/problems.drive" --out "$out/problems" \
+    > "$out/problems.txt" || fail "the Problems drive failed: $(cat "$out/problems.txt")"
+cat "$out/problems.txt"
+grep -q '^step 1: .*selection C3$' "$out/problems.txt" \
+    || fail "choosing the finding did not land on Data.C3"
+say "   a Problems row jumps to its cell, on another sheet"
+
+# With every overlay on and the source pane open, a save is the bytes that were read: nothing
+# a view mode shows is ever written.
+cp "$out/sample/sample.fods" "$out/overlaid.fods"
+before="$(shasum "$out/overlaid.fods" | cut -d' ' -f1)"
+cat > "$out/overlays.drive" <<'DRIVE'
+menu View/Cell Roles
+menu View/Names
+menu View/Show Source
+menu View/Friendly Formulas
+wait 0.5
+snap overlays
+key cmd+s
+wait 2
+DRIVE
+bounded 120 "$mac" "$out/overlaid.fods" --drive "$out/overlays.drive" --out "$out/overlays" \
+    > "$out/overlays.txt" || fail "the overlays drive failed: $(cat "$out/overlays.txt")"
+[ "$(shasum "$out/overlaid.fods" | cut -d' ' -f1)" = "$before" ] \
+    || fail "a save with every overlay on changed the document"
+say "   every overlay on and the source open, a save writes the bytes that were read"
