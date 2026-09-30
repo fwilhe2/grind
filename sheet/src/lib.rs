@@ -877,6 +877,23 @@ impl App {
     // a new one is appended, because that is the button a shell has, and a move is a
     // capability to add when something can ask for it rather than a parameter to carry now.
 
+    /// The name a new sheet is offered: the first `SheetN` no sheet already has, compared the way
+    /// sheet names are — without regard to case. What every spreadsheet offers and nobody has to
+    /// think about.
+    ///
+    /// The GNOME window, the browser and the terminal each spelled this, and the Windows pane
+    /// suggested `Sheet{count + 1}`, which a document with a `Sheet3` among two sheets already
+    /// has; the macOS shell would have been a fifth answer.
+    pub fn fresh_sheet_name(&self) -> String {
+        let taken: Vec<String> = (0..self.sheet_count())
+            .filter_map(|i| self.sheet_name(i).ok())
+            .collect();
+        (1..)
+            .map(|n| format!("Sheet{n}"))
+            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
+            .expect("there is always a free number")
+    }
+
     /// Append an empty sheet, returning its index.
     pub fn add_sheet(&self, name: &str) -> Result<usize> {
         self.mutate(|state| {

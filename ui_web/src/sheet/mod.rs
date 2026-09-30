@@ -1182,13 +1182,7 @@ impl Ui {
     // --- the workbook ---
 
     fn add_sheet(&self) {
-        let taken: Vec<String> = (0..self.app.sheet_count())
-            .filter_map(|i| self.app.sheet_name(i).ok())
-            .collect();
-        let name = (1..)
-            .map(|n| format!("Sheet{n}"))
-            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
-            .expect("there is always a free number");
+        let name = self.app.fresh_sheet_name();
         match self.app.add_sheet(&name) {
             Ok(index) => {
                 let _ = self.switch_to(index);

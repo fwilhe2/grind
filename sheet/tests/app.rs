@@ -1199,3 +1199,19 @@ fn inlining_a_name_writes_it_into_every_use_and_deletes_it() {
         Some("=rate*[.A2]+RATE(1;-1;2)")
     );
 }
+
+/// A new sheet is offered the first `SheetN` nobody has, compared as sheet names are — without
+/// regard to case — rather than `Sheet{count + 1}`, which a document can already hold.
+#[test]
+fn a_fresh_sheet_name_is_the_first_free_one() {
+    let app = App::new();
+    assert_eq!(app.fresh_sheet_name(), "Sheet2");
+    app.add_sheet("sheet3").unwrap();
+    assert_eq!(app.fresh_sheet_name(), "Sheet2", "a gap is filled");
+    app.add_sheet("Sheet2").unwrap();
+    assert_eq!(
+        app.fresh_sheet_name(),
+        "Sheet4",
+        "and sheet3 counts as Sheet3"
+    );
+}

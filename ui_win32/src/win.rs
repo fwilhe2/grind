@@ -4454,11 +4454,8 @@ fn sheet_step(hwnd: HWND, by: i64) {
 
 fn sheet_add(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt — which runs a nested message loop.
-    let Some(suggested) = (unsafe {
-        with_sheet(hwnd, |state| {
-            format!("Sheet{}", state.app.sheet_count() + 1)
-        })
-    }) else {
+    let Some(suggested) = (unsafe { with_sheet(hwnd, |state| state.app.fresh_sheet_name()) })
+    else {
         return;
     };
     let Some(name) = dialog::prompt(hwnd, "Add Sheet", "Name for the new sheet:", &suggested)

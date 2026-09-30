@@ -1450,13 +1450,7 @@ impl App {
     }
 
     fn cmd_sheet_add(&mut self) {
-        let taken: Vec<String> = (0..self.core.sheet_count())
-            .filter_map(|i| self.core.sheet_name(i).ok())
-            .collect();
-        let name = (1..)
-            .map(|n| format!("Sheet{n}"))
-            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
-            .expect("there is always a free number");
+        let name = self.core.fresh_sheet_name();
         match self.core.add_sheet(&name) {
             Ok(index) => {
                 self.sheet = index;
