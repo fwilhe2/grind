@@ -254,11 +254,12 @@ pub use mac::replay;
 #[cfg(target_os = "macos")]
 mod mac {
     use objc2::rc::Retained;
-    use objc2::runtime::NSObjectProtocol;
-    use objc2::{MainThreadMarker, msg_send, sel};
+    use objc2::runtime::{AnyObject, NSObjectProtocol};
+    use objc2::{MainThreadMarker, MainThreadOnly, msg_send, sel};
     use objc2_app_kit::{
-        NSApplication, NSBitmapImageFileType, NSDocument, NSEvent, NSEventMask,
-        NSEventModifierFlags, NSEventType, NSResponder, NSView, NSWindow,
+        NSApplication, NSBitmapImageFileType, NSDocument, NSDocumentController, NSEvent,
+        NSEventMask, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSResponder, NSView,
+        NSWindow,
     };
     use objc2_foundation::{
         NSDate, NSDefaultRunLoopMode, NSDictionary, NSPoint, NSRange, NSString,
@@ -307,8 +308,110 @@ mod mac {
             .ok_or_else(|| "there is no window".to_owned())
     }
 
+    /// The item a ⌘-key is the key equivalent of, anywhere in `menu`.
+    fn equivalent(menu: &NSMenu, stroke: &Stroke) -> Option<Retained<NSMenuItem>> {
+        let modifiers = NSEventModifierFlags::Command
+            | NSEventModifierFlags::Shift
+            | NSEventModifierFlags::Option
+            | NSEventModifierFlags::Control;
+        for item in menu.itemArray().iter() {
+            if let Some(submenu) = item.submenu() {
+                if let Some(found) = equivalent(&submenu, stroke) {
+                    return Some(found);
+                }
+                continue;
+            }
+            let key = item.keyEquivalent().to_string();
+            if !key.is_empty()
+                && key == stroke.characters.to_lowercase()
+                && item.keyEquivalentModifierMask() & modifiers == flags(stroke)
+            {
+                return Some(item);
+            }
+        }
+        None
+    }
+
+    /// Send `item`'s action to `target` if it answers it — validated first, as the menu would
+    /// have validated it. `Ok(false)` when it does not answer it.
+    fn deliver(app: &NSApplication, target: &AnyObject, item: &NSMenuItem) -> Result<bool, String> {
+        let Some(action) = item.action() else {
+            return Err(format!("{} has no action", item.title()));
+        };
+        if !target.class().responds_to(action) {
+            return Ok(false);
+        }
+        if target.class().responds_to(sel!(validateMenuItem:)) {
+            // SAFETY: the target answers `validateMenuItem:`, which takes an item and answers a
+            // BOOL.
+            let enabled: bool = unsafe { msg_send![target, validateMenuItem: item] };
+            if !enabled {
+                return Err(format!("{} is disabled here", item.title()));
+            }
+        }
+        // SAFETY: the target answers the action, which takes one sender.
+        unsafe { app.sendAction_to_from(action, Some(target), Some(item)) };
+        Ok(true)
+    }
+
+    /// `item`'s action, sent where AppKit would have sent it were `window` key.
+    ///
+    /// A runner's window never becomes key (*Evidence*), and an action with no target starts at
+    /// the key window — so a ⌘-key a drive pressed there reached nothing: Copy copied nothing and
+    /// Save saved nothing. This walks AppKit's own documented path for a document application
+    /// from `window` instead: the first responder up through its views to the window, the
+    /// window's delegate, its controller and the controller's document, then the application,
+    /// its delegate and the document controller. Used only when the window is not key; a key
+    /// window gets the real path.
+    fn send(app: &NSApplication, window: &NSWindow, item: &NSMenuItem) -> Result<(), String> {
+        let mut responder = window.firstResponder();
+        while let Some(current) = responder {
+            if deliver(app, &current, item)? {
+                return Ok(());
+            }
+            // SAFETY: an ordinary read of the responder chain.
+            responder = unsafe { current.nextResponder() };
+        }
+        if let Some(delegate) = window.delegate()
+            && deliver(app, delegate.as_ref(), item)?
+        {
+            return Ok(());
+        }
+        if let Some(controller) = window.windowController() {
+            if deliver(app, &controller, item)? {
+                return Ok(());
+            }
+            // SAFETY: an ordinary read of the controller's document.
+            if let Some(document) = unsafe { controller.document() }
+                && deliver(app, &document, item)?
+            {
+                return Ok(());
+            }
+        }
+        if deliver(app, app, item)? {
+            return Ok(());
+        }
+        if let Some(delegate) = app.delegate()
+            && deliver(app, delegate.as_ref(), item)?
+        {
+            return Ok(());
+        }
+        let controller = NSDocumentController::sharedDocumentController(app.mtm());
+        match deliver(app, &controller, item)? {
+            true => Ok(()),
+            false => Err(format!("nothing answers {}", item.title())),
+        }
+    }
+
     fn key(app: &NSApplication, stroke: &Stroke) -> Result<(), String> {
         let window = window(app)?;
+        // A key equivalent, when the window cannot be key to receive it the real way.
+        if stroke.mods.command
+            && !window.isKeyWindow()
+            && let Some(item) = app.mainMenu().and_then(|menu| equivalent(&menu, stroke))
+        {
+            return send(app, &window, &item);
+        }
         let characters = NSString::from_str(&stroke.characters);
         for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
             let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
@@ -366,6 +469,10 @@ mod mac {
                 .itemWithTitle(&NSString::from_str(title))
                 .ok_or_else(|| format!("no menu item {title}"))?;
             if at + 1 == path.len() {
+                let window = window(app)?;
+                if !window.isKeyWindow() {
+                    return send(app, &window, &item);
+                }
                 menu.performActionForItemAtIndex(menu.indexOfItem(&item));
                 return Ok(());
             }
@@ -469,8 +576,20 @@ mod mac {
         }
         let app = NSApplication::sharedApplication(mtm);
         app.activate();
+        // Deprecated, and still the one call that may take focus from a runner's own session;
+        // a window that cannot be key is driven anyway (`send`), and the first line says which.
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+        if let Ok(window) = window(&app) {
+            window.makeKeyAndOrderFront(None);
+        }
         pump(&app, 1.0);
-        println!("start: {}", transcript(&app, document));
+        let is_key = window(&app).is_ok_and(|window| window.isKeyWindow());
+        println!(
+            "start: {}, active {}, key window {is_key}",
+            transcript(&app, document),
+            app.isActive()
+        );
         for (at, step) in steps.iter().enumerate() {
             let done = match step {
                 Step::Key(stroke) => key(&app, stroke),
