@@ -385,7 +385,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M0** | **Plan and wiring** — this document; `ui_mac/` with `args.rs` and `main.rs`; a workspace member (not a default member); `macos.yml`; `-p grind-mac` in `ci.yml`'s host lists; `ui_mac` in `cli/tests/packaging.rs`'s `UNPACKAGED`; the deployment target | The Linux half is **met** (see *Evidence*). The runner half is **the first run of `macos.yml`'s `probe` job**: the core works on macOS, CoreText draws headless and reproducibly, a window opens and can be snapshotted on both OS versions, and synthesized events reach a text field. Each answer goes into *Evidence*, and a "no" rewrites the decision that depended on it before M2 starts |
 | **M1** | The hoists above — *done* (*What M1 did*) | All suites green; Win32 and GTK frames byte-identical before and after each — **met**, with the one GTK frame change the `Flow` hoist made on purpose, proved separately |
 | **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe — *built, and not yet run* (*What M2 built*) | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26. **The Linux half is met; the runner half is the first run of `artifacts.yml`'s `macos` job** (`.github/scripts/mac-frames.sh`) |
-| **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20` |
+| **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar — *built, and not yet run* (*What M3 built*) | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20`. **The Linux half is met; the runner half is `mac-frames.sh`'s selection drive**, which checks the transcript after every step |
 | **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched |
 | **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine |
 | **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2 |
@@ -425,6 +425,26 @@ named starts an empty spreadsheet), a text document's page (M6 — its window sa
 Info.plist document types (M10 — the document controller answers by the bytes, and the open panel
 shows every file, so M2 needs none). **The probe stays** until its printed answers are in
 *Evidence*: the next run publishes them as annotations, and retiring it first would lose them.
+
+### What M3 built
+
+The same arrangement as M2's, and the same caveat: built, type-checked for both Apple targets,
+and not yet run. Two more hoists came first, because the Mac's name box and its keyboard would
+otherwise have been a third copy each: `grind_sheet::place` (the name box's text, `locate`, and
+the status bar saying nothing for one cell) and `nav::occupied` with `nav::all` (whose Select All
+now keeps the active cell at A1 in every shell — the GNOME window had put it at the far corner).
+
+| File | Half | What it is |
+|---|---|---|
+| `keys.rs` | portable | Decision 7's table: a selector to a grid action, with ⌘-arrows as the data's edge, each `…AndModifySelection:` its plain twin extending, and every binding left alone named with its reason in `UNANSWERED` — the list the runner's `StandardKeyBinding.dict` check will read |
+| `sheet/select.rs` | portable | What an action, a click, a drag or a header click makes of the selection, over `nav`; how far a page goes; what to scroll into sight beside the bands |
+| `sheet/paint.rs` | portable | The selection: a wash over the range but its active cell, an outline over everything, the selected tracks tinted in the bands |
+| `grid_view.rs` | Mac | Keys through `interpretKeyEvents:` and `doCommandBySelector:`, clicks and drags, the bands' own clicks, and `Pane::select`, which redraws, reveals and tells the listeners |
+| `accessory.rs` | Mac | The titlebar accessory: the name box, where typing a place and Return goes there, and the status read-out |
+| `sidebar.rs` | Mac | An `NSSplitViewController` whose sidebar is a source list of the sheets; choosing one shows it |
+
+Go To (⌘L) is a new `Command` — the keyboard into the name box — because a drive, like a person,
+can only reach the box through a key.
 
 ## Conventions made mechanical
 

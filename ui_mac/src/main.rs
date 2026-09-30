@@ -48,6 +48,8 @@ mod png;
 mod render;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod sheet;
+#[cfg(target_os = "macos")]
+mod sidebar;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

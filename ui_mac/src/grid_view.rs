@@ -65,6 +65,8 @@ pub struct Pane {
     kept: RefCell<Vec<Retained<NSObject>>>,
     /// The name box, once the window has one — what Go To puts the keyboard in.
     name_box: RefCell<Option<Weak<NSTextField>>>,
+    /// The two bands, which change size with the sheet.
+    bands: RefCell<Option<(Weak<ColumnHeader>, Weak<RowHeader>)>>,
 }
 
 impl Pane {
@@ -81,7 +83,41 @@ impl Pane {
             listeners: RefCell::new(Vec::new()),
             kept: RefCell::new(Vec::new()),
             name_box: RefCell::new(None),
+            bands: RefCell::new(None),
         })
+    }
+
+    /// Show another sheet: its own axes, the views resized to them, the cursor home and the view
+    /// at the top left — what choosing a sheet in the sidebar does.
+    pub fn show_sheet(&self, sheet: usize) {
+        if sheet == self.sheet.get() || sheet >= self.app.sheet_count() {
+            return;
+        }
+        self.sheet.set(sheet);
+        let grid = Grid::of(&self.app, sheet);
+        let (w, h) = grid.size();
+        *self.grid.borrow_mut() = grid;
+        if let Some(view) = self.grid_view.borrow().as_ref().and_then(Weak::load) {
+            view.setFrameSize(NSSize::new(HEADER_W + w, HEADER_H + h));
+            view.scrollPoint(NSPoint::new(0.0, 0.0));
+        }
+        if let Some((columns, rows)) = self.bands.borrow().as_ref() {
+            if let Some(columns) = columns.load() {
+                columns.setFrameSize(NSSize::new(w, HEADER_H));
+            }
+            if let Some(rows) = rows.load() {
+                rows.setFrameSize(NSSize::new(HEADER_W, h));
+            }
+        }
+        // Another sheet is another selection, even when both are at A1: the listeners' words
+        // depend on the sheet, so they are told whether or not the cell moved.
+        self.selection.set(Selection::default());
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
+        }
+        for listener in self.listeners.borrow().iter() {
+            listener(Selection::default());
+        }
     }
 
     /// Remember the window's name box, for Go To.
@@ -562,5 +598,6 @@ pub fn sheet_view(pane: &Rc<Pane>, size: NSSize, mtm: MainThreadMarker) -> Retai
         Weak::from_retained(&rows.clone().into_super()),
     ];
     *pane.grid_view.borrow_mut() = Some(Weak::from_retained(&grid));
+    *pane.bands.borrow_mut() = Some((Weak::from_retained(&columns), Weak::from_retained(&rows)));
     scroll
 }

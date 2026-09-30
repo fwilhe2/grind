@@ -91,9 +91,9 @@ mod mac {
     };
 
     use super::{SHEET, TEXT, kind_of, sniff};
-    use crate::accessory;
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
+    use crate::{accessory, sidebar};
 
     /// What a document holds: one of the suite's two `App`s.
     pub enum Content {
@@ -225,8 +225,14 @@ mod mac {
                 match self.ivars().content.borrow().as_ref() {
                     Some(Content::Sheet(app)) => {
                         let pane = Pane::new(app.clone());
-                        let scroll = sheet_view(&pane, window.frame().size, mtm);
-                        window.setContentView(Some(&scroll));
+                        let size = window.frame().size;
+                        let scroll = sheet_view(&pane, size, mtm);
+                        let split = sidebar::split(&pane, &scroll, size.height, mtm);
+                        window.setContentViewController(Some(&split));
+                        // A content view controller sizes the window to its view; this is the size
+                        // the window was made at.
+                        window.setContentSize(size);
+                        window.center();
                         // The grid takes the keyboard from the start, as a sheet's cursor does.
                         let grid = scroll.documentView();
                         window.makeFirstResponder(grid.as_deref().map(|view| &**view));
