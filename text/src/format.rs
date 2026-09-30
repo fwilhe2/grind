@@ -132,8 +132,22 @@ pub fn apply(
     pending: Option<&CharStyle>,
     change: &Change,
 ) -> Result<Landed> {
+    apply_all(app, selection, caret, pending, std::slice::from_ref(change))
+}
+
+/// Several changes as one — what a font panel's single answer is, when it changed a size and a
+/// weight at once — laid over [`here`] in order and written once, so they are one undo step.
+pub fn apply_all(
+    app: &App,
+    selection: Option<(Caret, Caret)>,
+    caret: Caret,
+    pending: Option<&CharStyle>,
+    changes: &[Change],
+) -> Result<Landed> {
     let mut style = here(app, selection, caret, pending);
-    change.apply(&mut style);
+    for change in changes {
+        change.apply(&mut style);
+    }
     match selection {
         Some((from, to)) => app
             .set_char_style(from, to, &style)
@@ -259,6 +273,19 @@ mod tests {
             !here(&app, None, at(4), Some(&pending)).is_bold(),
             "what is pending wins"
         );
+    }
+
+    #[test]
+    fn several_changes_are_one_write() {
+        let app = app("some words");
+        let selection = Some((at(0), at(4)));
+        let changes = [Change::Bold(true), Change::Size(Some("18pt".into()))];
+        apply_all(&app, selection, at(4), None, &changes).unwrap();
+        let style = app.char_style(at(0), at(4)).unwrap();
+        assert!(style.is_bold());
+        assert_eq!(style.font_size.as_deref(), Some("18pt"));
+        assert!(app.undo());
+        assert!(!app.char_style(at(0), at(4)).unwrap().is_bold(), "one step");
     }
 
     #[test]
