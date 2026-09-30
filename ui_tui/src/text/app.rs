@@ -581,43 +581,14 @@ impl App {
 
     /// Turn one emphasis on across the selection, or off when the whole of it already has it —
     /// `App::char_style` reports only what a span *agrees* about, which is exactly the question
-    /// a toggle asks.
+    /// a toggle asks, and `grind_text::format::Change::toggle` is every shell's answer to it.
     fn emphasise_selection(&mut self, emphasis: Emphasis) {
         let Some((from, to)) = self.selection() else {
             self.status = "nothing selected — v starts a selection".to_string();
             return;
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
-        let wanted = emphasis.style();
-        let field = |style: &CharStyle| match emphasis {
-            Emphasis::Bold => style.font_weight.clone(),
-            Emphasis::Italic => style.font_style.clone(),
-            Emphasis::Underline => style.underline.clone(),
-            Emphasis::Strike => style.line_through.clone(),
-            Emphasis::Code => style.font_family.clone(),
-        };
-        // The four switches have an explicit "off" the document can hold; a *family* does not
-        // — the way to have none is to have none, which is `None`.
-        let off = match emphasis {
-            Emphasis::Bold | Emphasis::Italic => Some("normal"),
-            Emphasis::Underline | Emphasis::Strike => Some("none"),
-            Emphasis::Code => None,
-        };
-        let already = match off {
-            Some(off) => field(&style).as_deref().is_some_and(|v| v != off),
-            None => field(&style).is_some(),
-        };
-        let value = match already {
-            true => off.map(str::to_owned),
-            false => field(&wanted),
-        };
-        match emphasis {
-            Emphasis::Bold => style.font_weight = value,
-            Emphasis::Italic => style.font_style = value,
-            Emphasis::Underline => style.underline = value,
-            Emphasis::Strike => style.line_through = value,
-            Emphasis::Code => style.font_family = value,
-        }
+        grind_text::format::Change::toggle(emphasis, &style).apply(&mut style);
         self.set_selection_style(&style, emphasis.markers());
     }
 

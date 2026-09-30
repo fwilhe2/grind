@@ -28,7 +28,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use grind_core::style::TextStyle;
+use grind_text::format::{self, Change, Landed};
 use grind_text::look::Role;
+use grind_text::markdown::Emphasis;
 use grind_text::style::CharStyle;
 use grind_text::{App, BlockKind, BlockView, Caret, Form, Metrics, loc};
 use wasm_bindgen::prelude::*;
@@ -716,11 +718,11 @@ impl Ui {
     pub fn run(&self, id: &str) {
         match id {
             "edit.select-all" => self.select_all(),
-            "char.bold" => self.toggle_char(|s| &mut s.font_weight, "bold", "normal"),
-            "char.italic" => self.toggle_char(|s| &mut s.font_style, "italic", "normal"),
-            "char.underline" => self.toggle_char(|s| &mut s.underline, "solid", "none"),
-            "char.strike" => self.toggle_char(|s| &mut s.line_through, "solid", "none"),
-            "char.clear" => self.set_char_style(CharStyle::default()),
+            "char.bold" => self.toggle_char(Emphasis::Bold),
+            "char.italic" => self.toggle_char(Emphasis::Italic),
+            "char.underline" => self.toggle_char(Emphasis::Underline),
+            "char.strike" => self.toggle_char(Emphasis::Strike),
+            "char.clear" => self.change_char(Change::Clear),
             "block.body" => self.set_kind(BlockKind::Paragraph, None),
             "block.title" => self.set_kind(BlockKind::Paragraph, Some("Title")),
             "block.subtitle" => self.set_kind(BlockKind::Paragraph, Some("Subtitle")),
@@ -871,60 +873,52 @@ impl Ui {
     /// Turn one character property on across the selection, or off when it is already on
     /// everywhere in it — [`App::char_style`] is what "already on everywhere" means, since it
     /// reports only what the whole span *agrees* about.
-    fn toggle_char(&self, field: fn(&mut CharStyle) -> &mut Option<String>, on: &str, off: &str) {
-        let mut style = self.style_here();
-        let slot = field(&mut style);
-        let already = slot.as_deref().is_some_and(|value| value != off);
-        *slot = match already {
-            true => Some(off.to_owned()),
-            false => Some(on.to_owned()),
-        };
-        self.set_char_style(style);
+    fn toggle_char(&self, emphasis: Emphasis) {
+        self.change_char(Change::toggle(emphasis, &self.style_here()));
     }
 
-    /// Write `style` over the selection — or, with nothing selected, hold it for the next
-    /// character typed at the caret, which is what Bold-then-type means in every word
-    /// processor. It used to answer "Select some text first", so the most common way of asking
-    /// for bold did nothing; `ui_text_gtk` made the same change. The pending style is the
-    /// `resume` [`App::type_markdown`] already carries, and moving the caret forgets it.
-    fn set_char_style(&self, style: CharStyle) {
-        let Some((from, to)) = self.selection() else {
-            *self.resume.borrow_mut() = Some(style);
-            let _ = self.refresh_tools();
-            return;
-        };
-        self.write_char_style(from, to, &style);
+    /// One control of the tool row over the selection — or, with nothing selected, held for
+    /// the next character typed at the caret, which is what Bold-then-type means in every word
+    /// processor (`grind_text::format::apply`). The pending style is the `resume`
+    /// [`App::type_markdown`] already carries, and moving the caret forgets it.
+    fn change_char(&self, change: Change) {
+        let pending = self.resume.borrow().clone();
+        let landed = format::apply(
+            &self.app,
+            self.selection(),
+            self.caret.get(),
+            pending.as_ref(),
+            &change,
+        );
+        match landed {
+            Ok(Landed::Written) => {}
+            Ok(Landed::Pending(style)) => {
+                *self.resume.borrow_mut() = Some(style);
+                let _ = self.refresh_tools();
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
-    /// What the tool row shows and what a toggle changes: the selection's agreed style, the
-    /// style pending at the caret, or what the character before the caret carries.
+    /// What the tool row shows and what a toggle changes (`grind_text::format::here`).
     fn style_here(&self) -> CharStyle {
-        if let Some((from, to)) = self.selection() {
-            return self.app.char_style(from, to).unwrap_or_default();
-        }
-        if let Some(pending) = self.resume.borrow().clone() {
-            return pending;
-        }
-        let caret = self.caret.get();
-        self.app.char_style(caret, caret).unwrap_or_default()
-    }
-
-    fn write_char_style(&self, from: Caret, to: Caret, style: &CharStyle) {
-        if let Err(error) = self.app.set_char_style(from, to, style) {
-            self.set_message(error.to_string());
-        }
+        let pending = self.resume.borrow().clone();
+        format::here(
+            &self.app,
+            self.selection(),
+            self.caret.get(),
+            pending.as_ref(),
+        )
     }
 
     /// A colour from the swatch grid — `"color"` for the letters, `"highlight"` for behind
     /// them.
     pub fn set_color(&self, target: &str, hex: Option<String>) {
-        let mut style = self.style_here();
         match target {
-            "color" => style.color = hex,
-            "highlight" => style.background = hex,
-            _ => return,
+            "color" => self.change_char(Change::Color(hex)),
+            "highlight" => self.change_char(Change::Highlight(hex)),
+            _ => {}
         }
-        self.set_char_style(style);
     }
 
     /// Change what the block under the caret *is* — every block the selection touches, since
@@ -969,12 +963,14 @@ impl Ui {
         // The toggles report what the selection agrees about, or — with nothing selected —
         // what the next character typed will carry, which is what pressing one there changes.
         let style = self.style_here();
-        let on =
-            |value: &Option<String>, off: &str| value.as_deref().is_some_and(|value| value != off);
-        set_pressed(document, "t-bold", on(&style.font_weight, "normal"));
-        set_pressed(document, "t-italic", on(&style.font_style, "normal"));
-        set_pressed(document, "t-underline", on(&style.underline, "none"));
-        set_pressed(document, "t-strike", on(&style.line_through, "none"));
+        set_pressed(document, "t-bold", format::has(&style, Emphasis::Bold));
+        set_pressed(document, "t-italic", format::has(&style, Emphasis::Italic));
+        set_pressed(
+            document,
+            "t-underline",
+            format::has(&style, Emphasis::Underline),
+        );
+        set_pressed(document, "t-strike", format::has(&style, Emphasis::Strike));
         set_swatch(document, "t-color-bar", style.color.as_deref());
         set_swatch(document, "t-highlight-bar", style.background.as_deref());
 

@@ -5807,136 +5807,57 @@ const STRIP_BUTTONS: [markdown::Emphasis; 5] = [
     markdown::Emphasis::Code,
 ];
 
-/// The property this emphasis lives in, read off a style rather than written to one — the half of
-/// [`text_emphasise`]'s old inline closure that answering "is this on" and "what should it become"
-/// both need, and now shared between the two rather than duplicated for the strip.
-fn emphasis_field(style: &grind_text::CharStyle, emphasis: markdown::Emphasis) -> Option<String> {
-    match emphasis {
-        markdown::Emphasis::Bold => style.font_weight.clone(),
-        markdown::Emphasis::Italic => style.font_style.clone(),
-        markdown::Emphasis::Underline => style.underline.clone(),
-        markdown::Emphasis::Strike => style.line_through.clone(),
-        markdown::Emphasis::Code => style.font_family.clone(),
-    }
-}
-
-/// The value that means "off", for the three that have one — `Code` sets a family, which has no
-/// off value of its own, only "no family" (`None`).
-fn emphasis_off(emphasis: markdown::Emphasis) -> Option<&'static str> {
-    match emphasis {
-        markdown::Emphasis::Bold | markdown::Emphasis::Italic => Some("normal"),
-        markdown::Emphasis::Underline | markdown::Emphasis::Strike => Some("none"),
-        markdown::Emphasis::Code => None,
-    }
-}
-
-/// Whether `style` already has this emphasis — the question a toggle button answers before it
-/// decides which way to toggle, and the same one its own drawing asks to decide whether to press
-/// itself in.
-fn emphasis_active(style: &grind_text::CharStyle, emphasis: markdown::Emphasis) -> bool {
-    let field = emphasis_field(style, emphasis);
-    match emphasis_off(emphasis) {
-        Some(off) => field.as_deref().is_some_and(|v| v != off),
-        None => field.is_some(),
-    }
-}
-
-/// The style a toggle button reads before it draws itself: the selection's agreed style if there
-/// is one, or — with nothing selected — the style the *next* character typed would carry, which is
-/// [`Text::resume`] when a markdown span left one pending and otherwise the character just behind
-/// the caret. A document has no style "at" an empty caret; it has one on either side of it, and
-/// the one already typed is the one a toolbar showing current state means.
+/// The style a toggle button reads before it draws itself, and what every control changes:
+/// `grind_text::format::here` — the selection's agreed style, or with nothing selected the style
+/// the *next* character typed would carry. `ui_text_gtk` and `ui_web` ask the same function.
 fn text_style_here(text: &Text) -> grind_text::CharStyle {
-    if text.has_selection() {
-        let (from, to) = text.range();
-        return text.app.char_style(from, to).unwrap_or_default();
-    }
-    if let Some(resume) = &text.resume {
-        return resume.clone();
-    }
-    let caret = text.caret;
-    if caret.offset == 0 {
-        return grind_text::CharStyle::default();
-    }
-    let before = Caret {
-        block: caret.block,
-        offset: caret.offset - 1,
-    };
-    text.app.char_style(before, caret).unwrap_or_default()
+    let selection = text.has_selection().then(|| text.range());
+    grind_text::format::here(&text.app, selection, text.caret, text.resume.as_ref())
 }
 
 /// Which of the strip's five toggles should be drawn pressed in, for [`text::draw::paint`].
 fn format_state(text: &Text) -> [bool; 5] {
     let style = text_style_here(text);
-    STRIP_BUTTONS.map(|emphasis| emphasis_active(&style, emphasis))
+    STRIP_BUTTONS.map(|emphasis| grind_text::format::has(&style, emphasis))
 }
 
 /// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` named as
 /// still owed for W5b, and now drawn (`text::draw::paint`'s strip) as well as reachable from
-/// Ctrl+B/I/U and the Format menu, all three converging on this one function. `App::char_style`
-/// reports only what the whole span agrees on, which is the same question a toggle button would
-/// ask; `ui_tui::emphasise_selection` is the twin this mirrors so the notation reads one way
-/// everywhere.
+/// Ctrl+B/I/U and the Format menu, all three converging on this one function. On across the
+/// selection, or off when every character already has it (`Change::toggle`).
 fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            // With nothing selected this sets what the next character typed carries, rather than
-            // saying "nothing selected" — Bold, then type, is bold in every word processor, and
-            // `grind-text-gtk` and `grind-web` made the same change. `text_style_here` is what
-            // the strip already showed there, so pressing a button in turns what it showed.
-            let mut style = text_style_here(text);
-            let wanted = emphasis.style();
-            let field = |style: &grind_text::CharStyle| emphasis_field(style, emphasis);
-            let off = emphasis_off(emphasis);
-            let already = emphasis_active(&style, emphasis);
-            let value = match already {
-                true => off.map(str::to_owned),
-                false => field(&wanted),
-            };
-            match emphasis {
-                markdown::Emphasis::Bold => style.font_weight = value,
-                markdown::Emphasis::Italic => style.font_style = value,
-                markdown::Emphasis::Underline => style.underline = value,
-                markdown::Emphasis::Strike => style.line_through = value,
-                markdown::Emphasis::Code => style.font_family = value,
-            }
-            text_write_style(text, style);
-        });
-    }
-    refresh(hwnd);
+    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    text_format(hwnd, grind_text::format::Change::toggle(emphasis, &style));
 }
 
-/// Apply a formatting-bar change over the selection — [`text_emphasise`]'s general form, over
-/// [`grind_text::format::Change`] rather than one `markdown::Emphasis`, for the strip's four
-/// controls that write more than a boolean: Family, Size, the two swatches and Clear. The same
-/// vocabulary `grind-text-gtk`'s `format.rs` writes through, hoisted into `grind-text` itself so
-/// the two shells cannot disagree about what a control does.
+/// Apply a formatting-bar change over the selection — or, with nothing selected, hold it for the
+/// next character typed at the caret (`Text::resume`, which `type_markdown` already carried).
+/// Bold, then type, is bold in every word processor. `grind_text::format::apply` is the rule,
+/// shared with `grind-text-gtk`, `grind-web` and the Mac.
 fn text_format(hwnd: HWND, change: grind_text::format::Change) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            let mut style = text_style_here(text);
-            change.apply(&mut style);
-            text_write_style(text, style);
+            let selection = text.has_selection().then(|| text.range());
+            let landed = grind_text::format::apply(
+                &text.app,
+                selection,
+                text.caret,
+                text.resume.as_ref(),
+                &change,
+            );
+            match landed {
+                Ok(grind_text::format::Landed::Written) => text.say(None),
+                Ok(grind_text::format::Landed::Pending(style)) => {
+                    text.resume = Some(style);
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
         });
     }
     refresh(hwnd);
-}
-
-/// Write `style` over the selection — or, with nothing selected, hold it for the next character
-/// typed at the caret (`Text::resume`, which `type_markdown` already carried).
-fn text_write_style(text: &mut Text, style: grind_text::CharStyle) {
-    if !text.has_selection() {
-        text.resume = Some(style);
-        text.say(None);
-        return;
-    }
-    let (from, to) = text.range();
-    match text.app.set_char_style(from, to, &style) {
-        Ok(_) => text.say(None),
-        Err(error) => text.say(Some(error.to_string())),
-    }
 }
 
 /// The families the picker offers — curated rather than enumerated. `grind-text-gtk` lists every
