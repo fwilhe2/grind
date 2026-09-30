@@ -426,7 +426,7 @@ define_class!(
                 &look,
             )
             .into_iter()
-            .map(|op| shift(op, HEADER_W, HEADER_H))
+            .map(|op| op.shifted(HEADER_W, HEADER_H))
             .collect();
             draw(&ops, pane);
         }
@@ -737,34 +737,6 @@ define_class!(
     }
 );
 
-/// `op` drawn `(dx, dy)` further on, with nothing cut away.
-fn shift(op: Op, dx: f64, dy: f64) -> Op {
-    match op {
-        Op::Fill { rect, color } => Op::Fill {
-            rect: rect.offset(dx, dy),
-            color,
-        },
-        Op::Wash { rect, color } => Op::Wash {
-            rect: rect.offset(dx, dy),
-            color,
-        },
-        Op::Text {
-            x,
-            top,
-            text,
-            style,
-            color,
-            clip,
-        } => Op::Text {
-            x: x + dx,
-            top: top + dy,
-            text,
-            style,
-            color,
-            clip: clip.offset(dx, dy),
-        },
-    }
-}
 
 fn frame(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))

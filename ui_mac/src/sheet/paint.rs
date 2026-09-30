@@ -29,15 +29,11 @@ use grind_sheet::nav::Selection;
 use grind_sheet::{App, Pos, look, numfmt};
 
 use super::geom::{self, Grid, HEADER_H, HEADER_W, Rect};
+pub use crate::ops::Op;
 
 /// How far a cell's text stands off its edges, across and down.
 pub const PAD_X: f64 = 4.0;
 pub const PAD_Y: f64 = 2.0;
-
-/// How strongly an [`Op::Wash`] tints what is under it — enough to read as selected, and little
-/// enough that a document's own red is still red. `ui_win32`'s wash, as an alpha rather than a
-/// blend, since CoreGraphics composites where GDI could not.
-pub const WASH: f64 = 0.22;
 
 /// How thick the selection's outline is.
 pub const OUTLINE: f64 = 2.0;
@@ -86,61 +82,6 @@ impl Palette {
         accent: (0x0a, 0x84, 0xff),
         dark: true,
     };
-}
-
-/// One thing to draw.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Op {
-    /// A filled rectangle — a ground, a fill the document chose, a grid line, a header band.
-    Fill { rect: Rect, color: Rgb },
-    /// A translucent tint over what is already down, at [`WASH`] — the selection.
-    Wash { rect: Rect, color: Rgb },
-    /// One line of text whose box starts at `(x, top)`, set in `style`, drawn only inside
-    /// `clip`. The renderer finds the baseline from the font it resolves `style` to — the same
-    /// resolution [`Metrics`] measured with.
-    Text {
-        x: f64,
-        top: f64,
-        text: String,
-        style: TextStyle,
-        color: Rgb,
-        clip: Rect,
-    },
-}
-
-impl Op {
-    /// The same thing drawn `(dx, dy)` further on, kept inside `clip` — how one part of a frame
-    /// (a header band, the cells) is placed in the whole.
-    fn placed(self, dx: f64, dy: f64, clip: &Rect) -> Option<Op> {
-        match self {
-            Op::Fill { rect, color } => {
-                let rect = rect.offset(dx, dy).intersection(clip);
-                (!rect.is_empty()).then_some(Op::Fill { rect, color })
-            }
-            Op::Wash { rect, color } => {
-                let rect = rect.offset(dx, dy).intersection(clip);
-                (!rect.is_empty()).then_some(Op::Wash { rect, color })
-            }
-            Op::Text {
-                x,
-                top,
-                text,
-                style,
-                color,
-                clip: own,
-            } => {
-                let clip = own.offset(dx, dy).intersection(clip);
-                (!clip.is_empty()).then_some(Op::Text {
-                    x: x + dx,
-                    top: top + dy,
-                    text,
-                    style,
-                    color,
-                    clip,
-                })
-            }
-        }
-    }
 }
 
 /// What a frame is drawn with: the colours, the fonts' measurements, and how thin a line is — one
@@ -549,7 +490,7 @@ mod tests {
         ops.iter()
             .filter_map(|op| match op {
                 Op::Text { text, x, top, .. } => Some((text.as_str(), *x, *top)),
-                Op::Fill { .. } | Op::Wash { .. } => None,
+                Op::Fill { .. } | Op::Wash { .. } | Op::Run { .. } => None,
             })
             .collect()
     }

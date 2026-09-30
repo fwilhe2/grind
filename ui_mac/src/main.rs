@@ -53,6 +53,8 @@ mod metrics;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod notice;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod ops;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod png;
 #[cfg(target_os = "macos")]
 mod render;

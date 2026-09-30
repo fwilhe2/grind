@@ -6,9 +6,10 @@
 //!
 //! **One path, two callers** (decision 9): a view's `drawRect:` hands [`draw`] the context AppKit
 //! gave it, and `--render-to` hands it a bitmap from [`bitmap`] with no application and no window
-//! server. Nothing is decided here that `sheet/paint.rs` did not already decide; this file turns a
-//! rectangle into `CGContextFillRect` and a line of text into the `CTLine`
-//! [`crate::metrics::CoreText`] measured it with.
+//! server. Nothing is decided here that `sheet/paint.rs` or `text/paint.rs` did not already
+//! decide; this file turns a rectangle into `CGContextFillRect` and a line of text into the
+//! `CTLine` [`crate::metrics::CoreText`] measured it with — and an underline or a strike into a
+//! rectangle placed by that font's own metrics.
 //!
 //! Both callers draw in a **flipped** space — origin top left, y down — which is what a flipped
 //! `NSView` gets for free and what [`bitmap`] sets up. CoreText sets glyphs upright in an
@@ -22,8 +23,8 @@ use objc2_core_graphics::{
 };
 
 use crate::metrics::CoreText;
+use crate::ops::{Op, WASH};
 use crate::sheet::geom::Rect;
-use crate::sheet::paint::{Op, WASH};
 
 fn cg_rect(rect: &Rect) -> CGRect {
     CGRect::new(CGPoint::new(rect.x, rect.y), CGSize::new(rect.w, rect.h))
@@ -78,6 +79,52 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
                 CGContext::set_text_position(context_ref, *x, *top + text.ascent(style));
                 // SAFETY: the context is live for the whole of this call.
                 unsafe { line.draw(context) };
+                CGContext::restore_g_state(context_ref);
+            }
+            Op::Run {
+                x,
+                top,
+                text: string,
+                font,
+                color,
+                underline,
+                strike,
+                clip,
+            } => {
+                CGContext::save_g_state(context_ref);
+                CGContext::clip_to_rect(context_ref, cg_rect(clip));
+                fill_color(context, *color, 1.0);
+                let line = text.line_of(string, font);
+                let baseline = *top + text.ascent_of(font);
+                CGContext::set_text_position(context_ref, *x, baseline);
+                // SAFETY: the context is live for the whole of this call.
+                unsafe { line.draw(context) };
+                if *underline || *strike {
+                    // SAFETY: null out-pointers are documented as "not wanted".
+                    let width = unsafe {
+                        line.typographic_bounds(
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                        )
+                    };
+                    let (below, thickness) = text.underline_of(font);
+                    if *underline {
+                        let y = baseline + below - thickness / 2.0;
+                        CGContext::fill_rect(
+                            context_ref,
+                            cg_rect(&Rect::new(*x, y, width, thickness)),
+                        );
+                    }
+                    if *strike {
+                        // Through the middle of a lower-case letter.
+                        let y = baseline - text.x_height_of(font) / 2.0 - thickness / 2.0;
+                        CGContext::fill_rect(
+                            context_ref,
+                            cg_rect(&Rect::new(*x, y, width, thickness)),
+                        );
+                    }
+                }
                 CGContext::restore_g_state(context_ref);
             }
         }

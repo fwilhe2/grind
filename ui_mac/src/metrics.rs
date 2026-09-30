@@ -36,6 +36,49 @@ pub fn fold(text: &str, offset_at: impl Fn(usize) -> f64, out: &mut Vec<f32>) {
 /// height. A document's own size is a multiple of it (`grind_sheet::look::font_scale`).
 pub const BASE_PT: f64 = 12.0;
 
+/// Which family a [`Font`] is set in.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Family {
+    /// The system's own face — San Francisco — which is what a cell and a page's prose are set
+    /// in when the document names nothing.
+    System,
+    /// The user's fixed-pitch face: a code fence, and the generic `monospace` a `` `code` `` run
+    /// carries. Named by the system rather than by us, since which monospace face a reader has
+    /// is theirs to choose.
+    Mono,
+    /// A family the document names, verbatim; CoreText finds the best match it has.
+    Named(String),
+}
+
+/// A font, resolved: everything CoreText is asked for, and nothing it has to interpret.
+///
+/// The one currency between measuring and drawing — a cell's `TextStyle` and a page's block face
+/// and run both come down to one of these, `CoreText` measures with it and `render.rs` sets the
+/// line in it, so the caret and the ink cannot come from two different fonts (decision 4).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Font {
+    /// In points.
+    pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub family: Family,
+}
+
+impl Font {
+    /// A cell's font: the system face at `base` times the document's own multiple of its default
+    /// size (`grind_sheet::look::font_scale`), bold and italic as the style says. The grid's
+    /// family is always the system's.
+    pub fn cell(base: f64, style: &grind_core::style::TextStyle) -> Font {
+        use grind_sheet::look;
+        Font {
+            size: base * look::font_scale(style.font_size.as_deref()).unwrap_or(1.0),
+            bold: look::bold_weight(style.font_weight.as_deref()),
+            italic: look::italic_style(style.font_style.as_deref()),
+            family: Family::System,
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub use mac::CoreText;
 
@@ -47,7 +90,8 @@ mod mac {
 
     use grind_core::layout::Metrics;
     use grind_core::style::TextStyle;
-    use grind_sheet::look;
+
+    use super::{Family, Font};
     use objc2_core_foundation::{
         CFAttributedString, CFBoolean, CFDictionary, CFIndex, CFRetained, CFString, CFType, CGFloat,
     };
@@ -58,12 +102,11 @@ mod mac {
 
     /// Fonts by size and face, and the lines set in them.
     ///
-    /// The cache is by the three things a `TextStyle` changes about a font here — its size, and
-    /// whether it is bold or italic — because a paint measures hundreds of cells in a handful of
-    /// faces, and creating a `CTFont` per cell would be most of the paint.
+    /// The cache is by the whole [`Font`], because a paint measures hundreds of cells and lines
+    /// in a handful of faces, and creating a `CTFont` per piece would be most of the paint.
     pub struct CoreText {
         base: CGFloat,
-        fonts: RefCell<HashMap<(u64, bool, bool), CFRetained<CTFont>>>,
+        fonts: RefCell<HashMap<(u64, bool, bool, Family), CFRetained<CTFont>>>,
     }
 
     impl CoreText {
@@ -74,46 +117,31 @@ mod mac {
             }
         }
 
-        /// The font `style` is set in: the system font, at the base size times the document's
-        /// own multiple, bold and italic as it says.
-        pub fn font(&self, style: &TextStyle) -> CFRetained<CTFont> {
-            let size = self.base * look::font_scale(style.font_size.as_deref()).unwrap_or(1.0);
-            let bold = look::bold_weight(style.font_weight.as_deref());
-            let italic = look::italic_style(style.font_style.as_deref());
-            let key = (size.to_bits(), bold, italic);
-            if let Some(font) = self.fonts.borrow().get(&key) {
-                return font.clone();
+        /// The CoreText font for `font`, made once and kept.
+        pub fn font_of(&self, font: &Font) -> CFRetained<CTFont> {
+            let key = (
+                font.size.to_bits(),
+                font.bold,
+                font.italic,
+                font.family.clone(),
+            );
+            if let Some(made) = self.fonts.borrow().get(&key) {
+                return made.clone();
             }
-            let kind = match bold {
-                true => CTFontUIFontType::EmphasizedSystem,
-                false => CTFontUIFontType::System,
-            };
-            // SAFETY: a null language means the user's own, which is what the UI font follows.
-            let upright = unsafe { CTFont::new_ui_font_for_language(kind, size, None) }
-                .expect("the system UI font exists on every macOS");
-            let font = match italic {
-                // SAFETY: a size of zero keeps the font's own, and a null matrix is the identity;
-                // both are documented. A face with no italic answers `None`, and the upright one
-                // is then the honest answer.
-                true => unsafe {
-                    upright.copy_with_symbolic_traits(
-                        0.0,
-                        null(),
-                        CTFontSymbolicTraits::ItalicTrait,
-                        CTFontSymbolicTraits::ItalicTrait,
-                    )
-                }
-                .unwrap_or(upright),
-                false => upright,
-            };
-            self.fonts.borrow_mut().insert(key, font.clone());
-            font
+            let made = make(font);
+            self.fonts.borrow_mut().insert(key, made.clone());
+            made
         }
 
-        /// One line of `text` set in `style`'s font, drawn in whatever fill colour the context
-        /// has — the line [`Metrics::advances`] measured and `render.rs` draws.
-        pub fn line(&self, text: &str, style: &TextStyle) -> CFRetained<CTLine> {
-            let font = self.font(style);
+        /// The font a cell set in `style` is drawn in — [`Font::cell`] at this base size.
+        pub fn font(&self, style: &TextStyle) -> CFRetained<CTFont> {
+            self.font_of(&Font::cell(self.base, style))
+        }
+
+        /// One line of `text` set in `font`, drawn in whatever fill colour the context has —
+        /// the line a [`Metrics`] implementation measured and `render.rs` draws.
+        pub fn line_of(&self, text: &str, font: &Font) -> CFRetained<CTLine> {
+            let font = self.font_of(font);
             // SAFETY: both keys are constants CoreText exports for exactly these attributes.
             let (font_key, from_context): (&CFString, &CFString) = unsafe {
                 (
@@ -136,11 +164,89 @@ mod mac {
             unsafe { CTLine::with_attributed_string(&attributed) }
         }
 
-        /// How far below a line's top its baseline is, in `style`'s font.
-        pub fn ascent(&self, style: &TextStyle) -> CGFloat {
-            // SAFETY: an ordinary read of a live font's metrics.
-            unsafe { self.font(style).ascent() }
+        /// One line of a cell's `text`, set in `style` as the grid sets it.
+        pub fn line(&self, text: &str, style: &TextStyle) -> CFRetained<CTLine> {
+            self.line_of(text, &Font::cell(self.base, style))
         }
+
+        /// How far below a line's top its baseline is, in `font`.
+        pub fn ascent_of(&self, font: &Font) -> CGFloat {
+            // SAFETY: an ordinary read of a live font's metrics.
+            unsafe { self.font_of(font).ascent() }
+        }
+
+        /// How far below a line's top its baseline is, in a cell's `style`.
+        pub fn ascent(&self, style: &TextStyle) -> CGFloat {
+            self.ascent_of(&Font::cell(self.base, style))
+        }
+
+        /// Where `font` draws an underline — its offset below the baseline, and how thick — the
+        /// font's own answer, so an underline sits where its designer put it.
+        pub fn underline_of(&self, font: &Font) -> (CGFloat, CGFloat) {
+            let font = self.font_of(font);
+            // SAFETY: ordinary reads of a live font's metrics. CoreText's position is up from
+            // the baseline, so a line below it is negative; this answers the distance down.
+            let (position, thickness) =
+                unsafe { (font.underline_position(), font.underline_thickness()) };
+            (-position, thickness.max(0.5))
+        }
+
+        /// How tall `font`'s lower-case letters are — where a strike goes through them.
+        pub fn x_height_of(&self, font: &Font) -> CGFloat {
+            // SAFETY: an ordinary read of a live font's metrics.
+            unsafe { self.font_of(font).x_height() }
+        }
+
+        /// How tall a line set in `font` is: ascent, descent and leading, rounded up to a point.
+        pub fn height_of(&self, font: &Font) -> f32 {
+            let font = self.font_of(font);
+            // SAFETY: ordinary reads of a live font's metrics.
+            let height = unsafe { font.ascent() + font.descent() + font.leading() };
+            height.ceil() as f32
+        }
+    }
+
+    /// A CoreText font for `font`: the family first, then the weight and slant over it.
+    fn make(font: &Font) -> CFRetained<CTFont> {
+        let size = font.size as CGFloat;
+        // SAFETY: a null language means the user's own, which is what the UI fonts follow, and a
+        // null matrix is the identity; both are documented.
+        let base = unsafe {
+            match &font.family {
+                // The system face's bold is its own emphasized type rather than a trait applied
+                // afterwards, which is how AppKit asks for it too.
+                Family::System => CTFont::new_ui_font_for_language(
+                    match font.bold {
+                        true => CTFontUIFontType::EmphasizedSystem,
+                        false => CTFontUIFontType::System,
+                    },
+                    size,
+                    None,
+                ),
+                Family::Mono => {
+                    CTFont::new_ui_font_for_language(CTFontUIFontType::UserFixedPitch, size, None)
+                }
+                Family::Named(name) => {
+                    Some(CTFont::with_name(&CFString::from_str(name), size, null()))
+                }
+            }
+        }
+        .expect("the system and fixed-pitch UI fonts exist on every macOS");
+        let bold = font.bold && font.family != Family::System;
+        let mut traits = CTFontSymbolicTraits::empty();
+        if bold {
+            traits |= CTFontSymbolicTraits::BoldTrait;
+        }
+        if font.italic {
+            traits |= CTFontSymbolicTraits::ItalicTrait;
+        }
+        if traits.is_empty() {
+            return base;
+        }
+        // SAFETY: a size of zero keeps the font's own, and a null matrix is the identity; both
+        // are documented. A face with no bold or no italic answers `None`, and the face as it is
+        // is then the honest answer.
+        unsafe { base.copy_with_symbolic_traits(0.0, null(), traits, traits) }.unwrap_or(base)
     }
 
     impl Metrics for CoreText {
@@ -157,10 +263,7 @@ mod mac {
         }
 
         fn line_height(&self, style: &TextStyle) -> f32 {
-            let font = self.font(style);
-            // SAFETY: ordinary reads of a live font's metrics.
-            let height = unsafe { font.ascent() + font.descent() + font.leading() };
-            height.ceil() as f32
+            self.height_of(&Font::cell(self.base, style))
         }
     }
 }
