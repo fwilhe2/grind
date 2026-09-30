@@ -33,6 +33,8 @@ mod banner;
 #[cfg(target_os = "macos")]
 mod clipboard;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod code;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod document;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod drive;
