@@ -713,6 +713,55 @@ jobs:
   # The browser is also the one platform that is not an operating system, so this is the one
   # shell whose artifact is the same everywhere. It is built once, on Linux — still not a
   # cross-compile: `wasm32-unknown-unknown` *is* the target it runs on.
+  # The macOS shell (`doc/macos-shell.md`) — the one place its AppKit half links and runs. One
+  # release build per OS version, then everything that has something to say about it: every R7
+  # document and the sample spreadsheet drawn twice in each appearance and compared byte for
+  # byte, and each one opened in a real window through a drive (M2's exit criterion, in
+  # `.github/scripts/mac-frames.sh`). Both OS versions, because the deployment target is 15 and
+  # a floor that is never run is a claim that is never checked (decision 11).
+  #
+  # `macos.yml` keeps its `probe` job until its answers are written into the doc's *Evidence*;
+  # this job supersedes it for everything else.
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    # A GUI process that puts an alert up waits for a click; every step in the script is bounded,
+    # and this is the bound on all of them.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The assertions that need a Mac — everything behind `cfg(target_os = "macos")`. The
+      # portable half runs on Linux in `ci.yml` and `macos.yml`; this is the other half.
+      - name: Test
+        run: cargo test --locked -p grind-mac
+
+      # THE ONE MAC BUILD. The CLI beside it builds the sample document the frames are drawn
+      # from, through the same `examples/sample-sheet.sh` every other shell's sample comes from.
+      # It is named by its binary rather than by `-p grind-cli`, which `cli/tests/packaging.rs`
+      # keeps for the Linux job's one line — the packaged set.
+      - name: Build the Mac shell and the CLI, release
+        run: |
+          cargo build --release --locked -p grind-mac
+          cargo build --release --locked --bin grind
+
+      - name: Every document drawn twice in each appearance, and opened in a window
+        run: .github/scripts/mac-frames.sh target/release/grind-mac target/release/grind frames
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: grind-mac-frames-${{ matrix.os }}
+          path: frames/
+          if-no-files-found: warn
+
   wasm:
     runs-on: ubuntu-latest
     env:

@@ -384,7 +384,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 |---|---|---|
 | **M0** | **Plan and wiring** — this document; `ui_mac/` with `args.rs` and `main.rs`; a workspace member (not a default member); `macos.yml`; `-p grind-mac` in `ci.yml`'s host lists; `ui_mac` in `cli/tests/packaging.rs`'s `UNPACKAGED`; the deployment target | The Linux half is **met** (see *Evidence*). The runner half is **the first run of `macos.yml`'s `probe` job**: the core works on macOS, CoreText draws headless and reproducibly, a window opens and can be snapshotted on both OS versions, and synthesized events reach a text field. Each answer goes into *Evidence*, and a "no" rewrites the decision that depended on it before M2 starts |
 | **M1** | The hoists above — *done* (*What M1 did*) | All suites green; Win32 and GTK frames byte-identical before and after each — **met**, with the one GTK frame change the `Flow` hoist made on purpose, proved separately |
-| **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26 |
+| **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe — *built, and not yet run* (*What M2 built*) | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26. **The Linux half is met; the runner half is the first run of `artifacts.yml`'s `macos` job** (`.github/scripts/mac-frames.sh`) |
 | **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20` |
 | **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched |
 | **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine |
@@ -395,6 +395,36 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such** |
 | **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing |
 | **M12** | **The UX pass**, over a screen-sharing session into a runner (`mac-session.yml`), recorded the way `doc/windows-shell.md`'s is | Every item on *What the runner cannot speak for* is either checked or still named |
+
+### What M2 built
+
+Everything M2 names exists, and **none of the AppKit half has run**: it is written against
+objc2's generated bindings, type-checked and linted for both Apple targets from Linux, and the
+first thing that will run it is `artifacts.yml`'s `macos` job. Until then this is a claim about
+what compiles, not about what works.
+
+The split is decision 9's, taken as far as it goes. Every decision a user would notice is
+portable and tested here; only turning it into pixels and events needs a Mac:
+
+| File | Half | What it is |
+|---|---|---|
+| `sheet/geom.rs` | portable | Every cell in points, in the sheet's own coordinates: one-inch columns and quarter-inch rows by default (`ui_web`'s and `ui_tui`'s sizes), the document's own through `grind_sheet::tracks`, rows hidden by hand or by a filter closed up, and a grid that reaches the used extent and a margin rather than a million rows |
+| `sheet/paint.rs` | portable | A frame as a list of `Op`s — a fill, or a line of text at a place — over `grind_sheet::look`, `numfmt::overflow` and `grind_core::color::document_ink`; the header bands, and a whole frame composed from them. Tested against `grind_core::layout::Fixed` |
+| `metrics.rs` | both | The UTF-16 fold, portable and tested; CoreText behind `Metrics`, whose `CTLine` is also the one drawn |
+| `png.rs` | portable | The frame's PNG, written here over the workspace's own `flate2`, so two renders are the same **bytes** — a system encoder may write a timestamp or a profile of its choosing |
+| `menu.rs` | portable | The menu bar as data, and *Conventions made mechanical* as its tests |
+| `drive.rs` | both | The drive-script parser, portable, and its replay through `NSApp.sendEvent` |
+| `import.rs` | portable | A workbook or a CSV to flat ODF **in bytes**, the shape `NSDocument` hands a document over in |
+| `document.rs` | both | The type names and the byte sniff, portable; the `NSDocument` subclass and the document controller, whose `typeForContentsOfURL:error:` reads the file rather than its name |
+| `render.rs` `grid_view.rs` `app.rs` | Mac | The `Op`s onto a flipped `CGContext`; the grid in its scroll view with the bands floating; the application, its delegate and the menu bar |
+
+What M2 leaves, each on purpose: the selection (M3), editing, saving and autosave (M4 — the
+document writes, but nothing yet changes it), a label spilling into the empty cells beside it (a
+cell's text is clipped to its own cell), borders, the welcome window (M9 — a launch with nothing
+named starts an empty spreadsheet), a text document's page (M6 — its window says so), and
+Info.plist document types (M10 — the document controller answers by the bytes, and the open panel
+shows every file, so M2 needs none). **The probe stays** until its printed answers are in
+*Evidence*: the next run publishes them as annotations, and retiring it first would lose them.
 
 ## Conventions made mechanical
 
