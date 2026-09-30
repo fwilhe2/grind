@@ -60,6 +60,8 @@ mod render;
 mod sheet;
 #[cfg(target_os = "macos")]
 mod sidebar;
+#[cfg(target_os = "macos")]
+mod watch;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

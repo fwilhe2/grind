@@ -22,7 +22,6 @@
 //! bands float over that margin, so at rest they cover nothing but it.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::Arc;
 
@@ -181,7 +180,7 @@ impl Pane {
     /// The core said the document changed (architecture rule 3: it pushes, shells never poll):
     /// read the sheet's axes again — an edit may have widened the used extent — resize the views,
     /// redraw them, tell the listeners, and mark the document edited.
-    pub fn document_changed(&self) {
+    fn changed(&self) {
         // A sheet deleted — or one taken back by an undo — may be the one showing.
         let count = self.app.sheet_count().max(1);
         if self.sheet.get() >= count {
@@ -307,40 +306,9 @@ impl Pane {
     }
 }
 
-thread_local! {
-    /// The panes the core may tell about a change, by the address of each — see [`Changed`].
-    static PANES: RefCell<HashMap<usize, RcWeak<Pane>>> = RefCell::new(HashMap::new());
-}
-
-/// The core's observer, which has to be `Send + Sync` because the core does not say which thread
-/// a change arrives on — and a pane, holding views, is the main thread's alone. So the observer
-/// holds only the pane's address, and finds the pane in a registry the main thread owns. Every
-/// edit in this shell is made on the main thread, so every notification arrives there; one that
-/// did not would find no registry and change nothing, rather than touch AppKit from elsewhere.
-struct Changed(usize);
-
-impl grind_core::Observer for Changed {
-    fn changed(&self) {
-        if MainThreadMarker::new().is_none() {
-            return;
-        }
-        let pane = PANES.with(|panes| panes.borrow().get(&self.0).and_then(RcWeak::upgrade));
-        if let Some(pane) = pane {
-            pane.document_changed();
-        }
-    }
-}
-
 /// Have the core tell `pane` about every change to its document from now on.
 pub fn watch(pane: &Rc<Pane>) {
-    let id = Rc::as_ptr(pane) as usize;
-    PANES.with(|panes| {
-        let mut panes = panes.borrow_mut();
-        // A pane that is gone leaves its address behind; drop those as new ones arrive.
-        panes.retain(|_, pane| pane.strong_count() > 0);
-        panes.insert(id, Rc::downgrade(pane));
-    });
-    pane.app.set_observer(Arc::new(Changed(id)));
+    pane.app.set_observer(crate::watch::observer(pane));
 }
 
 /// A colour AppKit resolves for the current drawing appearance, as three bytes. A colour with no
@@ -860,4 +828,10 @@ pub fn sheet_view(pane: &Rc<Pane>, size: NSSize, mtm: MainThreadMarker) -> Retai
     *pane.grid_view.borrow_mut() = Some(Weak::from_retained(&grid));
     *pane.bands.borrow_mut() = Some((Weak::from_retained(&columns), Weak::from_retained(&rows)));
     scroll
+}
+
+impl crate::watch::Watched for Pane {
+    fn document_changed(&self) {
+        self.changed();
+    }
 }
