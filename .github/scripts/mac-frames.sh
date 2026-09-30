@@ -26,7 +26,10 @@
 #      input text, and text another application put there pastes as a rectangle of cells;
 #   6. M6's: every vendored Writer document and the sample text document is drawn and opened
 #      as the spreadsheets are, and a drive types `**bold**` onto a page and composes `é`
-#      through `setMarkedText`, which the saved file has to project as bold and accented.
+#      through `setMarkedText`, which the saved file has to project as bold and accented;
+#   7. M7's: a label made bold, a currency's decimals stepped, a cell coloured and cleared and
+#      another coloured and kept, all through the Format menu or its keys, and the projection
+#      says each; and on a page, a heading from the Paragraph menu and ⌘I-then-type in italic.
 #
 # **What it says is public.** A job's log needs admin rights to read, so the script reports its
 # own progress — and, when it fails, the last command's output — as one workflow annotation on
@@ -309,3 +312,70 @@ projected="$("$grind" text project "$out/typed.fodt" | grep '^p ')"
 [ "$projected" = 'p "say **bold** é"' ] \
     || fail "the typed document projects as $projected, not as bold and accented"
 say "   **bold** typed and é composed land in the file as bold and é"
+
+say "== formatting"
+# M7's: a label made bold with ⌘B, a currency's decimals stepped, a cell coloured and cleared
+# and another coloured and kept — every one through the Format menu or its key, as a person
+# would — then saved; the projection says what each cell carries.
+"$grind" sheet new "$out/formatted.fods" > /dev/null
+"$grind" sheet set "$out/formatted.fods" A1 Total > /dev/null
+"$grind" sheet set "$out/formatted.fods" B2 1234.5 > /dev/null
+"$grind" sheet set "$out/formatted.fods" C3 1 > /dev/null
+"$grind" sheet set "$out/formatted.fods" D4 2 > /dev/null
+cat > "$out/format.drive" <<'DRIVE'
+key cmd+l
+type A1
+key return
+key cmd+b
+key cmd+l
+type B2
+key return
+menu Format/Number/Currency
+menu Format/Number/Increase Decimals
+key cmd+l
+type C3
+key return
+menu Format/Background Color/Yellow
+menu Format/Clear Formatting
+key cmd+l
+type D4
+key return
+menu Format/Background Color/Yellow
+snap formatted
+key cmd+s
+wait 2
+DRIVE
+bounded 120 "$mac" "$out/formatted.fods" --drive "$out/format.drive" --out "$out/formatted" \
+    > "$out/format.txt" || fail "the formatting drive failed: $(cat "$out/format.txt")"
+cat "$out/format.txt"
+"$grind" lint "$out/formatted.fods" || fail "the formatted document does not lint clean"
+"$grind" sheet project "$out/formatted.fods" > "$out/formatted.grind"
+grep -q '^ *style A1 bold=#true$' "$out/formatted.grind" \
+    || fail "A1 is not bold: $(cat "$out/formatted.grind")"
+grep -q '^ *format B2 currency decimals=3' "$out/formatted.grind" \
+    || fail "B2 is not a currency at three decimals: $(cat "$out/formatted.grind")"
+grep -q '^ *style D4 background="#ffdc00"$' "$out/formatted.grind" \
+    || fail "D4 is not yellow: $(cat "$out/formatted.grind")"
+if grep -Eq '^ *(style|format) C3( |$)' "$out/formatted.grind"; then
+    fail "C3 kept a style after Clear Formatting: $(cat "$out/formatted.grind")"
+fi
+say "   bold, a currency stepped, a cell coloured and cleared: the file says each"
+
+# The page's Paragraph menu and ⌘I: a heading, and an italic word.
+"$grind" text new "$out/headed.fodt" > /dev/null
+cat > "$out/headed.drive" <<'DRIVE'
+type Title
+menu Format/Paragraph/Heading 1
+key return
+key cmd+i
+type slanted
+key cmd+s
+wait 2
+DRIVE
+bounded 120 "$mac" "$out/headed.fodt" --drive "$out/headed.drive" --out "$out/headed" \
+    > "$out/headed.txt" || fail "the paragraph drive failed: $(cat "$out/headed.txt")"
+cat "$out/headed.txt"
+projected="$("$grind" text project "$out/headed.fodt" | grep -E '^(h|p) ')"
+[ "$projected" = "$(printf 'h 1 "Title"\np "*slanted*"')" ] \
+    || fail "the page projects as $projected, not as a heading and an italic word"
+say "   a heading from the Paragraph menu, and ⌘I then typing is italic"
