@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The pasteboard (M5): Copy, Cut, Paste and Delete over the grid, and the one file that touches
+//! The pasteboard (M5): Copy, Cut, Paste and Delete over the grid — the page's (M6) are in
+//! `page_view.rs`, over [`write()`] and [`read()`] — and the one file that touches
 //! `NSPasteboard` — as `ui_win32/src/clipboard.rs` is the one that opens the Windows clipboard.
 //!
 //! What travels is `grind_sheet::clip`'s, the codec every shell's clipboard shares: each cell's
@@ -36,14 +37,7 @@ impl Pane {
             App::input_text,
             "\n",
         );
-        let text = NSString::from_str(&text);
-        let board = NSPasteboard::generalPasteboard();
-        board.clearContents();
-        // SAFETY: both types are constants AppKit exports.
-        unsafe {
-            board.setString_forType(&text, NSPasteboardTypeString);
-            board.setString_forType(&text, NSPasteboardTypeTabularText);
-        }
+        write(&text, true);
     }
 
     /// Edit ▸ Cut: the selection on the pasteboard, then emptied — one ⌘Z brings it back.
@@ -63,7 +57,7 @@ impl Pane {
     /// Edit ▸ Paste: the pasteboard's text as a rectangle from the active cell. Nothing happens
     /// when it holds no text — pasting a picture writes no garbage into a cell.
     pub fn paste(&self) {
-        let Some(text) = Self::pasteboard_text() else {
+        let Some(text) = read() else {
             return;
         };
         let rows = clip::parse_rows(&text);
@@ -88,13 +82,33 @@ impl Pane {
 
     /// Whether Paste has anything to paste — what greys it when it has not.
     pub fn can_paste() -> bool {
-        Self::pasteboard_text().is_some_and(|text| !text.is_empty())
+        can_paste()
     }
+}
 
-    fn pasteboard_text() -> Option<String> {
-        // SAFETY: the type is a constant AppKit exports.
-        let text =
-            unsafe { NSPasteboard::generalPasteboard().stringForType(NSPasteboardTypeString) };
-        text.map(|text| text.to_string())
+/// `text` on the general pasteboard as plain text — and as tab-separated text too when it is a
+/// rectangle of cells, so a spreadsheet reads it back as one.
+pub fn write(text: &str, tabular: bool) {
+    let text = NSString::from_str(text);
+    let board = NSPasteboard::generalPasteboard();
+    board.clearContents();
+    // SAFETY: both types are constants AppKit exports.
+    unsafe {
+        board.setString_forType(&text, NSPasteboardTypeString);
+        if tabular {
+            board.setString_forType(&text, NSPasteboardTypeTabularText);
+        }
     }
+}
+
+/// The general pasteboard's plain text, when it holds some.
+pub fn read() -> Option<String> {
+    // SAFETY: the type is a constant AppKit exports.
+    let text = unsafe { NSPasteboard::generalPasteboard().stringForType(NSPasteboardTypeString) };
+    text.map(|text| text.to_string())
+}
+
+/// Whether Paste has anything to paste — what greys it when it has not.
+pub fn can_paste() -> bool {
+    read().is_some_and(|text| !text.is_empty())
 }
