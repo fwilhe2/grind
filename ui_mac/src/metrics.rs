@@ -7,7 +7,7 @@
 //!
 //! Two halves. [`fold`] is portable: CoreText answers "where is the caret at this UTF-16 index",
 //! the trait asks "how far after each `char`", and turning one into the other is arithmetic that
-//! is tested on any host. [`CoreText`] is the Mac's, and it is **also what draws**: `render.rs`
+//! is tested on any host. `CoreText` is the Mac's, and it is **also what draws**: `render.rs`
 //! sets each line with the very `CTLine` this measured, so the caret and the ink cannot disagree
 //! (`doc/windows-shell.md` decision 3, which GDI met with its own advances and CoreText meets by
 //! construction).

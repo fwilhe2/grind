@@ -86,7 +86,6 @@ impl Rect {
             ..*self
         }
     }
-
 }
 
 /// One sheet's two axes, and how far the grid reaches along each.

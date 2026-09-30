@@ -51,6 +51,10 @@ pub enum Command {
         /// **Only meaningful with `--render-to`**, for the reason `ui_win32` gives. A window
         /// follows the system's appearance, and a render must depend on its command line alone.
         dark: bool,
+        /// `--drive <script> --out <dir>`: open a real window, replay the script's synthesized
+        /// events, write its snapshots to the directory, print a transcript and exit (decision
+        /// 9). Not a user feature either.
+        drive: Option<Drive>,
     },
     Help,
     Version,
@@ -58,8 +62,16 @@ pub enum Command {
     Error(String),
 }
 
+/// A drive: the script to replay, and where its snapshots go.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Drive {
+    pub script: PathBuf,
+    pub out: PathBuf,
+}
+
 /// What `--help` prints.
 pub const USAGE: &str = "usage: grind-mac [--sheet|--text] [file] [--render-to <png> [--dark]]
+                 [--drive <script> --out <dir>]
 
 One application, both document types. Which one opens is read out of the file, not
 guessed from its name; with no file and no flag the welcome window is shown, where a
@@ -69,6 +81,8 @@ spreadsheet, a text document or an existing file can be chosen.
   --text           start an empty text document, skipping the welcome window
   --render-to <f>  draw one frame to a PNG and exit, with no window
   --dark           draw that frame in the dark appearance
+  --drive <s>      open a window, replay the script's events, and exit
+  --out <dir>      where a drive's snapshots are written
   -h, --help       this text
   -V, --version    version and build stamp
 
@@ -82,6 +96,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let mut path: Option<PathBuf> = None;
     let mut render_to: Option<PathBuf> = None;
     let mut dark = false;
+    let mut script: Option<PathBuf> = None;
+    let mut out: Option<PathBuf> = None;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
@@ -95,6 +111,14 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
                 None => return Command::Error("--render-to needs a file to write".into()),
             },
             "--dark" => dark = true,
+            "--drive" => match args.next() {
+                Some(file) => script = Some(PathBuf::from(file)),
+                None => return Command::Error("--drive needs a script to replay".into()),
+            },
+            "--out" => match args.next() {
+                Some(dir) => out = Some(PathBuf::from(dir)),
+                None => return Command::Error("--out needs a directory".into()),
+            },
             other if other.starts_with("--") => {
                 return Command::Error(format!("unknown option {other}"));
             }
@@ -121,11 +145,23 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         // silently did nothing there would read as this shell failing to honour it.
         return Command::Error("--dark only means something with --render-to".into());
     }
+    let drive = match (script, out) {
+        (Some(script), Some(out)) => Some(Drive { script, out }),
+        (Some(_), None) => return Command::Error("--drive needs --out <dir>".into()),
+        (None, Some(_)) => return Command::Error("--out only means something with --drive".into()),
+        (None, None) => None,
+    };
+    if drive.is_some() && render_to.is_some() {
+        return Command::Error(
+            "a render draws without a window and a drive needs one; ask for one".into(),
+        );
+    }
     Command::Open {
         kind,
         path,
         render_to,
         dark,
+        drive,
     }
 }
 
@@ -276,5 +312,32 @@ mod tests {
             Some(PathBuf::from("/Users/florian/My Book.fods"))
         );
         assert_eq!(open(&["./-odd.fods"]).1, Some(PathBuf::from("./-odd.fods")));
+    }
+
+    #[test]
+    fn a_drive_names_its_script_and_where_its_snapshots_go() {
+        let command = parse_str(&["book.fods", "--drive", "bold.drive", "--out", "shots"]);
+        let Command::Open { drive, .. } = command else {
+            panic!("an open")
+        };
+        assert_eq!(
+            drive,
+            Some(Drive {
+                script: PathBuf::from("bold.drive"),
+                out: PathBuf::from("shots"),
+            })
+        );
+        assert!(matches!(
+            parse_str(&["--drive", "bold.drive"]),
+            Command::Error(message) if message.contains("--out")
+        ));
+        assert!(matches!(
+            parse_str(&["--out", "shots"]),
+            Command::Error(message) if message.contains("--drive")
+        ));
+        assert!(matches!(
+            parse_str(&["--drive", "a", "--out", "b", "--render-to", "c.png"]),
+            Command::Error(_)
+        ));
     }
 }

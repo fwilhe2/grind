@@ -4,8 +4,8 @@
 
 //! `grind-mac` — the macOS shell over the suite, shipped as `Grind.app`.
 //!
-//! **M0: wiring, and nothing that opens a window yet.** `doc/macos-shell.md` is normative for
-//! this crate and is where the decisions, the milestones and the named gaps live. It is written
+//! **M2: the application, the document and the read-only grid.** `doc/macos-shell.md` is
+//! normative for this crate and is where the decisions, the milestones and the named gaps live. It is written
 //! so that as much as possible of this shell can be built and tested on Linux, because the
 //! machine this repository is developed on is not a Mac:
 //!
@@ -16,15 +16,26 @@
 //!   type-checks and lints it with `--target aarch64-apple-darwin` (nothing links, so no SDK is
 //!   needed), and `artifacts.yml`'s `macos` job is the one place it links and runs.
 //!
-//! This file owns the process. Today it resolves the command line into what a window *would*
-//! open and says so, which makes the argument handling runnable rather than only testable. The
-//! same thing `ui_win32`'s W0 did.
+//! This file owns the process: it resolves the command line into what to open, and hands that to
+//! `--render-to`'s windowless frame or to `app.rs`'s window. Off a Mac it says what a window would
+//! have done, which is what makes the argument handling runnable there rather than only testable —
+//! the same thing `ui_win32`'s W0 did.
 
 // Portable, and reached from the AppKit half — which is not compiled off macOS, so on Linux the
 // only callers of much of this are the tests.
+#[cfg(target_os = "macos")]
+mod app;
 mod args;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod document;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod drive;
+#[cfg(target_os = "macos")]
+mod grid_view;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod import;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod menu;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod metrics;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
@@ -37,7 +48,7 @@ mod sheet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use args::Command;
+use args::{Command, Drive};
 use grind_core::DocumentKind;
 
 fn version() -> String {
@@ -47,32 +58,24 @@ fn version() -> String {
     )
 }
 
-/// What kind of document a file holds, read from its bytes. Decided *before* parsing, because
-/// the reader is tolerant by construction and would hand back an empty document rather than an
-/// error if it were handed the wrong type.
+/// What kind of document a file holds, read from its bytes — the rule the document controller
+/// answers `typeForContentsOfURL:error:` with (`document::sniff`), asked here before there is a
+/// controller to ask.
 fn sniff(path: &Path) -> Result<DocumentKind, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    // A workbook or a CSV is a spreadsheet this shell imports; `grind_core::kind` answers only
-    // which *ODF* type some bytes are, and should.
-    if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
-        return Ok(DocumentKind::Spreadsheet);
-    }
-    grind_core::kind(&bytes).ok_or_else(|| {
-        format!(
-            "{}: not an ODF spreadsheet or text document",
-            path.display()
-        )
-    })
+    document::sniff(&path.display().to_string(), &bytes)
 }
 
-/// Which document, from where, and — when this invocation is a render — where the frame goes
-/// and in which appearance. The kind is an `Option` because **"no document" is an answer**: the
-/// welcome window (decision 6).
-type Opening = (
-    Option<DocumentKind>,
-    Option<PathBuf>,
-    Option<(PathBuf, bool)>,
-);
+/// What this invocation opens, resolved from the command line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Opening {
+    /// `None` because **"no document" is an answer**: the welcome window (decision 6).
+    pub kind: Option<DocumentKind>,
+    pub path: Option<PathBuf>,
+    /// A render: where the frame goes, and whether it is drawn dark.
+    pub render: Option<(PathBuf, bool)>,
+    pub drive: Option<Drive>,
+}
 
 /// Resolve the command line into what a window would open, or a message saying why it cannot.
 /// The whole of the decision and none of the platform, so it is tested on any host.
@@ -82,32 +85,42 @@ fn resolve(command: Command) -> Result<Opening, String> {
         path,
         render_to,
         dark,
+        drive,
     } = command
     else {
         unreachable!("help, version and errors are handled before this")
     };
     let render = render_to.map(|target| (target, dark));
-    match &path {
+    let kind = match &path {
         Some(file) => {
             let found = sniff(file)?;
-            let kind = grind_core::kind::reconcile(kind, found, &file.display().to_string())?;
-            Ok((Some(kind), path, render))
+            Some(grind_core::kind::reconcile(
+                kind,
+                found,
+                &file.display().to_string(),
+            )?)
         }
-        None => Ok((kind, None, render)),
-    }
+        None => kind,
+    };
+    Ok(Opening {
+        kind,
+        path,
+        render,
+        drive,
+    })
 }
 
-/// What a window would do with `opening`, in a sentence.
-fn intent(opening: &Opening) -> String {
-    let (kind, path, render) = opening;
-    let what = match (kind, path) {
+/// What a window would do with `opening`, in a sentence — the first line of a drive's transcript,
+/// and what this binary says off a Mac.
+pub fn intent(opening: &Opening) -> String {
+    let what = match (opening.kind, &opening.path) {
         (Some(kind), Some(path)) => {
             format!("open {} as a {}", path.display(), kind.label())
         }
         (Some(kind), None) => format!("start an empty {}", kind.label()),
         (None, _) => "show the welcome window".to_owned(),
     };
-    match render {
+    match &opening.render {
         Some((target, dark)) => format!(
             "{what}, and draw it to {} in the {} appearance",
             target.display(),
@@ -133,13 +146,13 @@ const SCALE: f64 = 2.0;
 fn render_to(opening: &Opening) -> Result<(), String> {
     use sheet::paint::{self, Palette};
 
-    let (kind, path, Some((target, dark))) = opening else {
+    let Some((target, dark)) = &opening.render else {
         unreachable!("only a render reaches here")
     };
-    match kind {
+    match opening.kind {
         Some(DocumentKind::Spreadsheet) => {
             let app = grind_sheet::App::new();
-            if let Some(path) = path {
+            if let Some(path) = &opening.path {
                 let bytes =
                     std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
                 let opened = import::open(&path.display().to_string(), &bytes)?;
@@ -179,6 +192,23 @@ fn render_to(_: &Opening) -> Result<(), String> {
     Err("frames are drawn by CoreGraphics, on macOS only".into())
 }
 
+/// Open the window — the application, its menu bar and the document — and run until it quits.
+#[cfg(target_os = "macos")]
+fn window(opening: Opening) -> ExitCode {
+    app::run(opening)
+}
+
+/// Off a Mac there is no window to open: say what one would have done, and fail, so no script
+/// mistakes this for a shell that did what it was asked.
+#[cfg(not(target_os = "macos"))]
+fn window(opening: Opening) -> ExitCode {
+    eprintln!(
+        "grind-mac opens windows on macOS only. There it would {}.",
+        intent(&opening)
+    );
+    ExitCode::FAILURE
+}
+
 fn main() -> ExitCode {
     match args::parse(std::env::args().skip(1)) {
         Command::Help => {
@@ -198,22 +228,14 @@ fn main() -> ExitCode {
                 eprintln!("grind-mac: {message}");
                 ExitCode::FAILURE
             }
-            Ok(opening) if opening.2.is_some() => match render_to(&opening) {
+            Ok(opening) if opening.render.is_some() => match render_to(&opening) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(message) => {
                     eprintln!("grind-mac: --render-to: {message}");
                     ExitCode::FAILURE
                 }
             },
-            Ok(opening) => {
-                // Not an error in the arguments, but not a window either — exit non-zero so no
-                // script mistakes this for a shell that did what it was asked.
-                eprintln!(
-                    "grind-mac has no window yet (doc/macos-shell.md, M2). It would {}.",
-                    intent(&opening)
-                );
-                ExitCode::FAILURE
-            }
+            Ok(opening) => window(opening),
         },
     }
 }
@@ -228,20 +250,30 @@ mod tests {
             path: path.map(PathBuf::from),
             render_to: None,
             dark: false,
+            drive: None,
+        }
+    }
+
+    fn opening(kind: Option<DocumentKind>, path: Option<&str>) -> Opening {
+        Opening {
+            kind,
+            path: path.map(PathBuf::from),
+            render: None,
+            drive: None,
         }
     }
 
     #[test]
     fn an_empty_invocation_names_no_document() {
-        assert_eq!(resolve(open(None, None)).unwrap(), (None, None, None));
-        assert_eq!(intent(&(None, None, None)), "show the welcome window");
+        assert_eq!(resolve(open(None, None)).unwrap(), opening(None, None));
+        assert_eq!(intent(&opening(None, None)), "show the welcome window");
     }
 
     #[test]
     fn the_flag_decides_when_there_is_no_file() {
         assert_eq!(
             resolve(open(None, Some(DocumentKind::Text))).unwrap(),
-            (Some(DocumentKind::Text), None, None)
+            opening(Some(DocumentKind::Text), None)
         );
     }
 
@@ -257,9 +289,9 @@ mod tests {
                 .expect("a default document writes");
         std::fs::write(&lying, bytes).unwrap();
 
-        let (kind, ..) = resolve(open(Some(lying.to_str().unwrap()), None)).unwrap();
+        let resolved = resolve(open(Some(lying.to_str().unwrap()), None)).unwrap();
         assert_eq!(
-            kind,
+            resolved.kind,
             Some(DocumentKind::Text),
             "the name says sheet, the bytes say text"
         );
@@ -275,11 +307,10 @@ mod tests {
 
     #[test]
     fn a_render_says_where_and_in_which_appearance() {
-        let opening = (
-            Some(DocumentKind::Spreadsheet),
-            Some(PathBuf::from("book.fods")),
-            Some((PathBuf::from("frame.png"), true)),
-        );
+        let opening = Opening {
+            render: Some((PathBuf::from("frame.png"), true)),
+            ..opening(Some(DocumentKind::Spreadsheet), Some("book.fods"))
+        };
         assert_eq!(
             intent(&opening),
             "open book.fods as a spreadsheet, and draw it to frame.png in the dark appearance"
