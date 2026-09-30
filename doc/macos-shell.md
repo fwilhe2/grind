@@ -394,7 +394,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` — *built, and not yet run* (*What M5 built*) | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine. **The Linux half is met; the runner half is `mac-frames.sh`'s pasteboard section** |
 | **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid — *built, and not yet run* (*What M6 built*) | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2. **The Linux half is met, and the probe measured the CoreText half (*Evidence*); the runner half is `metrics.rs`'s Mac-only tests and `mac-frames.sh`'s page section** |
 | **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting — *built, and not yet run* (*What M7 built*) | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …`. **The Linux half is met; the runner half is `mac-frames.sh`'s formatting section** |
-| **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical |
+| **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) — *built, and not yet run* (*What M8 built*) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical. **The Linux half is met; the runner half is `mac-frames.sh`'s eighth section** |
 | **M9** | The welcome window and Open Recent; context menus; the accessibility floor | `tests/appkit.rs`'s accessibility assertions pass; the welcome window renders in both appearances |
 | **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such** |
 | **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing |
@@ -553,6 +553,32 @@ very likely why `artifacts.yml`'s `macos` job has been red since M3.
 What M7 leaves: a cell's font family (the font panel can choose one and a `CellStyle` cannot
 hold it, so it is left out rather than approximated); borders; a paragraph kind over several
 blocks is one ⌘Z per block; and the toolbar's controls have not been seen, only compiled.
+
+### What M8 built
+
+Built and type-checked, not yet run. Two more hoists came first, each a copy the Mac would
+otherwise have made: `grind_sheet::formula::assist` gained the offer machine (`Assist`), the
+band's runs, the friendly formula-bar line and the function list's rows, out of `ui_win32`,
+which keeps only which keys steer it; and `CellRole::hue` is which colour each role is, the
+table `ui_sheet_gtk` and `ui_win32` each carried.
+
+| File | Half | What it is |
+|---|---|---|
+| `sheet/assist.rs` | portable | Which selectors steer a list of offers — `insertTab:` takes one, the vertical arrows step, Esc closes it for the word, and Return still commits — and what the formula read-out shows at rest and while typing |
+| `editor.rs` | Mac | A one-line band under the cell editor with the offers or the signature, the accent where the core says `Strong`; an accepted offer goes in through the field editor, so it is one step of the field's own undo |
+| `app.rs` `menu.rs` | both | View ▸ Friendly Formulas (on by default) and Explain Formula, Insert ▸ Function… (all 110 by name and plain-English name), View ▸ Cell Roles, Names and Show Source (⌥⌘U) |
+| `sheet/paint.rs` `text/paint.rs` | portable | The role marker in a margin reserved at a cell's leading edge and a muted outline round each defined name; on a page, each bookmark named in the margin beside its line, never over the ink |
+| `places.rs` | portable | The sidebar's rows for either document — sheets, names and Problems; outline, bookmarks and Problems — and where each goes, a Problems row to another sheet if that is where the finding is |
+| `sidebar.rs` | Mac | One source list over those rows for both panes, so a page has a sidebar too; re-read when the document changes and not when the cursor moves |
+| `code.rs` | portable | The source pane's lines in UTF-16 and its colours, from the projection's own token map |
+| `source_pane.rs` | Mac | The projection in a read-only `NSTextView` in a trailing inspector item, the selection's line marked and a click on a line going where it projects |
+| `drive.rs` | both | `sidebar <text>`, which chooses a row the way a click does |
+
+What M8 leaves: the signature band follows the text, so a caret moved by an arrow without
+typing shows the old argument until the next keystroke; point mode (arrows building a reference
+into a half-typed formula), which is the GNOME window's alone; the formula read-out is still a
+read-out rather than a second editor; every change re-lints the whole document for the Problems
+section (a `ponytail:` in `sidebar.rs`); and the source pane is read-only, as every shell's is.
 
 ## Conventions made mechanical
 
