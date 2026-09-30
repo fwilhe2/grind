@@ -23,7 +23,15 @@
 #      reads back as typed; and an edited import leaves its workbook, and the folder beside it,
 #      alone;
 #   5. M5's: a copy in the application is on the system pasteboard as the cells' tab-separated
-#      input text, and text another application put there pastes as a rectangle of cells.
+#      input text, and text another application put there pastes as a rectangle of cells;
+#   6. M6's: every vendored Writer document and the sample text document is drawn and opened
+#      as the spreadsheets are, and a drive types `**bold**` onto a page and composes `é`
+#      through `setMarkedText`, which the saved file has to project as bold and accented.
+#
+# **What it says is public.** A job's log needs admin rights to read, so the script reports its
+# own progress — and, when it fails, the last command's output — as one workflow annotation on
+# exit, which the public API serves to anyone (`check-runs/<job>/annotations`). That is how a
+# session with no credentials learns why this job went red.
 #
 # Every step is bounded: a GUI process that manages to put an alert up on a runner would
 # otherwise wait for a click until the job's own limit.
@@ -38,22 +46,58 @@ grind="$2"
 out="$3"
 mkdir -p "$out"
 
+progress="$out/progress.txt"
+log="$out/last.log"
+: > "$progress"
+: > "$log"
+
+# A line of progress: on the job's log, and in the annotation made on exit.
+say() {
+    echo "$*"
+    echo "$*" >> "$progress"
+}
+
 fail() {
     echo "mac-frames: $*" >&2
+    echo "FAILED: $*" >> "$progress"
     exit 1
 }
 
-# Run a command with a time limit, since `timeout` is not part of macOS.
+# One annotation, on exit, with everything said — and the last command's output when the exit
+# was a failure, whether `fail` said so or `set -e` did. Newlines are `%0A` in a workflow
+# command, and a `%` has to be escaped first.
+report() {
+    local status=$?
+    [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+    local level=notice
+    if [ "$status" -ne 0 ]; then
+        level=error
+        {
+            echo "--- exit $status; the last command said:"
+            tail -n 30 "$log"
+        } >> "$progress"
+    fi
+    local body
+    body="$(awk 'BEGIN { ORS = "%0A" } { gsub(/%/, "%25"); gsub(/\r/, ""); print }' "$progress")"
+    echo "::$level title=mac-frames on macOS $(sw_vers -productVersion)::$body"
+}
+trap report EXIT
+
+# Run a command with a time limit, since `timeout` is not part of macOS. Its output is kept in
+# `$log` for `report`, and passed on, so a caller redirecting it still gets it.
 bounded() {
     local seconds="$1"
     shift
-    "$@" &
+    : > "$log"
+    "$@" > "$log" 2>&1 &
     local pid=$!
     ( sleep "$seconds" && kill -9 "$pid" 2>/dev/null ) &
     local watchdog=$!
     local status=0
     wait "$pid" || status=$?
     kill "$watchdog" 2>/dev/null || true
+    cat "$log"
+    [ "$status" -eq 0 ] || echo "\`$(basename "$1") ${*:2}\` exited $status" >> "$progress"
     return "$status"
 }
 
@@ -73,7 +117,7 @@ EOF
 
 for doc in sheet/tests/data/kb/*.fods "$out/sample/sample.fods"; do
     name="$(basename "$doc" .fods)"
-    echo "== $name"
+    say "== $name"
     for look in light dark; do
         for n in 1 2; do
             frame="$out/$name-$look-$n.png"
@@ -91,15 +135,15 @@ for doc in sheet/tests/data/kb/*.fods "$out/sample/sample.fods"; do
     if cmp -s "$out/$name-light-1.png" "$out/$name-dark-1.png"; then
         fail "$name: the dark frame is the light one — --dark reached nothing"
     fi
-    echo "   reproducible in both appearances, and the two differ"
+    say "   reproducible in both appearances, and the two differ"
 
     bounded 120 "$mac" "$doc" --drive "$drive" --out "$out/$name-window" \
         || fail "$name: the drive that opens it failed"
     is_png "$out/$name-window/window.png" || fail "$name: no snapshot of its window"
-    echo "   opened in a window, snapshot kept"
+    say "   opened in a window, snapshot kept"
 done
 
-echo "== selection"
+say "== selection"
 cat > "$out/select.drive" <<'EOF'
 key right
 key down
@@ -123,9 +167,9 @@ expect 2 'B2'
 expect 3 'B2:B3 (active B3)'
 expect 4 'B3'
 expect 7 'G20'
-echo "   arrows, Shift, Esc and a typed place all land where they should"
+say "   arrows, Shift, Esc and a typed place all land where they should"
 
-echo "== editing and saving"
+say "== editing and saving"
 # An untouched open writes nothing: the bytes and the modification time both stay.
 cp "$out/sample/sample.fods" "$out/untouched.fods"
 before_sum="$(shasum "$out/untouched.fods" | cut -d' ' -f1)"
@@ -137,7 +181,7 @@ bounded 120 "$mac" "$out/untouched.fods" --drive "$out/wait.drive" --out "$out/u
     || fail "opening a document and touching nothing changed its bytes"
 [ "$(stat -f %m "$out/untouched.fods")" = "$before_time" ] \
     || fail "opening a document and touching nothing rewrote it"
-echo "   an untouched open writes nothing"
+say "   an untouched open writes nothing"
 
 # A driven edit is stored the way a typed one is — display syntax in, ODF's out — and saved in
 # place: the file lints clean and reads back as typed.
@@ -164,7 +208,7 @@ bounded 120 "$mac" "$out/edited.fods" --drive "$out/edit.drive" --out "$out/edit
 # Typed in display syntax, stored in ODF's.
 "$grind" sheet project "$out/edited.fods" | grep -F 'formula="=[.Z90]*2"' | grep -q 'cell Z91' \
     || fail "the formula was not stored as a formula"
-echo "   a typed number and formula are saved in place, lint clean, and project as typed"
+say "   a typed number and formula are saved in place, lint clean, and project as typed"
 
 # An imported workbook is untitled: editing it writes nothing beside it and nothing into it,
 # autosave included.
@@ -178,10 +222,10 @@ if [ -f "$workbook" ]; then
     [ "$(shasum "$out/imported.xlsx" | cut -d' ' -f1)" = "$source_sum" ] \
         || fail "an imported workbook was written to"
     [ ! -e "$out/imported.fods" ] || fail "an import was saved beside its workbook"
-    echo "   an edited import leaves its workbook alone"
+    say "   an edited import leaves its workbook alone"
 fi
 
-echo "== the pasteboard"
+say "== the pasteboard"
 # Copy in the application, and the job's own `pbpaste` shows the rectangle's input text, tab- and
 # line-separated — cross-application interop, which `ui_win32` could not check under Wine.
 cp "$out/sample/sample.fods" "$out/pasteboard.fods"
@@ -191,7 +235,7 @@ bounded 120 "$mac" "$out/pasteboard.fods" --drive "$out/copy.drive" --out "$out/
 input() { "$grind" sheet get --input "$out/pasteboard.fods" "$1"; }
 expected="$(printf '%s\t%s\n%s\t%s' "$(input A1)" "$(input B1)" "$(input A2)" "$(input B2)")"
 [ "$(pbpaste)" = "$expected" ] || fail "pbpaste shows $(pbpaste | head -c 200), not the copied cells"
-echo "   a copy reaches the system pasteboard as the cells' tab-separated input text"
+say "   a copy reaches the system pasteboard as the cells' tab-separated input text"
 
 # `pbcopy` in the job, Paste in the application, and the cells hold it once saved.
 printf 'pasted\tthere' | pbcopy
@@ -200,4 +244,68 @@ bounded 120 "$mac" "$out/pasteboard.fods" --drive "$out/paste.drive" --out "$out
     > /dev/null || fail "the paste drive failed"
 [ "$(input Z97)" = "pasted" ] && [ "$(input AA97)" = "there" ] \
     || fail "the pasted text did not land in Z97:AA97: $(input Z97) / $(input AA97)"
-echo "   text from another application pastes as a rectangle of cells"
+say "   text from another application pastes as a rectangle of cells"
+
+say "== the page"
+# Every Writer document vendored in both forms, and the sample text document built through the
+# CLI out of every feature it has — drawn twice in each appearance and opened in a window, as the
+# spreadsheets were.
+GRIND="$grind" examples/sample-text.sh "$out/sample-text" > /dev/null
+for doc in text/tests/data/*.fodt text/tests/data/*.odt "$out/sample-text/sample.fodt"; do
+    name="text-$(basename "$doc" | tr . -)"
+    say "== $name"
+    for look in light dark; do
+        for n in 1 2; do
+            frame="$out/$name-$look-$n.png"
+            if [ "$look" = dark ]; then
+                bounded 60 "$mac" "$doc" --render-to "$frame" --dark
+            else
+                bounded 60 "$mac" "$doc" --render-to "$frame"
+            fi
+            is_png "$frame" || fail "$frame is not a PNG"
+        done
+        cmp -s "$out/$name-$look-1.png" "$out/$name-$look-2.png" \
+            || fail "$name: two $look renders of the same document differ"
+        rm "$out/$name-$look-2.png"
+    done
+    if cmp -s "$out/$name-light-1.png" "$out/$name-dark-1.png"; then
+        fail "$name: the dark frame is the light one — --dark reached nothing"
+    fi
+    say "   reproducible in both appearances, and the two differ"
+    bounded 120 "$mac" "$doc" --drive "$drive" --out "$out/$name-window" \
+        || fail "$name: the drive that opens it failed"
+    is_png "$out/$name-window/window.png" || fail "$name: no snapshot of its window"
+    say "   opened in a window, snapshot kept"
+done
+
+say "== typing on the page"
+# `**bold**` typed a key at a time is read as it is typed (`App::type_markdown`), and `é` is
+# composed the way a dead key composes it: marked, then committed. The transcript follows the
+# caret, and the saved file has to project the result.
+"$grind" text new "$out/typed.fodt" > /dev/null
+cat > "$out/type.drive" <<'DRIVE'
+type say **bold**
+key space
+mark ´
+commit é
+key cmd+s
+wait 2
+snap typed
+DRIVE
+bounded 120 "$mac" "$out/typed.fodt" --drive "$out/type.drive" --out "$out/typed" \
+    > "$out/type.txt" || fail "the typing drive failed: $(cat "$out/type.txt")"
+cat "$out/type.txt"
+# `type` is one step, so the caret after it is past the eight characters left once the four
+# markers have gone; the marked `´` puts the shown caret one further, and its commit leaves it
+# there.
+grep -q "^step 1: .*selection p1+8\$" "$out/type.txt" \
+    || fail "after typing **bold** the caret is not at p1+8"
+grep -q "^step 3: .*selection p1+10\$" "$out/type.txt" \
+    || fail "with ´ marked the caret is not after it"
+grep -q "^step 4: .*selection p1+10\$" "$out/type.txt" \
+    || fail "after the commit the caret is not after é"
+"$grind" lint "$out/typed.fodt" || fail "the typed document does not lint clean"
+projected="$("$grind" text project "$out/typed.fodt" | grep '^p ')"
+[ "$projected" = 'p "say **bold** é"' ] \
+    || fail "the typed document projects as $projected, not as bold and accented"
+say "   **bold** typed and é composed land in the file as bold and é"
