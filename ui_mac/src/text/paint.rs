@@ -10,8 +10,9 @@
 //! What a line is made of is `grind_text::paint`'s — pieces cut at every run, a tab and a line
 //! break measured and never drawn, the selection band, the bullet — so this file is only the
 //! walk: the blocks the flow says are in view, each laid out through the page's own `Faces`
-//! (the same answer the caret's motions got), and each piece set in the [`Font`] its block and
-//! its run resolve to (`text/face.rs`), which is also what measured it.
+//! (the same answer the caret's motions got), and each piece set in the
+//! [`Font`](crate::metrics::Font) its block and its run resolve to (`text/face.rs`), which is
+//! also what measured it.
 //!
 //! **An input method's composition is drawn inline**, in the line it will land in:
 //! `App::layout_composing` lays the caret's block out as if the marked text were typed, and the

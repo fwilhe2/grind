@@ -245,6 +245,11 @@ mod tests {
     #[test]
     fn a_marked_selection_is_in_the_marked_texts_units() {
         assert_eq!(marked_selection("😀x", 2..3), 1..2);
-        assert_eq!(marked_selection("ab", 2..0), 2..2, "backwards is empty");
+        let backwards = std::ops::Range { start: 2, end: 0 };
+        assert_eq!(
+            marked_selection("ab", backwards),
+            2..2,
+            "backwards is empty"
+        );
     }
 }
