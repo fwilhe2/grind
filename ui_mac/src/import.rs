@@ -2,13 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Excel workbooks and CSV: which bytes this shell imports rather than opens.
+//! Excel workbooks and CSV: which bytes this shell imports rather than opens, and what importing
+//! them hands the document.
 //!
-//! Every shell has an `import.rs` of its own (`doc/xlsx-import.md`, X6), and this one starts as
-//! only the two questions `main.rs` asks before there is a window. The rest — importing into a
-//! new, **untitled** document under `grind_xlsx::suggested_name` — is M2's, and it is where
-//! decision 5 makes autosave unable to write over a workbook: an untitled `NSDocument` has no
-//! file to autosave into.
+//! Every shell has an `import.rs` of its own (`doc/xlsx-import.md`, X6). This one answers in
+//! **bytes**, because that is the shape `NSDocument` hands a document over in
+//! (`readFromData:ofType:`), and `--render-to` reads a file the same way. A workbook or a CSV
+//! comes back as flat ODF under its ODF name and marked [`Opened::untitled`]: the document that
+//! opens it has no file URL, so there is nothing for Save — or autosave, decision 5 — to write
+//! over the workbook with. One way in, never out, kept by construction.
 
 use std::path::Path;
 
@@ -32,18 +34,72 @@ pub fn is_delimited(path: &Path, bytes: &[u8]) -> bool {
         && grind_sheet::csv::is_delimited_name(&path.display().to_string())
 }
 
+/// What a document opens: the bytes to hand `App::open_bytes`, the name it goes by, and whether
+/// it came from somewhere it must never be saved back to.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Opened {
+    pub name: String,
+    pub bytes: Vec<u8>,
+    /// Imported: an untitled document, whose window says `summary` once.
+    pub untitled: bool,
+    /// The report's one sentence, the same in every shell (`grind_xlsx::Report::summary`, or
+    /// the CSV's) — `None` for a document that was simply opened.
+    pub summary: Option<String>,
+}
+
+/// Turn a file's bytes into what the document opens — a workbook or a CSV imported to flat ODF,
+/// anything else passed through for the reader, whose own sniff decides the form.
+pub fn open(name: &str, bytes: &[u8]) -> Result<Opened, String> {
+    #[cfg(feature = "xlsx")]
+    if grind_xlsx::sniff(bytes) {
+        let (odf, report) = grind_xlsx::open(bytes).map_err(|error| format!("{name}: {error}"))?;
+        return Ok(Opened {
+            name: grind_xlsx::suggested_name(name),
+            bytes: odf,
+            untitled: true,
+            summary: Some(report.summary()),
+        });
+    }
+    if is_delimited(Path::new(name), bytes)
+        && let Some(opened) = grind_sheet::csv::open(name, bytes)
+    {
+        let opened = opened?;
+        return Ok(Opened {
+            name: opened.name,
+            bytes: opened.odf,
+            untitled: true,
+            summary: Some(opened.summary),
+        });
+    }
+    Ok(Opened {
+        name: name.to_owned(),
+        bytes: bytes.to_vec(),
+        untitled: false,
+        summary: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[cfg(feature = "xlsx")]
     #[test]
-    fn a_workbook_is_recognised_by_its_bytes() {
-        let path = Path::new(concat!(
+    fn a_workbook_is_recognised_by_its_bytes_and_opens_untitled() {
+        let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../xlsx/tests/data/sample.xlsx"
-        ));
-        assert!(is_workbook(&std::fs::read(path).unwrap()));
+        );
+        let bytes = std::fs::read(path).unwrap();
+        assert!(is_workbook(&bytes));
+        let opened = open("budget.xlsx", &bytes).unwrap();
+        assert!(opened.untitled);
+        assert_eq!(opened.name, "budget.fods");
+        assert_eq!(
+            grind_core::kind(&opened.bytes),
+            Some(grind_core::DocumentKind::Spreadsheet)
+        );
+        assert!(opened.summary.is_some());
     }
 
     #[test]
@@ -56,5 +112,28 @@ mod tests {
             !is_delimited(Path::new("lying.csv"), &odf),
             "ODF bytes are ODF whatever the name says"
         );
+    }
+
+    #[test]
+    fn a_csv_opens_untitled_as_flat_odf() {
+        let opened = open("prices.csv", b"item,price\nbread,2.5\n").unwrap();
+        assert!(opened.untitled);
+        assert_eq!(opened.name, "prices.fods");
+        let app = grind_sheet::App::new();
+        app.open_bytes(&opened.name, &opened.bytes).unwrap();
+        assert_eq!(
+            app.value_text(0, grind_sheet::Pos::new(1, 1)).unwrap(),
+            "2.5"
+        );
+    }
+
+    #[test]
+    fn an_odf_document_is_handed_on_as_it_is() {
+        let odf = grind_text::write_bytes(&grind_text::Document::default(), grind_core::Form::Flat)
+            .unwrap();
+        let opened = open("note.fodt", &odf).unwrap();
+        assert!(!opened.untitled);
+        assert_eq!(opened.bytes, odf);
+        assert_eq!(opened.summary, None);
     }
 }

@@ -100,19 +100,27 @@ pub fn valign(style: Option<&CellStyle>) -> VAlign {
 /// Whether a cell's text is set bold: `fo:font-weight` is `bold`, `normal`, or a hundreds number,
 /// and 600 and up is bold everywhere else, so it is bold here.
 pub fn is_bold(style: Option<&CellStyle>) -> bool {
-    match style.and_then(|style| style.font_weight.as_deref()) {
+    bold_weight(style.and_then(|style| style.font_weight.as_deref()))
+}
+
+/// Whether a cell's text is set italic — `italic`, or `oblique`, which a grid draws the same.
+pub fn is_italic(style: Option<&CellStyle>) -> bool {
+    italic_style(style.and_then(|style| style.font_style.as_deref()))
+}
+
+/// [`is_bold`]'s rule over the raw `fo:font-weight`, for a shell resolving a font from a
+/// [`grind_core::style::TextStyle`] rather than from a cell.
+pub fn bold_weight(weight: Option<&str>) -> bool {
+    match weight {
         Some("bold") => true,
         Some(other) => other.parse::<u32>().is_ok_and(|weight| weight >= 600),
         None => false,
     }
 }
 
-/// Whether a cell's text is set italic — `italic`, or `oblique`, which a grid draws the same.
-pub fn is_italic(style: Option<&CellStyle>) -> bool {
-    matches!(
-        style.and_then(|style| style.font_style.as_deref()),
-        Some("italic" | "oblique")
-    )
+/// [`is_italic`]'s rule over the raw `fo:font-style`.
+pub fn italic_style(style: Option<&str>) -> bool {
+    matches!(style, Some("italic" | "oblique"))
 }
 
 /// Whether a cell's text wraps at its column's width rather than running on — `fo:wrap-option`.

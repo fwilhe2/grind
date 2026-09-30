@@ -20,8 +20,19 @@
 //! open and says so, which makes the argument handling runnable rather than only testable. The
 //! same thing `ui_win32`'s W0 did.
 
+// Portable, and reached from the AppKit half — which is not compiled off macOS, so on Linux the
+// only callers of much of this are the tests.
 mod args;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod import;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod metrics;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod png;
+#[cfg(target_os = "macos")]
+mod render;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod sheet;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -106,6 +117,68 @@ fn intent(opening: &Opening) -> String {
     }
 }
 
+/// The size of a `--render-to` frame in points, and how many pixels a point is — a Retina screen's
+/// two, which is what somebody looking at the window sees.
+#[cfg(target_os = "macos")]
+const FRAME: (f64, f64) = (1024.0, 640.0);
+#[cfg(target_os = "macos")]
+const SCALE: f64 = 2.0;
+
+/// Draw one frame of the document `opening` names into the PNG it names, with no window — decision
+/// 9's `--render-to`, through the same `sheet::paint` and `render::draw` a view calls.
+///
+/// The palette is the fixed light or dark one rather than the system's current colours, so a
+/// frame is a function of its command line alone and two renders are the same bytes.
+#[cfg(target_os = "macos")]
+fn render_to(opening: &Opening) -> Result<(), String> {
+    use sheet::paint::{self, Palette};
+
+    let (kind, path, Some((target, dark))) = opening else {
+        unreachable!("only a render reaches here")
+    };
+    match kind {
+        Some(DocumentKind::Spreadsheet) => {
+            let app = grind_sheet::App::new();
+            if let Some(path) = path {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                let opened = import::open(&path.display().to_string(), &bytes)?;
+                app.open_bytes(&opened.name, &opened.bytes)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+            }
+            let grid = sheet::geom::Grid::of(&app, 0);
+            let text = metrics::CoreText::new(metrics::BASE_PT);
+            let palette = match dark {
+                true => Palette::DARK,
+                false => Palette::LIGHT,
+            };
+            let ops = paint::frame(
+                &app,
+                0,
+                &grid,
+                FRAME,
+                (0.0, 0.0),
+                &palette,
+                &text,
+                1.0 / SCALE,
+            );
+            let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {
+                render::draw(context, &ops, &text)
+            })?;
+            std::fs::write(target, png::encode(w, h, &rgba))
+                .map_err(|error| format!("{}: {error}", target.display()))
+        }
+        Some(DocumentKind::Text) => Err("a text document's page is drawn from M6 on".into()),
+        _ => Err("the welcome window is drawn from M9 on; name a document or --sheet".into()),
+    }
+}
+
+/// Off a Mac there is nothing to draw with: CoreGraphics and CoreText are the renderer.
+#[cfg(not(target_os = "macos"))]
+fn render_to(_: &Opening) -> Result<(), String> {
+    Err("frames are drawn by CoreGraphics, on macOS only".into())
+}
+
 fn main() -> ExitCode {
     match args::parse(std::env::args().skip(1)) {
         Command::Help => {
@@ -125,11 +198,18 @@ fn main() -> ExitCode {
                 eprintln!("grind-mac: {message}");
                 ExitCode::FAILURE
             }
+            Ok(opening) if opening.2.is_some() => match render_to(&opening) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(message) => {
+                    eprintln!("grind-mac: --render-to: {message}");
+                    ExitCode::FAILURE
+                }
+            },
             Ok(opening) => {
                 // Not an error in the arguments, but not a window either — exit non-zero so no
-                // script mistakes M0 for a shell that did what it was asked.
+                // script mistakes this for a shell that did what it was asked.
                 eprintln!(
-                    "grind-mac has no window yet (doc/macos-shell.md, M0). It would {}.",
+                    "grind-mac has no window yet (doc/macos-shell.md, M2). It would {}.",
                     intent(&opening)
                 );
                 ExitCode::FAILURE

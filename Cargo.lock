@@ -987,6 +987,8 @@ dependencies = [
 name = "grind-mac"
 version = "0.0.0"
 dependencies = [
+ "crc32fast",
+ "flate2",
  "grind-core",
  "grind-sheet",
  "grind-text",
