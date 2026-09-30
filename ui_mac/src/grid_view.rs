@@ -33,12 +33,10 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSColorSpace, NSEvent,
     NSEventGestureAxis, NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenuItem,
-    NSScrollView, NSTableView, NSTextField, NSView,
+    NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
-use objc2_foundation::{
-    NSArray, NSAttributedString, NSIndexSet, NSObject, NSPoint, NSRect, NSSize, NSString,
-};
+use objc2_foundation::{NSArray, NSAttributedString, NSObject, NSPoint, NSRect, NSSize, NSString};
 
 use crate::banner::Banner;
 use crate::editor::Edit;
@@ -86,8 +84,9 @@ pub struct Pane {
     text_listeners: RefCell<Vec<TextListener>>,
     /// Told that the document changed — which is what marks it edited, and what autosave reads.
     on_change: RefCell<Option<Box<dyn Fn()>>>,
-    /// The sidebar's list of sheets, which a sheet added, renamed or deleted changes.
-    sheet_list: RefCell<Option<Weak<NSTableView>>>,
+    /// Told when the document or the sheet showing changed — the sidebar, which lists the
+    /// sheets and what `grind lint` finds, and has nothing to say about a move of the cursor.
+    document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
     /// The find bar, once the window has one (`find_bar.rs`).
     pub(crate) find_bar: RefCell<Option<FindBar>>,
     /// Whether formulas are read in plain English — View ▸ Friendly Formulas (M8).
@@ -118,7 +117,7 @@ impl Pane {
             banner: RefCell::new(None),
             text_listeners: RefCell::new(Vec::new()),
             on_change: RefCell::new(None),
-            sheet_list: RefCell::new(None),
+            document_listeners: RefCell::new(Vec::new()),
             find_bar: RefCell::new(None),
             friendly: Cell::new(true),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
@@ -130,25 +129,17 @@ impl Pane {
         *self.find_bar.borrow_mut() = Some(bar);
     }
 
-    /// The sidebar's list of sheets.
-    pub fn set_sheet_list(&self, table: &Retained<NSTableView>) {
-        *self.sheet_list.borrow_mut() = Some(Weak::from_retained(table));
+    /// Call `listener` whenever the document or the sheet showing changes.
+    pub fn listen_document(&self, listener: impl Fn() + 'static) {
+        self.document_listeners
+            .borrow_mut()
+            .push(Box::new(listener));
     }
 
-    /// The sidebar's list, with the showing sheet's row selected. Selecting a row programmatically
-    /// posts the same notification a click does, and `show_sheet` of the sheet already showing is
-    /// nothing.
-    fn mark_sheet(&self, reload: bool) {
-        let Some(table) = self.sheet_list.borrow().as_ref().and_then(Weak::load) else {
-            return;
-        };
-        if reload {
-            table.reloadData();
+    fn tell_document(&self) {
+        for listener in self.document_listeners.borrow().iter() {
+            listener();
         }
-        table.selectRowIndexes_byExtendingSelection(
-            &NSIndexSet::indexSetWithIndex(self.sheet.get()),
-            false,
-        );
     }
 
     /// This pane, weakly.
@@ -199,7 +190,7 @@ impl Pane {
             self.sheet.set(count - 1);
             self.selection.set(Selection::default());
         }
-        self.mark_sheet(true);
+        self.tell_document();
         let grid = Grid::of(&self.app, self.sheet.get());
         let (w, h) = grid.size();
         *self.grid.borrow_mut() = grid;
@@ -249,7 +240,7 @@ impl Pane {
                 rows.setFrameSize(NSSize::new(HEADER_W, h));
             }
         }
-        self.mark_sheet(false);
+        self.tell_document();
         // Another sheet is another selection, even when both are at A1: the listeners' words
         // depend on the sheet, so they are told whether or not the cell moved.
         self.selection.set(Selection::default());

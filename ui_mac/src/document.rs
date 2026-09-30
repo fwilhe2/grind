@@ -95,6 +95,7 @@ mod mac {
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
     use crate::page_view::{self, TextPane, page_view};
+    use crate::sidebar::{Places, Sidebar};
     use crate::toolbar::{self, Toolbar};
     use crate::{accessory, banner, find_bar, grid_view, sidebar};
 
@@ -139,6 +140,8 @@ mod mac {
         page: RefCell<Option<Rc<TextPane>>>,
         /// The toolbar's delegate, which the toolbar holds only weakly.
         toolbar: RefCell<Option<Retained<Toolbar>>>,
+        /// The sidebar's list, which its table holds only weakly.
+        sidebar: RefCell<Option<Retained<Sidebar>>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
         imported: RefCell<Option<(String, Option<String>)>>,
     }
@@ -234,7 +237,9 @@ mod mac {
                         let pane = Pane::new(app.clone());
                         let size = window.frame().size;
                         let scroll = sheet_view(&pane, size, mtm);
-                        let split = sidebar::split(&pane, &scroll, size.height, mtm);
+                        let places: Rc<dyn Places> = pane.clone();
+                        let (split, list) = sidebar::split(places, &scroll, size.height, mtm);
+                        *self.ivars().sidebar.borrow_mut() = Some(list);
                         window.setContentViewController(Some(&split));
                         // A content view controller sizes the window to its view; this is the size
                         // the window was made at.
@@ -269,7 +274,10 @@ mod mac {
                         let pane = TextPane::new(app.clone());
                         let size = window.frame().size;
                         let scroll = page_view(&pane, size, mtm);
-                        window.setContentView(Some(&scroll));
+                        let places: Rc<dyn Places> = pane.clone();
+                        let (split, list) = sidebar::split(places, &scroll, size.height, mtm);
+                        *self.ivars().sidebar.borrow_mut() = Some(list);
+                        window.setContentViewController(Some(&split));
                         window.setContentSize(size);
                         window.center();
                         // The page takes the keyboard from the start, caret at the top.

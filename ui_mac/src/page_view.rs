@@ -76,6 +76,8 @@ pub struct TextPane {
     listeners: RefCell<Vec<Box<dyn Fn()>>>,
     /// View ▸ Names: each bookmark named in the margin (M8). Drawn, never written.
     pub names: Cell<bool>,
+    /// Told when the document changed, and not when the caret moved — the sidebar.
+    document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
 }
 
 impl TextPane {
@@ -92,6 +94,7 @@ impl TextPane {
             stale: Cell::new(false),
             listeners: RefCell::new(Vec::new()),
             names: Cell::new(false),
+            document_listeners: RefCell::new(Vec::new()),
         })
     }
 
@@ -103,6 +106,13 @@ impl TextPane {
     /// Call `listener` whenever the caret, the selection or the document changes.
     pub fn listen(&self, listener: impl Fn() + 'static) {
         self.listeners.borrow_mut().push(Box::new(listener));
+    }
+
+    /// Call `listener` whenever the document changes.
+    pub fn listen_document(&self, listener: impl Fn() + 'static) {
+        self.document_listeners
+            .borrow_mut()
+            .push(Box::new(listener));
     }
 
     fn tell(&self) {
@@ -170,7 +180,23 @@ impl TextPane {
         if let Some(callback) = self.on_change.borrow().as_ref() {
             callback();
         }
+        for listener in self.document_listeners.borrow().iter() {
+            listener();
+        }
         self.tell();
+    }
+
+    /// Go to `caret` — a sidebar row, a Problems finding — and give the page the keyboard.
+    pub fn go_to(&self, caret: Caret) {
+        self.act_on(|page, _, _| {
+            page.place(caret, false);
+            Ok(())
+        });
+        if let Some(view) = self.view()
+            && let Some(window) = view.window()
+        {
+            window.makeFirstResponder(Some(&view));
+        }
     }
 
     /// View ▸ Names, on or off.
