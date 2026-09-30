@@ -6,6 +6,7 @@
 //! draws, both portable and tested on any host; only turning [`paint`]'s list into pixels needs
 //! a Mac (`render.rs`).
 
+pub mod assist;
 pub mod format;
 pub mod geom;
 pub mod paint;

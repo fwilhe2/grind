@@ -70,6 +70,15 @@ pub enum Command {
     Block(Block),
     /// Every character or cell property off at once, and a cell's number format with them.
     ClearFormatting,
+    /// The formula read-out and the signature band in plain English — `Present Value(Rate: …)`
+    /// for `=PV(…)` — or in the spec's own spelling (M8). On by default, as in the GNOME and
+    /// Windows windows; a reading, never written back.
+    FriendlyFormulas,
+    /// The active cell's formula unfolded, a call at a time, in plain English (M8).
+    ExplainFormula,
+    /// All 110 functions, with their plain-English names, and the chosen one's call written
+    /// into the cell — Excel for Mac's Insert ▸ Function… (M8).
+    InsertFunction,
 }
 
 /// A cell alignment.
@@ -129,6 +138,11 @@ impl Command {
             .map(Command::Block),
         );
         all.push(Command::ClearFormatting);
+        all.extend([
+            Command::FriendlyFormulas,
+            Command::ExplainFormula,
+            Command::InsertFunction,
+        ]);
         all
     }
 
@@ -136,7 +150,10 @@ impl Command {
     /// promises, and what the tests hold the titles to.
     #[cfg(test)]
     pub fn asks(self) -> bool {
-        matches!(self, Command::GoTo | Command::RenameSheet)
+        matches!(
+            self,
+            Command::GoTo | Command::RenameSheet | Command::InsertFunction
+        )
     }
 
     /// The item's tag: the command's place in [`Command::all`], so no two share one.
@@ -174,7 +191,10 @@ impl Command {
             | Command::Align(_)
             | Command::Wrap
             | Command::Number(_)
-            | Command::Decimals(_) => sheet,
+            | Command::Decimals(_)
+            | Command::FriendlyFormulas
+            | Command::ExplainFormula
+            | Command::InsertFunction => sheet,
         }
     }
 }
@@ -571,7 +591,10 @@ pub static MENUS: &[Menu] = &[
     Menu {
         title: "Insert",
         role: Role::Plain,
-        items: &[command("Sheet", None, Command::AddSheet)],
+        items: &[
+            command("Sheet", None, Command::AddSheet),
+            command("Function…", None, Command::InsertFunction),
+        ],
     },
     Menu {
         title: "Format",
@@ -613,6 +636,9 @@ pub static MENUS: &[Menu] = &[
         items: &[
             standard("Show Toolbar", None, "toggleToolbarShown:"),
             standard("Show Sidebar", key("s", CTRL_CMD), "toggleSidebar:"),
+            Item::Separator,
+            command("Friendly Formulas", None, Command::FriendlyFormulas),
+            command("Explain Formula", None, Command::ExplainFormula),
             Item::Separator,
             standard("Enter Full Screen", key("f", CTRL_CMD), "toggleFullScreen:"),
         ],

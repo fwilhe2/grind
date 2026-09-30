@@ -122,9 +122,13 @@ impl Pane {
         }
     }
 
-    /// Whether the command's menu item is ticked for the active cell.
+    /// Whether the command's menu item is ticked for the active cell — or, for View ▸ Friendly
+    /// Formulas, whether formulas are being read in plain English.
     pub fn format_checked(&self, command: Command) -> bool {
-        cells::checked(command, &self.active())
+        match command {
+            Command::FriendlyFormulas => self.friendly.get(),
+            _ => cells::checked(command, &self.active()),
+        }
     }
 
     /// The font the font panel is shown for the active cell.

@@ -21,12 +21,14 @@ use grind_sheet::RecalcMode;
 use grind_sheet::formula::display;
 use grind_sheet::nav::{Dir, Motion};
 use objc2::rc::Retained;
-use objc2::runtime::{ProtocolObject, Sel};
+use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSControl, NSControlTextEditingDelegate, NSTextField, NSTextFieldDelegate, NSTextView,
+    NSColor, NSControl, NSControlTextEditingDelegate, NSFont, NSFontAttributeName,
+    NSForegroundColorAttributeName, NSTextField, NSTextFieldDelegate, NSTextView,
 };
 use objc2_foundation::{
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableAttributedString,
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
 };
 
@@ -34,6 +36,7 @@ use crate::banner::Action;
 use crate::grid_view::Pane;
 use crate::keys::GridAction;
 use crate::notice;
+use crate::sheet::assist::{self, Assist, Ink, Piece, Reply};
 use crate::sheet::geom::{HEADER_H, HEADER_W};
 use crate::sheet::select;
 use crate::sheet::state::{self, Mode, Outcome, Seed};
@@ -41,11 +44,50 @@ use crate::sheet::state::{self, Mode, Outcome, Seed};
 /// The narrowest the editor is, however narrow its column: room to see what is being typed.
 const MIN_W: f64 = 90.0;
 
-/// An edit in progress: the field, its delegate (which the field holds weakly), and the mode.
+/// How tall the band under the editor is.
+const HINT_H: f64 = 20.0;
+
+/// The band's runs as one attributed line: the offer Tab would take and the argument being typed
+/// in the accent and bold, separators and the rest quieter, the signature in the label's ink.
+fn attributed(pieces: &[Piece]) -> Retained<NSAttributedString> {
+    let line = NSMutableAttributedString::new();
+    let size = NSFont::smallSystemFontSize();
+    for piece in pieces {
+        let (color, font) = match piece.ink {
+            Ink::Strong => (
+                NSColor::controlAccentColor(),
+                NSFont::boldSystemFontOfSize(size),
+            ),
+            Ink::Muted => (
+                NSColor::secondaryLabelColor(),
+                NSFont::systemFontOfSize(size),
+            ),
+            Ink::Plain => (NSColor::labelColor(), NSFont::systemFontOfSize(size)),
+        };
+        let keys: [&NSAttributedStringKey; 2] =
+            // SAFETY: both keys are constants AppKit exports.
+            unsafe { [NSForegroundColorAttributeName, NSFontAttributeName] };
+        let values: [&AnyObject; 2] = [&color, &font];
+        let attributes = NSDictionary::from_slices(&keys, &values);
+        // SAFETY: a dictionary of AppKit's own attribute keys to a colour and a font.
+        let run = unsafe {
+            NSAttributedString::new_with_attributes(&NSString::from_str(&piece.text), &attributes)
+        };
+        line.appendAttributedString(&run);
+    }
+    line.into_super()
+}
+
+/// An edit in progress: the field, its delegate (which the field holds weakly), the mode, and
+/// the help shown under it while a formula is typed (M8).
 pub struct Edit {
     field: Retained<NSTextField>,
     _delegate: Retained<EditorDelegate>,
     mode: Mode,
+    assist: Assist,
+    /// One line under the field: the offers for the word being typed, or the signature of the
+    /// call the caret is in — `formula::assist::band`'s runs, hidden when there is nothing to say.
+    hint: Retained<NSTextField>,
 }
 
 define_class!(
@@ -71,6 +113,7 @@ define_class!(
         #[unsafe(method(controlTextDidChange:))]
         fn did_change(&self, _notification: &NSNotification) {
             if let Some(pane) = self.ivars().upgrade() {
+                pane.refresh_assist();
                 pane.edit_changed();
             }
         }
@@ -116,6 +159,16 @@ impl Pane {
         // the field is.
         unsafe { field.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
         view.addSubview(&field);
+        let hint = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+        hint.setFrame(NSRect::new(
+            NSPoint::new(cell.x + HEADER_W, cell.y + HEADER_H + cell.h + 2.0),
+            NSSize::new(cell.w.max(MIN_W), HINT_H),
+        ));
+        hint.setDrawsBackground(true);
+        hint.setBackgroundColor(Some(&NSColor::controlBackgroundColor()));
+        hint.setBordered(true);
+        hint.setHidden(true);
+        view.addSubview(&hint);
         if let Some(window) = view.window() {
             window.makeFirstResponder(Some(&field));
         }
@@ -128,16 +181,29 @@ impl Pane {
             field,
             _delegate: delegate,
             mode: seed.mode(),
+            assist: Assist::default(),
+            hint,
         });
+        self.refresh_assist();
         self.edit_changed();
     }
 
     /// What a selector from the field editor does. `true` is "handled": the field editor does
     /// nothing more with it.
     fn edit_command(&self, selector: &str) -> bool {
-        let Some(mode) = self.edit.borrow().as_ref().map(|edit| edit.mode) else {
+        let Some((mode, offering)) = self
+            .edit
+            .borrow()
+            .as_ref()
+            .map(|edit| (edit.mode, edit.assist.is_offering()))
+        else {
             return false;
         };
+        // A list of offers claims Tab, the arrows and Esc before the edit machine sees them.
+        if let Some(reply) = assist::on_selector(offering, selector) {
+            self.assist_reply(reply);
+            return true;
+        }
         match state::editing(mode, selector) {
             Outcome::Passthrough => false,
             Outcome::Commit(dir) => {
@@ -207,6 +273,7 @@ impl Pane {
     fn end_edit(&self) {
         if let Some(edit) = self.edit.borrow_mut().take() {
             edit.field.removeFromSuperview();
+            edit.hint.removeFromSuperview();
         }
         self.focus_grid();
         self.edit_changed();
@@ -239,6 +306,132 @@ impl Pane {
                 .input_text(self.sheet.get(), self.selection.get().active)
                 .unwrap_or_default(),
         }
+    }
+
+    /// Read what the editor holds and where its caret is, and say what to offer or which
+    /// argument the caret is in — asked afresh on every change, never stored between them.
+    pub fn refresh_assist(&self) {
+        let Some(field) = self.edit.borrow().as_ref().map(|edit| edit.field.clone()) else {
+            return;
+        };
+        let text = field.stringValue().to_string();
+        let caret = field.currentEditor().map_or(text.len(), |editor| {
+            utf16::byte_of(&text, editor.selectedRange().location)
+        });
+        let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
+        if let Some(edit) = self.edit.borrow_mut().as_mut() {
+            edit.assist.refresh(&text, caret, &names);
+        }
+        self.show_hint();
+    }
+
+    /// The band under the editor, or none.
+    fn show_hint(&self) {
+        let edit = self.edit.borrow();
+        let Some(edit) = edit.as_ref() else { return };
+        let pieces = assist::band(&edit.assist, self.friendly.get());
+        if pieces.is_empty() {
+            edit.hint.setHidden(true);
+            return;
+        }
+        edit.hint.setAttributedStringValue(&attributed(&pieces));
+        let width = edit
+            .hint
+            .fittingSize()
+            .width
+            .max(edit.field.frame().size.width);
+        let mut frame = edit.hint.frame();
+        frame.size.width = width;
+        edit.hint.setFrame(frame);
+        edit.hint.setHidden(false);
+    }
+
+    /// Tab, an arrow or Esc with a list up: take the offer, step through the list, or close it.
+    fn assist_reply(&self, reply: Reply) {
+        let accepted = {
+            let mut edit = self.edit.borrow_mut();
+            let Some(edit) = edit.as_mut() else { return };
+            match reply {
+                Reply::Accept => edit
+                    .assist
+                    .accept()
+                    .map(|taken| (edit.field.clone(), taken)),
+                Reply::Step(by) => {
+                    edit.assist.step(by);
+                    None
+                }
+                Reply::Dismiss => {
+                    edit.assist.dismiss();
+                    None
+                }
+            }
+        };
+        if let Some((field, (span, with))) = accepted {
+            let text = field.stringValue().to_string();
+            let (_, caret) = assist::replaced(&text, span.clone(), &with);
+            if let Some(editor) = field.currentEditor() {
+                // Through the field editor rather than the field's value, so the replacement is
+                // one step of the field's own undo.
+                let range = NSRange::new(
+                    utf16::units_before(&text, span.start),
+                    utf16::units_before(&text[span.start..], span.end - span.start),
+                );
+                editor.replaceCharactersInRange_withString(range, &NSString::from_str(&with));
+                let now = field.stringValue().to_string();
+                editor.setSelectedRange(NSRange::new(utf16::units_before(&now, caret), 0));
+            }
+            self.refresh_assist();
+            self.edit_changed();
+            return;
+        }
+        self.show_hint();
+    }
+
+    /// View ▸ Friendly Formulas: the read-out and the band in plain English, or not.
+    pub fn toggle_friendly(&self) {
+        self.friendly.set(!self.friendly.get());
+        self.show_hint();
+        self.edit_changed();
+    }
+
+    /// View ▸ Explain Formula's text: the active cell's formula unfolded a call at a time, or why
+    /// there is nothing to unfold.
+    pub fn explanation(&self) -> String {
+        let text = self
+            .app
+            .input_text(self.sheet.get(), self.selection.get().active)
+            .unwrap_or_default();
+        if !text.starts_with('=') {
+            return "The active cell holds no formula.".to_owned();
+        }
+        match grind_sheet::formula::friendly::explain(&text) {
+            Ok(explained) => explained,
+            Err(error) => notice::bad_formula(&error.message),
+        }
+    }
+
+    /// Insert ▸ Function…'s choice written in: `NAME(` at the caret when a cell is being edited,
+    /// or an edit of the active cell begun with `=NAME(` when not.
+    pub fn insert_function(&self, at: usize) {
+        let editing = self.is_editing();
+        let Some(call) = assist::function_insert(at, editing) else {
+            return;
+        };
+        if !editing {
+            self.begin_edit(Seed::Text(call));
+            return;
+        }
+        let Some(field) = self.edit.borrow().as_ref().map(|edit| edit.field.clone()) else {
+            return;
+        };
+        if let Some(editor) = field.currentEditor() {
+            let range = editor.selectedRange();
+            editor.replaceCharactersInRange_withString(range, &NSString::from_str(&call));
+            let caret = range.location + call.encode_utf16().count();
+            editor.setSelectedRange(NSRange::new(caret, 0));
+        }
+        self.refresh_assist();
+        self.edit_changed();
     }
 
     /// Say a sentence in the banner, with a button when it offers one — or hide it.

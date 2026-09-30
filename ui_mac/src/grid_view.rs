@@ -90,6 +90,8 @@ pub struct Pane {
     sheet_list: RefCell<Option<Weak<NSTableView>>>,
     /// The find bar, once the window has one (`find_bar.rs`).
     pub(crate) find_bar: RefCell<Option<FindBar>>,
+    /// Whether formulas are read in plain English — View ▸ Friendly Formulas (M8).
+    pub friendly: Cell<bool>,
 }
 
 impl Pane {
@@ -114,6 +116,7 @@ impl Pane {
             on_change: RefCell::new(None),
             sheet_list: RefCell::new(None),
             find_bar: RefCell::new(None),
+            friendly: Cell::new(true),
         })
     }
 
@@ -166,7 +169,11 @@ impl Pane {
 
     /// Tell the text listeners what the edit, or the active cell, now says.
     pub fn edit_changed(&self) {
-        let text = self.edit_text();
+        let text = crate::sheet::assist::read_out(
+            &self.edit_text(),
+            self.is_editing(),
+            self.friendly.get(),
+        );
         for listener in self.text_listeners.borrow().iter() {
             listener(&text);
         }

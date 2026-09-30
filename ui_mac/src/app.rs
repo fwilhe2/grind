@@ -25,7 +25,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationPolicy,
     NSApplicationDelegate, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags,
-    NSMenu, NSMenuItem, NSTextField,
+    NSMenu, NSMenuItem, NSPopUpButton, NSTextField,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -155,6 +155,23 @@ impl Delegate {
                 }
                 return;
             }
+            // Formula literacy (M8), on the front document's grid.
+            Command::FriendlyFormulas | Command::ExplainFormula | Command::InsertFunction => {
+                if let Some(pane) = self.front_pane() {
+                    match command {
+                        Command::FriendlyFormulas => pane.toggle_friendly(),
+                        Command::ExplainFormula => {
+                            alert(self.mtm(), "Explain Formula", &pane.explanation())
+                        }
+                        _ => {
+                            if let Some(at) = ask_function(self.mtm()) {
+                                pane.insert_function(at);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
             Command::GoTo | Command::AddSheet | Command::RenameSheet | Command::DeleteSheet => {
                 if let Some(pane) = self.front_pane() {
                     match command {
@@ -258,6 +275,38 @@ fn ask_sheet_name(mtm: MainThreadMarker, current: &str) -> Option<String> {
     alert.setAccessoryView(Some(&field));
     alert.window().setInitialFirstResponder(Some(&field));
     (alert.runModal() == NSAlertFirstButtonReturn).then(|| field.stringValue().to_string())
+}
+
+/// Insert ▸ Function…: every function this build has, by its name and its plain-English one,
+/// in a pop-up under an alert — the platform's own shape for choosing one of many, with each
+/// row's summary as its tooltip. The chosen row's place in the catalog, or `None`.
+fn ask_function(mtm: MainThreadMarker) -> Option<usize> {
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str("Insert Function"));
+    alert.setInformativeText(&NSString::from_str(
+        "The call is written into the cell, ready for its arguments.",
+    ));
+    alert.addButtonWithTitle(&NSString::from_str("Insert"));
+    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+    let popup = NSPopUpButton::initWithFrame_pullsDown(
+        NSPopUpButton::alloc(mtm),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 26.0)),
+        false,
+    );
+    for info in grind_sheet::formula::funcs::catalog() {
+        let alias = grind_sheet::formula::friendly::alias(info.name).unwrap_or(info.name);
+        popup.addItemWithTitle(&NSString::from_str(&format!(
+            "{} \u{2014} {alias}",
+            info.name
+        )));
+        if let Some(item) = popup.lastItem() {
+            item.setToolTip(Some(&NSString::from_str(info.brief)));
+        }
+    }
+    alert.setAccessoryView(Some(&popup));
+    (alert.runModal() == NSAlertFirstButtonReturn)
+        .then(|| usize::try_from(popup.indexOfSelectedItem()).ok())
+        .flatten()
 }
 
 /// A selector by name, as `menu.rs` spells it.
