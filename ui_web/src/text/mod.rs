@@ -1211,17 +1211,8 @@ impl Ui {
                     Motion::LineStart => start,
                     _ => end,
                 }),
-            Motion::DocStart => Some(Caret {
-                block: 0,
-                offset: 0,
-            }),
-            Motion::DocEnd => {
-                let block = self.app.block_count() - 1;
-                Some(Caret {
-                    block,
-                    offset: self.block_len(block),
-                })
-            }
+            Motion::DocStart => Some(grind_text::caret::START),
+            Motion::DocEnd => Some(grind_text::caret::end(&self.app)),
         };
         let Some(moved) = moved else { return };
         if !matches!(motion, Motion::Line(_) | Motion::Page(_)) {
@@ -1230,30 +1221,10 @@ impl Ui {
         self.set_caret(moved);
     }
 
-    /// One character left or right, rolling onto the neighbouring block at either end.
-    ///
-    /// The only arithmetic here, and it is over *characters* rather than over layout —
-    /// walking off the end of a block is a document fact, not a line one.
+    /// One character left or right, rolling onto the neighbouring block at either end —
+    /// `grind_text::caret::step`, which every shell's page shares.
     fn stepped(&self, delta: i32) -> Caret {
-        let mut caret = self.caret.get();
-        if delta > 0 {
-            if caret.offset < self.block_len(caret.block) {
-                caret.offset += 1;
-            } else if caret.block + 1 < self.app.block_count() {
-                caret = Caret {
-                    block: caret.block + 1,
-                    offset: 0,
-                };
-            }
-        } else if caret.offset > 0 {
-            caret.offset -= 1;
-        } else if caret.block > 0 {
-            caret = Caret {
-                block: caret.block - 1,
-                offset: self.block_len(caret.block - 1),
-            };
-        }
-        caret
+        grind_text::caret::step(&self.app, self.caret.get(), delta)
     }
 
     /// Move the caret, forgetting any style pending for the next character — a Bold pressed
@@ -1271,10 +1242,7 @@ impl Ui {
     }
 
     fn block_len(&self, index: usize) -> usize {
-        self.app
-            .input_text(index)
-            .map(|text| text.chars().count())
-            .unwrap_or(0)
+        grind_text::caret::block_len(&self.app, index)
     }
 
     /// How each block is set — this pane's [`grind_text::Faces`], rebuilt per question because

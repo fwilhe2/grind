@@ -46,6 +46,7 @@
 //! reads here as formatting lost; pages.
 
 pub mod action;
+pub mod caret;
 pub mod flow;
 pub mod format;
 pub mod lint;

@@ -124,6 +124,7 @@ use crate::welcome;
 use grind_core::DocumentKind;
 use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
+use grind_text::caret::START;
 use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
@@ -375,13 +376,6 @@ impl Pane {
         }
     }
 }
-
-/// The document's very first caret position. `Caret` has no `Default`, and spelling this out once
-/// is better than spelling `{ block: 0, offset: 0 }` in five places.
-const START: Caret = Caret {
-    block: 0,
-    offset: 0,
-};
 
 /// Everything the **welcome screen** owns, which is almost nothing — it has no document, so there
 /// is no viewport, no selection, no history and nothing to save.
@@ -885,19 +879,11 @@ impl Text {
     /// How many characters a block holds. Asked of the viewport rather than remembered, because
     /// a block's length changes under every edit.
     fn block_len(&self, index: usize) -> usize {
-        self.app
-            .get_viewport(index..index + 1)
-            .get(index)
-            .map(|view| view.text.chars().count())
-            .unwrap_or(0)
+        grind_text::caret::block_len(&self.app, index)
     }
 
     fn last_caret(&self) -> Caret {
-        let block = self.app.block_count().saturating_sub(1);
-        Caret {
-            block,
-            offset: self.block_len(block),
-        }
+        grind_text::caret::end(&self.app)
     }
 
     /// The faces this document is set in, at the current measure. Built per call rather than
@@ -998,30 +984,9 @@ impl Text {
         use text::keymap::Motion;
         let at = self.caret;
         match motion {
-            Motion::Char(step) if step < 0 => match at.offset {
-                0 if at.block > 0 => Caret {
-                    block: at.block - 1,
-                    offset: self.block_len(at.block - 1),
-                },
-                0 => at,
-                offset => Caret {
-                    block: at.block,
-                    offset: offset - 1,
-                },
-            },
-            Motion::Char(_) => match at.offset < self.block_len(at.block) {
-                true => Caret {
-                    block: at.block,
-                    offset: at.offset + 1,
-                },
-                // Off the end of a block is the start of the next one: a document is one flow,
-                // not a list of boxes, which is the same rule `App::caret_line` follows.
-                false if at.block + 1 < self.app.block_count() => Caret {
-                    block: at.block + 1,
-                    offset: 0,
-                },
-                false => at,
-            },
+            // Off the end of a block is the start of the next one: a document is one flow, not a
+            // list of boxes, which is the same rule `App::caret_line` follows.
+            Motion::Char(step) => grind_text::caret::step(&self.app, at, i32::from(step)),
             Motion::Word(step) => {
                 let forward = step > 0;
                 let text = self.block_text(at.block);
@@ -1097,22 +1062,13 @@ impl Text {
     /// "outside" and a caret that refuses to move is a bug nobody can see the cause of.
     fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
         let body = self.page.body();
-        let document_y = y - body.y + self.page.scroll;
         let (column_x, _) = self.page.text_column();
-        let block = self.flow.at(x - column_x, document_y)?;
-        let slot = self.flow.slot(block).copied()?;
-        let layout = self.layout_of(block)?;
-        let local_y = (document_y - slot.top).max(0.0);
-        let line = layout
-            .lines()
-            .iter()
-            .position(|line| local_y < f64::from(line.top + line.height))
-            .unwrap_or(layout.lines().len().saturating_sub(1));
-        let local_x = (x - column_x - slot.indent) as f32;
-        Some(Caret {
-            block,
-            offset: layout.offset_at(line, local_x),
-        })
+        grind_text::caret::hit(
+            &self.flow,
+            x - column_x,
+            y - body.y + self.page.scroll,
+            |block| self.layout_of(block),
+        )
     }
 
     /// How many lines a Page Up or Page Down moves.

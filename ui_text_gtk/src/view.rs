@@ -997,80 +997,25 @@ mod imp {
                         );
                     }
                 }
-                Motion::DocStart => self.move_caret(
-                    Caret {
-                        block: 0,
-                        offset: 0,
-                    },
-                    true,
-                ),
-                Motion::DocEnd => {
-                    let block = app.block_count() - 1;
-                    self.move_caret(
-                        Caret {
-                            block,
-                            offset: self.block_len(&app, block),
-                        },
-                        true,
-                    );
-                }
+                Motion::DocStart => self.move_caret(grind_text::caret::START, true),
+                Motion::DocEnd => self.move_caret(grind_text::caret::end(&app), true),
             }
         }
 
-        /// One character left or right, rolling onto the neighbouring block at either end.
-        ///
-        /// The only arithmetic in this file, and it is over *characters* rather than over
-        /// layout — walking off the end of a block is a document fact, not a line one.
+        /// One character left or right, rolling onto the neighbouring block at either end —
+        /// `grind_text::caret::step`, which every shell's page shares.
         fn stepped(&self, app: &App, delta: i32) -> Caret {
-            let mut caret = self.caret.get();
-            if delta > 0 {
-                if caret.offset < self.block_len(app, caret.block) {
-                    caret.offset += 1;
-                } else if caret.block + 1 < app.block_count() {
-                    caret = Caret {
-                        block: caret.block + 1,
-                        offset: 0,
-                    };
-                }
-            } else if caret.offset > 0 {
-                caret.offset -= 1;
-            } else if caret.block > 0 {
-                caret = Caret {
-                    block: caret.block - 1,
-                    offset: self.block_len(app, caret.block - 1),
-                };
-            }
-            caret
+            grind_text::caret::step(app, self.caret.get(), delta)
         }
 
-        /// Where a word motion from the caret lands: the far edge of a word in this block, or —
-        /// with none left in that direction — the end of this block, then the near end of the
-        /// next, which is where a further press goes on from. `grind_text::word` owns what a
-        /// word is.
+        /// Where a word motion from the caret lands — `grind_text::caret::word`, the rule this
+        /// window and the Mac share.
         fn word_stepped(&self, app: &App, delta: i32) -> Caret {
-            let caret = self.caret.get();
-            let text = app.input_text(caret.block).unwrap_or_default();
-            let len = text.chars().count();
-            let within = match delta > 0 {
-                true => grind_text::word::next_end(&text, caret.offset),
-                false => grind_text::word::previous_start(&text, caret.offset),
-            };
-            let at = |offset| Caret {
-                block: caret.block,
-                offset,
-            };
-            match within {
-                Some(offset) => at(offset),
-                None if delta > 0 && caret.offset < len => at(len),
-                None if delta < 0 && caret.offset > 0 => at(0),
-                None => self.stepped(app, delta),
-            }
+            grind_text::caret::word(app, self.caret.get(), delta)
         }
 
         fn block_len(&self, app: &App, index: usize) -> usize {
-            app.input_text(index)
-                .map(|text| text.chars().count())
-                .unwrap_or(0)
+            grind_text::caret::block_len(app, index)
         }
 
         /// The block and offset a point in the widget lands on: which block the pointer is
@@ -1084,14 +1029,8 @@ mod imp {
             // Both coordinates, measured from the column's left edge: inside a table the cells
             // of one row share a band of the page, so "which block" is a horizontal question
             // as well as a vertical one.
-            let index = flow.at(x - left, y + scroll)?;
-            let slot = *flow.slot(index)?;
-            let (layout, _, _) = self.measured(slot.index)?;
-            let line = line_at_y(&layout, y + scroll - slot.top);
-            let offset = layout.offset_at(line, (x - left - slot.indent) as f32);
-            Some(Caret {
-                block: slot.index,
-                offset,
+            grind_text::caret::hit(&flow, x - left, y + scroll, |index| {
+                self.measured(index).map(|(layout, _, _)| layout)
             })
         }
 
@@ -1627,16 +1566,6 @@ mod imp {
         })
     }
 
-    /// Which line of a layout a y coordinate is on, measured from the block's own top.
-    fn line_at_y(layout: &Layout, y: f64) -> usize {
-        let last = layout.lines().len().saturating_sub(1);
-        layout
-            .lines()
-            .iter()
-            .position(|line| y < f64::from(line.top + line.height))
-            .unwrap_or(last)
-    }
-
     fn draw_at(
         snapshot: &gtk::Snapshot,
         layout: &pango::Layout,
@@ -1698,30 +1627,6 @@ mod imp {
         use super::*;
         use grind_core::layout::{Fixed, Fragment, wrap};
         use grind_core::style::TextStyle;
-
-        /// `Layout` is the core's, so this checks only the shell's own reading of it: which
-        /// line a y coordinate falls on, including above and below the block.
-        #[test]
-        fn a_y_coordinate_picks_the_line_it_is_inside() {
-            let style = TextStyle::default();
-            let layout = wrap(
-                &[Fragment {
-                    text: "the cat sat on the mat",
-                    style: &style,
-                }],
-                10.0,
-                &Fixed,
-            );
-            assert!(layout.lines().len() > 1, "the fixture has to wrap");
-            assert_eq!(line_at_y(&layout, 0.0), 0);
-            assert_eq!(line_at_y(&layout, 1.5), 1, "one unit per line under Fixed");
-            assert_eq!(line_at_y(&layout, -50.0), 0, "above the block");
-            assert_eq!(
-                line_at_y(&layout, 500.0),
-                layout.lines().len() - 1,
-                "below it"
-            );
-        }
 
         /// The bug a screenshot found: a selection spanning a soft line break (a `text:tab`
         /// and `text:line-break` inside one paragraph both force one — `p12` typed as

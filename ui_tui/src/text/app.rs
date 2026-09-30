@@ -708,50 +708,23 @@ impl App {
             }
             Motion::DocStart => {
                 self.goal_x = None;
-                self.caret = Caret {
-                    block: 0,
-                    offset: 0,
-                };
+                self.caret = grind_text::caret::START;
             }
             Motion::DocEnd => {
                 self.goal_x = None;
-                let block = blocks - 1;
-                self.caret = Caret {
-                    block,
-                    offset: self.block_len(block),
-                };
+                self.caret = grind_text::caret::end(&self.core);
             }
         }
     }
 
-    /// One character left or right, rolling onto the neighbouring block at either end.
+    /// One character left or right, rolling onto the neighbouring block at either end —
+    /// `grind_text::caret::step`, which every shell's page shares.
     fn stepped(&self, delta: i32) -> Caret {
-        let mut caret = self.caret;
-        if delta > 0 {
-            if caret.offset < self.block_len(caret.block) {
-                caret.offset += 1;
-            } else if caret.block + 1 < self.core.block_count() {
-                caret = Caret {
-                    block: caret.block + 1,
-                    offset: 0,
-                };
-            }
-        } else if caret.offset > 0 {
-            caret.offset -= 1;
-        } else if caret.block > 0 {
-            caret = Caret {
-                block: caret.block - 1,
-                offset: self.block_len(caret.block - 1),
-            };
-        }
-        caret
+        grind_text::caret::step(&self.core, self.caret, delta)
     }
 
     fn block_len(&self, index: usize) -> usize {
-        self.core
-            .input_text(index)
-            .map(|t| t.chars().count())
-            .unwrap_or(0)
+        grind_text::caret::block_len(&self.core, index)
     }
 
     fn open_below(&mut self) {
