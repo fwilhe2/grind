@@ -175,6 +175,134 @@ pub fn own_locale(current: Option<&Format>, fallback: Option<Locale>) -> Option<
     }
 }
 
+/// The number formats a picker offers, each one click: [`numfmt::preset`]'s kinds, plus
+/// *General* for no format at all and *Date and Time*, which is [`numfmt::datetime_preset`].
+///
+/// The same nine, in the same order, as `grind sheet format`'s positional argument and every
+/// shell's picker. What each is *called* is the shell's — the GNOME window writes sentence case
+/// and the Mac and Windows title case — and what each *writes* is this. Hoisted out of
+/// `ui_win32/src/sheet/format.rs` the day the Mac's toolbar would have been its second copy
+/// (`doc/macos-shell.md`, M7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Preset {
+    General,
+    Number,
+    Percent,
+    Currency,
+    Date,
+    DateTime,
+    Time,
+    Boolean,
+    Text,
+}
+
+impl Preset {
+    pub const ALL: [Preset; 9] = [
+        Preset::General,
+        Preset::Number,
+        Preset::Percent,
+        Preset::Currency,
+        Preset::Date,
+        Preset::DateTime,
+        Preset::Time,
+        Preset::Boolean,
+        Preset::Text,
+    ];
+
+    /// The `numfmt` kind this preset builds, for the seven that are one.
+    pub fn kind(self) -> Option<Kind> {
+        match self {
+            Preset::General | Preset::DateTime => None,
+            Preset::Number => Some(Kind::Number),
+            Preset::Percent => Some(Kind::Percentage),
+            Preset::Currency => Some(Kind::Currency),
+            Preset::Date => Some(Kind::Date),
+            Preset::Time => Some(Kind::Time),
+            Preset::Boolean => Some(Kind::Boolean),
+            Preset::Text => Some(Kind::Text),
+        }
+    }
+
+    /// Which preset a cell formatted `format` is — what a picker opens on. `None` for a format
+    /// this build did not write (a document's own `#,##0.0 "kg"`), which no preset may claim.
+    pub fn of(format: Option<&Format>) -> Option<Preset> {
+        let Some(format) = format else {
+            return Some(Preset::General);
+        };
+        if *format == numfmt::datetime_preset().in_locale(format.locale.clone()) {
+            return Some(Preset::DateTime);
+        }
+        if !format.is_preset() {
+            return None;
+        }
+        let kind = format.preset_params().0;
+        Preset::ALL
+            .into_iter()
+            .find(|preset| preset.kind() == Some(kind))
+    }
+
+    /// The format choosing this preset writes over a cell formatted `current` — `None` for
+    /// *General*, which is no format at all.
+    ///
+    /// **One click is the whole request**: there is no dialog of decimals, so a cell that already
+    /// shows a number keeps its own decimals, grouping and locale where the new kind has them,
+    /// and a currency keeps its symbol. Anything else gets what a spreadsheet's own buttons give
+    /// — a number two decimals grouped, a percentage none, a currency two grouped in the default
+    /// currency. `locale` is used only when the cell has no format to keep one from.
+    pub fn format(self, current: Option<&Format>, locale: Option<Locale>) -> Option<Format> {
+        if self == Preset::DateTime {
+            return Some(numfmt::datetime_preset().in_locale(own_locale(current, locale)));
+        }
+        let kind = self.kind()?;
+        let numeric = current
+            .filter(|f| f.is_preset())
+            .map(Format::preset_params)
+            .filter(|(k, ..)| matches!(k, Kind::Number | Kind::Percentage | Kind::Currency));
+        let (decimals, grouping, symbol) = match (kind, numeric) {
+            (Kind::Number | Kind::Percentage | Kind::Currency, Some((_, d, g, s))) => (d, g, s),
+            (Kind::Number, None) => (2, true, String::new()),
+            (Kind::Percentage, None) => (0, false, String::new()),
+            (Kind::Currency, None) => (2, true, String::new()),
+            _ => (0, false, String::new()),
+        };
+        let symbol = match (kind, symbol.as_str()) {
+            (Kind::Currency, "") => numfmt::DEFAULT_CURRENCY.to_owned(),
+            (Kind::Currency, _) => symbol,
+            _ => String::new(),
+        };
+        // A percentage keeps the grouping it had, but one arriving from nothing gets none:
+        // `1,250%` is a figure nobody formats on purpose.
+        Some(
+            numfmt::preset(kind, decimals, grouping, &symbol)
+                .in_locale(own_locale(current, locale)),
+        )
+    }
+
+    /// What a picker's face says about a cell formatted `format`: `123` for a plain number,
+    /// `%`, the currency's own symbol, `Date`, `Time`, `T/F`, `Abc` — so a glance at a toolbar
+    /// answers "what is this cell" without opening anything. A format this build did not write
+    /// says `Custom`, which is true and is not a guess.
+    pub fn face(format: Option<&Format>) -> String {
+        let preset = match Preset::of(format) {
+            None => return "Custom".to_owned(),
+            Some(Preset::General) => return "General".to_owned(),
+            Some(Preset::DateTime) => return "Date Time".to_owned(),
+            Some(preset) => preset,
+        };
+        let symbol = format.map(|f| f.preset_params().3).unwrap_or_default();
+        match preset {
+            Preset::Number => "123".to_owned(),
+            Preset::Percent => "%".to_owned(),
+            Preset::Currency if symbol.is_empty() => numfmt::DEFAULT_CURRENCY.to_owned(),
+            Preset::Currency => symbol,
+            Preset::Date => "Date".to_owned(),
+            Preset::Time => "Time".to_owned(),
+            Preset::Boolean => "T/F".to_owned(),
+            _ => "Abc".to_owned(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,5 +448,70 @@ mod tests {
         );
         assert_eq!(decimals_shown("12", None), 0);
         assert_eq!(decimals_shown("Groceries", None), 0);
+    }
+    /// Every preset is one `numfmt` builds, and each reads back as the preset that wrote it.
+    #[test]
+    fn every_preset_reads_back_as_the_one_that_wrote_it() {
+        assert_eq!(Preset::of(None), Some(Preset::General));
+        assert_eq!(Preset::General.format(None, None), None);
+        for preset in Preset::ALL.into_iter().skip(1) {
+            let format = preset.format(None, None).expect("a format");
+            assert_eq!(Preset::of(Some(&format)), Some(preset), "{preset:?}");
+        }
+    }
+
+    #[test]
+    fn a_number_keeps_its_own_digits_when_it_changes_preset() {
+        let de = Locale::parse("de-DE");
+        let own = numfmt::preset(Kind::Number, 3, false, "").in_locale(de.clone());
+        let percent = Preset::Percent
+            .format(Some(&own), Locale::parse("en-US"))
+            .unwrap();
+        assert_eq!(
+            percent,
+            numfmt::preset(Kind::Percentage, 3, false, "").in_locale(de)
+        );
+        let currency = Preset::Currency.format(Some(&percent), None).unwrap();
+        assert_eq!(currency.preset_params().3, numfmt::DEFAULT_CURRENCY);
+        let dollar = numfmt::preset(Kind::Currency, 0, true, "$");
+        assert_eq!(
+            Preset::Currency
+                .format(Some(&dollar), None)
+                .unwrap()
+                .preset_params(),
+            (Kind::Currency, 0, true, "$".to_owned())
+        );
+        let date = numfmt::preset(Kind::Date, 0, false, "");
+        assert_eq!(
+            Preset::Number
+                .format(Some(&date), None)
+                .unwrap()
+                .preset_params(),
+            (Kind::Number, 2, true, String::new())
+        );
+    }
+
+    #[test]
+    fn the_face_says_what_the_cell_is() {
+        let faces: Vec<String> = Preset::ALL
+            .iter()
+            .map(|preset| Preset::face(preset.format(None, None).as_ref()))
+            .collect();
+        assert_eq!(
+            faces,
+            [
+                "General",
+                "123",
+                "%",
+                "€",
+                "Date",
+                "Date Time",
+                "Time",
+                "T/F",
+                "Abc"
+            ]
+        );
+        let pound = numfmt::preset(Kind::Currency, 2, true, "£");
+        assert_eq!(Preset::face(Some(&pound)), "£");
     }
 }

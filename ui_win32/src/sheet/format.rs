@@ -27,9 +27,9 @@
 //! wrapped text yet and a toggle with no visible effect is worse than none; and *Borders*, which
 //! the GNOME strip lacks as well and this window does not draw either.
 
-use grind_sheet::format::{Toggle, own_locale};
+use grind_sheet::format::{Preset, Toggle};
 use grind_sheet::locale::Locale;
-use grind_sheet::numfmt::{self, Format, Kind};
+use grind_sheet::numfmt::Format;
 use grind_sheet::style::CellStyle;
 
 pub use grind_sheet::format::{coloured, decimals_shown, stepped};
@@ -146,111 +146,41 @@ pub fn toggled(style: &CellStyle, control: Control) -> Option<Option<CellStyle>>
     control.toggle().map(|toggle| toggle.flipped(style))
 }
 
-/// The number kinds the picker offers, as (label, kind): [`numfmt::preset`]'s kinds, plus
-/// *General* for no format at all and *Date and Time*, which is `numfmt::datetime_preset`.
-///
-/// The same nine, in the same order, as `ui_sheet_gtk`'s menu and `grind sheet format`'s
-/// positional argument.
-pub const KINDS: [(&str, Option<Kind>); 9] = [
-    ("General", None),
-    ("Number", Some(Kind::Number)),
-    ("Percent", Some(Kind::Percentage)),
-    ("Currency", Some(Kind::Currency)),
-    ("Date", Some(Kind::Date)),
-    ("Date and Time", None),
-    ("Time", Some(Kind::Time)),
-    ("Boolean", Some(Kind::Boolean)),
-    ("Text", Some(Kind::Text)),
+/// The number formats the picker offers, as (label, preset) — `grind_sheet::format::Preset`,
+/// whose order is `ui_sheet_gtk`'s menu and `grind sheet format`'s positional argument, in this
+/// window's title case.
+pub const KINDS: [(&str, Preset); 9] = [
+    ("General", Preset::General),
+    ("Number", Preset::Number),
+    ("Percent", Preset::Percent),
+    ("Currency", Preset::Currency),
+    ("Date", Preset::Date),
+    ("Date and Time", Preset::DateTime),
+    ("Time", Preset::Time),
+    ("Boolean", Preset::Boolean),
+    ("Text", Preset::Text),
 ];
 
-/// Where *General* and *Date and Time* sit in [`KINDS`] — the two entries that are not a `Kind`.
-const GENERAL: usize = 0;
-const DATETIME: usize = 5;
-
-/// Which of [`KINDS`] a cell formatted `format` is — the row the picker opens on. `None` for a
-/// format this build did not write (a document's own `#,##0.0 "kg"`), which no row may claim.
+/// Which row of [`KINDS`] a cell formatted `format` is — the row the picker opens on. `None` for
+/// a format this build did not write, which no row may claim ([`Preset::of`]).
 pub fn kind_of(format: Option<&Format>) -> Option<usize> {
-    let Some(format) = format else {
-        return Some(GENERAL);
-    };
-    if *format == numfmt::datetime_preset().in_locale(format.locale.clone()) {
-        return Some(DATETIME);
-    }
-    if !format.is_preset() {
-        return None;
-    }
-    let kind = format.preset_params().0;
-    KINDS.iter().position(|(_, k)| *k == Some(kind))
+    let preset = Preset::of(format)?;
+    KINDS.iter().position(|(_, p)| *p == preset)
 }
 
-/// What the picker's face says about a cell formatted `format`: `123` for a plain number or none
-/// at all, `%`, the currency's own symbol, `Date`, `Time`, `T/F`, `Abc` — `ui_sheet_gtk`'s faces,
-/// so a glance at the strip answers "what is this cell" without opening anything. A format this
-/// build did not write says `Custom`, which is true and is not a guess.
+/// What the picker's face says about a cell formatted `format` ([`Preset::face`]).
 pub fn face(format: Option<&Format>) -> String {
-    match kind_of(format) {
-        Some(GENERAL) => "General".to_owned(),
-        Some(DATETIME) => "Date Time".to_owned(),
-        Some(_) => {
-            let Some((kind, _, _, symbol)) = format.map(Format::preset_params) else {
-                return "General".to_owned();
-            };
-            match kind {
-                Kind::Number => "123".to_owned(),
-                Kind::Percentage => "%".to_owned(),
-                Kind::Currency => match symbol.as_str() {
-                    "" => numfmt::DEFAULT_CURRENCY.to_owned(),
-                    symbol => symbol.to_owned(),
-                },
-                Kind::Date => "Date".to_owned(),
-                Kind::Time => "Time".to_owned(),
-                Kind::Boolean => "T/F".to_owned(),
-                Kind::Text => "Abc".to_owned(),
-            }
-        }
-        None => "Custom".to_owned(),
-    }
+    Preset::face(format)
 }
 
-/// The format picking row `index` of [`KINDS`] writes over a cell formatted `current`.
-///
-/// **One click is the whole request**, as the currency items are (`sheet/currency.rs`): there is
-/// no dialog of decimals here, so a cell that already shows a number keeps its own decimals,
-/// grouping and locale where the new kind has them, and a currency keeps its symbol. Anything
-/// else gets what a spreadsheet's own buttons give — a number two decimals grouped, a percentage
-/// none, a currency two grouped in the default currency. `locale` is used only when the cell has
-/// no format to keep one from, which is `currency::format_for`'s rule too.
-///
-/// `None` is *General* — no format at all — and so is an index past the end.
+/// The format picking row `index` of [`KINDS`] writes over a cell formatted `current`
+/// ([`Preset::format`]) — `None` for *General*, and for an index past the end.
 pub fn format_for_kind(
     current: Option<&Format>,
     index: usize,
     locale: Option<Locale>,
 ) -> Option<Format> {
-    let (_, kind) = KINDS.get(index)?;
-    if index == DATETIME {
-        return Some(numfmt::datetime_preset().in_locale(own_locale(current, locale)));
-    }
-    let kind = (*kind)?;
-    let numeric = current
-        .filter(|f| f.is_preset())
-        .map(Format::preset_params)
-        .filter(|(k, ..)| matches!(k, Kind::Number | Kind::Percentage | Kind::Currency));
-    let (decimals, grouping, symbol) = match (kind, numeric) {
-        (Kind::Number | Kind::Percentage | Kind::Currency, Some((_, d, g, s))) => (d, g, s),
-        (Kind::Number, None) => (2, true, String::new()),
-        (Kind::Percentage, None) => (0, false, String::new()),
-        (Kind::Currency, None) => (2, true, String::new()),
-        _ => (0, false, String::new()),
-    };
-    let symbol = match (kind, symbol.as_str()) {
-        (Kind::Currency, "") => numfmt::DEFAULT_CURRENCY.to_owned(),
-        (Kind::Currency, _) => symbol,
-        _ => String::new(),
-    };
-    // A percentage keeps the grouping it had, but one arriving from nothing gets none: `1,250%`
-    // is a figure nobody formats on purpose.
-    Some(numfmt::preset(kind, decimals, grouping, &symbol).in_locale(own_locale(current, locale)))
+    KINDS.get(index)?.1.format(current, locale)
 }
 
 #[cfg(test)]
@@ -306,65 +236,23 @@ mod tests {
         }
     }
 
-    /// The strip's vocabulary is the core's: every kind the picker offers is one `numfmt` builds,
-    /// and each reads back as the row that wrote it.
+    /// The picker's rows are the core's presets, all of them, in the core's order — and each
+    /// reads back as the row that wrote it. What a preset writes is `grind_sheet::format`'s test.
     #[test]
-    fn every_kind_reads_back_as_the_row_that_wrote_it() {
-        assert_eq!(kind_of(None), Some(GENERAL));
-        assert_eq!(format_for_kind(None, GENERAL, None), None);
+    fn every_row_is_a_preset_and_reads_back_as_itself() {
+        let presets: Vec<Preset> = KINDS.iter().map(|(_, preset)| *preset).collect();
+        assert_eq!(presets, Preset::ALL);
+        assert_eq!(kind_of(None), Some(0));
         for (index, (label, _)) in KINDS.iter().enumerate().skip(1) {
-            let format = format_for_kind(None, index, None).expect("a format");
-            assert_eq!(kind_of(Some(&format)), Some(index), "{label}");
+            let format = format_for_kind(None, index, None);
+            assert_eq!(kind_of(format.as_ref()), Some(index), "{label}");
         }
         assert_eq!(
             format_for_kind(None, KINDS.len(), None),
             None,
             "past the end"
         );
-    }
-
-    #[test]
-    fn a_number_keeps_its_own_digits_when_it_changes_kind() {
-        let de = Locale::parse("de-DE");
-        let own = numfmt::preset(Kind::Number, 3, false, "").in_locale(de.clone());
-        let percent = format_for_kind(Some(&own), 2, Locale::parse("en-US")).unwrap();
-        assert_eq!(
-            percent,
-            numfmt::preset(Kind::Percentage, 3, false, "").in_locale(de.clone())
-        );
-        let currency = format_for_kind(Some(&percent), 3, None).unwrap();
-        assert_eq!(currency.preset_params().3, numfmt::DEFAULT_CURRENCY);
-        assert_eq!(currency.preset_params().1, 3);
-        // A currency keeps its symbol when it becomes a currency again.
-        let dollar = numfmt::preset(Kind::Currency, 0, true, "$");
-        assert_eq!(
-            format_for_kind(Some(&dollar), 3, None)
-                .unwrap()
-                .preset_params(),
-            (Kind::Currency, 0, true, "$".to_owned())
-        );
-        // A date has no digits to keep: a number arriving from one gets the defaults.
-        let date = numfmt::preset(Kind::Date, 0, false, "");
-        assert_eq!(
-            format_for_kind(Some(&date), 1, None)
-                .unwrap()
-                .preset_params(),
-            (Kind::Number, 2, true, String::new())
-        );
-    }
-
-    #[test]
-    fn the_face_says_what_the_cell_is() {
         assert_eq!(face(None), "General");
-        let faces: Vec<String> = (1..KINDS.len())
-            .map(|index| face(format_for_kind(None, index, None).as_ref()))
-            .collect();
-        assert_eq!(
-            faces,
-            ["123", "%", "€", "Date", "Date Time", "Time", "T/F", "Abc"]
-        );
-        let pound = numfmt::preset(Kind::Currency, 2, true, "£");
-        assert_eq!(face(Some(&pound)), "£");
     }
 
     /// Every control has a name, and the ones drawn as a labelled button have a label to draw.
