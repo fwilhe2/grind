@@ -62,6 +62,8 @@ mod render;
 mod sheet;
 #[cfg(target_os = "macos")]
 mod sidebar;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod text;
 #[cfg(target_os = "macos")]
 mod watch;
 

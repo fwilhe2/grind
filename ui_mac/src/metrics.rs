@@ -80,7 +80,7 @@ impl Font {
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::CoreText;
+pub use mac::{CoreText, Face};
 
 #[cfg(target_os = "macos")]
 mod mac {
@@ -90,8 +90,10 @@ mod mac {
 
     use grind_core::layout::Metrics;
     use grind_core::style::TextStyle;
+    use grind_text::look::Role;
 
     use super::{Family, Font};
+    use crate::text::face;
     use objc2_core_foundation::{
         CFAttributedString, CFBoolean, CFDictionary, CFIndex, CFRetained, CFString, CFType, CGFloat,
     };
@@ -247,6 +249,32 @@ mod mac {
         // are documented. A face with no bold or no italic answers `None`, and the face as it is
         // is then the honest answer.
         unsafe { base.copy_with_symbolic_traits(0.0, null(), traits, traits) }.unwrap_or(base)
+    }
+
+    /// A page's block face — the [`Metrics`] one block is laid out with. Each run's own
+    /// formatting is layered over the block's role by `text::face::font`, which is also what
+    /// `text/paint.rs` hands the renderer, so a run is measured and drawn in one font.
+    pub struct Face<'a> {
+        pub text: &'a CoreText,
+        pub role: Role,
+    }
+
+    impl Metrics for Face<'_> {
+        fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
+            let line = self.text.line_of(text, &face::font(self.role, style));
+            super::fold(
+                text,
+                // SAFETY: a null secondary offset is documented as allowed.
+                |units| unsafe {
+                    line.offset_for_string_index(units as CFIndex, std::ptr::null_mut())
+                },
+                out,
+            );
+        }
+
+        fn line_height(&self, style: &TextStyle) -> f32 {
+            self.text.height_of(&face::font(self.role, style))
+        }
     }
 
     impl Metrics for CoreText {
