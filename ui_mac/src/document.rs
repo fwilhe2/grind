@@ -83,7 +83,7 @@ mod mac {
     };
     use objc2_app_kit::{
         NSBackingStoreType, NSDocument, NSDocumentChangeType, NSDocumentController, NSOpenPanel,
-        NSTextField, NSWindow, NSWindowController, NSWindowStyleMask,
+        NSTextField, NSView, NSWindow, NSWindowController, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSArray, NSCocoaErrorDomain, NSData, NSDictionary, NSError, NSInteger,
@@ -93,6 +93,7 @@ mod mac {
     use super::{SHEET, TEXT, kind_of, sniff};
     use crate::grid_view::{Pane, sheet_view};
     use crate::import;
+    use crate::page_view::{self, TextPane, page_view};
     use crate::{accessory, banner, find_bar, grid_view, sidebar};
 
     /// What a document holds: one of the suite's two `App`s.
@@ -132,6 +133,8 @@ mod mac {
         content: RefCell<Option<Content>>,
         /// The spreadsheet's views' shared state, once its window exists.
         pane: RefCell<Option<Rc<Pane>>>,
+        /// The text document's page, once its window exists.
+        page: RefCell<Option<Rc<TextPane>>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
         imported: RefCell<Option<(String, Option<String>)>>,
     }
@@ -251,11 +254,28 @@ mod mac {
                         grid_view::watch(&pane);
                         *self.ivars().pane.borrow_mut() = Some(pane);
                     }
-                    // The page is M6's; until then a text document opens to a window that says
-                    // so, rather than to nothing at all.
-                    Some(Content::Text(_)) | None => {
+                    Some(Content::Text(app)) => {
+                        let pane = TextPane::new(app.clone());
+                        let size = window.frame().size;
+                        let scroll = page_view(&pane, size, mtm);
+                        window.setContentView(Some(&scroll));
+                        window.setContentSize(size);
+                        window.center();
+                        // The page takes the keyboard from the start, caret at the top.
+                        let page = scroll.documentView();
+                        window.makeFirstResponder(page.as_deref().map(|view| &**view));
+                        let me = ObjcWeak::new(self);
+                        pane.on_change(move || {
+                            if let Some(document) = me.load() {
+                                document.updateChangeCount(NSDocumentChangeType::ChangeDone);
+                            }
+                        });
+                        page_view::watch(&pane);
+                        *self.ivars().page.borrow_mut() = Some(pane);
+                    }
+                    None => {
                         let label = NSTextField::labelWithString(
-                            &NSString::from_str("A text document's page is drawn from M6 on."),
+                            &NSString::from_str("Nothing is open."),
                             mtm,
                         );
                         window.setContentView(Some(&label));
@@ -345,9 +365,29 @@ mod mac {
             self.ivars().pane.borrow().clone()
         }
 
+        /// The text document's page, when this document is one with a window.
+        pub fn page(&self) -> Option<Rc<TextPane>> {
+            self.ivars().page.borrow().clone()
+        }
+
+        /// The view a drive's click lands in — the grid or the page — and how far its own
+        /// origin is from the one a script counts from: the grid keeps a margin the header
+        /// bands float over, and a script's points are the sheet's.
+        pub fn click_target(&self) -> Option<(Retained<NSView>, (f64, f64))> {
+            if let Some(grid) = self.pane().and_then(|pane| pane.grid_view()) {
+                let origin = (crate::sheet::geom::HEADER_W, crate::sheet::geom::HEADER_H);
+                return Some((grid.into_super(), origin));
+            }
+            let page = self.page()?.view()?;
+            Some((page.into_super(), (0.0, 0.0)))
+        }
+
         /// Where the selection is, for a drive's transcript: the name box's word, and the range
-        /// when there is more than one cell.
+        /// when there is more than one cell — or on a page, the caret's address.
         pub fn selection_text(&self) -> String {
+            if let Some(page) = self.page() {
+                return page.caret_text();
+            }
             let Some(pane) = self.pane() else {
                 return "no grid".to_owned();
             };

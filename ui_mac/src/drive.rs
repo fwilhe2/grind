@@ -244,14 +244,13 @@ mod mac {
     use objc2::rc::Retained;
     use objc2_app_kit::{
         NSApplication, NSBitmapImageFileType, NSDocument, NSEvent, NSEventMask,
-        NSEventModifierFlags, NSEventType, NSScrollView, NSView, NSWindow,
+        NSEventModifierFlags, NSEventType, NSView, NSWindow,
     };
     use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSDictionary, NSPoint, NSString};
 
     use super::{Step, Stroke, parse, stroke_for};
     use crate::args::Drive;
     use crate::document::Document;
-    use crate::sheet::geom::{HEADER_H, HEADER_W};
 
     /// Let the run loop turn for `seconds`, dispatching whatever arrives — how a drive waits for
     /// a window to draw, a menu action to land or a save to finish.
@@ -313,20 +312,18 @@ mod mac {
         Ok(())
     }
 
-    /// The grid view of the window a step acts on — the scroll view's document view.
-    fn grid(window: &NSWindow) -> Result<Retained<NSView>, String> {
-        window
-            .contentView()
-            .and_then(|view| view.downcast::<NSScrollView>().ok())
-            .and_then(|scroll| scroll.documentView())
-            .ok_or_else(|| "this window has no grid".to_owned())
-    }
-
-    fn click(app: &NSApplication, x: f64, y: f64) -> Result<(), String> {
+    fn click(
+        app: &NSApplication,
+        document: Option<&NSDocument>,
+        x: f64,
+        y: f64,
+    ) -> Result<(), String> {
         let window = window(app)?;
-        // The grid view keeps a margin the header bands float over, and a drive's points are the
-        // sheet's own.
-        let at = grid(&window)?.convertPoint_toView(NSPoint::new(x + HEADER_W, y + HEADER_H), None);
+        let (view, (dx, dy)) = document
+            .and_then(|document| document.downcast_ref::<Document>())
+            .and_then(Document::click_target)
+            .ok_or("this window has no grid and no page")?;
+        let at = view.convertPoint_toView(NSPoint::new(x + dx, y + dy), None);
         for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
             let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
                 kind,
@@ -425,7 +422,7 @@ mod mac {
             let done = match step {
                 Step::Key(stroke) => key(&app, stroke),
                 Step::Type(text) => text.chars().try_for_each(|c| key(&app, &stroke_for(c))),
-                Step::Click { x, y } => click(&app, *x, *y),
+                Step::Click { x, y } => click(&app, document, *x, *y),
                 Step::Menu(path) => menu(&app, path),
                 Step::Wait(seconds) => {
                     pump(&app, *seconds);

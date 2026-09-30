@@ -54,6 +54,8 @@ mod metrics;
 mod notice;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod ops;
+#[cfg(target_os = "macos")]
+mod page_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod png;
 #[cfg(target_os = "macos")]
@@ -160,7 +162,8 @@ const FRAME: (f64, f64) = (1024.0, 640.0);
 const SCALE: f64 = 2.0;
 
 /// Draw one frame of the document `opening` names into the PNG it names, with no window — decision
-/// 9's `--render-to`, through the same `sheet::paint` and `render::draw` a view calls.
+/// 9's `--render-to`, through the same `sheet::paint` or `text::paint` and `render::draw` a view
+/// calls.
 ///
 /// The palette is the fixed light or dark one rather than the system's current colours, so a
 /// frame is a function of its command line alone and two renders are the same bytes.
@@ -202,7 +205,50 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             std::fs::write(target, png::encode(w, h, &rgba))
                 .map_err(|error| format!("{}: {error}", target.display()))
         }
-        Some(DocumentKind::Text) => Err("a text document's page is drawn from M6 on".into()),
+        Some(DocumentKind::Text) => {
+            use grind_text::look::Role;
+            use text::paint::{Frame, Palette};
+
+            let app = grind_text::App::new();
+            if let Some(path) = &opening.path {
+                let bytes =
+                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+                app.open_bytes(&path.display().to_string(), &bytes)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+            }
+            let fonts = metrics::CoreText::new(metrics::BASE_PT);
+            let faces: Vec<metrics::Face> = Role::ALL
+                .iter()
+                .map(|role| metrics::Face {
+                    text: &fonts,
+                    role: *role,
+                })
+                .collect();
+            // Laid out at the frame's width, as a window that size lays it out.
+            let laid = text::face::lay_out(&app, &faces, FRAME.0);
+            let palette = match dark {
+                true => Palette::DARK,
+                false => Palette::LIGHT,
+            };
+            // The caret where a window opens with it, at the top, and drawn: the page has the
+            // keyboard in a new window.
+            let state = text::state::Page::default();
+            let ops = text::paint::frame(&Frame {
+                app: &app,
+                flow: &laid.flow,
+                faces: &laid.faces(&faces),
+                column_x: laid.column.0,
+                view: sheet::geom::Rect::new(0.0, 0.0, FRAME.0, FRAME.1),
+                state: &state,
+                caret: true,
+                palette: &palette,
+            });
+            let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {
+                render::draw(context, &ops, &fonts)
+            })?;
+            std::fs::write(target, png::encode(w, h, &rgba))
+                .map_err(|error| format!("{}: {error}", target.display()))
+        }
         _ => Err("the welcome window is drawn from M9 on; name a document or --sheet".into()),
     }
 }

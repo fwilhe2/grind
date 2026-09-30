@@ -102,13 +102,16 @@ mod mac {
         kCTForegroundColorFromContextAttributeName,
     };
 
+    /// What a made font is kept under: its size's bits, bold, italic and family.
+    type FontKey = (u64, bool, bool, Family);
+
     /// Fonts by size and face, and the lines set in them.
     ///
     /// The cache is by the whole [`Font`], because a paint measures hundreds of cells and lines
     /// in a handful of faces, and creating a `CTFont` per piece would be most of the paint.
     pub struct CoreText {
         base: CGFloat,
-        fonts: RefCell<HashMap<(u64, bool, bool, Family), CFRetained<CTFont>>>,
+        fonts: RefCell<HashMap<FontKey, CFRetained<CTFont>>>,
     }
 
     impl CoreText {
@@ -133,11 +136,6 @@ mod mac {
             let made = make(font);
             self.fonts.borrow_mut().insert(key, made.clone());
             made
-        }
-
-        /// The font a cell set in `style` is drawn in — [`Font::cell`] at this base size.
-        pub fn font(&self, style: &TextStyle) -> CFRetained<CTFont> {
-            self.font_of(&Font::cell(self.base, style))
         }
 
         /// One line of `text` set in `font`, drawn in whatever fill colour the context has —

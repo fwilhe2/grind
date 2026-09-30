@@ -313,7 +313,7 @@ pub fn watch(pane: &Rc<Pane>) {
 
 /// A colour AppKit resolves for the current drawing appearance, as three bytes. A colour with no
 /// sRGB form — a pattern — is a mid grey, which reads on either appearance.
-fn rgb(color: &NSColor) -> Rgb {
+pub(crate) fn rgb(color: &NSColor) -> Rgb {
     let Some(srgb) = color.colorUsingColorSpace(&NSColorSpace::sRGBColorSpace()) else {
         return (0x80, 0x80, 0x80);
     };
@@ -350,7 +350,7 @@ fn hairline(view: &NSView) -> f64 {
         .recip()
 }
 
-fn rect(frame: NSRect) -> Rect {
+pub(crate) fn rect(frame: NSRect) -> Rect {
     Rect::new(
         frame.origin.x,
         frame.origin.y,
@@ -359,7 +359,7 @@ fn rect(frame: NSRect) -> Rect {
     )
 }
 
-fn ns_rect(rect: Rect) -> NSRect {
+pub(crate) fn ns_rect(rect: Rect) -> NSRect {
     NSRect::new(NSPoint::new(rect.x, rect.y), NSSize::new(rect.w, rect.h))
 }
 
@@ -373,11 +373,11 @@ fn draw(ops: &[Op], pane: &Pane) {
 }
 
 /// Where a mouse event happened, in `view`'s own coordinates.
-fn located(view: &NSView, event: &NSEvent) -> NSPoint {
+pub(crate) fn located(view: &NSView, event: &NSEvent) -> NSPoint {
     view.convertPoint_fromView(event.locationInWindow(), None)
 }
 
-fn shifted(event: &NSEvent) -> bool {
+pub(crate) fn shifted(event: &NSEvent) -> bool {
     event.modifierFlags().contains(NSEventModifierFlags::Shift)
 }
 
