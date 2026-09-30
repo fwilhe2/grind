@@ -19,7 +19,6 @@
 
 use grind_sheet::locale::Locale;
 use grind_sheet::numfmt::{self, Format, Kind};
-use grind_sheet::{MAX_COLS, MAX_ROWS, Pos};
 
 /// The format a currency choice writes over a cell whose format is `current`.
 ///
@@ -47,26 +46,6 @@ pub fn chosen(current: Option<&Format>) -> Option<usize> {
         return None;
     }
     numfmt::CURRENCIES.iter().position(|(s, _)| *s == symbol)
-}
-
-/// The rectangle a format is written over: the selection, cut down to the part of the sheet in
-/// use — `ui_sheet_gtk`'s `Grid::target`, for the reason `App::set_format` gives. A whole column
-/// selected from its header is a million rows, and a format costs an entry per cell, so a click
-/// on its header followed by `€` would otherwise be refused rather than doing what it means.
-///
-/// Only a whole row or column is cut: a rectangle somebody dragged out past the last value is
-/// a request for exactly those cells, which may be about to be filled.
-pub fn target(start: Pos, end: Pos, used: (u32, u32)) -> (Pos, Pos) {
-    let (rows, cols) = used;
-    let row = match start.row == 0 && end.row >= MAX_ROWS - 1 {
-        true => end.row.min(rows.saturating_sub(1)).max(start.row),
-        false => end.row,
-    };
-    let col = match start.col == 0 && end.col >= MAX_COLS - 1 {
-        true => end.col.min(cols.saturating_sub(1)).max(start.col),
-        false => end.col,
-    };
-    (start, Pos::new(row, col))
 }
 
 #[cfg(test)]
@@ -117,24 +96,5 @@ mod tests {
         for (index, (symbol, _)) in numfmt::CURRENCIES.iter().enumerate() {
             assert_eq!(chosen(Some(&format_for(None, symbol, None))), Some(index));
         }
-    }
-
-    #[test]
-    fn only_a_whole_row_or_column_is_cut_to_the_sheet_in_use() {
-        let used = (10, 4);
-        let column = (Pos::new(0, 2), Pos::new(MAX_ROWS - 1, 2));
-        assert_eq!(
-            target(column.0, column.1, used),
-            (Pos::new(0, 2), Pos::new(9, 2))
-        );
-        let row = (Pos::new(3, 0), Pos::new(3, MAX_COLS - 1));
-        assert_eq!(target(row.0, row.1, used), (Pos::new(3, 0), Pos::new(3, 3)));
-        let dragged = (Pos::new(0, 0), Pos::new(40, 7));
-        assert_eq!(target(dragged.0, dragged.1, used), dragged);
-        // An empty sheet still formats the cell the column starts at, rather than nothing.
-        assert_eq!(
-            target(column.0, column.1, (0, 0)),
-            (Pos::new(0, 2), Pos::new(0, 2))
-        );
     }
 }

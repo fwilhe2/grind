@@ -167,6 +167,32 @@ pub fn moved(
     }
 }
 
+/// The rectangle an operation over `selection` acts on — a format, a style, a copy — when the
+/// sheet uses rows `0..used.0` and columns `0..used.1`.
+///
+/// **Only a whole row or column is cut** to the part of the sheet in use: a column selected from
+/// its header is a million rows, and a format costs an entry per cell and a copy a line per row,
+/// so a click on a header followed by `€` or ⌘C would otherwise be refused or put a million lines
+/// on the clipboard. A rectangle somebody dragged out past the last value is a request for
+/// exactly those cells, which may be about to be filled, and is left as it is. An empty sheet
+/// still acts on the cell the row or column starts at, rather than on nothing.
+///
+/// The Windows pane's rule, hoisted when the macOS shell's Copy would have been a third answer;
+/// the GNOME window used to cut every rectangle, dragged or not.
+pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
+    let (start, end) = selection.rect();
+    let (rows, cols) = used;
+    let row = match start.row == 0 && end.row >= MAX_ROWS - 1 {
+        true => end.row.min(rows.saturating_sub(1)).max(start.row),
+        false => end.row,
+    };
+    let col = match start.col == 0 && end.col >= MAX_COLS - 1 {
+        true => end.col.min(cols.saturating_sub(1)).max(start.col),
+        false => end.col,
+    };
+    (start, Pos::new(row, col))
+}
+
 /// Whether a cell of `sheet` holds anything — what [`moved`]'s `occupied` asks, answered by the
 /// document. One read per probe, which is what every shell did with its own copy of this.
 ///
@@ -509,5 +535,28 @@ mod tests {
         let every = all(&app, 0);
         assert_eq!(every.active, Pos::new(0, 0), "the view goes home");
         assert_eq!(every.rect(), (Pos::new(0, 0), Pos::new(4, 2)));
+    }
+
+    #[test]
+    fn only_a_whole_row_or_column_is_cut_to_the_sheet_in_use() {
+        let used = (10, 4);
+        assert_eq!(
+            target(Selection::whole_col(2), used),
+            (Pos::new(0, 2), Pos::new(9, 2))
+        );
+        assert_eq!(
+            target(Selection::whole_row(3), used),
+            (Pos::new(3, 0), Pos::new(3, 3))
+        );
+        let dragged = Selection {
+            anchor: Pos::new(40, 7),
+            active: Pos::new(0, 0),
+        };
+        assert_eq!(target(dragged, used), (Pos::new(0, 0), Pos::new(40, 7)));
+        // An empty sheet still acts on the cell the column starts at, rather than nothing.
+        assert_eq!(
+            target(Selection::whole_col(2), (0, 0)),
+            (Pos::new(0, 2), Pos::new(0, 2))
+        );
     }
 }

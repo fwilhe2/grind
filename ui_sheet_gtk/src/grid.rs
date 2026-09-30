@@ -328,16 +328,11 @@ impl Grid {
     pub fn target(&self) -> Option<(usize, Pos, Pos)> {
         let app = self.imp().app.borrow().clone()?;
         let sheet = self.sheet();
-        let (start, end) = self.selection().rect();
-        let (rows, cols) = app.used_extent(sheet).ok()?;
-        Some((
-            sheet,
-            start,
-            Pos::new(
-                end.row.min(rows.saturating_sub(1)).max(start.row),
-                end.col.min(cols.saturating_sub(1)).max(start.col),
-            ),
-        ))
+        let used = app.used_extent(sheet).ok()?;
+        // Only a whole row or column is cut to what the sheet uses; a dragged rectangle is a
+        // request for exactly those cells (`grind_sheet::nav::target`).
+        let (start, end) = grind_sheet::nav::target(self.selection(), used);
+        Some((sheet, start, end))
     }
 
     /// Called after every selection change, with the selection that resulted — what the

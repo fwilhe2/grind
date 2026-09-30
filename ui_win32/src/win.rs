@@ -3382,7 +3382,10 @@ fn copy(hwnd: HWND, cut: bool) {
     // borrowed.
     unsafe {
         with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
+            // A whole row or column is cut to what the sheet uses, or a copy of a column would
+            // be a million lines (`nav::target`).
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
             let text =
                 clip::rect_text(&state.app, state.sheet, start, end, App::input_text, "\r\n");
             clipboard::set_text(hwnd, &text);
@@ -3902,9 +3905,8 @@ fn set_currency(hwnd: HWND, index: usize) {
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
         with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
             let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = currency::target(start, end, used);
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
             let current = state
                 .app
                 .format_at(state.sheet, state.selection.active)
@@ -3927,7 +3929,7 @@ fn set_currency(hwnd: HWND, index: usize) {
 /// and what the same verb in the Format menu or on a key does, since those arrive here too.
 ///
 /// Every write is one `App::set_style` or `App::set_format` over the selection cut to the sheet in
-/// use (`currency::target`, which is `ui_sheet_gtk`'s `Grid::target`), so one Ctrl+Z takes back a
+/// use (`grind_sheet::nav::target`), so one Ctrl+Z takes back a
 /// formatted column. *Clear* is the one control that makes two calls, the same pair the GNOME
 /// strip's Clear makes — the core has one "plain again" per kind of property.
 fn format_control(hwnd: HWND, control: format::Control) {
@@ -3962,9 +3964,8 @@ fn format_write(
     // SAFETY: one borrow; the core's writes notify, and the observer posts rather than sends.
     unsafe {
         with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
             let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = currency::target(start, end, used);
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
             match write(state, start, end) {
                 Ok(_) => state.say(None),
                 Err(error) => state.say(Some(error.to_string())),
