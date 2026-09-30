@@ -98,6 +98,10 @@ had no width and therefore no lines.
 
 - `layout_block` — `grind text view --width <columns>`, which prints what any shell would draw
   at that width. Without `--width` a block is one line, which is what `view` always printed
+- `layout_composing` — not exposed: a composition is an input method's state *between*
+  keystrokes, and a command line has no input method. What it lays out is exactly what
+  `grind text type <at> <text>` followed by `grind text view --width` prints, which is the
+  property its test asserts
 - `caret_line` — `grind text caret <at> --down <n>`, negative to go up. Crosses block
   boundaries, so down from the last line of a paragraph lands on the first line of the next;
   at the document's own top or bottom it stops rather than erroring

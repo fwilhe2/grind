@@ -1209,3 +1209,91 @@ fn a_document_saves_as_a_projection_and_opens_again() {
     reopened.open_bytes("x.grind", &bytes).expect("opens");
     assert_eq!(reopened.input_text(0).unwrap(), "Hello");
 }
+
+// --- an input method's composition ------------------------------------------------------------
+
+/// A composition is laid out exactly as the same text typed would be — same lines, same
+/// offsets — and writes nothing, so the undo stack and the document are as they were.
+#[test]
+fn a_composition_lays_out_as_typing_would_and_writes_nothing() {
+    let app = app(&["the cat sat on the mat"]);
+    let at = caret(&app, "p1+4");
+    let composing = app
+        .layout_composing(at, "big ", None, 10.0, &M)
+        .expect("lays out");
+    assert_eq!(text(&app), "the cat sat on the mat", "nothing written");
+    assert_eq!(
+        undo_all(&app),
+        1,
+        "and nothing on the undo stack but the fixture's own edit"
+    );
+
+    let app = self::app(&["the cat sat on the mat"]);
+    app.insert_text(at, "big ").expect("types");
+    let typed = app.layout_block(0, 10.0, &M).expect("lays out");
+    assert_eq!(composing, typed, "the lines the committed text will have");
+}
+
+/// Composed at the end of a bold word, it is bold — and `resume` overrides that, the way the
+/// next typed character after a closed `**span**` would.
+#[test]
+fn a_composition_takes_the_formatting_the_next_character_would() {
+    let app = app(&["plain bold"]);
+    let bold = grind_text::CharStyle {
+        font_weight: Some("bold".into()),
+        ..Default::default()
+    };
+    app.set_char_style(caret(&app, "p1+6"), caret(&app, "p1+10"), &bold)
+        .expect("bolds");
+    // Twice as wide when bold, so the measure says which formatting the composition took.
+    struct Wide;
+    impl grind_text::Metrics for Wide {
+        fn advances(&self, text: &str, style: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+            let step = match style.font_weight.as_deref() {
+                Some("bold") => 2.0,
+                _ => 1.0,
+            };
+            let mut x = 0.0;
+            for _ in text.chars() {
+                x += step;
+                out.push(x);
+            }
+        }
+        fn line_height(&self, _: &grind_core::style::TextStyle) -> f32 {
+            1.0
+        }
+    }
+    let end = caret(&app, "p1+10");
+    let carried = app
+        .layout_composing(end, "é", None, 0.0, &Wide)
+        .expect("lays out");
+    let resumed = app
+        .layout_composing(
+            end,
+            "é",
+            Some(&grind_text::CharStyle::default()),
+            0.0,
+            &Wide,
+        )
+        .expect("lays out");
+    let width = |layout: &grind_text::Layout| layout.lines()[0].width;
+    assert_eq!(width(&carried) - width(&resumed), 1.0, "bold, then not");
+    assert!(
+        app.layout_composing(caret(&app, "p1+0"), "", None, 0.0, &M)
+            .is_ok(),
+        "an empty composition is the block as it is"
+    );
+    assert!(
+        app.layout_composing(
+            grind_text::Caret {
+                block: 9,
+                offset: 0
+            },
+            "x",
+            None,
+            0.0,
+            &M
+        )
+        .is_err()
+    );
+}

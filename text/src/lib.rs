@@ -763,6 +763,47 @@ impl App {
         Ok(lay_out(block, width, metrics))
     }
 
+    /// One block laid out as if `text` had been typed at `at` — an **input method's
+    /// composition**, set in the line it will land in before it has landed. **Nothing is
+    /// written**: a composition is the state of an input method between keystrokes (dead keys,
+    /// press-and-hold accents, a CJK conversion), and becomes a document edit only when the
+    /// input method commits it, as one `type_markdown`.
+    ///
+    /// Here rather than in a shell because it is line layout (`doc/text-layout.md`, Path C): the
+    /// composed text takes the formatting the character typed at `at` would — `resume` when a
+    /// markdown span left one pending, otherwise [`App::insert_text`]'s rule — and a line that
+    /// the composition pushes past the measure breaks where the committed text will. The offsets
+    /// in the answer count the composed characters, so the caret inside a composition is
+    /// `at.offset` plus its own position in `text`.
+    pub fn layout_composing(
+        &self,
+        at: Caret,
+        text: &str,
+        resume: Option<&CharStyle>,
+        width: f32,
+        metrics: &dyn Metrics,
+    ) -> Result<Layout> {
+        let state = self.state.read().unwrap();
+        let mut block = block_at(&state, at.block)?;
+        if !text.is_empty() {
+            let (mut runs, tail) = model::split_runs(&block.runs, at.offset.min(block.len()));
+            let (style, props, href) = match resume {
+                Some(props) => (None, props.clone(), None),
+                None => caret_formatting(&runs, &tail),
+            };
+            runs.push(Run::Text {
+                text: text.to_owned(),
+                style,
+                props,
+                href,
+            });
+            runs.extend(tail);
+            model::coalesce(&mut runs);
+            block.runs = runs;
+        }
+        Ok(lay_out(&block, width, metrics))
+    }
+
     /// The x of a caret within its line — what a shell remembers as the **goal column** while
     /// the user holds Down, so that walking through a short line and out the other side comes
     /// back to the column it started in.
