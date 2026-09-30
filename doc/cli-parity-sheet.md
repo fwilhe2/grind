@@ -85,7 +85,9 @@ stops ratcheting.
   nothing to undo. Document-level, like a name, and one undo entry: every number with no format,
   or with one that names no locale of its own, is spelled the new way at once, and a number
   typed afterwards is read the new way (`doc/ods-format.md` §5.2)
-- `add_sheet` — `grind sheet add <name>`
+- `add_sheet` — `grind sheet add [<name>]`
+- `fresh_sheet_name` — `grind sheet add` with no name, which is the name every window's Add Sheet
+  offers: the first `SheetN` no sheet already has, compared without regard to case
 - `rename_sheet` — `grind sheet rename <sheet> <name>`, which carries every reference that named
   the old sheet with it: formulas, named expressions and chart ranges, in one `Action::Batch` so
   `grind sheet undo` takes the whole rename back (`doc/dsl.md` §6.5, D10). It returns how many

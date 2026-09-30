@@ -1611,6 +1611,17 @@ fn a_sheet_can_be_added_renamed_and_deleted_from_the_cli() {
 
     let output = sheet(&["remove", &s(&file), "Sheet1"]);
     assert!(!output.status.success(), "the last sheet stays");
+
+    // With no name, the one every window's Add Sheet offers: the first `SheetN` not taken,
+    // compared without regard to case — so a `sheet3` already there is skipped.
+    ok(&["rename", &s(&file), "Sheet1", "sheet2"]);
+    ok(&["add", &s(&file)]);
+    ok(&["add", &s(&file)]);
+    let json = ok_top(&["--format", "json", "info", &s(&file)]);
+    assert!(
+        json.contains("\"Sheet1\"") && json.contains("\"Sheet3\""),
+        "{json}"
+    );
 }
 
 /// Deleting a sheet is undoable across invocations, which is the whole reason the inverse
