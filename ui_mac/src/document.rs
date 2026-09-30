@@ -83,7 +83,7 @@ mod mac {
     };
     use objc2_app_kit::{
         NSBackingStoreType, NSDocument, NSDocumentChangeType, NSDocumentController, NSOpenPanel,
-        NSTextField, NSView, NSWindow, NSWindowController, NSWindowStyleMask,
+        NSSplitViewItem, NSTextField, NSView, NSWindow, NSWindowController, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSArray, NSCocoaErrorDomain, NSData, NSDictionary, NSError, NSInteger,
@@ -96,6 +96,7 @@ mod mac {
     use crate::import;
     use crate::page_view::{self, TextPane, page_view};
     use crate::sidebar::{Places, Sidebar};
+    use crate::source_pane::{self, SourcePane};
     use crate::toolbar::{self, Toolbar};
     use crate::{accessory, banner, find_bar, grid_view, sidebar};
 
@@ -142,6 +143,8 @@ mod mac {
         toolbar: RefCell<Option<Retained<Toolbar>>>,
         /// The sidebar's list, which its table holds only weakly.
         sidebar: RefCell<Option<Retained<Sidebar>>>,
+        /// The source pane's split item and its delegate (D9).
+        source: RefCell<Option<(Retained<NSSplitViewItem>, Retained<SourcePane>)>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
         imported: RefCell<Option<(String, Option<String>)>>,
     }
@@ -238,8 +241,11 @@ mod mac {
                         let size = window.frame().size;
                         let scroll = sheet_view(&pane, size, mtm);
                         let places: Rc<dyn Places> = pane.clone();
-                        let (split, list) = sidebar::split(places, &scroll, size.height, mtm);
+                        let (code, source) = source_pane::make(pane.clone(), mtm);
+                        let (split, list, item) =
+                            sidebar::split(places, &scroll, &code, size.height, mtm);
                         *self.ivars().sidebar.borrow_mut() = Some(list);
+                        *self.ivars().source.borrow_mut() = Some((item, source));
                         window.setContentViewController(Some(&split));
                         // A content view controller sizes the window to its view; this is the size
                         // the window was made at.
@@ -275,8 +281,11 @@ mod mac {
                         let size = window.frame().size;
                         let scroll = page_view(&pane, size, mtm);
                         let places: Rc<dyn Places> = pane.clone();
-                        let (split, list) = sidebar::split(places, &scroll, size.height, mtm);
+                        let (code, source) = source_pane::make(pane.clone(), mtm);
+                        let (split, list, item) =
+                            sidebar::split(places, &scroll, &code, size.height, mtm);
                         *self.ivars().sidebar.borrow_mut() = Some(list);
+                        *self.ivars().source.borrow_mut() = Some((item, source));
                         window.setContentViewController(Some(&split));
                         window.setContentSize(size);
                         window.center();
@@ -414,8 +423,25 @@ mod mac {
             }
         }
 
-        /// Whether a Format command's item is ticked here.
+        /// View ▸ Show Source: the source pane opened, or closed.
+        pub fn toggle_source(&self) {
+            if let Some((item, pane)) = self.ivars().source.borrow().as_ref() {
+                let shown = item.isCollapsed();
+                item.setCollapsed(!shown);
+                pane.shown(shown);
+            }
+        }
+
+        /// Whether a Format or View command's item is ticked here.
         pub fn format_checked(&self, command: crate::menu::Command) -> bool {
+            if command == crate::menu::Command::ShowSource {
+                return self
+                    .ivars()
+                    .source
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|(item, _)| !item.isCollapsed());
+            }
             match (self.pane(), self.page()) {
                 (Some(pane), _) => pane.format_checked(command),
                 (_, Some(page)) => page.format_checked(command),

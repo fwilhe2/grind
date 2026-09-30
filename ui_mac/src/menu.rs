@@ -85,6 +85,9 @@ pub enum Command {
     /// The name overlay: an outline round each defined name's range, or each bookmark's name
     /// beside its line on a page (M8).
     Names,
+    /// The document as its projection, in a pane beside it (D9, M8) — ⌥⌘U, Safari's key for
+    /// showing a page's source.
+    ShowSource,
 }
 
 /// A cell alignment.
@@ -150,6 +153,7 @@ impl Command {
             Command::InsertFunction,
             Command::CellRoles,
             Command::Names,
+            Command::ShowSource,
         ]);
         all
     }
@@ -187,7 +191,7 @@ impl Command {
         let text = kind == DocumentKind::Text;
         match self {
             Command::NewSheet | Command::NewText => true,
-            Command::Names => sheet || text,
+            Command::Names | Command::ShowSource => sheet || text,
             Command::Mark(Emphasis::Bold | Emphasis::Italic)
             | Command::TextColor(_)
             | Command::Background(_)
@@ -652,6 +656,7 @@ pub static MENUS: &[Menu] = &[
             Item::Separator,
             command("Cell Roles", None, Command::CellRoles),
             command("Names", None, Command::Names),
+            command("Show Source", key("u", OPT_CMD), Command::ShowSource),
             Item::Separator,
             standard("Enter Full Screen", key("f", CTRL_CMD), "toggleFullScreen:"),
         ],
@@ -851,6 +856,7 @@ mod tests {
             (Action::Command(Command::Mark(Emphasis::Underline)), "⌘U"),
             (Action::Standard("orderFrontFontPanel:"), "⌘T"),
             (Action::Standard("orderFrontColorPanel:"), "⇧⌘C"),
+            (Action::Command(Command::ShowSource), "⌥⌘U"),
             (Action::Tagged("performFindPanelAction:", find::SHOW), "⌘F"),
             (Action::Tagged("performFindPanelAction:", find::NEXT), "⌘G"),
             (

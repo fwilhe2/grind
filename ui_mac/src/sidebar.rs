@@ -249,15 +249,21 @@ fn rect(w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h))
 }
 
-/// `content` with the sidebar beside it, listing `places`, as a split view controller for the
-/// window's content — and the sidebar's list, which the caller keeps, since the table holds its
-/// data source weakly.
+/// `content` with the sidebar before it, listing `places`, and `trailing` after it as a
+/// collapsed inspector — the source pane — as a split view controller for the window's content.
+/// Also the sidebar's list, which the caller keeps, since the table holds its data source
+/// weakly, and the trailing item, which View ▸ Show Source opens and closes.
 pub fn split(
     places: Rc<dyn Places>,
     content: &NSView,
+    trailing: &NSView,
     height: f64,
     mtm: MainThreadMarker,
-) -> (Retained<NSSplitViewController>, Retained<Sidebar>) {
+) -> (
+    Retained<NSSplitViewController>,
+    Retained<Sidebar>,
+    Retained<NSSplitViewItem>,
+) {
     let list: Retained<Sidebar> = {
         let this = Sidebar::alloc(mtm).set_ivars(List {
             places: places.clone(),
@@ -298,8 +304,15 @@ pub fn split(
     let main = NSViewController::new(mtm);
     main.setView(content);
 
+    let inspector = NSViewController::new(mtm);
+    inspector.setView(trailing);
+    let source = NSSplitViewItem::inspectorWithViewController(&inspector);
+    source.setCanCollapse(true);
+    source.setCollapsed(true);
+
     let split = NSSplitViewController::new(mtm);
     split.addSplitViewItem(&NSSplitViewItem::sidebarWithViewController(&sidebar));
     split.addSplitViewItem(&NSSplitViewItem::splitViewItemWithViewController(&main));
-    (split, list)
+    split.addSplitViewItem(&source);
+    (split, list, source)
 }

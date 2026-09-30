@@ -155,6 +155,12 @@ impl Delegate {
                 }
                 return;
             }
+            Command::ShowSource => {
+                if let Some(document) = self.front_document() {
+                    document.toggle_source();
+                }
+                return;
+            }
             // The overlays (M8), on either pane.
             Command::CellRoles | Command::Names => {
                 if let Some(document) = self.front_document() {
