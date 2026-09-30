@@ -450,6 +450,16 @@ define_class!(
             self.interpretKeyEvents(&NSArray::from_slice(&[event]));
         }
 
+        /// `NSResponder`'s older `insertText:`, which some senders still use — a Services menu
+        /// item, a script — rather than the input client's form below.
+        #[unsafe(method(insertText:))]
+        fn insert_text(&self, string: &AnyObject) {
+            let text = string_of(string);
+            self.ivars().act_on(|page, app, _| {
+                input::insert(app, page, &text, NOT_FOUND..NOT_FOUND)
+            });
+        }
+
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             if let Some(window) = self.window() {
