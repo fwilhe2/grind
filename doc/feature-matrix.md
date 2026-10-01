@@ -65,7 +65,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● | ● |
 | Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● | ● |
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
-| Go to an address | ● | ● | ● | ● | ● | ● | ● |
+| Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ○ | ● | ◐ ⁶ |
 | Recent files | — | ● | ○ | ○ | ○ | ○ | ● |
@@ -99,8 +99,8 @@ CLI matters most exactly where a GUI's whole output is colour.
 **Mac.** ¹ An untitled document saves flat: the document answers `fods` or `fodt` itself (M10),
 since the type it is declared under would have said `.ods`. ² A window of its own beside this
 one — one window per document is decision 5. ³ The sidebar's Problems section rather than a
-dialog, every row a jump (M8). ⁴ The grid's name box (⌘L) takes any address; on a page ⌘L asks for one in an
-alert, and its sidebar's outline and bookmarks are jumps too. ⁵ Every menu item shows
+dialog, every row a jump (M8). ⁴ The grid's name box (⌘L) takes any address; on a page ⌘L
+asks for one in an alert, and its sidebar's outline and bookmarks are jumps too. ⁵ Every menu item shows
 its key, and Help ▸ Search finds any item — the platform's own key list. ⁶ The standard About
 panel, which says the bundle's version and not `grind_core::build_info`'s stamp. ⁷ A universal,
 ad-hoc-signed `Grind.app` in a DMG instead (M10).
@@ -143,7 +143,7 @@ than as a cursor on a hidden row.
 | Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ○ |
 | Fill down / fill right | ● | ● | ● | ● | ○ | ○ |
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ○ |
-| Recalculate | ● | ● | ● | ● | ● | ● |
+| Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
 | Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ○ |
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
@@ -367,7 +367,7 @@ untitled spreadsheet of its own (the next row); nothing imports into an open doc
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
 | A named paragraph style | ● | ○ | ● | ○ | ○ | ○ |
 | **Addressing and navigation** | | | | | | |
-| `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● |
+| `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
 | Create a bookmark | ● | ○ | ● | ○ | ○ | ○ |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
