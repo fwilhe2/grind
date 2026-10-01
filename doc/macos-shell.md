@@ -336,7 +336,7 @@ ui_mac/
     render.rs          [M]  the `Op`s onto a CGContext, and the bitmap `--render-to` draws into
     png.rs              *   the frame's PNG, written here so two renders are the same bytes
   (tests/appkit.rs was planned here; a drive's `a11y` step is what M9 built instead)
-  data/                     grind.svg → Grind.icns (M10), Info.plist is generated
+  data/                     grind.svg → Grind.icns by make-icns.py (M10); Info.plist is generated
 ```
 
 **AppKit must be called from the main thread**, and the Rust test harness runs tests on worker
@@ -402,7 +402,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting — *built, and not yet run* (*What M7 built*) | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …`. **The Linux half is met; the runner half is `mac-frames.sh`'s formatting section** |
 | **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) — *built, and not yet run* (*What M8 built*) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical. **The Linux half is met; the runner half is `mac-frames.sh`'s eighth section** |
 | **M9** | The welcome window and Open Recent; context menus; the accessibility floor — *built, and not yet run* (*What M9 built*) | ~~`tests/appkit.rs`'s~~ **a drive's `a11y` step's** accessibility assertions pass; the welcome window renders in both appearances. **The Linux half is met; the runner half is `mac-frames.sh`'s last two sections** |
-| **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such** |
+| **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap — *built but for the tap, and not yet run* (*What M10 built*) | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such**. **The Linux half is met; the runner half is `.github/scripts/mac-bundle.sh`** |
 | **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing |
 | **M12** | **The UX pass**, over a screen-sharing session into a runner (`mac-session.yml`), recorded the way `doc/windows-shell.md`'s is | Every item on *What the runner cannot speak for* is either checked or still named |
 
@@ -610,6 +610,25 @@ What M9 leaves: Open Recent needed nothing — `NSDocumentController` fills it, 
 `clearRecentDocuments:` item was for; a line of the page's accessibility value is a block rather
 than a laid-out line (a `ponytail:` in `a11y.rs`, `accesskit_macos` the upgrade); and the grid is
 announced rather than described cell by cell, which is decision 10's floor and not its ceiling.
+
+### What M10 built
+
+Built, and not yet run: every check is in `.github/scripts/mac-bundle.sh`, which `artifacts.yml`'s
+`macos` job runs after the frames — and whether or not they passed, since its checks are about
+the binary.
+
+| File | Half | What it is |
+|---|---|---|
+| `plist.rs` | portable | The Info.plist from one table of nine types — `assoc.rs`'s, offered never taken: every type **Alternate** but `.grind`, **Owner** and exported conforming to `public.plain-text`; ODF forms as Editor, imports as Viewer. Printed by `grind-mac --info-plist`; tests hold each extension to a form this build reads and the floor to the deployment target |
+| `document.rs` | Mac | Declared types would have given a Save the package's extension; the document answers it — its own, or the flat form for an untitled one (`doc/flat-first.md`) — and the panel keeps what is typed |
+| `data/grind.svg` `data/make-icns.py` `data/Grind.icns` | portable | The suite's mark on the macOS icon grid, rasterised and packed into eleven sizes with no Mac tool, reproducibly, and checked in as `grind.ico` is |
+| `main.rs` | both | `--handlers <file>`, what LaunchServices offers for a file and its default, asked of `NSWorkspace` |
+| `mac-bundle.sh` `artifacts.yml` | CI | The x86_64 slice, `lipo`, the bundle, the ad-hoc signature, the DMG and its upload, and the checks: `plutil -lint`, `codesign --verify --strict`, `otool -L`, `vtool`'s 15.0, LaunchServices offering without taking, and `spctl` rejecting, as expected |
+
+What M10 leaves: **the tap**. A Homebrew cask points at a published DMG by URL and checksum, and
+this project publishes nothing yet — the DMG is a workflow artifact — so the tap, with decision
+12's Open Anyway step written into its caveats, waits for the first release. Quick Look's preview
+of a `.grind` is claimed by the declaration and not yet seen.
 
 ## Conventions made mechanical
 
