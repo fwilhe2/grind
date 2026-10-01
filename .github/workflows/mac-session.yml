@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# M12's screen-sharing session (doc/macos-shell.md, M11 builds it, M12 uses it): a macos-26
+# runner with the latest Grind.app in /Applications, Screen Sharing on behind a password, and
+# the runner on the user's own tailnet as an ephemeral node — reachable from the user's machines
+# and from nowhere else — for at most an hour.
+#
+#   scripts/mac-remote.sh session [minutes]
+#
+# **Dispatch only**: never on a push or a pull request, since it opens a machine to a network.
+# It needs three secrets, and fails before doing anything without them:
+#
+#   MAC_SESSION_PASSWORD   the runner user's password for the session — never printed
+#   TS_OAUTH_CLIENT_ID     a Tailscale OAuth client with the `auth_keys` scope, for `tag:ci`
+#   TS_OAUTH_SECRET        its secret
+#
+# Not yet run. Whether `kickstart` may still switch Screen Sharing on, unattended, on the runner's
+# macOS is the first thing its first run answers; if it may not, M12 falls back to drives and
+# their snapshots, which is what the runner can speak for already.
+
+name: mac-session
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long the session stays up, at most 55"
+        required: false
+        default: "45"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  session:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: The secrets are there
+        env:
+          PASSWORD: ${{ secrets.MAC_SESSION_PASSWORD }}
+          TS_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          for name in PASSWORD TS_ID TS_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "::error::a secret this session needs is not set ($name); see the workflow's header"
+              exit 1
+            fi
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The latest Grind.app, in /Applications
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for run in $(gh run list -R "$GITHUB_REPOSITORY" -w artifacts.yml -b "$GITHUB_REF_NAME" \
+              -L 20 --json databaseId -q '.[].databaseId'); do
+            gh run download "$run" -R "$GITHUB_REPOSITORY" -n grind-mac-dmg-macos-26 -D dmg && break
+          done
+          [ -f dmg/Grind.dmg ] || { echo "::error::no Grind.dmg to put in the session"; exit 1; }
+          hdiutil attach dmg/Grind.dmg -mountpoint /Volumes/Grind -nobrowse -quiet
+          cp -R /Volumes/Grind/Grind.app /Applications/
+          hdiutil detach /Volumes/Grind -quiet
+
+      # The password is a secret, so the runner masks it in every log line; it is passed through
+      # the environment and never echoed regardless.
+      - name: Screen Sharing on, behind the session's password
+        env:
+          PASSWORD: ${{ secrets.MAC_SESSION_PASSWORD }}
+        run: |
+          sudo dscl . -passwd "/Users/$USER" "$PASSWORD"
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on -users "$USER" -privs -all -restart -agent -menu
+          echo "Screen Sharing is on for $USER"
+
+      - uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: grind-mac-session
+
+      - name: The session — connect, look, and let it end
+        env:
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          case "$MINUTES" in '' | *[!0-9]*) MINUTES=45 ;; esac
+          [ "$MINUTES" -le 55 ] || MINUTES=55
+          echo "::notice title=mac-session::vnc://grind-mac-session on your tailnet, user $USER, for $MINUTES minutes"
+          sleep $((MINUTES * 60))
