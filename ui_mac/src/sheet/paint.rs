@@ -288,7 +288,10 @@ pub fn cells(
                 palette.ink,
                 palette.dark,
             );
-            ops.push(cell_text(one_line(text), &value, style, cell, ink, metrics));
+            match look::wraps(style) && !numfmt::is_number(&value) {
+                true => ops.extend(wrapped_text(text, &value, style, cell, ink, metrics)),
+                false => ops.push(cell_text(one_line(text), &value, style, cell, ink, metrics)),
+            }
         }
     }
     ops.extend(name_outlines(grid, &view, viewport.names(), palette));
@@ -404,6 +407,68 @@ fn cell_text(
         color: ink,
         clip: cell,
     }
+}
+
+/// A wrapping cell's text, broken at its column's width by `grind_core::layout::wrap` — the
+/// breaker the page and the GNOME window's row heights use — one line an op, aligned across as a
+/// line is and the block of lines placed down the cell as one line would be. What does not fit
+/// the row's height is cut by the cell, since the row is as tall as the document says.
+///
+/// ponytail: a row with no height of its own is not grown to fit (the GNOME window's L3 does);
+/// the trigger is a wrapped cell somebody cannot read, and the upgrade is `Grid` asking this
+/// same breaker for a row's height.
+fn wrapped_text(
+    text: &str,
+    value: &grind_sheet::model::CellValue,
+    style: Option<&grind_sheet::style::CellStyle>,
+    cell: Rect,
+    ink: Rgb,
+    metrics: &dyn Metrics,
+) -> Vec<Op> {
+    let text_style = look::text_style(style);
+    let room = (cell.w - 2.0 * PAD_X).max(1.0);
+    let layout = grind_core::layout::wrap(
+        &[grind_core::layout::Fragment {
+            text,
+            style: &text_style,
+        }],
+        room as f32,
+        metrics,
+    );
+    let block_h = f64::from(layout.height());
+    let top = match look::valign(style) {
+        look::VAlign::Top => cell.y + PAD_Y,
+        look::VAlign::Middle => cell.y + (cell.h - block_h) / 2.0,
+        look::VAlign::Bottom => cell.bottom() - PAD_Y - block_h,
+    };
+    layout
+        .lines()
+        .iter()
+        .map(|line| {
+            let piece: String = text
+                .chars()
+                .skip(line.start)
+                .take(line.end.saturating_sub(line.start))
+                .collect::<String>()
+                .trim_end()
+                .to_owned();
+            let piece = one_line(&piece);
+            let piece_w = width(metrics, &piece, &text_style);
+            let x = match look::align(value, style) {
+                look::Align::Left => cell.x + PAD_X,
+                look::Align::Center => cell.x + (cell.w - piece_w) / 2.0,
+                look::Align::Right => cell.right() - PAD_X - piece_w,
+            };
+            Op::Text {
+                x,
+                top: top + f64::from(line.top),
+                text: piece,
+                style: text_style.clone(),
+                color: ink,
+                clip: cell,
+            }
+        })
+        .collect()
 }
 
 /// A cell's text as the one line a grid draws: a line break the document kept (`text:line-break`
@@ -940,5 +1005,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Wrap Text draws a long label as lines inside its cell, each where the breaker put it.
+    #[test]
+    fn a_wrapping_cell_is_drawn_as_lines() {
+        let app = App::new();
+        app.enter(
+            0,
+            Pos::new(0, 0),
+            "the quick brown fox jumps",
+            RecalcMode::Document,
+        )
+        .unwrap();
+        let wrap = grind_sheet::style::CellStyle {
+            wrap: Some("wrap".into()),
+            ..Default::default()
+        };
+        app.set_style(0, Pos::new(0, 0), Pos::new(0, 0), Some(wrap))
+            .unwrap();
+        app.set_row_height(0, 0..1, Some("2in".into())).unwrap();
+        // About ten `Fixed` characters of room.
+        app.set_col_width(0, 0..1, Some("0.25in".into())).unwrap();
+        let grid = Grid::of(&app, 0);
+        let view = Rect::new(0.0, 0.0, 500.0, 300.0);
+        let ops = cells(&app, 0, &grid, view, Selection::default(), &LOOK);
+        let lines: Vec<(&str, f64, f64)> = texts(&ops);
+        assert!(lines.len() > 1, "{lines:?}");
+        assert!(
+            lines.windows(2).all(|pair| pair[0].2 < pair[1].2),
+            "down the cell"
+        );
+        let joined: Vec<&str> = lines.iter().map(|(text, ..)| *text).collect();
+        assert_eq!(joined.join(" "), "the quick brown fox jumps");
     }
 }

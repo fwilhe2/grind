@@ -482,9 +482,7 @@ impl Page {
 /// A table's size as a person types it for Insert ▸ Table… — `3x2`, `3 × 2`, `3,2` — columns
 /// first, as every word processor's dialog asks: `(columns, rows)`, each at least one.
 pub fn table_size(text: &str) -> Option<(u32, u32)> {
-    let mut parts = text
-        .split(['x', 'X', '×', ',', '*'])
-        .map(str::trim);
+    let mut parts = text.split(['x', 'X', '×', ',', '*']).map(str::trim);
     let columns = parts.next()?.parse::<u32>().ok().filter(|n| *n > 0)?;
     let rows = parts.next()?.parse::<u32>().ok().filter(|n| *n > 0)?;
     parts.next().is_none().then_some((columns, rows))
