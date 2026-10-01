@@ -202,6 +202,22 @@ impl Delegate {
                 }
                 return;
             }
+            // Go To on a page: an address asked for, and the caret there.
+            Command::GoTo if self.front_pane().is_none() => {
+                if let Some(page) = self.front_document().and_then(|document| document.page())
+                    && let Some(address) = ask_address(self.mtm())
+                {
+                    match crate::places::caret(&page.app, &address) {
+                        Some(caret) => page.go_to(caret),
+                        None => alert(
+                            self.mtm(),
+                            "There is no such place.",
+                            &format!("“{address}” is not an address in this document."),
+                        ),
+                    }
+                }
+                return;
+            }
             Command::GoTo | Command::AddSheet | Command::RenameSheet | Command::DeleteSheet => {
                 if let Some(pane) = self.front_pane() {
                     match command {
@@ -335,6 +351,27 @@ fn alert(mtm: MainThreadMarker, message: &str, detail: &str) {
     alert.setMessageText(&NSString::from_str(message));
     alert.setInformativeText(&NSString::from_str(detail));
     alert.runModal();
+}
+
+/// Ask for a place on a page — `p12`, `p12+40`, `#intro`, `§2.1.3`.
+fn ask_address(mtm: MainThreadMarker) -> Option<String> {
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str("Go To"));
+    alert.setInformativeText(&NSString::from_str(
+        "A paragraph (p12), a place in one (p12+40), a bookmark (#intro) or an outline path (§2.1).",
+    ));
+    alert.addButtonWithTitle(&NSString::from_str("Go"));
+    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+    let field = NSTextField::textFieldWithString(&NSString::from_str(""), mtm);
+    field.setFrame(NSRect::new(
+        NSPoint::new(0.0, 0.0),
+        NSSize::new(240.0, 24.0),
+    ));
+    alert.setAccessoryView(Some(&field));
+    alert.window().setInitialFirstResponder(Some(&field));
+    (alert.runModal() == NSAlertFirstButtonReturn)
+        .then(|| field.stringValue().to_string().trim().to_owned())
+        .filter(|address| !address.is_empty())
 }
 
 /// Ask for a sheet's new name, starting from `current` — an alert with a field in it, the

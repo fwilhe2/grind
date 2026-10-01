@@ -39,7 +39,8 @@ pub enum Command {
     /// A new, empty text document.
     NewText,
     /// The keyboard into the name box, to type a place — `g20`, `Data.B2:C9`, a defined name —
-    /// and go there (M3). ⌘L, the precedent `doc/macos-shell.md` names.
+    /// and go there (M3). ⌘L, the precedent `doc/macos-shell.md` names. On a page, a prompt for
+    /// an address — `p12`, `#intro`, `§2.1` — since a page has no box of its own.
     GoTo,
     /// A sheet, after the last, under `App::fresh_sheet_name` (M4) — Insert ▸ Sheet, where Excel
     /// for Mac has it.
@@ -195,14 +196,13 @@ impl Command {
         let text = kind == DocumentKind::Text;
         match self {
             Command::NewSheet | Command::NewText | Command::Welcome => true,
-            Command::Names | Command::ShowSource => sheet || text,
+            Command::Names | Command::ShowSource | Command::GoTo => sheet || text,
             Command::Mark(Emphasis::Bold | Emphasis::Italic)
             | Command::TextColor(_)
             | Command::Background(_)
             | Command::ClearFormatting => sheet || text,
             Command::Mark(_) | Command::Block(_) => text,
-            Command::GoTo
-            | Command::AddSheet
+            Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
             | Command::Align(_)
