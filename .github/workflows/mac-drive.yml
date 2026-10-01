@@ -1,0 +1,100 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The remote loop's drive (doc/macos-shell.md, M11): a drive script written anywhere — on the
+# Linux machine this project is developed on, typically — run against the latest Grind.app that
+# `artifacts.yml` built, **compiling nothing**, and the transcript and snapshots handed back.
+#
+#   scripts/mac-remote.sh drive my.drive [document] [branch]
+#
+# is the usual way in. The transcript is also emitted as an annotation, which the public API
+# serves without signing in — a job's log and its artifacts need credentials, an annotation does
+# not — so a session with no credentials at all can still read what the drive did.
+#
+# The inputs reach the shell only as environment variables, never interpolated into a script: a
+# dispatch input is text from outside, and `${{ }}` inside `run:` would execute it.
+
+name: mac-drive
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "The drive script (ui_mac/src/drive.rs's steps), one step a line"
+        required: true
+      document:
+        description: "A document in the repository to open; empty for a new spreadsheet, `text` for a new text document"
+        required: false
+        default: ""
+      branch:
+        description: "The branch whose latest Grind.app is driven"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  drive:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The newest artifacts.yml run on the branch that left a DMG behind — a run whose bundle
+      # step failed left none, and the one before it is the latest Grind.app there is.
+      - name: The latest Grind.app — downloaded, not built
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          found=""
+          for run in $(gh run list -R "$GITHUB_REPOSITORY" -w artifacts.yml -b "$BRANCH" \
+              -L 20 --json databaseId -q '.[].databaseId'); do
+            if gh run download "$run" -R "$GITHUB_REPOSITORY" -n grind-mac-dmg-macos-26 -D dmg; then
+              found="$run"
+              break
+            fi
+          done
+          [ -n "$found" ] || { echo "::error::no artifacts.yml run on $BRANCH left a DMG"; exit 1; }
+          echo "Grind.app from run $found"
+          hdiutil attach dmg/Grind.dmg -mountpoint /Volumes/Grind -nobrowse -quiet
+          cp -R /Volumes/Grind/Grind.app .
+          hdiutil detach /Volumes/Grind -quiet
+
+      - name: Drive
+        env:
+          SCRIPT: ${{ inputs.script }}
+          DOCUMENT: ${{ inputs.document }}
+        run: |
+          mkdir -p out
+          printf '%s\n' "$SCRIPT" > out/script.drive
+          case "$DOCUMENT" in
+            "") what=(--sheet) ;;
+            text) what=(--text) ;;
+            *)
+              # A document in the repository, and nowhere else.
+              case "$DOCUMENT" in /* | *..*) echo "::error::$DOCUMENT is not a path in the repository"; exit 1 ;; esac
+              [ -f "$DOCUMENT" ] || { echo "::error::$DOCUMENT is not a file in the repository"; exit 1; }
+              cp "$DOCUMENT" out/
+              what=("out/$(basename "$DOCUMENT")")
+              ;;
+          esac
+          status=0
+          ./Grind.app/Contents/MacOS/grind-mac "${what[@]}" --drive out/script.drive --out out \
+            > out/transcript.txt 2>&1 || status=$?
+          cat out/transcript.txt
+          body="$(awk 'BEGIN { ORS = "%0A" } { gsub(/%/, "%25"); gsub(/\r/, ""); print }' out/transcript.txt)"
+          level=notice
+          [ "$status" -eq 0 ] || level=error
+          echo "::$level title=drive transcript (exit $status)::$body"
+          exit "$status"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: mac-drive
+          path: out/
+          if-no-files-found: warn
