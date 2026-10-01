@@ -61,6 +61,10 @@ pub enum Command {
     /// `--info-plist`: print the bundle's Info.plist (`plist.rs`) and exit — what the bundle
     /// step writes into `Grind.app`. Not a user feature.
     InfoPlist,
+    /// `--handlers <file>`: which applications LaunchServices offers for a file, and which one a
+    /// double-click opens — what M10's "offered, never taken" is checked with. Not a user
+    /// feature.
+    Handlers(PathBuf),
     /// Something was wrong with the arguments. The string is the whole message.
     Error(String),
 }
@@ -87,6 +91,7 @@ spreadsheet, a text document or an existing file can be chosen.
   --drive <s>      open a window, replay the script's events, and exit
   --out <dir>      where a drive's snapshots are written
   --info-plist     print the bundle's Info.plist and exit
+  --handlers <f>   print which applications are offered for a file, and its default
   -h, --help       this text
   -V, --version    version and build stamp
 
@@ -109,6 +114,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
             "-h" | "--help" => return Command::Help,
             "-V" | "--version" => return Command::Version,
             "--info-plist" => return Command::InfoPlist,
+            "--handlers" => {
+                return match args.next() {
+                    Some(file) => Command::Handlers(PathBuf::from(file)),
+                    None => Command::Error("--handlers needs a file to ask about".into()),
+                };
+            }
             "--sheet" => kind = Some(DocumentKind::Spreadsheet),
             "--text" => kind = Some(DocumentKind::Text),
             "--render-to" => match args.next() {
@@ -203,6 +214,11 @@ mod tests {
     #[test]
     fn the_info_plist_is_asked_for_by_name() {
         assert_eq!(parse_str(&["--info-plist"]), Command::InfoPlist);
+        assert_eq!(
+            parse_str(&["--handlers", "a.fods"]),
+            Command::Handlers(PathBuf::from("a.fods"))
+        );
+        assert!(matches!(parse_str(&["--handlers"]), Command::Error(_)));
     }
 
     #[test]

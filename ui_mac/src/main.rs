@@ -295,6 +295,35 @@ fn render_to(_: &Opening) -> Result<(), String> {
     Err("frames are drawn by CoreGraphics, on macOS only".into())
 }
 
+/// Which applications LaunchServices offers for `file`, one `offered:` line each, and the one a
+/// double-click opens as `default:` — asked of `NSWorkspace`, which is what the Finder asks.
+#[cfg(target_os = "macos")]
+fn handlers(file: &Path) -> Result<String, String> {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::NSURL;
+    let url = NSURL::from_file_path(file).ok_or("not a file path")?;
+    let workspace = NSWorkspace::sharedWorkspace();
+    let path = |url: &NSURL| {
+        url.to_file_path()
+            .map_or_else(String::new, |p| p.display().to_string())
+    };
+    let mut said = String::new();
+    for app in workspace.URLsForApplicationsToOpenURL(&url).iter() {
+        said.push_str(&format!("offered: {}\n", path(&app)));
+    }
+    let default = workspace
+        .URLForApplicationToOpenURL(&url)
+        .map_or_else(|| "none".to_owned(), |app| path(&app));
+    said.push_str(&format!("default: {default}\n"));
+    Ok(said)
+}
+
+/// Off a Mac there is no LaunchServices to ask.
+#[cfg(not(target_os = "macos"))]
+fn handlers(_: &Path) -> Result<String, String> {
+    Err("LaunchServices is macOS's".into())
+}
+
 /// Open the window — the application, its menu bar and the document — and run until it quits.
 #[cfg(target_os = "macos")]
 fn window(opening: Opening) -> ExitCode {
@@ -326,6 +355,16 @@ fn main() -> ExitCode {
             print!("{}", plist::info_plist(env!("CARGO_PKG_VERSION")));
             ExitCode::SUCCESS
         }
+        Command::Handlers(file) => match handlers(&file) {
+            Ok(said) => {
+                print!("{said}");
+                ExitCode::SUCCESS
+            }
+            Err(message) => {
+                eprintln!("grind-mac: --handlers: {message}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Error(message) => {
             eprintln!("grind-mac: {message}\n\n{}", args::USAGE);
             ExitCode::from(2)
