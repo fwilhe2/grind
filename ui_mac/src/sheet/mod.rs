@@ -13,3 +13,4 @@ pub mod paint;
 pub mod search;
 pub mod select;
 pub mod state;
+pub mod verbs;

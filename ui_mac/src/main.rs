@@ -69,6 +69,8 @@ mod plist;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod png;
 #[cfg(target_os = "macos")]
+mod prompt;
+#[cfg(target_os = "macos")]
 mod render;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod sheet;
@@ -76,6 +78,8 @@ mod sheet;
 mod sidebar;
 #[cfg(target_os = "macos")]
 mod source_pane;
+#[cfg(target_os = "macos")]
+mod structure;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod text;
 #[cfg(target_os = "macos")]

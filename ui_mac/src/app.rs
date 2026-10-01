@@ -25,7 +25,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_clas
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationPolicy,
     NSApplicationDelegate, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags,
-    NSMenu, NSMenuItem, NSPopUpButton, NSTextField, NSWindow,
+    NSMenu, NSMenuItem, NSPopUpButton, NSWindow,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -34,6 +34,7 @@ use objc2_foundation::{
 use crate::Opening;
 use crate::document::{Controller, Document};
 use crate::menu::{self, Action, COMMAND_SELECTOR, Command, Item, MENUS, Menu, Role};
+use crate::prompt;
 use crate::welcome_window::{self, Picked};
 
 /// What the delegate was launched to do, until it has done it.
@@ -218,6 +219,22 @@ impl Delegate {
                 }
                 return;
             }
+            Command::Fill(_)
+            | Command::Rows(_)
+            | Command::Columns(_)
+            | Command::DefineName
+            | Command::ExportCsv => {
+                if let Some(pane) = self.front_pane() {
+                    pane.structure(command, self.mtm());
+                }
+                return;
+            }
+            Command::InsertTable | Command::InsertBookmark => {
+                if let Some(page) = self.front_document().and_then(|document| document.page()) {
+                    page.structure(command, self.mtm());
+                }
+                return;
+            }
             Command::Recalculate => {
                 if let Some(pane) = self.front_pane() {
                     pane.recalculate_anyway();
@@ -351,53 +368,31 @@ impl Delegate {
     }
 }
 
-/// Say what went wrong, in a sheet-less alert — the one modal this milestone has.
+/// Say what went wrong.
 fn alert(mtm: MainThreadMarker, message: &str, detail: &str) {
-    let alert = NSAlert::new(mtm);
-    alert.setMessageText(&NSString::from_str(message));
-    alert.setInformativeText(&NSString::from_str(detail));
-    alert.runModal();
+    prompt::tell(mtm, message, detail);
 }
 
 /// Ask for a place on a page — `p12`, `p12+40`, `#intro`, `§2.1.3`.
 fn ask_address(mtm: MainThreadMarker) -> Option<String> {
-    let alert = NSAlert::new(mtm);
-    alert.setMessageText(&NSString::from_str("Go To"));
-    alert.setInformativeText(&NSString::from_str(
+    prompt::ask(
+        mtm,
+        "Go To",
         "A paragraph (p12), a place in one (p12+40), a bookmark (#intro) or an outline path (§2.1).",
-    ));
-    alert.addButtonWithTitle(&NSString::from_str("Go"));
-    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
-    let field = NSTextField::textFieldWithString(&NSString::from_str(""), mtm);
-    field.setFrame(NSRect::new(
-        NSPoint::new(0.0, 0.0),
-        NSSize::new(240.0, 24.0),
-    ));
-    alert.setAccessoryView(Some(&field));
-    alert.window().setInitialFirstResponder(Some(&field));
-    (alert.runModal() == NSAlertFirstButtonReturn)
-        .then(|| field.stringValue().to_string().trim().to_owned())
-        .filter(|address| !address.is_empty())
+        "Go",
+        "",
+    )
 }
 
-/// Ask for a sheet's new name, starting from `current` — an alert with a field in it, the
-/// platform's own shape for one line of input. `None` when it is cancelled.
+/// Ask for a sheet's new name, starting from `current`. `None` when it is cancelled.
 fn ask_sheet_name(mtm: MainThreadMarker, current: &str) -> Option<String> {
-    let alert = NSAlert::new(mtm);
-    alert.setMessageText(&NSString::from_str("Rename Sheet"));
-    alert.setInformativeText(&NSString::from_str(
+    prompt::ask(
+        mtm,
+        "Rename Sheet",
         "Every formula, name and chart that refers to this sheet follows the new name.",
-    ));
-    alert.addButtonWithTitle(&NSString::from_str("Rename"));
-    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
-    let field = NSTextField::textFieldWithString(&NSString::from_str(current), mtm);
-    field.setFrame(NSRect::new(
-        NSPoint::new(0.0, 0.0),
-        NSSize::new(240.0, 24.0),
-    ));
-    alert.setAccessoryView(Some(&field));
-    alert.window().setInitialFirstResponder(Some(&field));
-    (alert.runModal() == NSAlertFirstButtonReturn).then(|| field.stringValue().to_string())
+        "Rename",
+        current,
+    )
 }
 
 /// Insert ▸ Function…: every function this build has, by its name and its plain-English one,
@@ -431,7 +426,6 @@ fn ask_function(mtm: MainThreadMarker) -> Option<usize> {
         .then(|| usize::try_from(popup.indexOfSelectedItem()).ok())
         .flatten()
 }
-
 /// A selector by name, as `menu.rs` spells it.
 fn selector(name: &str) -> Sel {
     let name = CString::new(name).expect("a selector has no NUL in it");

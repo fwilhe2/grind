@@ -91,6 +91,21 @@ pub enum Command {
     ShowSource,
     /// Every formula recalculated now — Excel for Mac's Calculate Now, on its key, ⌘=.
     Recalculate,
+    /// Fill Down (`true`, ⌘D) or Fill Right (⌘R): the top row or the left column of the
+    /// selection copied over the rest, references shifted (`App::fill`).
+    Fill(bool),
+    /// Something done to the selection's rows.
+    Rows(Track),
+    /// Something done to the selection's columns.
+    Columns(Track),
+    /// A name for the selection — Insert ▸ Name….
+    DefineName,
+    /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
+    ExportCsv,
+    /// A table at the caret — Insert ▸ Table….
+    InsertTable,
+    /// A bookmark on the caret's block — Insert ▸ Bookmark….
+    InsertBookmark,
     /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
     /// keeps its own.
     Welcome,
@@ -102,6 +117,15 @@ pub enum Align {
     Left,
     Center,
     Right,
+}
+
+/// What Format ▸ Row or Column does to the selection's tracks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Track {
+    /// Asks for a height or a width.
+    Size,
+    Hide,
+    Show,
 }
 
 /// A block kind Format ▸ Paragraph offers.
@@ -162,6 +186,17 @@ impl Command {
             Command::ShowSource,
             Command::Welcome,
             Command::Recalculate,
+            Command::Fill(true),
+            Command::Fill(false),
+        ]);
+        for track in [Track::Size, Track::Hide, Track::Show] {
+            all.extend([Command::Rows(track), Command::Columns(track)]);
+        }
+        all.extend([
+            Command::DefineName,
+            Command::ExportCsv,
+            Command::InsertTable,
+            Command::InsertBookmark,
         ]);
         all
     }
@@ -172,7 +207,15 @@ impl Command {
     pub fn asks(self) -> bool {
         matches!(
             self,
-            Command::GoTo | Command::RenameSheet | Command::InsertFunction
+            Command::GoTo
+                | Command::RenameSheet
+                | Command::InsertFunction
+                | Command::Rows(Track::Size)
+                | Command::Columns(Track::Size)
+                | Command::DefineName
+                | Command::ExportCsv
+                | Command::InsertTable
+                | Command::InsertBookmark
         )
     }
 
@@ -204,7 +247,10 @@ impl Command {
             | Command::TextColor(_)
             | Command::Background(_)
             | Command::ClearFormatting => sheet || text,
-            Command::Mark(_) | Command::Block(_) => text,
+            Command::Mark(_)
+            | Command::Block(_)
+            | Command::InsertTable
+            | Command::InsertBookmark => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -216,7 +262,12 @@ impl Command {
             | Command::ExplainFormula
             | Command::InsertFunction
             | Command::CellRoles
-            | Command::Recalculate => sheet,
+            | Command::Recalculate
+            | Command::Fill(_)
+            | Command::Rows(_)
+            | Command::Columns(_)
+            | Command::DefineName
+            | Command::ExportCsv => sheet,
         }
     }
 }
@@ -521,6 +572,35 @@ static NUMBER: Menu = Menu {
     ],
 };
 
+static FILL: Menu = Menu {
+    title: "Fill",
+    role: Role::Plain,
+    items: &[
+        command("Down", key("d", CMD), Command::Fill(true)),
+        command("Right", key("r", CMD), Command::Fill(false)),
+    ],
+};
+
+static ROW: Menu = Menu {
+    title: "Row",
+    role: Role::Plain,
+    items: &[
+        command("Height…", None, Command::Rows(Track::Size)),
+        command("Hide", None, Command::Rows(Track::Hide)),
+        command("Show", None, Command::Rows(Track::Show)),
+    ],
+};
+
+static COLUMN: Menu = Menu {
+    title: "Column",
+    role: Role::Plain,
+    items: &[
+        command("Width…", None, Command::Columns(Track::Size)),
+        command("Hide", None, Command::Columns(Track::Hide)),
+        command("Show", None, Command::Columns(Track::Show)),
+    ],
+};
+
 static PARAGRAPH: Menu = Menu {
     title: "Paragraph",
     role: Role::Plain,
@@ -582,6 +662,7 @@ pub static MENUS: &[Menu] = &[
             standard("Duplicate", key("s", SHIFT_CMD), "duplicateDocument:"),
             standard("Rename…", None, "renameDocument:"),
             standard("Move To…", None, "moveDocument:"),
+            command("Export as CSV…", None, Command::ExportCsv),
             Item::Submenu {
                 title: "Revert To",
                 menu: &REVERT_TO,
@@ -607,6 +688,10 @@ pub static MENUS: &[Menu] = &[
             },
             command("Go To…", key("l", CMD), Command::GoTo),
             command("Recalculate", key("=", CMD), Command::Recalculate),
+            Item::Submenu {
+                title: "Fill",
+                menu: &FILL,
+            },
             Item::Separator,
             command("Delete Sheet", None, Command::DeleteSheet),
         ],
@@ -617,6 +702,10 @@ pub static MENUS: &[Menu] = &[
         items: &[
             command("Sheet", None, Command::AddSheet),
             command("Function…", None, Command::InsertFunction),
+            command("Name…", None, Command::DefineName),
+            Item::Separator,
+            command("Table…", None, Command::InsertTable),
+            command("Bookmark…", None, Command::InsertBookmark),
         ],
     },
     Menu {
@@ -646,6 +735,14 @@ pub static MENUS: &[Menu] = &[
             Item::Submenu {
                 title: "Paragraph",
                 menu: &PARAGRAPH,
+            },
+            Item::Submenu {
+                title: "Row",
+                menu: &ROW,
+            },
+            Item::Submenu {
+                title: "Column",
+                menu: &COLUMN,
             },
             Item::Separator,
             command("Clear Formatting", None, Command::ClearFormatting),
