@@ -89,6 +89,8 @@ pub enum Command {
     /// The document as its projection, in a pane beside it (D9, M8) — ⌥⌘U, Safari's key for
     /// showing a page's source.
     ShowSource,
+    /// Every formula recalculated now — Excel for Mac's Calculate Now, on its key, ⌘=.
+    Recalculate,
     /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
     /// keeps its own.
     Welcome,
@@ -159,6 +161,7 @@ impl Command {
             Command::Names,
             Command::ShowSource,
             Command::Welcome,
+            Command::Recalculate,
         ]);
         all
     }
@@ -212,7 +215,8 @@ impl Command {
             | Command::FriendlyFormulas
             | Command::ExplainFormula
             | Command::InsertFunction
-            | Command::CellRoles => sheet,
+            | Command::CellRoles
+            | Command::Recalculate => sheet,
         }
     }
 }
@@ -602,6 +606,7 @@ pub static MENUS: &[Menu] = &[
                 menu: &FIND,
             },
             command("Go To…", key("l", CMD), Command::GoTo),
+            command("Recalculate", key("=", CMD), Command::Recalculate),
             Item::Separator,
             command("Delete Sheet", None, Command::DeleteSheet),
         ],

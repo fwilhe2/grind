@@ -300,6 +300,24 @@ mod mac {
                             }
                         });
                         pane.set_find_bar(find_bar::attach(&window, &pane, mtm));
+                        // The window's subtitle counts the words, as it changes.
+                        let counted = {
+                            let app = pane.app.clone();
+                            let window = ObjcWeak::new(&*window);
+                            move || {
+                                let counts = app.counts();
+                                if let Some(window) = window.load() {
+                                    window.setSubtitle(&NSString::from_str(
+                                        &crate::notice::counted_words(
+                                            counts.words,
+                                            counts.characters,
+                                        ),
+                                    ));
+                                }
+                            }
+                        };
+                        counted();
+                        pane.listen_document(counted);
                         page_view::watch(&pane);
                         let formats: Rc<dyn Formats> = pane.clone();
                         *self.ivars().toolbar.borrow_mut() =

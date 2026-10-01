@@ -218,6 +218,12 @@ impl Delegate {
                 }
                 return;
             }
+            Command::Recalculate => {
+                if let Some(pane) = self.front_pane() {
+                    pane.recalculate_anyway();
+                }
+                return;
+            }
             Command::GoTo | Command::AddSheet | Command::RenameSheet | Command::DeleteSheet => {
                 if let Some(pane) = self.front_pane() {
                     match command {

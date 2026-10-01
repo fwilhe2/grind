@@ -109,6 +109,15 @@ pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
     }
 }
 
+/// A page's counts, for its window's subtitle — what every word processor keeps in sight.
+pub fn counted_words(words: usize, characters: usize) -> String {
+    format!(
+        "{}, {}",
+        counted(words, "word", "words"),
+        counted(characters, "character", "characters")
+    )
+}
+
 /// A find on a page that landed: which of how many, and how to go on.
 pub fn found_text(index: usize, count: usize, needle: &str) -> String {
     format!(
@@ -176,6 +185,7 @@ mod tests {
             "2 of 3 occurrences of “rent”. ⌘G finds the next, ⇧⌘G the previous."
         );
         assert_eq!(replaced_text(1), "Replaced 1 occurrence. ⌘Z takes it back.");
+        assert_eq!(counted_words(1, 5), "1 word, 5 characters");
     }
 
     /// A Mac spells its keys with its own symbols.
