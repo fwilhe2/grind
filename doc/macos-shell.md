@@ -527,9 +527,9 @@ What M6 leaves: the caret does not blink (a Mac text view's does; a timer is the
 and it would make a drive's snapshots depend on when they were taken); a selection across
 blocks is shown to an input method as the caret alone, since the one block it sees cannot hold
 it; a picture is outlined where it goes rather than drawn (`CGImageSource` is the decoder, and
-`flow::lay_out`'s picture hook is where it goes); Edit ▸ Find over the page, the text sidebar
-(headings and bookmarks), paragraph kinds from a menu and every formatting control, which are
-M7's and M8's; and a notice banner for an edit the core refuses, which beeps instead.
+`flow::lay_out`'s picture hook is where it goes); the text sidebar (headings and bookmarks),
+paragraph kinds from a menu and every formatting control, which are M7's and M8's — and Edit ▸
+Find over the page, a go-to prompt and a word count, which came after M11; and a notice banner for an edit the core refuses, which beeps instead.
 
 ### What M7 built
 
@@ -644,6 +644,16 @@ of a `.grind` is claimed by the declaration and not yet seen.
 runner is an *annotation*, because the public API serves annotations to anyone while a job's log
 and its artifacts need credentials. `mac-frames.sh`, `mac-bundle.sh` and `mac-drive.yml` all
 report that way, and the probe's answers reached *Evidence* that way.
+
+### After M11: the named gaps, closed one at a time
+
+With M12 waiting on a person, the work turned to what each milestone named as left. Closed so far:
+**Find and Replace on the page** (one find bar over a `Findable` trait both panes answer, with a
+status line of its own, since a page window has no banner); **Go To on a page** (⌘L asks for
+`p12`, `#intro` or `§2.1` in an alert); **Edit ▸ Recalculate** on ⌘=, Excel for Mac's key; a
+page's **word count** in its window's subtitle; and `canAsynchronouslyWriteToURL:` answering NO
+where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
+column carries each.
 
 ## Conventions made mechanical
 

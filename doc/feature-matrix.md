@@ -65,7 +65,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● | ● |
 | Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● | ● |
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
-| Go to an address | ● | ● | ● | ● | ● | ● | ◐ ⁴ |
+| Go to an address | ● | ● | ● | ● | ● | ● | ● |
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ○ | ● | ◐ ⁶ |
 | Recent files | — | ● | ○ | ○ | ○ | ○ | ● |
@@ -99,8 +99,8 @@ CLI matters most exactly where a GUI's whole output is colour.
 **Mac.** ¹ An untitled document saves flat: the document answers `fods` or `fodt` itself (M10),
 since the type it is declared under would have said `.ods`. ² A window of its own beside this
 one — one window per document is decision 5. ³ The sidebar's Problems section rather than a
-dialog, every row a jump (M8). ⁴ The grid's name box (⌘L) takes any address; a page has no box
-to type `p12` into, and its sidebar's outline and bookmarks are its jumps. ⁵ Every menu item shows
+dialog, every row a jump (M8). ⁴ The grid's name box (⌘L) takes any address; on a page ⌘L asks for one in an
+alert, and its sidebar's outline and bookmarks are jumps too. ⁵ Every menu item shows
 its key, and Help ▸ Search finds any item — the platform's own key list. ⁶ The standard About
 panel, which says the bundle's version and not `grind_core::build_info`'s stamp. ⁷ A universal,
 ad-hoc-signed `Grind.app` in a DMG instead (M10).
@@ -143,7 +143,7 @@ than as a cursor on a hidden row.
 | Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ○ |
 | Fill down / fill right | ● | ● | ● | ● | ○ | ○ |
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ○ |
-| Recalculate | ● | ● | ● | ● | ● | ◐ ² |
+| Recalculate | ● | ● | ● | ● | ● | ● |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
 | Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ○ |
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
@@ -185,8 +185,8 @@ asked through `dialog::prompt` and the answers said on the notice bar (`notice::
 `notice::replaced`). The same step as the other two. No match-case or whole-cell control.
 
 **Mac.** ¹ A read-out above the grid that follows the cell editor and reads a formula in plain
-English at rest — not a second editor (`accessory.rs`'s `ponytail:`). ² Only the banner's
-Recalculate Anyway, after an edit whose recalculation this build refused; no menu item yet.
+English at rest — not a second editor (`accessory.rs`'s `ponytail:`). ² Edit ▸ Recalculate,
+on ⌘= — Excel for Mac's key — and the banner's Recalculate Anyway.
 
 ## 5. Spreadsheet — formatting
 
@@ -346,9 +346,9 @@ untitled spreadsheet of its own (the next row); nothing imports into an open doc
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● | ● |
 | Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ○ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● | ● |
-| Find | ● | ● | ● ᶠ | ○ | ○ | ○ |
-| Replace | ● | ○ | ● | ○ | ○ | ○ |
-| Word count | ● | ● | ● | ● | ● | ○ |
+| Find | ● | ● | ● ᶠ | ○ | ○ | ● |
+| Replace | ● | ○ | ● | ○ | ○ | ● |
+| Word count | ● | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
 | Strikethrough | ● | ● | ● | ● | ◐ ᵉ | ● |
@@ -367,7 +367,7 @@ untitled spreadsheet of its own (the next row); nothing imports into an open doc
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
 | A named paragraph style | ● | ○ | ● | ○ | ○ | ○ |
 | **Addressing and navigation** | | | | | | |
-| `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ◐ ³ |
+| `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
 | Create a bookmark | ● | ○ | ● | ○ | ○ | ○ |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
@@ -424,8 +424,8 @@ one, and no client sets a column width, because the model carries no table style
 
 **Mac.** ¹ Through the system font panel (⌘T), whose answer becomes a family, a size and the
 weight and slant, as one undo step (M7). ² Drawn in their own faces when a document has them;
-Format ▸ Paragraph sets Body and Heading 1–3 only. ³ Reached when a sidebar row or a Problems
-finding names one; there is no box to type an address into. ⁴ The sidebar's Outline section.
+Format ▸ Paragraph sets Body and Heading 1–3 only. ³ Edit ▸ Go To… (⌘L) asks for one; a sidebar
+row or a Problems finding goes to one too. ⁴ The sidebar's Outline section.
 
 ## 8. The divergences that matter, ranked
 
