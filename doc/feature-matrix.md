@@ -119,7 +119,7 @@ ad-hoc-signed `Grind.app` in a DMG instead (M10).
 | Go to a defined name | ● | ● | ● | ● | ● | ● |
 | Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ○ | ● | ● |
 | Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn | sidebar |
-| Zoom | — | ● | ○ | ○ | ○ | ○ |
+| Zoom | — | ● | ○ | ○ | ○ | ● |
 
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
