@@ -65,6 +65,8 @@ mod page_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod places;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod plist;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod png;
 #[cfg(target_os = "macos")]
 mod render;
@@ -318,6 +320,10 @@ fn main() -> ExitCode {
         }
         Command::Version => {
             println!("{}", version());
+            ExitCode::SUCCESS
+        }
+        Command::InfoPlist => {
+            print!("{}", plist::info_plist(env!("CARGO_PKG_VERSION")));
             ExitCode::SUCCESS
         }
         Command::Error(message) => {

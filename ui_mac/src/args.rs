@@ -58,6 +58,9 @@ pub enum Command {
     },
     Help,
     Version,
+    /// `--info-plist`: print the bundle's Info.plist (`plist.rs`) and exit — what the bundle
+    /// step writes into `Grind.app`. Not a user feature.
+    InfoPlist,
     /// Something was wrong with the arguments. The string is the whole message.
     Error(String),
 }
@@ -83,6 +86,7 @@ spreadsheet, a text document or an existing file can be chosen.
   --dark           draw that frame in the dark appearance
   --drive <s>      open a window, replay the script's events, and exit
   --out <dir>      where a drive's snapshots are written
+  --info-plist     print the bundle's Info.plist and exit
   -h, --help       this text
   -V, --version    version and build stamp
 
@@ -104,6 +108,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         match arg.as_str() {
             "-h" | "--help" => return Command::Help,
             "-V" | "--version" => return Command::Version,
+            "--info-plist" => return Command::InfoPlist,
             "--sheet" => kind = Some(DocumentKind::Spreadsheet),
             "--text" => kind = Some(DocumentKind::Text),
             "--render-to" => match args.next() {
@@ -193,6 +198,11 @@ mod tests {
             } => (kind, path, render_to),
             other => panic!("expected an open, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_info_plist_is_asked_for_by_name() {
+        assert_eq!(parse_str(&["--info-plist"]), Command::InfoPlist);
     }
 
     #[test]

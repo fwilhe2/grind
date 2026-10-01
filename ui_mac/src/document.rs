@@ -83,7 +83,8 @@ mod mac {
     };
     use objc2_app_kit::{
         NSBackingStoreType, NSDocument, NSDocumentChangeType, NSDocumentController, NSOpenPanel,
-        NSSplitViewItem, NSTextField, NSView, NSWindow, NSWindowController, NSWindowStyleMask,
+        NSSaveOperationType, NSSavePanel, NSSplitViewItem, NSTextField, NSView, NSWindow,
+        NSWindowController, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSArray, NSCocoaErrorDomain, NSData, NSDictionary, NSError, NSInteger,
@@ -349,6 +350,26 @@ mod mac {
                 false
             }
 
+            /// The extension a save gives the file: its own when it has one, and the flat form
+            /// for an untitled document — `doc/flat-first.md`'s default, which the declared type
+            /// (a package's identifier for either kind) would otherwise overrule.
+            #[unsafe(method_id(fileNameExtensionForType:saveOperation:))]
+            fn file_name_extension(
+                &self,
+                _type_name: &NSString,
+                _operation: NSSaveOperationType,
+            ) -> Option<Retained<NSString>> {
+                Some(NSString::from_str(&self.extension()))
+            }
+
+            /// The panel keeps the extension a person typed — `.ods`, `.fods`, `.grind` — since
+            /// the form is read from the name (`Form::from_path`), not from a type pop-up.
+            #[unsafe(method(prepareSavePanel:))]
+            fn prepare_save_panel(&self, panel: &NSSavePanel) -> bool {
+                panel.setAllowsOtherFileTypes(true);
+                true
+            }
+
             #[unsafe(method_id(readableTypes))]
             fn readable_types() -> Retained<NSArray<NSString>> {
                 NSArray::from_retained_slice(&[NSString::from_str(SHEET), NSString::from_str(TEXT)])
@@ -394,6 +415,21 @@ mod mac {
         /// The spreadsheet's pane, when this document is one with a window.
         pub fn pane(&self) -> Option<Rc<Pane>> {
             self.ivars().pane.borrow().clone()
+        }
+
+        /// The extension a save gives the file (`fileNameExtensionForType:saveOperation:`).
+        fn extension(&self) -> String {
+            let own = self
+                .fileURL()
+                .and_then(|url| url.to_file_path())
+                .and_then(|path| {
+                    path.extension()
+                        .map(|ext| ext.to_string_lossy().into_owned())
+                });
+            own.unwrap_or_else(|| match self.kind() {
+                Some(DocumentKind::Text) => "fodt".to_owned(),
+                _ => "fods".to_owned(),
+            })
         }
 
         /// Which kind of document this is.
