@@ -403,7 +403,7 @@ Every milestone lands green: `cargo fmt --check`, clippy for the host **and both
 | **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) — *built, and not yet run* (*What M8 built*) | A drive types `=SU` and Tab takes an offer; every Problems row jumps; with every overlay on, a save is byte-identical. **The Linux half is met; the runner half is `mac-frames.sh`'s eighth section** |
 | **M9** | The welcome window and Open Recent; context menus; the accessibility floor — *built, and not yet run* (*What M9 built*) | ~~`tests/appkit.rs`'s~~ **a drive's `a11y` step's** accessibility assertions pass; the welcome window renders in both appearances. **The Linux half is met; the runner half is `mac-frames.sh`'s last two sections** |
 | **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap — *built but for the tap, and not yet run* (*What M10 built*) | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such**. **The Linux half is met; the runner half is `.github/scripts/mac-bundle.sh`** |
-| **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing |
+| **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` — *built, and not yet run* (*What M11 built*) | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing. **Met by construction and unproved: the first dispatch of `mac-drive.yml` after a DMG exists is the proof** |
 | **M12** | **The UX pass**, over a screen-sharing session into a runner (`mac-session.yml`), recorded the way `doc/windows-shell.md`'s is | Every item on *What the runner cannot speak for* is either checked or still named |
 
 ### What M2 built
@@ -630,6 +630,21 @@ this project publishes nothing yet — the DMG is a workflow artifact — so the
 12's Open Anyway step written into its caveats, waits for the first release. Quick Look's preview
 of a `.grind` is claimed by the declaration and not yet seen.
 
+### What M11 built
+
+| File | What it is |
+|---|---|
+| `scripts/mac-remote.sh` | `renders` fetches the latest `artifacts.yml` run's frames and every annotation its scripts left; `drive <script> [document] [branch]` dispatches `mac-drive.yml`, waits, prints the transcript and fetches the snapshots; `session` asks for `mac-session.yml`. Needs `gh` signed in |
+| `.github/workflows/mac-drive.yml` | A script against the newest DMG `artifacts.yml` left on a branch — compiling nothing — with the transcript uploaded and annotated, and the inputs reaching the shell only through its environment |
+| `.github/workflows/mac-session.yml` | M12's session: dispatch only, at most an hour, three secrets checked before anything happens |
+| `doc/feature-matrix.md` | The Mac column, read out of `ui_mac` through M10, whose ● means *written* until a run says *working* |
+| `ui_mac/src/document.rs` `app.rs` | A drive started with `--sheet` or `--text` is handed its new document, so `save`, `click` and `sidebar` act on it |
+
+**The loop's whole design is the lesson of M2–M10**: everything that has to be read back from a
+runner is an *annotation*, because the public API serves annotations to anyone while a job's log
+and its artifacts need credentials. `mac-frames.sh`, `mac-bundle.sh` and `mac-drive.yml` all
+report that way, and the probe's answers reached *Evidence* that way.
+
 ## Conventions made mechanical
 
 "Follow the platform's conventions" is a promise that rots in a shell nobody here can run. So
@@ -674,13 +689,16 @@ as much of it as possible is a test, and most of those tests are portable:
   and never rebuilt, rendered and driven on the floor. *From M2.*
 - **`screenshots.yml`** gains a Mac job reading that `.app`; it compiles nothing. *From M2.*
 - **`mac-drive.yml`** (`workflow_dispatch`, a drive script as its input) runs the latest `.app`
-  against the script and uploads the transcript and the PNGs. It is the Linux side's "see it
-  working". *M11.*
+  against the script and uploads the transcript and the PNGs — and emits the transcript as an
+  annotation, which a session with no credentials can read. It is the Linux side's "see it
+  working". *Built in M11.*
 - **`mac-session.yml`** (`workflow_dispatch` only; never on a push or a pull request; at most an
   hour) is M12's screen-sharing session. The runner enables Screen Sharing with a password taken
   from a secret and joins a private network as an ephemeral node, using an auth key that is also
   a secret, so the session is reachable from the user's own machines and nowhere else. **The
-  password is never printed**: a public repository's logs are public. *M11, used in M12.*
+  password is never printed**: a public repository's logs are public. The private network is
+  Tailscale's, through an OAuth client rather than a reusable key. *Built in M11, not yet run;
+  used in M12.*
 
 The cost: macOS minutes are free on public repositories and billed at ten times the Linux rate
 on private ones. `check-from-linux` carries the everyday signal on the cheapest runner there is.
