@@ -109,6 +109,31 @@ pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
     }
 }
 
+/// A find on a page that landed: which of how many, and how to go on.
+pub fn found_text(index: usize, count: usize, needle: &str) -> String {
+    format!(
+        "{} of {} of “{needle}”. ⌘G finds the next, ⇧⌘G the previous.",
+        index + 1,
+        counted(count, "occurrence", "occurrences")
+    )
+}
+
+/// A find on a page with nothing to land on.
+pub fn not_found_text(needle: &str) -> String {
+    format!("Nothing in this document reads “{needle}”. ⌘F asks for another word.")
+}
+
+/// What Replace All did on a page — one ⌘Z for every one of them.
+pub fn replaced_text(count: usize) -> String {
+    match count {
+        0 => "Nothing replaced.".to_owned(),
+        n => format!(
+            "Replaced {}. ⌘Z takes it back.",
+            counted(n, "occurrence", "occurrences")
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +153,10 @@ mod tests {
             not_found("rent"),
             replaced(0, None),
             replaced(4, Some(("B7", 2))),
+            found_text(1, 3, "rent"),
+            not_found_text("rent"),
+            replaced_text(0),
+            replaced_text(1),
         ]
     }
 
@@ -142,6 +171,11 @@ mod tests {
         assert!(recalc_skipped(3).ends_with("their saved values."));
         assert!(recalculated(1, 0).starts_with("1 cell recalculated"));
         assert!(references_renamed(4).starts_with("4 references"));
+        assert_eq!(
+            found_text(1, 3, "rent"),
+            "2 of 3 occurrences of “rent”. ⌘G finds the next, ⇧⌘G the previous."
+        );
+        assert_eq!(replaced_text(1), "Replaced 1 occurrence. ⌘Z takes it back.");
     }
 
     /// A Mac spells its keys with its own symbols.

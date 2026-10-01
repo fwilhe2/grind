@@ -91,7 +91,7 @@ pub struct Pane {
     /// sheets and what `grind lint` finds, and has nothing to say about a move of the cursor.
     document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
     /// The find bar, once the window has one (`find_bar.rs`).
-    pub(crate) find_bar: RefCell<Option<FindBar>>,
+    pub(crate) find_bar: RefCell<Option<Retained<FindBar>>>,
     /// Whether formulas are read in plain English — View ▸ Friendly Formulas (M8).
     pub friendly: Cell<bool>,
     /// What the last move announced (decision 10) — kept so a drive can read back what
@@ -132,8 +132,16 @@ impl Pane {
     }
 
     /// The window's find bar.
-    pub fn set_find_bar(&self, bar: FindBar) {
+    pub fn set_find_bar(&self, bar: Retained<FindBar>) {
         *self.find_bar.borrow_mut() = Some(bar);
+    }
+
+    /// `performFindPanelAction:` — which of Find's items, by its tag (`find_bar.rs`).
+    pub fn find_panel_action(&self, tag: isize) {
+        let bar = self.find_bar.borrow().clone();
+        if let Some(bar) = bar {
+            bar.action(tag);
+        }
     }
 
     /// Call `listener` whenever the document or the sheet showing changes.

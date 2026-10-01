@@ -81,6 +81,8 @@ pub struct TextPane {
     pub names: Cell<bool>,
     /// Told when the document changed, and not when the caret moved — the sidebar.
     document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
+    /// The window's find bar (`find_bar.rs`).
+    find_bar: RefCell<Option<Retained<crate::find_bar::FindBar>>>,
 }
 
 impl TextPane {
@@ -98,6 +100,7 @@ impl TextPane {
             listeners: RefCell::new(Vec::new()),
             names: Cell::new(false),
             document_listeners: RefCell::new(Vec::new()),
+            find_bar: RefCell::new(None),
         })
     }
 
@@ -109,6 +112,19 @@ impl TextPane {
     /// Call `listener` whenever the caret, the selection or the document changes.
     pub fn listen(&self, listener: impl Fn() + 'static) {
         self.listeners.borrow_mut().push(Box::new(listener));
+    }
+
+    /// The window's find bar.
+    pub fn set_find_bar(&self, bar: Retained<crate::find_bar::FindBar>) {
+        *self.find_bar.borrow_mut() = Some(bar);
+    }
+
+    /// `performFindPanelAction:` — Edit ▸ Find's four items, over the page.
+    pub fn find_panel_action(&self, tag: isize) {
+        let bar = self.find_bar.borrow().clone();
+        if let Some(bar) = bar {
+            bar.action(tag);
+        }
     }
 
     /// Call `listener` whenever the document changes.
@@ -637,6 +653,15 @@ define_class!(
         #[unsafe(method(copy:))]
         fn copy(&self, _sender: Option<&AnyObject>) {
             self.ivars().copy();
+        }
+
+        /// Edit ▸ Find's four items, told apart by the sender's tag (`find_bar.rs`).
+        #[unsafe(method(performFindPanelAction:))]
+        fn perform_find_panel_action(&self, sender: Option<&AnyObject>) {
+            let tag = sender
+                .and_then(|sender| sender.downcast_ref::<NSMenuItem>())
+                .map_or(0, |item| item.tag());
+            self.ivars().find_panel_action(tag);
         }
 
         #[unsafe(method(cut:))]

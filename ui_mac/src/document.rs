@@ -299,6 +299,7 @@ mod mac {
                                 document.updateChangeCount(NSDocumentChangeType::ChangeDone);
                             }
                         });
+                        pane.set_find_bar(find_bar::attach(&window, &pane, mtm));
                         page_view::watch(&pane);
                         let formats: Rc<dyn Formats> = pane.clone();
                         *self.ivars().toolbar.borrow_mut() =
