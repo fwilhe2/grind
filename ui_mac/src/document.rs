@@ -505,6 +505,16 @@ mod mac {
             }
         }
 
+        /// View ▸ Zoom In, Zoom Out or Actual Size, on whichever document view this window has.
+        pub fn zoom(&self, step: i8) {
+            let Some((view, _)) = self.click_target() else {
+                return;
+            };
+            if let Some(scroll) = view.enclosingScrollView() {
+                scroll.setMagnification(crate::zoom::stepped(scroll.magnification(), step));
+            }
+        }
+
         /// View ▸ Show Source: the source pane opened, or closed.
         pub fn toggle_source(&self) {
             if let Some((item, pane)) = self.ivars().source.borrow().as_ref() {

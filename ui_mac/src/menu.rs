@@ -106,6 +106,8 @@ pub enum Command {
     InsertTable,
     /// A bookmark on the caret's block — Insert ▸ Bookmark….
     InsertBookmark,
+    /// Zoom In (1), Zoom Out (-1) or Actual Size (0) — `zoom.rs`.
+    Zoom(i8),
     /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
     /// keeps its own.
     Welcome,
@@ -197,6 +199,9 @@ impl Command {
             Command::ExportCsv,
             Command::InsertTable,
             Command::InsertBookmark,
+            Command::Zoom(1),
+            Command::Zoom(-1),
+            Command::Zoom(0),
         ]);
         all
     }
@@ -242,7 +247,9 @@ impl Command {
         let text = kind == DocumentKind::Text;
         match self {
             Command::NewSheet | Command::NewText | Command::Welcome => true,
-            Command::Names | Command::ShowSource | Command::GoTo => sheet || text,
+            Command::Names | Command::ShowSource | Command::GoTo | Command::Zoom(_) => {
+                sheet || text
+            }
             Command::Mark(Emphasis::Bold | Emphasis::Italic)
             | Command::TextColor(_)
             | Command::Background(_)
@@ -763,6 +770,10 @@ pub static MENUS: &[Menu] = &[
             command("Cell Roles", None, Command::CellRoles),
             command("Names", None, Command::Names),
             command("Show Source", key("u", OPT_CMD), Command::ShowSource),
+            Item::Separator,
+            command("Zoom In", key("+", CMD), Command::Zoom(1)),
+            command("Zoom Out", key("-", CMD), Command::Zoom(-1)),
+            command("Actual Size", key("0", CMD), Command::Zoom(0)),
             Item::Separator,
             standard("Enter Full Screen", key("f", CTRL_CMD), "toggleFullScreen:"),
         ],

@@ -858,6 +858,10 @@ pub fn sheet_view(pane: &Rc<Pane>, size: NSSize, mtm: MainThreadMarker) -> Retai
     );
     scroll.setHasVerticalScroller(true);
     scroll.setHasHorizontalScroller(true);
+    // A pinch, and View ▸ Zoom's three items (`zoom.rs`).
+    scroll.setAllowsMagnification(true);
+    scroll.setMinMagnification(crate::zoom::STOPS[0]);
+    scroll.setMaxMagnification(crate::zoom::STOPS[crate::zoom::STOPS.len() - 1]);
     scroll.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );

@@ -173,6 +173,12 @@ impl Delegate {
                 self.show_welcome();
                 return;
             }
+            Command::Zoom(step) => {
+                if let Some(document) = self.front_document() {
+                    document.zoom(step);
+                }
+                return;
+            }
             Command::ShowSource => {
                 if let Some(document) = self.front_document() {
                     document.toggle_source();

@@ -92,6 +92,8 @@ mod watch;
 mod welcome;
 #[cfg(target_os = "macos")]
 mod welcome_window;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod zoom;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

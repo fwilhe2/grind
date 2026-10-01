@@ -879,6 +879,10 @@ pub fn page_view(
         frame(0.0, 0.0, size.width, size.height),
     );
     scroll.setHasVerticalScroller(true);
+    // A pinch, and View ▸ Zoom's three items (`zoom.rs`).
+    scroll.setAllowsMagnification(true);
+    scroll.setMinMagnification(crate::zoom::STOPS[0]);
+    scroll.setMaxMagnification(crate::zoom::STOPS[crate::zoom::STOPS.len() - 1]);
     scroll.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
