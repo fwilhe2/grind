@@ -685,7 +685,7 @@ mod mac {
         }
 
         /// An empty document of `kind`, shown.
-        pub fn new_document(&self, kind: DocumentKind) -> Result<(), String> {
+        pub fn new_document(&self, kind: DocumentKind) -> Result<Retained<NSDocument>, String> {
             let type_name = super::type_name(kind).ok_or("not a kind this build makes")?;
             let document = self
                 .makeUntitledDocumentOfType_error(&NSString::from_str(type_name))
@@ -696,7 +696,7 @@ mod mac {
             self.addDocument(&document);
             document.makeWindowControllers();
             document.showWindows();
-            Ok(())
+            Ok(document)
         }
 
         /// The document at `path`, opened and shown — the same path File ▸ Open takes, minus

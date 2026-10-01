@@ -253,7 +253,9 @@ impl Delegate {
         let controller = &self.ivars().controller;
         let opened = match (&opening.path, opening.kind) {
             (Some(path), _) => controller.open_path(path).map(Some),
-            (None, Some(kind)) => controller.new_document(kind).map(|()| None),
+            // The document is handed to a drive like an opened one is, so its transcript can say
+            // where the selection is and its `save` has something to save.
+            (None, Some(kind)) => controller.new_document(kind).map(Some),
             // Nothing named: the choice, not a guess (decision 6).
             (None, None) => {
                 self.show_welcome();
