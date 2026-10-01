@@ -734,6 +734,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The universal2 bundle's second slice (decision 11). The runner is arm64, so the
+          # host build is the first.
+          targets: x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -761,6 +765,26 @@ jobs:
           name: grind-mac-frames-${{ matrix.os }}
           path: frames/
           if-no-files-found: warn
+
+      # M10: the Intel slice — the one more build universal2 costs — then Grind.app, signed ad
+      # hoc, in a DMG, with every check `doc/macos-shell.md` names run on what was built.
+      # Run whatever the frames said: the bundle's checks are about the binary, not the drives.
+      - name: The x86_64 slice, release
+        if: ${{ !cancelled() }}
+        run: cargo build --release --locked -p grind-mac --target x86_64-apple-darwin
+
+      - name: Grind.app, its checks, and the DMG
+        if: ${{ !cancelled() }}
+        run: |
+          .github/scripts/mac-bundle.sh target/release/grind-mac \
+            target/x86_64-apple-darwin/release/grind-mac bundle
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: grind-mac-dmg-${{ matrix.os }}
+          path: bundle/Grind.dmg
+          if-no-files-found: error
 
   wasm:
     runs-on: ubuntu-latest
