@@ -343,6 +343,20 @@ mod mac {
                 true
             }
 
+            /// Every write on the main thread, where `App` is used — the answer *Risks* gives to an
+            /// autosave arriving on a background queue. `NSDocument` says NO by default; this says
+            /// it on purpose, so a change of default could not move a save off the main thread
+            /// unnoticed. R6's splice makes a main-thread save fast enough to need nothing else.
+            #[unsafe(method(canAsynchronouslyWriteToURL:ofType:forSaveOperation:))]
+            fn can_asynchronously_write(
+                &self,
+                _url: &NSURL,
+                _type_name: &NSString,
+                _operation: NSSaveOperationType,
+            ) -> bool {
+                false
+            }
+
             /// No `NSUndoManager`: undo is the core's (architecture rule 2), and the grid answers
             /// `undo:` and `redo:` itself.
             #[unsafe(method(hasUndoManager))]
