@@ -141,7 +141,7 @@ than as a cursor on a hidden row.
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
 | Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ○ |
-| Fill down / fill right | ● | ● | ● | ● | ○ | ○ |
+| Fill down / fill right | ● | ● | ● | ● | ○ | ● |
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ○ |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
@@ -257,16 +257,16 @@ one line. ² The toolbar's two steps and Format ▸ Number's; no grouping or cur
 |---|---|---|---|---|---|---|
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
-| Set a column width or row height | ● | ● | ● | ○ | ○ | ○ |
+| Set a column width or row height | ● | ● | ● | ○ | ○ | ● |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ | ○ |
 | Autofit a column | ● | ● | ○ | ○ | ○ | ○ |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ○ |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
-| Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ○ |
+| Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ○ | ○ | ○ | ○ |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ○ |
+| Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ◐ ³ |
 | Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
 | Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
@@ -277,7 +277,7 @@ one line. ² The toolbar's two steps and Format ▸ Number's; no grouping or cur
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ○ |
 | **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ○ |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ◐ ² |
-| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ○ |
+| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ◐ ⁴ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ | ○ |
 | Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● |
 | Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
@@ -331,6 +331,9 @@ the table it was made from (`doc/chart-format.md`, The shell).
 
 **Mac.** ¹ In the sidebar's Names section, and the name box takes one. ² A CSV opens as a new,
 untitled spreadsheet of its own (the next row); nothing imports into an open document.
+³ Insert ▸ Name… defines one over the selection; redefining or deleting one is the CLI's.
+⁴ File ▸ Export as CSV…, the sheet's used rectangle with commas and shown values; no TSV or
+other dialect from the window.
 
 ## 7. Word processor
 
@@ -369,13 +372,13 @@ untitled spreadsheet of its own (the next row); nothing imports into an open doc
 | **Addressing and navigation** | | | | | | |
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
-| Create a bookmark | ● | ○ | ● | ○ | ○ | ○ |
+| Create a bookmark | ● | ○ | ● | ○ | ○ | ● |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
 | **Pictures** | | | | | | |
 | Insert an image | ● | ● | ○ | ○ | ○ | ○ |
 | **Draws** an image | — | ● | ○ | ● | ○ | ○ |
 | **Tables** | | | | | | |
-| Insert a table | ● | ● | ● | ○ | ○ | ○ |
+| Insert a table | ● | ● | ● | ○ | ○ | ● |
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ | ● |
 | **Draws** a table as a grid | — | ● | ● ᵠ | ● | ● ᵖ | ● |
 | Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ |
