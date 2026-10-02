@@ -19,7 +19,7 @@ use grind_core::color::Rgb;
 use objc2_core_foundation::{CGAffineTransform, CGFloat, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGBitmapContextGetBytesPerRow, CGBitmapContextGetData, CGColorSpace,
-    CGContext, CGImageAlphaInfo, kCGColorSpaceSRGB,
+    CGContext, CGImageAlphaInfo, CGLineCap, CGLineJoin, kCGColorSpaceSRGB,
 };
 
 use std::ptr::null_mut;
@@ -101,6 +101,46 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
                     Some(&image),
                 );
                 CGContext::restore_g_state(context_ref);
+            }
+            Op::Path {
+                points,
+                fill,
+                stroke,
+            } => {
+                let Some((first, rest)) = points.split_first() else {
+                    continue;
+                };
+                // Filling consumes the path, so it is traced once for each of the two.
+                let trace = |closed: bool| {
+                    CGContext::begin_path(context_ref);
+                    CGContext::move_to_point(context_ref, first.0, first.1);
+                    for (x, y) in rest {
+                        CGContext::add_line_to_point(context_ref, *x, *y);
+                    }
+                    if closed {
+                        CGContext::close_path(context_ref);
+                    }
+                };
+                if let Some(color) = fill {
+                    fill_color(context, *color, 1.0);
+                    trace(true);
+                    CGContext::fill_path(context_ref);
+                }
+                if let Some(((r, g, b), width)) = stroke {
+                    let channel = |value: u8| CGFloat::from(value) / 255.0;
+                    CGContext::set_rgb_stroke_color(
+                        context_ref,
+                        channel(*r),
+                        channel(*g),
+                        channel(*b),
+                        1.0,
+                    );
+                    CGContext::set_line_width(context_ref, *width);
+                    CGContext::set_line_join(context_ref, CGLineJoin::Round);
+                    CGContext::set_line_cap(context_ref, CGLineCap::Round);
+                    trace(fill.is_some());
+                    CGContext::stroke_path(context_ref);
+                }
             }
             Op::Fill { rect, color } => {
                 fill_color(context, *color, 1.0);

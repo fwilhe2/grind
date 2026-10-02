@@ -274,8 +274,8 @@ them: what its height does not hold is cut. ² The toolbar's two steps and Forma
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ○ |
 | A chart's own title and legend | ● | ● | ○ | ○ | ○ | ○ |
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
-| **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ○ |
-| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ○ |
+| **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
+| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ◐ ² |
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ◐ ⁴ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ | ○ |

@@ -7,6 +7,7 @@
 //! a Mac (`render.rs`).
 
 pub mod assist;
+pub mod chart;
 pub mod format;
 pub mod geom;
 pub mod paint;

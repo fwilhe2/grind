@@ -654,7 +654,11 @@ page's **word count** in its window's subtitle; **pictures drawn on the page** �
 decodes them, `text/picture.rs` fits each to the column at no more than its own size with its
 caption under it (`ui_text_gtk`'s rule, so a figure takes the same room in both windows), and
 bytes nothing reads stay outlined — and **Insert ▸ Picture…**, an open panel whose file is
-embedded in a paragraph of its own, refused when its signature is no picture's (`picture::mime`); and `canAsynchronouslyWriteToURL:` answering NO
+embedded in a paragraph of its own, refused when its signature is no picture's (`picture::mime`); **charts drawn on the grid** — `sheet/chart.rs` turns each into `Op`s (bars, a line as one
+`Op::Path`, a pie as one path per slice from `grind_sheet::pie_slices`), scaled by `axis_ticks`
+and coloured by `effective_color` as the GNOME window and the browser are, with its title and
+legend placed on *measured* text rather than the browser's estimate; read-only, and the value
+axis' title set level above the axis rather than turned along it; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

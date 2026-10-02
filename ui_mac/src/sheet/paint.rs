@@ -177,7 +177,7 @@ fn selection_outline(grid: &Grid, view: &Rect, selection: Selection, color: Rgb)
 }
 
 /// How wide `text` is set in `style` — the last cumulative advance.
-fn width(metrics: &dyn Metrics, text: &str, style: &TextStyle) -> f64 {
+pub fn width(metrics: &dyn Metrics, text: &str, style: &TextStyle) -> f64 {
     let mut advances = Vec::new();
     metrics.advances(text, style, &mut advances);
     advances.last().copied().map_or(0.0, f64::from)
@@ -607,7 +607,11 @@ pub fn frame(
     let mut ops = Vec::new();
     let view = Rect::new(scroll_x, scroll_y, body_w, body_h);
     let (dx, dy) = (HEADER_W - scroll_x, HEADER_H - scroll_y);
-    for op in cells(app, sheet, grid, view, selection, look) {
+    let charts = super::chart::charts(app, sheet, &view, palette, look.metrics);
+    for op in cells(app, sheet, grid, view, selection, look)
+        .into_iter()
+        .chain(charts)
+    {
         ops.extend(op.placed(dx, dy, &body));
     }
     for op in column_header(grid, scroll_x, body_w, selection, look) {
@@ -647,7 +651,11 @@ mod tests {
         ops.iter()
             .filter_map(|op| match op {
                 Op::Text { text, x, top, .. } => Some((text.as_str(), *x, *top)),
-                Op::Fill { .. } | Op::Wash { .. } | Op::Run { .. } | Op::Image { .. } => None,
+                Op::Fill { .. }
+                | Op::Wash { .. }
+                | Op::Run { .. }
+                | Op::Image { .. }
+                | Op::Path { .. } => None,
             })
             .collect()
     }

@@ -56,6 +56,27 @@ pub enum Op {
     /// decoded by the renderer, which on a Mac is `NSImage`. Shared rather than copied, since a
     /// frame may draw one picture in several places and every paint makes a frame.
     Image { rect: Rect, data: Rc<[u8]> },
+    /// A polygon through `points` — a chart's line or one slice of its pie — filled in `fill`
+    /// when there is one, and stroked with `stroke`'s colour and width when there is one. Open
+    /// when only stroked, closed when filled.
+    Path {
+        points: Vec<(f64, f64)>,
+        fill: Option<Rgb>,
+        stroke: Option<(Rgb, f64)>,
+    },
+}
+
+/// The smallest rectangle holding every point.
+fn bounds(points: &[(f64, f64)]) -> Rect {
+    let (mut x0, mut y0) = (f64::INFINITY, f64::INFINITY);
+    let (mut x1, mut y1) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for (x, y) in points {
+        (x0, y0, x1, y1) = (x0.min(*x), y0.min(*y), x1.max(*x), y1.max(*y));
+    }
+    match points.is_empty() {
+        true => Rect::new(0.0, 0.0, 0.0, 0.0),
+        false => Rect::new(x0, y0, x1 - x0, y1 - y0),
+    }
 }
 
 impl Op {
@@ -108,6 +129,15 @@ impl Op {
             Op::Image { rect, data } => Op::Image {
                 rect: rect.offset(dx, dy),
                 data,
+            },
+            Op::Path {
+                points,
+                fill,
+                stroke,
+            } => Op::Path {
+                points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(),
+                fill,
+                stroke,
             },
         }
     }
@@ -169,6 +199,18 @@ impl Op {
             Op::Image { rect, data } => {
                 let rect = rect.offset(dx, dy);
                 (!rect.intersection(clip).is_empty()).then_some(Op::Image { rect, data })
+            }
+            // A path is the same: whole, when any of it is inside, and the band clips it in the
+            // renderer the way a chart frame straddling the header band needs.
+            path @ Op::Path { .. } => {
+                let path = path.shifted(dx, dy);
+                let Op::Path { points, .. } = &path else {
+                    unreachable!()
+                };
+                let mut reach = bounds(points);
+                // A level or upright line has no area and still meets the band.
+                (reach.w, reach.h) = (reach.w.max(1.0), reach.h.max(1.0));
+                (!reach.intersection(clip).is_empty()).then_some(path)
             }
         }
     }

@@ -474,6 +474,9 @@ define_class!(
             // The dirty rectangle in the sheet's own coordinates: the view keeps a margin the
             // header bands float over.
             let view = rect(dirty).offset(-HEADER_W, -HEADER_H);
+            // The charts float over the cells, drawn after them.
+            let charts =
+                crate::sheet::chart::charts(&pane.app, pane.sheet.get(), &view, &palette, &pane.text);
             let ops: Vec<Op> = paint::cells(
                 &pane.app,
                 pane.sheet.get(),
@@ -483,6 +486,7 @@ define_class!(
                 &look,
             )
             .into_iter()
+            .chain(charts)
             .map(|op| op.shifted(HEADER_W, HEADER_H))
             .collect();
             draw(&ops, pane);
