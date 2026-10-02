@@ -28,32 +28,51 @@ pub fn change(command: Command, here: &CharStyle) -> Option<Change> {
     }
 }
 
-/// The kind `command` makes a block that is `current` — a list item keeps its depth when it is
-/// asked to be a list item again.
-pub fn kind(command: Command, current: &BlockKind) -> Option<BlockKind> {
+/// The two style names this page applies and takes away — the ones `grind_text::look` draws in a
+/// face of their own. Any other name on a block is the document's, and is left alone.
+const OURS: [&str; 2] = ["Title", "Subtitle"];
+
+/// What `command` makes a block that is `current`, wearing `style`: its kind, and the paragraph
+/// style it should wear — the GNOME window's rule. Title and Subtitle are paragraphs wearing those
+/// names; any other kind takes one of those two names off, and leaves a document's own name (a
+/// `Quotations`, say) exactly where it was. A list item keeps its depth when asked to be a list
+/// item again.
+pub fn block(
+    command: Command,
+    current: &BlockKind,
+    style: Option<&str>,
+) -> Option<(BlockKind, Option<String>)> {
     let Command::Block(block) = command else {
         return None;
     };
+    let kept = style.filter(|name| !OURS.contains(name)).map(str::to_owned);
     Some(match block {
-        Block::Body => BlockKind::Paragraph,
-        Block::Heading(level) => BlockKind::Heading {
-            level: u32::from(level),
-        },
+        Block::Title => (BlockKind::Paragraph, Some("Title".to_owned())),
+        Block::Subtitle => (BlockKind::Paragraph, Some("Subtitle".to_owned())),
+        Block::Body => (BlockKind::Paragraph, kept),
+        Block::Heading(level) => (
+            BlockKind::Heading {
+                level: u32::from(level),
+            },
+            kept,
+        ),
         Block::ListItem => match current {
-            BlockKind::ListItem { depth } => BlockKind::ListItem { depth: *depth },
-            _ => BlockKind::ListItem { depth: 1 },
+            BlockKind::ListItem { depth } => (BlockKind::ListItem { depth: *depth }, kept),
+            _ => (BlockKind::ListItem { depth: 1 }, kept),
         },
     })
 }
 
 /// Whether the command's menu item is ticked: an emphasis every selected character has, the
-/// colour they agree on, the kind the caret's block is.
-pub fn checked(command: Command, here: &CharStyle, block: &BlockKind) -> bool {
+/// colour they agree on, the kind the caret's block is — and for a block, what it wears, since a
+/// heading wearing `Title` is drawn as a title.
+pub fn checked(command: Command, here: &CharStyle, kind: &BlockKind, style: Option<&str>) -> bool {
     match command {
         Command::Mark(emphasis) => has(here, emphasis),
         Command::TextColor(index) => here.color == color(index),
         Command::Background(index) => here.background == color(index),
-        Command::Block(_) => kind(command, block).as_ref() == Some(block),
+        Command::Block(_) => block(command, kind, style)
+            .is_some_and(|(wanted, wears)| wanted == *kind && wears.as_deref() == style),
         _ => false,
     }
 }
@@ -113,7 +132,7 @@ mod tests {
         let mut style = plain.clone();
         Change::Bold(true).apply(&mut style);
         assert_eq!(change(bold, &style), Some(Change::Bold(false)));
-        assert!(checked(bold, &style, &BlockKind::Paragraph));
+        assert!(checked(bold, &style, &BlockKind::Paragraph, None));
         assert_eq!(
             change(Command::Mark(Emphasis::Code), &plain),
             Some(Change::Code(true))
@@ -133,31 +152,60 @@ mod tests {
         assert!(checked(
             Command::TextColor(None),
             &CharStyle::default(),
-            &BlockKind::Paragraph
+            &BlockKind::Paragraph,
+            None
         ));
     }
 
     #[test]
     fn a_block_command_is_a_kind_and_is_ticked_on_its_own_kind() {
+        let plain = CharStyle::default();
         let h2 = Command::Block(Block::Heading(2));
+        let heading = BlockKind::Heading { level: 2 };
         assert_eq!(
-            kind(h2, &BlockKind::Paragraph),
-            Some(BlockKind::Heading { level: 2 })
+            block(h2, &BlockKind::Paragraph, None),
+            Some((heading.clone(), None))
         );
-        assert!(checked(
-            h2,
-            &CharStyle::default(),
-            &BlockKind::Heading { level: 2 }
-        ));
-        assert!(!checked(h2, &CharStyle::default(), &BlockKind::Paragraph));
+        assert!(checked(h2, &plain, &heading, None));
+        assert!(!checked(h2, &plain, &BlockKind::Paragraph, None));
         let deep = BlockKind::ListItem { depth: 3 };
         assert_eq!(
-            kind(Command::Block(Block::ListItem), &deep),
-            Some(deep.clone())
+            block(Command::Block(Block::ListItem), &deep, None),
+            Some((deep.clone(), None))
         );
-        assert_eq!(kind(Command::Wrap, &deep), None);
-        assert_eq!(change(Command::Wrap, &CharStyle::default()), None);
+        assert_eq!(block(Command::Wrap, &deep, None), None);
+        assert_eq!(change(Command::Wrap, &plain), None);
     }
+
+    #[test]
+    fn a_title_is_a_paragraph_wearing_its_name_and_only_ours_are_taken_off() {
+        let plain = CharStyle::default();
+        let title = Command::Block(Block::Title);
+        let body = Command::Block(Block::Body);
+        assert_eq!(
+            block(title, &BlockKind::Heading { level: 1 }, None),
+            Some((BlockKind::Paragraph, Some("Title".into())))
+        );
+        assert!(checked(title, &plain, &BlockKind::Paragraph, Some("Title")));
+        assert!(!checked(body, &plain, &BlockKind::Paragraph, Some("Title")));
+        assert_eq!(
+            block(body, &BlockKind::Paragraph, Some("Title")),
+            Some((BlockKind::Paragraph, None)),
+            "our name, taken off"
+        );
+        assert_eq!(
+            block(body, &BlockKind::Heading { level: 1 }, Some("Quotations")),
+            Some((BlockKind::Paragraph, Some("Quotations".into()))),
+            "the document's own name, left"
+        );
+        assert!(checked(
+            body,
+            &plain,
+            &BlockKind::Paragraph,
+            Some("Quotations")
+        ));
+    }
+
     #[test]
     fn the_font_panel_changes_only_what_it_changed() {
         let before = Facts {

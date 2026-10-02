@@ -135,10 +135,15 @@ const PARAGRAPH: Tool = Tool::PopUp {
     id: "paragraph",
     label: "Paragraph",
     rows: &[
+        ("Title", Command::Block(Block::Title)),
+        ("Subtitle", Command::Block(Block::Subtitle)),
         ("Body", Command::Block(Block::Body)),
         ("Heading 1", Command::Block(Block::Heading(1))),
         ("Heading 2", Command::Block(Block::Heading(2))),
         ("Heading 3", Command::Block(Block::Heading(3))),
+        ("Heading 4", Command::Block(Block::Heading(4))),
+        ("Heading 5", Command::Block(Block::Heading(5))),
+        ("Heading 6", Command::Block(Block::Heading(6))),
         ("List Item", Command::Block(Block::ListItem)),
     ],
 };

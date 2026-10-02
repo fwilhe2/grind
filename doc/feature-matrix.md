@@ -365,8 +365,8 @@ as the core reads it; there is no dialog, and editing, moving or removing one is
 | **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ | ● |
 | **Block structure** | | | | | | |
 | Paragraph, Heading 1–3 | ● | ● | ● | ● | ● | ● |
-| Heading 4–6 | ● | ● | ● | ◐ ʲ | ● | ◐ ² |
-| Title, Subtitle | ● | ● | ● | ● | ○ | ◐ ² |
+| Heading 4–6 | ● | ● | ● | ◐ ʲ | ● | ● ² |
+| Title, Subtitle | ● | ● | ● | ● | ○ | ● ² |
 | List item | ● | ● | ● | ● | ● | ● |
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
 | A named paragraph style | ● | ○ | ● | ○ | ○ | ○ |
@@ -427,8 +427,8 @@ one, and no client sets a column width, because the model carries no table style
 (`doc/text-core.md`).
 
 **Mac.** ¹ Through the system font panel (⌘T), whose answer becomes a family, a size and the
-weight and slant, as one undo step (M7). ² Drawn in their own faces when a document has them;
-Format ▸ Paragraph sets Body and Heading 1–3 only. ³ Edit ▸ Go To… (⌘L) asks for one; a sidebar
+weight and slant, as one undo step (M7). ² Format ▸ Paragraph and the toolbar's
+pop-up set all six levels, Title and Subtitle; ⌥⌘0–6 reach Body and the headings. ³ Edit ▸ Go To… (⌘L) asks for one; a sidebar
 row or a Problems finding goes to one too. ⁴ The sidebar's Outline section.
 
 ## 8. The divergences that matter, ranked

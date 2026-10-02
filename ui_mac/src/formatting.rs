@@ -191,12 +191,15 @@ impl TextPane {
     }
 
     /// The kind of the caret's block.
-    fn block_kind(&self) -> BlockKind {
+    /// The caret's block's kind, and the paragraph style it wears.
+    fn block_kind(&self) -> (BlockKind, Option<String>) {
         let block = self.state.borrow().caret.block;
         self.app
             .get_viewport(block..block + 1)
             .get(block)
-            .map_or(BlockKind::Paragraph, |view| view.kind.clone())
+            .map_or((BlockKind::Paragraph, None), |view| {
+                (view.kind.clone(), view.style.clone())
+            })
     }
 
     /// Character changes over the selection, as one write — or held for the next character
@@ -225,15 +228,22 @@ impl TextPane {
     /// `App` has no kind over a range; the Windows pane and the GNOME window pay the same, and
     /// the trigger is a third page that sets kinds over a selection.
     pub fn format(&self, command: Command) {
-        if page::kind(command, &BlockKind::Paragraph).is_some() {
+        if page::block(command, &BlockKind::Paragraph, None).is_some() {
             self.act_on(|state, app, _| {
                 let (from, to) = state.selection().unwrap_or((state.caret, state.caret));
                 let viewport = app.get_viewport(from.block..to.block + 1);
                 for view in viewport.iter() {
-                    if let Some(kind) = page::kind(command, &view.kind)
-                        && kind != view.kind
-                    {
+                    let Some((kind, style)) =
+                        page::block(command, &view.kind, view.style.as_deref())
+                    else {
+                        continue;
+                    };
+                    if kind != view.kind {
                         app.set_kind(view.index, kind)
+                            .map_err(|error| error.to_string())?;
+                    }
+                    if style != view.style {
+                        app.set_style(view.index..view.index + 1, style)
                             .map_err(|error| error.to_string())?;
                     }
                 }
@@ -250,15 +260,18 @@ impl TextPane {
     pub fn format_checked(&self, command: Command) -> bool {
         match command {
             Command::Names => self.names.get(),
-            _ => page::checked(command, &self.here(), &self.block_kind()),
+            _ => {
+                let (kind, style) = self.block_kind();
+                page::checked(command, &self.here(), &kind, style.as_deref())
+            }
         }
     }
 
     /// The font the font panel is shown: the run's own family, or the block's face.
     fn panel_font(&self, manager: &NSFontManager) -> Retained<NSFont> {
         let here = self.here();
-        let kind = self.block_kind();
-        let role = grind_text::look::Role::of(&kind, None);
+        let (kind, style) = self.block_kind();
+        let role = grind_text::look::Role::of(&kind, style.as_deref());
         let font = face::font(role, &here.metrics());
         ns_font(
             manager,

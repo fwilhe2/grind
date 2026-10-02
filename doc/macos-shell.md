@@ -674,7 +674,9 @@ is the font panel's here; **Insert ▸ Chart**, the selection's table charted be
 `App::suggest_chart` in one step, with no dialog; **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
 over the selection or from one cell to the end of the used part, a button drawn in each heading
 and filled in the accent while its field has a condition, and a click on one listing the field's
-values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; and `canAsynchronouslyWriteToURL:` answering NO
+values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; **every paragraph kind a page draws** — Title, Subtitle and
+Heading 4–6 beside Body, Heading 1–3 and List Item, the two names taken off again only when this
+page put them on, as the GNOME window does; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

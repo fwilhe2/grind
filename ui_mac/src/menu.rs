@@ -141,12 +141,29 @@ pub enum Track {
 /// A block kind Format ▸ Paragraph offers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Block {
+    /// A paragraph wearing LibreOffice's `Title` or `Subtitle` style — the two names every page
+    /// in the suite draws in a face of its own (`grind_text::look`).
+    Title,
+    Subtitle,
     Body,
-    /// Levels 1 to 3 — the three every page in the suite gives a face of its own to set apart
-    /// from the body; deeper levels are the document's, reached through the CLI or a projection.
+    /// Levels 1 to 6, ODF's outline levels that every page gives a face of its own.
     Heading(u8),
     ListItem,
 }
+
+/// Every block kind Format ▸ Paragraph sets, in its order.
+pub const BLOCKS: [Block; 10] = [
+    Block::Title,
+    Block::Subtitle,
+    Block::Body,
+    Block::Heading(1),
+    Block::Heading(2),
+    Block::Heading(3),
+    Block::Heading(4),
+    Block::Heading(5),
+    Block::Heading(6),
+    Block::ListItem,
+];
 
 /// The five emphases, in the order the menu and the toolbar give them.
 pub const EMPHASES: [Emphasis; 5] = [
@@ -177,16 +194,7 @@ impl Command {
         let palette = || std::iter::once(None).chain((0..PALETTE.len() as u8).map(Some));
         all.extend(palette().map(Command::TextColor));
         all.extend(palette().map(Command::Background));
-        all.extend(
-            [
-                Block::Body,
-                Block::Heading(1),
-                Block::Heading(2),
-                Block::Heading(3),
-                Block::ListItem,
-            ]
-            .map(Command::Block),
-        );
+        all.extend(BLOCKS.map(Command::Block));
         all.push(Command::ClearFormatting);
         all.extend([
             Command::FriendlyFormulas,
@@ -638,6 +646,9 @@ static PARAGRAPH: Menu = Menu {
     title: "Paragraph",
     role: Role::Plain,
     items: &[
+        command("Title", None, Command::Block(Block::Title)),
+        command("Subtitle", None, Command::Block(Block::Subtitle)),
+        Item::Separator,
         command("Body", key("0", OPT_CMD), Command::Block(Block::Body)),
         command(
             "Heading 1",
@@ -654,6 +665,22 @@ static PARAGRAPH: Menu = Menu {
             key("3", OPT_CMD),
             Command::Block(Block::Heading(3)),
         ),
+        command(
+            "Heading 4",
+            key("4", OPT_CMD),
+            Command::Block(Block::Heading(4)),
+        ),
+        command(
+            "Heading 5",
+            key("5", OPT_CMD),
+            Command::Block(Block::Heading(5)),
+        ),
+        command(
+            "Heading 6",
+            key("6", OPT_CMD),
+            Command::Block(Block::Heading(6)),
+        ),
+        Item::Separator,
         command("List Item", None, Command::Block(Block::ListItem)),
     ],
 };
