@@ -376,8 +376,8 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Create a bookmark | ● | ○ | ● | ● ᶻ | ● ᶻ | ● |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
 | **Pictures** | | | | | | |
-| Insert an image | ● | ● | ○ | ○ | ○ | ● |
-| **Draws** an image | — | ● | ○ | ● | ○ | ● |
+| Insert an image | ● | ● | ○ | ○ | ● | ● |
+| **Draws** an image | — | ● | ○ | ● | ● | ● |
 | **Tables** | | | | | | |
 | Insert a table | ● | ● | ● | ● ᶻ | ● ᶻ | ● |
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ | ● |
