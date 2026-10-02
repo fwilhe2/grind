@@ -104,11 +104,19 @@ for file in "$out/probe.csv" "$out/probe.grind" "$out/probe.fods"; do
         || fail "LaunchServices does not offer Grind for $(basename "$file")"
 done
 "$app/Contents/MacOS/grind-mac" --handlers "$out/probe.csv" > "$out/handlers.txt"
-# Taking the default is a failure only where something else was there to have it: an
-# Alternate rank loses to every other claim, and wins only by elimination.
-others="$(grep '^offered: ' "$out/handlers.txt" | grep -vc 'Grind.app' || true)"
+# Taking the default is a failure only where something else was there to have it. Rank orders
+# claims of the *same* specificity: an app that claims CSV itself outranks one that claims only
+# `public.text` or `public.data` whatever either rank says, so on a runner with no spreadsheet
+# installed Grind is the one exact claim and wins by elimination. The rivals that count are
+# the offered applications whose own Info.plist names CSV.
+others=0
+while IFS= read -r other; do
+    plutil -convert xml1 -o - "$other/Contents/Info.plist" 2> /dev/null \
+        | grep -qiE 'comma-separated-values|text/csv|<string>csv</string>' \
+        && others=$((others + 1))
+done < <(sed -n 's/^offered: //p' "$out/handlers.txt" | grep -v 'Grind.app')
 if grep -q '^default: .*Grind.app' "$out/handlers.txt" && [ "$others" -gt 0 ]; then
-    fail "Grind took .csv's default from $others other application(s), when it only offers"
+    fail "Grind took .csv's default from $others application(s) claiming CSV, when it only offers"
 fi
 say "LaunchServices offers Grind for .csv, .grind and .fods, and .csv's default is not taken"
 say ".fods opens by default in: $("$app/Contents/MacOS/grind-mac" --handlers "$out/probe.fods" \
