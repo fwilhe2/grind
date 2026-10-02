@@ -72,6 +72,11 @@ pub enum Command {
     Paste,
     /// Empty the selected cells, keeping their formatting — `App::clear_range`.
     ClearCells,
+    /// Fill Down (Ctrl+D) and Fill Right (Ctrl+R): each column's top cell, or each row's left
+    /// one, copied across the rest of the selection with its relative references shifted —
+    /// `App::fill` over `grind_sheet::nav::fills`, the lines the Mac and the browser fill too.
+    FillDown,
+    FillRight,
     /// Put the caret in the name box. A menu item as well as F5, because a verb nobody can
     /// find is a verb this shell does not have.
     GoTo,
@@ -251,6 +256,8 @@ impl Command {
         Command::Copy,
         Command::Paste,
         Command::ClearCells,
+        Command::FillDown,
+        Command::FillRight,
         Command::GoTo,
         Command::Find,
         Command::FindNext,
@@ -454,6 +461,14 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ClearCells,
                 label: "&Delete\tDel",
+            },
+            Item::Verb {
+                command: Command::FillDown,
+                label: "Fill Do&wn\tCtrl+D",
+            },
+            Item::Verb {
+                command: Command::FillRight,
+                label: "Fill Rig&ht\tCtrl+R",
             },
             Item::Separator,
             Item::Verb {
@@ -785,6 +800,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::PageDown, true, _) => Some(Command::SheetNext),
         (Key::PageUp, true, _) => Some(Command::SheetPrevious),
         (Key::F9, false, false) => Some(Command::Recalculate),
+        (Key::Char('D'), true, false) => Some(Command::FillDown),
+        (Key::Char('R'), true, false) => Some(Command::FillRight),
         (Key::Char('B'), true, false) => Some(Command::Bold),
         (Key::Char('I'), true, false) => Some(Command::Italic),
         (Key::Char('U'), true, false) => Some(Command::Underline),
@@ -867,6 +884,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
     use grind_core::DocumentKind::{Presentation, Spreadsheet, Text};
     match command {
         Command::Recalculate
+        | Command::FillDown
+        | Command::FillRight
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
@@ -1222,6 +1241,8 @@ mod tests {
         use grind_core::DocumentKind::{Spreadsheet, Text};
         for command in [
             Command::Recalculate,
+            Command::FillDown,
+            Command::FillRight,
             Command::FunctionList,
             Command::ExplainFormula,
             Command::ToggleFriendly,

@@ -140,6 +140,19 @@ pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
     }
 }
 
+/// What a fill did, or why it did nothing — a selection one cell deep along the fill has no
+/// cell to copy *into*, and says so rather than staying silent.
+pub fn filled(cells: u64, down: bool) -> String {
+    match (cells, down) {
+        (0, true) => "Select more than one row to fill down.".to_owned(),
+        (0, false) => "Select more than one column to fill right.".to_owned(),
+        (n, _) => format!(
+            "Filled {}. Ctrl+Z takes it back.",
+            counted(n as usize, "cell", "cells")
+        ),
+    }
+}
+
 /// [`found`] for the word processor: which of how many occurrences the selection is on.
 pub fn text_found(index: usize, count: usize, needle: &str) -> String {
     format!(
@@ -284,5 +297,13 @@ mod tests {
         assert!(text_not_found("tax").contains("Ctrl+F"));
         assert!(text_replaced(1, "tax").contains("1 paragraph."));
         assert_eq!(text_replaced(0, "tax"), text_not_found("tax"));
+    }
+
+    #[test]
+    fn a_fill_says_what_it_copied_or_what_to_select() {
+        assert!(filled(6, true).starts_with("Filled 6 cells"));
+        assert!(filled(1, false).starts_with("Filled 1 cell."));
+        assert!(filled(0, true).contains("more than one row"));
+        assert!(filled(0, false).contains("more than one column"));
     }
 }

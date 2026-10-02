@@ -3246,6 +3246,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::Copy => copy(hwnd, false),
         Command::Paste => paste(hwnd),
         Command::ClearCells => clear_cells(hwnd),
+        Command::FillDown => fill(hwnd, true),
+        Command::FillRight => fill(hwnd, false),
         Command::GoTo => open_name_box(hwnd),
         Command::Find => find(hwnd),
         Command::FindNext => find_step(hwnd, find::Towards::Next),
@@ -3414,6 +3416,29 @@ fn clear_cells(hwnd: HWND) {
             if let Err(error) = state.app.clear_range(state.sheet, start, end) {
                 state.say(Some(error.to_string()));
             }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Edit ▸ Fill Down / Fill Right: one `App::fill` per column (or row), each from its own leading
+/// cell, over the lines `grind_sheet::nav::fills` names — so a two-column fill copies column A
+/// into A and column B into B.
+fn fill(hwnd: HWND, down: bool) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let mut cells = 0;
+            for (source, start, end) in grind_sheet::nav::fills(state.selection, down) {
+                match state
+                    .app
+                    .fill(state.sheet, source, start, end, RecalcMode::Document)
+                {
+                    Ok(done) => cells += done.cells as u64,
+                    Err(error) => return state.say(Some(error.to_string())),
+                }
+            }
+            state.say(Some(notice::filled(cells, down)));
         });
     }
     refresh(hwnd);
@@ -4668,6 +4693,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::Copy
         | Command::Paste
         | Command::ClearCells
+        | Command::FillDown
+        | Command::FillRight
         | Command::GoTo
         | Command::Find
         | Command::FindNext
@@ -5703,6 +5730,8 @@ fn text_command(hwnd: HWND, command: Command) {
         // The spreadsheet's, and this pane has no answer to any of them: it has no sheets, no
         // cells for `CellRole` to classify, and no formulas to list, explain or read out.
         Command::Recalculate
+        | Command::FillDown
+        | Command::FillRight
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
