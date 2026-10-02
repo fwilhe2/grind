@@ -475,8 +475,9 @@ then refused.
 | `document.rs` | Mac | Autosave in place on, no undo manager, and every change the core reports marking the document edited — which is what keeps an untouched open from writing anything |
 | `sidebar.rs` `menu.rs` | both | Insert ▸ Sheet, Format ▸ Rename Sheet…, Edit ▸ Delete Sheet, where Excel for Mac has them, with the sidebar's list following every change |
 
-What M4 leaves: the formula field edits only through the cell editor (the read-out follows it —
-a `ponytail:` in `accessory.rs`); an undo back to the saved state left the Edited dot, since
+What M4 leaves: the formula field edited only through the cell editor (since closed: the
+read-out is `GrindFormulaBar`, and clicking it opens the same edit there — or carries one open over
+the cell into it); an undo back to the saved state left the Edited dot, since
 the core's observer says *changed* rather than *which way* (since closed: a pane knows when it is
 undoing, and tells `NSDocument` the change was undone, `watch::Turn`); and ⌃U inside the editor was
 the field editor's (since closed: it arrives as `noop:`, and the event behind it says it was ⌃U).
@@ -582,8 +583,8 @@ table `ui_sheet_gtk` and `ui_win32` each carried.
 
 What M8 leaves: the signature band followed the text, so a caret moved by an arrow without
 typing showed the old argument until the next keystroke (since closed: the editor makes a caret
-move itself, then reads the caret); point mode (since closed); the formula read-out is still a
-read-out rather than a second editor; every change re-lints the whole document for the Problems
+move itself, then reads the caret); point mode (since closed); the formula read-out was a
+read-out rather than a second editor (since closed); every change re-lints the whole document for the Problems
 section (a `ponytail:` in `sidebar.rs`); and the source pane is read-only, as every shell's is.
 
 ### What M9 built
@@ -670,8 +671,10 @@ click, its rectangle alone redrawn on each tick; **point mode** — typing `=SUM
 cell instead of committing, Shift grows the range, the pointed cells are outlined in the system's
 orange, and typing anything ends it; the predicate is `formula::assist::ref_eligible`, hoisted
 out of the GNOME window for it, and a drive in `mac-frames.sh` checks the formula it writes.
-Pointing with the mouse and F4's `$` cycle are not built: ⌘T, Excel for Mac's key for the cycle,
-is the font panel's here; **Insert ▸ Chart**, the selection's table charted beside it by
+A click on the grid points too, at the clicked cell (a drag grows the range), and where no
+reference could go a click commits the edit before it moves — it used to move the selection and
+leave the edit open, so the next Return wrote into the clicked cell. F4's `$` cycle is not built:
+⌘T, Excel for Mac's key for it, is the font panel's here; **Insert ▸ Chart**, the selection's table charted beside it by
 `App::suggest_chart` in one step, with no dialog, and a chart's own context menu — its title,
 bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`)
 — and dragged to move it, drawn where the pointer has it and written once as the button comes up

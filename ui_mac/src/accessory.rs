@@ -8,9 +8,9 @@
 //! Between them (M4) is the formula read-out: the active cell as it would be typed back in —
 //! a formula in display syntax — and, while a cell is being edited, what the editor holds.
 //!
-//! ponytail: the read-out is not itself an editor. Decision 3's formula *field* edits in place;
-//! this one follows the cell editor, which is where typing happens. The upgrade is making it a
-//! second view onto the same edit, the way `ui_win32`'s one `EDIT` is both.
+//! At rest it is a read-out; clicked, it is an editor — `FormulaBar` opens the same edit the cell
+//! editor is, in this field, or carries one already open over the cell into it, the way
+//! `ui_win32`'s one `EDIT` is both.
 //!
 //! An `NSTitlebarAccessoryViewController` at the title bar's bottom edge, so it takes on the
 //! window's own material and, on macOS 26, its Liquid Glass, with nothing here knowing. Both
@@ -77,6 +77,34 @@ define_class!(
     }
 );
 
+define_class!(
+    /// The formula bar: a read-out of the active cell at rest, and an editor of it once clicked —
+    /// the same edit the cell editor is (`editor.rs`), in this field rather than over the cell.
+    #[unsafe(super(NSTextField))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "GrindFormulaBar"]
+    #[ivars = Weak<Pane>]
+    pub struct FormulaBar;
+
+    impl FormulaBar {
+        /// Taking the keyboard begins the edit: the cell's own text put in first, so what the
+        /// field starts editing is the formula and not its plain-English reading.
+        #[unsafe(method(becomeFirstResponder))]
+        fn become_first_responder(&self) -> bool {
+            let pane = self.ivars().upgrade();
+            if let Some(pane) = &pane {
+                pane.begin_bar_edit(self);
+            }
+            // SAFETY: the superclass's own method, with its own signature.
+            let took: bool = unsafe { msg_send![super(self), becomeFirstResponder] };
+            if let (true, Some(pane)) = (took, pane) {
+                pane.bar_took_keyboard();
+            }
+            took
+        }
+    }
+);
+
 fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
 }
@@ -103,13 +131,24 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
     bar.addSubview(&name);
     pane.set_name_box(&name);
 
-    let formula = NSTextField::labelWithString(&NSString::from_str(""), mtm);
-    formula.setFrame(rect(
-        NAME_W + 16.0,
-        7.0,
-        (width - NAME_W - STATUS_W - 32.0).max(0.0),
-        16.0,
-    ));
+    let formula: Retained<FormulaBar> = {
+        let this = FormulaBar::alloc(mtm).set_ivars(Rc::downgrade(pane));
+        // SAFETY: `initWithFrame:` is `NSTextField`'s designated initialiser.
+        unsafe {
+            msg_send![super(this), initWithFrame: rect(
+                NAME_W + 16.0,
+                4.0,
+                (width - NAME_W - STATUS_W - 32.0).max(0.0),
+                22.0,
+            )]
+        }
+    };
+    // A label to look at, and a field to click into.
+    formula.setBezeled(false);
+    formula.setDrawsBackground(false);
+    formula.setEditable(true);
+    formula.setSelectable(true);
+    formula.setPlaceholderString(Some(&NSString::from_str("Click to edit the cell")));
     formula.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
     bar.addSubview(&formula);
 
@@ -126,7 +165,14 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
     window.addTitlebarAccessoryViewController(&controller);
 
     pane.keep(target.into_super());
-    pane.listen_text(move |text| formula.setStringValue(&NSString::from_str(text)));
+    // What the read-out says — except while the edit is in the bar itself, whose text is the
+    // edit's and must not be written over under its caret.
+    let reading = Rc::downgrade(pane);
+    pane.listen_text(move |text| {
+        if !reading.upgrade().is_some_and(|pane| pane.editing_in_bar()) {
+            formula.setStringValue(&NSString::from_str(text));
+        }
+    });
     let weak = Rc::downgrade(pane);
     pane.listen(move |selection| {
         let Some(pane) = weak.upgrade() else { return };

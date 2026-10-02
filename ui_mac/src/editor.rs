@@ -25,7 +25,7 @@ use grind_sheet::nav::{Dir, Motion, Selection};
 use grind_sheet::{RecalcMode, a1};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::{
     NSApplication, NSColor, NSControl, NSControlTextEditingDelegate, NSEventModifierFlags, NSFont,
     NSFontAttributeName, NSForegroundColorAttributeName, NSTextField, NSTextFieldDelegate,
@@ -96,6 +96,9 @@ pub struct Edit {
     pending: Option<Pending>,
     /// The editor is writing into its own field, and the change it reports is not the user's.
     applying: bool,
+    /// The edit is in the formula bar (`accessory.rs`) rather than in a field over the cell —
+    /// so ending it leaves the field where it is.
+    in_bar: bool,
 }
 
 /// A reference written by pointing: where its text is in the field, as bytes, and the cells it
@@ -220,7 +223,79 @@ impl Pane {
             hint,
             pending: None,
             applying: false,
+            in_bar: false,
         });
+        self.refresh_assist();
+        self.edit_changed();
+    }
+
+    /// The formula bar took the keyboard: an edit of the active cell begun in it — Edit mode,
+    /// seeded with the cell's own text — or, when one is already open over the cell, that edit
+    /// moved into the bar with what it holds and the mode it is in. Called before the bar becomes
+    /// first responder, so the text it starts editing is already the cell's (`accessory.rs`).
+    pub fn begin_bar_edit(&self, bar: &NSTextField) {
+        if self.edit.borrow().as_ref().is_some_and(|edit| edit.in_bar) {
+            return;
+        }
+        let Some(view) = self.grid_view() else { return };
+        let mtm = view.mtm();
+        let (text, mode) = match self.edit.borrow_mut().take() {
+            // The edit over the cell, carried across: its words and its mode.
+            Some(open) => {
+                open.field.removeFromSuperview();
+                open.hint.removeFromSuperview();
+                (open.field.stringValue().to_string(), open.mode)
+            }
+            None => (
+                self.app
+                    .input_text(self.sheet.get(), self.selection.get().active)
+                    .unwrap_or_default(),
+                Mode::Edit,
+            ),
+        };
+        bar.setStringValue(&NSString::from_str(&text));
+        let delegate: Retained<EditorDelegate> = {
+            let this = EditorDelegate::alloc(mtm).set_ivars(self.me());
+            // SAFETY: `init` is `NSObject`'s designated initialiser.
+            unsafe { msg_send![super(this), init] }
+        };
+        // SAFETY: the delegate answers the protocol, and the edit keeps it alive until it ends,
+        // when the bar is given no delegate again.
+        unsafe { bar.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
+        let active = self.selection.get().active;
+        let cell = self.grid.borrow().cell(active.row, active.col);
+        let hint = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+        hint.setFrame(NSRect::new(
+            NSPoint::new(cell.x + HEADER_W, cell.y + HEADER_H + cell.h + 2.0),
+            NSSize::new(cell.w.max(MIN_W), HINT_H),
+        ));
+        hint.setDrawsBackground(true);
+        hint.setBackgroundColor(Some(&NSColor::controlBackgroundColor()));
+        hint.setBordered(true);
+        hint.setHidden(true);
+        view.addSubview(&hint);
+        *self.edit.borrow_mut() = Some(Edit {
+            field: bar.retain(),
+            _delegate: delegate,
+            mode,
+            assist: Assist::default(),
+            hint,
+            pending: None,
+            applying: false,
+            in_bar: true,
+        });
+    }
+
+    /// After the bar became first responder: the caret at the end of what it holds, as the cell
+    /// editor puts it, rather than everything selected.
+    pub fn bar_took_keyboard(&self) {
+        let Some(field) = self.edit.borrow().as_ref().map(|edit| edit.field.clone()) else {
+            return;
+        };
+        let text = field.stringValue().to_string();
+        if let Some(editor) = field.currentEditor() {
+            editor.setSelectedRange(NSRange::new(utf16::units_before(&text, text.len()), 0));
+        }
         self.refresh_assist();
         self.edit_changed();
     }
@@ -317,6 +392,44 @@ impl Pane {
         self.set_pending(moved, pending.map(|pending| pending.span));
     }
 
+    /// A click (or a drag, `extend`) on the grid while a cell is being edited: a reference pointed
+    /// at where one could go — point mode by the mouse, every spreadsheet's rule — and otherwise
+    /// the edit committed first. Answers whether the grid may move its selection to the click:
+    /// not when it pointed, and not when the edit would not commit (a formula that does not
+    /// parse keeps the edit, and the cell it is for).
+    pub(crate) fn click_while_editing(&self, clicked: Selection, extend: bool) -> bool {
+        let Some((field, pending)) = self
+            .edit
+            .borrow()
+            .as_ref()
+            .map(|edit| (edit.field.clone(), edit.pending.clone()))
+        else {
+            return true;
+        };
+        let text = field.stringValue().to_string();
+        let caret = field.currentEditor().map_or(text.len(), |editor| {
+            utf16::byte_of(&text, editor.selectedRange().location)
+        });
+        let pointing =
+            pending.is_some() || grind_sheet::formula::assist::ref_eligible(&text, caret);
+        if pointing {
+            let selection = match (&pending, extend) {
+                (Some(pending), true) => Selection {
+                    anchor: pending.selection.anchor,
+                    active: clicked.active,
+                },
+                _ => Selection::at(clicked.active),
+            };
+            // The field editor went with the click, so a first reference goes where the caret
+            // was — at the end when there is no editor to say, which is where typing left it.
+            let span = pending.map_or(caret..caret, |pending| pending.span);
+            self.set_pending(selection, Some(span));
+            return false;
+        }
+        self.commit(None);
+        !self.is_editing()
+    }
+
     /// Write the reference `selection` names into the field — over `span`, the text written for
     /// the last one, or at the caret for the first — through the field editor, so it is one step
     /// of the field's own undo.
@@ -324,6 +437,12 @@ impl Pane {
         let Some(field) = self.edit.borrow().as_ref().map(|edit| edit.field.clone()) else {
             return;
         };
+        // A click on the grid took the keyboard from the field; pointing gives it back.
+        if field.currentEditor().is_none()
+            && let Some(window) = field.window()
+        {
+            window.makeFirstResponder(Some(&field));
+        }
         let Some(editor) = field.currentEditor() else {
             return;
         };
@@ -434,12 +553,23 @@ impl Pane {
 
     /// Close the editor without storing anything, and give the keyboard back to the grid.
     fn end_edit(&self) {
-        if let Some(edit) = self.edit.borrow_mut().take() {
-            edit.field.removeFromSuperview();
+        let ended = self.edit.borrow_mut().take();
+        if let Some(edit) = &ended {
             edit.hint.removeFromSuperview();
+            match edit.in_bar {
+                // The bar stays, a read-out again once the grid has the keyboard back.
+                // SAFETY: no delegate is always allowed.
+                true => unsafe { edit.field.setDelegate(None) },
+                false => edit.field.removeFromSuperview(),
+            }
         }
         self.focus_grid();
         self.edit_changed();
+    }
+
+    /// Whether the edit open is in the formula bar.
+    pub fn editing_in_bar(&self) -> bool {
+        self.edit.borrow().as_ref().is_some_and(|edit| edit.in_bar)
     }
 
     /// One cell onward after a commit, the way Return and Tab go.

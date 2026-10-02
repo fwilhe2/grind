@@ -439,6 +439,18 @@ cat "$out/point.txt"
     || fail "pointing did not write A1:A3: A4 holds $("$grind" sheet get --input "$out/pointed.fods" A4)"
 say "   =SUM( and the arrows point at A1:A3"
 
+# And by the mouse: a click while a formula wants a reference points at the clicked cell rather
+# than moving the cursor away from the edit.
+"$grind" sheet new "$out/clicked.fods" > /dev/null
+"$grind" sheet set "$out/clicked.fods" A1 5 > /dev/null
+printf 'key cmd+l\ntype A4\nkey return\ntype =SUM(\nclick 36 9\ntype )\nkey return\nkey cmd+s\nwait 2\n' \
+    > "$out/click.drive"
+bounded 120 "$mac" "$out/clicked.fods" --drive "$out/click.drive" --out "$out/clicked" \
+    > "$out/click.txt" || fail "the click-point drive failed: $(cat "$out/click.txt")"
+[ "$("$grind" sheet get --input "$out/clicked.fods" A4)" = "=SUM(A1)" ] \
+    || fail "a click did not point at A1: A4 holds $("$grind" sheet get --input "$out/clicked.fods" A4)"
+say "   a click while typing a formula points at the cell"
+
 # Insert ▸ Chart charts the table the cursor is in — read by the core, as `chart-add --from` reads
 # it — and the chart is drawn: the frame after it differs from the one before.
 "$grind" sheet new "$out/charted.fods" > /dev/null

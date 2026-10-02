@@ -1294,6 +1294,10 @@ impl GridView {
             at.y - HEADER_H,
             extend,
         );
+        // While a cell is being edited a click points at a cell or commits the edit first.
+        if pane.is_editing() && !pane.click_while_editing(next, extend) {
+            return;
+        }
         pane.select(next);
     }
 }

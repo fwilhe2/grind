@@ -135,7 +135,7 @@ than as a cursor on a hidden row.
 |---|---|---|---|---|---|---|
 | The typing rule (`=` formula, `'` text, empty clears) | ● | ● | ● | ● | ● | ● |
 | In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● | ● |
-| Formula bar | — | ● | ◐ ᵃ | ● | ● | ◐ ¹ |
+| Formula bar | — | ● | ◐ ᵃ | ● | ● | ● ¹ |
 | Clear a cell or a range | ● | ● | ● | ● | ● | ● |
 | Clear only the formula, keeping the value | ● | ○ | ○ | ○ | ○ | ● |
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
@@ -184,8 +184,8 @@ match-case or whole-cell control.
 asked through `dialog::prompt` and the answers said on the notice bar (`notice::found`,
 `notice::replaced`). The same step as the other two. No match-case or whole-cell control.
 
-**Mac.** ¹ A read-out above the grid that follows the cell editor and reads a formula in plain
-English at rest — not a second editor (`accessory.rs`'s `ponytail:`). ² Edit ▸ Recalculate,
+**Mac.** ¹ A read-out above the grid that reads a formula in plain English at rest, and an editor
+of the cell once clicked — the same edit the in-cell editor is. ² Edit ▸ Recalculate,
 on ⌘= — Excel for Mac's key — and the banner's Recalculate Anyway.
 
 ## 5. Spreadsheet — formatting
