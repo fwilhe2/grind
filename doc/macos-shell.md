@@ -429,8 +429,8 @@ portable and tested here; only turning it into pixels and events needs a Mac:
 | `render.rs` `grid_view.rs` `app.rs` | Mac | The `Op`s onto a flipped `CGContext`; the grid in its scroll view with the bands floating; the application, its delegate and the menu bar |
 
 What M2 leaves, each on purpose: the selection (M3), editing, saving and autosave (M4 — the
-document writes, but nothing yet changes it), a label spilling into the empty cells beside it (a
-cell's text is clipped to its own cell), borders, the welcome window (M9 — a launch with nothing
+document writes, but nothing yet changes it), a label spilling into the empty cells beside it
+(since closed), borders (since closed), the welcome window (M9 — a launch with nothing
 named starts an empty spreadsheet), a text document's page (M6 — its window says so), and
 Info.plist document types (M10 — the document controller answers by the bytes, and the open panel
 shows every file, so M2 needs none). **The probe's answers are in
@@ -556,7 +556,7 @@ target that starts at the key window, so Copy, Save and Undo did nothing either.
 very likely why `artifacts.yml`'s `macos` job has been red since M3.
 
 What M7 leaves: a cell's font family (the font panel can choose one and a `CellStyle` cannot
-hold it, so it is left out rather than approximated); borders; a paragraph kind over several
+hold it, so it is left out rather than approximated); borders (since closed); a paragraph kind over several
 blocks is one ⌘Z per block; and the toolbar's controls have not been seen, only compiled.
 
 ### What M8 built
@@ -580,8 +580,7 @@ table `ui_sheet_gtk` and `ui_win32` each carried.
 | `drive.rs` | both | `sidebar <text>`, which chooses a row the way a click does |
 
 What M8 leaves: the signature band follows the text, so a caret moved by an arrow without
-typing shows the old argument until the next keystroke; point mode (arrows building a reference
-into a half-typed formula), which is the GNOME window's alone; the formula read-out is still a
+typing shows the old argument until the next keystroke; point mode (since closed); the formula read-out is still a
 read-out rather than a second editor; every change re-lints the whole document for the Problems
 section (a `ponytail:` in `sidebar.rs`); and the source pane is read-only, as every shell's is.
 
@@ -675,7 +674,9 @@ is the font panel's here; **Insert ▸ Chart**, the selection's table charted be
 bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`)
 — and dragged to move it, drawn where the pointer has it and written once as the button comes up
 (`App::reshape_chart`); every Format ▸ Number item carrying **a live sample** of the active
-cell in its format as the item's subtitle (`App::shown_as`, macOS 15's `NSMenuItem.subtitle`); File ▸ **Import CSV…** into the open sheet at the active cell, and
+cell in its format as the item's subtitle (`App::shown_as`, macOS 15's `NSMenuItem.subtitle`); **a label spilling into the empty cells beside it**, the way it is
+aligned, with the grid lines it crosses covered and twelve columns read past the view either
+side so one anchored off-screen still shows (the GNOME window's margin) — a number never spills; File ▸ **Import CSV…** into the open sheet at the active cell, and
 Export as CSV… writing TSV when the name says `.tsv`; and **About Grind** telling the standard panel the build's stamp; **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
 over the selection or from one cell to the end of the used part, a button drawn in each heading
 and filled in the accent while its field has a condition, and a click on one listing the field's

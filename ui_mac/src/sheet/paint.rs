@@ -208,7 +208,10 @@ pub fn cells(
     }];
     let rows = grid.rows_in(view.y, view.h);
     let cols = grid.cols_in(view.x, view.w);
-    let Ok(viewport) = app.get_viewport_with(sheet, rows.clone(), cols.clone(), look.overlays)
+    // Read wider than the view, so a label anchored off to one side still spills into it.
+    let fetch = cols.start.saturating_sub(SPILL_MARGIN)
+        ..cols.end.saturating_add(SPILL_MARGIN).min(grid.shown_cols);
+    let Ok(viewport) = app.get_viewport_with(sheet, rows.clone(), fetch.clone(), look.overlays)
     else {
         return ops;
     };
@@ -261,9 +264,9 @@ pub fn cells(
 
     ops.extend(selection_wash(grid, &view, selection, palette.accent));
 
-    // The text.
+    // The text — read over the wider columns, and drawn where it reaches the view.
     for row in rows {
-        for col in cols.clone() {
+        for col in fetch.clone() {
             // With formulas shown, a formula's own text — set as text, so it reads from the left.
             let formula = look
                 .formulas
@@ -314,10 +317,62 @@ pub fn cells(
                 palette.ink,
                 palette.dark,
             );
-            match look::wraps(style) && !numfmt::is_number(&value) {
-                true => ops.extend(wrapped_text(text, &value, style, cell, ink, metrics)),
-                false => ops.push(cell_text(one_line(text), &value, style, cell, ink, metrics)),
+            if look::wraps(style) && !numfmt::is_number(&value) {
+                if !cell.intersection(&view).is_empty() {
+                    ops.extend(wrapped_text(text, &value, style, cell, ink, metrics));
+                }
+                continue;
             }
+            let text = one_line(text);
+            // Text wider than its cell runs on over the empty cells it is aligned towards, as in
+            // every spreadsheet; a number never does — it shows `###` instead (`cell_text`).
+            let reach = match numfmt::is_number(&value) {
+                true => cell,
+                false => {
+                    let needed = width(metrics, &text, &look::text_style(style)) + 2.0 * PAD_X;
+                    let empty = |col: u32| {
+                        fetch.contains(&col)
+                            && viewport.text(row, col).is_none_or(str::is_empty)
+                            && app
+                                .formula(sheet, Pos::new(row, col))
+                                .ok()
+                                .flatten()
+                                .is_none()
+                    };
+                    spill(grid, row, col, needed, look::align(&value, style), &empty)
+                }
+            };
+            if reach.intersection(&view).is_empty() {
+                continue;
+            }
+            // The grid lines the text crosses are covered, where neither side has a ground of
+            // its own to show through.
+            if reach != cell {
+                for boundary in grid.cols_in(reach.x, reach.w) {
+                    let edge = grid.cell(row, boundary).right();
+                    if edge >= reach.right() - 0.5 {
+                        continue;
+                    }
+                    let filled = |col: u32| {
+                        viewport
+                            .style(row, col)
+                            .and_then(|style| style.background.as_deref())
+                            .and_then(color::parse)
+                            .is_some()
+                    };
+                    if !filled(boundary) && !filled(boundary + 1) {
+                        ops.push(Op::Fill {
+                            rect: Rect::new(edge - hairline, cell.y, hairline, cell.h - hairline),
+                            color: palette.page,
+                        });
+                    }
+                }
+            }
+            let mut op = cell_text(text, &value, style, cell, ink, metrics);
+            if let Op::Text { clip, .. } = &mut op {
+                *clip = reach;
+            }
+            ops.push(op);
         }
     }
     ops.extend(name_outlines(grid, &view, viewport.names(), palette));
@@ -378,6 +433,61 @@ pub fn borders(cell: Rect, style: &CellStyle, palette: &Palette, hairline: f64) 
         }
     }
     ops
+}
+
+/// How many columns either side of the view are read for text that may spill into it — the
+/// GNOME window's margin.
+const SPILL_MARGIN: u32 = 12;
+
+/// The rectangle a cell's text of `needed` width may be drawn in: its own cell, widened over the
+/// neighbouring cells `empty` says hold nothing — rightward for text aligned left, leftward for
+/// text aligned right, both ways for centred — until it is wide enough or meets one that is not.
+fn spill(
+    grid: &Grid,
+    row: u32,
+    col: u32,
+    needed: f64,
+    align: look::Align,
+    empty: &dyn Fn(u32) -> bool,
+) -> Rect {
+    let mut reach = grid.cell(row, col);
+    if reach.w >= needed {
+        return reach;
+    }
+    let (mut left, mut right) = (col, col);
+    let (rightward, leftward) = match align {
+        look::Align::Left => (true, false),
+        look::Align::Right => (false, true),
+        look::Align::Center => (true, true),
+    };
+    let (mut more_right, mut more_left) = (rightward, leftward);
+    while reach.w < needed && (more_right || more_left) {
+        if more_right {
+            match right
+                .checked_add(1)
+                .filter(|next| *next < grid.shown_cols && empty(*next))
+            {
+                Some(next) => {
+                    right = next;
+                    let cell = grid.cell(row, next);
+                    reach.w = cell.right() - reach.x;
+                }
+                None => more_right = false,
+            }
+        }
+        if more_left && reach.w < needed {
+            match left.checked_sub(1).filter(|next| empty(*next)) {
+                Some(next) => {
+                    left = next;
+                    let cell = grid.cell(row, next);
+                    reach.w += reach.x - cell.x;
+                    reach.x = cell.x;
+                }
+                None => more_left = false,
+            }
+        }
+    }
+    reach
 }
 
 /// How wide the margin is that the role overlay reserves at a cell's leading edge.
@@ -495,9 +605,7 @@ fn cell_text(
 /// line is and the block of lines placed down the cell as one line would be. What does not fit
 /// the row's height is cut by the cell, since the row is as tall as the document says.
 ///
-/// ponytail: a row with no height of its own is not grown to fit (the GNOME window's L3 does);
-/// the trigger is a wrapped cell somebody cannot read, and the upgrade is `Grid` asking this
-/// same breaker for a row's height.
+/// A row with no height of its own is grown to hold them (`Grid::measured`, L3).
 fn wrapped_text(
     text: &str,
     value: &grind_sheet::model::CellValue,
@@ -1182,5 +1290,49 @@ mod tests {
             ["2", "=A1*3"],
             "a plain value is still itself"
         );
+    }
+
+    #[test]
+    fn a_long_label_runs_on_over_empty_cells_and_stops_at_a_full_one() {
+        let app = App::new();
+        // 75 characters, wider than a 72-point column and narrower than two.
+        let long = "a label wider than one column of the sheet, at a unit a character in Fixed";
+        app.enter(0, Pos::new(0, 0), long, RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(1, 0), long, RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(1, 2), "x", RecalcMode::Document)
+            .unwrap();
+        app.enter(
+            0,
+            Pos::new(2, 0),
+            "123456789012345678901234567890",
+            RecalcMode::Document,
+        )
+        .unwrap();
+        let grid = Grid::of(&app, 0);
+        let view = Rect::new(0.0, 0.0, 1000.0, 200.0);
+        let ops = cells(&app, 0, &grid, view, Selection::default(), &LOOK);
+        let clip_of = |row: u32| {
+            ops.iter()
+                .find_map(|op| match op {
+                    Op::Text { top, clip, .. }
+                        if *top > grid.cell(row, 0).y && *top < grid.cell(row, 0).bottom() =>
+                    {
+                        Some(*clip)
+                    }
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let a1 = clip_of(0);
+        assert!(a1.w > grid.cell(0, 0).w, "spills right: {a1:?}");
+        let a2 = clip_of(1);
+        assert_eq!(
+            a2.right(),
+            grid.cell(1, 1).right(),
+            "stops before C2, which holds x"
+        );
+        assert_eq!(clip_of(2), grid.cell(2, 0), "a number never spills");
     }
 }
