@@ -270,8 +270,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
 | Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
-| Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ○ |
-| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ○ |
+| Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
+| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
 | A chart's own title and legend | ● | ● | ○ | ○ | ○ | ○ |
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
@@ -333,7 +333,8 @@ the table it was made from (`doc/chart-format.md`, The shell).
 untitled spreadsheet of its own (the next row); nothing imports into an open document.
 ³ Insert ▸ Name… defines one over the selection; redefining or deleting one is the CLI's.
 ⁴ File ▸ Export as CSV…, the sheet's used rectangle with commas and shown values; no TSV or
-other dialect from the window.
+other dialect from the window. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
+as the core reads it; there is no dialog, and editing, moving or removing one is the CLI's.
 
 ## 7. Word processor
 

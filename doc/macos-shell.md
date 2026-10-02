@@ -670,7 +670,8 @@ cell instead of committing, Shift grows the range, the pointed cells are outline
 orange, and typing anything ends it; the predicate is `formula::assist::ref_eligible`, hoisted
 out of the GNOME window for it, and a drive in `mac-frames.sh` checks the formula it writes.
 Pointing with the mouse and F4's `$` cycle are not built: ⌘T, Excel for Mac's key for the cycle,
-is the font panel's here; and `canAsynchronouslyWriteToURL:` answering NO
+is the font panel's here; **Insert ▸ Chart**, the selection's table charted beside it by
+`App::suggest_chart` in one step, with no dialog; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

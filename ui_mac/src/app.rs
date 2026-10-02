@@ -230,6 +230,7 @@ impl Delegate {
             | Command::Rows(_)
             | Command::Columns(_)
             | Command::DefineName
+            | Command::InsertChart
             | Command::ExportCsv => {
                 if let Some(pane) = self.front_pane() {
                     pane.structure(command, self.mtm());

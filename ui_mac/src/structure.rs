@@ -7,6 +7,7 @@
 //! what `sheet/verbs.rs` reads off the selection, with a question asked through `prompt.rs`
 //! where the verb needs an answer first.
 
+use grind_sheet::style::mm_length;
 use grind_sheet::{Pos, RecalcMode};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSModalResponseOK, NSOpenPanel, NSSavePanel};
@@ -16,9 +17,16 @@ use crate::grid_view::Pane;
 use crate::menu::{Command, Track};
 use crate::page_view::TextPane;
 use crate::prompt;
+use crate::sheet::chart;
+use crate::sheet::geom::{HEADER_H, HEADER_W, PT_PER_MM};
 use crate::sheet::verbs;
 use crate::text::picture;
 use crate::text::state::table_size;
+
+/// A new chart's size — the GNOME window's — and its gap from the table it charts.
+const CHART_WIDTH: &str = "12cm";
+const CHART_HEIGHT: &str = "7.5cm";
+const CHART_MARGIN_MM: f64 = 6.0;
 
 impl Pane {
     /// One of the grid's structural verbs.
@@ -90,12 +98,44 @@ impl Pane {
                     self.export_csv(mtm);
                     return;
                 }
+                Command::InsertChart => self.insert_chart(),
                 _ => return,
             };
         match done {
             Ok(()) => self.say(None),
             Err(error) => self.say(Some((&error.to_string(), None))),
         }
+    }
+
+    /// Insert ▸ Chart: the table the selection is in, read the way `chart-add --from` reads one
+    /// (`App::suggest_chart` — which way the series run, what names them, and what kind of chart
+    /// the cells want), placed beside that table at the GNOME window's size, and brought into
+    /// sight. One undo step; there is no dialog, and changing the chart is the CLI's.
+    fn insert_chart(&self) -> grind_sheet::Result<()> {
+        let sheet = self.sheet.get();
+        let (start, end) = self.selection.get().rect();
+        let guessed = self.app.suggest_chart(sheet, start, end, None)?;
+        let spec = grind_sheet::ChartSpec {
+            legend: guessed.spec.default_legend(),
+            ..guessed.spec
+        };
+        let (x, y) = {
+            let grid = self.grid.borrow();
+            let x = grid.cols.offset_of(guessed.end.col + 1) / PT_PER_MM + CHART_MARGIN_MM;
+            let y = grid.rows.offset_of(guessed.start.row) / PT_PER_MM;
+            (mm_length(x), mm_length(y))
+        };
+        self.app
+            .add_chart(sheet, &spec, &x, &y, CHART_WIDTH, CHART_HEIGHT)?;
+        let added = self
+            .app
+            .charts(sheet)
+            .ok()
+            .and_then(|charts| charts.last().and_then(chart::frame_of));
+        if let (Some(frame), Some(view)) = (added, self.grid_view()) {
+            view.scrollRectToVisible(crate::grid_view::ns_rect(frame.offset(HEADER_W, HEADER_H)));
+        }
+        Ok(())
     }
 
     /// File ▸ Export as CSV…: the sheet showing, everything it uses, as comma-separated values

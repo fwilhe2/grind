@@ -104,6 +104,8 @@ pub enum Command {
     DefineName,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
+    /// A chart of the table the selection is in, beside it — Insert ▸ Chart.
+    InsertChart,
     /// A table at the caret — Insert ▸ Table….
     InsertTable,
     /// A bookmark on the caret's block — Insert ▸ Bookmark….
@@ -202,6 +204,7 @@ impl Command {
         all.extend([
             Command::DefineName,
             Command::ExportCsv,
+            Command::InsertChart,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -283,6 +286,7 @@ impl Command {
             | Command::Rows(_)
             | Command::Columns(_)
             | Command::DefineName
+            | Command::InsertChart
             | Command::ExportCsv => sheet,
         }
     }
@@ -728,6 +732,7 @@ pub static MENUS: &[Menu] = &[
             command("Sheet", None, Command::AddSheet),
             command("Function…", None, Command::InsertFunction),
             command("Name…", None, Command::DefineName),
+            command("Chart", None, Command::InsertChart),
             Item::Separator,
             command("Table…", None, Command::InsertTable),
             command("Bookmark…", None, Command::InsertBookmark),

@@ -429,6 +429,23 @@ cat "$out/point.txt"
     || fail "pointing did not write A1:A3: A4 holds $("$grind" sheet get --input "$out/pointed.fods" A4)"
 say "   =SUM( and the arrows point at A1:A3"
 
+# Insert ▸ Chart charts the table the cursor is in — read by the core, as `chart-add --from` reads
+# it — and the chart is drawn: the frame after it differs from the one before.
+"$grind" sheet new "$out/charted.fods" > /dev/null
+for cell in "A1 Region" "B1 Sales" "A2 North" "B2 3" "A3 South" "B3 5"; do
+    set -- $cell
+    "$grind" sheet set "$out/charted.fods" "$1" "$2" > /dev/null
+done
+printf 'snap before\nmenu Insert/Chart\nwait 0.5\nsnap after\nkey cmd+s\nwait 2\n' \
+    > "$out/chart.drive"
+bounded 120 "$mac" "$out/charted.fods" --drive "$out/chart.drive" --out "$out/charted" \
+    > "$out/chart.txt" || fail "the chart drive failed: $(cat "$out/chart.txt")"
+"$grind" sheet chart-list "$out/charted.fods" | grep -q 'Sheet1.B2:Sheet1.B3' \
+    || fail "Insert ▸ Chart did not chart B2:B3: $("$grind" sheet chart-list "$out/charted.fods")"
+cmp -s "$out/charted/before.png" "$out/charted/after.png" \
+    && fail "the inserted chart was not drawn"
+say "   Insert ▸ Chart charts the table, and draws it"
+
 # Every Problems row jumps: a formula on a second sheet reading an empty cell is a finding at
 # Data.C3, and choosing its row from the first sheet lands the selection there.
 "$grind" sheet new "$out/problems.fods" > /dev/null
