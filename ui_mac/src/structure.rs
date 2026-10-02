@@ -181,14 +181,9 @@ impl Pane {
                 return;
             }
             Command::FormulaToValue => {
-                // ponytail: one `clear_formula` per formula, so as many ⌘Z as formulas — the
-                // core has no range form, and the trigger is a user converting a large block.
                 let used = self.app.used_extent(sheet).unwrap_or((0, 0));
                 let (start, end) = grind_sheet::nav::target(selection, used);
-                (start.row..=end.row)
-                    .flat_map(|row| (start.col..=end.col).map(move |col| Pos::new(row, col)))
-                    .filter(|pos| self.app.formula(sheet, *pos).is_ok_and(|f| f.is_some()))
-                    .try_for_each(|pos| self.app.clear_formula(sheet, pos))
+                verbs::formulas_to_values(&self.app, sheet, start, end).map(|_| ())
             }
             Command::Filter => match self.app.filter(sheet).ok().flatten() {
                 Some(_) => self.app.set_filter(sheet, None),

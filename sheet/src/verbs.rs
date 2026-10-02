@@ -43,6 +43,26 @@ pub fn name_target(sheet: &str, selection: Selection) -> String {
     }
 }
 
+/// *Formula to Value*: every formula in `start..=end` dropped, each cell keeping the value it last
+/// computed (`App::clear_formula`). Returns how many formulas it dropped.
+///
+/// ponytail: one undo step per formula — the core has no range form, and the trigger is a person
+/// converting a large block. The macOS shell wrote the loop; the Windows grid and the browser
+/// wanted it too.
+pub fn formulas_to_values(app: &App, sheet: usize, start: Pos, end: Pos) -> crate::Result<usize> {
+    let mut dropped = 0;
+    for row in start.row..=end.row {
+        for col in start.col..=end.col {
+            let pos = Pos::new(row, col);
+            if app.formula(sheet, pos).is_ok_and(|f| f.is_some()) {
+                app.clear_formula(sheet, pos)?;
+                dropped += 1;
+            }
+        }
+    }
+    Ok(dropped)
+}
+
 /// What a formula typed in display syntax — with or without its `=` — comes to at `at`, spelled
 /// for a sentence, or why it could not be worked out. Nothing is stored and no undo step is made
 /// (`App::preview`, `grind sheet eval`'s call): relative references are relative to `at`, the
@@ -110,6 +130,22 @@ mod tests {
             anchor: Pos::new(a.0, a.1),
             active: Pos::new(b.0, b.1),
         }
+    }
+
+    #[test]
+    fn formula_to_value_keeps_what_the_cell_showed() {
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "2", crate::RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(1, 0), "=[.A1]*3", crate::RecalcMode::Document)
+            .unwrap();
+        assert_eq!(
+            formulas_to_values(&app, 0, Pos::new(0, 0), Pos::new(1, 0)).unwrap(),
+            1,
+            "only the formula is dropped"
+        );
+        assert_eq!(app.formula(0, Pos::new(1, 0)).unwrap(), None);
+        assert_eq!(app.value_text(0, Pos::new(1, 0)).unwrap(), "6");
     }
 
     #[test]
