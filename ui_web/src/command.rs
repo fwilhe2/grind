@@ -237,6 +237,24 @@ pub const TEXT: &[Command] = &[
         "Ctrl+A",
         false,
     ),
+    // Finding is the palette itself, as over a spreadsheet: type a word and the places that hold
+    // it are listed after the verbs (`text::Ui::found`) — so these are the two steps after that
+    // and the one verb that writes.
+    cmd("edit.find-next", "Find next", "Edit", "F3", false),
+    cmd(
+        "edit.find-previous",
+        "Find previous",
+        "Edit",
+        "Shift+F3",
+        false,
+    ),
+    cmd(
+        "edit.replace",
+        "Replace in the document…",
+        "Edit",
+        "Ctrl+H",
+        false,
+    ),
     cmd("char.bold", "Bold", "Format", "Ctrl+B", true),
     cmd("char.italic", "Italic", "Format", "Ctrl+I", true),
     cmd("char.underline", "Underline", "Format", "Ctrl+U", true),

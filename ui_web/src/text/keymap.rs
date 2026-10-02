@@ -108,6 +108,9 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
             "s" | "S" => Some(Action::Run("doc.save")),
             "o" | "O" => Some(Action::Run("doc.open")),
             "a" | "A" => Some(Action::Run("edit.select-all")),
+            // Replace's key in every other client. Ctrl+F is not here: it opens the palette
+            // (`wire_palette`), where typing a word lists the places that hold it.
+            "h" | "H" => Some(Action::Run("edit.replace")),
             "b" | "B" => Some(Action::Run("char.bold")),
             "i" | "I" => Some(Action::Run("char.italic")),
             "u" | "U" => Some(Action::Run("char.underline")),
@@ -123,6 +126,8 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
         };
     }
     match chord.key {
+        "F3" if chord.shift => Some(Action::Run("edit.find-previous")),
+        "F3" => Some(Action::Run("edit.find-next")),
         "ArrowLeft" => go(Motion::Char(-1)),
         "ArrowRight" => go(Motion::Char(1)),
         "ArrowUp" => go(Motion::Line(-1)),
@@ -184,6 +189,13 @@ mod tests {
             shift: false,
             composing: true,
         })
+    }
+
+    #[test]
+    fn find_replace_and_the_two_steps_are_commands() {
+        assert_eq!(plain("F3"), Some(Action::Run("edit.find-next")));
+        assert_eq!(shifted("F3"), Some(Action::Run("edit.find-previous")));
+        assert_eq!(ctrl("h"), Some(Action::Run("edit.replace")));
     }
 
     #[test]

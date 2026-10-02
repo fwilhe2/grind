@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use grind_core::style::TextStyle;
+use grind_text::find::{self, Towards};
 use grind_text::format::{self, Change, Landed};
 use grind_text::look::Role;
 use grind_text::markdown::Emphasis;
@@ -298,6 +299,9 @@ pub struct Ui {
     /// frame of the wrong picture in a document with two images in it.
     images: RefCell<HashMap<usize, String>>,
     message: RefCell<String>,
+    /// The word the palette last found, which F3 and Shift+F3 step through and Replace offers
+    /// back — `sheet::Ui::needle`'s twin.
+    needle: RefCell<String>,
 }
 
 impl Ui {
@@ -336,6 +340,7 @@ impl Ui {
             names: Cell::new(false),
             images: RefCell::new(HashMap::new()),
             message: RefCell::new(String::new()),
+            needle: RefCell::new(String::new()),
         });
         wire(&ui)?;
         Ok(ui)
@@ -733,6 +738,9 @@ impl Ui {
             "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
             "block.indent" => self.renest(1),
             "block.outdent" => self.renest(-1),
+            "edit.find-next" => self.find_step(Towards::Next),
+            "edit.find-previous" => self.find_step(Towards::Previous),
+            "edit.replace" => self.replace(),
             "view.names" => {
                 let on = !self.names.get();
                 self.names.set(on);
@@ -743,9 +751,10 @@ impl Ui {
                     false => "Bookmarks are invisible again".to_owned(),
                 });
             }
-            id => match id.strip_prefix("goto:") {
-                Some(where_) => self.go_to(where_),
-                None => self.set_message(format!("No such command: {id}")),
+            id => match (id.strip_prefix("goto:"), id.strip_prefix("find:")) {
+                (Some(where_), _) => self.go_to(where_),
+                (_, Some(found)) => self.pick_found(found),
+                _ => self.set_message(format!("No such command: {id}")),
             },
         }
     }
@@ -817,6 +826,131 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- find and replace (`grind_text::find`) ---
+
+    /// What the palette offers *after* the verbs for a query: the paragraphs holding it.
+    ///
+    /// After, not before like [`Ui::targets`] — a word somebody types is far more often a verb
+    /// than a phrase of the text, and `bold` must still put *Bold* first. Two characters at
+    /// least, since one letter is in every paragraph. When there are more hits than fit, the
+    /// last row is all of them, stepped through with F3. The browser's own find would only see
+    /// what is on screen, which is why Ctrl+F opens this box.
+    pub fn found(&self, query: &str) -> Vec<Entry> {
+        const SHOWN: usize = 5;
+        let query = query.trim();
+        if query.chars().count() < 2 {
+            return Vec::new();
+        }
+        let hits = self.app.find_ignoring_case(query);
+        let mut out: Vec<Entry> = hits
+            .iter()
+            .take(SHOWN)
+            .map(|hit| {
+                let text: String = hit.text.chars().take(60).collect();
+                Entry::target(
+                    format!("find:{}:{}\n{query}", hit.index, hit.offset),
+                    format!("{} — {text}", hit.address()),
+                    "Text",
+                )
+            })
+            .collect();
+        if hits.len() > SHOWN {
+            out.push(Entry::target(
+                format!("find:\n{query}"),
+                format!(
+                    "All {} places holding “{query}” — F3 steps through them",
+                    hits.len()
+                ),
+                "Find",
+            ));
+        }
+        out
+    }
+
+    /// A hit picked from [`Ui::found`]: select it and remember the word, so F3 carries on. No
+    /// address means "the first hit from here", which is the *All N places* row.
+    fn pick_found(&self, found: &str) {
+        let Some((address, needle)) = found.split_once('\n') else {
+            return;
+        };
+        *self.needle.borrow_mut() = needle.to_owned();
+        let at = address.split_once(':').and_then(|(block, offset)| {
+            Some(Caret {
+                block: block.parse().ok()?,
+                offset: offset.parse().ok()?,
+            })
+        });
+        match at {
+            Some(from) => self.select_hit(from, needle),
+            None => self.find_step(Towards::Here),
+        }
+    }
+
+    /// Select the hit that starts at `from`, so typing over it replaces it.
+    fn select_hit(&self, from: Caret, needle: &str) {
+        self.anchor.set(Some(from));
+        self.set_caret(find::end_of(from, needle));
+        let _ = self.dom.pane.focus();
+    }
+
+    /// F3 and Shift+F3: the next or previous occurrence of the remembered word, wrapping at
+    /// either end. The hits are asked for again each time, since the document may have changed.
+    fn find_step(&self, towards: Towards) {
+        let needle = self.needle.borrow().clone();
+        if needle.is_empty() {
+            return self.set_message("Nothing to find yet — Ctrl+F, then type".to_owned());
+        }
+        let hits = find::hits(&self.app, &needle);
+        // From the selection's start when there is one — usually the last hit — and the caret
+        // otherwise.
+        let at = self
+            .selection()
+            .map_or_else(|| self.caret.get(), |(from, _)| from);
+        let Some(index) = find::step(&hits, at, towards) else {
+            return self.set_message(format!("“{needle}” is not in the document"));
+        };
+        self.select_hit(hits[index], &needle);
+        self.set_message(format!(
+            "{} of {} · F3 next, Shift+F3 previous",
+            index + 1,
+            hits.len()
+        ));
+    }
+
+    /// *Replace in the document…* — two questions, then `App::replace` over every paragraph in
+    /// one undo step. Prompts rather than a form, as the spreadsheet's does: this page has no
+    /// dialog surface, and a replace is two words. Exact in case, since it writes.
+    fn replace(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let offered = self.needle.borrow().clone();
+        let Ok(Some(what)) = window.prompt_with_message_and_default("Replace what?", &offered)
+        else {
+            return;
+        };
+        if what.is_empty() {
+            return;
+        }
+        let Ok(Some(with)) =
+            window.prompt_with_message_and_default(&format!("Replace “{what}” with"), "")
+        else {
+            return;
+        };
+        *self.needle.borrow_mut() = what.clone();
+        match self.app.replace(&what, &with) {
+            Ok(0) => self.set_message(format!("“{what}” is not in the document")),
+            Ok(n) => {
+                self.anchor.set(None);
+                self.set_message(format!(
+                    "Replaced in {n} paragraph{} — Ctrl+Z takes it back",
+                    if n == 1 { "" } else { "s" }
+                ));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     // --- the code view (doc/dsl.md §6, D9) ---
