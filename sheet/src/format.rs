@@ -106,6 +106,18 @@ pub fn coloured(style: &CellStyle, background: bool, value: Option<String>) -> O
     })
 }
 
+/// The border a *Borders* control draws — LibreOffice's own hairline, in the three-part form ODF
+/// stores (`doc/ods-format.md` §5.4), so a box drawn from any shell is the box a document already
+/// full of them has. Four shells spelled it four times before this.
+pub const BORDER: &str = "0.06pt solid #000000";
+
+/// A hairline round the cell (`on`), or every edge taken away — *All Borders* and *No Borders*.
+pub fn bordered(style: &CellStyle, on: bool) -> Option<CellStyle> {
+    restyled(style, |style| {
+        style.set_border(on.then(|| BORDER.to_owned()))
+    })
+}
+
 /// Read, change, and hand back what to write — `None` meaning no style at all.
 ///
 /// The read-merge-write [`crate::App::set_style`]'s own documentation promises its callers in
@@ -513,5 +525,12 @@ mod tests {
         );
         let pound = numfmt::preset(Kind::Currency, 2, true, "£");
         assert_eq!(Preset::face(Some(&pound)), "£");
+    }
+
+    #[test]
+    fn borders_go_round_every_edge_and_back_to_no_style() {
+        let boxed = bordered(&CellStyle::default(), true).expect("a style with borders");
+        assert_eq!(boxed.uniform_border(), Some(BORDER));
+        assert_eq!(bordered(&boxed, false), None, "nothing else set: no style");
     }
 }

@@ -708,9 +708,11 @@ impl Ui {
             "style.align-right" => style(|s| Toggle::AlignEnd.set(s, true)),
             "style.align-clear" => style(|s| format::restyled(s, |s| s.align = None)),
             "style.wrap" => style(|s| Toggle::Wrap.flipped(s)),
-            "style.border" => {
-                style(|s| format::restyled(s, |s| s.set_border(Some(BORDER.to_owned()))))
-            }
+            "style.border" => style(|s| {
+                format::restyled(s, |s| {
+                    s.set_border(Some(grind_sheet::format::BORDER.to_owned()))
+                })
+            }),
             "style.border-clear" => style(|s| format::restyled(s, |s| s.set_border(None))),
             "style.clear" => self.set_style_of_selection(None),
 
@@ -1931,13 +1933,6 @@ fn replaced(what: &str, done: &find::Replaced) -> String {
     }
     said
 }
-
-/// The border this shell draws when asked for one.
-///
-/// LibreOffice's own hairline, in the three-part form ODF stores (`doc/ods-format.md` §5.4) —
-/// so a box drawn here is the box a document already full of them has, rather than a second
-/// weight nothing else uses.
-const BORDER: &str = "0.06pt solid #000000";
 
 /// What `format.currency` spells: the suite's default currency, the euro, so a cell formatted
 /// here looks the way the same command formats it everywhere else.

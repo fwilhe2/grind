@@ -54,9 +54,7 @@ fn toggle(command: Command) -> Option<Toggle> {
     }
 }
 
-/// The border All Borders draws — LibreOffice's own hairline, the one the terminal and the
-/// browser write for the same verb.
-pub const BORDER: &str = "0.06pt solid #000000";
+pub use grind_sheet::format::BORDER;
 
 /// A palette entry as the colour a document stores.
 pub fn color(index: Option<u8>) -> Option<String> {
@@ -90,9 +88,7 @@ pub fn write(command: Command, active: &Active, locale: Option<Locale>) -> Optio
             format::stepped(active.format.as_ref(), step, active.shown, locale)
                 .map(|format| Write::Format(Some(format)))
         }
-        Command::Borders(on) => Some(Write::Style(format::restyled(&active.style, |style| {
-            style.set_border(on.then(|| BORDER.to_owned()))
-        }))),
+        Command::Borders(on) => Some(Write::Style(format::bordered(&active.style, on))),
         Command::ClearFormatting => Some(Write::Clear),
         _ => None,
     }

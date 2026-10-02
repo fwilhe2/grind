@@ -881,7 +881,7 @@ impl App {
             "italic" => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
             "wrap" => self.toggle_style(|style| toggle(&mut style.wrap, "wrap")),
             "border" => self.toggle_style(|style| {
-                style.set_border(Some(BORDER.to_owned()));
+                style.set_border(Some(grind_sheet::format::BORDER.to_owned()));
             }),
             "plain" => self.write_style(None, "plain"),
             "general" => self.write_format(None, "general"),
@@ -1946,11 +1946,6 @@ fn show_value(core: &CoreApp, value: &CellValue) -> String {
         CellValue::Bool(false) => "FALSE".to_owned(),
     }
 }
-
-/// The border this shell draws when asked for one — LibreOffice's own hairline, in the
-/// three-part form ODF stores (`doc/ods-format.md` §5.4), so a box drawn here is the box a
-/// document already full of them has.
-const BORDER: &str = "0.06pt solid #000000";
 
 /// What `:format currency` spells: the suite's default currency, the euro, so a cell formatted
 /// here looks the way the same command formats it everywhere else.
