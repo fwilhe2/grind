@@ -211,7 +211,7 @@ borders, which that window does not draw either.
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ | ◐ ³ |
-| **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ◐ ¹ |
+| **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 
 ᵃ **A real gap, and this table is where it became visible.** Nothing in `ui_sheet_gtk` writes
@@ -248,8 +248,8 @@ the GNOME window hashed a number only when it was right-aligned, the Windows win
 every cell, and the browser clipped without a mark — and did not honour a column's width at all
 once its content was wider, since a `max-content` table sizes its columns from what is in them.
 
-**Mac.** ¹ Broken at the column's width and drawn as lines, but a row is not grown to fit
-them: what its height does not hold is cut. ² The toolbar's two steps and Format ▸ Number's; no grouping or currency-symbol control. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
+**Mac.** ¹ Broken at the column's width and drawn as lines, and a row with no height of its own
+grown to hold them, as the GNOME window grows one. ² The toolbar's two steps and Format ▸ Number's; no grouping or currency-symbol control. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
 
 ## 6. Spreadsheet — structure, charts and interchange
 
@@ -260,7 +260,7 @@ them: what its height does not hold is cut. ² The toolbar's two steps and Forma
 | Set a column width or row height | ● | ● | ● | ○ | ○ | ● |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
 | Autofit a column | ● | ● | ○ | ○ | ○ | ● |
-| Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ○ |
+| Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |

@@ -210,8 +210,8 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 app.open_bytes(&opened.name, &opened.bytes)
                     .map_err(|error| format!("{}: {error}", path.display()))?;
             }
-            let grid = sheet::geom::Grid::of(&app, 0);
             let text = metrics::CoreText::new(metrics::BASE_PT);
+            let grid = sheet::geom::Grid::measured(&app, 0, &text);
             let palette = match dark {
                 true => Palette::DARK,
                 false => Palette::LIGHT,

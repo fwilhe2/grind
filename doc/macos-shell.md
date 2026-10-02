@@ -662,7 +662,9 @@ axis' title set level above the axis rather than turned along it; **cell borders
 writing the terminal's and the browser's hairline; **tracks resized from the header bands** — the
 resize cursors over every edge, a drag drawn live from `Sizes::with` and written once when the
 button comes up (every selected whole track with it, one undo step), and a double-click fitting a
-column to its widest text or giving a row back to its content (`sheet/resize.rs`); and `canAsynchronouslyWriteToURL:` answering NO
+column to its widest text or giving a row back to its content (`sheet/resize.rs`); **rows grown to their content** — `Grid::measured`, a row with no
+height of its own as tall as its tallest wrapping or larger-faced cell through
+`grind_core::layout::wrap`, the GNOME window's L3 rule and bound; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

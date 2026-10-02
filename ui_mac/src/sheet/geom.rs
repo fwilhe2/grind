@@ -15,8 +15,9 @@
 
 use std::ops::Range;
 
+use grind_core::layout::{Fragment, Metrics, wrap};
 use grind_sheet::tracks::Sizes;
-use grind_sheet::{App, MAX_COLS, MAX_ROWS};
+use grind_sheet::{App, MAX_COLS, MAX_ROWS, look};
 
 /// A column nobody sized: **one inch**, the suite's own default column (`ui_web`'s 96 CSS pixels,
 /// `ui_tui`'s ten cells), in points.
@@ -124,6 +125,30 @@ impl Grid {
         }
     }
 
+    /// The grid of `sheet` as [`Grid::of`] reads it, and every row with no height of its own
+    /// grown to hold what is in it — a cell that wraps onto more lines, or one set in a larger
+    /// face — measured in `metrics` by `grind_core::layout::wrap`, the breaker that draws the
+    /// wrapped lines (L3, the GNOME window's rule). A row is only ever grown, never shrunk below
+    /// [`ROW_H`]; one the document sized keeps its size, and a hidden one stays hidden.
+    pub fn measured(app: &App, sheet: usize, metrics: &dyn Metrics) -> Grid {
+        let mut grid = Grid::of(app, sheet);
+        let grown = auto_heights(app, sheet, &grid, metrics);
+        if !grown.is_empty() {
+            let heights = app.row_heights(sheet).unwrap_or_default();
+            let mut sizes: Vec<(u32, f64)> = grown;
+            // The document's own heights, and its hidden rows, go on after — `Sizes::new` keeps
+            // the last entry given for a row, so they win.
+            sizes.extend(heights.iter().filter_map(|(row, length)| {
+                Some((*row, grind_core::style::length_mm(length)? * PT_PER_MM))
+            }));
+            let mut hidden = app.manually_hidden_rows(sheet).unwrap_or_default();
+            hidden.extend(app.hidden_rows(sheet).unwrap_or_default());
+            sizes.extend(hidden.into_iter().map(|row| (row, 0.0)));
+            grid.rows = Sizes::new(ROW_H, MAX_ROWS, sizes);
+        }
+        grid
+    }
+
     /// How large the grid view is: every shown column's width and every shown row's height.
     // Reached from the grid view, which sizes itself by this, and not yet written.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -169,6 +194,62 @@ impl Grid {
             .min(self.shown_cols.saturating_sub(1));
         (row, col)
     }
+}
+
+/// Space above and below a cell's text — `paint::PAD_Y` either side.
+const ROW_PAD: f64 = 2.0 * super::paint::PAD_Y;
+
+/// How much sheet is measured for natural row heights. A row above the view still displaces
+/// the ones below it, so the pass cannot be limited to what is on screen — past this much
+/// document every row keeps its height, the GNOME window's bound.
+const AUTO_HEIGHT_CELLS: u64 = 200_000;
+
+/// The rows `grid` should grow, and to what: for each, the tallest of its cells that wraps or
+/// names a font size, when that is taller than the row. A cell with no style is never laid out,
+/// which is what keeps this a cheap pass over a sheet where nine cells in ten are plain.
+fn auto_heights(app: &App, sheet: usize, grid: &Grid, metrics: &dyn Metrics) -> Vec<(u32, f64)> {
+    let Ok((rows, cols)) = app.used_extent(sheet) else {
+        return Vec::new();
+    };
+    if rows == 0 || cols == 0 || u64::from(rows) * u64::from(cols) > AUTO_HEIGHT_CELLS {
+        return Vec::new();
+    }
+    let Ok(viewport) = app.get_viewport(sheet, 0..rows, 0..cols) else {
+        return Vec::new();
+    };
+    let mut grown = Vec::new();
+    for row in 0..rows {
+        let mut tallest: f64 = 0.0;
+        for col in 0..cols {
+            let Some(style) = viewport.style(row, col) else {
+                continue;
+            };
+            let wrapping = look::wraps(Some(style));
+            if !wrapping && style.font_size.is_none() {
+                continue;
+            }
+            let Some(text) = viewport.text(row, col).filter(|text| !text.is_empty()) else {
+                continue;
+            };
+            let text_style = look::text_style(Some(style));
+            // A width of zero is `wrap`'s own "do not wrap": one line per hard break, which is
+            // what a cell here only for its larger face wants.
+            let width = match wrapping {
+                true => (grid.cols.size_of(col) - 2.0 * super::paint::PAD_X).max(1.0) as f32,
+                false => 0.0,
+            };
+            let fragment = Fragment {
+                text,
+                style: &text_style,
+            };
+            let laid = wrap(std::slice::from_ref(&fragment), width, metrics);
+            tallest = tallest.max(f64::from(laid.height()));
+        }
+        if tallest + ROW_PAD > ROW_H {
+            grown.push((row, (tallest + ROW_PAD).ceil()));
+        }
+    }
+    grown
 }
 
 /// The tracks of `sizes` meeting `start..start + len`, clamped to the first `shown`.
@@ -282,5 +363,42 @@ mod tests {
         assert_eq!(a.intersection(&b), Rect::new(5.0, 5.0, 5.0, 5.0));
         assert!(a.intersection(&Rect::new(20.0, 20.0, 1.0, 1.0)).is_empty());
         assert_eq!(a.offset(1.0, 2.0), Rect::new(1.0, 2.0, 10.0, 10.0));
+    }
+
+    #[test]
+    fn a_wrapping_row_grows_and_a_sized_one_keeps_its_height() {
+        let app = App::new();
+        let long = "one two three four five six seven eight nine ten eleven twelve";
+        for row in 0..2 {
+            app.enter(0, Pos::new(row, 0), long, RecalcMode::Document)
+                .unwrap();
+        }
+        let wrapping = grind_sheet::style::CellStyle {
+            wrap: Some("wrap".into()),
+            ..Default::default()
+        };
+        app.set_style(0, Pos::new(0, 0), Pos::new(1, 0), Some(wrapping))
+            .unwrap();
+        app.set_row_height(0, 1..2, Some("10mm".into())).unwrap();
+        /// Six points a character and thirteen a line, near enough a 10-point face.
+        struct Body;
+        impl Metrics for Body {
+            fn advances(&self, text: &str, _: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+                out.clear();
+                out.extend((1..=text.chars().count()).map(|n| n as f32 * 6.0));
+            }
+            fn line_height(&self, _: &grind_core::style::TextStyle) -> f32 {
+                13.0
+            }
+        }
+        let grid = Grid::measured(&app, 0, &Body);
+        assert!(grid.rows.size_of(0) > ROW_H, "{}", grid.rows.size_of(0));
+        assert!((grid.rows.size_of(1) - 10.0 * PT_PER_MM).abs() < 1e-9);
+        assert_eq!(grid.rows.size_of(2), ROW_H, "an empty row");
+        assert_eq!(
+            Grid::of(&app, 0).rows.size_of(0),
+            ROW_H,
+            "only the measured grid grows"
+        );
     }
 }

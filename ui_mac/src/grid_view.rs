@@ -108,13 +108,14 @@ pub struct Pane {
 
 impl Pane {
     pub fn new(app: Arc<grind_sheet::App>) -> Rc<Pane> {
-        let grid = Grid::of(&app, 0);
+        let text = CoreText::new(BASE_PT);
+        let grid = Grid::measured(&app, 0, &text);
         Rc::new_cyclic(|me| Pane {
             me: me.clone(),
             app,
             sheet: Cell::new(0),
             grid: RefCell::new(grid),
-            text: CoreText::new(BASE_PT),
+            text,
             selection: Cell::new(Selection::default()),
             views: RefCell::new(Vec::new()),
             grid_view: RefCell::new(None),
@@ -210,7 +211,7 @@ impl Pane {
             self.selection.set(Selection::default());
         }
         self.tell_document();
-        let grid = Grid::of(&self.app, self.sheet.get());
+        let grid = Grid::measured(&self.app, self.sheet.get(), &self.text);
         let (w, h) = grid.size();
         *self.grid.borrow_mut() = grid;
         if let Some(view) = self.grid_view() {
@@ -348,7 +349,7 @@ impl Pane {
         if let Err(error) = done {
             self.say(Some((&error.to_string(), None)));
             // What the drag drew is not what the document holds; draw what it does.
-            *self.grid.borrow_mut() = Grid::of(&self.app, sheet);
+            *self.grid.borrow_mut() = Grid::measured(&self.app, sheet, &self.text);
             self.relayout();
         }
         true
@@ -401,7 +402,7 @@ impl Pane {
             return;
         }
         self.sheet.set(sheet);
-        let grid = Grid::of(&self.app, sheet);
+        let grid = Grid::measured(&self.app, sheet, &self.text);
         let (w, h) = grid.size();
         *self.grid.borrow_mut() = grid;
         if let Some(view) = self.grid_view.borrow().as_ref().and_then(Weak::load) {
