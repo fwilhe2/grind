@@ -27,8 +27,9 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSColor, NSControl, NSControlTextEditingDelegate, NSFont, NSFontAttributeName,
-    NSForegroundColorAttributeName, NSTextField, NSTextFieldDelegate, NSTextView,
+    NSApplication, NSColor, NSControl, NSControlTextEditingDelegate, NSEventModifierFlags, NSFont,
+    NSFontAttributeName, NSForegroundColorAttributeName, NSTextField, NSTextFieldDelegate,
+    NSTextView,
 };
 use objc2_foundation::{
     NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableAttributedString,
@@ -142,6 +143,20 @@ define_class!(
     unsafe impl NSTextFieldDelegate for EditorDelegate {}
 );
 
+/// Whether the key being handled is ⌃U.
+fn control_u(view: &NSTextView) -> bool {
+    NSApplication::sharedApplication(view.mtm())
+        .currentEvent()
+        .is_some_and(|event| {
+            event
+                .modifierFlags()
+                .contains(NSEventModifierFlags::Control)
+                && event
+                    .charactersIgnoringModifiers()
+                    .is_some_and(|keys| keys.to_string() == "u")
+        })
+}
+
 impl Pane {
     /// Whether a cell is being edited.
     pub fn is_editing(&self) -> bool {
@@ -213,6 +228,13 @@ impl Pane {
     /// What a selector from the field editor does. `true` is "handled": the field editor does
     /// nothing more with it.
     fn edit_command(&self, selector: &str, sel: Sel, text_view: &NSTextView) -> bool {
+        // ⌃U is bound to nothing in the standard bindings, so inside the field it arrives as
+        // `noop:`; the event behind it says which key it was, and makes it the mode toggle the
+        // grid's own ⌃U already is (`state::TOGGLE`).
+        let selector = match selector == "noop:" && control_u(text_view) {
+            true => state::TOGGLE,
+            false => selector,
+        };
         let Some((mode, offering, pending, field)) = self.edit.borrow().as_ref().map(|edit| {
             (
                 edit.mode,

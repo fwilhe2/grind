@@ -477,8 +477,8 @@ then refused.
 
 What M4 leaves: the formula field edits only through the cell editor (the read-out follows it —
 a `ponytail:` in `accessory.rs`); an undo back to the saved state still leaves the Edited dot,
-since the core's observer says *changed* rather than *which way*; and ⌃U inside the editor is the
-field editor's, so toggling Enter and Edit mode there is not yet reachable.
+since the core's observer says *changed* rather than *which way*; and ⌃U inside the editor was
+the field editor's (since closed: it arrives as `noop:`, and the event behind it says it was ⌃U).
 
 ### What M5 built
 
