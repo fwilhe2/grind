@@ -1505,23 +1505,15 @@ impl Ui {
             }
             return;
         }
-        let (start, mut end) = self.selection.get().rect();
-        // A single cell is a click, not a range: filter the used table around it rather than
-        // one cell, which could never hide anything.
-        if start == end
-            && let Ok((rows, cols)) = self.app.used_extent(sheet)
-        {
-            end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
-        }
-        if end.row <= start.row {
-            return self
-                .set_message("Select the rows to filter, including their headings".to_owned());
-        }
-        // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes the
-        // same one, so a document does not say which shell made it.
-        let filter = Filter::new("__Anonymous_Sheet_DB__0", start, end);
-        if let Err(error) = self.app.set_filter(sheet, Some(filter)) {
-            self.set_message(error.to_string());
+        let (start, end) = self.selection.get().rect();
+        let used = self.app.used_extent(sheet).unwrap_or((0, 0));
+        match Filter::over_selection(start, end, used) {
+            Ok(filter) => {
+                if let Err(error) = self.app.set_filter(sheet, Some(filter)) {
+                    self.set_message(error.to_string());
+                }
+            }
+            Err(why) => self.set_message(why.to_owned()),
         }
     }
 

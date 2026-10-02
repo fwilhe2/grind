@@ -3938,23 +3938,15 @@ fn toggle_filter(hwnd: HWND) {
                 }
                 return;
             }
-            let (start, mut end) = state.selection.rect();
-            // A single cell is a click, not a range — the same rule `format_table` uses.
-            if start == end
-                && let Ok((rows, cols)) = state.app.used_extent(state.sheet)
-            {
-                end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
-            }
-            if end.row <= start.row {
-                return state.say(Some(
-                    "Select the rows to filter, including their headings".to_owned(),
-                ));
-            }
-            // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes the
-            // same one, so a document does not say which shell made it.
-            let filter = Filter::new("__Anonymous_Sheet_DB__0", start, end);
-            if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
-                state.say(Some(error.to_string()));
+            let (start, end) = state.selection.rect();
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            match Filter::over_selection(start, end, used) {
+                Ok(filter) => {
+                    if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
+                        state.say(Some(error.to_string()));
+                    }
+                }
+                Err(why) => state.say(Some(why.to_owned())),
             }
         });
     }

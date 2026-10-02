@@ -96,7 +96,32 @@ pub struct Filter {
     pub keep: BTreeMap<u32, BTreeSet<String>>,
 }
 
+/// The name LibreOffice gives an autofilter nobody named. `grind sheet filter` writes the same
+/// one, so a document does not say which shell made it.
+pub const ANONYMOUS: &str = "__Anonymous_Sheet_DB__0";
+
 impl Filter {
+    /// The filter *Data ▸ Filter* turns on over a selection `start..=end`: the selection itself,
+    /// or — from a single cell, which is a click and not a range — the used table from that cell
+    /// to the sheet's last used row and column (`used` is [`crate::App::used_extent`]). `Err`
+    /// with the sentence to say when there is no heading *and* a row under it to filter.
+    ///
+    /// Five shells spelled this rule, and the sentence, five times.
+    pub fn over_selection(
+        start: Pos,
+        end: Pos,
+        used: (u32, u32),
+    ) -> std::result::Result<Self, &'static str> {
+        let end = match start == end {
+            true => Pos::new(used.0.saturating_sub(1), used.1.saturating_sub(1)),
+            false => end,
+        };
+        match end.row > start.row && end.col >= start.col {
+            true => Ok(Self::new(ANONYMOUS, start, end)),
+            false => Err("Select the rows to filter, including their headings."),
+        }
+    }
+
     /// A filter over `start..=end` that hides nothing yet.
     pub fn new(name: impl Into<String>, start: Pos, end: Pos) -> Self {
         Self {
@@ -245,5 +270,20 @@ mod tests {
         filter.end.col = 2;
         filter.keep.insert(1, ["Office".to_owned()].into());
         assert_eq!(filter.hidden_rows(&sheet, 0, None), vec![2]);
+    }
+
+    #[test]
+    fn a_filter_over_one_cell_takes_the_used_table_and_over_one_row_nothing() {
+        let (a1, c9) = (Pos::new(0, 0), Pos::new(8, 2));
+        let whole = Filter::over_selection(a1, a1, (9, 3)).unwrap();
+        assert_eq!((whole.start, whole.end), (a1, c9));
+        assert_eq!(whole.name, ANONYMOUS);
+        let picked = Filter::over_selection(a1, Pos::new(3, 1), (9, 3)).unwrap();
+        assert_eq!(picked.end, Pos::new(3, 1), "the selection as it was made");
+        assert!(Filter::over_selection(a1, Pos::new(0, 2), (9, 3)).is_err());
+        assert!(
+            Filter::over_selection(a1, a1, (1, 1)).is_err(),
+            "a lone heading"
+        );
     }
 }

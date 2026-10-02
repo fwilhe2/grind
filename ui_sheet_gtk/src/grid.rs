@@ -3019,24 +3019,15 @@ mod imp {
                 self.obj().queue_draw();
                 return;
             }
-            let (start, mut end) = self.selection.get().rect();
-            // A single cell is a click, not a range: filter the used table around it rather
-            // than one cell, which could never hide anything.
-            if start == end
-                && let Ok((rows, cols)) = app.used_extent(sheet)
-            {
-                end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
-            }
-            if end.row <= start.row {
-                return self.notice(Notice::Refused(
-                    "Select the rows to filter, including their headings".to_owned(),
-                ));
-            }
-            // The name LibreOffice gives an autofilter nobody named; `sheet filter` writes
-            // the same one, so a document does not say which shell made it.
-            let filter = grind_sheet::Filter::new("__Anonymous_Sheet_DB__0", start, end);
-            if let Err(error) = app.set_filter(sheet, Some(filter)) {
-                self.notice(Notice::Refused(error.to_string()));
+            let (start, end) = self.selection.get().rect();
+            let used = app.used_extent(sheet).unwrap_or((0, 0));
+            match grind_sheet::Filter::over_selection(start, end, used) {
+                Ok(filter) => {
+                    if let Err(error) = app.set_filter(sheet, Some(filter)) {
+                        self.notice(Notice::Refused(error.to_string()));
+                    }
+                }
+                Err(why) => self.notice(Notice::Refused(why.to_owned())),
             }
             self.obj().queue_draw();
         }

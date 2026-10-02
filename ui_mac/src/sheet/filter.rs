@@ -24,7 +24,7 @@ use crate::ops::Op;
 
 /// The name LibreOffice gives an autofilter nobody named; `grind sheet filter` and the browser
 /// write the same one, so a document does not say which shell made it.
-pub const NAME: &str = "__Anonymous_Sheet_DB__0";
+pub const NAME: &str = grind_sheet::filter::ANONYMOUS;
 
 /// A button's side, and its gap from the heading cell's right and top edges.
 const BUTTON: f64 = 14.0;
@@ -33,14 +33,7 @@ const INSET: f64 = 2.0;
 /// The rectangle a new filter covers: the selection, or from a single cell to the end of the
 /// used part of the sheet — or why there is none, since a filter needs a heading and a row.
 pub fn range(selection: (Pos, Pos), used: (u32, u32)) -> Result<(Pos, Pos), &'static str> {
-    let (start, mut end) = selection;
-    if start == end {
-        end = Pos::new(used.0.saturating_sub(1), used.1.saturating_sub(1));
-    }
-    match end.row > start.row && end.col >= start.col {
-        true => Ok((start, end)),
-        false => Err("Select the rows to filter, including their headings."),
-    }
+    Filter::over_selection(selection.0, selection.1, used).map(|filter| (filter.start, filter.end))
 }
 
 /// Every field's button, in the sheet's own coordinates: at the right of its heading cell,
