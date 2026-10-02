@@ -355,18 +355,18 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Word count | ● | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
-| Strikethrough | ● | ● | ● | ● | ◐ ᵉ | ● |
-| Monospace / code | ● | ● | ● | ◐ ᵉ | ◐ ᵉ | ● |
-| Colour, highlight | ● | ● | ● | ● | ○ | ● |
-| Font family, font size | ● | ● | ○ | ○ | ○ | ● ¹ |
-| Clear formatting | ● | ● | ● | ● | ○ | ● |
+| Strikethrough | ● | ● | ● | ● | ● | ● |
+| Monospace / code | ● | ● | ● | ◐ ᵉ | ● | ● |
+| Colour, highlight | ● | ● | ● | ● | ● | ● |
+| Font family, font size | ● | ● | ○ | ○ | ● | ● ¹ |
+| Clear formatting | ● | ● | ● | ● | ● | ● |
 | **Drawn**: the four booleans | — | ● | ● | ● | ● | ● |
-| **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ○ | ● |
+| **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ● | ● |
 | **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ | ● |
 | **Block structure** | | | | | | |
 | Paragraph, Heading 1–3 | ● | ● | ● | ● | ● | ● |
 | Heading 4–6 | ● | ● | ● | ◐ ʲ | ● | ● ² |
-| Title, Subtitle | ● | ● | ● | ● | ○ | ● ² |
+| Title, Subtitle | ● | ● | ● | ● | ● | ● ² |
 | List item | ● | ● | ● | ● | ● | ● |
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
 | A named paragraph style | ● | ○ | ● | ○ | ○ | ● |
@@ -445,7 +445,7 @@ of a client's own job is missing.
    wrap and borders (§5 ˣ), which this window does not draw, and so does not offer.
 2. ~~**`grind-sheet-gtk` has no borders control** (§5 ᵃ).~~ **Closed** (2026-10-02): a Borders
    toggle in the format bar, over `format::bordered`.
-3. **`grind-win32` cannot colour a run either**, and `grind-tui` approximates one. Colour and
+3. ~~**`grind-win32` cannot colour a run either**~~ — **stale, found 2026-10-02**: its format strip has had colour, highlight, family, size, strike, code and Clear since W5b/W10 and the pane draws the colours; this row and §7 were never updated. `grind-tui` still approximates one. Colour and
    highlight are the word processor's twin of row 1: the CLI writes them, loop C round-trips
    them, `grind-web` and `grind-text-gtk` draw them, and the Windows pane shows neither.
 4. **Font family and size are a `grind-text-gtk`-and-CLI pair.** No other shell offers either
