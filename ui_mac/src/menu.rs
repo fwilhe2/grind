@@ -129,6 +129,9 @@ pub enum Command {
     MoveParagraph(bool),
     /// The selected paragraphs gone — Format ▸ Paragraph ▸ Delete Paragraph.
     DeleteParagraph,
+    /// A named paragraph style on the selected paragraphs, asked for — Format ▸ Paragraph ▸
+    /// Style….
+    ParagraphStyle,
     /// A table at the caret — Insert ▸ Table….
     InsertTable,
     /// A bookmark on the caret's block — Insert ▸ Bookmark….
@@ -250,6 +253,7 @@ impl Command {
             Command::MoveParagraph(true),
             Command::MoveParagraph(false),
             Command::DeleteParagraph,
+            Command::ParagraphStyle,
             Command::Zoom(1),
             Command::Zoom(-1),
             Command::Zoom(0),
@@ -276,6 +280,7 @@ impl Command {
                 | Command::Evaluate
                 | Command::DocumentLocale
                 | Command::Calculations
+                | Command::ParagraphStyle
         )
     }
 
@@ -315,7 +320,8 @@ impl Command {
             | Command::InsertBookmark
             | Command::InsertPicture
             | Command::MoveParagraph(_)
-            | Command::DeleteParagraph => text,
+            | Command::DeleteParagraph
+            | Command::ParagraphStyle => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -732,6 +738,8 @@ static PARAGRAPH: Menu = Menu {
         command("Move Up", None, Command::MoveParagraph(true)),
         command("Move Down", None, Command::MoveParagraph(false)),
         command("Delete Paragraph", None, Command::DeleteParagraph),
+        Item::Separator,
+        command("Style…", None, Command::ParagraphStyle),
     ],
 };
 

@@ -321,6 +321,31 @@ impl TextPane {
             Command::DeleteParagraph => {
                 return self.act_on(|page, app, _| page.delete_paragraphs(app));
             }
+            // A name this build keeps and does not interpret, unless it is Title or Subtitle
+            // (`doc/text-core.md`'s Styles section) — `grind text style`'s verb.
+            Command::ParagraphStyle => {
+                let blocks = self.state.borrow().blocks();
+                let now = self
+                    .app
+                    .get_viewport(*blocks.start()..*blocks.start() + 1)
+                    .get(*blocks.start())
+                    .and_then(|view| view.style.clone())
+                    .unwrap_or_default();
+                let Some(name) = prompt::ask(
+                    mtm,
+                    "Paragraph Style",
+                    "A named style for the selected paragraphs, as LibreOffice names them — \
+                     Quotations, Text Body — or nothing to take it off.",
+                    "Set",
+                    &now,
+                ) else {
+                    return;
+                };
+                let name = Some(name.trim().to_owned()).filter(|name| !name.is_empty());
+                self.app
+                    .set_style(*blocks.start()..*blocks.end() + 1, name)
+                    .map(|_| ())
+            }
             _ => return,
         };
         if let Err(error) = done {

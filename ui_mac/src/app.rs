@@ -248,7 +248,8 @@ impl Delegate {
             | Command::InsertBookmark
             | Command::InsertPicture
             | Command::MoveParagraph(_)
-            | Command::DeleteParagraph => {
+            | Command::DeleteParagraph
+            | Command::ParagraphStyle => {
                 if let Some(page) = self.front_document().and_then(|document| document.page()) {
                     page.structure(command, self.mtm());
                 }

@@ -370,7 +370,7 @@ as the core reads it; there is no dialog, and editing, moving or removing one is
 | Title, Subtitle | ● | ● | ● | ● | ○ | ● ² |
 | List item | ● | ● | ● | ● | ● | ● |
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
-| A named paragraph style | ● | ○ | ● | ○ | ○ | ○ |
+| A named paragraph style | ● | ○ | ● | ○ | ○ | ● |
 | **Addressing and navigation** | | | | | | |
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |

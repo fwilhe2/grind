@@ -686,7 +686,8 @@ through its names** (`App::named_formula`); Edit ▸ Fill ▸ **Across Selection
 selection in one `App::fill`; **View ▸ Calculations…**, every formula in the document listed in
 the sidebar as a section of its own — address, formula and value, each a jump — narrowed by what
 it asked for (`App::calculations`, the GNOME window's dialog as a list of places); Format ▸ Paragraph ▸ **Move Up, Move Down and Delete Paragraph**
-over the paragraphs the selection touches, one undo step each (`App::move_blocks`, `App::delete`); and `canAsynchronouslyWriteToURL:` answering NO
+over the paragraphs the selection touches, one undo step each (`App::move_blocks`, `App::delete`); and Format ▸ Paragraph ▸ **Style…**, a named paragraph style on them
+(`App::set_style`), kept and not interpreted unless it is Title or Subtitle; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 
