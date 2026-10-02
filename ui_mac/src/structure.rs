@@ -315,6 +315,12 @@ impl TextPane {
                 self.app.set_bookmark(&name, Some(block)).map(|_| ())
             }
             Command::InsertPicture => return self.insert_picture(mtm),
+            Command::MoveParagraph(up) => {
+                return self.act_on(|page, app, _| page.move_paragraphs(app, up));
+            }
+            Command::DeleteParagraph => {
+                return self.act_on(|page, app, _| page.delete_paragraphs(app));
+            }
             _ => return,
         };
         if let Err(error) = done {

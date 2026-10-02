@@ -124,6 +124,11 @@ pub enum Command {
     Filter,
     /// A chart of the table the selection is in, beside it — Insert ▸ Chart.
     InsertChart,
+    /// The selected paragraphs past their neighbour, up (`true`) or down — Format ▸ Paragraph ▸
+    /// Move Up and Move Down.
+    MoveParagraph(bool),
+    /// The selected paragraphs gone — Format ▸ Paragraph ▸ Delete Paragraph.
+    DeleteParagraph,
     /// A table at the caret — Insert ▸ Table….
     InsertTable,
     /// A bookmark on the caret's block — Insert ▸ Bookmark….
@@ -242,6 +247,9 @@ impl Command {
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
+            Command::MoveParagraph(true),
+            Command::MoveParagraph(false),
+            Command::DeleteParagraph,
             Command::Zoom(1),
             Command::Zoom(-1),
             Command::Zoom(0),
@@ -305,7 +313,9 @@ impl Command {
             | Command::Block(_)
             | Command::InsertTable
             | Command::InsertBookmark
-            | Command::InsertPicture => text,
+            | Command::InsertPicture
+            | Command::MoveParagraph(_)
+            | Command::DeleteParagraph => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -718,6 +728,10 @@ static PARAGRAPH: Menu = Menu {
         ),
         Item::Separator,
         command("List Item", None, Command::Block(Block::ListItem)),
+        Item::Separator,
+        command("Move Up", None, Command::MoveParagraph(true)),
+        command("Move Down", None, Command::MoveParagraph(false)),
+        command("Delete Paragraph", None, Command::DeleteParagraph),
     ],
 };
 

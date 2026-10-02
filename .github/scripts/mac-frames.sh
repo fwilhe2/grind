@@ -383,6 +383,16 @@ projected="$("$grind" text project "$out/headed.fodt" | grep -E '^(h|p) ')"
     || fail "the page projects as $projected, not as a heading and an italic word"
 say "   a heading from the Paragraph menu, and ⌘I then typing is italic"
 
+# Format ▸ Paragraph ▸ Move Up: the caret's paragraph swapped with the one above, in one step.
+"$grind" text new "$out/moved.fodt" > /dev/null
+printf 'type one\nkey return\ntype two\nmenu Format/Paragraph/Move Up\nkey cmd+s\nwait 2\n' \
+    > "$out/move.drive"
+bounded 120 "$mac" "$out/moved.fodt" --drive "$out/move.drive" --out "$out/moved" \
+    > "$out/move.txt" || fail "the move drive failed: $(cat "$out/move.txt")"
+[ "$("$grind" text view "$out/moved.fodt" | paste -sd, -)" = "two,one" ] \
+    || fail "Move Up did not swap the paragraphs: $("$grind" text view "$out/moved.fodt")"
+say "   Move Up swaps the caret's paragraph with the one above"
+
 say "== formula literacy, the sidebar and the overlays"
 # M8's: `=SU` offers SUBSTITUTE first, ↓ steps to SUM and Tab takes it; the call is finished by
 # hand and committed with Return, which the list never claims.

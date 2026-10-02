@@ -488,6 +488,57 @@ pub fn table_size(text: &str) -> Option<(u32, u32)> {
     parts.next().is_none().then_some((columns, rows))
 }
 
+impl Page {
+    /// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
+    pub fn blocks(&self) -> std::ops::RangeInclusive<usize> {
+        match self.selection() {
+            Some((from, to)) => from.block..=to.block,
+            None => self.caret.block..=self.caret.block,
+        }
+    }
+
+    /// Format ▸ Paragraph ▸ Move Up or Move Down: those blocks swapped past their neighbour,
+    /// in one `App::move_blocks` — one undo step — with the caret and the selection going with
+    /// them. Refused at the top or the bottom, where there is nowhere to go.
+    pub fn move_paragraphs(&mut self, app: &App, up: bool) -> Result<(), Refused> {
+        let blocks = self.blocks();
+        let (first, last) = (*blocks.start(), *blocks.end());
+        let to = match up {
+            true if first > 0 => first - 1,
+            false if last + 1 < app.block_count() => last + 2,
+            _ => return Err("there is nowhere to move it".to_owned()),
+        };
+        app.move_blocks(first..last + 1, to)
+            .map_err(|error| error.to_string())?;
+        let step = |caret: &mut Caret| match up {
+            true => caret.block -= 1,
+            false => caret.block += 1,
+        };
+        step(&mut self.caret);
+        step(&mut self.anchor);
+        Ok(())
+    }
+
+    /// Format ▸ Paragraph ▸ Delete: those blocks gone, in one `App::delete`, and the caret at the
+    /// start of what followed them. Refused when they are every block there is, since a page
+    /// always has somewhere for a caret to be (`Document::default`).
+    pub fn delete_paragraphs(&mut self, app: &App) -> Result<(), Refused> {
+        let blocks = self.blocks();
+        let (first, last) = (*blocks.start(), *blocks.end());
+        if first == 0 && last + 1 >= app.block_count() {
+            return Err("a page keeps at least one paragraph".to_owned());
+        }
+        app.delete(first..last + 1)
+            .map_err(|error| error.to_string())?;
+        let at = Caret {
+            block: first.min(app.block_count().saturating_sub(1)),
+            offset: 0,
+        };
+        self.place(at, false);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -734,5 +785,70 @@ mod tests {
         assert_eq!(table_size("0x2"), None, "a table has a column");
         assert_eq!(table_size("3"), None);
         assert_eq!(table_size("1x2x3"), None);
+    }
+
+    #[test]
+    fn a_paragraph_moves_past_its_neighbour_and_the_caret_goes_with_it() {
+        let app = app(&["one", "two", "three"]);
+        let mut page = Page::default();
+        page.place(
+            Caret {
+                block: 1,
+                offset: 2,
+            },
+            false,
+        );
+        page.move_paragraphs(&app, true).unwrap();
+        assert_eq!(texts(&app), ["two", "one", "three"]);
+        assert_eq!(
+            page.caret,
+            Caret {
+                block: 0,
+                offset: 2
+            }
+        );
+        assert!(
+            page.move_paragraphs(&app, true).is_err(),
+            "already at the top"
+        );
+        page.move_paragraphs(&app, false).unwrap();
+        page.move_paragraphs(&app, false).unwrap();
+        assert_eq!(texts(&app), ["one", "three", "two"]);
+        assert!(
+            page.move_paragraphs(&app, false).is_err(),
+            "already at the bottom"
+        );
+        assert!(app.undo(), "one undo step a move");
+        assert_eq!(texts(&app), ["one", "two", "three"]);
+    }
+
+    #[test]
+    fn deleting_paragraphs_keeps_one_and_lands_on_what_followed() {
+        let app = app(&["one", "two", "three"]);
+        let mut page = Page::default();
+        page.place(
+            Caret {
+                block: 0,
+                offset: 1,
+            },
+            false,
+        );
+        page.place(
+            Caret {
+                block: 1,
+                offset: 1,
+            },
+            true,
+        );
+        page.delete_paragraphs(&app).unwrap();
+        assert_eq!(texts(&app), ["three"]);
+        assert_eq!(
+            page.caret,
+            Caret {
+                block: 0,
+                offset: 0
+            }
+        );
+        assert!(page.delete_paragraphs(&app).is_err(), "the last one stays");
     }
 }

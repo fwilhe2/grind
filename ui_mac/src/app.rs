@@ -244,7 +244,11 @@ impl Delegate {
                 }
                 return;
             }
-            Command::InsertTable | Command::InsertBookmark | Command::InsertPicture => {
+            Command::InsertTable
+            | Command::InsertBookmark
+            | Command::InsertPicture
+            | Command::MoveParagraph(_)
+            | Command::DeleteParagraph => {
                 if let Some(page) = self.front_document().and_then(|document| document.page()) {
                     page.structure(command, self.mtm());
                 }

@@ -349,7 +349,7 @@ as the core reads it; there is no dialog, and editing, moving or removing one is
 | **Editing** | | | | | | |
 | Type, Enter, Backspace, Delete | ● | ● | ● | ● | ● | ● |
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● | ● |
-| Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ○ |
+| Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ◐ ³ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● | ● |
 | Find | ● | ● | ● ᶠ | ○ | ○ | ● |
 | Replace | ● | ○ | ● | ○ | ○ | ● |
@@ -430,7 +430,8 @@ one, and no client sets a column width, because the model carries no table style
 **Mac.** ¹ Through the system font panel (⌘T), whose answer becomes a family, a size and the
 weight and slant, as one undo step (M7). ² Format ▸ Paragraph and the toolbar's
 pop-up set all six levels, Title and Subtitle; ⌥⌘0–6 reach Body and the headings. ³ Edit ▸ Go To… (⌘L) asks for one; a sidebar
-row or a Problems finding goes to one too. ⁴ The sidebar's Outline section.
+row or a Problems finding goes to one too, and Format ▸ Paragraph moves the selected paragraphs
+up or down past their neighbour or deletes them — by where the caret is, not by address. ⁴ The sidebar's Outline section.
 
 ## 8. The divergences that matter, ranked
 
