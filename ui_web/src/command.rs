@@ -217,6 +217,13 @@ pub const SHEET: &[Command] = &[
     cmd("name.delete", "Delete a name…", "Names", "", false),
     cmd("edit.evaluate", "Evaluate a formula…", "Edit", "", false),
     cmd(
+        "edit.explain",
+        "Explain this formula in words",
+        "Edit",
+        "",
+        false,
+    ),
+    cmd(
         "edit.fill-across",
         "Fill the selection from its first cell",
         "Edit",

@@ -893,6 +893,7 @@ impl App {
             "right" => self.cmd_fill(false),
             "across" => self.cmd_across(),
             "value" => self.cmd_value(),
+            "explain" => self.cmd_explain(),
             "filter" => self.cmd_filter(),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
@@ -994,6 +995,20 @@ impl App {
                 Err(e) => e.to_string(),
             };
         self.leave_visual();
+    }
+
+    /// `:explain` — the active cell's formula in plain words, one line on the status bar
+    /// (`friendly::explain_inline`); presentation only, nothing parses back.
+    fn cmd_explain(&mut self) {
+        let text = self
+            .core
+            .input_text(self.sheet, self.active)
+            .unwrap_or_default();
+        let address = grind_sheet::a1::format(None, self.active);
+        self.status = match grind_sheet::formula::friendly::explain_inline(&text) {
+            Ok(words) if text.starts_with('=') => format!("{address}: {words}"),
+            _ => format!("{address} holds no formula to explain"),
+        };
     }
 
     /// `:filter` — an autofilter over the selection (or, from one cell, the table around it), or

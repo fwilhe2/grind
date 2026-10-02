@@ -702,6 +702,7 @@ impl Ui {
             "name.inline" => self.inline_name(),
             "name.delete" => self.delete_name(),
             "edit.evaluate" => self.evaluate(),
+            "edit.explain" => self.explain(),
             "edit.fill-across" => self.fill_across(),
             "edit.formula-to-value" => self.formula_to_value(),
             "sheet.filter" => self.toggle_filter(),
@@ -1422,6 +1423,24 @@ impl Ui {
             true => format!("“{}” deleted", name.trim()),
             false => format!("There is no name “{}”", name.trim()),
         });
+    }
+
+    /// *Explain this formula in words* — the active cell's formula with its functions by their
+    /// plain names and its arguments labelled (`friendly::explain_inline`). Presentation only: it
+    /// never parses back and nothing is written.
+    fn explain(&self) {
+        let at = self.selection.get().active;
+        let text = self
+            .app
+            .input_text(self.sheet.get(), at)
+            .unwrap_or_default();
+        let address = grind_sheet::a1::format(None, at);
+        self.set_message(
+            match grind_sheet::formula::friendly::explain_inline(&text) {
+                Ok(words) if text.starts_with('=') => format!("{address}: {words}"),
+                _ => format!("{address} holds no formula to explain"),
+            },
+        );
     }
 
     /// *Evaluate a formula…* — worked out at the active cell and said, never stored

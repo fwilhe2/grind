@@ -150,8 +150,8 @@ than as a cursor on a hidden row.
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
 | Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ | ● |
-| Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ○ | ○ | ● | ● |
-| Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● | ● |
+| Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
+| Explain a nested formula, unfolded | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ | ● |
 | Every calculated cell, searchable | ● | ● | ○ | ○ | ○ | ● |
@@ -286,6 +286,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
 ᵖᵇ Two more buttons on each row of the *Names…* dialog — rename (an alert with an entry) and inline — over `App::rename_name` / `inline_name`, each saying how many uses it rewrote; closed 2026-10-02, compile- and lint-checked only.
 ᵗᵘ Terminal verbs, closed 2026-10-02: `:filter` (no dropdowns drawn), `:rename`, `:inline`, `:value`, `:yank-values`, `:across`.
+ᵉˣ `:explain` and the palette's *Explain this formula in words* say the active cell's formula on one line (`friendly::explain_inline`) — not unfolded, and the formula bar does not read friendly at rest. Closed in part 2026-10-02.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.

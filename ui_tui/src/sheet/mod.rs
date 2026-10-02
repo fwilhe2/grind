@@ -30,6 +30,7 @@ Spreadsheet:
   :across                 — the cell the selection grew from, into all of it; one undo step
   :value                  — formulas in the selection become the values they show
   :yank-values            — the selection as shown (results, not formulas) into the register
+  :explain                — the active cell's formula in plain words
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
   :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers
