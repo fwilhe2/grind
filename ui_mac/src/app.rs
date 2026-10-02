@@ -158,6 +158,7 @@ impl Delegate {
             Command::Mark(_)
             | Command::Align(_)
             | Command::Wrap
+            | Command::Borders(_)
             | Command::Number(_)
             | Command::Decimals(_)
             | Command::TextColor(_)

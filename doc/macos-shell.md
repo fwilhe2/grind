@@ -658,7 +658,8 @@ embedded in a paragraph of its own, refused when its signature is no picture's (
 `Op::Path`, a pie as one path per slice from `grind_sheet::pie_slices`), scaled by `axis_ticks`
 and coloured by `effective_color` as the GNOME window and the browser are, with its title and
 legend placed on *measured* text rather than the browser's estimate; read-only, and the value
-axis' title set level above the axis rather than turned along it; and `canAsynchronouslyWriteToURL:` answering NO
+axis' title set level above the axis rather than turned along it; **cell borders**, drawn per edge centred on the grid line they replace, and Format ▸ Borders
+writing the terminal's and the browser's hairline; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

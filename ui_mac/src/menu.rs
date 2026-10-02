@@ -59,6 +59,8 @@ pub enum Command {
     Align(Align),
     /// `fo:wrap-option` on the selected cells.
     Wrap,
+    /// A hairline round every selected cell (`true`), or no border at all (`false`).
+    Borders(bool),
     /// One of the number picker's nine formats over the selected cells.
     Number(Preset),
     /// One decimal fewer or more (`grind_sheet::format::stepped`).
@@ -165,6 +167,7 @@ impl Command {
         all.extend(EMPHASES.map(Command::Mark));
         all.extend([Align::Left, Align::Center, Align::Right].map(Command::Align));
         all.push(Command::Wrap);
+        all.extend([Command::Borders(true), Command::Borders(false)]);
         all.extend(Preset::ALL.map(Command::Number));
         all.extend([Command::Decimals(-1), Command::Decimals(1)]);
         let palette = || std::iter::once(None).chain((0..PALETTE.len() as u8).map(Some));
@@ -268,6 +271,7 @@ impl Command {
             | Command::DeleteSheet
             | Command::Align(_)
             | Command::Wrap
+            | Command::Borders(_)
             | Command::Number(_)
             | Command::Decimals(_)
             | Command::FriendlyFormulas
@@ -513,6 +517,15 @@ static TEXT: Menu = Menu {
     ],
 };
 
+static BORDERS: Menu = Menu {
+    title: "Borders",
+    role: Role::Plain,
+    items: &[
+        command("All Borders", None, Command::Borders(true)),
+        command("No Borders", None, Command::Borders(false)),
+    ],
+};
+
 static TEXT_COLOR: Menu = Menu {
     title: "Text Color",
     role: Role::Plain,
@@ -736,6 +749,10 @@ pub static MENUS: &[Menu] = &[
             Item::Submenu {
                 title: "Text Color",
                 menu: &TEXT_COLOR,
+            },
+            Item::Submenu {
+                title: "Borders",
+                menu: &BORDERS,
             },
             Item::Submenu {
                 title: "Background Color",

@@ -26,6 +26,7 @@ use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
 use grind_core::style::TextStyle;
 use grind_sheet::nav::Selection;
+use grind_sheet::style::{CellStyle, EDGES, border_parts};
 use grind_sheet::view::{CellRole, Hue, NameAnchor, Overlays};
 use grind_sheet::{App, Pos, look, numfmt};
 
@@ -246,6 +247,15 @@ pub fn cells(
         }
     }
 
+    // The borders the document drew, over the grid lines they replace.
+    for row in rows.clone() {
+        for col in cols.clone() {
+            if let Some(style) = viewport.style(row, col) {
+                ops.extend(borders(grid.cell(row, col), style, palette, hairline));
+            }
+        }
+    }
+
     ops.extend(selection_wash(grid, &view, selection, palette.accent));
 
     // The text.
@@ -296,6 +306,61 @@ pub fn cells(
     }
     ops.extend(name_outlines(grid, &view, viewport.names(), palette));
     ops.extend(selection_outline(grid, &view, selection, palette.accent));
+    ops
+}
+
+/// A cell's own borders, each centred on the grid line it stands on — so a cell's right border
+/// and its neighbour's left one are the same line, and either covers the hairline under it.
+///
+/// A border is ODF's three parts (`0.5pt solid #000000`, `grind_sheet::style::border_parts`):
+/// never thinner than one device pixel, in the document's colour lifted to read on a dark page,
+/// and `double` as two thin lines with a gap between. `none` and `hidden` draw nothing, and
+/// neither does a border this build cannot read — R5's tolerance.
+///
+/// ponytail: `dashed` and `dotted` are drawn solid. The trigger is a document whose dashes are
+/// what distinguishes two of its tables; a dash is a run of fills along the edge.
+pub fn borders(cell: Rect, style: &CellStyle, palette: &Palette, hairline: f64) -> Vec<Op> {
+    let mut ops = Vec::new();
+    if cell.is_empty() {
+        return ops;
+    }
+    for (edge, border) in style.borders.iter().enumerate() {
+        let Some((points, line, ink)) = border.as_deref().and_then(border_parts) else {
+            continue;
+        };
+        if matches!(line, "none" | "hidden") || points <= 0.0 {
+            continue;
+        }
+        let Some(own) = color::parse(ink) else {
+            continue;
+        };
+        let color = color::document_ink(Some(own), None, palette.page, own, palette.dark);
+        let width = points.max(hairline);
+        // The line the edge stands on, where the grid's own hairline is drawn.
+        let at = match EDGES[edge] {
+            "left" => cell.x,
+            "right" => cell.right(),
+            "top" => cell.y,
+            _ => cell.bottom(),
+        } - hairline / 2.0;
+        let vertical = matches!(EDGES[edge], "left" | "right");
+        // One line, or for `double` two of a third of the width each, either side of a gap.
+        let strokes: Vec<(f64, f64)> = match line {
+            "double" => {
+                let thin = (width / 3.0).max(hairline);
+                let gap = thin.max(hairline);
+                vec![(at - gap / 2.0 - thin, thin), (at + gap / 2.0, thin)]
+            }
+            _ => vec![(at - width / 2.0, width)],
+        };
+        for (from, thickness) in strokes {
+            let rect = match vertical {
+                true => Rect::new(from, cell.y, thickness, cell.h),
+                false => Rect::new(cell.x, from, cell.w, thickness),
+            };
+            ops.push(Op::Fill { rect, color });
+        }
+    }
     ops
 }
 
@@ -1046,5 +1111,32 @@ mod tests {
         );
         let joined: Vec<&str> = lines.iter().map(|(text, ..)| *text).collect();
         assert_eq!(joined.join(" "), "the quick brown fox jumps");
+    }
+
+    #[test]
+    fn a_border_is_centred_on_its_grid_line_and_double_is_two() {
+        let cell = Rect::new(10.0, 20.0, 50.0, 18.0);
+        let mut style = CellStyle::default();
+        style.borders[1] = Some("2pt solid #ff0000".into());
+        style.borders[3] = Some("0.06pt solid #000000".into());
+        style.borders[0] = Some("none".into());
+        style.borders[2] = Some("garbage".into());
+        let ops = borders(cell, &style, &Palette::LIGHT, 0.5);
+        assert_eq!(
+            ops,
+            [
+                Op::Fill {
+                    rect: Rect::new(60.0 - 0.25 - 1.0, 20.0, 2.0, 18.0),
+                    color: (0xff, 0, 0),
+                },
+                Op::Fill {
+                    rect: Rect::new(10.0, 38.0 - 0.25 - 0.25, 50.0, 0.5),
+                    color: (0, 0, 0),
+                },
+            ],
+            "the right edge 2pt wide, the bottom no thinner than a device pixel"
+        );
+        style.borders = [None, None, Some("3pt double #000000".into()), None];
+        assert_eq!(borders(cell, &style, &Palette::LIGHT, 0.5).len(), 2);
     }
 }

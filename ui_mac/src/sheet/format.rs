@@ -54,6 +54,10 @@ fn toggle(command: Command) -> Option<Toggle> {
     }
 }
 
+/// The border All Borders draws — LibreOffice's own hairline, the one the terminal and the
+/// browser write for the same verb.
+pub const BORDER: &str = "0.06pt solid #000000";
+
 /// A palette entry as the colour a document stores.
 pub fn color(index: Option<u8>) -> Option<String> {
     index
@@ -86,6 +90,9 @@ pub fn write(command: Command, active: &Active, locale: Option<Locale>) -> Optio
             format::stepped(active.format.as_ref(), step, active.shown, locale)
                 .map(|format| Write::Format(Some(format)))
         }
+        Command::Borders(on) => Some(Write::Style(format::restyled(&active.style, |style| {
+            style.set_border(on.then(|| BORDER.to_owned()))
+        }))),
         Command::ClearFormatting => Some(Write::Clear),
         _ => None,
     }
@@ -101,6 +108,7 @@ pub fn checked(command: Command, active: &Active) -> bool {
         Command::Number(preset) => Preset::of(active.format.as_ref()) == Some(preset),
         Command::TextColor(index) => active.style.color == color(index),
         Command::Background(index) => active.style.background == color(index),
+        Command::Borders(true) => active.style.uniform_border().is_some(),
         _ => false,
     }
 }
@@ -253,6 +261,24 @@ mod tests {
             font_restyle(&CellStyle::default(), &before, &only_family),
             None,
             "a cell has no family to set"
+        );
+    }
+
+    #[test]
+    fn borders_go_on_and_off_leaving_the_rest_of_the_style() {
+        let Some(Write::Style(Some(on))) = write(Command::Borders(true), &bold(), None) else {
+            panic!("a style with borders");
+        };
+        assert_eq!(on.uniform_border(), Some(BORDER));
+        assert_eq!(on.font_weight.as_deref(), Some("bold"));
+        let active = Active {
+            style: on,
+            ..Active::default()
+        };
+        assert!(checked(Command::Borders(true), &active));
+        assert_eq!(
+            write(Command::Borders(false), &active, None),
+            Some(Write::Style(Some(bold().style)))
         );
     }
 }

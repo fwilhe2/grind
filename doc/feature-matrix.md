@@ -199,7 +199,7 @@ borders, which that window does not draw either.
 | Bold, italic | ● | ● | ● | ● | ● | ● |
 | Alignment | ● | ● | ● | ● | ● | ● |
 | Wrap text | ● | ● | ● | ● | ○ ˣ | ● |
-| Borders | ● | ○ ᵃ | ● | ● | ○ ˣ | ○ |
+| Borders | ● | ○ ᵃ | ● | ● | ○ ˣ | ● |
 | Text colour, cell background | ● | ● | ● | ● | ● | ● |
 | Clear formatting | ● | ● | ● | ● | ● | ● |
 | Number formats — the eight presets | ● | ● | ● | ● | ● | ● |
@@ -210,7 +210,7 @@ borders, which that window does not draw either.
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
-| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ | ○ |
+| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ | ◐ ³ |
 | **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ◐ ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 
@@ -249,7 +249,7 @@ every cell, and the browser clipped without a mark — and did not honour a colu
 once its content was wider, since a `max-content` table sizes its columns from what is in them.
 
 **Mac.** ¹ Broken at the column's width and drawn as lines, but a row is not grown to fit
-them: what its height does not hold is cut. ² The toolbar's two steps and Format ▸ Number's; no grouping or currency-symbol control.
+them: what its height does not hold is cut. ² The toolbar's two steps and Format ▸ Number's; no grouping or currency-symbol control. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
 
 ## 6. Spreadsheet — structure, charts and interchange
 
