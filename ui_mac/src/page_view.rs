@@ -59,6 +59,7 @@ use crate::text::geom;
 use crate::text::input::{self, NOT_FOUND};
 use crate::text::paint::{self, Frame, Palette};
 use crate::text::state::{Page, Refused};
+use crate::watch::Turn;
 
 /// What the page view draws from and answers to: the document, its layout, the fonts it is
 /// measured in, and the caret.
@@ -73,7 +74,9 @@ pub struct TextPane {
     width: Cell<f64>,
     view: RefCell<Option<Weak<PageView>>>,
     /// Told that the document changed — what marks it edited.
-    on_change: RefCell<Option<Box<dyn Fn()>>>,
+    on_change: crate::watch::OnChange,
+    /// Which way the change being made goes — set around an undo or a redo.
+    turn: Cell<Turn>,
     /// An edit of the view's own is running, and the core's notification must wait for it.
     busy: Cell<bool>,
     /// A notification arrived while busy.
@@ -112,6 +115,7 @@ impl TextPane {
             width: Cell::new(0.0),
             view: RefCell::new(None),
             on_change: RefCell::new(None),
+            turn: Cell::new(Turn::Done),
             busy: Cell::new(false),
             stale: Cell::new(false),
             listeners: RefCell::new(Vec::new()),
@@ -124,7 +128,7 @@ impl TextPane {
     }
 
     /// What to do when the document changes — the document marks itself edited.
-    pub fn on_change(&self, callback: impl Fn() + 'static) {
+    pub fn on_change(&self, callback: impl Fn(Turn) + 'static) {
         *self.on_change.borrow_mut() = Some(Box::new(callback));
     }
 
@@ -221,7 +225,7 @@ impl TextPane {
         self.fit();
         self.redraw();
         if let Some(callback) = self.on_change.borrow().as_ref() {
-            callback();
+            callback(self.turn.get());
         }
         for listener in self.document_listeners.borrow().iter() {
             listener();
@@ -786,18 +790,24 @@ define_class!(
         /// Edit ▸ Undo — the core's history, never AppKit's (architecture rule 2).
         #[unsafe(method(undo:))]
         fn undo(&self, _sender: Option<&AnyObject>) {
-            self.ivars().act_on(|page, app, _| {
+            let pane = self.ivars();
+            pane.turn.set(Turn::Undone);
+            pane.act_on(|page, app, _| {
                 page.history(app, true);
                 Ok(())
             });
+            pane.turn.set(Turn::Done);
         }
 
         #[unsafe(method(redo:))]
         fn redo(&self, _sender: Option<&AnyObject>) {
-            self.ivars().act_on(|page, app, _| {
+            let pane = self.ivars();
+            pane.turn.set(Turn::Redone);
+            pane.act_on(|page, app, _| {
                 page.history(app, false);
                 Ok(())
             });
+            pane.turn.set(Turn::Done);
         }
 
         #[unsafe(method(validateMenuItem:))]

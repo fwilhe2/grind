@@ -276,9 +276,9 @@ mod mac {
                         // the Edited dot and the autosave timer read. An open is not a change: the
                         // observer is attached after the document was read.
                         let me = ObjcWeak::new(self);
-                        pane.on_change(move || {
+                        pane.on_change(move |turn| {
                             if let Some(document) = me.load() {
-                                document.updateChangeCount(NSDocumentChangeType::ChangeDone);
+                                document.updateChangeCount(change_type(turn));
                             }
                         });
                         grid_view::watch(&pane);
@@ -309,9 +309,9 @@ mod mac {
                         window.setInitialFirstResponder(page.as_deref());
                         window.makeFirstResponder(page.as_deref().map(|view| &**view));
                         let me = ObjcWeak::new(self);
-                        pane.on_change(move || {
+                        pane.on_change(move |turn| {
                             if let Some(document) = me.load() {
-                                document.updateChangeCount(NSDocumentChangeType::ChangeDone);
+                                document.updateChangeCount(change_type(turn));
                             }
                         });
                         pane.set_find_bar(find_bar::attach(&window, &pane, mtm));
@@ -720,6 +720,16 @@ mod mac {
             }
         }
     );
+
+    /// Which way a change went, as `NSDocument`'s change count is told it — an undo counts back
+    /// towards the saved state rather than away from it.
+    fn change_type(turn: crate::watch::Turn) -> NSDocumentChangeType {
+        match turn {
+            crate::watch::Turn::Done => NSDocumentChangeType::ChangeDone,
+            crate::watch::Turn::Undone => NSDocumentChangeType::ChangeUndone,
+            crate::watch::Turn::Redone => NSDocumentChangeType::ChangeRedone,
+        }
+    }
 
     /// The type name of the file at `url`, read from its bytes, or an error said into `error`.
     fn type_of(url: &NSURL, error: *mut *mut NSError) -> Option<Retained<NSString>> {

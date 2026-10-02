@@ -55,6 +55,7 @@ use crate::sheet::paint::{self, Look, Op, Palette};
 use crate::sheet::resize::{self, Axis, Drag};
 use crate::sheet::select;
 use crate::sheet::state::{self, Mode, Seed};
+use crate::watch::Turn;
 
 /// Something told the new selection whenever it changes.
 type Listener = Box<dyn Fn(Selection)>;
@@ -90,7 +91,9 @@ pub struct Pane {
     /// Told the text being edited as it changes: the formula read-out.
     text_listeners: RefCell<Vec<TextListener>>,
     /// Told that the document changed — which is what marks it edited, and what autosave reads.
-    on_change: RefCell<Option<Box<dyn Fn()>>>,
+    on_change: crate::watch::OnChange,
+    /// Which way the change being made goes — set around an undo or a redo.
+    turn: Cell<Turn>,
     /// Told when the document or the sheet showing changed — the sidebar, which lists the
     /// sheets and what `grind lint` finds, and has nothing to say about a move of the cursor.
     document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
@@ -139,6 +142,7 @@ impl Pane {
             banner: RefCell::new(None),
             text_listeners: RefCell::new(Vec::new()),
             on_change: RefCell::new(None),
+            turn: Cell::new(Turn::Done),
             document_listeners: RefCell::new(Vec::new()),
             find_bar: RefCell::new(None),
             friendly: Cell::new(true),
@@ -222,7 +226,7 @@ impl Pane {
     }
 
     /// What to do when the document changes — the document marks itself edited.
-    pub fn on_change(&self, callback: impl Fn() + 'static) {
+    pub fn on_change(&self, callback: impl Fn(Turn) + 'static) {
         *self.on_change.borrow_mut() = Some(Box::new(callback));
     }
 
@@ -261,7 +265,7 @@ impl Pane {
         }
         self.edit_changed();
         if let Some(callback) = self.on_change.borrow().as_ref() {
-            callback();
+            callback(self.turn.get());
         }
     }
 
@@ -985,12 +989,18 @@ define_class!(
         /// Edit ▸ Undo — the core's history, never AppKit's (architecture rule 2).
         #[unsafe(method(undo:))]
         fn undo(&self, _sender: Option<&AnyObject>) {
-            self.ivars().app.undo();
+            let pane = self.ivars();
+            pane.turn.set(Turn::Undone);
+            pane.app.undo();
+            pane.turn.set(Turn::Done);
         }
 
         #[unsafe(method(redo:))]
         fn redo(&self, _sender: Option<&AnyObject>) {
-            self.ivars().app.redo();
+            let pane = self.ivars();
+            pane.turn.set(Turn::Redone);
+            pane.app.redo();
+            pane.turn.set(Turn::Done);
         }
 
         /// Undo and Redo are grey when the core has nothing to take back or bring back — the

@@ -476,8 +476,9 @@ then refused.
 | `sidebar.rs` `menu.rs` | both | Insert ▸ Sheet, Format ▸ Rename Sheet…, Edit ▸ Delete Sheet, where Excel for Mac has them, with the sidebar's list following every change |
 
 What M4 leaves: the formula field edits only through the cell editor (the read-out follows it —
-a `ponytail:` in `accessory.rs`); an undo back to the saved state still leaves the Edited dot,
-since the core's observer says *changed* rather than *which way*; and ⌃U inside the editor was
+a `ponytail:` in `accessory.rs`); an undo back to the saved state left the Edited dot, since
+the core's observer says *changed* rather than *which way* (since closed: a pane knows when it is
+undoing, and tells `NSDocument` the change was undone, `watch::Turn`); and ⌃U inside the editor was
 the field editor's (since closed: it arrives as `noop:`, and the event behind it says it was ⌃U).
 
 ### What M5 built

@@ -18,6 +18,20 @@ use std::sync::Arc;
 
 use objc2::MainThreadMarker;
 
+/// Which way a change went — what `NSDocument`'s change count is told, so undoing back to the
+/// saved state takes the Edited dot away again rather than counting the undo as one more edit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Turn {
+    #[default]
+    Done,
+    Undone,
+    Redone,
+}
+
+/// What a pane tells about each change to its document — the document, which marks itself
+/// edited, or not, by it.
+pub type OnChange = std::cell::RefCell<Option<Box<dyn Fn(Turn)>>>;
+
 /// Something that re-reads its document when the core says it changed.
 pub trait Watched {
     fn document_changed(&self);
