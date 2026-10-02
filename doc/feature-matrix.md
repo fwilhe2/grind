@@ -485,6 +485,12 @@ of a client's own job is missing.
     it is a decision about `grind_text::Action` rather than about the CLI.
 13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
 
+**Amended on 2026-10-02 for the Mac**, which is now on the authoring side of five of these rows —
+written and type-checked, not yet run (§1): it sets and draws borders (row 2), has point mode
+(row 5), sizes tracks by dragging and fitting, turns a filter on and chooses its values, and
+defines, redefines, renames, inlines and deletes names — the renaming and inlining first in any
+window (row 7) — inserts and draws charts (row 8), and inserts and draws pictures (row 9).
+
 ## 9. Absent from every client
 
 Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` or a gate in a
