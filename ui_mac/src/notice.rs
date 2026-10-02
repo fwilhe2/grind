@@ -69,6 +69,22 @@ pub fn references_renamed(count: usize) -> String {
     )
 }
 
+/// A defined name renamed, and every use of it respelled with it (`App::rename_name`).
+pub fn name_renamed(count: usize) -> String {
+    format!(
+        "{} rewritten to follow the rename. ⌘Z takes it back.",
+        counted(count, "use", "uses")
+    )
+}
+
+/// A defined name inlined into every use and taken away (`App::inline_name`).
+pub fn name_inlined(name: &str, count: usize) -> String {
+    format!(
+        "{name} written out in {} and removed. ⌘Z takes it back.",
+        counted(count, "place", "places")
+    )
+}
+
 /// A sheet that cannot be deleted because it is the only one — a spreadsheet has at least one.
 pub fn last_sheet() -> String {
     "A spreadsheet keeps at least one sheet. Add another first, then delete this one.".to_owned()

@@ -25,11 +25,11 @@ use std::rc::Rc;
 use grind_core::lint::Options;
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSControlTextEditingDelegate, NSScrollView, NSSplitViewController, NSSplitViewItem,
-    NSTableColumn, NSTableView, NSTableViewDataSource, NSTableViewDelegate, NSTableViewStyle,
-    NSView, NSViewController,
+    NSControlTextEditingDelegate, NSMenu, NSMenuDelegate, NSMenuItem, NSScrollView,
+    NSSplitViewController, NSSplitViewItem, NSTableColumn, NSTableView, NSTableViewDataSource,
+    NSTableViewDelegate, NSTableViewStyle, NSView, NSViewController,
 };
 use objc2_foundation::{
     NSIndexSet, NSInteger, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -39,7 +39,7 @@ use objc2_foundation::{
 use crate::grid_view::Pane;
 use crate::notice;
 use crate::page_view::TextPane;
-use crate::places::{self, Go, Row};
+use crate::places::{self, Go, NameVerb, Row};
 
 /// The sidebar's width when it first opens.
 const WIDTH: f64 = 200.0;
@@ -52,6 +52,8 @@ pub trait Places {
     fn here(&self, rows: &[Row]) -> Option<usize>;
     /// Call `listener` whenever the rows may have changed.
     fn watch(&self, listener: Box<dyn Fn()>);
+    /// A defined name's context menu chose `verb` for `name` — a spreadsheet's only.
+    fn name_verb(&self, _verb: NameVerb, _name: &str, _mtm: MainThreadMarker) {}
 }
 
 /// What the list holds.
@@ -61,6 +63,8 @@ pub struct List {
     table: RefCell<Option<Weak<NSTableView>>>,
     /// A selection the list is making itself, which is not a choice to act on.
     quiet: Cell<bool>,
+    /// The name the context menu was opened on.
+    menu_name: RefCell<Option<String>>,
 }
 
 define_class!(
@@ -92,6 +96,15 @@ define_class!(
 
     unsafe impl NSControlTextEditingDelegate for Sidebar {}
 
+    unsafe impl NSMenuDelegate for Sidebar {
+        /// The context menu, rebuilt for the row it was opened on: a defined name's verbs, or
+        /// nothing — an empty menu is not shown.
+        #[unsafe(method(menuNeedsUpdate:))]
+        fn menu_needs_update(&self, menu: &NSMenu) {
+            self.fill_menu(menu);
+        }
+    }
+
     unsafe impl NSTableViewDelegate for Sidebar {
         #[unsafe(method(tableView:isGroupRow:))]
         fn is_group_row(&self, _table: &NSTableView, row: NSInteger) -> bool {
@@ -108,9 +121,66 @@ define_class!(
             self.chosen(notification);
         }
     }
+
+    impl Sidebar {
+        #[unsafe(method(nameVerb:))]
+        fn name_verb_chosen(&self, sender: &NSMenuItem) {
+            self.name_verb(sender.tag());
+        }
+    }
 );
 
 impl Sidebar {
+    fn fill_menu(&self, menu: &NSMenu) {
+        menu.removeAllItems();
+        let list = self.ivars();
+        let clicked = list
+            .table
+            .borrow()
+            .as_ref()
+            .and_then(Weak::load)
+            .map_or(-1, |table| table.clickedRow());
+        let name = self.row(clicked).and_then(|row| row.name);
+        let Some(name) = name else {
+            *list.menu_name.borrow_mut() = None;
+            return;
+        };
+        *list.menu_name.borrow_mut() = Some(name);
+        let mtm = self.mtm();
+        for (tag, verb) in NameVerb::ALL.iter().enumerate() {
+            // SAFETY: an item made with its title, this list's own action and no key.
+            let item = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    NSMenuItem::alloc(mtm),
+                    &NSString::from_str(verb.title()),
+                    Some(sel!(nameVerb:)),
+                    &NSString::from_str(""),
+                )
+            };
+            // SAFETY: the list outlives the table and so the menu.
+            unsafe { item.setTarget(Some(self)) };
+            item.setTag(tag as isize);
+            if *verb == NameVerb::Delete {
+                menu.addItem(&NSMenuItem::separatorItem(mtm));
+            }
+            menu.addItem(&item);
+        }
+    }
+
+    fn name_verb(&self, tag: isize) {
+        let list = self.ivars();
+        let Some(verb) = usize::try_from(tag)
+            .ok()
+            .and_then(|at| NameVerb::ALL.get(at))
+        else {
+            return;
+        };
+        let Some(name) = list.menu_name.borrow().clone() else {
+            return;
+        };
+        list.places.name_verb(*verb, &name, self.mtm());
+    }
+
     fn row(&self, row: NSInteger) -> Option<Row> {
         let at = usize::try_from(row).ok()?;
         self.ivars().rows.borrow().get(at).cloned()
@@ -206,6 +276,10 @@ impl Places for Pane {
     fn watch(&self, listener: Box<dyn Fn()>) {
         self.listen_document(listener);
     }
+
+    fn name_verb(&self, verb: NameVerb, name: &str, mtm: MainThreadMarker) {
+        self.act_on_name(verb, name, mtm);
+    }
 }
 
 impl Places for TextPane {
@@ -292,6 +366,7 @@ pub fn split(
             rows: RefCell::new(Vec::new()),
             table: RefCell::new(None),
             quiet: Cell::new(false),
+            menu_name: RefCell::new(None),
         });
         // SAFETY: `init` is `NSObject`'s designated initialiser.
         unsafe { msg_send![super(this), init] }
@@ -309,6 +384,11 @@ pub fn split(
         table.setDelegate(Some(ProtocolObject::from_ref(&*list)));
     }
     *list.ivars().table.borrow_mut() = Some(Weak::from_retained(&table));
+    // A context menu filled in for whichever row it opens on (`menuNeedsUpdate:`).
+    let menu = NSMenu::new(mtm);
+    menu.setDelegate(Some(ProtocolObject::from_ref(&*list)));
+    // SAFETY: the menu is a plain one, and the table keeps it.
+    unsafe { table.setMenu(Some(&menu)) };
     let weak = Weak::from_retained(&list);
     places.watch(Box::new(move || {
         if let Some(list) = weak.load() {

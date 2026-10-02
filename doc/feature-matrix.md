@@ -266,9 +266,9 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ○ | ○ | ○ | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ◐ ³ |
-| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
-| Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
+| Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ● ³ |
+| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
+| Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
@@ -331,7 +331,8 @@ the table it was made from (`doc/chart-format.md`, The shell).
 
 **Mac.** ¹ In the sidebar's Names section, and the name box takes one. ² A CSV opens as a new,
 untitled spreadsheet of its own (the next row); nothing imports into an open document.
-³ Insert ▸ Name… defines one over the selection; redefining or deleting one is the CLI's.
+³ Insert ▸ Name… defines one over the selection; a name's row in the sidebar has a context
+menu that renames it with every use following, redefines it, inlines it everywhere or deletes it.
 ⁴ File ▸ Export as CSV…, the sheet's used rectangle with commas and shown values; no TSV or
 other dialect from the window. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
 as the core reads it; there is no dialog, and editing, moving or removing one is the CLI's.

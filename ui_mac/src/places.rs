@@ -32,6 +32,41 @@ pub struct Row {
     pub go: Option<Go>,
     /// A tooltip — a problem's rule, so a reader can look it up.
     pub tip: Option<String>,
+    /// The defined name the row stands for, which is what its context menu acts on.
+    pub name: Option<String>,
+}
+
+/// What a defined name's context menu does — each one core call, one undo step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NameVerb {
+    /// `App::rename_name`: the name, and every formula and name that uses it.
+    Rename,
+    /// `App::set_name` over what it stands for.
+    Redefine,
+    /// `App::inline_name`: every use replaced by the definition, and the name gone.
+    Inline,
+    /// `App::clear_name`: the name gone, and what used it `#NAME?` at the next recalculation.
+    Delete,
+}
+
+impl NameVerb {
+    /// The menu's order, which is also each verb's tag.
+    pub const ALL: [NameVerb; 4] = [
+        NameVerb::Rename,
+        NameVerb::Redefine,
+        NameVerb::Inline,
+        NameVerb::Delete,
+    ];
+
+    /// The item's title — an ellipsis where the verb asks first.
+    pub fn title(self) -> &'static str {
+        match self {
+            NameVerb::Rename => "Rename…",
+            NameVerb::Redefine => "Redefine…",
+            NameVerb::Inline => "Inline Everywhere",
+            NameVerb::Delete => "Delete",
+        }
+    }
 }
 
 impl Row {
@@ -41,6 +76,7 @@ impl Row {
             heading: true,
             go: None,
             tip: None,
+            name: None,
         }
     }
 
@@ -50,6 +86,7 @@ impl Row {
             heading: false,
             go: Some(go),
             tip: None,
+            name: None,
         }
     }
 
@@ -95,6 +132,7 @@ fn problem(diagnostic: &Diagnostic) -> Row {
         // A finding about the whole document goes nowhere; the row still says it.
         go: (!diagnostic.at.is_empty()).then(|| Go::Address(diagnostic.at.clone())),
         tip: Some(diagnostic.rule.to_owned()),
+        name: None,
     }
 }
 
@@ -108,11 +146,10 @@ pub fn sheet(app: &grind_sheet::App, report: &Report) -> Vec<Row> {
     let names = app.names();
     if !names.is_empty() {
         rows.push(Row::heading("Names"));
-        rows.extend(
-            names
-                .into_iter()
-                .map(|(name, _)| Row::place(name.clone(), Go::Address(name))),
-        );
+        rows.extend(names.into_iter().map(|(name, _)| Row {
+            name: Some(name.clone()),
+            ..Row::place(name.clone(), Go::Address(name))
+        }));
     }
     rows.extend(problems(report));
     rows

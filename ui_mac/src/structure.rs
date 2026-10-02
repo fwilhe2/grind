@@ -15,7 +15,9 @@ use objc2_foundation::NSString;
 
 use crate::grid_view::Pane;
 use crate::menu::{Command, Track};
+use crate::notice;
 use crate::page_view::TextPane;
+use crate::places::NameVerb;
 use crate::prompt;
 use crate::sheet::chart;
 use crate::sheet::filter;
@@ -351,6 +353,70 @@ impl TextPane {
                 offset: 1,
             }),
             Err(error) => prompt::tell(mtm, "That could not be done.", &error.to_string()),
+        }
+    }
+}
+
+impl Pane {
+    /// A defined name's context menu in the sidebar: rename it with every use following, point
+    /// it somewhere else, write it out into every formula that uses it, or delete it — each one
+    /// core call and one undo step, the first and third the first window to have them
+    /// (`grind sheet name --rename`/`--inline` until now).
+    pub fn act_on_name(&self, verb: NameVerb, name: &str, mtm: MainThreadMarker) {
+        let said = match verb {
+            NameVerb::Rename => {
+                let Some(to) = prompt::ask(
+                    mtm,
+                    "Rename Name",
+                    &format!("A new name for {name}. Every formula using it follows."),
+                    "Rename",
+                    name,
+                ) else {
+                    return;
+                };
+                self.app
+                    .rename_name(name, to.trim())
+                    .map(|count| Some(notice::name_renamed(count)))
+                    .map_err(|error| error.to_string())
+            }
+            NameVerb::Redefine => {
+                let now = self
+                    .app
+                    .names()
+                    .into_iter()
+                    .find(|(defined, _)| defined.eq_ignore_ascii_case(name))
+                    .map(|(_, expression)| verbs::shown_definition(&expression))
+                    .unwrap_or_default();
+                let Some(typed) = prompt::ask(
+                    mtm,
+                    "Redefine Name",
+                    &format!("What {name} stands for: a range such as Sheet1.A1:B9, or a formula."),
+                    "Redefine",
+                    &now,
+                ) else {
+                    return;
+                };
+                verbs::definition(&self.app, &typed)
+                    .and_then(|expression| {
+                        self.app
+                            .set_name(name, &expression)
+                            .map_err(|error| error.to_string())
+                    })
+                    .map(|()| None)
+            }
+            NameVerb::Inline => self
+                .app
+                .inline_name(name)
+                .map(|count| Some(notice::name_inlined(name, count)))
+                .map_err(|error| error.to_string()),
+            NameVerb::Delete => {
+                self.app.clear_name(name);
+                Ok(None)
+            }
+        };
+        match said {
+            Ok(sentence) => self.say(sentence.as_deref().map(|sentence| (sentence, None))),
+            Err(why) => prompt::tell(mtm, "That could not be done.", &why),
         }
     }
 }

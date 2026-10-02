@@ -678,7 +678,9 @@ values as a menu (`filter::offered`'s order), ticked while shown, plus Show All;
 Heading 4–6 beside Body, Heading 1–3 and List Item, the two names taken off again only when this
 page put them on, as the GNOME window does; Edit ▸ **Copy Value** (`App::value_text` through `clip::rect_text`)
 and **Formula to Value** (`App::clear_formula`, LibreOffice's name, the first window with it); Edit ▸ **Evaluate…** (`App::preview` at the active cell, display syntax in, an alert out)
-and Format ▸ Number ▸ **Document Locale…** (`App::set_locale`, a tag or nothing); and `canAsynchronouslyWriteToURL:` answering NO
+and Format ▸ Number ▸ **Document Locale…** (`App::set_locale`, a tag or nothing); **a defined name's context menu** in the sidebar — Rename… (every
+use following, `App::rename_name`), Redefine…, Inline Everywhere (`App::inline_name`) and Delete,
+the first window with the first and third; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

@@ -101,6 +101,26 @@ pub fn locale(typed: &str) -> Result<Option<Locale>, ()> {
     }
 }
 
+/// A name's definition as Redefine… shows it to be edited: display syntax, `=` and all, so a
+/// range reads `=$Sheet1.$A$1:$B$3` and an expression `=SUM($Sheet1.$A$1:$A$9)`. A definition
+/// this build cannot print is shown as stored.
+pub fn shown_definition(expression: &str) -> String {
+    display::to_display(&format!("={expression}")).unwrap_or_else(|_| expression.to_owned())
+}
+
+/// What somebody typed into Redefine… or Define Name… as the expression `App::set_name` stores:
+/// a formula in display syntax when it starts `=`, and otherwise an address or a range
+/// (`grind_sheet::a1::definition`, the CLI's reading).
+pub fn definition(app: &App, typed: &str) -> Result<String, String> {
+    let typed = typed.trim();
+    match typed.starts_with('=') {
+        true => display::from_display(typed)
+            .map(|canonical| canonical.trim_start_matches('=').to_owned())
+            .map_err(|error| error.message),
+        false => grind_sheet::a1::definition(app, typed).map_err(|error| error.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +199,24 @@ mod tests {
         assert_eq!(locale(" de-DE "), Ok(Locale::parse("de-DE")));
         assert_eq!(locale(""), Ok(None));
         assert_eq!(locale("not a tag"), Err(()));
+    }
+
+    #[test]
+    fn a_definition_is_shown_in_display_syntax_and_read_back_from_it() {
+        let app = App::new();
+        app.set_name("rate", "[$Sheet1.$B$1]").unwrap();
+        let (_, stored) = app.names().into_iter().next().unwrap();
+        let shown = shown_definition(&stored);
+        assert!(shown.starts_with('=') && !shown.contains('['), "{shown}");
+        assert_eq!(
+            definition(&app, &shown),
+            Ok(stored),
+            "what is shown reads back"
+        );
+        let range = definition(&app, "A1:A3").unwrap();
+        app.set_name("block", &range).unwrap();
+        let sum = definition(&app, "=SUM(A1:A3)").unwrap();
+        assert!(sum.starts_with("SUM(") && sum.contains("[."), "{sum}");
+        assert!(definition(&app, "=SUM(").is_err());
     }
 }
