@@ -736,6 +736,7 @@ impl Ui {
             "block.h3" => self.set_kind(BlockKind::Heading { level: 3 }, None),
             "block.h4" => self.set_kind(BlockKind::Heading { level: 4 }, None),
             "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
+            "block.table" => self.insert_table(),
             "block.bookmark" => self.bookmark(),
             "block.style" => self.name_style(),
             "block.indent" => self.renest(1),
@@ -828,6 +829,37 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- tables ---
+
+    /// *Insert a table…* — a size, then a table below the caret's block
+    /// (`grind_text::table::insert_below`, the one answer to where it goes). One prompt that
+    /// takes `3x4`, `3 4` or `3×4`: this page has no dialog surface, and two numbers are one
+    /// question.
+    fn insert_table(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Ok(Some(answer)) =
+            window.prompt_with_message_and_default("Table size — rows × columns", "3x3")
+        else {
+            return;
+        };
+        let Some((rows, columns)) = grind_text::table::parse_size(&answer) else {
+            return self.set_message("A table size looks like 3x4 — rows, then columns".to_owned());
+        };
+        match grind_text::table::insert_below(&self.app, self.caret.get().block, rows, columns) {
+            Ok(at) => {
+                self.anchor.set(None);
+                self.set_caret(Caret {
+                    block: at,
+                    offset: 0,
+                });
+                self.set_message(format!("A {rows}×{columns} table — Ctrl+Z takes it back"));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     // --- bookmarks and named styles ---

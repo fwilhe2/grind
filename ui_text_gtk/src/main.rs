@@ -896,21 +896,14 @@ impl Ui {
     }
 
     fn add_table(self: &Rc<Self>, rows: u32, columns: u32) {
-        let at = self.doc.caret().block + 1;
-        if let Err(error) = self.app.insert_table(at, rows, columns, None) {
-            return self.toast(&error.to_string());
-        }
-        // A document must not *end* with a table: there would be nowhere to type after it, and
-        // LibreOffice appends a paragraph to any document that does (`doc/odt-format.md` §5b).
-        // A second action, and so a second Ctrl+Z, which is the honest cost of the core's own
-        // verb doing exactly what it says (`grind text table` inserts a table and nothing else).
-        if at + (rows * columns) as usize == self.app.block_count()
-            && let Err(error) = self
-                .app
-                .insert(self.app.block_count(), BlockKind::Paragraph, "")
-        {
-            return self.toast(&error.to_string());
-        }
+        // Below the caret's block, never last: `grind_text::table::insert_below`, which is also
+        // what the browser and the Windows pane ask.
+        let at =
+            match grind_text::table::insert_below(&self.app, self.doc.caret().block, rows, columns)
+            {
+                Ok(at) => at,
+                Err(error) => return self.toast(&error.to_string()),
+            };
         self.doc.go_to(grind_text::Caret {
             block: at,
             offset: 0,

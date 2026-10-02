@@ -282,6 +282,7 @@ pub const TEXT: &[Command] = &[
         "Shift+Tab",
         false,
     ),
+    cmd("block.table", "Insert a table…", "Structure", "", false),
     cmd(
         "block.bookmark",
         "Bookmark this paragraph…",

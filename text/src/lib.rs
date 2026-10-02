@@ -59,6 +59,7 @@ pub mod odf;
 pub mod paint;
 pub mod projection;
 pub mod style;
+pub mod table;
 pub mod word;
 
 pub use action::Action;
