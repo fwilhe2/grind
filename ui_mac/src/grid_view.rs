@@ -649,6 +649,15 @@ define_class!(
             )
             .into_iter()
             .chain(charts)
+            // The cells a formula being typed is pointing at, over everything.
+            .chain(pane.pointed().into_iter().flat_map(|pointed| {
+                paint::selection_outline(
+                    &pane.grid.borrow(),
+                    &view,
+                    pointed,
+                    crate::editor::POINTED,
+                )
+            }))
             .map(|op| op.shifted(HEADER_W, HEADER_H))
             .collect();
             draw(&ops, pane);

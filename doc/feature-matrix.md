@@ -149,7 +149,7 @@ than as a cursor on a hidden row.
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
-| Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ | ○ |
+| Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ | ● |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ○ | ○ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● | ● |
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● | ● |

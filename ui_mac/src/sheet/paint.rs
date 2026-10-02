@@ -152,7 +152,7 @@ fn selection_wash(grid: &Grid, view: &Rect, selection: Selection, color: Rgb) ->
 }
 
 /// The selection's outline, [`OUTLINE`] thick and straddling the range's edge.
-fn selection_outline(grid: &Grid, view: &Rect, selection: Selection, color: Rgb) -> Vec<Op> {
+pub fn selection_outline(grid: &Grid, view: &Rect, selection: Selection, color: Rgb) -> Vec<Op> {
     let range = selection_rect(grid, selection);
     let half = OUTLINE / 2.0;
     [

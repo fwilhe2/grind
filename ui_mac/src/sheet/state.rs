@@ -31,7 +31,8 @@
 //! stores. **The trigger is a fourth copy**, or two of them answering one keystroke differently
 //! for a reason that is not their input model.
 
-use grind_sheet::nav::Dir;
+use grind_sheet::formula::assist::ref_eligible;
+use grind_sheet::nav::{Dir, Motion};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
@@ -82,6 +83,36 @@ pub enum Outcome {
     Cancel,
     /// ⌃U while editing: Enter ↔ Edit.
     ToggleMode,
+    /// Start or move a **pending reference** — Point mode: the pointed cells move by `motion`
+    /// (grown, with `extend`) and the reference naming them is written at the caret, in place of
+    /// the one written for them last.
+    Point { motion: Motion, extend: bool },
+}
+
+/// Where the edit is — what deciding a selector needs beyond the selector itself.
+#[derive(Clone, Copy, Debug)]
+pub struct Where<'a> {
+    pub mode: Mode,
+    pub text: &'a str,
+    /// A byte offset into `text`.
+    pub caret: usize,
+    /// Whether a reference is being pointed at.
+    pub pending: bool,
+}
+
+/// An arrow's selector, as the motion it is and whether it grows the pointed range.
+fn arrow(selector: &str) -> Option<(Dir, bool)> {
+    Some(match selector {
+        "moveLeft:" => (Dir::Left, false),
+        "moveRight:" => (Dir::Right, false),
+        "moveUp:" => (Dir::Up, false),
+        "moveDown:" => (Dir::Down, false),
+        "moveLeftAndModifySelection:" => (Dir::Left, true),
+        "moveRightAndModifySelection:" => (Dir::Right, true),
+        "moveUpAndModifySelection:" => (Dir::Up, true),
+        "moveDownAndModifySelection:" => (Dir::Down, true),
+        _ => return None,
+    })
 }
 
 /// The selector ⌃U sends — `NSStandardKeyBindingResponding` binds ⌃U to nothing, so a view sees
@@ -89,9 +120,21 @@ pub enum Outcome {
 /// this name so one table decides everything.
 pub const TOGGLE: &str = "grindToggleEditMode:";
 
-/// The whole state machine while editing. One `match`, and no memory beyond the mode.
-pub fn editing(mode: Mode, selector: &str) -> Outcome {
-    match (selector, mode) {
+/// The whole state machine while editing. One `match`, and no memory beyond what it is told.
+///
+/// **Point** is not a fourth mode but a predicate, as in the GNOME window: while typing a formula
+/// with the caret where a reference could go (`=SUM(`, `=A1+`) — `formula::assist::ref_eligible`
+/// — an arrow points at a cell rather than committing, and once a reference is pending every
+/// arrow, shifted or not, keeps moving it. "Am I pointing" is a question about the text, and a
+/// flag would go stale the moment the caret moved.
+pub fn editing(at: Where, selector: &str) -> Outcome {
+    if let Some((dir, extend)) = arrow(selector) {
+        let motion = Motion::By(dir);
+        if at.pending || (at.mode == Mode::Enter && ref_eligible(at.text, at.caret)) {
+            return Outcome::Point { motion, extend };
+        }
+    }
+    match (selector, at.mode) {
         ("cancelOperation:", _) => Outcome::Cancel,
         (TOGGLE, _) => Outcome::ToggleMode,
         ("insertNewline:", _) => Outcome::Commit(Some(Dir::Down)),
@@ -122,6 +165,16 @@ pub fn typed(mode: Mode, text: &str) -> Option<Seed> {
 mod tests {
     use super::*;
 
+    /// Editing `12`, where no reference could go.
+    fn at(mode: Mode) -> Where<'static> {
+        Where {
+            mode,
+            text: "12",
+            caret: 2,
+            pending: false,
+        }
+    }
+
     #[test]
     fn typing_starts_an_edit_in_enter_mode_and_a_cell_edit_is_edit_mode() {
         let seed = typed(Mode::Ready, "1").unwrap();
@@ -146,23 +199,23 @@ mod tests {
     fn return_and_tab_commit_onward_and_esc_throws_away() {
         for mode in [Mode::Enter, Mode::Edit] {
             assert_eq!(
-                editing(mode, "insertNewline:"),
+                editing(at(mode), "insertNewline:"),
                 Outcome::Commit(Some(Dir::Down))
             );
             assert_eq!(
-                editing(mode, "insertNewlineIgnoringFieldEditor:"),
+                editing(at(mode), "insertNewlineIgnoringFieldEditor:"),
                 Outcome::Commit(Some(Dir::Up))
             );
             assert_eq!(
-                editing(mode, "insertTab:"),
+                editing(at(mode), "insertTab:"),
                 Outcome::Commit(Some(Dir::Right))
             );
             assert_eq!(
-                editing(mode, "insertBacktab:"),
+                editing(at(mode), "insertBacktab:"),
                 Outcome::Commit(Some(Dir::Left))
             );
-            assert_eq!(editing(mode, "cancelOperation:"), Outcome::Cancel);
-            assert_eq!(editing(mode, TOGGLE), Outcome::ToggleMode);
+            assert_eq!(editing(at(mode), "cancelOperation:"), Outcome::Cancel);
+            assert_eq!(editing(at(mode), TOGGLE), Outcome::ToggleMode);
         }
     }
 
@@ -170,22 +223,22 @@ mod tests {
     #[test]
     fn an_arrow_commits_in_enter_mode_and_moves_the_caret_in_edit_mode() {
         assert_eq!(
-            editing(Mode::Enter, "moveRight:"),
+            editing(at(Mode::Enter), "moveRight:"),
             Outcome::Commit(Some(Dir::Right))
         );
-        assert_eq!(editing(Mode::Edit, "moveRight:"), Outcome::Passthrough);
+        assert_eq!(editing(at(Mode::Edit), "moveRight:"), Outcome::Passthrough);
         assert_eq!(
-            editing(Mode::Enter, "moveUp:"),
+            editing(at(Mode::Enter), "moveUp:"),
             Outcome::Commit(Some(Dir::Up))
         );
-        assert_eq!(editing(Mode::Edit, "moveUp:"), Outcome::Passthrough);
+        assert_eq!(editing(at(Mode::Edit), "moveUp:"), Outcome::Passthrough);
         // Shift-arrows and the rest are the field's in both.
         assert_eq!(
-            editing(Mode::Enter, "moveRightAndModifySelection:"),
+            editing(at(Mode::Enter), "moveRightAndModifySelection:"),
             Outcome::Passthrough
         );
         assert_eq!(
-            editing(Mode::Enter, "deleteBackward:"),
+            editing(at(Mode::Enter), "deleteBackward:"),
             Outcome::Passthrough
         );
     }
@@ -194,5 +247,56 @@ mod tests {
     fn the_toggle_swaps_the_two_editing_modes() {
         assert_eq!(Mode::Enter.toggled(), Mode::Edit);
         assert_eq!(Mode::Edit.toggled(), Mode::Enter);
+    }
+
+    #[test]
+    fn an_arrow_points_where_a_reference_could_go_and_commits_where_it_could_not() {
+        let typing = |text: &'static str| Where {
+            mode: Mode::Enter,
+            text,
+            caret: text.len(),
+            pending: false,
+        };
+        let down = Outcome::Point {
+            motion: Motion::By(Dir::Down),
+            extend: false,
+        };
+        assert_eq!(editing(typing("=SUM("), "moveDown:"), down);
+        assert_eq!(editing(typing("=A1+"), "moveDown:"), down);
+        assert_eq!(
+            editing(typing("=SUM(B2"), "moveDown:"),
+            Outcome::Commit(Some(Dir::Down)),
+            "a reference already typed: the arrow moves on"
+        );
+        // Amending never starts pointing.
+        let amending = Where {
+            mode: Mode::Edit,
+            ..typing("=SUM(")
+        };
+        assert_eq!(editing(amending, "moveDown:"), Outcome::Passthrough);
+        // Once pointing, every arrow keeps pointing, and Shift grows the range.
+        let pointing = Where {
+            pending: true,
+            ..typing("=SUM(B3")
+        };
+        assert_eq!(
+            editing(pointing, "moveRight:"),
+            Outcome::Point {
+                motion: Motion::By(Dir::Right),
+                extend: false,
+            }
+        );
+        assert_eq!(
+            editing(pointing, "moveDownAndModifySelection:"),
+            Outcome::Point {
+                motion: Motion::By(Dir::Down),
+                extend: true,
+            }
+        );
+        // And Return and Tab still commit: pointing must not swallow the keys that end an edit.
+        assert_eq!(
+            editing(pointing, "insertNewline:"),
+            Outcome::Commit(Some(Dir::Down))
+        );
     }
 }

@@ -16,10 +16,13 @@
 //! the problem — a byte offset turned into the UTF-16 units the field counts
 //! (`grind_core::utf16`, hoisted in M1 for exactly this).
 
+use std::ops::Range;
+
+use grind_core::color::Rgb;
 use grind_core::utf16;
-use grind_sheet::RecalcMode;
 use grind_sheet::formula::display;
-use grind_sheet::nav::{Dir, Motion};
+use grind_sheet::nav::{Dir, Motion, Selection};
+use grind_sheet::{RecalcMode, a1};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
@@ -39,7 +42,7 @@ use crate::notice;
 use crate::sheet::assist::{self, Assist, Ink, Piece, Reply};
 use crate::sheet::geom::{HEADER_H, HEADER_W};
 use crate::sheet::select;
-use crate::sheet::state::{self, Mode, Outcome, Seed};
+use crate::sheet::state::{self, Mode, Outcome, Seed, Where};
 
 /// The narrowest the editor is, however narrow its column: room to see what is being typed.
 const MIN_W: f64 = 90.0;
@@ -88,7 +91,23 @@ pub struct Edit {
     /// One line under the field: the offers for the word being typed, or the signature of the
     /// call the caret is in — `formula::assist::band`'s runs, hidden when there is nothing to say.
     hint: Retained<NSTextField>,
+    /// The reference being pointed at, while one is (Point mode).
+    pending: Option<Pending>,
+    /// The editor is writing into its own field, and the change it reports is not the user's.
+    applying: bool,
 }
+
+/// A reference written by pointing: where its text is in the field, as bytes, and the cells it
+/// names — so the next arrow moves those cells and rewrites that text.
+#[derive(Clone, Debug)]
+struct Pending {
+    span: Range<usize>,
+    selection: Selection,
+}
+
+/// The pointed cells' outline — the system's orange, so it is never mistaken for the selection's
+/// accent, as a pointed range in every spreadsheet is drawn in a colour of its own.
+pub const POINTED: Rgb = (0xff, 0x95, 0x00);
 
 define_class!(
     /// The cell editor's delegate: every selector its field editor would act on comes here
@@ -113,6 +132,7 @@ define_class!(
         #[unsafe(method(controlTextDidChange:))]
         fn did_change(&self, _notification: &NSNotification) {
             if let Some(pane) = self.ivars().upgrade() {
+                pane.typed_over_pointing();
                 pane.refresh_assist();
                 pane.edit_changed();
             }
@@ -183,6 +203,8 @@ impl Pane {
             mode: seed.mode(),
             assist: Assist::default(),
             hint,
+            pending: None,
+            applying: false,
         });
         self.refresh_assist();
         self.edit_changed();
@@ -191,12 +213,14 @@ impl Pane {
     /// What a selector from the field editor does. `true` is "handled": the field editor does
     /// nothing more with it.
     fn edit_command(&self, selector: &str) -> bool {
-        let Some((mode, offering)) = self
-            .edit
-            .borrow()
-            .as_ref()
-            .map(|edit| (edit.mode, edit.assist.is_offering()))
-        else {
+        let Some((mode, offering, pending, field)) = self.edit.borrow().as_ref().map(|edit| {
+            (
+                edit.mode,
+                edit.assist.is_offering(),
+                edit.pending.is_some(),
+                edit.field.clone(),
+            )
+        }) else {
             return false;
         };
         // A list of offers claims Tab, the arrows and Esc before the edit machine sees them.
@@ -204,7 +228,17 @@ impl Pane {
             self.assist_reply(reply);
             return true;
         }
-        match state::editing(mode, selector) {
+        let text = field.stringValue().to_string();
+        let caret = field.currentEditor().map_or(text.len(), |editor| {
+            utf16::byte_of(&text, editor.selectedRange().location)
+        });
+        let at = Where {
+            mode,
+            text: &text,
+            caret,
+            pending,
+        };
+        match state::editing(at, selector) {
             Outcome::Passthrough => false,
             Outcome::Commit(dir) => {
                 self.commit(dir);
@@ -220,7 +254,103 @@ impl Pane {
                 }
                 true
             }
+            Outcome::Point { motion, extend } => {
+                self.point(motion, extend);
+                true
+            }
         }
+    }
+
+    /// Move — or start — the reference being pointed at. The first arrow points one cell away
+    /// from the one being edited, which is where the eye already is.
+    fn point(&self, motion: Motion, extend: bool) {
+        let pending = self
+            .edit
+            .borrow()
+            .as_ref()
+            .and_then(|edit| edit.pending.clone());
+        let from = pending.as_ref().map_or_else(
+            || Selection::at(self.selection.get().active),
+            |pending| pending.selection,
+        );
+        let moved = select::apply(
+            &self.app,
+            self.sheet.get(),
+            &self.grid.borrow(),
+            from,
+            GridAction::Move { motion, extend },
+            1,
+        );
+        self.set_pending(moved, pending.map(|pending| pending.span));
+    }
+
+    /// Write the reference `selection` names into the field — over `span`, the text written for
+    /// the last one, or at the caret for the first — through the field editor, so it is one step
+    /// of the field's own undo.
+    fn set_pending(&self, selection: Selection, span: Option<Range<usize>>) {
+        let Some(field) = self.edit.borrow().as_ref().map(|edit| edit.field.clone()) else {
+            return;
+        };
+        let Some(editor) = field.currentEditor() else {
+            return;
+        };
+        let text = field.stringValue().to_string();
+        let (start, end) = selection.rect();
+        let reference = display::reference_text(&a1::reference(None, start, end));
+        let span = span.unwrap_or_else(|| {
+            let caret = utf16::byte_of(&text, editor.selectedRange().location);
+            caret..caret
+        });
+        let range = NSRange::new(
+            utf16::units_before(&text, span.start),
+            utf16::units_before(&text[span.start..], span.end - span.start),
+        );
+        if let Some(edit) = self.edit.borrow_mut().as_mut() {
+            edit.applying = true;
+        }
+        editor.replaceCharactersInRange_withString(range, &NSString::from_str(&reference));
+        let placed = span.start..span.start + reference.len();
+        let now = field.stringValue().to_string();
+        editor.setSelectedRange(NSRange::new(utf16::units_before(&now, placed.end), 0));
+        if let Some(edit) = self.edit.borrow_mut().as_mut() {
+            edit.applying = false;
+            edit.pending = Some(Pending {
+                span: placed,
+                selection,
+            });
+        }
+        // The cells pointed at are brought into sight, or pointing below the fold is typing
+        // blind; and drawn, outlined in their own colour.
+        if let Some(view) = self.grid_view() {
+            view.scrollRectToVisible(crate::grid_view::ns_rect(select::reveal(
+                &self.grid.borrow(),
+                selection,
+            )));
+            view.setNeedsDisplay(true);
+        }
+        self.refresh_assist();
+        self.edit_changed();
+    }
+
+    /// Text typed by the user ends pointing: the reference stays where it was written, and the
+    /// next arrow starts a new one only if a reference could go after what was typed.
+    pub(crate) fn typed_over_pointing(&self) {
+        let ended = match self.edit.borrow_mut().as_mut() {
+            Some(edit) if !edit.applying => edit.pending.take().is_some(),
+            _ => false,
+        };
+        if ended && let Some(view) = self.grid_view() {
+            view.setNeedsDisplay(true);
+        }
+    }
+
+    /// The cells being pointed at, for the grid to outline.
+    pub fn pointed(&self) -> Option<Selection> {
+        self.edit
+            .borrow()
+            .as_ref()
+            .and_then(|edit| edit.pending.as_ref())
+            .map(|pending| pending.selection)
     }
 
     /// Store what the editor holds and move `dir` — or, for a formula that will not parse, keep

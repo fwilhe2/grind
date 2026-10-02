@@ -403,6 +403,32 @@ cat "$out/assist.txt"
     || fail "Tab did not take SUM: A1 holds $("$grind" sheet get --input "$out/assisted.fods" A1)"
 say "   =SU, ↓ and Tab take SUM, and Return commits the call"
 
+# Point mode: with the caret where a reference could go, the arrows point at cells instead of
+# committing, Shift grows the range, and typing the `)` ends pointing.
+"$grind" sheet new "$out/pointed.fods" > /dev/null
+cat > "$out/point.drive" <<'DRIVE'
+type 1
+key return
+type 2
+key return
+type 3
+key return
+type =SUM(
+key up
+key shift+up
+key shift+up
+type )
+key return
+key cmd+s
+wait 2
+DRIVE
+bounded 120 "$mac" "$out/pointed.fods" --drive "$out/point.drive" --out "$out/pointed" \
+    > "$out/point.txt" || fail "the point drive failed: $(cat "$out/point.txt")"
+cat "$out/point.txt"
+[ "$("$grind" sheet get --input "$out/pointed.fods" A4)" = "=SUM(A1:A3)" ] \
+    || fail "pointing did not write A1:A3: A4 holds $("$grind" sheet get --input "$out/pointed.fods" A4)"
+say "   =SUM( and the arrows point at A1:A3"
+
 # Every Problems row jumps: a formula on a second sheet reading an empty cell is a finding at
 # Data.C3, and choosing its row from the first sheet lands the selection there.
 "$grind" sheet new "$out/problems.fods" > /dev/null
