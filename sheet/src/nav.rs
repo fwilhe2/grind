@@ -193,6 +193,46 @@ pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
     (start, Pos::new(row, col))
 }
 
+/// The fills *Fill Down* (`down`) or *Fill Right* makes over `selection`: for each column, its top
+/// cell copied down the rest; for each row, its leftmost cell copied across. `(source, start,
+/// end)`, the shape [`App::fill`] takes. Nothing for a selection one cell deep along the fill —
+/// this never reads a cell that was not selected, which is the promise "it fills what I picked"
+/// makes.
+///
+/// ponytail: a fill over several lines is one `App::fill` — and so one undo step — per line. The
+/// upgrade is a multi-source fill in the core; nothing needs it until a wide block is common.
+///
+/// The macOS shell's rule, hoisted when the browser and the Windows grid wanted a Ctrl+D too.
+pub fn fills(selection: Selection, down: bool) -> Vec<(Pos, Pos, Pos)> {
+    let (start, end) = selection.rect();
+    fill_lines(start, end, down)
+}
+
+/// [`fills`] over a rectangle, for a shell whose selection is not this type.
+pub fn fill_lines(start: Pos, end: Pos, down: bool) -> Vec<(Pos, Pos, Pos)> {
+    match down {
+        true if end.row > start.row => (start.col..=end.col)
+            .map(|col| {
+                (
+                    Pos::new(start.row, col),
+                    Pos::new(start.row + 1, col),
+                    Pos::new(end.row, col),
+                )
+            })
+            .collect(),
+        false if end.col > start.col => (start.row..=end.row)
+            .map(|row| {
+                (
+                    Pos::new(row, start.col),
+                    Pos::new(row, start.col + 1),
+                    Pos::new(row, end.col),
+                )
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// Whether a cell of `sheet` holds anything — what [`moved`]'s `occupied` asks, answered by the
 /// document. One read per probe, which is what every shell did with its own copy of this.
 ///
@@ -306,6 +346,31 @@ fn data_edge(from: Pos, dir: Dir, extent: Extent, occupied: &dyn Fn(Pos) -> bool
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fill_down_copies_each_columns_top_cell_and_right_each_rows_first() {
+        let sel = |a: (u32, u32), b: (u32, u32)| Selection {
+            anchor: Pos::new(a.0, a.1),
+            active: Pos::new(b.0, b.1),
+        };
+        let b2_c4 = sel((1, 1), (3, 2));
+        assert_eq!(
+            fills(b2_c4, true),
+            [
+                (Pos::new(1, 1), Pos::new(2, 1), Pos::new(3, 1)),
+                (Pos::new(1, 2), Pos::new(2, 2), Pos::new(3, 2)),
+            ]
+        );
+        assert_eq!(fills(b2_c4, false).len(), 3, "a fill per row");
+        assert_eq!(
+            fills(b2_c4, false)[0],
+            (Pos::new(1, 1), Pos::new(1, 2), Pos::new(1, 2))
+        );
+        assert!(
+            fills(sel((0, 0), (0, 4)), true).is_empty(),
+            "nothing below to fill"
+        );
+    }
+
     use super::*;
     use std::collections::HashSet;
 

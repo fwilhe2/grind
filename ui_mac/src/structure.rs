@@ -35,180 +35,179 @@ impl Pane {
     /// One of the grid's structural verbs.
     pub fn structure(&self, command: Command, mtm: MainThreadMarker) {
         let (sheet, selection) = (self.sheet.get(), self.selection.get());
-        let done =
-            match command {
-                // ponytail: a fill over several columns is one `App::fill` each, so as many ⌘Z as
-                // columns. `fill` takes one source; the trigger is a user filling a wide block.
-                Command::Fill(down) => verbs::fills(selection, down).into_iter().try_for_each(
-                    |(source, start, end)| {
-                        self.app
-                            .fill(sheet, source, start, end, RecalcMode::Document)
-                            .map(|_| ())
-                    },
-                ),
-                // The active cell into the whole selection — one `App::fill`, one undo step.
-                Command::FillAcross => {
-                    let (start, end) = selection.rect();
+        let done = match command {
+            // ponytail: a fill over several columns is one `App::fill` each, so as many ⌘Z as
+            // columns. `fill` takes one source; the trigger is a user filling a wide block.
+            Command::Fill(down) => grind_sheet::nav::fills(selection, down)
+                .into_iter()
+                .try_for_each(|(source, start, end)| {
                     self.app
-                        .fill(sheet, selection.active, start, end, RecalcMode::Document)
+                        .fill(sheet, source, start, end, RecalcMode::Document)
                         .map(|_| ())
-                }
-                Command::Rows(Track::Hide) => self
-                    .app
-                    .set_row_hidden(sheet, verbs::rows(selection), true)
-                    .map(|_| ()),
-                Command::Rows(Track::Show) => self
-                    .app
-                    .set_row_hidden(sheet, verbs::rows(selection), false)
-                    .map(|_| ()),
-                Command::Columns(Track::Hide) => self
-                    .app
-                    .set_col_hidden(sheet, verbs::cols(selection), true)
-                    .map(|_| ()),
-                Command::Columns(Track::Show) => self
-                    .app
-                    .set_col_hidden(sheet, verbs::cols(selection), false)
-                    .map(|_| ()),
-                Command::Rows(Track::Size) | Command::Columns(Track::Size) => {
-                    let rows = matches!(command, Command::Rows(_));
-                    let Some(size) = prompt::ask(
-                        mtm,
-                        if rows { "Row Height" } else { "Column Width" },
-                        "A length, such as 2.5cm, 1in or 64pt.",
-                        "Set",
-                        "",
-                    ) else {
-                        return;
-                    };
-                    match rows {
-                        true => self
-                            .app
-                            .set_row_height(sheet, verbs::rows(selection), Some(size)),
-                        false => self
-                            .app
-                            .set_col_width(sheet, verbs::cols(selection), Some(size)),
-                    }
+                }),
+            // The active cell into the whole selection — one `App::fill`, one undo step.
+            Command::FillAcross => {
+                let (start, end) = selection.rect();
+                self.app
+                    .fill(sheet, selection.active, start, end, RecalcMode::Document)
                     .map(|_| ())
-                }
-                Command::DefineName => {
-                    let target = verbs::name_target(&self.sheet_name(), selection);
-                    let Some(name) = prompt::ask(
-                        mtm,
-                        "Define Name",
-                        &format!("A name for {target}, to use in formulas instead of its address."),
-                        "Define",
-                        "",
-                    ) else {
-                        return;
-                    };
-                    grind_sheet::a1::definition(&self.app, &target)
-                        .and_then(|expression| self.app.set_name(&name, &expression))
-                }
-                Command::ExportCsv => {
-                    self.export_csv(mtm);
+            }
+            Command::Rows(Track::Hide) => self
+                .app
+                .set_row_hidden(sheet, verbs::rows(selection), true)
+                .map(|_| ()),
+            Command::Rows(Track::Show) => self
+                .app
+                .set_row_hidden(sheet, verbs::rows(selection), false)
+                .map(|_| ()),
+            Command::Columns(Track::Hide) => self
+                .app
+                .set_col_hidden(sheet, verbs::cols(selection), true)
+                .map(|_| ()),
+            Command::Columns(Track::Show) => self
+                .app
+                .set_col_hidden(sheet, verbs::cols(selection), false)
+                .map(|_| ()),
+            Command::Rows(Track::Size) | Command::Columns(Track::Size) => {
+                let rows = matches!(command, Command::Rows(_));
+                let Some(size) = prompt::ask(
+                    mtm,
+                    if rows { "Row Height" } else { "Column Width" },
+                    "A length, such as 2.5cm, 1in or 64pt.",
+                    "Set",
+                    "",
+                ) else {
                     return;
-                }
-                Command::ImportCsv => {
-                    self.import_csv(mtm);
-                    return;
-                }
-                Command::InsertChart => self.insert_chart(),
-                Command::Evaluate => {
-                    let at = selection.active;
-                    let Some(typed) = prompt::ask(
-                        mtm,
-                        "Evaluate",
-                        &format!(
-                            "A formula, worked out at {} without storing it.",
-                            grind_sheet::a1::format(None, at)
-                        ),
-                        "Evaluate",
-                        "=",
-                    ) else {
-                        return;
-                    };
-                    match verbs::evaluated(&self.app, sheet, at, &typed) {
-                        Ok(value) => prompt::tell(mtm, &value, typed.trim()),
-                        Err(why) => prompt::tell(mtm, "That cannot be worked out.", &why),
-                    }
-                    return;
-                }
-                Command::DocumentLocale => {
-                    let now = self
+                };
+                match rows {
+                    true => self
                         .app
-                        .locale()
-                        .map(|locale| locale.tag())
-                        .unwrap_or_default();
-                    let Some(typed) = prompt::ask(
-                        mtm,
-                        "Document Locale",
-                        "How this document writes numbers and reads them typed: a tag such as \
+                        .set_row_height(sheet, verbs::rows(selection), Some(size)),
+                    false => self
+                        .app
+                        .set_col_width(sheet, verbs::cols(selection), Some(size)),
+                }
+                .map(|_| ())
+            }
+            Command::DefineName => {
+                let target = verbs::name_target(&self.sheet_name(), selection);
+                let Some(name) = prompt::ask(
+                    mtm,
+                    "Define Name",
+                    &format!("A name for {target}, to use in formulas instead of its address."),
+                    "Define",
+                    "",
+                ) else {
+                    return;
+                };
+                grind_sheet::a1::definition(&self.app, &target)
+                    .and_then(|expression| self.app.set_name(&name, &expression))
+            }
+            Command::ExportCsv => {
+                self.export_csv(mtm);
+                return;
+            }
+            Command::ImportCsv => {
+                self.import_csv(mtm);
+                return;
+            }
+            Command::InsertChart => self.insert_chart(),
+            Command::Evaluate => {
+                let at = selection.active;
+                let Some(typed) = prompt::ask(
+                    mtm,
+                    "Evaluate",
+                    &format!(
+                        "A formula, worked out at {} without storing it.",
+                        grind_sheet::a1::format(None, at)
+                    ),
+                    "Evaluate",
+                    "=",
+                ) else {
+                    return;
+                };
+                match verbs::evaluated(&self.app, sheet, at, &typed) {
+                    Ok(value) => prompt::tell(mtm, &value, typed.trim()),
+                    Err(why) => prompt::tell(mtm, "That cannot be worked out.", &why),
+                }
+                return;
+            }
+            Command::DocumentLocale => {
+                let now = self
+                    .app
+                    .locale()
+                    .map(|locale| locale.tag())
+                    .unwrap_or_default();
+                let Some(typed) = prompt::ask(
+                    mtm,
+                    "Document Locale",
+                    "How this document writes numbers and reads them typed: a tag such as \
                          en-US, de-DE or fr-FR, or nothing for this Mac's own.",
-                        "Set",
-                        &now,
-                    ) else {
+                    "Set",
+                    &now,
+                ) else {
+                    return;
+                };
+                match verbs::locale(&typed) {
+                    Ok(locale) => self.app.set_locale(locale),
+                    Err(()) => {
+                        prompt::tell(mtm, "That is not a locale.", "A tag such as de-DE.");
                         return;
-                    };
-                    match verbs::locale(&typed) {
-                        Ok(locale) => self.app.set_locale(locale),
-                        Err(()) => {
-                            prompt::tell(mtm, "That is not a locale.", "A tag such as de-DE.");
+                    }
+                }
+            }
+            // On: asked what to search for, listed in the sidebar. On already: off.
+            Command::Calculations => {
+                if self.calculations.borrow().is_some() {
+                    self.show_calculations(None);
+                    return;
+                }
+                let Some(needle) = prompt::ask(
+                    mtm,
+                    "Calculations",
+                    "Every formula in the document, listed in the sidebar. Search for a \
+                         function, an address or a piece of a formula — or leave it empty for \
+                         all of them.",
+                    "Show",
+                    "",
+                ) else {
+                    return;
+                };
+                self.show_calculations(Some(needle.trim().to_owned()));
+                return;
+            }
+            Command::CopyValue => {
+                self.copy_value();
+                return;
+            }
+            Command::FormulaToValue => {
+                // ponytail: one `clear_formula` per formula, so as many ⌘Z as formulas — the
+                // core has no range form, and the trigger is a user converting a large block.
+                let used = self.app.used_extent(sheet).unwrap_or((0, 0));
+                let (start, end) = grind_sheet::nav::target(selection, used);
+                (start.row..=end.row)
+                    .flat_map(|row| (start.col..=end.col).map(move |col| Pos::new(row, col)))
+                    .filter(|pos| self.app.formula(sheet, *pos).is_ok_and(|f| f.is_some()))
+                    .try_for_each(|pos| self.app.clear_formula(sheet, pos))
+            }
+            Command::Filter => match self.app.filter(sheet).ok().flatten() {
+                Some(_) => self.app.set_filter(sheet, None),
+                None => {
+                    let used = self.app.used_extent(sheet).unwrap_or((0, 0));
+                    match filter::range(selection.rect(), used) {
+                        Ok((start, end)) => self.app.set_filter(
+                            sheet,
+                            Some(grind_sheet::Filter::new(filter::NAME, start, end)),
+                        ),
+                        Err(why) => {
+                            self.say(Some((why, None)));
                             return;
                         }
                     }
                 }
-                // On: asked what to search for, listed in the sidebar. On already: off.
-                Command::Calculations => {
-                    if self.calculations.borrow().is_some() {
-                        self.show_calculations(None);
-                        return;
-                    }
-                    let Some(needle) = prompt::ask(
-                        mtm,
-                        "Calculations",
-                        "Every formula in the document, listed in the sidebar. Search for a \
-                         function, an address or a piece of a formula — or leave it empty for \
-                         all of them.",
-                        "Show",
-                        "",
-                    ) else {
-                        return;
-                    };
-                    self.show_calculations(Some(needle.trim().to_owned()));
-                    return;
-                }
-                Command::CopyValue => {
-                    self.copy_value();
-                    return;
-                }
-                Command::FormulaToValue => {
-                    // ponytail: one `clear_formula` per formula, so as many ⌘Z as formulas — the
-                    // core has no range form, and the trigger is a user converting a large block.
-                    let used = self.app.used_extent(sheet).unwrap_or((0, 0));
-                    let (start, end) = grind_sheet::nav::target(selection, used);
-                    (start.row..=end.row)
-                        .flat_map(|row| (start.col..=end.col).map(move |col| Pos::new(row, col)))
-                        .filter(|pos| self.app.formula(sheet, *pos).is_ok_and(|f| f.is_some()))
-                        .try_for_each(|pos| self.app.clear_formula(sheet, pos))
-                }
-                Command::Filter => match self.app.filter(sheet).ok().flatten() {
-                    Some(_) => self.app.set_filter(sheet, None),
-                    None => {
-                        let used = self.app.used_extent(sheet).unwrap_or((0, 0));
-                        match filter::range(selection.rect(), used) {
-                            Ok((start, end)) => self.app.set_filter(
-                                sheet,
-                                Some(grind_sheet::Filter::new(filter::NAME, start, end)),
-                            ),
-                            Err(why) => {
-                                self.say(Some((why, None)));
-                                return;
-                            }
-                        }
-                    }
-                },
-                _ => return,
-            };
+            },
+            _ => return,
+        };
         match done {
             Ok(()) => self.say(None),
             Err(error) => self.say(Some((&error.to_string(), None))),

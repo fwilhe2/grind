@@ -16,34 +16,6 @@ use grind_sheet::locale::Locale;
 use grind_sheet::nav::Selection;
 use grind_sheet::{App, CellValue, Pos};
 
-/// The fills Fill Down (`down`) or Fill Right makes over `selection`: for each column, its top
-/// cell copied down the rest; for each row, its leftmost cell copied across. `(source, start,
-/// end)`, the shape `App::fill` takes. Nothing for a selection one cell deep along the fill.
-pub fn fills(selection: Selection, down: bool) -> Vec<(Pos, Pos, Pos)> {
-    let (start, end) = selection.rect();
-    match down {
-        true if end.row > start.row => (start.col..=end.col)
-            .map(|col| {
-                (
-                    Pos::new(start.row, col),
-                    Pos::new(start.row + 1, col),
-                    Pos::new(end.row, col),
-                )
-            })
-            .collect(),
-        false if end.col > start.col => (start.row..=end.row)
-            .map(|row| {
-                (
-                    Pos::new(row, start.col),
-                    Pos::new(row, start.col + 1),
-                    Pos::new(row, end.col),
-                )
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// The rows the selection covers.
 pub fn rows(selection: Selection) -> Range<u32> {
     let (start, end) = selection.rect();
@@ -130,25 +102,6 @@ mod tests {
             anchor: Pos::new(a.0, a.1),
             active: Pos::new(b.0, b.1),
         }
-    }
-
-    #[test]
-    fn fill_down_copies_each_columns_top_cell_and_right_each_rows_first() {
-        let b2_c4 = range((1, 1), (3, 2));
-        assert_eq!(
-            fills(b2_c4, true),
-            [
-                (Pos::new(1, 1), Pos::new(2, 1), Pos::new(3, 1)),
-                (Pos::new(1, 2), Pos::new(2, 2), Pos::new(3, 2)),
-            ]
-        );
-        assert_eq!(fills(b2_c4, false).len(), 3, "a fill per row");
-        assert_eq!(
-            fills(b2_c4, false)[0],
-            (Pos::new(1, 1), Pos::new(1, 2), Pos::new(1, 2))
-        );
-        let one_row = range((0, 0), (0, 4));
-        assert!(fills(one_row, true).is_empty(), "nothing below to fill");
     }
 
     #[test]

@@ -1239,24 +1239,30 @@ impl Ui {
         });
     }
 
-    /// Replicate the top row — or the left column — across the selection, which is what
-    /// `App::fill` already is.
+    /// Replicate each column's top cell down the selection — or each row's left cell across it —
+    /// which is what `App::fill` already is, over `grind_sheet::nav::fills` (the same lines the
+    /// Mac and the Windows grid fill). It used to copy one cell over the whole rectangle, which
+    /// made a two-column fill write column A's formulas into column B.
     fn fill(&self, down: bool) {
         let (start, end) = self.rect();
-        if (down && end.row == start.row) || (!down && end.col == start.col) {
-            return self.set_message("Select the cells to fill into as well".to_owned());
+        let lines = grind_sheet::nav::fill_lines(start, end, down);
+        if lines.is_empty() {
+            return self.set_message(match down {
+                true => "Select the cells to fill into as well — more than one row".to_owned(),
+                false => "Select the cells to fill into as well — more than one column".to_owned(),
+            });
         }
-        let from = match down {
-            true => Pos::new(start.row + 1, start.col),
-            false => Pos::new(start.row, start.col + 1),
-        };
-        match self
-            .app
-            .fill(self.sheet.get(), start, from, end, RecalcMode::Document)
-        {
-            Ok(outcome) => self.set_message(format!("Filled {} cell(s)", outcome.cells)),
-            Err(error) => self.set_message(error.to_string()),
+        let mut cells = 0;
+        for (source, start, end) in lines {
+            match self
+                .app
+                .fill(self.sheet.get(), source, start, end, RecalcMode::Document)
+            {
+                Ok(outcome) => cells += outcome.cells,
+                Err(error) => return self.set_message(error.to_string()),
+            }
         }
+        self.set_message(format!("Filled {cells} cell(s)"));
     }
 
     /// Hide — or, with `hidden: false`, unhide — the rows the selection spans.
