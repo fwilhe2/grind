@@ -443,7 +443,7 @@ say "   =SUM( and the arrows point at A1:A3"
 # than moving the cursor away from the edit.
 "$grind" sheet new "$out/clicked.fods" > /dev/null
 "$grind" sheet set "$out/clicked.fods" A1 5 > /dev/null
-printf 'key cmd+l\ntype A4\nkey return\ntype =SUM(\nclick 36 9\ntype )\nkey return\nkey cmd+s\nwait 2\n' \
+printf 'key cmd+l\ntype A4\nkey return\ntype =SUM(\nclick 36,9\ntype )\nkey return\nkey cmd+s\nwait 2\n' \
     > "$out/click.drive"
 bounded 120 "$mac" "$out/clicked.fods" --drive "$out/click.drive" --out "$out/clicked" \
     > "$out/click.txt" || fail "the click-point drive failed: $(cat "$out/click.txt")"
