@@ -296,6 +296,9 @@ impl Delegate {
 
     fn launch(&self, opening: Opening) {
         let mtm = self.mtm();
+        if opening.drive.is_some() {
+            crate::page_view::STEADY.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         let controller = &self.ivars().controller;
         let opened = match (&opening.path, opening.kind) {
             (Some(path), _) => controller.open_path(path).map(Some),

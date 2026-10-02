@@ -23,7 +23,9 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use grind_core::color;
 use grind_core::style::TextStyle;
@@ -31,17 +33,17 @@ use grind_text::look::Role;
 use grind_text::{App, Caret, Faces};
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSAccessibilityPostNotification, NSAccessibilitySelectedTextChangedNotification,
     NSAccessibilityTextAreaRole, NSAccessibilityValueChangedNotification,
     NSAutoresizingMaskOptions, NSBeep, NSColor, NSColorPanel, NSEvent, NSFontManager,
-    NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextInputClient, NSView,
+    NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextInputClient, NSView, NSWindow,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSCopying, NSInteger, NSPoint, NSRange,
-    NSRect, NSSize, NSString, NSUInteger,
+    NSRect, NSSize, NSString, NSTimer, NSUInteger,
 };
 
 use crate::a11y;
@@ -51,6 +53,7 @@ use crate::keys::{self, PageAction, Scroll};
 use crate::metrics::{BASE_PT, CoreText, Face};
 use crate::render;
 use crate::sheet::geom::Rect;
+use crate::text::blink::{Blink, PERIOD};
 use crate::text::face::{self, Column, Laid};
 use crate::text::geom;
 use crate::text::input::{self, NOT_FOUND};
@@ -83,6 +86,20 @@ pub struct TextPane {
     document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
     /// The window's find bar (`find_bar.rs`).
     find_bar: RefCell<Option<Retained<crate::find_bar::FindBar>>>,
+    /// Whether the caret is lit (`text/blink.rs`), and the timer that blinks it while the page
+    /// has the keyboard.
+    blink: Cell<Blink>,
+    blinker: RefCell<Option<Retained<NSTimer>>>,
+}
+
+/// Set for a drive, whose snapshots must not depend on when they were taken: the caret stays lit
+/// and no timer is started.
+pub static STEADY: AtomicBool = AtomicBool::new(false);
+
+/// The time since the first caret woke — what [`Blink`] counts in.
+fn now() -> Duration {
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed()
 }
 
 impl TextPane {
@@ -101,6 +118,8 @@ impl TextPane {
             names: Cell::new(false),
             document_listeners: RefCell::new(Vec::new()),
             find_bar: RefCell::new(None),
+            blink: Cell::new(Blink::default()),
+            blinker: RefCell::new(None),
         })
     }
 
@@ -236,8 +255,57 @@ impl TextPane {
     }
 
     fn redraw(&self) {
+        self.wake_caret();
         if let Some(view) = self.view() {
             view.setNeedsDisplay(true);
+        }
+    }
+
+    /// The caret lit at once and held lit a while, because the user did something.
+    fn wake_caret(&self) {
+        let mut blink = self.blink.get();
+        blink.wake(now());
+        self.blink.set(blink);
+    }
+
+    /// The blink timer, started when the page takes the keyboard — never under a drive.
+    fn start_blinking(&self, view: &PageView) {
+        self.wake_caret();
+        if STEADY.load(Ordering::Relaxed) || self.blinker.borrow().is_some() {
+            return;
+        }
+        // SAFETY: `blinkCaret:` is the view's own method, taking the timer; the timer holds the
+        // view until `stop_blinking` invalidates it, which losing the keyboard or the window does.
+        let timer = unsafe {
+            NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                PERIOD.as_secs_f64(),
+                view,
+                sel!(blinkCaret:),
+                None,
+                true,
+            )
+        };
+        *self.blinker.borrow_mut() = Some(timer);
+    }
+
+    fn stop_blinking(&self) {
+        if let Some(timer) = self.blinker.borrow_mut().take() {
+            timer.invalidate();
+        }
+        self.wake_caret();
+    }
+
+    /// A tick: the caret's rectangle drawn again when it went out or came back — that rectangle
+    /// only, so a long document is not repainted twice a second.
+    fn blink_caret(&self) {
+        let mut blink = self.blink.get();
+        if !blink.tick(now()) {
+            return;
+        }
+        self.blink.set(blink);
+        if let (Some(view), Some(caret)) = (self.view(), self.caret_rect(&self.state.borrow())) {
+            let room = Rect::new(caret.x - 2.0, caret.y - 2.0, caret.w + 4.0, caret.h + 4.0);
+            view.setNeedsDisplayInRect(ns_rect(room));
         }
     }
 
@@ -250,6 +318,7 @@ impl TextPane {
 
     /// The caret scrolled into sight, and the input method told its characters may have moved.
     fn reveal(&self) {
+        self.wake_caret();
         let Some(view) = self.view() else {
             return;
         };
@@ -487,14 +556,29 @@ define_class!(
         /// redraws.
         #[unsafe(method(becomeFirstResponder))]
         fn become_first_responder(&self) -> bool {
+            self.ivars().start_blinking(self);
             self.setNeedsDisplay(true);
             true
         }
 
         #[unsafe(method(resignFirstResponder))]
         fn resign_first_responder(&self) -> bool {
+            self.ivars().stop_blinking();
             self.setNeedsDisplay(true);
             true
+        }
+
+        /// Leaving the window — a closed document — stops the timer, which holds the view.
+        #[unsafe(method(viewWillMoveToWindow:))]
+        fn view_will_move_to_window(&self, window: Option<&NSWindow>) {
+            if window.is_none() {
+                self.ivars().stop_blinking();
+            }
+        }
+
+        #[unsafe(method(blinkCaret:))]
+        fn blink_caret(&self, _timer: &NSTimer) {
+            self.ivars().blink_caret();
         }
 
         /// The scroll view changed size: the page follows it across, and is laid out again when
@@ -527,7 +611,7 @@ define_class!(
                     column_x: laid.column.0,
                     view: rect(dirty),
                     state: &state,
-                    caret: focused,
+                    caret: focused && pane.blink.get().lit,
                     decoder: &render::ImageDecoder,
                     names: pane.names.get(),
                     palette: &palette,

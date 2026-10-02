@@ -523,8 +523,8 @@ input method's composition, laid out as if typed).
 | `watch.rs` | Mac | The observer registry `grid_view.rs` had, behind a trait, for both panes |
 | `drive.rs` | both | `mark` and `commit`, the two calls an input method makes; a click lands in whichever view the document has |
 
-What M6 leaves: the caret does not blink (a Mac text view's does; a timer is the whole of it,
-and it would make a drive's snapshots depend on when they were taken); a selection across
+What M6 leaves: the caret did not blink (since closed: `text/blink.rs`, steady while the user
+types and never started under a drive, so a snapshot does not depend on when it was taken); a selection across
 blocks is shown to an input method as the caret alone, since the one block it sees cannot hold
 it; a picture outlined where it goes rather than drawn (since closed: `NSImage` decodes it); the text sidebar (headings and bookmarks),
 paragraph kinds from a menu and every formatting control, which are M7's and M8's — and Edit ▸
@@ -664,7 +664,8 @@ resize cursors over every edge, a drag drawn live from `Sizes::with` and written
 button comes up (every selected whole track with it, one undo step), and a double-click fitting a
 column to its widest text or giving a row back to its content (`sheet/resize.rs`); **rows grown to their content** — `Grid::measured`, a row with no
 height of its own as tall as its tallest wrapping or larger-faced cell through
-`grind_core::layout::wrap`, the GNOME window's L3 rule and bound; and `canAsynchronouslyWriteToURL:` answering NO
+`grind_core::layout::wrap`, the GNOME window's L3 rule and bound; **a caret that blinks**, lit for a whole period after every key and
+click, its rectangle alone redrawn on each tick; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 
