@@ -102,6 +102,9 @@ pub enum Command {
     Columns(Track),
     /// A name for the selection — Insert ▸ Name….
     DefineName,
+    /// The standard About panel, told the build's stamp (`grind_core::build_info`) — Grind ▸
+    /// About Grind.
+    About,
     /// A delimited file read into the sheet at the active cell — File ▸ Import CSV….
     ImportCsv,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
@@ -241,6 +244,7 @@ impl Command {
             Command::DefineName,
             Command::ExportCsv,
             Command::ImportCsv,
+            Command::About,
             Command::InsertChart,
             Command::Filter,
             Command::CopyValue,
@@ -310,7 +314,7 @@ impl Command {
         let sheet = kind == DocumentKind::Spreadsheet;
         let text = kind == DocumentKind::Text;
         match self {
-            Command::NewSheet | Command::NewText | Command::Welcome => true,
+            Command::NewSheet | Command::NewText | Command::Welcome | Command::About => true,
             Command::Names | Command::ShowSource | Command::GoTo | Command::Zoom(_) => {
                 sheet || text
             }
@@ -754,7 +758,7 @@ pub static MENUS: &[Menu] = &[
         title: APP_NAME,
         role: Role::Application,
         items: &[
-            standard("About Grind", None, "orderFrontStandardAboutPanel:"),
+            command("About Grind", None, Command::About),
             Item::Separator,
             Item::Submenu {
                 title: "Services",
@@ -1282,7 +1286,7 @@ mod tests {
                 !command.applies(DocumentKind::Presentation)
                     || matches!(
                         command,
-                        Command::NewSheet | Command::NewText | Command::Welcome
+                        Command::NewSheet | Command::NewText | Command::Welcome | Command::About
                     )
             );
         }

@@ -67,7 +67,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
 | Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
-| About / build stamp | ● | ● | ● | ● ʰ | ○ | ● | ◐ ⁶ |
+| About / build stamp | ● | ● | ● | ● ʰ | ○ | ● | ● ⁶ |
 | Recent files | — | ● | ○ | ○ | ○ | ○ | ● |
 | Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
@@ -102,7 +102,7 @@ one — one window per document is decision 5. ³ The sidebar's Problems section
 dialog, every row a jump (M8). ⁴ The grid's name box (⌘L) takes any address; on a page ⌘L
 asks for one in an alert, and its sidebar's outline and bookmarks are jumps too. ⁵ Every menu item shows
 its key, and Help ▸ Search finds any item — the platform's own key list. ⁶ The standard About
-panel, which says the bundle's version and not `grind_core::build_info`'s stamp. ⁷ A universal,
+panel, told `grind_core::build_info`'s stamp: the version, the commit and the build, and when. ⁷ A universal,
 ad-hoc-signed `Grind.app` in a DMG instead (M10).
 
 ## 3. Spreadsheet — navigation and selection

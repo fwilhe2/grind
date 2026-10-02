@@ -23,12 +23,14 @@ use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSApplication, NSApplicationActivationPolicy,
-    NSApplicationDelegate, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags,
-    NSMenu, NSMenuItem, NSPopUpButton, NSWindow,
+    NSAboutPanelOptionApplicationVersion, NSAboutPanelOptionCredits, NSAboutPanelOptionKey,
+    NSAboutPanelOptionVersion, NSAlert, NSAlertFirstButtonReturn, NSApplication,
+    NSApplicationActivationPolicy, NSApplicationDelegate, NSControlStateValueOff,
+    NSControlStateValueOn, NSEventModifierFlags, NSMenu, NSMenuItem, NSPopUpButton, NSWindow,
 };
 use objc2_foundation::{
-    NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSAttributedString, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
+    NSSize, NSString,
 };
 
 use crate::Opening;
@@ -136,7 +138,10 @@ impl Delegate {
         let document = self.front_document();
         let applies = match document.as_ref().and_then(|document| document.kind()) {
             Some(kind) => command.applies(kind),
-            None => matches!(command, Command::NewSheet | Command::NewText),
+            None => matches!(
+                command,
+                Command::NewSheet | Command::NewText | Command::About
+            ),
         };
         // A number format's item says what the active cell would look like in it.
         if matches!(command, Command::Number(_)) {
@@ -180,6 +185,10 @@ impl Delegate {
             }
             Command::Welcome => {
                 self.show_welcome();
+                return;
+            }
+            Command::About => {
+                about(self.mtm());
                 return;
             }
             Command::Zoom(step) => {
@@ -564,4 +573,37 @@ pub fn run(opening: Opening) -> ExitCode {
     app.setMainMenu(Some(&menu_bar(&app, mtm)));
     app.run();
     ExitCode::SUCCESS
+}
+
+/// The standard About panel, saying which build this is the way every other window's About does:
+/// the crate's version, the commit and whether the tree was clean, and how and when it was built
+/// (`grind_core::build_info`, the one place the stamp is formatted).
+fn about(mtm: MainThreadMarker) {
+    let version = env!("CARGO_PKG_VERSION");
+    let stamp = grind_core::build_info::describe_version(version);
+    // Everything after the first line: the commit and the date, as the panel's credits.
+    let credits = stamp.lines().skip(1).collect::<Vec<_>>().join("\n");
+    let build = format!(
+        "{} {}",
+        grind_core::build_info::COMMIT,
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
+    );
+    let credits = NSAttributedString::from_nsstring(&NSString::from_str(&credits));
+    // SAFETY: AppKit's own option keys, each to the type its documentation names.
+    unsafe {
+        let keys: [&NSAboutPanelOptionKey; 3] = [
+            NSAboutPanelOptionApplicationVersion,
+            NSAboutPanelOptionVersion,
+            NSAboutPanelOptionCredits,
+        ];
+        let application = NSString::from_str(version);
+        let build = NSString::from_str(&build);
+        let values: [&AnyObject; 3] = [&application, &build, &credits];
+        let options = NSDictionary::from_slices(&keys, &values);
+        NSApplication::sharedApplication(mtm).orderFrontStandardAboutPanelWithOptions(&options);
+    }
 }
