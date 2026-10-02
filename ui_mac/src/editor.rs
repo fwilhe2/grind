@@ -122,11 +122,11 @@ define_class!(
 
     unsafe impl NSControlTextEditingDelegate for EditorDelegate {
         #[unsafe(method(control:textView:doCommandBySelector:))]
-        fn do_command(&self, _control: &NSControl, _text_view: &NSTextView, selector: Sel) -> bool {
+        fn do_command(&self, _control: &NSControl, text_view: &NSTextView, selector: Sel) -> bool {
             let name = selector.name().to_str().unwrap_or_default();
             self.ivars()
                 .upgrade()
-                .is_some_and(|pane| pane.edit_command(name))
+                .is_some_and(|pane| pane.edit_command(name, selector, text_view))
         }
 
         #[unsafe(method(controlTextDidChange:))]
@@ -212,7 +212,7 @@ impl Pane {
 
     /// What a selector from the field editor does. `true` is "handled": the field editor does
     /// nothing more with it.
-    fn edit_command(&self, selector: &str) -> bool {
+    fn edit_command(&self, selector: &str, sel: Sel, text_view: &NSTextView) -> bool {
         let Some((mode, offering, pending, field)) = self.edit.borrow().as_ref().map(|edit| {
             (
                 edit.mode,
@@ -239,6 +239,17 @@ impl Pane {
             pending,
         };
         match state::editing(at, selector) {
+            // A caret move is made here rather than after: the field editor would move the caret
+            // once this returns, and the signature band would read where it *was*.
+            Outcome::Passthrough if selector.starts_with("move") => {
+                // SAFETY: a selector the field editor itself just asked about, sent to it with no
+                // argument, which every `move…:` action takes as its sender.
+                let moved = unsafe { text_view.tryToPerform_with(sel, None) };
+                if moved {
+                    self.refresh_assist();
+                }
+                moved
+            }
             Outcome::Passthrough => false,
             Outcome::Commit(dir) => {
                 self.commit(dir);

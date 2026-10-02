@@ -579,8 +579,9 @@ table `ui_sheet_gtk` and `ui_win32` each carried.
 | `source_pane.rs` | Mac | The projection in a read-only `NSTextView` in a trailing inspector item, the selection's line marked and a click on a line going where it projects |
 | `drive.rs` | both | `sidebar <text>`, which chooses a row the way a click does |
 
-What M8 leaves: the signature band follows the text, so a caret moved by an arrow without
-typing shows the old argument until the next keystroke; point mode (since closed); the formula read-out is still a
+What M8 leaves: the signature band followed the text, so a caret moved by an arrow without
+typing showed the old argument until the next keystroke (since closed: the editor makes a caret
+move itself, then reads the caret); point mode (since closed); the formula read-out is still a
 read-out rather than a second editor; every change re-lints the whole document for the Problems
 section (a `ponytail:` in `sidebar.rs`); and the source pane is read-only, as every shell's is.
 
