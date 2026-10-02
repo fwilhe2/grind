@@ -232,6 +232,8 @@ impl Delegate {
             | Command::DefineName
             | Command::InsertChart
             | Command::Filter
+            | Command::CopyValue
+            | Command::FormulaToValue
             | Command::ExportCsv => {
                 if let Some(pane) = self.front_pane() {
                     pane.structure(command, self.mtm());

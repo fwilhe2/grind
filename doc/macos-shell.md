@@ -676,7 +676,8 @@ over the selection or from one cell to the end of the used part, a button drawn 
 and filled in the accent while its field has a condition, and a click on one listing the field's
 values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; **every paragraph kind a page draws** — Title, Subtitle and
 Heading 4–6 beside Body, Heading 1–3 and List Item, the two names taken off again only when this
-page put them on, as the GNOME window does; and `canAsynchronouslyWriteToURL:` answering NO
+page put them on, as the GNOME window does; Edit ▸ **Copy Value** (`App::value_text` through `clip::rect_text`)
+and **Formula to Value** (`App::clear_formula`, LibreOffice's name, the first window with it); and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

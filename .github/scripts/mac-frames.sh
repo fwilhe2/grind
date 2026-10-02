@@ -460,6 +460,19 @@ cmp -s "$out/filtered/before.png" "$out/filtered/after.png" \
     && fail "the filter's buttons were not drawn"
 say "   Edit ▸ Filter covers the table and draws its buttons"
 
+# Edit ▸ Formula to Value keeps what a formula last calculated and drops the formula.
+"$grind" sheet new "$out/valued.fods" > /dev/null
+"$grind" sheet set "$out/valued.fods" A1 2 > /dev/null
+"$grind" sheet set "$out/valued.fods" A2 '=[.A1]*3' > /dev/null
+"$grind" sheet recalc "$out/valued.fods" > /dev/null
+printf 'key cmd+l\ntype A2\nkey return\nmenu Edit/Formula to Value\nkey cmd+s\nwait 2\n' \
+    > "$out/value.drive"
+bounded 120 "$mac" "$out/valued.fods" --drive "$out/value.drive" --out "$out/valued" \
+    > "$out/value.txt" || fail "the value drive failed: $(cat "$out/value.txt")"
+[ "$("$grind" sheet get --input "$out/valued.fods" A2)" = "6" ] \
+    || fail "Formula to Value did not keep 6: A2 holds $("$grind" sheet get --input "$out/valued.fods" A2)"
+say "   Edit ▸ Formula to Value keeps the value and drops the formula"
+
 # Every Problems row jumps: a formula on a second sheet reading an empty cell is a finding at
 # Data.C3, and choosing its row from the first sheet lands the selection there.
 "$grind" sheet new "$out/problems.fods" > /dev/null

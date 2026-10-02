@@ -137,10 +137,10 @@ than as a cursor on a hidden row.
 | In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● | ● |
 | Formula bar | — | ● | ◐ ᵃ | ● | ● | ◐ ¹ |
 | Clear a cell or a range | ● | ● | ● | ● | ● | ● |
-| Clear only the formula, keeping the value | ● | ○ | ○ | ○ | ○ | ○ |
+| Clear only the formula, keeping the value | ● | ○ | ○ | ○ | ○ | ● |
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
-| Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ○ |
+| Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ● |
 | Fill down / fill right | ● | ● | ● | ● | ○ | ● |
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ○ |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |

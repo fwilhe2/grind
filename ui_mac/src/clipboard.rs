@@ -40,6 +40,22 @@ impl Pane {
         write(&text, true);
     }
 
+    /// Edit ▸ Copy Value: the selection as it is *shown* — a formula's formatted result rather
+    /// than its source (`App::value_text`), for pasting into something that is not a spreadsheet.
+    pub fn copy_value(&self) {
+        let used = self.app.used_extent(self.sheet.get()).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(self.selection.get(), used);
+        let text = clip::rect_text(
+            &self.app,
+            self.sheet.get(),
+            start,
+            end,
+            App::value_text,
+            "\n",
+        );
+        write(&text, true);
+    }
+
     /// Edit ▸ Cut: the selection on the pasteboard, then emptied — one ⌘Z brings it back.
     pub fn cut(&self) {
         self.copy();

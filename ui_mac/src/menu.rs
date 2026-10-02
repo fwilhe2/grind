@@ -104,6 +104,11 @@ pub enum Command {
     DefineName,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
+    /// The selection's shown values on the pasteboard, not their formulas — Edit ▸ Copy Value.
+    CopyValue,
+    /// Every formula in the selection dropped, its last value kept — Edit ▸ Formula to Value,
+    /// LibreOffice's name for it.
+    FormulaToValue,
     /// An autofilter over the selection, or off again — Edit ▸ Filter (`sheet/filter.rs`).
     Filter,
     /// A chart of the table the selection is in, beside it — Insert ▸ Chart.
@@ -216,6 +221,8 @@ impl Command {
             Command::ExportCsv,
             Command::InsertChart,
             Command::Filter,
+            Command::CopyValue,
+            Command::FormulaToValue,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -299,6 +306,8 @@ impl Command {
             | Command::DefineName
             | Command::InsertChart
             | Command::Filter
+            | Command::CopyValue
+            | Command::FormulaToValue
             | Command::ExportCsv => sheet,
         }
     }
@@ -738,6 +747,7 @@ pub static MENUS: &[Menu] = &[
             Item::Separator,
             standard("Cut", key("x", CMD), "cut:"),
             standard("Copy", key("c", CMD), "copy:"),
+            command("Copy Value", None, Command::CopyValue),
             standard("Paste", key("v", CMD), "paste:"),
             standard("Delete", None, "delete:"),
             standard("Select All", key("a", CMD), "selectAll:"),
@@ -749,6 +759,7 @@ pub static MENUS: &[Menu] = &[
             command("Go To…", key("l", CMD), Command::GoTo),
             command("Recalculate", key("=", CMD), Command::Recalculate),
             command("Filter", key("f", SHIFT_CMD), Command::Filter),
+            command("Formula to Value", None, Command::FormulaToValue),
             Item::Submenu {
                 title: "Fill",
                 menu: &FILL,
