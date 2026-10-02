@@ -77,20 +77,28 @@ pub fn frame_of(chart: &Chart) -> Option<Rect> {
     (rect.w > 0.0 && rect.h > 0.0).then_some(rect)
 }
 
+/// A chart being dragged: which, and how far it has moved, in points.
+pub type Moving = Option<(usize, f64, f64)>;
+
 /// Every chart on `sheet` that meets `view`, drawn in the sheet's own coordinates — the space
-/// [`super::paint::cells`] draws in, so a chart floats over the cells under it.
+/// [`super::paint::cells`] draws in, so a chart floats over the cells under it. The one being
+/// dragged, if one is, is drawn where the drag has it.
 pub fn charts(
     app: &App,
     sheet: usize,
     view: &Rect,
     palette: &Palette,
     metrics: &dyn Metrics,
+    moving: Moving,
 ) -> Vec<Op> {
     let mut ops = Vec::new();
     for (index, chart) in app.charts(sheet).unwrap_or_default().iter().enumerate() {
-        let Some(frame) = frame_of(chart) else {
+        let Some(mut frame) = frame_of(chart) else {
             continue;
         };
+        if let Some((_, dx, dy)) = moving.filter(|(at, ..)| *at == index) {
+            frame = frame.offset(dx, dy);
+        }
         if frame.intersection(view).is_empty() {
             continue;
         }
@@ -110,6 +118,13 @@ pub fn chart_at(app: &App, sheet: usize, x: f64, y: f64) -> Option<usize> {
         let frame = frame_of(chart)?;
         (x >= frame.x && x < frame.right() && y >= frame.y && y < frame.bottom()).then_some(index)
     })
+}
+
+/// Where a chart dragged by `(dx, dy)` lands, as the two ODF lengths `App::reshape_chart` takes
+/// for its corner — never above or left of A1, where nothing can show it.
+pub fn moved_to(frame: Rect, dx: f64, dy: f64) -> (String, String) {
+    let length = |pt: f64| grind_sheet::style::mm_length(pt.max(0.0) / PT_PER_MM);
+    (length(frame.x + dx), length(frame.y + dy))
 }
 
 /// One change a chart's context menu makes.
@@ -692,10 +707,10 @@ mod tests {
     fn charts_off_the_view_are_not_drawn() {
         let app = sheet_with("bar");
         let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
-        let near = charts(&app, 0, &frame, &Palette::LIGHT, &Fixed);
+        let near = charts(&app, 0, &frame, &Palette::LIGHT, &Fixed, None);
         assert!(!near.is_empty());
         let far = Rect::new(frame.right() + 1000.0, 0.0, 100.0, 100.0);
-        assert!(charts(&app, 0, &far, &Palette::LIGHT, &Fixed).is_empty());
+        assert!(charts(&app, 0, &far, &Palette::LIGHT, &Fixed, None).is_empty());
     }
 
     #[test]
@@ -720,5 +735,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(app.charts(0).unwrap()[0].legend, Some(ChartLegend::Top));
+    }
+
+    #[test]
+    fn a_dragged_chart_is_drawn_where_the_drag_has_it_and_lands_there() {
+        let app = sheet_with("bar");
+        let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
+        let view = Rect::new(0.0, 0.0, 2000.0, 2000.0);
+        let ground = |moving| {
+            charts(&app, 0, &view, &Palette::LIGHT, &Fixed, moving)
+                .into_iter()
+                .find_map(|op| match op {
+                    Op::Fill { rect, .. } => Some(rect),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(ground(None), frame);
+        assert_eq!(ground(Some((0, 30.0, 40.0))), frame.offset(30.0, 40.0));
+        let (x, y) = moved_to(frame, 72.0 - frame.x, -1000.0);
+        assert!((grind_sheet::style::length_mm(&x).unwrap() - 25.4).abs() < 0.01);
+        assert_eq!(
+            grind_sheet::style::length_mm(&y),
+            Some(0.0),
+            "never above row 1"
+        );
     }
 }

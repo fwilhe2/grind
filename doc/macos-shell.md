@@ -672,7 +672,9 @@ out of the GNOME window for it, and a drive in `mac-frames.sh` checks the formul
 Pointing with the mouse and F4's `$` cycle are not built: ⌘T, Excel for Mac's key for the cycle,
 is the font panel's here; **Insert ▸ Chart**, the selection's table charted beside it by
 `App::suggest_chart` in one step, with no dialog, and a chart's own context menu — its title,
-bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`); **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
+bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`)
+— and dragged to move it, drawn where the pointer has it and written once as the button comes up
+(`App::reshape_chart`); **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
 over the selection or from one cell to the end of the used part, a button drawn in each heading
 and filled in the accent while its field has a condition, and a click on one listing the field's
 values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; **every paragraph kind a page draws** — Title, Subtitle and

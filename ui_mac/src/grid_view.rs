@@ -112,6 +112,10 @@ pub struct Pane {
     /// View ▸ Calculations…: what the sidebar's Calculations section is narrowed to, while it
     /// is shown.
     pub calculations: RefCell<Option<String>>,
+    /// A chart picked up by a press — its index and where the pointer was — and how far the drag
+    /// has taken it, which is what is drawn until the button comes up.
+    chart_drag: Cell<Option<(usize, f64, f64)>>,
+    moving: Cell<crate::sheet::chart::Moving>,
 }
 
 impl Pane {
@@ -143,6 +147,8 @@ impl Pane {
             resizing: Cell::new(None),
             formulas: Cell::new(false),
             calculations: RefCell::new(None),
+            chart_drag: Cell::new(None),
+            moving: Cell::new(None),
         })
     }
 
@@ -823,8 +829,14 @@ define_class!(
                     crate::sheet::filter::ops(&filter, &pane.grid.borrow(), &view, &palette)
                 })
                 .unwrap_or_default();
-            let charts =
-                crate::sheet::chart::charts(&pane.app, pane.sheet.get(), &view, &palette, &pane.text);
+            let charts = crate::sheet::chart::charts(
+                &pane.app,
+                pane.sheet.get(),
+                &view,
+                &palette,
+                &pane.text,
+                pane.moving.get(),
+            );
             let ops: Vec<Op> = paint::cells(
                 &pane.app,
                 pane.sheet.get(),
@@ -894,10 +906,11 @@ define_class!(
             }
         }
 
-        /// A click selects; a double-click opens the cell to amend it.
+        /// A click selects; a double-click opens the cell to amend it; a press on a chart picks
+        /// it up to be dragged somewhere else.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
-            if self.filter_button(event) {
+            if self.filter_button(event) || self.grab_chart(event) {
                 return;
             }
             self.click(event, shifted(event));
@@ -995,7 +1008,14 @@ define_class!(
 
         #[unsafe(method(mouseDragged:))]
         fn mouse_dragged(&self, event: &NSEvent) {
-            self.click(event, true);
+            if !self.drag_chart(event) {
+                self.click(event, true);
+            }
+        }
+
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            self.drop_chart(event);
         }
 
         /// A right-click, or a Control-click: the cells' context menu, from `menu.rs`'s table.
@@ -1141,6 +1161,68 @@ impl GridView {
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         item("Delete Chart", CHART_DELETE, false);
         Some(menu)
+    }
+
+    /// A press on a chart: picked up, by its index and where the pointer was. Answers whether
+    /// there was a chart there.
+    fn grab_chart(&self, event: &NSEvent) -> bool {
+        let pane = self.ivars();
+        let at = located(self, event);
+        let Some(index) = crate::sheet::chart::chart_at(
+            &pane.app,
+            pane.sheet.get(),
+            at.x - HEADER_W,
+            at.y - HEADER_H,
+        ) else {
+            return false;
+        };
+        pane.chart_drag.set(Some((index, at.x, at.y)));
+        true
+    }
+
+    /// The chart being dragged drawn where the pointer has it; nothing written yet.
+    fn drag_chart(&self, event: &NSEvent) -> bool {
+        let pane = self.ivars();
+        let Some((index, x, y)) = pane.chart_drag.get() else {
+            return false;
+        };
+        let at = located(self, event);
+        pane.moving.set(Some((index, at.x - x, at.y - y)));
+        self.setNeedsDisplay(true);
+        true
+    }
+
+    /// The button up over a dragged chart: its new corner written once, one undo step.
+    fn drop_chart(&self, event: &NSEvent) {
+        let pane = self.ivars();
+        let Some((index, x, y)) = pane.chart_drag.take() else {
+            return;
+        };
+        pane.moving.set(None);
+        let at = located(self, event);
+        let (dx, dy) = (at.x - x, at.y - y);
+        let sheet = pane.sheet.get();
+        let chart = pane
+            .app
+            .charts(sheet)
+            .ok()
+            .and_then(|charts| charts.get(index).cloned());
+        let Some((chart, frame)) =
+            chart.and_then(|chart| crate::sheet::chart::frame_of(&chart).map(|f| (chart, f)))
+        else {
+            return;
+        };
+        if dx == 0.0 && dy == 0.0 {
+            return;
+        }
+        let (to_x, to_y) = crate::sheet::chart::moved_to(frame, dx, dy);
+        if let Err(error) =
+            pane.app
+                .reshape_chart(sheet, index, &to_x, &to_y, &chart.width, &chart.height)
+        {
+            pane.say(Some((&error.to_string(), None)));
+        }
+        self.setNeedsDisplay(true);
     }
 
     /// A chart's own menu over a chart, and the cells' otherwise.

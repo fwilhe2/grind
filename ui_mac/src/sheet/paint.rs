@@ -688,7 +688,7 @@ pub fn frame(
     let mut ops = Vec::new();
     let view = Rect::new(scroll_x, scroll_y, body_w, body_h);
     let (dx, dy) = (HEADER_W - scroll_x, HEADER_H - scroll_y);
-    let charts = super::chart::charts(app, sheet, &view, palette, look.metrics);
+    let charts = super::chart::charts(app, sheet, &view, palette, look.metrics, None);
     for op in cells(app, sheet, grid, view, selection, look)
         .into_iter()
         .chain(charts)

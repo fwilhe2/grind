@@ -336,7 +336,7 @@ menu that renames it with every use following, redefines it, inlines it everywhe
 ⁴ File ▸ Export as CSV…, the sheet's used rectangle with commas and shown values; no TSV or
 other dialect from the window. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
 as the core reads it; a right-click on a chart sets its title, its kind and its legend or removes
-it. There is no dialog, and moving, resizing or recolouring one is the CLI's.
+it, and dragging one moves it. There is no dialog, and resizing or recolouring one is the CLI's.
 
 ## 7. Word processor
 
