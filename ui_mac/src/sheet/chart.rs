@@ -102,6 +102,35 @@ pub fn charts(
     ops
 }
 
+/// The topmost chart on `sheet` whose frame holds `(x, y)` — the last drawn, since a later chart
+/// covers an earlier one — by its index, for a context menu to act on.
+pub fn chart_at(app: &App, sheet: usize, x: f64, y: f64) -> Option<usize> {
+    let charts = app.charts(sheet).ok()?;
+    charts.iter().enumerate().rev().find_map(|(index, chart)| {
+        let frame = frame_of(chart)?;
+        (x >= frame.x && x < frame.right() && y >= frame.y && y < frame.bottom()).then_some(index)
+    })
+}
+
+/// One change a chart's context menu makes.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Change {
+    Kind(ChartKind),
+    Legend(Option<ChartLegend>),
+    Title(Option<String>),
+}
+
+/// What `chart` is with `change` made — the spec `App::edit_chart` takes, everything else kept.
+pub fn changed(chart: &Chart, change: Change) -> grind_sheet::ChartSpec {
+    let mut spec = grind_sheet::ChartSpec::of(chart);
+    match change {
+        Change::Kind(kind) => spec.kind = kind,
+        Change::Legend(legend) => spec.legend = legend,
+        Change::Title(title) => spec.title = title.filter(|title| !title.trim().is_empty()),
+    }
+    spec
+}
+
 /// What draws one chart: its frame, its colours and the measure of its text.
 struct Painter<'a> {
     chart: &'a Chart,
@@ -667,5 +696,29 @@ mod tests {
         assert!(!near.is_empty());
         let far = Rect::new(frame.right() + 1000.0, 0.0, 100.0, 100.0);
         assert!(charts(&app, 0, &far, &Palette::LIGHT, &Fixed).is_empty());
+    }
+
+    #[test]
+    fn the_topmost_chart_under_a_point_is_found_and_changed() {
+        let app = sheet_with("bar");
+        let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
+        assert_eq!(chart_at(&app, 0, frame.x + 5.0, frame.y + 5.0), Some(0));
+        assert_eq!(chart_at(&app, 0, frame.x - 5.0, frame.y + 5.0), None);
+        let chart = &app.charts(0).unwrap()[0];
+        let pie = changed(chart, Change::Kind(ChartKind::Pie));
+        assert_eq!(pie.kind, ChartKind::Pie);
+        assert_eq!(
+            pie.series,
+            grind_sheet::ChartSpec::of(chart).series,
+            "the rest kept"
+        );
+        assert_eq!(changed(chart, Change::Title(Some("  ".into()))).title, None);
+        app.edit_chart(
+            0,
+            0,
+            &changed(chart, Change::Legend(Some(ChartLegend::Top))),
+        )
+        .unwrap();
+        assert_eq!(app.charts(0).unwrap()[0].legend, Some(ChartLegend::Top));
     }
 }

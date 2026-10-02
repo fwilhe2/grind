@@ -272,7 +272,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
-| A chart's own title and legend | ● | ● | ○ | ○ | ○ | ○ |
+| A chart's own title and legend | ● | ● | ○ | ○ | ○ | ● ⁵ |
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
 | **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
@@ -335,7 +335,8 @@ untitled spreadsheet of its own (the next row); nothing imports into an open doc
 menu that renames it with every use following, redefines it, inlines it everywhere or deletes it.
 ⁴ File ▸ Export as CSV…, the sheet's used rectangle with commas and shown values; no TSV or
 other dialect from the window. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
-as the core reads it; there is no dialog, and editing, moving or removing one is the CLI's.
+as the core reads it; a right-click on a chart sets its title, its kind and its legend or removes
+it. There is no dialog, and moving, resizing or recolouring one is the CLI's.
 
 ## 7. Word processor
 

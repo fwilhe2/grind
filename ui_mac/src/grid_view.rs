@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use grind_core::color::{self, Rgb};
 use grind_sheet::nav::Selection;
+use grind_sheet::{ChartKind, ChartLegend};
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
@@ -48,6 +49,7 @@ use crate::find_bar::FindBar;
 use crate::keys;
 use crate::metrics::{BASE_PT, CoreText};
 use crate::render;
+use crate::sheet::chart::Change;
 use crate::sheet::geom::{Grid, HEADER_H, HEADER_W, Rect};
 use crate::sheet::paint::{self, Look, Op, Palette};
 use crate::sheet::resize::{self, Axis, Drag};
@@ -612,6 +614,92 @@ impl FilterChoice {
     }
 }
 
+/// A chart menu's tags: the title, the three kinds from [`CHART_KIND`], the five legends from
+/// [`CHART_LEGEND`], and removal.
+const CHART_TITLE: isize = 0;
+const CHART_KIND: isize = 10;
+const CHART_LEGEND: isize = 20;
+const CHART_DELETE: isize = 30;
+
+const CHART_KINDS: [(&str, ChartKind); 3] = [
+    ("Bar Chart", ChartKind::Bar),
+    ("Line Chart", ChartKind::Line),
+    ("Pie Chart", ChartKind::Pie),
+];
+
+const CHART_LEGENDS: [(&str, Option<ChartLegend>); 5] = [
+    ("No Legend", None),
+    ("Legend on the Right", Some(ChartLegend::End)),
+    ("Legend at the Bottom", Some(ChartLegend::Bottom)),
+    ("Legend at the Top", Some(ChartLegend::Top)),
+    ("Legend on the Left", Some(ChartLegend::Start)),
+];
+
+define_class!(
+    /// A chart's context menu's target: the pane and which chart.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "GrindChartChoice"]
+    #[ivars = (RcWeak<Pane>, usize)]
+    pub struct ChartChoice;
+
+    impl ChartChoice {
+        #[unsafe(method(chartChose:))]
+        fn chose(&self, sender: &NSMenuItem) {
+            self.choose(sender.tag());
+        }
+    }
+);
+
+impl ChartChoice {
+    fn choose(&self, tag: isize) {
+        let (pane, index) = self.ivars();
+        let Some(pane) = pane.upgrade() else {
+            return;
+        };
+        let sheet = pane.sheet.get();
+        let Some(chart) = pane
+            .app
+            .charts(sheet)
+            .ok()
+            .and_then(|charts| charts.get(*index).cloned())
+        else {
+            return;
+        };
+        let change = match tag {
+            CHART_DELETE => {
+                if let Err(error) = pane.app.remove_chart(sheet, *index) {
+                    pane.say(Some((&error.to_string(), None)));
+                }
+                return;
+            }
+            CHART_TITLE => {
+                let Some(title) = crate::prompt::ask(
+                    self.mtm(),
+                    "Chart Title",
+                    "What the chart is called, over it — or nothing for no title.",
+                    "Set",
+                    chart.title.as_deref().unwrap_or_default(),
+                ) else {
+                    return;
+                };
+                Change::Title(Some(title))
+            }
+            tag if (CHART_KIND..CHART_KIND + 3).contains(&tag) => {
+                Change::Kind(CHART_KINDS[(tag - CHART_KIND) as usize].1)
+            }
+            tag if (CHART_LEGEND..CHART_LEGEND + 5).contains(&tag) => {
+                Change::Legend(CHART_LEGENDS[(tag - CHART_LEGEND) as usize].1)
+            }
+            _ => return,
+        };
+        let spec = crate::sheet::chart::changed(&chart, change);
+        if let Err(error) = pane.app.edit_chart(sheet, *index, &spec) {
+            pane.say(Some((&error.to_string(), None)));
+        }
+    }
+}
+
 /// Have the core tell `pane` about every change to its document from now on.
 pub fn watch(pane: &Rc<Pane>) {
     pane.app.set_observer(crate::watch::observer(pane));
@@ -915,8 +1003,7 @@ define_class!(
         /// menu acts on what was clicked.
         #[unsafe(method_id(menuForEvent:))]
         fn menu_for_event(&self, event: &NSEvent) -> Option<Retained<NSMenu>> {
-            self.context(event);
-            Some(crate::app::context_menu(&crate::menu::GRID_CONTEXT, self.mtm()))
+            self.menu_for(event)
         }
     }
 );
@@ -997,6 +1084,75 @@ impl GridView {
             });
         menu.popUpMenuPositioningItem_atLocation_inView(None, below, Some(self));
         true
+    }
+
+    /// A right-click on a chart: its own menu — its title, its kind, its legend, and taking it
+    /// away — each one `App::edit_chart` or `App::remove_chart`, one undo step.
+    fn chart_menu(&self, event: &NSEvent) -> Option<Retained<NSMenu>> {
+        let pane = self.ivars();
+        let sheet = pane.sheet.get();
+        let at = located(self, event);
+        let index =
+            crate::sheet::chart::chart_at(&pane.app, sheet, at.x - HEADER_W, at.y - HEADER_H)?;
+        let chart = pane.app.charts(sheet).ok()?.get(index)?.clone();
+        let mtm = self.mtm();
+        let target: Retained<ChartChoice> = {
+            let this = ChartChoice::alloc(mtm).set_ivars((pane.me.clone(), index));
+            // SAFETY: `init` is `NSObject`'s designated initialiser.
+            unsafe { msg_send![super(this), init] }
+        };
+        let menu = NSMenu::new(mtm);
+        menu.setAutoenablesItems(false);
+        let item = |title: &str, tag: isize, on: bool| {
+            // SAFETY: an item made with its title, the target's own action and no key.
+            let item = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    NSMenuItem::alloc(mtm),
+                    &NSString::from_str(title),
+                    Some(sel!(chartChose:)),
+                    &NSString::from_str(""),
+                )
+            };
+            // SAFETY: an item holds its target weakly, so it holds it as its represented object
+            // too — strongly, for exactly as long as the menu lives.
+            unsafe {
+                item.setTarget(Some(&target));
+                item.setRepresentedObject(Some(&target));
+            }
+            item.setTag(tag);
+            if on {
+                item.setState(NSControlStateValueOn);
+            }
+            menu.addItem(&item);
+        };
+        item("Title…", CHART_TITLE, false);
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        for (offset, (title, kind)) in CHART_KINDS.iter().enumerate() {
+            item(title, CHART_KIND + offset as isize, chart.kind == *kind);
+        }
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        for (offset, (title, legend)) in CHART_LEGENDS.iter().enumerate() {
+            item(
+                title,
+                CHART_LEGEND + offset as isize,
+                chart.legend == *legend,
+            );
+        }
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        item("Delete Chart", CHART_DELETE, false);
+        Some(menu)
+    }
+
+    /// A chart's own menu over a chart, and the cells' otherwise.
+    fn menu_for(&self, event: &NSEvent) -> Option<Retained<NSMenu>> {
+        if let Some(menu) = self.chart_menu(event) {
+            return Some(menu);
+        }
+        self.context(event);
+        Some(crate::app::context_menu(
+            &crate::menu::GRID_CONTEXT,
+            self.mtm(),
+        ))
     }
 
     fn context(&self, event: &NSEvent) {
