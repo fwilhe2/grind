@@ -145,7 +145,7 @@ than as a cursor on a hidden row.
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ○ |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
-| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ○ |
+| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ● |
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
@@ -206,7 +206,7 @@ borders, which that window does not draw either.
 | Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ | ◐ ² |
 | Read a cell's style / format back | ● | ● | ● | ● | ● | ● |
 | A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ | ○ |
-| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ | ○ |
+| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ | ● |
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |

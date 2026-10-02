@@ -100,6 +100,50 @@ impl Pane {
                     return;
                 }
                 Command::InsertChart => self.insert_chart(),
+                Command::Evaluate => {
+                    let at = selection.active;
+                    let Some(typed) = prompt::ask(
+                        mtm,
+                        "Evaluate",
+                        &format!(
+                            "A formula, worked out at {} without storing it.",
+                            grind_sheet::a1::format(None, at)
+                        ),
+                        "Evaluate",
+                        "=",
+                    ) else {
+                        return;
+                    };
+                    match verbs::evaluated(&self.app, sheet, at, &typed) {
+                        Ok(value) => prompt::tell(mtm, &value, typed.trim()),
+                        Err(why) => prompt::tell(mtm, "That cannot be worked out.", &why),
+                    }
+                    return;
+                }
+                Command::DocumentLocale => {
+                    let now = self
+                        .app
+                        .locale()
+                        .map(|locale| locale.tag())
+                        .unwrap_or_default();
+                    let Some(typed) = prompt::ask(
+                        mtm,
+                        "Document Locale",
+                        "How this document writes numbers and reads them typed: a tag such as \
+                         en-US, de-DE or fr-FR, or nothing for this Mac's own.",
+                        "Set",
+                        &now,
+                    ) else {
+                        return;
+                    };
+                    match verbs::locale(&typed) {
+                        Ok(locale) => self.app.set_locale(locale),
+                        Err(()) => {
+                            prompt::tell(mtm, "That is not a locale.", "A tag such as de-DE.");
+                            return;
+                        }
+                    }
+                }
                 Command::CopyValue => {
                     self.copy_value();
                     return;

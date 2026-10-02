@@ -104,6 +104,10 @@ pub enum Command {
     DefineName,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
+    /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
+    Evaluate,
+    /// The locale the document speaks in, asked for — Format ▸ Document Locale….
+    DocumentLocale,
     /// The selection's shown values on the pasteboard, not their formulas — Edit ▸ Copy Value.
     CopyValue,
     /// Every formula in the selection dropped, its last value kept — Edit ▸ Formula to Value,
@@ -223,6 +227,8 @@ impl Command {
             Command::Filter,
             Command::CopyValue,
             Command::FormulaToValue,
+            Command::Evaluate,
+            Command::DocumentLocale,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -249,6 +255,8 @@ impl Command {
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
+                | Command::Evaluate
+                | Command::DocumentLocale
         )
     }
 
@@ -308,6 +316,8 @@ impl Command {
             | Command::Filter
             | Command::CopyValue
             | Command::FormulaToValue
+            | Command::Evaluate
+            | Command::DocumentLocale
             | Command::ExportCsv => sheet,
         }
     }
@@ -619,6 +629,8 @@ static NUMBER: Menu = Menu {
         Item::Separator,
         command("Increase Decimals", None, Command::Decimals(1)),
         command("Decrease Decimals", None, Command::Decimals(-1)),
+        Item::Separator,
+        command("Document Locale…", None, Command::DocumentLocale),
     ],
 };
 
@@ -760,6 +772,7 @@ pub static MENUS: &[Menu] = &[
             command("Recalculate", key("=", CMD), Command::Recalculate),
             command("Filter", key("f", SHIFT_CMD), Command::Filter),
             command("Formula to Value", None, Command::FormulaToValue),
+            command("Evaluate…", None, Command::Evaluate),
             Item::Submenu {
                 title: "Fill",
                 menu: &FILL,

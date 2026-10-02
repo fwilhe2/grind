@@ -11,8 +11,10 @@
 
 use std::ops::Range;
 
-use grind_sheet::Pos;
+use grind_sheet::formula::display;
+use grind_sheet::locale::Locale;
 use grind_sheet::nav::Selection;
+use grind_sheet::{App, CellValue, Pos};
 
 /// The fills Fill Down (`down`) or Fill Right makes over `selection`: for each column, its top
 /// cell copied down the rest; for each row, its leftmost cell copied across. `(source, start,
@@ -65,6 +67,40 @@ pub fn name_target(sheet: &str, selection: Selection) -> String {
     }
 }
 
+/// What a formula typed in display syntax — with or without its `=` — comes to at `at`, spelled
+/// for a sentence, or why it could not be worked out. Nothing is stored and no undo step is made
+/// (`App::preview`, `grind sheet eval`'s call): relative references are relative to `at`, the
+/// active cell, as they would be typed into it.
+pub fn evaluated(app: &App, sheet: usize, at: Pos, typed: &str) -> Result<String, String> {
+    let typed = typed.trim();
+    let written = match typed.starts_with('=') {
+        true => typed.to_owned(),
+        false => format!("={typed}"),
+    };
+    let canonical = display::from_display(&written)
+        .map_err(|error| format!("{} (at character {})", error.message, error.at + 1))?;
+    let value = app
+        .preview(sheet, at, &canonical)
+        .map_err(|error| error.to_string())?;
+    Ok(match value {
+        CellValue::Empty => "nothing".to_owned(),
+        // Four decimals at most, in the document's own locale: an answer to read, not to store.
+        CellValue::Number(n) => app.display_number((n * 1e4).round() / 1e4),
+        CellValue::Text(text) => text,
+        CellValue::Bool(true) => "TRUE".to_owned(),
+        CellValue::Bool(false) => "FALSE".to_owned(),
+    })
+}
+
+/// A locale as somebody types one into Document Locale… — a tag (`de-DE`, `fr`) or nothing at
+/// all, which is no locale of the document's own. `Err` for anything that is not a tag.
+pub fn locale(typed: &str) -> Result<Option<Locale>, ()> {
+    match typed.trim() {
+        "" => Ok(None),
+        tag => Locale::parse(tag).map(Some).ok_or(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,5 +148,36 @@ mod tests {
             grind_sheet::a1::definition(&app, &target).is_ok(),
             "{target}"
         );
+    }
+
+    #[test]
+    fn a_formula_is_worked_out_where_the_cursor_is_and_nothing_is_stored() {
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "2", grind_sheet::RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(1, 0), "3", grind_sheet::RecalcMode::Document)
+            .unwrap();
+        assert_eq!(
+            evaluated(&app, 0, Pos::new(2, 0), "=SUM(A1:A2)"),
+            Ok("5".into())
+        );
+        assert_eq!(
+            evaluated(&app, 0, Pos::new(2, 0), "A1*10"),
+            Ok("20".into()),
+            "no = needed"
+        );
+        assert_eq!(
+            evaluated(&app, 0, Pos::new(2, 0), "1/3"),
+            Ok("0.3333".into())
+        );
+        assert!(evaluated(&app, 0, Pos::new(2, 0), "=SUM(").is_err());
+        assert_eq!(app.used_extent(0).unwrap(), (2, 1), "nothing stored");
+    }
+
+    #[test]
+    fn a_locale_is_a_tag_or_nothing() {
+        assert_eq!(locale(" de-DE "), Ok(Locale::parse("de-DE")));
+        assert_eq!(locale(""), Ok(None));
+        assert_eq!(locale("not a tag"), Err(()));
     }
 }
