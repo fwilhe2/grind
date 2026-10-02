@@ -102,6 +102,7 @@ bounded() {
     local status=0
     wait "$pid" || status=$?
     kill "$watchdog" 2>/dev/null || true
+    wait "$watchdog" 2>/dev/null || true
     cat "$log"
     [ "$status" -eq 0 ] || echo "\`$(basename "$1") ${*:2}\` exited $status" >> "$progress"
     return "$status"
@@ -168,10 +169,12 @@ expect() {
     grep -q "^step $1: .*selection $2\$" "$out/select.txt" \
         || fail "after step $1 the selection is not $2"
 }
+# The sample leaves its filter on, hiding rows 2, 5, 6 and 7, so ↓ from B1 lands on B3: the
+# arrows step over a row the user cannot see, as every other shell's do.
 expect 1 'B1'
-expect 2 'B2'
-expect 3 'B2:B3 (active B3)'
-expect 4 'B3'
+expect 2 'B3'
+expect 3 'B3:B4 (active B4)'
+expect 4 'B4'
 expect 7 'G20'
 say "   arrows, Shift, Esc and a typed place all land where they should"
 
@@ -234,7 +237,10 @@ fi
 say "== the pasteboard"
 # Copy in the application, and the job's own `pbpaste` shows the rectangle's input text, tab- and
 # line-separated — cross-application interop, which `ui_win32` could not check under Wine.
+# The sample's filter is cleared first: with rows hidden, Shift+↓ from A1 reaches row 3 and
+# the rectangle would be a question about copying hidden rows rather than about the pasteboard.
 cp "$out/sample/sample.fods" "$out/pasteboard.fods"
+"$grind" sheet filter "$out/pasteboard.fods" --clear > /dev/null
 printf 'key shift+right\nkey shift+down\nkey cmd+c\nwait 0.5\n' > "$out/copy.drive"
 bounded 120 "$mac" "$out/pasteboard.fods" --drive "$out/copy.drive" --out "$out/copy" \
     > /dev/null || fail "the copy drive failed"
