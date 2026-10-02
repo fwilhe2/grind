@@ -106,6 +106,8 @@ pub enum Command {
     InsertTable,
     /// A bookmark on the caret's block — Insert ▸ Bookmark….
     InsertBookmark,
+    /// A picture from a file, at the caret — Insert ▸ Picture….
+    InsertPicture,
     /// Zoom In (1), Zoom Out (-1) or Actual Size (0) — `zoom.rs`.
     Zoom(i8),
     /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
@@ -199,6 +201,7 @@ impl Command {
             Command::ExportCsv,
             Command::InsertTable,
             Command::InsertBookmark,
+            Command::InsertPicture,
             Command::Zoom(1),
             Command::Zoom(-1),
             Command::Zoom(0),
@@ -221,6 +224,7 @@ impl Command {
                 | Command::ExportCsv
                 | Command::InsertTable
                 | Command::InsertBookmark
+                | Command::InsertPicture
         )
     }
 
@@ -257,7 +261,8 @@ impl Command {
             Command::Mark(_)
             | Command::Block(_)
             | Command::InsertTable
-            | Command::InsertBookmark => text,
+            | Command::InsertBookmark
+            | Command::InsertPicture => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -713,6 +718,7 @@ pub static MENUS: &[Menu] = &[
             Item::Separator,
             command("Table…", None, Command::InsertTable),
             command("Bookmark…", None, Command::InsertBookmark),
+            command("Picture…", None, Command::InsertPicture),
         ],
     },
     Menu {

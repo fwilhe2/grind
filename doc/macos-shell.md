@@ -653,7 +653,8 @@ status line of its own, since a page window has no banner); **Go To on a page** 
 page's **word count** in its window's subtitle; **pictures drawn on the page** — `NSImage`
 decodes them, `text/picture.rs` fits each to the column at no more than its own size with its
 caption under it (`ui_text_gtk`'s rule, so a figure takes the same room in both windows), and
-bytes nothing reads stay outlined; and `canAsynchronouslyWriteToURL:` answering NO
+bytes nothing reads stay outlined — and **Insert ▸ Picture…**, an open panel whose file is
+embedded in a paragraph of its own, refused when its signature is no picture's (`picture::mime`); and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

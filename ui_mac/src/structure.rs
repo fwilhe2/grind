@@ -9,7 +9,7 @@
 
 use grind_sheet::{Pos, RecalcMode};
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSModalResponseOK, NSSavePanel};
+use objc2_app_kit::{NSModalResponseOK, NSOpenPanel, NSSavePanel};
 use objc2_foundation::NSString;
 
 use crate::grid_view::Pane;
@@ -17,6 +17,7 @@ use crate::menu::{Command, Track};
 use crate::page_view::TextPane;
 use crate::prompt;
 use crate::sheet::verbs;
+use crate::text::picture;
 use crate::text::state::table_size;
 
 impl Pane {
@@ -132,7 +133,8 @@ impl Pane {
 }
 
 impl TextPane {
-    /// One of the page's structural verbs: a table after the caret's block, or a bookmark on it.
+    /// One of the page's structural verbs: a table after the caret's block, a bookmark on it, or
+    /// a picture.
     pub fn structure(&self, command: Command, mtm: MainThreadMarker) {
         let block = self.state.borrow().caret.block;
         let done = match command {
@@ -168,10 +170,72 @@ impl TextPane {
                 };
                 self.app.set_bookmark(&name, Some(block)).map(|_| ())
             }
+            Command::InsertPicture => return self.insert_picture(mtm),
             _ => return,
         };
         if let Err(error) = done {
             prompt::tell(mtm, "That could not be done.", &error.to_string());
+        }
+    }
+}
+
+impl TextPane {
+    /// Insert ▸ Picture…: a file the open panel names, embedded in the document — a picture is
+    /// its bytes, never a link to them — in a paragraph of its own: the caret's, when that one is
+    /// empty, and otherwise a new one after it. The caret lands just past the picture, so what is
+    /// typed next is its caption, which is `ui_text_gtk`'s rule.
+    fn insert_picture(&self, mtm: MainThreadMarker) {
+        let panel = NSOpenPanel::openPanel(mtm);
+        panel.setCanChooseDirectories(false);
+        panel.setAllowsMultipleSelection(false);
+        panel.setPrompt(Some(&NSString::from_str("Insert")));
+        if panel.runModal() != NSModalResponseOK {
+            return;
+        }
+        let Some(path) = panel.URL().and_then(|url| url.to_file_path()) else {
+            return;
+        };
+        let data = match std::fs::read(&path) {
+            Ok(data) => data,
+            Err(error) => {
+                return prompt::tell(
+                    mtm,
+                    "That file could not be read.",
+                    &format!("{}: {error}", path.display()),
+                );
+            }
+        };
+        let Some(mime) = picture::mime(&data) else {
+            return prompt::tell(
+                mtm,
+                "That file is not a picture.",
+                "A PNG, JPEG, GIF, TIFF, WebP, HEIC, BMP or SVG file can be inserted.",
+            );
+        };
+        let block = self.state.borrow().caret.block;
+        let empty = self.app.input_text(block).is_ok_and(|text| text.is_empty());
+        let at = match empty {
+            true => Ok(block),
+            false => self
+                .app
+                .insert(block + 1, grind_text::BlockKind::Paragraph, "")
+                .map(|_| block + 1),
+        };
+        let done = at.and_then(|at| {
+            let caret = grind_text::Caret {
+                block: at,
+                offset: 0,
+            };
+            self.app
+                .insert_image(caret, mime.to_owned(), data, None, None)
+                .map(|()| at)
+        });
+        match done {
+            Ok(at) => self.go_to(grind_text::Caret {
+                block: at,
+                offset: 1,
+            }),
+            Err(error) => prompt::tell(mtm, "That could not be done.", &error.to_string()),
         }
     }
 }

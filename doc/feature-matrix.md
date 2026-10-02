@@ -375,7 +375,7 @@ other dialect from the window.
 | Create a bookmark | ● | ○ | ● | ○ | ○ | ● |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
 | **Pictures** | | | | | | |
-| Insert an image | ● | ● | ○ | ○ | ○ | ○ |
+| Insert an image | ● | ● | ○ | ○ | ○ | ● |
 | **Draws** an image | — | ● | ○ | ● | ○ | ● |
 | **Tables** | | | | | | |
 | Insert a table | ● | ● | ● | ○ | ○ | ● |
