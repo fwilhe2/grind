@@ -350,8 +350,8 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● | ● |
 | Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ◐ ³ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● | ● |
-| Find | ● | ● | ● ᶠ | ○ | ○ | ● |
-| Replace | ● | ○ | ● | ○ | ○ | ● |
+| Find | ● | ● | ● ᶠ | ○ | ● ʷ | ● |
+| Replace | ● | ○ | ● | ○ | ● ʷ | ● |
 | Word count | ● | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
@@ -421,6 +421,7 @@ reads it back — the shape `ui_text_gtk/src/view.rs`'s `Column` has, and requir
 chosen: `Faces::of` is called while `App` holds its read lock. The map covers the view and a page
 either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ᶠ `:find`, then `n`/`N`, with every match marked in the line rather than only counted.
+ʷ Edit ▸ Find… (Ctrl+F), Find Next/Previous (F3/Shift+F3) and Replace… (Ctrl+H) over the page, closed 2026-10-02: `grind_text::find` finds (ignoring case) and steps, the hit is selected, and `App::replace` writes (exactly, one undo step).
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**
 one, and no client sets a column width, because the model carries no table style

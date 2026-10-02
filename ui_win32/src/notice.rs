@@ -140,6 +140,31 @@ pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
     }
 }
 
+/// [`found`] for the word processor: which of how many occurrences the selection is on.
+pub fn text_found(index: usize, count: usize, needle: &str) -> String {
+    format!(
+        "{} of {} of “{needle}”. F3 finds the next, Shift+F3 the previous.",
+        index + 1,
+        count
+    )
+}
+
+/// [`not_found`] for the word processor.
+pub fn text_not_found(needle: &str) -> String {
+    format!("“{needle}” is not in the document. Ctrl+F asks for another word.")
+}
+
+/// What a replace did over the page: how many paragraphs changed.
+pub fn text_replaced(blocks: usize, needle: &str) -> String {
+    match blocks {
+        0 => text_not_found(needle),
+        n => format!(
+            "Replaced in {}. Ctrl+Z takes it back.",
+            counted(n, "paragraph", "paragraphs")
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +276,13 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("leaves the cell as it was"), "{text}");
+    }
+
+    #[test]
+    fn the_pages_find_sentences_name_the_word_and_the_way_out() {
+        assert!(text_found(0, 3, "tax").starts_with("1 of 3 of “tax”"));
+        assert!(text_not_found("tax").contains("Ctrl+F"));
+        assert!(text_replaced(1, "tax").contains("1 paragraph."));
+        assert_eq!(text_replaced(0, "tax"), text_not_found("tax"));
     }
 }

@@ -901,7 +901,9 @@ did; a formula the replace would break is left alone and named there. Every matc
 own. Prompts rather than the system's `FindTextW` dialog, for decision 7's reason: that dialog
 is modeless, and a second window with its own message routing is exactly what this shell keeps
 out of `win.rs`. Named gaps: no match-case or whole-cell control (the CLI has both), no marking
-of every hit, and **no find in the text pane** — `App::find_ignoring_case` is there to call.
+of every hit. **The text pane has the same three verbs since 2026-10-02**: Find…, F3/Shift+F3 and
+Replace… over `grind_text::find` (case-blind hits, selected so typing replaces one) and
+`App::replace` (exact, one undo step), the sentences in `notice.rs`.
 No **conditional formatting UI**, which exists in no shell — the banding *Format as Table*
 paints is static cell styling, applied once, not a live rule. No **command palette**, by
 decision 4.

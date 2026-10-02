@@ -863,12 +863,6 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::NumberFormat
         | Command::FewerDecimals
         | Command::MoreDecimals
-        // Find and replace search *cells*: `App::find` is the spreadsheet's. The word processor's
-        // own find is a named gap in this window (`doc/windows-shell.md`).
-        | Command::Find
-        | Command::FindNext
-        | Command::FindPrevious
-        | Command::Replace
         // CSV is cells: fields land in a grid and a range comes out of one, so both are the
         // spreadsheet's even though they sit in the File menu with the universal verbs.
         | Command::ImportCsv
@@ -880,6 +874,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // pane answers them over its own style — `CharStyle` there, `CellStyle` here — so they are
         // both panes' verbs, and Ctrl+B is bold wherever the window is.
         Command::Bold | Command::Italic | Command::PickColor | Command::ClearFormatting => {
+            matches!(kind, Spreadsheet | Text)
+        }
+        // Find and replace reach both: `App::find` over cells on the grid, `grind_text::find`
+        // over the document's text on the page.
+        Command::Find | Command::FindNext | Command::FindPrevious | Command::Replace => {
             matches!(kind, Spreadsheet | Text)
         }
         Command::Underline
@@ -1344,6 +1343,21 @@ mod tests {
             Command::MoreDecimals,
         ] {
             assert!(!text.contains(&grid_only), "{grid_only:?}");
+        }
+    }
+
+    /// Find, the two steps and Replace: cells on the grid, text on the page.
+    #[test]
+    fn find_and_replace_reach_both_document_types() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        for command in [
+            Command::Find,
+            Command::FindNext,
+            Command::FindPrevious,
+            Command::Replace,
+        ] {
+            assert!(applies_to(command, Text), "{command:?}");
+            assert!(applies_to(command, Spreadsheet), "{command:?}");
         }
     }
 

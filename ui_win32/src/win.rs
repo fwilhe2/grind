@@ -776,6 +776,9 @@ struct Text {
     /// `doc/view-modes.md`'s name overlay, this pane's own — `:names`' equivalent, a bookmark
     /// drawn beside the text it anchors. Presentation state, exactly like `Sheet::overlays`.
     show_names: bool,
+    /// The word [`text_find`] last asked for, which F3 and Shift+F3 step through and Replace
+    /// offers back — `Sheet::needle`'s twin.
+    needle: String,
     /// Which format-strip control is held down, and therefore the one a release over it will
     /// activate. See `text_button_down`.
     pressed: Option<text::geom::StripHit>,
@@ -1216,6 +1219,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         resume: None,
         surrogate: None,
         show_names: false,
+        needle: String::new(),
         hover: None,
         pressed: None,
     })
@@ -5675,6 +5679,10 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }, None),
         Command::Heading3 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 3 }, None),
         Command::GoTo => text_go_to(hwnd),
+        Command::Find => text_find(hwnd),
+        Command::FindNext => text_find_step(hwnd, grind_text::find::Towards::Next),
+        Command::FindPrevious => text_find_step(hwnd, grind_text::find::Towards::Previous),
+        Command::Replace => text_replace(hwnd),
         Command::Outline => text_outline(hwnd),
         Command::BlockKindDialog => text_block_kind_dialog(hwnd),
         Command::InsertPicture => text_insert_picture(hwnd),
@@ -5708,11 +5716,6 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::NumberFormat
         | Command::FewerDecimals
         | Command::MoreDecimals
-        // Find and replace search cells (`App::find`); this pane's own find is a named gap.
-        | Command::Find
-        | Command::FindNext
-        | Command::FindPrevious
-        | Command::Replace
         // CSV is cells in both directions, so neither means anything here — and `applies_to`
         // keeps both out of this pane's File menu rather than leaving them to be no-ops.
         | Command::ImportCsv
@@ -5759,6 +5762,97 @@ fn text_go_to(hwnd: HWND) {
         Some(Ok(())) => refresh(hwnd),
         None => {}
     }
+}
+
+/// Edit ▸ Find… over the page — ask for a word, then select the first occurrence at or after the
+/// caret. The prompt runs a nested message loop, so the word it offers is read in one borrow and
+/// the search is a second (decision 7). Case is ignored, as in the GNOME window's bar:
+/// `grind_text::find` is the one answer to what a hit is and where the next one lies.
+fn text_find(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompt.
+    let Some(offered) = (unsafe { with_text(hwnd, |text| text.needle.clone()) }) else {
+        return;
+    };
+    let Some(needle) = dialog::prompt(hwnd, "Find", "Find in the document:", &offered) else {
+        return;
+    };
+    if needle.is_empty() {
+        return;
+    }
+    // SAFETY: a fresh borrow, taken after the dialog has closed.
+    unsafe {
+        with_text(hwnd, |text| text.needle = needle);
+    }
+    text_find_step(hwnd, grind_text::find::Towards::Here);
+}
+
+/// F3 / Shift+F3, and the landing half of Find…: the occurrences are asked for again every time,
+/// since the document may have changed between two presses, and the next one is selected so that
+/// typing replaces it.
+fn text_find_step(hwnd: HWND, towards: grind_text::find::Towards) {
+    use grind_text::find;
+    // SAFETY: one borrow, and no dialog on either side of it.
+    let asked = unsafe {
+        with_text(hwnd, |text| {
+            if text.needle.is_empty() {
+                return false;
+            }
+            let hits = find::hits(&text.app, &text.needle);
+            // From the selection's start when there is one — usually the last hit — and the
+            // caret otherwise.
+            let (at, _) = text::keymap::ordered(text.anchor, text.caret);
+            let said = match find::step(&hits, at, towards) {
+                Some(index) => {
+                    let from = hits[index];
+                    text.place(from, false);
+                    text.place(find::end_of(from, &text.needle), true);
+                    text.caret_on = true;
+                    notice::text_found(index, hits.len(), &text.needle)
+                }
+                None => notice::text_not_found(&text.needle),
+            };
+            text.say(Some(said));
+            true
+        })
+    };
+    match asked {
+        // Nothing searched for yet: F3 means "find", which is where the word comes from.
+        Some(false) => text_find(hwnd),
+        Some(true) => text_refresh(hwnd),
+        None => {}
+    }
+}
+
+/// Edit ▸ Replace… — what, then with what, then `App::replace` over the whole document in one
+/// undo step. Two prompts, as the grid's is; neither is asked with anything borrowed. Exact in
+/// case, since it writes: only finding is lenient.
+fn text_replace(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompts.
+    let Some(offered) = (unsafe { with_text(hwnd, |text| text.needle.clone()) }) else {
+        return;
+    };
+    let Some(what) = dialog::prompt(hwnd, "Replace", "Replace what:", &offered) else {
+        return;
+    };
+    if what.is_empty() {
+        return;
+    }
+    let Some(with) = dialog::prompt(hwnd, "Replace", &format!("Replace “{what}” with:"), "")
+    else {
+        return;
+    };
+    // SAFETY: a fresh borrow, taken after both dialogs have closed.
+    unsafe {
+        with_text(hwnd, |text| {
+            let said = match text.app.replace(&what, &with) {
+                Ok(blocks) => notice::text_replaced(blocks, &what),
+                Err(error) => error.to_string(),
+            };
+            text.needle = what;
+            text.say(Some(said));
+        });
+    }
+    text_refresh(hwnd);
 }
 
 /// The outline dialog: every heading, indented by its own depth, jump to any of them.
