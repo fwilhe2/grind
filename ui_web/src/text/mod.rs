@@ -736,6 +736,8 @@ impl Ui {
             "block.h3" => self.set_kind(BlockKind::Heading { level: 3 }, None),
             "block.h4" => self.set_kind(BlockKind::Heading { level: 4 }, None),
             "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
+            "block.bookmark" => self.bookmark(),
+            "block.style" => self.name_style(),
             "block.indent" => self.renest(1),
             "block.outdent" => self.renest(-1),
             "edit.find-next" => self.find_step(Towards::Next),
@@ -826,6 +828,64 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- bookmarks and named styles ---
+
+    /// *Bookmark this paragraph…* — a name, then `App::set_bookmark` at the caret's block. A
+    /// name already in use *moves* (the core's rule), so asking twice relocates rather than
+    /// duplicates. The overlay goes on, because a bookmark contributes no characters and would
+    /// otherwise leave nothing on the page to say it was made.
+    fn bookmark(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Ok(Some(name)) = window.prompt_with_message_and_default("Bookmark name", "") else {
+            return;
+        };
+        let name = name.trim().trim_start_matches('#');
+        if name.is_empty() {
+            return;
+        }
+        match self.app.set_bookmark(name, Some(self.caret.get().block)) {
+            Ok(moved) => {
+                self.names.set(true);
+                self.set_message(match moved {
+                    true => format!("#{name} moved here"),
+                    false => format!("#{name} anchored here"),
+                });
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// *Name this paragraph's style…* — `App::set_style` over the selected blocks, an empty
+    /// answer taking the name away. A named style is kept and never interpreted
+    /// (`doc/text-core.md`), so this is how a document says *Quote* to a reader that has one.
+    fn name_style(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let (from, to) = self
+            .selection()
+            .unwrap_or_else(|| (self.caret.get(), self.caret.get()));
+        let current = self
+            .block_at(from.block)
+            .and_then(|block| block.style)
+            .unwrap_or_default();
+        let Ok(Some(name)) = window.prompt_with_message_and_default("Paragraph style", &current)
+        else {
+            return;
+        };
+        let name = name.trim();
+        let style = (!name.is_empty()).then(|| name.to_owned());
+        match self.app.set_style(from.block..to.block + 1, style) {
+            Ok(_) => self.set_message(match name.is_empty() {
+                true => "Style name removed".to_owned(),
+                false => format!("Style “{name}” set"),
+            }),
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     // --- find and replace (`grind_text::find`) ---

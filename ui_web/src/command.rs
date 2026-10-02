@@ -282,6 +282,20 @@ pub const TEXT: &[Command] = &[
         "Shift+Tab",
         false,
     ),
+    cmd(
+        "block.bookmark",
+        "Bookmark this paragraph…",
+        "Structure",
+        "",
+        false,
+    ),
+    cmd(
+        "block.style",
+        "Name this paragraph's style…",
+        "Structure",
+        "",
+        false,
+    ),
     // §3.6, the word processor's half of inline names: a bookmark is the one part of a text
     // document a reader cannot see at all, because it contributes no characters.
     cmd("view.names", "Show where bookmarks are", "View", "", false),
