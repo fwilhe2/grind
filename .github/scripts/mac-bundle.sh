@@ -77,7 +77,9 @@ codesign --verify --strict --verbose=2 "$app" 2> "$out/codesign.txt" \
     || fail "codesign --verify --strict: $(cat "$out/codesign.txt")"
 say "signed ad hoc, and codesign --verify --strict passes"
 
-foreign="$(otool -L "$app/Contents/MacOS/grind-mac" | tail -n +2 | awk '{ print $1 }' \
+# A universal binary is listed once per architecture, each under a header line of its own path,
+# so only the indented lines are libraries.
+foreign="$(otool -L "$app/Contents/MacOS/grind-mac" | grep '^[[:space:]]' | awk '{ print $1 }' \
     | grep -v -e '^/System/Library/' -e '^/usr/lib/' || true)"
 [ -z "$foreign" ] || fail "the binary links outside the system: $foreign"
 say "otool -L: /System/Library and /usr/lib only"
