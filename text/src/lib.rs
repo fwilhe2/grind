@@ -47,6 +47,7 @@
 
 pub mod action;
 pub mod caret;
+pub mod find;
 pub mod flow;
 pub mod format;
 pub mod lint;

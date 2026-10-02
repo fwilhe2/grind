@@ -24,7 +24,8 @@ use std::sync::Arc;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
-use grind_text::{App, Caret};
+use grind_text::App;
+use grind_text::find::{Towards, end_of, hits, step};
 use gtk::glib;
 
 use crate::view::Doc;
@@ -36,31 +37,6 @@ pub struct Find {
     count: gtk::Label,
     app: Arc<App>,
     doc: Doc,
-}
-
-/// Which way a step goes: `Here` is "the first hit at or after where I am", which is what
-/// typing into the entry wants — the hit under the selection stays selected as it grows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Towards {
-    Here,
-    Next,
-    Previous,
-}
-
-/// Which of `hits` (in document order) a step from `at` lands on, wrapping at either end.
-/// `None` only when there are none.
-pub fn step(hits: &[Caret], at: Caret, towards: Towards) -> Option<usize> {
-    if hits.is_empty() {
-        return None;
-    }
-    Some(match towards {
-        Towards::Here => hits.iter().position(|hit| *hit >= at).unwrap_or(0),
-        Towards::Next => hits.iter().position(|hit| *hit > at).unwrap_or(0),
-        Towards::Previous => hits
-            .iter()
-            .rposition(|hit| *hit < at)
-            .unwrap_or(hits.len() - 1),
-    })
 }
 
 impl Find {
@@ -198,15 +174,7 @@ impl Find {
             self.count.set_text("");
             return;
         }
-        let hits: Vec<Caret> = self
-            .app
-            .find_ignoring_case(&needle)
-            .into_iter()
-            .map(|hit| Caret {
-                block: hit.index,
-                offset: hit.offset,
-            })
-            .collect();
+        let hits = hits(&self.app, &needle);
         // From the selection's start when there is one — it is usually the last hit — and the
         // caret otherwise.
         let at = self
@@ -219,45 +187,8 @@ impl Find {
             return;
         };
         let from = hits[index];
-        let to = Caret {
-            block: from.block,
-            offset: from.offset + needle.chars().count(),
-        };
-        self.doc.select(from, to);
+        self.doc.select(from, end_of(from, &needle));
         self.count
             .set_text(&format!("{} of {}", index + 1, hits.len()));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn at(block: usize, offset: usize) -> Caret {
-        Caret { block, offset }
-    }
-
-    #[test]
-    fn a_step_finds_the_next_hit_and_wraps_at_either_end() {
-        let hits = [at(0, 4), at(2, 0), at(2, 9)];
-        assert_eq!(step(&hits, at(0, 0), Towards::Here), Some(0));
-        assert_eq!(
-            step(&hits, at(2, 0), Towards::Here),
-            Some(1),
-            "typing keeps the hit already under the selection"
-        );
-        assert_eq!(step(&hits, at(2, 0), Towards::Next), Some(2));
-        assert_eq!(
-            step(&hits, at(2, 9), Towards::Next),
-            Some(0),
-            "wraps forward"
-        );
-        assert_eq!(step(&hits, at(2, 0), Towards::Previous), Some(0));
-        assert_eq!(
-            step(&hits, at(0, 4), Towards::Previous),
-            Some(2),
-            "wraps back"
-        );
-        assert_eq!(step(&[], at(0, 0), Towards::Next), None);
     }
 }
