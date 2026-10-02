@@ -593,6 +593,18 @@ mod mac {
         format!("window {title:?}, edited {edited}, selection {selection}")
     }
 
+    /// Which object has the keyboard — its class's name, for the first line of a transcript,
+    /// since a key that changed nothing is otherwise silent about where it went.
+    fn responder(app: &NSApplication) -> String {
+        window(app)
+            .ok()
+            .and_then(|window| window.firstResponder())
+            .map_or_else(
+                || "nothing".to_owned(),
+                |responder| responder.class().name().to_string_lossy().into_owned(),
+            )
+    }
+
     /// Replay `drive`'s script against the application `launch` just opened, and answer the
     /// process's exit code: zero when every step ran.
     pub fn replay(mtm: MainThreadMarker, drive: &Drive, document: Option<&NSDocument>) -> i32 {
@@ -626,9 +638,10 @@ mod mac {
         pump(&app, 1.0);
         let is_key = window(&app).is_ok_and(|window| window.isKeyWindow());
         println!(
-            "start: {}, active {}, key window {is_key}",
+            "start: {}, active {}, key window {is_key}, keyboard {}",
             transcript(&app, document),
-            app.isActive()
+            app.isActive(),
+            responder(&app)
         );
         for (at, step) in steps.iter().enumerate() {
             let done = match step {

@@ -232,6 +232,16 @@ mod mac {
                 }
             }
 
+            /// The window shown, and then the grid or the page given the keyboard once more — by
+            /// now it is certainly inside the window, which `makeWindowControllers` could not be
+            /// sure of.
+            #[unsafe(method(showWindows))]
+            fn show_windows(&self) {
+                // SAFETY: the superclass's own method, with its own signature.
+                let () = unsafe { msg_send![super(self), showWindows] };
+                self.take_keyboard();
+            }
+
             #[unsafe(method(makeWindowControllers))]
             fn make_window_controllers(&self) {
                 let mtm = self.mtm();
@@ -253,7 +263,11 @@ mod mac {
                         window.setContentSize(size);
                         window.center();
                         // The grid takes the keyboard from the start, as a sheet's cursor does.
+                        // Asked twice: now, and as the window's initial responder for when it is
+                        // first made key — the split view may not hold the grid yet, and a
+                        // responder outside the window is refused without a word.
                         let grid = scroll.documentView();
+                        window.setInitialFirstResponder(grid.as_deref());
                         window.makeFirstResponder(grid.as_deref().map(|view| &**view));
                         accessory::attach(&window, &pane, mtm);
                         pane.set_banner(banner::attach(&window, &pane, mtm));
@@ -292,6 +306,7 @@ mod mac {
                         window.center();
                         // The page takes the keyboard from the start, caret at the top.
                         let page = scroll.documentView();
+                        window.setInitialFirstResponder(page.as_deref());
                         window.makeFirstResponder(page.as_deref().map(|view| &**view));
                         let me = ObjcWeak::new(self);
                         pane.on_change(move || {
@@ -556,6 +571,23 @@ mod mac {
             }
             let page = self.page()?.view()?;
             Some((page.into_super(), (0.0, 0.0)))
+        }
+
+        /// Give the grid or the page the keyboard, when the window has neither — a sheet's
+        /// cursor and a page's caret answer the keys from the moment a document opens.
+        pub fn take_keyboard(&self) {
+            let Some((view, _)) = self.click_target() else {
+                return;
+            };
+            let Some(window) = view.window() else {
+                return;
+            };
+            let holds = window
+                .firstResponder()
+                .is_some_and(|responder| std::ptr::eq(&*responder, view.as_super()));
+            if !holds {
+                window.makeFirstResponder(Some(&view));
+            }
         }
 
         /// Where the selection is, for a drive's transcript: the name box's word, and the range
