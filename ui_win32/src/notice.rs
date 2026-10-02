@@ -153,6 +153,20 @@ pub fn filled(cells: u64, down: bool) -> String {
     }
 }
 
+/// What Formula to Value did.
+pub fn formulas_dropped(count: usize) -> String {
+    match count {
+        0 => "There was no formula in the selection.".to_owned(),
+        n => format!(
+            "{} now a plain value. Ctrl+Z takes each back.",
+            match n {
+                1 => "1 formula is".to_owned(),
+                n => format!("{n} formulas are"),
+            }
+        ),
+    }
+}
+
 /// What hiding or showing a run of rows or columns did.
 pub fn tracks_hidden(count: usize, rows: bool, hidden: bool) -> String {
     let what = match rows {

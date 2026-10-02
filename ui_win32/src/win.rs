@@ -3248,6 +3248,9 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ClearCells => clear_cells(hwnd),
         Command::FillDown => fill(hwnd, true),
         Command::FillRight => fill(hwnd, false),
+        Command::FillAcross => fill_across(hwnd),
+        Command::CopyValue => copy_value(hwnd),
+        Command::FormulaToValue => formula_to_value(hwnd),
         Command::HideRows => hide_tracks(hwnd, true, true),
         Command::ShowRows => hide_tracks(hwnd, true, false),
         Command::HideColumns => hide_tracks(hwnd, false, true),
@@ -3447,6 +3450,64 @@ fn fill(hwnd: HWND, down: bool) {
                 }
             }
             state.say(Some(notice::filled(cells, down)));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Edit ▸ Fill Across — the active cell into the whole selection, references shifted, as one
+/// `App::fill` and so one undo step.
+fn fill_across(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            state.say(Some(
+                match state.app.fill(
+                    state.sheet,
+                    state.selection.active,
+                    start,
+                    end,
+                    RecalcMode::Document,
+                ) {
+                    Ok(done) => notice::filled(done.cells as u64, true),
+                    Err(error) => error.to_string(),
+                },
+            ));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Edit ▸ Copy Value — the selection as it is *shown*, on the clipboard as tab-separated text
+/// (`App::value_text`). The bytes of Copy's own rectangle, with the answer instead of the source.
+fn copy_value(hwnd: HWND) {
+    // SAFETY: one borrow; `set_text` runs with nothing else borrowed.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
+            let text =
+                clip::rect_text(&state.app, state.sheet, start, end, App::value_text, "\r\n");
+            clipboard::set_text(hwnd, &text);
+        });
+    }
+}
+
+/// Edit ▸ Formula to Value — every formula in the selection dropped, each cell keeping the value
+/// it last computed.
+fn formula_to_value(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
+            state.say(Some(
+                match grind_sheet::verbs::formulas_to_values(&state.app, state.sheet, start, end) {
+                    Ok(n) => notice::formulas_dropped(n),
+                    Err(error) => error.to_string(),
+                },
+            ));
         });
     }
     refresh(hwnd);
@@ -4835,6 +4896,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ClearCells
         | Command::FillDown
         | Command::FillRight
+        | Command::CopyValue
+        | Command::FormulaToValue
+        | Command::FillAcross
         | Command::HideRows
         | Command::ShowRows
         | Command::HideColumns
@@ -5880,6 +5944,9 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Recalculate
         | Command::FillDown
         | Command::FillRight
+        | Command::CopyValue
+        | Command::FormulaToValue
+        | Command::FillAcross
         | Command::HideRows
         | Command::ShowRows
         | Command::HideColumns

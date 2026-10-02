@@ -77,6 +77,14 @@ pub enum Command {
     /// `App::fill` over `grind_sheet::nav::fills`, the lines the Mac and the browser fill too.
     FillDown,
     FillRight,
+    /// The active cell copied across the whole selection, references shifted — one `App::fill`.
+    FillAcross,
+    /// Copy the selection as it is *shown* — a formula's formatted result rather than its source
+    /// (`App::value_text`), for pasting into something that is not a spreadsheet.
+    CopyValue,
+    /// Replace every formula in the selection with the value it last computed
+    /// (`grind_sheet::verbs::formulas_to_values`).
+    FormulaToValue,
     /// Hide or show the rows (or columns) the selection spans — `App::set_row_hidden` and
     /// `set_col_hidden` over `grind_sheet::verbs::rows`/`cols`, the call `grind sheet hide` makes.
     HideRows,
@@ -274,6 +282,9 @@ impl Command {
         Command::ClearCells,
         Command::FillDown,
         Command::FillRight,
+        Command::FillAcross,
+        Command::CopyValue,
+        Command::FormulaToValue,
         Command::HideRows,
         Command::ShowRows,
         Command::HideColumns,
@@ -493,6 +504,19 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FillRight,
                 label: "Fill Rig&ht\tCtrl+R",
+            },
+            Item::Verb {
+                command: Command::FillAcross,
+                label: "Fill Acro&ss",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::CopyValue,
+                label: "Copy Va&lue",
+            },
+            Item::Verb {
+                command: Command::FormulaToValue,
+                label: "For&mula to Value",
             },
             Item::Separator,
             Item::Verb {
@@ -943,6 +967,9 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         Command::Recalculate
         | Command::FillDown
         | Command::FillRight
+        | Command::CopyValue
+        | Command::FormulaToValue
+        | Command::FillAcross
         | Command::HideRows
         | Command::ShowRows
         | Command::HideColumns
@@ -1308,6 +1335,9 @@ mod tests {
             Command::Recalculate,
             Command::FillDown,
             Command::FillRight,
+            Command::CopyValue,
+            Command::FormulaToValue,
+            Command::FillAcross,
             Command::HideRows,
             Command::ShowRows,
             Command::HideColumns,
