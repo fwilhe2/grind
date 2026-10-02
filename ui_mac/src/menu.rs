@@ -108,6 +108,9 @@ pub enum Command {
     Evaluate,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
     DocumentLocale,
+    /// The active cell copied into every selected cell, references shifted — Edit ▸ Fill ▸
+    /// Across Selection.
+    FillAcross,
     /// Every formula shown in its cell rather than its value — View ▸ Formulas.
     ShowFormulas,
     /// The selection's shown values on the pasteboard, not their formulas — Edit ▸ Copy Value.
@@ -232,6 +235,7 @@ impl Command {
             Command::Evaluate,
             Command::DocumentLocale,
             Command::ShowFormulas,
+            Command::FillAcross,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -322,6 +326,7 @@ impl Command {
             | Command::Evaluate
             | Command::DocumentLocale
             | Command::ShowFormulas
+            | Command::FillAcross
             | Command::ExportCsv => sheet,
         }
     }
@@ -644,6 +649,7 @@ static FILL: Menu = Menu {
     items: &[
         command("Down", key("d", CMD), Command::Fill(true)),
         command("Right", key("r", CMD), Command::Fill(false)),
+        command("Across Selection", None, Command::FillAcross),
     ],
 };
 

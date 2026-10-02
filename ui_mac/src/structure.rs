@@ -46,6 +46,13 @@ impl Pane {
                             .map(|_| ())
                     },
                 ),
+                // The active cell into the whole selection — one `App::fill`, one undo step.
+                Command::FillAcross => {
+                    let (start, end) = selection.rect();
+                    self.app
+                        .fill(sheet, selection.active, start, end, RecalcMode::Document)
+                        .map(|_| ())
+                }
                 Command::Rows(Track::Hide) => self
                     .app
                     .set_row_hidden(sheet, verbs::rows(selection), true)

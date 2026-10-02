@@ -682,7 +682,8 @@ and Format ▸ Number ▸ **Document Locale…** (`App::set_locale`, a tag or no
 use following, `App::rename_name`), Redefine…, Inline Everywhere (`App::inline_name`) and Delete,
 the first window with the first and third; **View ▸ Formulas** (⌃⌘\`), every formula shown in its cell in
 display syntax rather than its value, drawn and never written — the first window with it; and with View ▸ Names on, the formula read-out **reads a formula
-through its names** (`App::named_formula`); and `canAsynchronouslyWriteToURL:` answering NO
+through its names** (`App::named_formula`); Edit ▸ Fill ▸ **Across Selection**, the active cell into the whole
+selection in one `App::fill`; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

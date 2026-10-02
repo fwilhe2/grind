@@ -142,7 +142,7 @@ than as a cursor on a hidden row.
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
 | Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ● |
 | Fill down / fill right | ● | ● | ● | ● | ○ | ● |
-| Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ○ |
+| Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ● |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
 | Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ● |

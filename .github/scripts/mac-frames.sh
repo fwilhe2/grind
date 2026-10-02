@@ -473,6 +473,20 @@ bounded 120 "$mac" "$out/valued.fods" --drive "$out/value.drive" --out "$out/val
     || fail "Formula to Value did not keep 6: A2 holds $("$grind" sheet get --input "$out/valued.fods" A2)"
 say "   Edit ▸ Formula to Value keeps the value and drops the formula"
 
+# Edit ▸ Fill ▸ Across Selection copies the active cell into the selection, references shifted.
+"$grind" sheet new "$out/filled.fods" > /dev/null
+for cell in "A1 1" "A2 2" "A3 3" "B1 =[.A1]*2"; do
+    set -- $cell
+    "$grind" sheet set "$out/filled.fods" "$1" "$2" > /dev/null
+done
+printf 'key cmd+l\ntype B1:B3\nkey return\nmenu Edit/Fill/Across Selection\nkey cmd+s\nwait 2\n' \
+    > "$out/fill.drive"
+bounded 120 "$mac" "$out/filled.fods" --drive "$out/fill.drive" --out "$out/filled" \
+    > "$out/fill.txt" || fail "the fill drive failed: $(cat "$out/fill.txt")"
+[ "$("$grind" sheet get --input "$out/filled.fods" B3)" = "=A3*2" ] \
+    || fail "Fill Across Selection did not shift into B3: $("$grind" sheet get --input "$out/filled.fods" B3)"
+say "   Edit ▸ Fill ▸ Across Selection shifts the formula into every cell"
+
 # Every Problems row jumps: a formula on a second sheet reading an empty cell is a finding at
 # Data.C3, and choosing its row from the first sheet lands the selection there.
 "$grind" sheet new "$out/problems.fods" > /dev/null
