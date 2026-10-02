@@ -695,6 +695,13 @@ impl Ui {
             "sheet.unhide-rows" => self.hide_rows(false),
             "sheet.hide-cols" => self.hide_cols(true),
             "sheet.unhide-cols" => self.hide_cols(false),
+            "sheet.row-height" => self.track_size(true),
+            "sheet.col-width" => self.track_size(false),
+            "name.define" => self.define_name(),
+            "name.rename" => self.rename_name(),
+            "name.inline" => self.inline_name(),
+            "name.delete" => self.delete_name(),
+            "edit.evaluate" => self.evaluate(),
             "sheet.filter" => self.toggle_filter(),
             "sheet.format-table" => self.format_table(None),
             "sheet.format-table-totals" => self.format_table_with_totals(),
@@ -1263,6 +1270,130 @@ impl Ui {
             }
         }
         self.set_message(format!("Filled {cells} cell(s)"));
+    }
+
+    /// A selection in the core's own type, for `grind_sheet::verbs`.
+    fn nav_selection(&self) -> grind_sheet::nav::Selection {
+        let selection = self.selection.get();
+        grind_sheet::nav::Selection {
+            anchor: selection.anchor,
+            active: selection.active,
+        }
+    }
+
+    /// A window prompt, or `None` when there is no window or the question was cancelled.
+    fn ask(&self, message: &str, default: &str) -> Option<String> {
+        web_sys::window()?
+            .prompt_with_message_and_default(message, default)
+            .ok()
+            .flatten()
+    }
+
+    /// *Row height…* / *Column width…* — a length (`2.5cm`, `1in`, `64pt`), set on every selected
+    /// row or column in one undo step; empty puts the default back. `App` checks the length.
+    fn track_size(&self, rows: bool) {
+        let Some(answer) = self.ask(
+            match rows {
+                true => "Row height — 2.5cm, 1in or 64pt; empty for the default",
+                false => "Column width — 2.5cm, 1in or 64pt; empty for the default",
+            },
+            "",
+        ) else {
+            return;
+        };
+        let size = Some(answer.trim().to_owned()).filter(|size| !size.is_empty());
+        let selection = self.nav_selection();
+        let result = match rows {
+            true => {
+                self.app
+                    .set_row_height(self.sheet.get(), grind_sheet::verbs::rows(selection), size)
+            }
+            false => {
+                self.app
+                    .set_col_width(self.sheet.get(), grind_sheet::verbs::cols(selection), size)
+            }
+        };
+        self.set_message(match result {
+            Ok(0) => "That was the size already".to_owned(),
+            Ok(n) => format!(
+                "Resized {n} {} — Ctrl+Z takes it back",
+                if rows { "row(s)" } else { "column(s)" }
+            ),
+            Err(error) => error.to_string(),
+        });
+    }
+
+    /// *Define a name for the selection…* — sheet-qualified so it means the same place from every
+    /// sheet (`grind_sheet::verbs::name_target`), read the way `grind sheet name` reads one.
+    fn define_name(&self) {
+        let sheet = self.app.sheet_name(self.sheet.get()).unwrap_or_default();
+        let target = grind_sheet::verbs::name_target(&sheet, self.nav_selection());
+        let Some(name) = self.ask(&format!("A name for {target}"), "") else {
+            return;
+        };
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let result = grind_sheet::a1::definition(&self.app, &target)
+            .and_then(|expression| self.app.set_name(name, &expression));
+        self.set_message(match result {
+            Ok(()) => format!("“{name}” now means {target}"),
+            Err(error) => error.to_string(),
+        });
+    }
+
+    /// *Rename a name…* — every formula and every other name that uses it comes with it, in one
+    /// undo step (`App::rename_name`, §6.5).
+    fn rename_name(&self) {
+        let Some(from) = self.ask("Rename which name?", "") else {
+            return;
+        };
+        let Some(to) = self.ask(&format!("Rename “{}” to", from.trim()), from.trim()) else {
+            return;
+        };
+        self.set_message(match self.app.rename_name(from.trim(), to.trim()) {
+            Ok(n) => format!("Renamed — {n} use(s) rewritten"),
+            Err(error) => error.to_string(),
+        });
+    }
+
+    /// *Inline a name into its uses…* — the name's definition written where it is used, and the
+    /// name deleted, in one undo step (`App::inline_name`, §6.5).
+    fn inline_name(&self) {
+        let Some(name) = self.ask("Inline which name?", "") else {
+            return;
+        };
+        self.set_message(match self.app.inline_name(name.trim()) {
+            Ok(n) => format!("Inlined — {n} use(s) rewritten, the name is gone"),
+            Err(error) => error.to_string(),
+        });
+    }
+
+    /// *Delete a name…* — the definition only; formulas that used it will say `#NAME?`.
+    fn delete_name(&self) {
+        let Some(name) = self.ask("Delete which name?", "") else {
+            return;
+        };
+        self.set_message(match self.app.clear_name(name.trim()) {
+            true => format!("“{}” deleted", name.trim()),
+            false => format!("There is no name “{}”", name.trim()),
+        });
+    }
+
+    /// *Evaluate a formula…* — worked out at the active cell and said, never stored
+    /// (`grind_sheet::verbs::evaluated`).
+    fn evaluate(&self) {
+        let Some(typed) = self.ask("A formula, worked out at the active cell", "=") else {
+            return;
+        };
+        let at = self.selection.get().active;
+        self.set_message(
+            match grind_sheet::verbs::evaluated(&self.app, self.sheet.get(), at, &typed) {
+                Ok(value) => format!("{} = {value} (nothing was stored)", typed.trim()),
+                Err(why) => format!("That cannot be worked out: {why}"),
+            },
+        );
     }
 
     /// Hide — or, with `hidden: false`, unhide — the rows the selection spans.

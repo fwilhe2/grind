@@ -194,6 +194,28 @@ pub const SHEET: &[Command] = &[
     cmd("sheet.unhide-rows", "Unhide row(s)", "Sheets", "", false),
     cmd("sheet.hide-cols", "Hide column(s)", "Sheets", "", false),
     cmd("sheet.unhide-cols", "Unhide column(s)", "Sheets", "", false),
+    // A length asked for in a prompt, over every selected row or column in one undo step — the
+    // browser has no edge to drag.
+    cmd("sheet.row-height", "Row height…", "Sheets", "", false),
+    cmd("sheet.col-width", "Column width…", "Sheets", "", false),
+    // §6.5: a name for the selection, and the three things done to one that carries every use.
+    cmd(
+        "name.define",
+        "Define a name for the selection…",
+        "Names",
+        "",
+        false,
+    ),
+    cmd("name.rename", "Rename a name…", "Names", "", false),
+    cmd(
+        "name.inline",
+        "Inline a name into its uses…",
+        "Names",
+        "",
+        false,
+    ),
+    cmd("name.delete", "Delete a name…", "Names", "", false),
+    cmd("edit.evaluate", "Evaluate a formula…", "Edit", "", false),
     // §9.4: filter the selection, or clear the filter the sheet already has. The same key
     // both LibreOffice Calc and Excel use.
     cmd(

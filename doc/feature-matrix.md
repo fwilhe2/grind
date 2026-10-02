@@ -145,7 +145,7 @@ than as a cursor on a hidden row.
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ● |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
-| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ● | ● |
+| Evaluate a formula without storing it | ● | ● ᵈ | ● | ● ᵖᵃ | ● | ● |
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
@@ -254,7 +254,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 |---|---|---|---|---|---|---|
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
-| Set a column width or row height | ● | ● | ● | ○ | ● | ● |
+| Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
 | Autofit a column | ● | ● | ○ | ○ | ○ | ● |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ● |
@@ -263,9 +263,9 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ○ | ● | ● | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ● | ○ | ◐ | ● ³ |
-| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
-| Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
+| Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ◐ | ● ³ |
+| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ● ᵖᵃ | ○ | ● ³ |
+| Inline a name into every use (§6.5) | ● | ○ | ○ | ● ᵖᵃ | ○ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
@@ -282,6 +282,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● | ● |
 | Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ | ● |
 
+ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.
