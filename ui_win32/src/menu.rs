@@ -201,6 +201,17 @@ pub enum Command {
     /// of its own below the caret's block (an empty block is used as it stands). Decoded and
     /// drawn for real (`image.rs`, WIC), matching `ui_text_gtk`'s own Ctrl+Shift+I.
     InsertPicture,
+    /// Insert a table below the caret's block — a size asked for in one prompt (`3x4`), then
+    /// `grind_text::table::insert_below`, which also decides where it goes and that a document
+    /// never ends with one. Matches `ui_text_gtk`'s Ctrl+Shift+T.
+    InsertTable,
+    /// Anchor a bookmark at the caret's block — a name, then `App::set_bookmark`. Naming one
+    /// already there moves it. Switches the name overlay on, since a bookmark contributes no
+    /// characters and would otherwise leave nothing on the page to say it was made.
+    Bookmark,
+    /// Name the style of the paragraph the selection touches (`App::set_style`); an empty answer
+    /// takes the name away. A named style is kept and never interpreted (`doc/text-core.md`).
+    ParagraphStyle,
     /// The document as its own projection (D9) — a modal list of its lines, `App::project`'s
     /// text-form, opened on whichever line the pane's own selection or caret projects to. Applies
     /// to both document types, the same as `App::project` reaching both.
@@ -288,6 +299,9 @@ impl Command {
         Command::Outline,
         Command::BlockKindDialog,
         Command::InsertPicture,
+        Command::InsertTable,
+        Command::Bookmark,
+        Command::ParagraphStyle,
         Command::ShowSource,
         Command::CheckDocument,
         Command::ToggleRoles,
@@ -654,6 +668,19 @@ pub const MENUS: &[Menu] = &[
                 command: Command::InsertPicture,
                 label: "I&nsert Picture…\tCtrl+Shift+I",
             },
+            Item::Verb {
+                command: Command::InsertTable,
+                label: "Insert T&able…\tCtrl+Shift+T",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::Bookmark,
+                label: "B&ookmark Here…\tCtrl+Shift+B",
+            },
+            Item::Verb {
+                command: Command::ParagraphStyle,
+                label: "Paragraph St&yle Name…",
+            },
         ],
     },
     Menu {
@@ -770,6 +797,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('O'), true, true) => Some(Command::Outline),
         (Key::Char('K'), true, true) => Some(Command::BlockKindDialog),
         (Key::Char('I'), true, true) => Some(Command::InsertPicture),
+        (Key::Char('T'), true, true) => Some(Command::InsertTable),
+        (Key::Char('B'), true, true) => Some(Command::Bookmark),
         (Key::Char('U'), true, true) => Some(Command::ShowSource),
         (Key::Char('F'), true, true) => Some(Command::FunctionList),
         (Key::Char('E'), true, true) => Some(Command::ExplainFormula),
@@ -895,7 +924,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Heading3
         | Command::Outline
         | Command::BlockKindDialog
-        | Command::InsertPicture => matches!(kind, Text),
+        | Command::InsertPicture
+        | Command::InsertTable
+        | Command::Bookmark
+        | Command::ParagraphStyle => matches!(kind, Text),
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1174,6 +1206,9 @@ mod tests {
             Command::Outline,
             Command::BlockKindDialog,
             Command::InsertPicture,
+            Command::InsertTable,
+            Command::Bookmark,
+            Command::ParagraphStyle,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");

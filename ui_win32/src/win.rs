@@ -3304,7 +3304,10 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Heading3
         | Command::Outline
         | Command::BlockKindDialog
-        | Command::InsertPicture => {}
+        | Command::InsertPicture
+        | Command::InsertTable
+        | Command::Bookmark
+        | Command::ParagraphStyle => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
@@ -4713,6 +4716,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::Outline
         | Command::BlockKindDialog
         | Command::InsertPicture
+        | Command::InsertTable
+        | Command::Bookmark
+        | Command::ParagraphStyle
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleRoles
@@ -5686,6 +5692,9 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Outline => text_outline(hwnd),
         Command::BlockKindDialog => text_block_kind_dialog(hwnd),
         Command::InsertPicture => text_insert_picture(hwnd),
+        Command::InsertTable => text_insert_table(hwnd),
+        Command::Bookmark => text_bookmark(hwnd),
+        Command::ParagraphStyle => text_paragraph_style(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
@@ -6215,6 +6224,116 @@ fn text_insert_picture(hwnd: HWND) {
             refresh(hwnd);
         }
         Some(Err(message)) => dialog::error(hwnd, &message),
+        None => {}
+    }
+}
+
+/// Format ▸ Insert Table… — one prompt for the size (`3x4`, `grind_text::table::parse_size`), then
+/// the table below the caret's block, the caret on its first cell. Prompt first, borrow second:
+/// the dialog runs a nested message loop (decision 7).
+fn text_insert_table(hwnd: HWND) {
+    let Some(answer) = dialog::prompt(hwnd, "Insert Table", "Size — rows × columns:", "3x3")
+    else {
+        return;
+    };
+    let Some((rows, columns)) = grind_text::table::parse_size(&answer) else {
+        return dialog::error(hwnd, "A table size looks like 3x4 — rows, then columns.");
+    };
+    // SAFETY: one borrow, after the dialog. `insert_table` notifies; the observer posts.
+    let outcome = unsafe {
+        with_text(hwnd, |text| {
+            grind_text::table::insert_below(&text.app, text.caret.block, rows, columns).map(|at| {
+                text.place(
+                    Caret {
+                        block: at,
+                        offset: 0,
+                    },
+                    false,
+                );
+                text.caret_on = true;
+            })
+        })
+    };
+    match outcome {
+        Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
+        Some(Ok(())) => refresh(hwnd),
+        None => {}
+    }
+}
+
+/// Format ▸ Bookmark Here… — a name, then `App::set_bookmark` at the caret's block. The name
+/// overlay goes on, so the anchor can be seen.
+fn text_bookmark(hwnd: HWND) {
+    let Some(name) = dialog::prompt(hwnd, "Bookmark", "Bookmark name:", "") else {
+        return;
+    };
+    let name = name.trim().trim_start_matches('#').to_owned();
+    if name.is_empty() {
+        return;
+    }
+    // SAFETY: one borrow, after the dialog.
+    let outcome = unsafe {
+        with_text(hwnd, |text| {
+            text.app
+                .set_bookmark(&name, Some(text.caret.block))
+                .map(|moved| {
+                    text.show_names = true;
+                    let said = match moved {
+                        true => format!("#{name} moved here."),
+                        false => format!("#{name} anchored here."),
+                    };
+                    text.say(Some(said));
+                })
+        })
+    };
+    match outcome {
+        Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
+        Some(Ok(())) => {
+            build_menu(hwnd);
+            refresh(hwnd);
+        }
+        None => {}
+    }
+}
+
+/// Format ▸ Paragraph Style Name… — `App::set_style` over the blocks the selection touches, an
+/// empty answer removing the name.
+fn text_paragraph_style(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompt.
+    let Some(current) = (unsafe {
+        with_text(hwnd, |text| {
+            let (from, _) = text::keymap::ordered(text.anchor, text.caret);
+            text.app
+                .get_viewport(from.block..from.block + 1)
+                .get(0)
+                .and_then(|block| block.style.clone())
+                .unwrap_or_default()
+        })
+    }) else {
+        return;
+    };
+    let Some(name) = dialog::prompt(
+        hwnd,
+        "Paragraph Style",
+        "Style name (empty removes):",
+        &current,
+    ) else {
+        return;
+    };
+    let name = name.trim().to_owned();
+    // SAFETY: a fresh borrow, after the dialog.
+    let outcome = unsafe {
+        with_text(hwnd, |text| {
+            let (from, to) = text::keymap::ordered(text.anchor, text.caret);
+            text.app.set_style(
+                from.block..to.block + 1,
+                (!name.is_empty()).then(|| name.clone()),
+            )
+        })
+    };
+    match outcome {
+        Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
+        Some(Ok(_)) => refresh(hwnd),
         None => {}
     }
 }
