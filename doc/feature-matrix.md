@@ -264,8 +264,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Create or clear a filter | ● | ● | ○ | ● | ● | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
 | Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ◐ | ● ³ |
-| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ● ᵖᵃ | ○ | ● ³ |
-| Inline a name into every use (§6.5) | ● | ○ | ○ | ● ᵖᵃ | ○ | ● ³ |
+| Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ○ | ● ᵖᵃ | ○ | ● ³ |
+| Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ○ | ● ᵖᵃ | ○ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
@@ -283,6 +283,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ | ● |
 
 ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
+ᵖᵇ Two more buttons on each row of the *Names…* dialog — rename (an alert with an entry) and inline — over `App::rename_name` / `inline_name`, each saying how many uses it rewrote; closed 2026-10-02, compile- and lint-checked only.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.

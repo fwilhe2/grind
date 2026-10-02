@@ -1586,10 +1586,14 @@ fn palette_rows() -> &'static [palette::Row] {
     })
 }
 
-/// One name, as a row: its definition editable in place, and a button that removes it.
+/// One name, as a row: its definition editable in place, and buttons that rename, inline or
+/// remove it.
 ///
-/// `set_name` over the same name replaces it, so applying an edit is a definition and needs
-/// no separate "rename" path — the name itself is the row's title and does not change.
+/// `set_name` over the same name replaces it, so applying an edit is a definition and needs no
+/// separate path. **Rename** and **Inline** are the two edits that carry every use of the name
+/// with them (`App::rename_name`, `App::inline_name`, `doc/dsl.md` §6.5), so each is one undo
+/// step and says how many uses it rewrote. The name a row stands for is a cell, since a rename
+/// changes it under the closures that edit and delete the row.
 fn name_row(
     app: &Arc<App>,
     name: &str,
@@ -1597,6 +1601,7 @@ fn name_row(
     say: &Rc<dyn Fn(&str)>,
     sync_empty: &Rc<dyn Fn()>,
 ) -> adw::EntryRow {
+    let current = Rc::new(std::cell::RefCell::new(name.to_owned()));
     let row = adw::EntryRow::builder()
         .title(name)
         .text(definition_text(expression))
@@ -1607,14 +1612,100 @@ fn name_row(
         app,
         #[strong]
         say,
-        #[to_owned]
-        name,
+        #[strong]
+        current,
         move |row| {
-            if let Err(error) = define(&app, &name, &row.text()) {
+            if let Err(error) = define(&app, &current.borrow(), &row.text()) {
                 say(&error);
             }
         }
     ));
+
+    let rename = gtk::Button::from_icon_name("document-edit-symbolic");
+    rename.set_tooltip_text(Some("Rename, carrying every use"));
+    rename.set_valign(gtk::Align::Center);
+    rename.add_css_class("flat");
+    rename.connect_clicked(glib::clone!(
+        #[strong]
+        app,
+        #[strong]
+        say,
+        #[strong]
+        current,
+        #[weak]
+        row,
+        move |_| {
+            let entry = gtk::Entry::builder()
+                .text(current.borrow().as_str())
+                .activates_default(true)
+                .build();
+            let dialog = adw::AlertDialog::new(Some("Rename Name"), None);
+            dialog.set_body("Every formula and name that uses it follows.");
+            dialog.set_extra_child(Some(&entry));
+            dialog.add_response("cancel", "Cancel");
+            dialog.add_response("rename", "Rename");
+            dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
+            dialog.set_default_response(Some("rename"));
+            dialog.set_close_response("cancel");
+            dialog.choose(
+                &row,
+                gio::Cancellable::NONE,
+                glib::clone!(
+                    #[strong]
+                    app,
+                    #[strong]
+                    say,
+                    #[strong]
+                    current,
+                    #[weak]
+                    row,
+                    move |response| {
+                        if response != "rename" {
+                            return;
+                        }
+                        let to = entry.text();
+                        match app.rename_name(&current.borrow(), to.trim()) {
+                            Ok(uses) => {
+                                *current.borrow_mut() = to.trim().to_owned();
+                                row.set_title(to.trim());
+                                say(&format!("Renamed — {uses} use(s) rewritten"));
+                            }
+                            Err(error) => say(&error.to_string()),
+                        }
+                    }
+                ),
+            );
+        }
+    ));
+    row.add_suffix(&rename);
+
+    let inline = gtk::Button::from_icon_name("go-jump-symbolic");
+    inline.set_tooltip_text(Some("Inline into every use, then delete the name"));
+    inline.set_valign(gtk::Align::Center);
+    inline.add_css_class("flat");
+    inline.connect_clicked(glib::clone!(
+        #[strong]
+        app,
+        #[strong]
+        say,
+        #[strong]
+        sync_empty,
+        #[strong]
+        current,
+        #[weak]
+        row,
+        move |_| match app.inline_name(&current.borrow()) {
+            Ok(uses) => {
+                if let Some(list) = row.parent().and_downcast::<gtk::ListBox>() {
+                    list.remove(&row);
+                }
+                sync_empty();
+                say(&format!("Inlined — {uses} use(s) rewritten"));
+            }
+            Err(error) => say(&error.to_string()),
+        }
+    ));
+    row.add_suffix(&inline);
 
     let delete = gtk::Button::from_icon_name("user-trash-symbolic");
     delete.set_tooltip_text(Some("Delete"));
@@ -1625,14 +1716,14 @@ fn name_row(
         app,
         #[strong]
         sync_empty,
+        #[strong]
+        current,
         #[weak]
         row,
-        #[to_owned]
-        name,
         move |_| {
             // A formula that mentions a deleted name goes stale rather than being rewritten
             // — `App::clear_name`'s documented answer, and the banner counts it.
-            app.clear_name(&name);
+            app.clear_name(&current.borrow());
             if let Some(list) = row.parent().and_downcast::<gtk::ListBox>() {
                 list.remove(&row);
             }
