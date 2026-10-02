@@ -872,6 +872,7 @@ define_class!(
         /// here first.
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
+            crate::drive::hear("keyDown:");
             let control = event.modifierFlags().contains(NSEventModifierFlags::Control);
             let u = event
                 .charactersIgnoringModifiers()
@@ -886,6 +887,7 @@ define_class!(
         #[unsafe(method(doCommandBySelector:))]
         fn do_command_by_selector(&self, selector: Sel) {
             let name = selector.name().to_str().unwrap_or_default();
+            crate::drive::hear(name);
             match keys::grid_action(name) {
                 Some(action) => self.act(action),
                 // A key with no meaning here is the platform's beep, as in every other view.
@@ -905,6 +907,7 @@ define_class!(
                         .map(|text| text.string().to_string())
                 })
                 .unwrap_or_default();
+            crate::drive::hear(format!("insertText:{typed:?}"));
             if let Some(seed) = state::typed(Mode::Ready, &typed) {
                 self.ivars().begin_edit(seed);
             }

@@ -258,6 +258,31 @@ fn is_name(name: &str) -> bool {
 #[cfg(target_os = "macos")]
 pub use mac::replay;
 
+thread_local! {
+    /// What the views were told since a transcript last asked — `keyDown:`, the selector the
+    /// text system answered with, the text it inserted — so a key that changed nothing says
+    /// where it stopped.
+    static HEARD: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A view was told `what`: kept for the next transcript line. Costs one push outside a drive.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn hear(what: impl Into<String>) {
+    HEARD.with(|heard| {
+        let mut heard = heard.borrow_mut();
+        // Bounded, so a long session that is never driven does not keep growing it.
+        if heard.len() < 64 {
+            heard.push(what.into());
+        }
+    });
+}
+
+/// Everything heard since the last call, and forget it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn heard() -> String {
+    HEARD.with(|heard| heard.borrow_mut().drain(..).collect::<Vec<_>>().join(" "))
+}
+
 /// The replay — synthesized events through `NSApp.sendEvent`, so each takes the path a real one
 /// takes, in-process and so with no Accessibility or Input Monitoring permission.
 #[cfg(target_os = "macos")]
@@ -271,7 +296,7 @@ mod mac {
         NSWindow,
     };
     use objc2_foundation::{
-        NSDate, NSDefaultRunLoopMode, NSDictionary, NSPoint, NSRange, NSString,
+        NSDate, NSDefaultRunLoopMode, NSDictionary, NSPoint, NSProcessInfo, NSRange, NSString,
     };
 
     use super::{Step, Stroke, parse, stroke_for};
@@ -295,8 +320,19 @@ mod mac {
         }
     }
 
+    /// The modifiers a real keyboard would have set: the stroke's own, and for a key from
+    /// AppKit's function-key range (U+F700–U+F8FF) the Function flag — with NumericPad as well
+    /// for the four arrows, which is what the hardware sends for them.
     fn flags(stroke: &Stroke) -> NSEventModifierFlags {
         let mut flags = NSEventModifierFlags::empty();
+        if let Some(c) = stroke.characters.chars().next()
+            && ('\u{f700}'..='\u{f8ff}').contains(&c)
+        {
+            flags |= NSEventModifierFlags::Function;
+            if ('\u{f700}'..='\u{f703}').contains(&c) {
+                flags |= NSEventModifierFlags::NumericPad;
+            }
+        }
         for (on, flag) in [
             (stroke.mods.command, NSEventModifierFlags::Command),
             (stroke.mods.shift, NSEventModifierFlags::Shift),
@@ -333,7 +369,7 @@ mod mac {
             let key = item.keyEquivalent().to_string();
             if !key.is_empty()
                 && key == stroke.characters.to_lowercase()
-                && item.keyEquivalentModifierMask() & modifiers == flags(stroke)
+                && item.keyEquivalentModifierMask() & modifiers == flags(stroke) & modifiers
             {
                 return Some(item);
             }
@@ -422,12 +458,16 @@ mod mac {
             return send(app, &window, &item);
         }
         let characters = NSString::from_str(&stroke.characters);
+        // A real event's timestamp is the system's uptime; one at zero is older than anything
+        // the text-input system has seen, and an active application's input context may drop
+        // it as stale.
+        let now = NSProcessInfo::processInfo().systemUptime();
         for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
             let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
                 kind,
                 NSPoint::new(0.0, 0.0),
                 flags(stroke),
-                0.0,
+                now,
                 window.windowNumber(),
                 None,
                 &characters,
@@ -590,7 +630,8 @@ mod mac {
         let selection = document
             .and_then(|document| document.downcast_ref::<Document>())
             .map_or_else(|| "no grid".to_owned(), Document::selection_text);
-        format!("window {title:?}, edited {edited}, selection {selection}")
+        let heard = super::heard();
+        format!("window {title:?}, edited {edited}, heard [{heard}], selection {selection}")
     }
 
     /// Which object has the keyboard — its class's name, for the first line of a transcript,
