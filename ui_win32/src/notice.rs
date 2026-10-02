@@ -153,6 +153,49 @@ pub fn filled(cells: u64, down: bool) -> String {
     }
 }
 
+/// What hiding or showing a run of rows or columns did.
+pub fn tracks_hidden(count: usize, rows: bool, hidden: bool) -> String {
+    let what = match rows {
+        true => counted(count, "row", "rows"),
+        false => counted(count, "column", "columns"),
+    };
+    match (count, hidden) {
+        (0, true) => "Those are hidden already.".to_owned(),
+        (0, false) => "Nothing there was hidden.".to_owned(),
+        (_, true) => format!("Hid {what}. Show brings {} back.", pronoun(count)),
+        (_, false) => format!("Showed {what}."),
+    }
+}
+
+fn pronoun(count: usize) -> &'static str {
+    match count {
+        1 => "it",
+        _ => "them",
+    }
+}
+
+/// What a row height or column width did.
+pub fn track_sized(count: usize, rows: bool) -> String {
+    let what = match rows {
+        true => counted(count, "row", "rows"),
+        false => counted(count, "column", "columns"),
+    };
+    match count {
+        0 => "That was the size already.".to_owned(),
+        _ => format!("Resized {what}. Ctrl+Z takes it back."),
+    }
+}
+
+/// A name defined over the selection.
+pub fn name_defined(name: &str, target: &str) -> String {
+    format!("“{name}” now means {target}. Use it in a formula instead of the address.")
+}
+
+/// What an evaluated formula came to — said, never stored.
+pub fn evaluated(formula: &str, value: &str) -> String {
+    format!("{formula} = {value}  (nothing was stored)")
+}
+
 /// [`found`] for the word processor: which of how many occurrences the selection is on.
 pub fn text_found(index: usize, count: usize, needle: &str) -> String {
     format!(
@@ -305,5 +348,15 @@ mod tests {
         assert!(filled(1, false).starts_with("Filled 1 cell."));
         assert!(filled(0, true).contains("more than one row"));
         assert!(filled(0, false).contains("more than one column"));
+    }
+
+    #[test]
+    fn the_structure_sentences_count_what_they_changed() {
+        assert!(tracks_hidden(3, true, true).starts_with("Hid 3 rows"));
+        assert!(tracks_hidden(1, false, true).contains("brings it back"));
+        assert_eq!(tracks_hidden(0, true, false), "Nothing there was hidden.");
+        assert!(track_sized(2, false).starts_with("Resized 2 columns"));
+        assert!(name_defined("tax", "Sheet1.B2").contains("Sheet1.B2"));
+        assert!(evaluated("=1+1", "2").contains("nothing was stored"));
     }
 }

@@ -3248,6 +3248,14 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ClearCells => clear_cells(hwnd),
         Command::FillDown => fill(hwnd, true),
         Command::FillRight => fill(hwnd, false),
+        Command::HideRows => hide_tracks(hwnd, true, true),
+        Command::ShowRows => hide_tracks(hwnd, true, false),
+        Command::HideColumns => hide_tracks(hwnd, false, true),
+        Command::ShowColumns => hide_tracks(hwnd, false, false),
+        Command::RowHeight => track_size(hwnd, true),
+        Command::ColumnWidth => track_size(hwnd, false),
+        Command::DefineName => define_name(hwnd),
+        Command::Evaluate => evaluate(hwnd),
         Command::GoTo => open_name_box(hwnd),
         Command::Find => find(hwnd),
         Command::FindNext => find_step(hwnd, find::Towards::Next),
@@ -3439,6 +3447,138 @@ fn fill(hwnd: HWND, down: bool) {
                 }
             }
             state.say(Some(notice::filled(cells, down)));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Sheet ▸ Hide / Show Rows or Columns — the run the selection spans, `App::set_row_hidden` /
+/// `set_col_hidden`, one undo step. Showing reaches a hidden run because a selection made with
+/// Shift+arrow across one still spans its indexes.
+fn hide_tracks(hwnd: HWND, rows: bool, hidden: bool) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let result = match rows {
+                true => state.app.set_row_hidden(
+                    state.sheet,
+                    grind_sheet::verbs::rows(state.selection),
+                    hidden,
+                ),
+                false => state.app.set_col_hidden(
+                    state.sheet,
+                    grind_sheet::verbs::cols(state.selection),
+                    hidden,
+                ),
+            };
+            state.say(Some(match result {
+                Ok(count) => notice::tracks_hidden(count, rows, hidden),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Sheet ▸ Row Height… / Column Width… — a length in a prompt (`2.5cm`, `64pt`), over every
+/// selected row or column. `App` checks the length, so a nonsense one is the notice's problem,
+/// not a column that silently vanishes. An empty answer clears the size back to the default.
+fn track_size(hwnd: HWND, rows: bool) {
+    let prompt = match rows {
+        true => "Row height — 2.5cm, 1in or 64pt; empty for the default:",
+        false => "Column width — 2.5cm, 1in or 64pt; empty for the default:",
+    };
+    let title = match rows {
+        true => "Row Height",
+        false => "Column Width",
+    };
+    let Some(answer) = dialog::prompt(hwnd, title, prompt, "") else {
+        return;
+    };
+    let size = Some(answer.trim().to_owned()).filter(|size| !size.is_empty());
+    // SAFETY: one borrow, taken after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let result = match rows {
+                true => state.app.set_row_height(
+                    state.sheet,
+                    grind_sheet::verbs::rows(state.selection),
+                    size,
+                ),
+                false => state.app.set_col_width(
+                    state.sheet,
+                    grind_sheet::verbs::cols(state.selection),
+                    size,
+                ),
+            };
+            state.say(Some(match result {
+                Ok(count) => notice::track_sized(count, rows),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Define Name… — a name for the selection, sheet-qualified so it means the same place from
+/// every sheet (`grind_sheet::verbs::name_target`). Redefining one is `grind sheet name`'s.
+fn define_name(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompt.
+    let Some(target) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let sheet = state.app.sheet_name(state.sheet).unwrap_or_default();
+            grind_sheet::verbs::name_target(&sheet, state.selection)
+        })
+    }) else {
+        return;
+    };
+    let Some(name) = dialog::prompt(
+        hwnd,
+        "Define Name",
+        &format!("A name for {target}, to use in formulas instead of its address:"),
+        "",
+    ) else {
+        return;
+    };
+    let name = name.trim().to_owned();
+    if name.is_empty() {
+        return;
+    }
+    // SAFETY: a fresh borrow, after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let result = grind_sheet::a1::definition(&state.app, &target)
+                .and_then(|expression| state.app.set_name(&name, &expression));
+            state.say(Some(match result {
+                Ok(()) => notice::name_defined(&name, &target),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Evaluate… — a formula typed in display syntax, worked out at the active cell and said in
+/// the notice bar. `App::preview`: nothing stored, no undo step.
+fn evaluate(hwnd: HWND) {
+    let Some(typed) = dialog::prompt(
+        hwnd,
+        "Evaluate",
+        "A formula, worked out at the active cell without storing it:",
+        "=",
+    ) else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let at = state.selection.active;
+            state.say(Some(
+                match grind_sheet::verbs::evaluated(&state.app, state.sheet, at, &typed) {
+                    Ok(value) => notice::evaluated(typed.trim(), &value),
+                    Err(why) => format!("That cannot be worked out: {why}"),
+                },
+            ));
         });
     }
     refresh(hwnd);
@@ -4695,6 +4835,14 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ClearCells
         | Command::FillDown
         | Command::FillRight
+        | Command::HideRows
+        | Command::ShowRows
+        | Command::HideColumns
+        | Command::ShowColumns
+        | Command::RowHeight
+        | Command::ColumnWidth
+        | Command::DefineName
+        | Command::Evaluate
         | Command::GoTo
         | Command::Find
         | Command::FindNext
@@ -5732,6 +5880,14 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Recalculate
         | Command::FillDown
         | Command::FillRight
+        | Command::HideRows
+        | Command::ShowRows
+        | Command::HideColumns
+        | Command::ShowColumns
+        | Command::RowHeight
+        | Command::ColumnWidth
+        | Command::DefineName
+        | Command::Evaluate
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete

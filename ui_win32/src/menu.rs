@@ -77,6 +77,22 @@ pub enum Command {
     /// `App::fill` over `grind_sheet::nav::fills`, the lines the Mac and the browser fill too.
     FillDown,
     FillRight,
+    /// Hide or show the rows (or columns) the selection spans — `App::set_row_hidden` and
+    /// `set_col_hidden` over `grind_sheet::verbs::rows`/`cols`, the call `grind sheet hide` makes.
+    HideRows,
+    ShowRows,
+    HideColumns,
+    ShowColumns,
+    /// A length asked for in a prompt — `2.5cm`, `1in`, `64pt` — set on every selected row or
+    /// column in one undo step: `App::set_row_height` / `set_col_width`, which check the length.
+    RowHeight,
+    ColumnWidth,
+    /// A name for the selection, to use in formulas instead of its address (`App::set_name`
+    /// through `grind_sheet::a1::definition`, as `grind sheet name` reads one).
+    DefineName,
+    /// A formula worked out at the active cell and said in the notice bar, storing nothing and
+    /// making no undo step (`grind_sheet::verbs::evaluated`, `grind sheet eval`'s call).
+    Evaluate,
     /// Put the caret in the name box. A menu item as well as F5, because a verb nobody can
     /// find is a verb this shell does not have.
     GoTo,
@@ -258,6 +274,14 @@ impl Command {
         Command::ClearCells,
         Command::FillDown,
         Command::FillRight,
+        Command::HideRows,
+        Command::ShowRows,
+        Command::HideColumns,
+        Command::ShowColumns,
+        Command::RowHeight,
+        Command::ColumnWidth,
+        Command::DefineName,
+        Command::Evaluate,
         Command::GoTo,
         Command::Find,
         Command::FindNext,
@@ -522,6 +546,31 @@ pub const MENUS: &[Menu] = &[
                 command: Command::SheetPrevious,
                 label: "&Previous\tCtrl+PgUp",
             },
+            Item::Separator,
+            Item::Verb {
+                command: Command::HideRows,
+                label: "Hide Row&s",
+            },
+            Item::Verb {
+                command: Command::ShowRows,
+                label: "Show R&ows",
+            },
+            Item::Verb {
+                command: Command::HideColumns,
+                label: "Hide &Columns",
+            },
+            Item::Verb {
+                command: Command::ShowColumns,
+                label: "Show Col&umns",
+            },
+            Item::Verb {
+                command: Command::RowHeight,
+                label: "Row &Height…",
+            },
+            Item::Verb {
+                command: Command::ColumnWidth,
+                label: "Column &Width…",
+            },
         ],
     },
     Menu {
@@ -539,6 +588,14 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ExplainFormula,
                 label: "&Explain Formula…\tCtrl+Shift+E",
+            },
+            Item::Verb {
+                command: Command::Evaluate,
+                label: "E&valuate…",
+            },
+            Item::Verb {
+                command: Command::DefineName,
+                label: "Define &Name…",
             },
             Item::Separator,
             Item::Verb {
@@ -886,6 +943,14 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         Command::Recalculate
         | Command::FillDown
         | Command::FillRight
+        | Command::HideRows
+        | Command::ShowRows
+        | Command::HideColumns
+        | Command::ShowColumns
+        | Command::RowHeight
+        | Command::ColumnWidth
+        | Command::DefineName
+        | Command::Evaluate
         | Command::SheetAdd
         | Command::SheetRename
         | Command::SheetDelete
@@ -1243,6 +1308,14 @@ mod tests {
             Command::Recalculate,
             Command::FillDown,
             Command::FillRight,
+            Command::HideRows,
+            Command::ShowRows,
+            Command::HideColumns,
+            Command::ShowColumns,
+            Command::RowHeight,
+            Command::ColumnWidth,
+            Command::DefineName,
+            Command::Evaluate,
             Command::FunctionList,
             Command::ExplainFormula,
             Command::ToggleFriendly,

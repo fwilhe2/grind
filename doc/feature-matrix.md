@@ -145,7 +145,7 @@ than as a cursor on a hidden row.
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ● |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
-| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ● |
+| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ● | ● |
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
@@ -254,16 +254,16 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 |---|---|---|---|---|---|---|
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
-| Set a column width or row height | ● | ● | ● | ○ | ○ | ● |
+| Set a column width or row height | ● | ● | ● | ○ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
 | Autofit a column | ● | ● | ○ | ○ | ○ | ● |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
-| Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ● |
+| Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
-| Create or clear a filter | ● | ● | ○ | ○ | ○ | ● |
+| Create or clear a filter | ● | ● | ○ | ● | ● | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ● ³ |
+| Define, redefine or delete a name | ● | ● | ● | ○ | ◐ | ● ³ |
 | Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
 | Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
