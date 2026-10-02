@@ -23,6 +23,7 @@
 
 use std::ops::Range;
 
+use super::display::{self, TokenKind};
 use super::{friendly, funcs};
 
 /// One offer in a completion list.
@@ -137,6 +138,61 @@ pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
         }
     }
     None
+}
+
+/// Whether a reference may be inserted at `caret` — the predicate Point mode is.
+///
+/// A formula, and the last thing before the caret is something a reference can follow: an
+/// operator, a separator, an opening parenthesis, or the `=` itself. `SUM(B2` is *not*
+/// eligible — an arrow there moves on rather than pointing at a second cell, which is what
+/// stops a half-typed reference from being extended by accident.
+pub fn ref_eligible(text: &str, caret: usize) -> bool {
+    if !text.starts_with('=') {
+        return false;
+    }
+    let before = &text[..caret.min(text.len())];
+    match before.trim_end().chars().next_back() {
+        Some(c) => "=(;+-*/^&<>:,".contains(c),
+        // Nothing but the `=` and whitespace.
+        None => false,
+    }
+}
+
+/// F4: the reference to re-spell, and what to spell it as.
+///
+/// Excel's cycle, because everybody's fingers know it: `B2` → `$B$2` → `B$2` → `$B2` → `B2`.
+/// The reference is the one the caret is in or at the end of, found with `display::spans` —
+/// the same scanner that colours them, so what F4 acts on is what the user sees highlighted.
+pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)> {
+    let span = display::spans(text).into_iter().find(|span| {
+        span.kind == TokenKind::Ref && span.range.start <= caret && caret <= span.range.end
+    })?;
+    let mut reference = crate::a1::parse(&text[span.range.clone()]).ok()?;
+    // Both axes of both ends move together, which is what the four steps mean.
+    let (col, row) = reference
+        .start
+        .col
+        .zip(reference.start.row)
+        .map(|(c, r)| (c.absolute, r.absolute))
+        .unwrap_or((false, false));
+    let (col, row) = match (col, row) {
+        (false, false) => (true, true),
+        (true, true) => (false, true),
+        (false, true) => (true, false),
+        _ => (false, false),
+    };
+    for end in [Some(&mut reference.start), reference.end.as_mut()]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(axis) = end.col.as_mut() {
+            axis.absolute = col;
+        }
+        if let Some(axis) = end.row.as_mut() {
+            axis.absolute = row;
+        }
+    }
+    Some((span.range, display::reference_text(&reference)))
 }
 
 /// A function's signature split into a head and one part per parameter — the two spellings a
@@ -702,5 +758,27 @@ mod tests {
         assert_eq!(function_insert(at, false).as_deref(), Some("=PV("));
         assert_eq!(function_insert(at, true).as_deref(), Some("PV("));
         assert_eq!(function_insert(lines.len(), false), None);
+    }
+
+    /// Excel's cycle, because everybody's fingers know it.
+    #[test]
+    fn f4_walks_the_four_spellings_and_comes_back() {
+        let mut text = "=SUM(B2:B4)".to_owned();
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            let (span, replacement) = cycle_absolute(&text, 6).expect(&text);
+            text.replace_range(span, &replacement);
+            seen.push(replacement);
+        }
+        assert_eq!(
+            seen,
+            ["$B$2:$B$4", "B$2:B$4", "$B2:$B4", "B2:B4", "$B$2:$B$4"]
+        );
+    }
+
+    #[test]
+    fn f4_does_nothing_where_there_is_no_reference() {
+        assert!(cycle_absolute("=SUM(1;2)", 6).is_none());
+        assert!(cycle_absolute("hello", 2).is_none());
     }
 }
