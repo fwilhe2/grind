@@ -165,7 +165,12 @@ impl TextPane {
 
     /// Lay the whole document out again at the page's width.
     fn reflow(&self) {
-        let laid = face::lay_out(&self.app, &self.faces(), self.width.get());
+        let laid = face::lay_out(
+            &self.app,
+            &self.faces(),
+            self.width.get(),
+            &render::ImageDecoder,
+        );
         *self.laid.borrow_mut() = laid;
     }
 
@@ -523,6 +528,7 @@ define_class!(
                     view: rect(dirty),
                     state: &state,
                     caret: focused,
+                    decoder: &render::ImageDecoder,
                     names: pane.names.get(),
                     palette: &palette,
                 })

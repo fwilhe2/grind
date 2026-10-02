@@ -22,9 +22,38 @@ use objc2_core_graphics::{
     CGContext, CGImageAlphaInfo, kCGColorSpaceSRGB,
 };
 
+use std::ptr::null_mut;
+
+use grind_text::ImageView;
+use objc2::AllocAnyThread;
+use objc2::rc::Retained;
+use objc2_app_kit::NSImage;
+use objc2_foundation::NSData;
+
 use crate::metrics::CoreText;
 use crate::ops::{Op, WASH};
 use crate::sheet::geom::Rect;
+use crate::text::picture::Decoder;
+
+/// A picture's bytes as an `NSImage` — every format the system reads — or `None` when nothing
+/// here can read them.
+///
+/// ponytail: decoded on every paint rather than cached, as `ui_text_gtk` does; the trigger is a
+/// document whose pictures make scrolling visibly slow, and the cache is keyed by the bytes.
+fn decode(data: &[u8]) -> Option<Retained<NSImage>> {
+    NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(data))
+}
+
+/// What decodes a page's pictures for the layout — their natural size, in points, which is
+/// `NSImage`'s own reading of a picture's pixels and resolution.
+pub struct ImageDecoder;
+
+impl Decoder for ImageDecoder {
+    fn size(&self, image: &ImageView) -> Option<(f64, f64)> {
+        let size = decode(&image.data)?.size();
+        (size.width > 0.0 && size.height > 0.0).then_some((size.width, size.height))
+    }
+}
 
 fn cg_rect(rect: &Rect) -> CGRect {
     CGRect::new(CGPoint::new(rect.x, rect.y), CGSize::new(rect.w, rect.h))
@@ -53,6 +82,26 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
     );
     for op in ops {
         match op {
+            Op::Image { rect, data } => {
+                let Some(image) = decode(data).and_then(|image| {
+                    // SAFETY: a null proposed rectangle and no context or hints ask for the
+                    // image at its own size, all documented as allowed.
+                    unsafe { image.CGImageForProposedRect_context_hints(null_mut(), None, None) }
+                }) else {
+                    continue;
+                };
+                // A CGImage is drawn the right way up in an unflipped space; this one is
+                // flipped, so the picture's own rectangle is flipped back around its middle.
+                CGContext::save_g_state(context_ref);
+                CGContext::translate_ctm(context_ref, rect.x, rect.y + rect.h);
+                CGContext::scale_ctm(context_ref, 1.0, -1.0);
+                CGContext::draw_image(
+                    context_ref,
+                    cg_rect(&Rect::new(0.0, 0.0, rect.w, rect.h)),
+                    Some(&image),
+                );
+                CGContext::restore_g_state(context_ref);
+            }
             Op::Fill { rect, color } => {
                 fill_color(context, *color, 1.0);
                 CGContext::fill_rect(context_ref, cg_rect(rect));

@@ -376,7 +376,7 @@ other dialect from the window.
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
 | **Pictures** | | | | | | |
 | Insert an image | ● | ● | ○ | ○ | ○ | ○ |
-| **Draws** an image | — | ● | ○ | ● | ○ | ○ |
+| **Draws** an image | — | ● | ○ | ● | ○ | ● |
 | **Tables** | | | | | | |
 | Insert a table | ● | ● | ● | ○ | ○ | ● |
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ | ● |

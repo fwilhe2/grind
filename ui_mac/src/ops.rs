@@ -8,6 +8,8 @@
 //! Portable, with no CoreGraphics in it: whatever decides *what* is drawn where is tested on
 //! Linux, and the Mac half only puts it down (decision 9: one drawing path, two callers).
 
+use std::rc::Rc;
+
 use grind_core::color::Rgb;
 use grind_core::style::TextStyle;
 
@@ -50,6 +52,10 @@ pub enum Op {
         strike: bool,
         clip: Rect,
     },
+    /// A picture's bytes — a PNG, a JPEG, whatever the document holds — drawn to fill `rect`,
+    /// decoded by the renderer, which on a Mac is `NSImage`. Shared rather than copied, since a
+    /// frame may draw one picture in several places and every paint makes a frame.
+    Image { rect: Rect, data: Rc<[u8]> },
 }
 
 impl Op {
@@ -98,6 +104,10 @@ impl Op {
                 underline,
                 strike,
                 clip: clip.offset(dx, dy),
+            },
+            Op::Image { rect, data } => Op::Image {
+                rect: rect.offset(dx, dy),
+                data,
             },
         }
     }
@@ -153,6 +163,12 @@ impl Op {
                     strike,
                     clip,
                 })
+            }
+            // A picture is drawn whole or not at all: cutting one would need the renderer to
+            // clip, and a picture straddling a band's edge is not a case any frame has.
+            Op::Image { rect, data } => {
+                let rect = rect.offset(dx, dy);
+                (!rect.intersection(clip).is_empty()).then_some(Op::Image { rect, data })
             }
         }
     }

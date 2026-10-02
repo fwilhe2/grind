@@ -647,7 +647,7 @@ mod tests {
         ops.iter()
             .filter_map(|op| match op {
                 Op::Text { text, x, top, .. } => Some((text.as_str(), *x, *top)),
-                Op::Fill { .. } | Op::Wash { .. } | Op::Run { .. } => None,
+                Op::Fill { .. } | Op::Wash { .. } | Op::Run { .. } | Op::Image { .. } => None,
             })
             .collect()
     }

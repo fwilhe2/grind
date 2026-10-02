@@ -252,7 +252,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 })
                 .collect();
             // Laid out at the frame's width, as a window that size lays it out.
-            let laid = text::face::lay_out(&app, &faces, FRAME.0);
+            let laid = text::face::lay_out(&app, &faces, FRAME.0, &render::ImageDecoder);
             let palette = match dark {
                 true => Palette::DARK,
                 false => Palette::LIGHT,
@@ -268,6 +268,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 view: sheet::geom::Rect::new(0.0, 0.0, FRAME.0, FRAME.1),
                 state: &state,
                 caret: true,
+                decoder: &render::ImageDecoder,
                 names: false,
                 palette: &palette,
             });

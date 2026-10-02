@@ -526,8 +526,7 @@ input method's composition, laid out as if typed).
 What M6 leaves: the caret does not blink (a Mac text view's does; a timer is the whole of it,
 and it would make a drive's snapshots depend on when they were taken); a selection across
 blocks is shown to an input method as the caret alone, since the one block it sees cannot hold
-it; a picture is outlined where it goes rather than drawn (`CGImageSource` is the decoder, and
-`flow::lay_out`'s picture hook is where it goes); the text sidebar (headings and bookmarks),
+it; a picture outlined where it goes rather than drawn (since closed: `NSImage` decodes it); the text sidebar (headings and bookmarks),
 paragraph kinds from a menu and every formatting control, which are M7's and M8's — and Edit ▸
 Find over the page, a go-to prompt and a word count, which came after M11; and a notice banner for an edit the core refuses, which beeps instead.
 
@@ -651,7 +650,10 @@ With M12 waiting on a person, the work turned to what each milestone named as le
 **Find and Replace on the page** (one find bar over a `Findable` trait both panes answer, with a
 status line of its own, since a page window has no banner); **Go To on a page** (⌘L asks for
 `p12`, `#intro` or `§2.1` in an alert); **Edit ▸ Recalculate** on ⌘=, Excel for Mac's key; a
-page's **word count** in its window's subtitle; and `canAsynchronouslyWriteToURL:` answering NO
+page's **word count** in its window's subtitle; **pictures drawn on the page** — `NSImage`
+decodes them, `text/picture.rs` fits each to the column at no more than its own size with its
+caption under it (`ui_text_gtk`'s rule, so a figure takes the same room in both windows), and
+bytes nothing reads stay outlined; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

@@ -28,6 +28,7 @@ use grind_text::look::Role;
 use grind_text::{App, BlockKind};
 
 use super::geom;
+use super::picture::{self, Decoder};
 use crate::metrics::{Family, Font};
 
 /// The body's size, in points — `metrics::BASE_PT`, the grid's, and LibreOffice's default.
@@ -140,8 +141,9 @@ impl Laid {
     }
 }
 
-/// Lay `app` out on a page `width` wide, with one face per role in [`Role::ALL`]'s order.
-pub fn lay_out<M: Metrics>(app: &App, faces: &[M], width: f64) -> Laid {
+/// Lay `app` out on a page `width` wide, with one face per role in [`Role::ALL`]'s order, a
+/// picture block as tall as `decoder` says its picture and caption are (`text/picture.rs`).
+pub fn lay_out<M: Metrics>(app: &App, faces: &[M], width: f64, decoder: &dyn Decoder) -> Laid {
     let column = geom::column(width);
     let spacing = geom::spacing();
     let mut laid = Laid {
@@ -149,8 +151,13 @@ pub fn lay_out<M: Metrics>(app: &App, faces: &[M], width: f64) -> Laid {
         across: grind_text::flow::across(app, column.1, &spacing),
         column,
     };
-    laid.flow =
-        grind_text::flow::lay_out(app, &laid.faces(faces), column.1, &spacing, &|_, _| None);
+    let body = &faces[slot(Role::Body)];
+    let picture = |view: &grind_text::BlockView, width: f64| {
+        picture::height(view, width, decoder, |text, width| {
+            picture::caption_lines(text, width, body).1
+        })
+    };
+    laid.flow = grind_text::flow::lay_out(app, &laid.faces(faces), column.1, &spacing, &picture);
     laid
 }
 
@@ -266,7 +273,7 @@ mod tests {
         .unwrap();
         let faces = vec![grind_text::Fixed; Role::ALL.len()];
         let width = 60.0 + 2.0 * geom::MARGIN;
-        let laid = lay_out(&app, &faces, width);
+        let laid = lay_out(&app, &faces, width, &picture::Undecoded);
         assert_eq!(laid.column, (geom::MARGIN, 60.0));
         let column = laid.faces(&faces);
         for block in 0..2 {

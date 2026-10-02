@@ -19,9 +19,9 @@
 //! marked text is underlined, its selected clause more heavily — the Mac convention, and ahead of
 //! the Windows pane, whose composition is the system's floating box.
 //!
-//! **What it does not draw**, each a named gap in `doc/macos-shell.md`: a picture (its block is
-//! outlined where the picture would go), the name overlay (M8), and paragraph styles beyond the
-//! faces `grind_text::look` names.
+//! **What it does not draw**, each a named gap in `doc/macos-shell.md`: a picture whose bytes
+//! nothing here decodes (its block is outlined where the picture would go), and paragraph styles
+//! beyond the faces `grind_text::look` names.
 
 use grind_core::color::{self, Rgb};
 use grind_text::flow::Flow;
@@ -32,6 +32,7 @@ use grind_text::{App, BlockKind, Caret, Faces, RunView};
 
 use super::face;
 use super::geom::{CARET_W, RULE, bullet_x};
+use super::picture::{self, Decoder};
 use super::state::Page;
 use crate::metrics::{Family, Font};
 use crate::ops::Op;
@@ -117,6 +118,8 @@ pub struct Frame<'a> {
     /// Whether the caret is drawn — off while the view is not the key view, as every Mac text
     /// view's is.
     pub caret: bool,
+    /// What decodes a picture's bytes — `NSImage` on a Mac.
+    pub decoder: &'a dyn Decoder,
     /// View ▸ Names: each bookmark's name in the margin beside its line (M8).
     pub names: bool,
     pub palette: &'a Palette,
@@ -233,21 +236,51 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
         let x = column_x + slot.indent;
         let role = Role::of(&block.kind, block.style.as_deref());
 
-        if grind_text::picture_of(block).is_some() {
-            // ponytail: a picture is outlined where it goes rather than drawn. Decoding one is
-            // `CGImageSource`'s, and the flow sizes the block as its placeholder line until the
-            // page has a decoder to hand `grind_text::flow::lay_out`'s picture hook.
-            let rect = Rect::new(x, slot.top, slot.width, slot.height.max(1.0));
-            for edge in [
-                Rect::new(rect.x, rect.y, rect.w, RULE),
-                Rect::new(rect.x, rect.bottom() - RULE, rect.w, RULE),
-                Rect::new(rect.x, rect.y, RULE, rect.h),
-                Rect::new(rect.right() - RULE, rect.y, RULE, rect.h),
-            ] {
-                ops.push(Op::Fill {
-                    rect: edge,
-                    color: rule,
-                });
+        if let Some((image, caption)) = grind_text::picture_of(block) {
+            match frame.decoder.size(image) {
+                // The picture fitted to the block's width, and its caption's lines under it in
+                // the block's own face — the room `face::lay_out` reserved for both.
+                Some(size) => {
+                    let (w, h) = picture::fitted(size, slot.width);
+                    ops.push(Op::Image {
+                        rect: Rect::new(x, slot.top, w, h),
+                        data: image.data.as_slice().into(),
+                    });
+                    if let Some(caption) = caption {
+                        let (_, metrics) =
+                            faces.of(slot.index, &block.kind, block.style.as_deref());
+                        let (lines, _) = picture::caption_lines(caption, slot.width, metrics);
+                        let top = slot.top + h + picture::CAPTION_GAP;
+                        for (text, line_top) in lines {
+                            ops.push(Op::Run {
+                                x,
+                                top: top + line_top,
+                                text,
+                                font: face::font(role, &Default::default()),
+                                color: palette.ink,
+                                underline: false,
+                                strike: false,
+                                clip: view,
+                            });
+                        }
+                    }
+                }
+                // Bytes nothing here can decode: outlined where the picture goes, and the rest of
+                // the document drawn — R5's tolerance, over a picture.
+                None => {
+                    let rect = Rect::new(x, slot.top, slot.width, slot.height.max(1.0));
+                    for edge in [
+                        Rect::new(rect.x, rect.y, rect.w, RULE),
+                        Rect::new(rect.x, rect.bottom() - RULE, rect.w, RULE),
+                        Rect::new(rect.x, rect.y, RULE, rect.h),
+                        Rect::new(rect.right() - RULE, rect.y, RULE, rect.h),
+                    ] {
+                        ops.push(Op::Fill {
+                            rect: edge,
+                            color: rule,
+                        });
+                    }
+                }
             }
             continue;
         }
@@ -517,6 +550,7 @@ mod tests {
             view: Rect::new(0.0, 0.0, 400.0, 400.0),
             state,
             caret: true,
+            decoder: &picture::Undecoded,
             names: false,
             palette: &Palette::LIGHT,
         })
@@ -760,6 +794,7 @@ mod tests {
                 view: Rect::new(0.0, 0.0, 400.0, 400.0),
                 state: &Page::default(),
                 caret: false,
+                decoder: &picture::Undecoded,
                 names,
                 palette: &Palette::LIGHT,
             });
@@ -777,5 +812,68 @@ mod tests {
             .expect("the name is drawn");
         assert!(*x < 200.0, "in the margin, left of the text");
         assert_eq!(*top, spacing().top, "on the bookmark's own line");
+    }
+
+    /// A picture the decoder can size is drawn at its fitted size where the flow put its block;
+    /// one it cannot is outlined.
+    #[test]
+    fn a_decoded_picture_is_drawn_fitted_and_an_undecodable_one_outlined() {
+        struct Square;
+        impl Decoder for Square {
+            fn size(&self, _: &grind_text::ImageView) -> Option<(f64, f64)> {
+                Some((40.0, 40.0))
+            }
+        }
+        let app = App::new();
+        app.insert_image(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            "image/png".into(),
+            vec![1, 2, 3],
+            None,
+            None,
+        )
+        .unwrap();
+        let faces = vec![grind_text::Fixed; Role::ALL.len()];
+        let laid = face::lay_out(
+            &app,
+            &faces,
+            20.0 + 2.0 * crate::text::geom::MARGIN,
+            &Square,
+        );
+        let draw = |decoder: &dyn Decoder| {
+            frame(&Frame {
+                app: &app,
+                flow: &laid.flow,
+                faces: &laid.faces(&faces),
+                column_x: laid.column.0,
+                view: Rect::new(0.0, 0.0, 400.0, 400.0),
+                state: &Page::default(),
+                caret: false,
+                decoder,
+                names: false,
+                palette: &Palette::LIGHT,
+            })
+        };
+        let images: Vec<Rect> = draw(&Square)
+            .iter()
+            .filter_map(|op| match op {
+                Op::Image { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            images,
+            [Rect::new(laid.column.0, spacing().top, 20.0, 20.0)],
+            "fitted to the 20-wide column"
+        );
+        let undecoded = draw(&picture::Undecoded);
+        assert!(!undecoded.iter().any(|op| matches!(op, Op::Image { .. })));
+        assert!(
+            fills(&undecoded, Palette::LIGHT.rule()).len() >= 4,
+            "outlined"
+        );
     }
 }
