@@ -189,8 +189,18 @@ impl Pane {
 
     /// Tell the text listeners what the edit, or the active cell, now says.
     pub fn edit_changed(&self) {
+        // With View ▸ Names on, a formula is read through the names it uses — `=rate*subtotal`
+        // where the file stores `=[.B2]*[.B7]` (`App::named_formula`, `doc/view-modes.md` §3.3).
+        let named = (!self.is_editing() && self.overlays.get().names)
+            .then(|| {
+                self.app
+                    .named_formula(self.sheet.get(), self.selection.get().active)
+                    .ok()
+                    .flatten()
+            })
+            .flatten();
         let text = crate::sheet::assist::read_out(
-            &self.edit_text(),
+            &named.unwrap_or_else(|| self.edit_text()),
             self.is_editing(),
             self.friendly.get(),
         );
@@ -453,6 +463,7 @@ impl Pane {
         for view in self.views.borrow().iter().filter_map(Weak::load) {
             view.setNeedsDisplay(true);
         }
+        self.edit_changed();
     }
 
     /// Remember the window's name box, for Go To.

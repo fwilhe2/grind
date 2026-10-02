@@ -153,7 +153,7 @@ than as a cursor on a hidden row.
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ○ | ○ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● | ● |
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● | ● |
-| Read a formula through the document's names | ● | ● | ● | ○ | ○ | ○ |
+| Read a formula through the document's names | ● | ● | ● | ○ | ○ | ● |
 | Every calculated cell, searchable | ● | ● | ○ | ○ | ○ | ○ |
 | Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 | Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |

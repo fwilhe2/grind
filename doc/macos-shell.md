@@ -681,7 +681,8 @@ and **Formula to Value** (`App::clear_formula`, LibreOffice's name, the first wi
 and Format ▸ Number ▸ **Document Locale…** (`App::set_locale`, a tag or nothing); **a defined name's context menu** in the sidebar — Rename… (every
 use following, `App::rename_name`), Redefine…, Inline Everywhere (`App::inline_name`) and Delete,
 the first window with the first and third; **View ▸ Formulas** (⌃⌘\`), every formula shown in its cell in
-display syntax rather than its value, drawn and never written — the first window with it; and `canAsynchronouslyWriteToURL:` answering NO
+display syntax rather than its value, drawn and never written — the first window with it; and with View ▸ Names on, the formula read-out **reads a formula
+through its names** (`App::named_formula`); and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 
