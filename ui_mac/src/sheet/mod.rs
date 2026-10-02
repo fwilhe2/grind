@@ -11,6 +11,7 @@ pub mod chart;
 pub mod format;
 pub mod geom;
 pub mod paint;
+pub mod resize;
 pub mod search;
 pub mod select;
 pub mod state;

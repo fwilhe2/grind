@@ -258,8 +258,8 @@ them: what its height does not hold is cut. ² The toolbar's two steps and Forma
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
 | Set a column width or row height | ● | ● | ● | ○ | ○ | ● |
-| Drag a track edge to resize | — | ● | ○ | ○ | ○ | ○ |
-| Autofit a column | ● | ● | ○ | ○ | ○ | ○ |
+| Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
+| Autofit a column | ● | ● | ○ | ○ | ○ | ● |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ○ |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ● |

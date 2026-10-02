@@ -33,8 +33,8 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSAccessibilityAnnouncementKey, NSAccessibilityAnnouncementRequestedNotification,
     NSAccessibilityPostNotificationWithUserInfo, NSAutoresizingMaskOptions, NSBeep, NSColor,
-    NSColorPanel, NSColorSpace, NSEvent, NSEventGestureAxis, NSEventModifierFlags, NSFontManager,
-    NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextField, NSView,
+    NSColorPanel, NSColorSpace, NSCursor, NSEvent, NSEventGestureAxis, NSEventModifierFlags,
+    NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -49,6 +49,7 @@ use crate::metrics::{BASE_PT, CoreText};
 use crate::render;
 use crate::sheet::geom::{Grid, HEADER_H, HEADER_W, Rect};
 use crate::sheet::paint::{self, Look, Op, Palette};
+use crate::sheet::resize::{self, Axis, Drag};
 use crate::sheet::select;
 use crate::sheet::state::{self, Mode, Seed};
 
@@ -101,6 +102,8 @@ pub struct Pane {
     /// Asked for on every paint and never written: a save with every overlay on is the bytes
     /// a save with none would be.
     pub overlays: Cell<grind_sheet::view::Overlays>,
+    /// A track picked up by its edge in a header band, until the button comes up (`resize.rs`).
+    resizing: Cell<Option<Drag>>,
 }
 
 impl Pane {
@@ -128,6 +131,7 @@ impl Pane {
             friendly: Cell::new(true),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             announced: RefCell::new(String::new()),
+            resizing: Cell::new(None),
         })
     }
 
@@ -220,6 +224,7 @@ impl Pane {
                 rows.setFrameSize(NSSize::new(HEADER_W, h));
             }
         }
+        self.reset_band_cursors();
         for view in self.views.borrow().iter().filter_map(Weak::load) {
             view.setNeedsDisplay(true);
         }
@@ -231,6 +236,162 @@ impl Pane {
         if let Some(callback) = self.on_change.borrow().as_ref() {
             callback();
         }
+    }
+
+    /// The views sized to the grid as it stands, its bands' cursors placed again, and all of it
+    /// drawn — after a drag changed a track's size on screen without the document knowing yet.
+    fn relayout(&self) {
+        let (w, h) = self.grid.borrow().size();
+        if let Some(view) = self.grid_view() {
+            view.setFrameSize(NSSize::new(HEADER_W + w, HEADER_H + h));
+        }
+        self.reset_band_cursors();
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
+        }
+    }
+
+    /// The bands' resize cursors, placed again over edges that may have moved.
+    fn reset_band_cursors(&self) {
+        if let Some((columns, rows)) = self.bands.borrow().as_ref() {
+            for band in [
+                columns.load().map(Retained::into_super),
+                rows.load().map(Retained::into_super),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if let Some(window) = band.window() {
+                    window.invalidateCursorRectsForView(&band);
+                }
+            }
+        }
+    }
+
+    /// The pointer at `at` along a band: a track picked up when it is on an edge — and fitted
+    /// instead, on a double-click — answering whether it was.
+    fn grab_edge(&self, axis: Axis, at: f64, clicks: isize) -> bool {
+        let track = {
+            let grid = self.grid.borrow();
+            match axis {
+                Axis::Columns => resize::edge(&grid.cols, grid.shown_cols, at),
+                Axis::Rows => resize::edge(&grid.rows, grid.shown_rows, at),
+            }
+        };
+        let Some(track) = track else {
+            return false;
+        };
+        if clicks >= 2 {
+            self.resizing.set(None);
+            self.fit_track(axis, track);
+            return true;
+        }
+        let size = {
+            let grid = self.grid.borrow();
+            match axis {
+                Axis::Columns => grid.cols.size_of(track),
+                Axis::Rows => grid.rows.size_of(track),
+            }
+        };
+        self.resizing.set(Some(Drag {
+            axis,
+            track,
+            from: at,
+            size,
+        }));
+        true
+    }
+
+    /// A drag under way: the track drawn at its new size, and nothing written. Answers whether a
+    /// track was being dragged at all.
+    fn drag_edge(&self, at: f64) -> bool {
+        let Some(drag) = self.resizing.get() else {
+            return false;
+        };
+        let size = drag.size_at(at);
+        {
+            let mut grid = self.grid.borrow_mut();
+            match drag.axis {
+                Axis::Columns => grid.cols = grid.cols.with(drag.track, size),
+                Axis::Rows => grid.rows = grid.rows.with(drag.track, size),
+            }
+        }
+        if let Some((columns, rows)) = self.bands.borrow().as_ref() {
+            let (w, h) = self.grid.borrow().size();
+            if let Some(columns) = columns.load() {
+                columns.setFrameSize(NSSize::new(w, HEADER_H));
+            }
+            if let Some(rows) = rows.load() {
+                rows.setFrameSize(NSSize::new(HEADER_W, h));
+            }
+        }
+        self.relayout();
+        true
+    }
+
+    /// The button up: the size the drag ended at, written over every track it sizes as one
+    /// undo step — or, when the pointer never moved, nothing.
+    fn drop_edge(&self, at: f64) -> bool {
+        let Some(drag) = self.resizing.take() else {
+            return false;
+        };
+        if at == drag.from {
+            return true;
+        }
+        let tracks = resize::tracks(self.selection.get(), drag.axis, drag.track);
+        let length = Some(resize::length(drag.size_at(at)));
+        let sheet = self.sheet.get();
+        let done = match drag.axis {
+            Axis::Columns => self.app.set_col_width(sheet, tracks, length),
+            Axis::Rows => self.app.set_row_height(sheet, tracks, length),
+        };
+        if let Err(error) = done {
+            self.say(Some((&error.to_string(), None)));
+            // What the drag drew is not what the document holds; draw what it does.
+            *self.grid.borrow_mut() = Grid::of(&self.app, sheet);
+            self.relayout();
+        }
+        true
+    }
+
+    /// A double-click on an edge: a column as wide as its widest text, a row given back to its
+    /// content — its own height taken away, as the GNOME window does.
+    fn fit_track(&self, axis: Axis, track: u32) {
+        let sheet = self.sheet.get();
+        let tracks = resize::tracks(self.selection.get(), axis, track);
+        let done = match axis {
+            // Each column its own width, so as many undo steps as columns fitted.
+            Axis::Columns => tracks.into_iter().try_for_each(|col| {
+                let width = resize::fit_width(&self.app, sheet, col, &self.text);
+                self.app
+                    .set_col_width(sheet, col..col + 1, Some(resize::length(width)))
+                    .map(|_| ())
+            }),
+            Axis::Rows => self.app.set_row_height(sheet, tracks, None).map(|_| ()),
+        };
+        if let Err(error) = done {
+            self.say(Some((&error.to_string(), None)));
+        }
+    }
+
+    /// Where the bands' resize cursors go: a strip [`resize::GRAB`] either side of every shown
+    /// edge inside `visible`, in the band's own coordinates.
+    fn edge_strips(&self, axis: Axis, visible: Rect) -> Vec<Rect> {
+        let grid = self.grid.borrow();
+        let (sizes, range) = match axis {
+            Axis::Columns => (&grid.cols, grid.cols_in(visible.x, visible.w)),
+            Axis::Rows => (&grid.rows, grid.rows_in(visible.y, visible.h)),
+        };
+        range
+            .filter(|track| sizes.size_of(*track) > 0.0)
+            .map(|track| {
+                let end = sizes.offset_of(track) + sizes.size_of(track) - resize::GRAB;
+                match axis {
+                    Axis::Columns => Rect::new(end, visible.y, 2.0 * resize::GRAB, visible.h),
+                    Axis::Rows => Rect::new(visible.x, end, visible.w, 2.0 * resize::GRAB),
+                }
+            })
+            .collect()
     }
 
     /// Show another sheet: its own axes, the views resized to them, the cursor home and the view
@@ -701,7 +862,9 @@ impl GridView {
 }
 
 define_class!(
-    /// The column letters, floating over the grid's top margin. A click selects the column.
+    /// The column letters, floating over the grid's top margin. A click selects the column; one
+    /// on a column's right edge picks it up to be dragged wider or narrower, and a double-click
+    /// there fits it to what it holds.
     #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
     #[name = "GrindColumnHeader"]
@@ -737,12 +900,30 @@ define_class!(
 
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
-            self.click(event, shifted(event));
+            let at = located(self, event).x;
+            if !self.ivars().grab_edge(Axis::Columns, at, event.clickCount()) {
+                self.click(event, shifted(event));
+            }
         }
 
         #[unsafe(method(mouseDragged:))]
         fn mouse_dragged(&self, event: &NSEvent) {
-            self.click(event, true);
+            if !self.ivars().drag_edge(located(self, event).x) {
+                self.click(event, true);
+            }
+        }
+
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            self.ivars().drop_edge(located(self, event).x);
+        }
+
+        #[unsafe(method(resetCursorRects))]
+        fn reset_cursor_rects(&self) {
+            let cursor = NSCursor::columnResizeCursor();
+            for strip in self.ivars().edge_strips(Axis::Columns, rect(self.visibleRect())) {
+                self.addCursorRect_cursor(ns_rect(strip), &cursor);
+            }
         }
     }
 );
@@ -757,7 +938,9 @@ impl ColumnHeader {
 }
 
 define_class!(
-    /// The row numbers, floating over the grid's left margin. A click selects the row.
+    /// The row numbers, floating over the grid's left margin. A click selects the row; one on a
+    /// row's bottom edge picks it up to be dragged, and a double-click there gives the row back
+    /// to its content.
     #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
     #[name = "GrindRowHeader"]
@@ -793,12 +976,30 @@ define_class!(
 
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
-            self.click(event, shifted(event));
+            let at = located(self, event).y;
+            if !self.ivars().grab_edge(Axis::Rows, at, event.clickCount()) {
+                self.click(event, shifted(event));
+            }
         }
 
         #[unsafe(method(mouseDragged:))]
         fn mouse_dragged(&self, event: &NSEvent) {
-            self.click(event, true);
+            if !self.ivars().drag_edge(located(self, event).y) {
+                self.click(event, true);
+            }
+        }
+
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            self.ivars().drop_edge(located(self, event).y);
+        }
+
+        #[unsafe(method(resetCursorRects))]
+        fn reset_cursor_rects(&self) {
+            let cursor = NSCursor::rowResizeCursor();
+            for strip in self.ivars().edge_strips(Axis::Rows, rect(self.visibleRect())) {
+                self.addCursorRect_cursor(ns_rect(strip), &cursor);
+            }
         }
     }
 );
