@@ -351,7 +351,7 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ◐ ³ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● | ● |
 | Find | ● | ● | ● ᶠ | ● ˣ | ● ʷ | ● |
-| Replace | ● | ○ | ● | ● ˣ | ● ʷ | ● |
+| Replace | ● | ● ʸ | ● | ● ˣ | ● ʷ | ● |
 | Word count | ● | ● | ● | ● | ● | ● |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
@@ -422,6 +422,7 @@ chosen: `Faces::of` is called while `App` holds its read lock. The map covers th
 either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ᶠ `:find`, then `n`/`N`, with every match marked in the line rather than only counted.
 ʷ Edit ▸ Find… (Ctrl+F), Find Next/Previous (F3/Shift+F3) and Replace… (Ctrl+H) over the page, closed 2026-10-02: `grind_text::find` finds (ignoring case) and steps, the hit is selected, and `App::replace` writes (exactly, one undo step).
+ʸ A second row in the find bar — *Replace with* and **Replace All** (`App::replace`: every occurrence, exact, one undo step); closed 2026-10-02. Its widget test skips without a display.
 ˣ The palette is the find box, as over cells (Ctrl+F, or two characters typed after the verbs); picking a hit selects it, F3/Shift+F3 step, and Ctrl+H is *Replace in the document…* — closed 2026-10-02, over `grind_text::find`.
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**

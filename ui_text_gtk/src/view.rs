@@ -1666,6 +1666,10 @@ mod tests {
             the_find_bar_selects_each_hit_in_turn,
         ),
         (
+            "the find bar replaces every exact occurrence",
+            the_find_bar_replaces_every_exact_occurrence,
+        ),
+        (
             "a Title style is drawn in a larger face than the body",
             a_title_style_is_drawn_in_a_larger_face_than_the_body,
         ),
@@ -2114,6 +2118,16 @@ mod tests {
         find.next();
         find.next();
         assert_eq!(doc.selection(), Some((at(0, 0), at(0, 8))), "wrapped");
+    }
+
+    /// Replace All writes exactly what was typed, over every block, and says how many changed.
+    fn the_find_bar_replaces_every_exact_occurrence() {
+        let (doc, app) = shell(&["tax and tax", "no match", "Tax"]);
+        let find = crate::find::Find::new(&app, &doc);
+        find.open();
+        find.search("tax");
+        find.replace_with("VAT");
+        assert_eq!(text(&app), "VAT and VAT\nno match\nTax");
     }
 
     /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes
