@@ -136,8 +136,55 @@ fn problem(diagnostic: &Diagnostic) -> Row {
     }
 }
 
-/// A spreadsheet's rows: its sheets, its defined names, and what `grind lint` finds.
-pub fn sheet(app: &grind_sheet::App, report: &Report) -> Vec<Row> {
+/// How many calculations the sidebar lists before it says how many more there are.
+pub const CALCULATIONS: usize = 300;
+
+/// The Calculations section — every formula in the document whose formula, address or functions
+/// hold `needle` (`App::calculations` and `Calculation::matches`, the GNOME window's dialog), each
+/// row its address, its formula and what it came to, and a jump to it.
+fn calculations(app: &grind_sheet::App, needle: &str) -> Vec<Row> {
+    let found: Vec<_> = app
+        .calculations()
+        .into_iter()
+        .filter(|calc| calc.matches(needle))
+        .collect();
+    let heading = match needle.is_empty() {
+        true => "Calculations".to_owned(),
+        false => format!("Calculations: {needle}"),
+    };
+    let mut rows = vec![Row::heading(&heading)];
+    if found.is_empty() {
+        rows.push(Row {
+            go: None,
+            ..Row::place("Nothing calculated matches.", Go::Sheet(0))
+        });
+        return rows;
+    }
+    rows.extend(found.iter().take(CALCULATIONS).map(|calc| Row {
+        tip: Some(calc.functions.join(", ")).filter(|tip| !tip.is_empty()),
+        ..Row::place(
+            format!("{}  {} = {}", calc.address(), calc.formula, calc.value),
+            Go::Address(calc.address()),
+        )
+    }));
+    if found.len() > CALCULATIONS {
+        rows.push(Row {
+            go: None,
+            ..Row::place(
+                format!(
+                    "{} more — search to narrow them",
+                    found.len() - CALCULATIONS
+                ),
+                Go::Sheet(0),
+            )
+        });
+    }
+    rows
+}
+
+/// A spreadsheet's rows: its sheets, its defined names, what `grind lint` finds, and — while
+/// View ▸ Calculations… is on — the formulas matching what it asked for.
+pub fn sheet(app: &grind_sheet::App, report: &Report, calcs: Option<&str>) -> Vec<Row> {
     let mut rows = vec![Row::heading("Sheets")];
     rows.extend(
         (0..app.sheet_count())
@@ -152,6 +199,9 @@ pub fn sheet(app: &grind_sheet::App, report: &Report) -> Vec<Row> {
         }));
     }
     rows.extend(problems(report));
+    if let Some(needle) = calcs {
+        rows.extend(calculations(app, needle));
+    }
     rows
 }
 
@@ -233,7 +283,7 @@ mod tests {
         app.enter(0, Pos::new(0, 0), "=[.Z99]*rate", RecalcMode::Document)
             .unwrap();
         let report = app.lint(&Options::default());
-        let rows = sheet(&app, &report);
+        let rows = sheet(&app, &report, None);
         let titles: Vec<&str> = rows.iter().map(|row| row.title.as_str()).collect();
         assert_eq!(&titles[..5], ["SHEETS", "Sheet1", "Data", "NAMES", "rate"]);
         assert!(rows[0].is_heading());
@@ -269,7 +319,7 @@ mod tests {
     #[test]
     fn a_clean_document_has_no_problems_heading() {
         let app = grind_sheet::App::new();
-        let rows = sheet(&app, &Report::default());
+        let rows = sheet(&app, &Report::default(), None);
         assert!(rows.iter().all(|row| row.title != "PROBLEMS"));
         assert!(
             rows.iter().all(|row| row.title != "NAMES"),
@@ -314,5 +364,34 @@ mod tests {
         assert_eq!(rows[1].go, None);
         assert!(!rows[1].is_heading());
         assert!(rows[1].title.contains("is odd"));
+    }
+
+    #[test]
+    fn calculations_are_listed_while_asked_for_and_narrowed_by_the_search() {
+        let app = grind_sheet::App::new();
+        app.enter(0, Pos::new(0, 0), "2", RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(0, 1), "=SUM([.A1])", RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(0, 2), "=[.A1]*3", RecalcMode::Document)
+            .unwrap();
+        let none = sheet(&app, &Report::default(), None);
+        assert!(!none.iter().any(|row| row.title.starts_with("CALCULATIONS")));
+        let all = sheet(&app, &Report::default(), Some(""));
+        let at = all
+            .iter()
+            .position(|row| row.title == "CALCULATIONS")
+            .expect("a section");
+        assert_eq!(all.len() - at - 1, 2, "both formulas");
+        assert_eq!(all[at + 1].go, Some(Go::Address("Sheet1.B1".into())));
+        assert!(all[at + 1].title.contains("=SUM(A1)") && all[at + 1].title.ends_with("= 2"));
+        let sums = sheet(&app, &Report::default(), Some("SUM"));
+        assert_eq!(
+            sums.iter().filter(|row| row.go.is_some()).count(),
+            2,
+            "Sheet1, and the SUM"
+        );
+        let nothing = sheet(&app, &Report::default(), Some("VLOOKUP"));
+        assert_eq!(nothing.last().unwrap().go, None, "says nothing matches");
     }
 }

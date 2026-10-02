@@ -111,6 +111,8 @@ pub enum Command {
     /// The active cell copied into every selected cell, references shifted — Edit ▸ Fill ▸
     /// Across Selection.
     FillAcross,
+    /// Every formula in the document listed in the sidebar, searched — View ▸ Calculations….
+    Calculations,
     /// Every formula shown in its cell rather than its value — View ▸ Formulas.
     ShowFormulas,
     /// The selection's shown values on the pasteboard, not their formulas — Edit ▸ Copy Value.
@@ -236,6 +238,7 @@ impl Command {
             Command::DocumentLocale,
             Command::ShowFormulas,
             Command::FillAcross,
+            Command::Calculations,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -264,6 +267,7 @@ impl Command {
                 | Command::InsertPicture
                 | Command::Evaluate
                 | Command::DocumentLocale
+                | Command::Calculations
         )
     }
 
@@ -327,6 +331,7 @@ impl Command {
             | Command::DocumentLocale
             | Command::ShowFormulas
             | Command::FillAcross
+            | Command::Calculations
             | Command::ExportCsv => sheet,
         }
     }
@@ -862,6 +867,7 @@ pub static MENUS: &[Menu] = &[
             command("Explain Formula", None, Command::ExplainFormula),
             Item::Separator,
             command("Formulas", key("`", CTRL_CMD), Command::ShowFormulas),
+            command("Calculations…", None, Command::Calculations),
             command("Cell Roles", None, Command::CellRoles),
             command("Names", None, Command::Names),
             command("Show Source", key("u", OPT_CMD), Command::ShowSource),

@@ -153,6 +153,26 @@ impl Pane {
                         }
                     }
                 }
+                // On: asked what to search for, listed in the sidebar. On already: off.
+                Command::Calculations => {
+                    if self.calculations.borrow().is_some() {
+                        self.show_calculations(None);
+                        return;
+                    }
+                    let Some(needle) = prompt::ask(
+                        mtm,
+                        "Calculations",
+                        "Every formula in the document, listed in the sidebar. Search for a \
+                         function, an address or a piece of a formula — or leave it empty for \
+                         all of them.",
+                        "Show",
+                        "",
+                    ) else {
+                        return;
+                    };
+                    self.show_calculations(Some(needle.trim().to_owned()));
+                    return;
+                }
                 Command::CopyValue => {
                     self.copy_value();
                     return;

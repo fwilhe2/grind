@@ -236,6 +236,7 @@ impl Delegate {
             | Command::FormulaToValue
             | Command::Evaluate
             | Command::FillAcross
+            | Command::Calculations
             | Command::DocumentLocale
             | Command::ExportCsv => {
                 if let Some(pane) = self.front_pane() {

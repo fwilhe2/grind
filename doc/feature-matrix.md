@@ -154,7 +154,7 @@ than as a cursor on a hidden row.
 | Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● | ● |
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ | ● |
-| Every calculated cell, searchable | ● | ● | ○ | ○ | ○ | ○ |
+| Every calculated cell, searchable | ● | ● | ○ | ○ | ○ | ● |
 | Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 | Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 

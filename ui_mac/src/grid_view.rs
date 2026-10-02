@@ -107,6 +107,9 @@ pub struct Pane {
     resizing: Cell<Option<Drag>>,
     /// View ▸ Formulas: every formula shown rather than its value. Drawn, never written.
     pub formulas: Cell<bool>,
+    /// View ▸ Calculations…: what the sidebar's Calculations section is narrowed to, while it
+    /// is shown.
+    pub calculations: RefCell<Option<String>>,
 }
 
 impl Pane {
@@ -137,6 +140,7 @@ impl Pane {
             announced: RefCell::new(String::new()),
             resizing: Cell::new(None),
             formulas: Cell::new(false),
+            calculations: RefCell::new(None),
         })
     }
 
@@ -441,6 +445,13 @@ impl Pane {
         for listener in self.listeners.borrow().iter() {
             listener(Selection::default());
         }
+    }
+
+    /// View ▸ Calculations…: the sidebar's Calculations section narrowed to `needle` — every
+    /// formula when it is empty — or, with `None`, gone.
+    pub fn show_calculations(&self, needle: Option<String>) {
+        *self.calculations.borrow_mut() = needle;
+        self.tell_document();
     }
 
     /// View ▸ Formulas, on or off — a redraw and nothing else.

@@ -683,7 +683,9 @@ use following, `App::rename_name`), Redefine…, Inline Everywhere (`App::inline
 the first window with the first and third; **View ▸ Formulas** (⌃⌘\`), every formula shown in its cell in
 display syntax rather than its value, drawn and never written — the first window with it; and with View ▸ Names on, the formula read-out **reads a formula
 through its names** (`App::named_formula`); Edit ▸ Fill ▸ **Across Selection**, the active cell into the whole
-selection in one `App::fill`; and `canAsynchronouslyWriteToURL:` answering NO
+selection in one `App::fill`; **View ▸ Calculations…**, every formula in the document listed in
+the sidebar as a section of its own — address, formula and value, each a jump — narrowed by what
+it asked for (`App::calculations`, the GNOME window's dialog as a list of places); and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

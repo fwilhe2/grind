@@ -249,7 +249,11 @@ impl Sidebar {
 
 impl Places for Pane {
     fn rows(&self) -> Vec<Row> {
-        places::sheet(&self.app, &self.app.lint(&Options::default()))
+        places::sheet(
+            &self.app,
+            &self.app.lint(&Options::default()),
+            self.calculations.borrow().as_deref(),
+        )
     }
 
     fn go(&self, go: &Go) {
