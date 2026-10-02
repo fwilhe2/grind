@@ -26,7 +26,7 @@ use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
 use grind_core::style::TextStyle;
 use grind_sheet::nav::Selection;
-use grind_sheet::style::{CellStyle, EDGES, border_parts};
+use grind_sheet::style::CellStyle;
 use grind_sheet::view::{CellRole, Hue, NameAnchor, Overlays};
 use grind_sheet::{App, Pos, look, numfmt};
 
@@ -391,48 +391,19 @@ pub fn cells(
 /// ponytail: `dashed` and `dotted` are drawn solid. The trigger is a document whose dashes are
 /// what distinguishes two of its tables; a dash is a run of fills along the edge.
 pub fn borders(cell: Rect, style: &CellStyle, palette: &Palette, hairline: f64) -> Vec<Op> {
-    let mut ops = Vec::new();
-    if cell.is_empty() {
-        return ops;
-    }
-    for (edge, border) in style.borders.iter().enumerate() {
-        let Some((points, line, ink)) = border.as_deref().and_then(border_parts) else {
-            continue;
-        };
-        if matches!(line, "none" | "hidden") || points <= 0.0 {
-            continue;
-        }
-        let Some(own) = color::parse(ink) else {
-            continue;
-        };
-        let color = color::document_ink(Some(own), None, palette.page, own, palette.dark);
-        let width = points.max(hairline);
-        // The line the edge stands on, where the grid's own hairline is drawn.
-        let at = match EDGES[edge] {
-            "left" => cell.x,
-            "right" => cell.right(),
-            "top" => cell.y,
-            _ => cell.bottom(),
-        } - hairline / 2.0;
-        let vertical = matches!(EDGES[edge], "left" | "right");
-        // One line, or for `double` two of a third of the width each, either side of a gap.
-        let strokes: Vec<(f64, f64)> = match line {
-            "double" => {
-                let thin = (width / 3.0).max(hairline);
-                let gap = thin.max(hairline);
-                vec![(at - gap / 2.0 - thin, thin), (at + gap / 2.0, thin)]
-            }
-            _ => vec![(at - width / 2.0, width)],
-        };
-        for (from, thickness) in strokes {
-            let rect = match vertical {
-                true => Rect::new(from, cell.y, thickness, cell.h),
-                false => Rect::new(cell.x, from, cell.w, thickness),
-            };
-            ops.push(Op::Fill { rect, color });
-        }
-    }
-    ops
+    grind_sheet::look::border_strokes(
+        (cell.x, cell.y, cell.w, cell.h),
+        style,
+        palette.page,
+        palette.dark,
+        hairline,
+    )
+    .into_iter()
+    .map(|stroke| Op::Fill {
+        rect: Rect::new(stroke.rect.0, stroke.rect.1, stroke.rect.2, stroke.rect.3),
+        color: stroke.color,
+    })
+    .collect()
 }
 
 /// How many columns either side of the view are read for text that may spill into it — the

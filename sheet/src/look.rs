@@ -19,7 +19,8 @@
 
 use crate::formula::value::FormulaError;
 use crate::model::CellValue;
-use crate::style::CellStyle;
+use crate::style::{CellStyle, EDGES, border_parts};
+use grind_core::color::{self, Rgb};
 
 /// Where a cell's text sits across its box.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +159,77 @@ pub fn text_style(style: Option<&CellStyle>) -> grind_core::style::TextStyle {
         font_weight: style.and_then(|s| s.font_weight.clone()),
         font_style: style.and_then(|s| s.font_style.clone()),
     }
+}
+
+/// One filled rectangle of a border — `(x, y, width, height)` in whatever unit the cell was
+/// given in, and the colour to fill it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stroke {
+    pub rect: (f64, f64, f64, f64),
+    pub color: Rgb,
+}
+
+/// A cell's own borders as rectangles to fill, each centred on the grid line it stands on — so a
+/// cell's right border and its neighbour's left one are the same line, and either covers the
+/// hairline under it.
+///
+/// A border is ODF's three parts (`0.5pt solid #000000`, [`border_parts`]): never thinner than
+/// one device pixel (`hairline`), in the document's colour lifted to read on a dark page
+/// (`color::document_ink`), and `double` as two thin lines with a gap. `none`, `hidden` and a
+/// border this build cannot read draw nothing — R5's tolerance. `cell` is `(x, y, w, h)`.
+///
+/// Hoisted out of the macOS shell when the Windows grid wanted borders too; both draw these.
+///
+/// ponytail: `dashed` and `dotted` are drawn solid. The trigger is a document whose dashes are
+/// what distinguishes two of its tables; a dash is a run of fills along the edge.
+pub fn border_strokes(
+    cell: (f64, f64, f64, f64),
+    style: &CellStyle,
+    page: Rgb,
+    dark: bool,
+    hairline: f64,
+) -> Vec<Stroke> {
+    let (x, y, w, h) = cell;
+    let mut out = Vec::new();
+    if w <= 0.0 || h <= 0.0 {
+        return out;
+    }
+    for (edge, border) in style.borders.iter().enumerate() {
+        let Some((points, line, ink)) = border.as_deref().and_then(border_parts) else {
+            continue;
+        };
+        if matches!(line, "none" | "hidden") || points <= 0.0 {
+            continue;
+        }
+        let Some(own) = color::parse(ink) else {
+            continue;
+        };
+        let color = color::document_ink(Some(own), None, page, own, dark);
+        let width = points.max(hairline);
+        let at = match EDGES[edge] {
+            "left" => x,
+            "right" => x + w,
+            "top" => y,
+            _ => y + h,
+        } - hairline / 2.0;
+        let vertical = matches!(EDGES[edge], "left" | "right");
+        let strokes: Vec<(f64, f64)> = match line {
+            "double" => {
+                let thin = (width / 3.0).max(hairline);
+                let gap = thin.max(hairline);
+                vec![(at - gap / 2.0 - thin, thin), (at + gap / 2.0, thin)]
+            }
+            _ => vec![(at - width / 2.0, width)],
+        };
+        for (from, thickness) in strokes {
+            let rect = match vertical {
+                true => (from, y, thickness, h),
+                false => (x, from, w, thickness),
+            };
+            out.push(Stroke { rect, color });
+        }
+    }
+    out
 }
 
 #[cfg(test)]
