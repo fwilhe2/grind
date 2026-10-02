@@ -54,8 +54,6 @@ fn toggle(command: Command) -> Option<Toggle> {
     }
 }
 
-pub use grind_sheet::format::BORDER;
-
 /// A palette entry as the colour a document stores.
 pub fn color(index: Option<u8>) -> Option<String> {
     index
@@ -265,7 +263,7 @@ mod tests {
         let Some(Write::Style(Some(on))) = write(Command::Borders(true), &bold(), None) else {
             panic!("a style with borders");
         };
-        assert_eq!(on.uniform_border(), Some(BORDER));
+        assert_eq!(on.uniform_border(), Some(format::BORDER));
         assert_eq!(on.font_weight.as_deref(), Some("bold"));
         let active = Active {
             style: on,

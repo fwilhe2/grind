@@ -199,7 +199,7 @@ borders, which that window does not draw either.
 | Bold, italic | ● | ● | ● | ● | ● | ● |
 | Alignment | ● | ● | ● | ● | ● | ● |
 | Wrap text | ● | ● | ● | ● | ○ ˣ | ● |
-| Borders | ● | ○ ᵃ | ● | ● | ○ ˣ | ● |
+| Borders | ● | ● ᵃ | ● | ● | ○ ˣ | ● |
 | Text colour, cell background | ● | ● | ● | ● | ● | ● |
 | Clear formatting | ● | ● | ● | ● | ● | ● |
 | Number formats — the eight presets | ● | ● | ● | ● | ● | ● |
@@ -214,10 +214,7 @@ borders, which that window does not draw either.
 | **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 
-ᵃ **A real gap, and this table is where it became visible.** Nothing in `ui_sheet_gtk` writes
-`CellStyle::borders`; the strip carries bold, italic, three alignments, wrap, two colour
-buttons, Clear Formatting and the number-format menu, and no border control. The window *draws*
-borders. `grind sheet style --border` and the browser's two palette verbs both set them.
+ᵃ **Closed 2026-10-02.** A *Borders* toggle in the format bar writes `format::bordered` — a hairline on every edge, or none — over the selection, the same call the terminal, the browser and the Mac make; a per-edge width or colour is still `grind sheet style --border`'s.
 ᵇ `:format number [n]` takes a decimal count and `:format currency [eur|usd|gbp]` one of the three
 currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `grind sheet format`'s.
 ᶜ More / fewer decimals, and the three currencies of `numfmt::CURRENCIES` as three menu entries.
@@ -445,8 +442,8 @@ of a client's own job is missing.
    number presets, a decimal step and Clear, each a read of the active cell and one
    `App::set_style` or `App::set_format`, the same verbs in the Format menu. What is left is
    wrap and borders (§5 ˣ), which this window does not draw, and so does not offer.
-2. **`grind-sheet-gtk` has no borders control** (§5 ᵃ). The one formatting property the most
-   complete spreadsheet shell cannot write, and both the browser and the terminal can.
+2. ~~**`grind-sheet-gtk` has no borders control** (§5 ᵃ).~~ **Closed** (2026-10-02): a Borders
+   toggle in the format bar, over `format::bordered`.
 3. **`grind-win32` cannot colour a run either**, and `grind-tui` approximates one. Colour and
    highlight are the word processor's twin of row 1: the CLI writes them, loop C round-trips
    them, `grind-web` and `grind-text-gtk` draw them, and the Windows pane shows neither.

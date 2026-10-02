@@ -116,6 +116,10 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     let align = linked(&[&left, &center, &right]);
 
     let wrap = toggle("format-justify-fill-symbolic", "Wrap Text");
+    // A hairline round every selected cell, or none: `format::bordered`, which the terminal, the
+    // browser and the Mac's *All Borders* write too. Per-edge widths and colours are
+    // `sheet style --border`'s.
+    let borders = toggle("view-grid-symbolic", "Borders");
 
     // The two colour buttons offer `style::PALETTE` — the palette a document written from
     // either shell uses — with a dialog behind "Custom…" for anything else.
@@ -150,6 +154,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         emphasis.upcast_ref::<gtk::Widget>(),
         align.upcast_ref(),
         wrap.upcast_ref(),
+        borders.upcast_ref(),
         color.button.upcast_ref(),
         background.button.upcast_ref(),
         numbers.upcast_ref(),
@@ -177,6 +182,14 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         button.connect_toggled(move |button| {
             let on = button.is_active();
             apply(&|style| toggle.set(style, on));
+        });
+    }
+
+    {
+        let apply = field(grid, app, &updating);
+        borders.connect_toggled(move |button| {
+            let on = button.is_active();
+            apply(&|style| format::bordered(style, on));
         });
     }
 
@@ -227,6 +240,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
             }
             // A cell with no colour of its own shows the **theme's**, not a swatch's own
             // default — a red swatch over an unstyled cell is a claim about the cell.
+            borders.set_active(style.uniform_border().is_some());
             colors.0.show(style.color.as_deref(), true);
             colors.1.show(style.background.as_deref(), false);
             face.set_label(&picker.show(format.as_ref(), app.locale().as_ref()));
