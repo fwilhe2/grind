@@ -15,9 +15,8 @@
 //! The rows are read again when the document changes, not when the cursor moves: a Problems
 //! section re-lints the document, which an arrow key has no business costing.
 //!
-//! ponytail: every change re-lints the whole document, which is `grind lint` on each keystroke
-//! that commits. Fine for a document a person edits by hand; the trigger is a document large
-//! enough for typing to lag, and the upgrade is linting on idle rather than on change.
+//! A change re-reads them only once changes pause ([`SETTLE`]), since a Problems section is
+//! `grind lint` over the whole document and typing should not wait for it.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -33,7 +32,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{
     NSIndexSet, NSInteger, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
-    NSString,
+    NSString, NSTimer,
 };
 
 use crate::grid_view::Pane;
@@ -43,6 +42,9 @@ use crate::places::{self, Go, NameVerb, Row};
 
 /// The sidebar's width when it first opens.
 const WIDTH: f64 = 200.0;
+
+/// How long changes must pause before the rows are read again, in seconds.
+const SETTLE: f64 = 0.25;
 
 /// What the sidebar lists and where its rows go — both panes answer it.
 pub trait Places {
@@ -65,6 +67,8 @@ pub struct List {
     quiet: Cell<bool>,
     /// The name the context menu was opened on.
     menu_name: RefCell<Option<String>>,
+    /// The refresh waiting for changes to pause.
+    pending: RefCell<Option<Retained<NSTimer>>>,
 }
 
 define_class!(
@@ -123,6 +127,12 @@ define_class!(
     }
 
     impl Sidebar {
+        #[unsafe(method(refreshSettled:))]
+        fn refresh_settled(&self, _timer: &NSTimer) {
+            self.ivars().pending.borrow_mut().take();
+            self.refresh();
+        }
+
         #[unsafe(method(nameVerb:))]
         fn name_verb_chosen(&self, sender: &NSMenuItem) {
             self.name_verb(sender.tag());
@@ -224,6 +234,26 @@ impl Sidebar {
         // Selecting a row posts the same notification a click does, which goes where it says.
         table.selectRowIndexes_byExtendingSelection(&NSIndexSet::indexSetWithIndex(at), false);
         Ok(())
+    }
+
+    /// Read the rows again once changes have paused for [`SETTLE`] — each change starts the wait
+    /// over.
+    pub fn refresh_soon(&self) {
+        if let Some(timer) = self.ivars().pending.borrow_mut().take() {
+            timer.invalidate();
+        }
+        // SAFETY: `refreshSettled:` is this list's own method, taking the timer; the timer holds
+        // the list only until it fires or the next change invalidates it.
+        let timer = unsafe {
+            NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                SETTLE,
+                self,
+                sel!(refreshSettled:),
+                None,
+                false,
+            )
+        };
+        *self.ivars().pending.borrow_mut() = Some(timer);
     }
 
     /// Read the rows again, and keep the row that says where the document is selected.
@@ -371,6 +401,7 @@ pub fn split(
             table: RefCell::new(None),
             quiet: Cell::new(false),
             menu_name: RefCell::new(None),
+            pending: RefCell::new(None),
         });
         // SAFETY: `init` is `NSObject`'s designated initialiser.
         unsafe { msg_send![super(this), init] }
@@ -396,7 +427,7 @@ pub fn split(
     let weak = Weak::from_retained(&list);
     places.watch(Box::new(move || {
         if let Some(list) = weak.load() {
-            list.refresh();
+            list.refresh_soon();
         }
     }));
     list.refresh();

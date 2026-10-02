@@ -584,8 +584,8 @@ table `ui_sheet_gtk` and `ui_win32` each carried.
 What M8 leaves: the signature band followed the text, so a caret moved by an arrow without
 typing showed the old argument until the next keystroke (since closed: the editor makes a caret
 move itself, then reads the caret); point mode (since closed); the formula read-out was a
-read-out rather than a second editor (since closed); every change re-lints the whole document for the Problems
-section (a `ponytail:` in `sidebar.rs`); and the source pane is read-only, as every shell's is.
+read-out rather than a second editor (since closed); every change re-linted the whole document for the Problems
+section (since closed: the rows are read again once changes pause for a quarter second); and the source pane is read-only, as every shell's is.
 
 ### What M9 built
 
