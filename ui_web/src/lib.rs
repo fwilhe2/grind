@@ -470,6 +470,7 @@ impl Shell {
             "doc.redo" => self.redo(),
             "edit.copy" => self.copy_out(false),
             "edit.cut" => self.copy_out(true),
+            "edit.copy-value" => self.copy_value(),
             "edit.paste" => self.paste_in(),
             "view.source" => self.toggle_source(),
             "view.problems" => self.toggle_problems(),
@@ -659,6 +660,15 @@ impl Shell {
             true => "Cut".to_owned(),
             false => "Copied".to_owned(),
         });
+    }
+
+    /// *Copy as shown* — the selection's displayed values rather than its formulas.
+    fn copy_value(&self) {
+        let Some(clipboard) = clipboard() else {
+            return self.set_message("The browser's clipboard is not available here".to_owned());
+        };
+        let _ = clipboard.write_text(&self.sheet.value_text());
+        self.set_message("Copied the values as shown".to_owned());
     }
 
     /// Paste from a command. Reading the clipboard is the half browsers guard: it may prompt,

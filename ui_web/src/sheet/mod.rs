@@ -702,6 +702,8 @@ impl Ui {
             "name.inline" => self.inline_name(),
             "name.delete" => self.delete_name(),
             "edit.evaluate" => self.evaluate(),
+            "edit.fill-across" => self.fill_across(),
+            "edit.formula-to-value" => self.formula_to_value(),
             "sheet.filter" => self.toggle_filter(),
             "sheet.format-table" => self.format_table(None),
             "sheet.format-table-totals" => self.format_table_with_totals(),
@@ -1144,6 +1146,45 @@ impl Ui {
             "\n",
         );
         Some(text)
+    }
+
+    /// The selection as it is *shown* — a formula's formatted result rather than its source
+    /// (`App::value_text`), for pasting into something that is not a spreadsheet.
+    pub fn value_text(&self) -> String {
+        let (start, end) = self.rect();
+        grind_sheet::clip::rect_text(
+            &self.app,
+            self.sheet.get(),
+            start,
+            end,
+            App::value_text,
+            "\n",
+        )
+    }
+
+    /// The active cell into the whole selection, references shifted — one `App::fill`.
+    fn fill_across(&self) {
+        let (start, end) = self.rect();
+        match self.app.fill(
+            self.sheet.get(),
+            self.selection.get().active,
+            start,
+            end,
+            RecalcMode::Document,
+        ) {
+            Ok(outcome) => self.set_message(format!("Filled {} cell(s)", outcome.cells)),
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// Every formula in the selection dropped, each cell keeping the value it last computed.
+    fn formula_to_value(&self) {
+        let (start, end) = self.rect();
+        match grind_sheet::verbs::formulas_to_values(&self.app, self.sheet.get(), start, end) {
+            Ok(0) => self.set_message("There was no formula in the selection".to_owned()),
+            Ok(n) => self.set_message(format!("{n} formula(s) are now plain values")),
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     /// Tab-separated text, entered as a rectangle from the active cell — one undo step,

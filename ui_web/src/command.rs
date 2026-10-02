@@ -216,6 +216,27 @@ pub const SHEET: &[Command] = &[
     ),
     cmd("name.delete", "Delete a name…", "Names", "", false),
     cmd("edit.evaluate", "Evaluate a formula…", "Edit", "", false),
+    cmd(
+        "edit.fill-across",
+        "Fill the selection from the active cell",
+        "Edit",
+        "",
+        false,
+    ),
+    cmd(
+        "edit.copy-value",
+        "Copy as shown (values, not formulas)",
+        "Edit",
+        "",
+        false,
+    ),
+    cmd(
+        "edit.formula-to-value",
+        "Replace formulas with their values",
+        "Edit",
+        "",
+        false,
+    ),
     // §9.4: filter the selection, or clear the filter the sheet already has. The same key
     // both LibreOffice Calc and Excel use.
     cmd(
