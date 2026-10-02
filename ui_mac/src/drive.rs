@@ -678,11 +678,17 @@ mod mac {
         }
         pump(&app, 1.0);
         let is_key = window(&app).is_ok_and(|window| window.isKeyWindow());
+        // How many documents and windows there are: one each, for a drive that opened one
+        // file. Two is how AppKit opening the command line a second time once showed itself.
+        let documents = NSDocumentController::sharedDocumentController(mtm)
+            .documents()
+            .count();
         println!(
-            "start: {}, active {}, key window {is_key}, keyboard {}",
+            "start: {}, active {}, key window {is_key}, keyboard {}, documents {documents}, windows {}",
             transcript(&app, document),
             app.isActive(),
-            responder(&app)
+            responder(&app),
+            app.windows().count()
         );
         for (at, step) in steps.iter().enumerate() {
             let done = match step {

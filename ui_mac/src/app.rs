@@ -30,7 +30,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{
     NSAttributedString, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
-    NSSize, NSString,
+    NSSize, NSString, NSUserDefaults,
 };
 
 use crate::Opening;
@@ -564,6 +564,7 @@ pub fn run(opening: Opening) -> ExitCode {
         eprintln!("grind-mac: AppKit runs on the main thread only");
         return ExitCode::FAILURE;
     };
+    ignore_arguments_as_files();
     let app = NSApplication::sharedApplication(mtm);
     app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
     // Before anything asks for the shared controller, so that this one is it.
@@ -573,6 +574,24 @@ pub fn run(opening: Opening) -> ExitCode {
     app.setMainMenu(Some(&menu_bar(&app, mtm)));
     app.run();
     ExitCode::SUCCESS
+}
+
+/// Tell AppKit not to open the command line's arguments as documents.
+///
+/// Left on, `NSTreatUnknownArgumentsAsOpen` has AppKit open every argument it does not
+/// recognise as a file — the path [`Delegate::launch`] has already opened — and a second
+/// document with the same title comes up beside the first. A drive's keys then moved the
+/// selection in that second window, the key one, while its transcript read the first (run
+/// 37052072298). What the command line means is `args.rs`'s decision; a Finder open arrives as
+/// an Apple Event and is not touched by this. Registered rather than set, so an explicit
+/// `-NSTreatUnknownArgumentsAsOpen YES` still wins.
+fn ignore_arguments_as_files() {
+    let key = NSString::from_str("NSTreatUnknownArgumentsAsOpen");
+    let no = NSString::from_str("NO");
+    let values: [&AnyObject; 1] = [&no];
+    let defaults = NSDictionary::from_slices(&[&*key], &values);
+    // SAFETY: a dictionary of property-list values, which is what the registration domain holds.
+    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
 }
 
 /// The standard About panel, saying which build this is the way every other window's About does:
