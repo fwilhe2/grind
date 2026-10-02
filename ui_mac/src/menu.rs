@@ -108,6 +108,8 @@ pub enum Command {
     Evaluate,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
     DocumentLocale,
+    /// Every formula shown in its cell rather than its value — View ▸ Formulas.
+    ShowFormulas,
     /// The selection's shown values on the pasteboard, not their formulas — Edit ▸ Copy Value.
     CopyValue,
     /// Every formula in the selection dropped, its last value kept — Edit ▸ Formula to Value,
@@ -229,6 +231,7 @@ impl Command {
             Command::FormulaToValue,
             Command::Evaluate,
             Command::DocumentLocale,
+            Command::ShowFormulas,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -318,6 +321,7 @@ impl Command {
             | Command::FormulaToValue
             | Command::Evaluate
             | Command::DocumentLocale
+            | Command::ShowFormulas
             | Command::ExportCsv => sheet,
         }
     }
@@ -851,6 +855,7 @@ pub static MENUS: &[Menu] = &[
             command("Friendly Formulas", None, Command::FriendlyFormulas),
             command("Explain Formula", None, Command::ExplainFormula),
             Item::Separator,
+            command("Formulas", key("`", CTRL_CMD), Command::ShowFormulas),
             command("Cell Roles", None, Command::CellRoles),
             command("Names", None, Command::Names),
             command("Show Source", key("u", OPT_CMD), Command::ShowSource),

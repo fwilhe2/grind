@@ -283,7 +283,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● | ● |
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● | ● |
-| Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ | ○ |
+| Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ | ● |
 
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the

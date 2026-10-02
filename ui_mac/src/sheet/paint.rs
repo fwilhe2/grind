@@ -94,6 +94,9 @@ pub struct Look<'a> {
     pub hairline: f64,
     /// Which of `doc/view-modes.md`'s overlays are on — View ▸ Cell Roles and Names (M8).
     pub overlays: Overlays,
+    /// View ▸ Formulas: a cell holding a formula shows it, in display syntax, rather than what it
+    /// came to — `grind sheet view --formulas`.
+    pub formulas: bool,
 }
 
 /// A `Rect` kept only when there is something of it left inside `view`.
@@ -261,7 +264,17 @@ pub fn cells(
     // The text.
     for row in rows {
         for col in cols.clone() {
-            let Some(text) = viewport.text(row, col).filter(|text| !text.is_empty()) else {
+            // With formulas shown, a formula's own text — set as text, so it reads from the left.
+            let formula = look
+                .formulas
+                .then(|| app.formula(sheet, Pos::new(row, col)).ok().flatten())
+                .flatten()
+                .and_then(|_| app.input_text(sheet, Pos::new(row, col)).ok());
+            let Some(text) = formula
+                .as_deref()
+                .or_else(|| viewport.text(row, col))
+                .filter(|text| !text.is_empty())
+            else {
                 continue;
             };
             let mut cell = grid.cell(row, col);
@@ -284,7 +297,10 @@ pub fn cells(
                     cell.h,
                 );
             }
-            let value = viewport.get(row, col).cloned().unwrap_or_default();
+            let value = match &formula {
+                Some(formula) => grind_sheet::CellValue::Text(formula.clone()),
+                None => viewport.get(row, col).cloned().unwrap_or_default(),
+            };
             let style = viewport.style(row, col);
             let fill = style
                 .and_then(|style| style.background.as_deref())
@@ -744,6 +760,7 @@ mod tests {
         metrics: &Fixed,
         hairline: HAIR,
         overlays: Overlays::NONE,
+        formulas: false,
     };
 
     fn drawn(app: &App) -> Vec<Op> {
@@ -1138,5 +1155,32 @@ mod tests {
         );
         style.borders = [None, None, Some("3pt double #000000".into()), None];
         assert_eq!(borders(cell, &style, &Palette::LIGHT, 0.5).len(), 2);
+    }
+
+    #[test]
+    fn with_formulas_shown_a_formula_cell_shows_its_formula() {
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "2", RecalcMode::Document)
+            .unwrap();
+        app.enter(0, Pos::new(0, 1), "=[.A1]*3", RecalcMode::Document)
+            .unwrap();
+        let grid = Grid::of(&app, 0);
+        let view = Rect::new(0.0, 0.0, 500.0, 200.0);
+        let shown = |look: &Look| {
+            texts(&cells(&app, 0, &grid, view, Selection::default(), look))
+                .into_iter()
+                .map(|(text, ..)| text.to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shown(&LOOK), ["2", "6"]);
+        let formulas = Look {
+            formulas: true,
+            ..LOOK
+        };
+        assert_eq!(
+            shown(&formulas),
+            ["2", "=A1*3"],
+            "a plain value is still itself"
+        );
     }
 }

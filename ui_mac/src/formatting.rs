@@ -128,6 +128,7 @@ impl Pane {
         match command {
             Command::FriendlyFormulas => self.friendly.get(),
             Command::Filter => self.app.filter(self.sheet.get()).is_ok_and(|f| f.is_some()),
+            Command::ShowFormulas => self.formulas.get(),
             Command::CellRoles => self.overlays.get().roles,
             Command::Names => self.overlays.get().names,
             _ => cells::checked(command, &self.active()),

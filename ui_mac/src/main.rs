@@ -221,6 +221,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 metrics: &text,
                 hairline: 1.0 / SCALE,
                 overlays: grind_sheet::view::Overlays::NONE,
+                formulas: false,
             };
             // The cursor where a window opens with it, at A1, so a frame shows what the window
             // would.

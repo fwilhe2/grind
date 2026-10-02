@@ -248,6 +248,12 @@ impl Delegate {
                 }
                 return;
             }
+            Command::ShowFormulas => {
+                if let Some(pane) = self.front_pane() {
+                    pane.toggle_formulas();
+                }
+                return;
+            }
             Command::Recalculate => {
                 if let Some(pane) = self.front_pane() {
                     pane.recalculate_anyway();

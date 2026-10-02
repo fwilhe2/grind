@@ -105,6 +105,8 @@ pub struct Pane {
     pub overlays: Cell<grind_sheet::view::Overlays>,
     /// A track picked up by its edge in a header band, until the button comes up (`resize.rs`).
     resizing: Cell<Option<Drag>>,
+    /// View ▸ Formulas: every formula shown rather than its value. Drawn, never written.
+    pub formulas: Cell<bool>,
 }
 
 impl Pane {
@@ -134,6 +136,7 @@ impl Pane {
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             announced: RefCell::new(String::new()),
             resizing: Cell::new(None),
+            formulas: Cell::new(false),
         })
     }
 
@@ -430,6 +433,14 @@ impl Pane {
         }
     }
 
+    /// View ▸ Formulas, on or off — a redraw and nothing else.
+    pub fn toggle_formulas(&self) {
+        self.formulas.set(!self.formulas.get());
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
+        }
+    }
+
     /// View ▸ Cell Roles or Names, on or off — a redraw and nothing else: an overlay is read
     /// fresh on every paint and never stored in the document.
     pub fn toggle_overlay(&self, roles: bool) {
@@ -687,6 +698,7 @@ define_class!(
                 metrics: &pane.text,
                 hairline: hairline(self),
                 overlays: pane.overlays.get(),
+                formulas: pane.formulas.get(),
             };
             // The dirty rectangle in the sheet's own coordinates: the view keeps a margin the
             // header bands float over.
@@ -1042,6 +1054,7 @@ define_class!(
                 metrics: &pane.text,
                 hairline: hairline(self),
                 overlays: pane.overlays.get(),
+                formulas: pane.formulas.get(),
             };
             let ops = paint::column_header(
                 &pane.grid.borrow(),
@@ -1118,6 +1131,7 @@ define_class!(
                 metrics: &pane.text,
                 hairline: hairline(self),
                 overlays: pane.overlays.get(),
+                formulas: pane.formulas.get(),
             };
             let ops = paint::row_header(
                 &pane.grid.borrow(),
