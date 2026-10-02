@@ -497,6 +497,11 @@ mod mac {
             }
         }
 
+        /// A Format ▸ Number item's live sample, over the grid's active cell.
+        pub fn number_sample(&self, command: crate::menu::Command) -> Option<String> {
+            self.pane()?.number_sample(command)
+        }
+
         /// View ▸ Cell Roles and Names, on whichever pane this document has.
         pub fn toggle_overlay(&self, command: crate::menu::Command) {
             let roles = command == crate::menu::Command::CellRoles;

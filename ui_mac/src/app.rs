@@ -138,6 +138,14 @@ impl Delegate {
             Some(kind) => command.applies(kind),
             None => matches!(command, Command::NewSheet | Command::NewText),
         };
+        // A number format's item says what the active cell would look like in it.
+        if matches!(command, Command::Number(_)) {
+            let sample = document
+                .as_ref()
+                .filter(|_| applies)
+                .and_then(|document| document.number_sample(command));
+            item.setSubtitle(sample.map(|sample| NSString::from_str(&sample)).as_deref());
+        }
         let on = applies && document.is_some_and(|document| document.format_checked(command));
         item.setState(match on {
             true => NSControlStateValueOn,

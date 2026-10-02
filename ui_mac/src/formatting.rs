@@ -122,6 +122,25 @@ impl Pane {
         }
     }
 
+    /// What the active cell would show under a Format ▸ Number item's format — the live sample
+    /// the item carries as its subtitle, the renderer's own answer (`App::shown_as`) and nothing
+    /// written. `None` for an empty cell, or a command that is not a number format.
+    pub fn number_sample(&self, command: Command) -> Option<String> {
+        let Command::Number(preset) = command else {
+            return None;
+        };
+        let active = self.active();
+        let format = preset.format(
+            active.format.as_ref(),
+            grind_sheet::locale::from_environment(),
+        );
+        let (sheet, at) = (self.sheet.get(), self.selection.get().active);
+        self.app
+            .shown_as(sheet, at, format.as_ref())
+            .ok()
+            .filter(|shown| !shown.is_empty())
+    }
+
     /// Whether the command's menu item is ticked for the active cell — or, for View ▸ Friendly
     /// Formulas, whether formulas are being read in plain English.
     pub fn format_checked(&self, command: Command) -> bool {

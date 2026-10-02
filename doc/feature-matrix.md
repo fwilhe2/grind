@@ -205,7 +205,7 @@ borders, which that window does not draw either.
 | Number formats — the eight presets | ● | ● | ● | ● | ● | ● |
 | Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ | ◐ ² |
 | Read a cell's style / format back | ● | ● | ● | ● | ● | ● |
-| A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ | ○ |
+| A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ | ● |
 | Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ | ● |
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |

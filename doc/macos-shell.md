@@ -674,7 +674,8 @@ is the font panel's here; **Insert ▸ Chart**, the selection's table charted be
 `App::suggest_chart` in one step, with no dialog, and a chart's own context menu — its title,
 bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`)
 — and dragged to move it, drawn where the pointer has it and written once as the button comes up
-(`App::reshape_chart`); **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
+(`App::reshape_chart`); every Format ▸ Number item carrying **a live sample** of the active
+cell in its format as the item's subtitle (`App::shown_as`, macOS 15's `NSMenuItem.subtitle`); **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
 over the selection or from one cell to the end of the used part, a button drawn in each heading
 and filled in the accent while its field has a condition, and a click on one listing the field's
 values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; **every paragraph kind a page draws** — Title, Subtitle and
