@@ -104,6 +104,8 @@ pub enum Command {
     DefineName,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
+    /// An autofilter over the selection, or off again — Edit ▸ Filter (`sheet/filter.rs`).
+    Filter,
     /// A chart of the table the selection is in, beside it — Insert ▸ Chart.
     InsertChart,
     /// A table at the caret — Insert ▸ Table….
@@ -205,6 +207,7 @@ impl Command {
             Command::DefineName,
             Command::ExportCsv,
             Command::InsertChart,
+            Command::Filter,
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
@@ -287,6 +290,7 @@ impl Command {
             | Command::Columns(_)
             | Command::DefineName
             | Command::InsertChart
+            | Command::Filter
             | Command::ExportCsv => sheet,
         }
     }
@@ -717,6 +721,7 @@ pub static MENUS: &[Menu] = &[
             },
             command("Go To…", key("l", CMD), Command::GoTo),
             command("Recalculate", key("=", CMD), Command::Recalculate),
+            command("Filter", key("f", SHIFT_CMD), Command::Filter),
             Item::Submenu {
                 title: "Fill",
                 menu: &FILL,

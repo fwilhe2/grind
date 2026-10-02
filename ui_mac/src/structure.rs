@@ -18,6 +18,7 @@ use crate::menu::{Command, Track};
 use crate::page_view::TextPane;
 use crate::prompt;
 use crate::sheet::chart;
+use crate::sheet::filter;
 use crate::sheet::geom::{HEADER_H, HEADER_W, PT_PER_MM};
 use crate::sheet::verbs;
 use crate::text::picture;
@@ -99,6 +100,22 @@ impl Pane {
                     return;
                 }
                 Command::InsertChart => self.insert_chart(),
+                Command::Filter => match self.app.filter(sheet).ok().flatten() {
+                    Some(_) => self.app.set_filter(sheet, None),
+                    None => {
+                        let used = self.app.used_extent(sheet).unwrap_or((0, 0));
+                        match filter::range(selection.rect(), used) {
+                            Ok((start, end)) => self.app.set_filter(
+                                sheet,
+                                Some(grind_sheet::Filter::new(filter::NAME, start, end)),
+                            ),
+                            Err(why) => {
+                                self.say(Some((why, None)));
+                                return;
+                            }
+                        }
+                    }
+                },
                 _ => return,
             };
         match done {

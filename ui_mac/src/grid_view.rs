@@ -29,12 +29,13 @@ use grind_core::color::{self, Rgb};
 use grind_sheet::nav::Selection;
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, Sel};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSAccessibilityAnnouncementKey, NSAccessibilityAnnouncementRequestedNotification,
     NSAccessibilityPostNotificationWithUserInfo, NSAutoresizingMaskOptions, NSBeep, NSColor,
-    NSColorPanel, NSColorSpace, NSCursor, NSEvent, NSEventGestureAxis, NSEventModifierFlags,
-    NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView, NSTextField, NSView,
+    NSColorPanel, NSColorSpace, NSControlStateValueOff, NSControlStateValueOn, NSCursor, NSEvent,
+    NSEventGestureAxis, NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem,
+    NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -524,6 +525,60 @@ impl Pane {
     }
 }
 
+/// How many distinct values a filter button's menu lists — the GNOME window's and the browser's
+/// ceiling, past which a list is not a list.
+const FILTER_VALUES: usize = 500;
+
+/// What a filter button's menu is about: the pane, the field, and the values its rows name, by
+/// tag.
+pub struct Choice {
+    pane: RcWeak<Pane>,
+    field: u32,
+    values: Vec<String>,
+}
+
+define_class!(
+    /// A filter button's menu's target: a row hides or shows its value, Show All drops the
+    /// field's condition — each one `App::set_filter`, one undo step.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "GrindFilterChoice"]
+    #[ivars = Choice]
+    pub struct FilterChoice;
+
+    impl FilterChoice {
+        #[unsafe(method(filterChose:))]
+        fn chose(&self, sender: &NSMenuItem) {
+            self.choose(sender.tag());
+        }
+    }
+);
+
+impl FilterChoice {
+    fn choose(&self, tag: isize) {
+        let choice = self.ivars();
+        let Some(pane) = choice.pane.upgrade() else {
+            return;
+        };
+        let sheet = pane.sheet.get();
+        let Some(filter) = pane.app.filter(sheet).ok().flatten() else {
+            return;
+        };
+        let next = match usize::try_from(tag)
+            .ok()
+            .and_then(|at| choice.values.get(at))
+        {
+            Some(value) => {
+                crate::sheet::filter::toggled(&filter, choice.field, value, &choice.values)
+            }
+            None => crate::sheet::filter::shown_all(&filter, choice.field),
+        };
+        if let Err(error) = pane.app.set_filter(sheet, Some(next)) {
+            pane.say(Some((&error.to_string(), None)));
+        }
+    }
+}
+
 /// Have the core tell `pane` about every change to its document from now on.
 pub fn watch(pane: &Rc<Pane>) {
     pane.app.set_observer(crate::watch::observer(pane));
@@ -636,7 +691,16 @@ define_class!(
             // The dirty rectangle in the sheet's own coordinates: the view keeps a margin the
             // header bands float over.
             let view = rect(dirty).offset(-HEADER_W, -HEADER_H);
-            // The charts float over the cells, drawn after them.
+            // The filter's buttons sit in their heading cells; the charts float over everything.
+            let buttons = pane
+                .app
+                .filter(pane.sheet.get())
+                .ok()
+                .flatten()
+                .map(|filter| {
+                    crate::sheet::filter::ops(&filter, &pane.grid.borrow(), &view, &palette)
+                })
+                .unwrap_or_default();
             let charts =
                 crate::sheet::chart::charts(&pane.app, pane.sheet.get(), &view, &palette, &pane.text);
             let ops: Vec<Op> = paint::cells(
@@ -648,6 +712,7 @@ define_class!(
                 &look,
             )
             .into_iter()
+            .chain(buttons)
             .chain(charts)
             // The cells a formula being typed is pointing at, over everything.
             .chain(pane.pointed().into_iter().flat_map(|pointed| {
@@ -710,6 +775,9 @@ define_class!(
         /// A click selects; a double-click opens the cell to amend it.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
+            if self.filter_button(event) {
+                return;
+            }
             self.click(event, shifted(event));
             if event.clickCount() == 2 {
                 self.ivars().begin_edit(Seed::Cell);
@@ -820,6 +888,83 @@ define_class!(
 );
 
 impl GridView {
+    /// A click on one of the filter's buttons: the field's values as a menu under it, each ticked
+    /// while it is shown, and Show All. Answers whether the click was on a button.
+    fn filter_button(&self, event: &NSEvent) -> bool {
+        let pane = self.ivars();
+        let sheet = pane.sheet.get();
+        let Some(filter) = pane.app.filter(sheet).ok().flatten() else {
+            return false;
+        };
+        let at = located(self, event);
+        let grid = pane.grid.borrow().clone();
+        let Some(field) =
+            crate::sheet::filter::button_at(&filter, &grid, at.x - HEADER_W, at.y - HEADER_H)
+        else {
+            return false;
+        };
+        let col = filter.column(field);
+        let Ok(cells) = pane
+            .app
+            .get_viewport(sheet, 0..filter.end.row + 1, col..col + 1)
+        else {
+            return true;
+        };
+        let values = grind_sheet::filter::offered(&cells, &filter, field, FILTER_VALUES);
+        let mtm = self.mtm();
+        let target: Retained<FilterChoice> = {
+            let this = FilterChoice::alloc(mtm).set_ivars(Choice {
+                pane: pane.me.clone(),
+                field,
+                values: values.clone(),
+            });
+            // SAFETY: `init` is `NSObject`'s designated initialiser.
+            unsafe { msg_send![super(this), init] }
+        };
+        let menu = NSMenu::new(mtm);
+        menu.setAutoenablesItems(false);
+        let item = |title: &str, tag: isize| {
+            // SAFETY: an item made with its title, the target's own action and no key.
+            let item = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    NSMenuItem::alloc(mtm),
+                    &NSString::from_str(title),
+                    Some(sel!(filterChose:)),
+                    &NSString::from_str(""),
+                )
+            };
+            // SAFETY: the target outlives the menu, which is shown and closed within this call.
+            unsafe { item.setTarget(Some(&target)) };
+            item.setTag(tag);
+            item
+        };
+        let all = item("Show All", -1);
+        all.setEnabled(filter.keep.contains_key(&field));
+        menu.addItem(&all);
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        for (index, value) in values.iter().enumerate() {
+            let title = match value.is_empty() {
+                true => "(empty)",
+                false => value.as_str(),
+            };
+            let row = item(title, index as isize);
+            row.setState(match crate::sheet::filter::shown(&filter, field, value) {
+                true => NSControlStateValueOn,
+                false => NSControlStateValueOff,
+            });
+            menu.addItem(&row);
+        }
+        let buttons = crate::sheet::filter::buttons(&filter, &grid);
+        let below = buttons
+            .iter()
+            .find(|(at, _)| *at == field)
+            .map_or(at, |(_, rect)| {
+                NSPoint::new(rect.x + HEADER_W, rect.bottom() + HEADER_H)
+            });
+        menu.popUpMenuPositioningItem_atLocation_inView(None, below, Some(self));
+        true
+    }
+
     fn context(&self, event: &NSEvent) {
         let pane = self.ivars();
         let at = located(self, event);

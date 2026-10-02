@@ -8,6 +8,7 @@
 
 pub mod assist;
 pub mod chart;
+pub mod filter;
 pub mod format;
 pub mod geom;
 pub mod paint;

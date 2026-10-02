@@ -446,6 +446,20 @@ cmp -s "$out/charted/before.png" "$out/charted/after.png" \
     && fail "the inserted chart was not drawn"
 say "   Insert ▸ Chart charts the table, and draws it"
 
+# Edit ▸ Filter from A1 covers the table to the end of what the sheet uses, and its buttons are
+# drawn in the headings.
+cp "$out/charted.fods" "$out/filtered.fods"
+"$grind" sheet chart-remove "$out/filtered.fods" 0 > /dev/null 2>&1 || true
+printf 'snap before\nmenu Edit/Filter\nwait 0.5\nsnap after\nkey cmd+s\nwait 2\n' \
+    > "$out/filter.drive"
+bounded 120 "$mac" "$out/filtered.fods" --drive "$out/filter.drive" --out "$out/filtered" \
+    > "$out/filter.txt" || fail "the filter drive failed: $(cat "$out/filter.txt")"
+"$grind" sheet project "$out/filtered.fods" | grep -q 'filter .* A1:B3 ' \
+    || fail "Edit ▸ Filter did not cover A1:B3: $("$grind" sheet project "$out/filtered.fods" | grep filter)"
+cmp -s "$out/filtered/before.png" "$out/filtered/after.png" \
+    && fail "the filter's buttons were not drawn"
+say "   Edit ▸ Filter covers the table and draws its buttons"
+
 # Every Problems row jumps: a formula on a second sheet reading an empty cell is a finding at
 # Data.C3, and choosing its row from the first sheet lands the selection there.
 "$grind" sheet new "$out/problems.fods" > /dev/null

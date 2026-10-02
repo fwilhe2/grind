@@ -671,7 +671,10 @@ orange, and typing anything ends it; the predicate is `formula::assist::ref_elig
 out of the GNOME window for it, and a drive in `mac-frames.sh` checks the formula it writes.
 Pointing with the mouse and F4's `$` cycle are not built: ⌘T, Excel for Mac's key for the cycle,
 is the font panel's here; **Insert ▸ Chart**, the selection's table charted beside it by
-`App::suggest_chart` in one step, with no dialog; and `canAsynchronouslyWriteToURL:` answering NO
+`App::suggest_chart` in one step, with no dialog; **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
+over the selection or from one cell to the end of the used part, a button drawn in each heading
+and filled in the accent while its field has a condition, and a click on one listing the field's
+values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; and `canAsynchronouslyWriteToURL:` answering NO
 where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
 column carries each.
 

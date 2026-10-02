@@ -264,7 +264,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
-| Create or clear a filter | ● | ● | ○ | ○ | ○ | ○ |
+| Create or clear a filter | ● | ● | ○ | ○ | ○ | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
 | Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ◐ ³ |
 | Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ○ |
