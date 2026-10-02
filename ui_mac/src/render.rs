@@ -22,6 +22,8 @@ use objc2_core_graphics::{
     CGContext, CGImageAlphaInfo, CGLineCap, CGLineJoin, kCGColorSpaceSRGB,
 };
 
+use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
 use std::ptr::null_mut;
 
 use grind_text::ImageView;
@@ -35,13 +37,36 @@ use crate::ops::{Op, WASH};
 use crate::sheet::geom::Rect;
 use crate::text::picture::Decoder;
 
+/// How many decoded pictures are kept — enough for every picture a page shows at once.
+const DECODED: usize = 32;
+
+/// One decoded picture: the hash and length of its bytes, and what `NSImage` made of them.
+type Decoded = (u64, usize, Option<Retained<NSImage>>);
+
+thread_local! {
+    /// Pictures already decoded, by a hash of their bytes, oldest first. The page is laid out
+    /// again on every keystroke and asks each picture's size each time; decoding a photograph
+    /// that often is what this saves. A picture nothing can read is remembered as `None`.
+    static PICTURES: RefCell<Vec<Decoded>> = const { RefCell::new(Vec::new()) };
+}
+
 /// A picture's bytes as an `NSImage` — every format the system reads — or `None` when nothing
-/// here can read them.
-///
-/// ponytail: decoded on every paint rather than cached, as `ui_text_gtk` does; the trigger is a
-/// document whose pictures make scrolling visibly slow, and the cache is keyed by the bytes.
+/// here can read them; decoded once, and found again by its bytes.
 fn decode(data: &[u8]) -> Option<Retained<NSImage>> {
-    NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(data))
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    data.hash(&mut hasher);
+    let key = (hasher.finish(), data.len());
+    PICTURES.with_borrow_mut(|pictures| {
+        if let Some((.., image)) = pictures.iter().find(|(hash, len, _)| (*hash, *len) == key) {
+            return image.clone();
+        }
+        let image = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(data));
+        if pictures.len() == DECODED {
+            pictures.remove(0);
+        }
+        pictures.push((key.0, key.1, image.clone()));
+        image
+    })
 }
 
 /// What decodes a page's pictures for the layout — their natural size, in points, which is
