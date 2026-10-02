@@ -276,8 +276,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
 | **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
 | **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
-| Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ◐ ² |
-| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ◐ ⁴ |
+| Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ● ² |
+| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ● ⁴ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ | ○ |
 | Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● |
 | Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
@@ -330,11 +330,12 @@ what the function does.
 the table it was made from (`doc/chart-format.md`, The shell).
 
 **Mac.** ¹ In the sidebar's Names section, and the name box takes one. ² A CSV opens as a new,
-untitled spreadsheet of its own (the next row); nothing imports into an open document.
+untitled spreadsheet of its own (the next row), and File ▸ Import CSV… reads one into the open
+sheet at the active cell, sniffed.
 ³ Insert ▸ Name… defines one over the selection; a name's row in the sidebar has a context
 menu that renames it with every use following, redefines it, inlines it everywhere or deletes it.
-⁴ File ▸ Export as CSV…, the sheet's used rectangle with commas and shown values; no TSV or
-other dialect from the window. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
+⁴ File ▸ Export as CSV…, the sheet's used rectangle with shown values, its delimiter picked by
+the name — `.tsv` is tabs. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
 as the core reads it; a right-click on a chart sets its title, its kind and its legend or removes
 it, and dragging one moves it. There is no dialog, and resizing or recolouring one is the CLI's.
 

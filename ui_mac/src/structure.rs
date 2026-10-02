@@ -108,6 +108,10 @@ impl Pane {
                     self.export_csv(mtm);
                     return;
                 }
+                Command::ImportCsv => {
+                    self.import_csv(mtm);
+                    return;
+                }
                 Command::InsertChart => self.insert_chart(),
                 Command::Evaluate => {
                     let at = selection.active;
@@ -242,6 +246,44 @@ impl Pane {
         Ok(())
     }
 
+    /// File ▸ Import CSV…: a delimited file read into this sheet at the active cell, its
+    /// delimiter sniffed and each field read as if typed (`csv::Import::sniffed`, the one answer
+    /// every window gives), in one undo step. Not UTF-8 is refused with `csv::NOT_UTF8`'s words.
+    fn import_csv(&self, mtm: MainThreadMarker) {
+        let panel = NSOpenPanel::openPanel(mtm);
+        panel.setCanChooseDirectories(false);
+        panel.setAllowsMultipleSelection(false);
+        panel.setPrompt(Some(&NSString::from_str("Import")));
+        if panel.runModal() != NSModalResponseOK {
+            return;
+        }
+        let Some(path) = panel.URL().and_then(|url| url.to_file_path()) else {
+            return;
+        };
+        let text = std::fs::read(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| grind_sheet::csv::decode(bytes).map_err(str::to_owned));
+        let text = match text {
+            Ok(text) => text,
+            Err(why) => {
+                return prompt::tell(
+                    mtm,
+                    "That file could not be imported.",
+                    &format!("{}: {why}", path.display()),
+                );
+            }
+        };
+        let at = self.selection.get().active;
+        let options = grind_sheet::csv::Import::sniffed(&text);
+        match self
+            .app
+            .import_csv(self.sheet.get(), at, &text, &options, RecalcMode::Document)
+        {
+            Ok(outcome) => self.say(Some((&notice::imported(outcome.cells, at), None))),
+            Err(error) => prompt::tell(mtm, "That file could not be imported.", &error.to_string()),
+        }
+    }
+
     /// File ▸ Export as CSV…: the sheet showing, everything it uses, as comma-separated values
     /// in a file the save panel names — the cells' shown values, as `grind sheet export-csv`
     /// writes them by default.
@@ -260,11 +302,15 @@ impl Pane {
         let (rows, cols) = self.app.used_extent(sheet).unwrap_or((0, 0));
         let text = match rows == 0 || cols == 0 {
             true => Ok(String::new()),
+            // The name picks the delimiter — `.tsv` is tabs — as every other window's save does.
             false => self.app.export_csv(
                 sheet,
                 Pos::new(0, 0),
                 Pos::new(rows - 1, cols - 1),
-                &Default::default(),
+                &grind_sheet::csv::Export {
+                    dialect: grind_sheet::csv::Dialect::for_name(&path.display().to_string()),
+                    ..Default::default()
+                },
             ),
         };
         let written = text.map_err(|error| error.to_string()).and_then(|text| {

@@ -85,6 +85,15 @@ pub fn name_inlined(name: &str, count: usize) -> String {
     )
 }
 
+/// A delimited file read in at the cursor (`App::import_csv`).
+pub fn imported(cells: usize, at: grind_sheet::Pos) -> String {
+    format!(
+        "{} imported at {}. ⌘Z takes it back.",
+        counted(cells, "cell", "cells"),
+        grind_sheet::a1::format(None, at)
+    )
+}
+
 /// A sheet that cannot be deleted because it is the only one — a spreadsheet has at least one.
 pub fn last_sheet() -> String {
     "A spreadsheet keeps at least one sheet. Add another first, then delete this one.".to_owned()

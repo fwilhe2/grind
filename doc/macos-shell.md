@@ -675,7 +675,8 @@ is the font panel's here; **Insert ▸ Chart**, the selection's table charted be
 bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`)
 — and dragged to move it, drawn where the pointer has it and written once as the button comes up
 (`App::reshape_chart`); every Format ▸ Number item carrying **a live sample** of the active
-cell in its format as the item's subtitle (`App::shown_as`, macOS 15's `NSMenuItem.subtitle`); **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
+cell in its format as the item's subtitle (`App::shown_as`, macOS 15's `NSMenuItem.subtitle`); File ▸ **Import CSV…** into the open sheet at the active cell, and
+Export as CSV… writing TSV when the name says `.tsv`; **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
 over the selection or from one cell to the end of the used part, a button drawn in each heading
 and filled in the accent while its field has a condition, and a click on one listing the field's
 values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; **every paragraph kind a page draws** — Title, Subtitle and

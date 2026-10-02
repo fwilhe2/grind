@@ -102,6 +102,8 @@ pub enum Command {
     Columns(Track),
     /// A name for the selection — Insert ▸ Name….
     DefineName,
+    /// A delimited file read into the sheet at the active cell — File ▸ Import CSV….
+    ImportCsv,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
@@ -238,6 +240,7 @@ impl Command {
         all.extend([
             Command::DefineName,
             Command::ExportCsv,
+            Command::ImportCsv,
             Command::InsertChart,
             Command::Filter,
             Command::CopyValue,
@@ -274,6 +277,7 @@ impl Command {
                 | Command::Columns(Track::Size)
                 | Command::DefineName
                 | Command::ExportCsv
+                | Command::ImportCsv
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
@@ -348,7 +352,8 @@ impl Command {
             | Command::ShowFormulas
             | Command::FillAcross
             | Command::Calculations
-            | Command::ExportCsv => sheet,
+            | Command::ExportCsv
+            | Command::ImportCsv => sheet,
         }
     }
 }
@@ -780,6 +785,7 @@ pub static MENUS: &[Menu] = &[
             standard("Duplicate", key("s", SHIFT_CMD), "duplicateDocument:"),
             standard("Rename…", None, "renameDocument:"),
             standard("Move To…", None, "moveDocument:"),
+            command("Import CSV…", None, Command::ImportCsv),
             command("Export as CSV…", None, Command::ExportCsv),
             Item::Submenu {
                 title: "Revert To",
