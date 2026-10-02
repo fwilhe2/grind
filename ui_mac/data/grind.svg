@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The suite's mark (ui_win32/data/grind.svg) on the macOS app icon grid: a 1024 canvas, an
+     824 body inset 100 with Apple's corner radius, and the mark scaled into it. The navy square,
+     the white outline with a grid in one corner and a document's lines in the other, and the
+     green active cell are the same three things in the same places. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b2d52" />
+      <stop offset="1" stop-color="#001f3f" />
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#body)" />
+  <g fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="252" y="252" width="520" height="520" rx="36" />
+    <line x1="252" y1="425" x2="512" y2="425" />
+    <line x1="425" y1="252" x2="425" y2="512" />
+    <line x1="512" y1="555" x2="772" y2="555" />
+    <line x1="512" y1="642" x2="772" y2="642" />
+    <line x1="512" y1="729" x2="685" y2="729" />
+  </g>
+  <rect x="439" y="266" width="73" height="73" fill="#2ecc40" />
+</svg>

@@ -37,9 +37,9 @@ pub fn color(own: Option<&str>, fill: Option<&str>, dark: bool) -> Option<String
         // A colour this shell cannot parse is still the document's, and CSS may know it.
         (Some(own), None, _) => Some(own.to_owned()),
         (None, _, None) => None,
-        (None, _, Some(fill)) => Some(hex(color::automatic_ink(fill, ink))),
-        (Some(_), Some(rgb), None) if dark => Some(hex(color::legible(rgb, ground, color::TEXT))),
-        (Some(own), Some(_), _) => Some(own.to_owned()),
+        (Some(own), Some(_), Some(_)) => Some(own.to_owned()),
+        (Some(own), Some(_), None) if !dark => Some(own.to_owned()),
+        (_, rgb, fill) => Some(hex(color::document_ink(rgb, fill, ground, ink, dark))),
     }
 }
 

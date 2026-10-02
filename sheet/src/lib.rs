@@ -22,19 +22,26 @@ use std::sync::{Arc, RwLock};
 pub mod a1;
 pub mod action;
 pub mod chart;
+pub mod clip;
 pub mod csv;
 pub mod filter;
 pub mod find;
+pub mod format;
 pub mod formula;
 pub mod graph;
 pub mod grid;
 pub mod lint;
+pub mod look;
 pub mod model;
+pub mod nav;
 pub mod numfmt;
 pub mod odf;
+pub mod place;
 pub mod projection;
 pub mod style;
+pub mod summary;
 pub mod table_format;
+pub mod tracks;
 pub mod view;
 
 /// What this crate takes from `grind-core` and hands on under its own name.
@@ -816,7 +823,7 @@ impl App {
     ///
     /// Each rewritten cell goes back in through the typing rule, as if the replaced text had
     /// been typed into it: a formula stays a formula (its display form converted with
-    /// [`formula::display::from_display`], the step every shell takes on Enter), a date cell
+    /// [`formula::display::to_input`], the step every shell takes on Enter), a date cell
     /// reads its ISO spelling back, and `12` replaced into `123` is a number. A cell whose
     /// replaced text is a formula that will not parse is **left alone** and listed in
     /// [`find::Replaced::refused`] — neither silently turned into text nor stored as a formula
@@ -838,15 +845,12 @@ impl App {
                 let Some(input) = search.replaced(&hit.text, with) else {
                     continue;
                 };
-                let input = match input.starts_with('=') {
-                    true => match formula::display::from_display(&input) {
-                        Ok(canonical) => canonical,
-                        Err(e) => {
-                            refused.push((hit, e.to_string()));
-                            continue;
-                        }
-                    },
-                    false => input,
+                let input = match formula::display::to_input(&input) {
+                    Ok(input) => input,
+                    Err(e) => {
+                        refused.push((hit, e.to_string()));
+                        continue;
+                    }
                 };
                 edits.push(typed(&state.doc, hit.sheet, hit.pos, &input).1);
             }
@@ -872,6 +876,23 @@ impl App {
     // because it is strictly ordered — see `Document::apply`. Nothing here reorders sheets:
     // a new one is appended, because that is the button a shell has, and a move is a
     // capability to add when something can ask for it rather than a parameter to carry now.
+
+    /// The name a new sheet is offered: the first `SheetN` no sheet already has, compared the way
+    /// sheet names are — without regard to case. What every spreadsheet offers and nobody has to
+    /// think about.
+    ///
+    /// The GNOME window, the browser and the terminal each spelled this, and the Windows pane
+    /// suggested `Sheet{count + 1}`, which a document with a `Sheet3` among two sheets already
+    /// has; the macOS shell would have been a fifth answer.
+    pub fn fresh_sheet_name(&self) -> String {
+        let taken: Vec<String> = (0..self.sheet_count())
+            .filter_map(|i| self.sheet_name(i).ok())
+            .collect();
+        (1..)
+            .map(|n| format!("Sheet{n}"))
+            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
+            .expect("there is always a free number")
+    }
 
     /// Append an empty sheet, returning its index.
     pub fn add_sheet(&self, name: &str) -> Result<usize> {

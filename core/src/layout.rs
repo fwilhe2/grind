@@ -176,6 +176,18 @@ impl Layout {
             .unwrap_or(self.lines.len().saturating_sub(1))
     }
 
+    /// Which line a height `y` below the layout's top is on — the vertical half of hit-testing a
+    /// click, [`Layout::offset_at`] being the horizontal one.
+    ///
+    /// **Nearest, never nothing**: above the first line is the first line and below the last is
+    /// the last, since a click in the space around a paragraph means the line nearest it.
+    pub fn line_at_y(&self, y: f32) -> usize {
+        self.lines
+            .iter()
+            .position(|line| y < line.top + line.height)
+            .unwrap_or(self.lines.len().saturating_sub(1))
+    }
+
     /// The x of a caret offset, **relative to the start of its line**.
     pub fn x_at(&self, offset: usize) -> f32 {
         let offset = offset.min(self.len());
@@ -373,6 +385,23 @@ mod tests {
                 height: 1.0,
                 top: 0.0
             }
+        );
+    }
+
+    /// A click's height finds its line, and a click above or below the paragraph finds the
+    /// nearest one rather than nothing.
+    #[test]
+    fn a_height_finds_the_nearest_line() {
+        let layout = at("the cat sat on the mat", 10.0);
+        assert_eq!(layout.lines().len(), 3);
+        assert_eq!(layout.line_at_y(0.0), 0);
+        assert_eq!(layout.line_at_y(1.5), 1, "one unit per line under Fixed");
+        assert_eq!(layout.line_at_y(-50.0), 0, "above the block");
+        assert_eq!(layout.line_at_y(500.0), 2, "below it");
+        assert_eq!(
+            plain("").line_at_y(3.0),
+            0,
+            "an empty block has its one line"
         );
     }
 

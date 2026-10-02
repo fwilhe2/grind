@@ -554,26 +554,18 @@ impl App {
     ///
     /// The cells' *input* text, not their displayed text: a formula yanks as a formula, which
     /// is what somebody copying `=SUM(A1:A9)` means, and it is what `put` feeds back to
-    /// `App::enter_range` — so a round trip through the register is lossless.
+    /// `App::enter_range` — so a round trip through the register is lossless. The codec is
+    /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
     fn yank(&mut self) {
         let (start, end) = self.rect();
-        let mut out = String::new();
-        for row in start.row..=end.row {
-            if row > start.row {
-                out.push('\n');
-            }
-            for col in start.col..=end.col {
-                if col > start.col {
-                    out.push('\t');
-                }
-                let text = self
-                    .core
-                    .input_text(self.sheet, Pos::new(row, col))
-                    .unwrap_or_default();
-                // A tab or a newline inside a cell would read back as a cell boundary.
-                out.push_str(&text.replace(['\t', '\n'], " "));
-            }
-        }
+        let out = grind_sheet::clip::rect_text(
+            &self.core,
+            self.sheet,
+            start,
+            end,
+            CoreApp::input_text,
+            "\n",
+        );
         let cells = (end.row - start.row + 1) * (end.col - start.col + 1);
         self.register = out;
         self.leave_visual();
@@ -587,11 +579,9 @@ impl App {
             self.status = "nothing yanked".to_string();
             return;
         }
-        let rows: Vec<Vec<String>> = self
-            .register
-            .split('\n')
-            .map(|line| line.split('\t').map(str::to_owned).collect())
-            .collect();
+        // Display syntax back to ODF's (`grind_sheet::clip`) — without it a formula yanked here
+        // was put back as `#NAME?`.
+        let rows = grind_sheet::clip::parse_rows(&self.register);
         match self
             .core
             .enter_range(self.sheet, self.active, &rows, RecalcMode::Document)
@@ -794,15 +784,12 @@ impl App {
         if before == text {
             self.status.clear();
         } else {
-            let input = match text.starts_with('=') {
-                true => match display::from_display(&text) {
-                    Ok(canonical) => canonical,
-                    Err(e) => {
-                        self.status = format!("{} (at {})", e.message, e.at);
-                        return;
-                    }
-                },
-                false => text,
+            let input = match display::to_input(&text) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.status = format!("{} (at {})", e.message, e.at);
+                    return;
+                }
             };
             match self
                 .core
@@ -1463,13 +1450,7 @@ impl App {
     }
 
     fn cmd_sheet_add(&mut self) {
-        let taken: Vec<String> = (0..self.core.sheet_count())
-            .filter_map(|i| self.core.sheet_name(i).ok())
-            .collect();
-        let name = (1..)
-            .map(|n| format!("Sheet{n}"))
-            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
-            .expect("there is always a free number");
+        let name = self.core.fresh_sheet_name();
         match self.core.add_sheet(&name) {
             Ok(index) => {
                 self.sheet = index;
@@ -1585,15 +1566,11 @@ impl App {
 
     /// Where the selection is, and what it adds up to — the right-hand end of the status bar.
     ///
-    /// The aggregates go through [`grind_sheet::App::preview`] over generated formulas rather than
-    /// through a summing loop of this shell's own, so what the bar says and what a cell holding
-    /// `=SUM(...)` would say cannot differ. A single cell says only where it is, deliberately:
-    /// it has nothing to add up, and every other spreadsheet stays quiet about it.
-    ///
-    /// ponytail: the third copy of a shape `ui_sheet_gtk/src/chrome.rs` and
-    /// `ui_win32/src/sheet/status.rs` already have. It is small enough that three of it is
-    /// cheaper than a fourth spelling in `grind-sheet`; a fourth caller is where it gets hoisted,
-    /// the way `formula::assist` and `grind_core::search::score` were.
+    /// The numbers are `grind_sheet::summary`'s — [`grind_sheet::App::preview`] over generated
+    /// formulas, hoisted out of this shell, `ui_sheet_gtk` and `ui_win32` when the macOS shell was
+    /// the fourth caller — so what the bar says and what a cell holding `=SUM(...)` would say
+    /// cannot differ. The *spelling* stays this shell's: a terminal has less room, so `Avg`, four
+    /// decimals, and a single cell saying where it is, since there is no name box beside it.
     fn selection_summary(&self) -> String {
         use grind_sheet::a1::format as spell;
         let (start, end) = self.rect();
@@ -1601,38 +1578,16 @@ impl App {
             return spell(None, start);
         }
         let address = format!("{}:{}", spell(None, start), spell(None, end));
-        let Ok((rows, cols)) = self.core.used_extent(self.sheet) else {
+        let Some(summary) = grind_sheet::summary::summarise(&self.core, self.sheet, start, end)
+        else {
             return address;
         };
-        // Clamped to the used extent first: a selection reaching past what the sheet holds must
-        // not ask the evaluator to walk a million empty rows.
-        if rows == 0 || cols == 0 || start.row >= rows || start.col >= cols {
-            return address;
+        let mut parts = vec![address];
+        if let Some((sum, _)) = summary.totals {
+            parts.push(format!("Sum {}", show(&self.core, sum)));
         }
-        let end = Pos::new(end.row.min(rows - 1), end.col.min(cols - 1));
-        if end.row < start.row || end.col < start.col {
-            return address;
-        }
-        let range = format!("[.{}:.{}]", spell(None, start), spell(None, end));
-        // Evaluated one row past the used extent: a formula is evaluated *as if* it sat somewhere,
-        // and anywhere inside the range would be a circular reference.
-        let at = Pos::new(rows, 0);
-        let of = |formula: String| match self.core.preview(self.sheet, at, &formula) {
-            Ok(CellValue::Number(n)) => Some(n),
-            _ => None,
-        };
-        // A status bar's Count is non-empty rather than numeric, which is `COUNTA`.
-        let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
-        if count == 0.0 {
-            return address;
-        }
-        let mut parts = vec![address, format!("Count {}", show(&self.core, count))];
-        // Sum and Average of no numbers are not zero, they are nothing — `AVERAGE` says so with
-        // `#DIV/0!`, which is why both are read back as an optional number and offered together.
-        if let Some(sum) = of(format!("=SUM({range})"))
-            && let Some(average) = of(format!("=AVERAGE({range})"))
-        {
-            parts.insert(1, format!("Sum {}", show(&self.core, sum)));
+        parts.push(format!("Count {}", show(&self.core, summary.count)));
+        if let Some((_, average)) = summary.totals {
             parts.push(format!("Avg {}", show(&self.core, average)));
         }
         parts.join("  \u{00b7}  ")

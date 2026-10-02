@@ -996,14 +996,12 @@ impl Ui {
     /// at the caret if a control or a markdown span left one, and otherwise `char_style`'s own
     /// answer for a bare caret.
     fn style_here(&self) -> grind_text::CharStyle {
-        if let Some((from, to)) = self.doc.selection() {
-            return self.app.char_style(from, to).unwrap_or_default();
-        }
-        if let Some(pending) = self.doc.pending() {
-            return pending;
-        }
-        let caret = self.doc.caret();
-        self.app.char_style(caret, caret).unwrap_or_default()
+        grind_text::format::here(
+            &self.app,
+            self.doc.selection(),
+            self.doc.caret(),
+            self.doc.pending().as_ref(),
+        )
     }
 
     /// One control of the formatting bar, applied to the current selection. The [`format::
@@ -1015,14 +1013,17 @@ impl Ui {
     /// — and forgets it if the caret moves first. The bar used to be insensitive there, which
     /// looked broken at rest and turned the most common way of asking for bold into nothing.
     fn apply_char_style(self: &Rc<Self>, change: format::Change) {
-        let mut style = self.style_here();
-        change.apply(&mut style);
-        let Some((from, to)) = self.doc.selection() else {
-            self.doc.set_pending(style);
-            return;
-        };
-        if let Err(error) = self.app.set_char_style(from, to, &style) {
-            self.toast(&error.to_string());
+        let landed = grind_text::format::apply(
+            &self.app,
+            self.doc.selection(),
+            self.doc.caret(),
+            self.doc.pending().as_ref(),
+            &change,
+        );
+        match landed {
+            Ok(grind_text::format::Landed::Written) => {}
+            Ok(grind_text::format::Landed::Pending(style)) => self.doc.set_pending(style),
+            Err(error) => self.toast(&error.to_string()),
         }
     }
 
@@ -1173,7 +1174,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("heading-5", &[][..], |ui| ui.heading(5)),
         ("heading-6", &[][..], |ui| ui.heading(6)),
         // The two named paragraph styles this window can both apply and draw
-        // (`metrics.rs`'s `TITLE_SCALE`), and the only two it will ever apply — see `set_kind`.
+        // (`grind_text::look::TITLE_SCALE`), and the only two it will ever apply — see `set_kind`.
         ("title", &[][..], |ui| {
             ui.set_kind(BlockKind::Paragraph, Some("Title"))
         }),

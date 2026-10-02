@@ -120,6 +120,31 @@ pub fn automatic_ink(ground: Rgb, ink: Rgb) -> Rgb {
     }
 }
 
+/// The ink for text the document may or may not have coloured, over a fill it may or may not
+/// have chosen, on a page drawn with `ink` on `page` — every shell's rule for a cell's or a
+/// run's text, in one place:
+///
+/// - **No colour of its own, no fill**: the page's own `ink`.
+/// - **No colour of its own, on a fill of its own**: ODF's *automatic* colour on that fill
+///   ([`automatic_ink`]).
+/// - **A colour of its own on the page, when the page is `dark`**: lifted along its own hue until
+///   it reads ([`legible`]) — a navy word chosen for white paper is invisible on a dark page, and
+///   a lighter navy is still the document's navy.
+/// - **Anything else** is the document's decision about its own paper, and is drawn as it is.
+///
+/// The GNOME window, the Windows pane and the browser each spelled this, and the macOS shell
+/// would have been the fourth (`doc/macos-shell.md`). `dark` is the shell's own judgement of its
+/// page, because each already makes it — from a theme's mode, a stylesheet's scheme or a
+/// palette's background.
+pub fn document_ink(own: Option<Rgb>, fill: Option<Rgb>, page: Rgb, ink: Rgb, dark: bool) -> Rgb {
+    match (own, fill) {
+        (None, None) => ink,
+        (None, Some(fill)) => automatic_ink(fill, ink),
+        (Some(own), None) if dark => legible(own, page, TEXT),
+        (Some(own), _) => own,
+    }
+}
+
 /// `color`, moved along its own hue — lighter on a dark ground, darker on a light one — until it
 /// reaches `floor` against `ground`; `color` itself when it already does.
 ///
@@ -150,6 +175,43 @@ pub fn legible(color: Rgb, ground: Rgb, floor: f64) -> Rgb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_documents_ink_follows_the_four_rules() {
+        let (page, ink) = (DARK, WHITE);
+        let navy = (0x00, 0x1f, 0x3f);
+        let silver = (0xdd, 0xdd, 0xdd);
+        assert_eq!(
+            document_ink(None, None, page, ink, true),
+            ink,
+            "the page's own"
+        );
+        assert_eq!(
+            document_ink(None, Some(silver), page, ink, true),
+            BLACK,
+            "automatic on a pale fill, even on a dark page"
+        );
+        let lifted = document_ink(Some(navy), None, page, ink, true);
+        assert!(
+            contrast(lifted, page) >= TEXT,
+            "the navy reads on the dark page"
+        );
+        assert_eq!(
+            hsl(lifted).0.round(),
+            hsl(navy).0.round(),
+            "and is still navy"
+        );
+        assert_eq!(
+            document_ink(Some(navy), Some(silver), page, ink, true),
+            navy,
+            "on its own fill, the document's decision"
+        );
+        assert_eq!(
+            document_ink(Some(navy), None, WHITE, BLACK, false),
+            navy,
+            "on a light page, as it is"
+        );
+    }
 
     const WHITE: Rgb = (0xff, 0xff, 0xff);
     const BLACK: Rgb = (0, 0, 0);

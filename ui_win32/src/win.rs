@@ -109,11 +109,10 @@ use crate::metrics::{Faces, Fonts};
 use crate::notice;
 use crate::problems;
 use crate::sheet::assist;
-use crate::sheet::clip;
 use crate::sheet::currency;
 use crate::sheet::draw::{self, FormatStrip, Frame};
 use crate::sheet::format;
-use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, scale};
+use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, mm_to_px, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
@@ -123,7 +122,9 @@ use crate::text::geom::{Flow, Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use crate::welcome;
 use grind_core::DocumentKind;
+use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
+use grind_text::caret::START;
 use grind_text::{Caret, Layout, markdown};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
@@ -376,13 +377,6 @@ impl Pane {
     }
 }
 
-/// The document's very first caret position. `Caret` has no `Default`, and spelling this out once
-/// is better than spelling `{ block: 0, offset: 0 }` in five places.
-const START: Caret = Caret {
-    block: 0,
-    offset: 0,
-};
-
 /// Everything the **welcome screen** owns, which is almost nothing — it has no document, so there
 /// is no viewport, no selection, no history and nothing to save.
 ///
@@ -574,14 +568,14 @@ impl Sheet {
                 MAX_COLS,
                 &widths,
                 &hidden_cols,
-                dpi,
+                mm_to_px(dpi),
             ),
             rows: Sizes::from_lengths(
                 scale(draw::ROW_H, dpi),
                 MAX_ROWS,
                 &heights,
                 &hidden_rows,
-                dpi,
+                mm_to_px(dpi),
             ),
             first_row: self.geom.first_row,
             first_col: self.geom.first_col,
@@ -614,13 +608,8 @@ impl Sheet {
         match action {
             keymap::Action::Move { motion, extend } => {
                 let extent = self.extent();
-                let selection = self.selection;
-                let (app, sheet) = (&self.app, self.sheet);
-                let occupied = |pos: Pos| {
-                    app.get(sheet, pos)
-                        .is_ok_and(|value| !matches!(value, grind_sheet::model::CellValue::Empty))
-                };
-                let to = keymap::moved(selection, motion, extend, extent, &occupied);
+                let occupied = grind_sheet::nav::occupied(&self.app, self.sheet);
+                let to = keymap::moved(self.selection, motion, extend, extent, &occupied);
                 // A hidden track is drawn as gone, so a cursor may not stop on one — see
                 // `keymap::onto_visible`, which is the rule and has the tests.
                 self.selection = keymap::onto_visible(to, motion, &self.geom.rows, &self.geom.cols);
@@ -628,11 +617,7 @@ impl Sheet {
             // Everything the sheet *uses*, with the active cell at A1 so that the view goes
             // home rather than to the far corner. An empty sheet selects the one cell it has.
             keymap::Action::SelectAll => {
-                let (rows, cols) = self.app.used_extent(self.sheet).unwrap_or((0, 0));
-                self.selection = Selection {
-                    anchor: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
-                    active: Pos::new(0, 0),
-                };
+                self.selection = grind_sheet::nav::all(&self.app, self.sheet)
             }
             keymap::Action::GoTo => {}
         }
@@ -894,19 +879,11 @@ impl Text {
     /// How many characters a block holds. Asked of the viewport rather than remembered, because
     /// a block's length changes under every edit.
     fn block_len(&self, index: usize) -> usize {
-        self.app
-            .get_viewport(index..index + 1)
-            .get(index)
-            .map(|view| view.text.chars().count())
-            .unwrap_or(0)
+        grind_text::caret::block_len(&self.app, index)
     }
 
     fn last_caret(&self) -> Caret {
-        let block = self.app.block_count().saturating_sub(1);
-        Caret {
-            block,
-            offset: self.block_len(block),
-        }
+        grind_text::caret::end(&self.app)
     }
 
     /// The faces this document is set in, at the current measure. Built per call rather than
@@ -919,7 +896,7 @@ impl Text {
         Some(Faces::new(
             fonts,
             width,
-            scale(text::geom::INDENT, self.page.dpi),
+            text::geom::spacing(self.page.dpi),
             &self.across,
         ))
     }
@@ -1007,30 +984,9 @@ impl Text {
         use text::keymap::Motion;
         let at = self.caret;
         match motion {
-            Motion::Char(step) if step < 0 => match at.offset {
-                0 if at.block > 0 => Caret {
-                    block: at.block - 1,
-                    offset: self.block_len(at.block - 1),
-                },
-                0 => at,
-                offset => Caret {
-                    block: at.block,
-                    offset: offset - 1,
-                },
-            },
-            Motion::Char(_) => match at.offset < self.block_len(at.block) {
-                true => Caret {
-                    block: at.block,
-                    offset: at.offset + 1,
-                },
-                // Off the end of a block is the start of the next one: a document is one flow,
-                // not a list of boxes, which is the same rule `App::caret_line` follows.
-                false if at.block + 1 < self.app.block_count() => Caret {
-                    block: at.block + 1,
-                    offset: 0,
-                },
-                false => at,
-            },
+            // Off the end of a block is the start of the next one: a document is one flow, not a
+            // list of boxes, which is the same rule `App::caret_line` follows.
+            Motion::Char(step) => grind_text::caret::step(&self.app, at, i32::from(step)),
             Motion::Word(step) => {
                 let forward = step > 0;
                 let text = self.block_text(at.block);
@@ -1106,22 +1062,13 @@ impl Text {
     /// "outside" and a caret that refuses to move is a bug nobody can see the cause of.
     fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
         let body = self.page.body();
-        let document_y = y - body.y + self.page.scroll;
         let (column_x, _) = self.page.text_column();
-        let block = self.flow.at(x - column_x, document_y)?;
-        let slot = self.flow.slot(block).copied()?;
-        let layout = self.layout_of(block)?;
-        let local_y = (document_y - slot.top).max(0.0);
-        let line = layout
-            .lines()
-            .iter()
-            .position(|line| local_y < f64::from(line.top + line.height))
-            .unwrap_or(layout.lines().len().saturating_sub(1));
-        let local_x = (x - column_x - slot.indent) as f32;
-        Some(Caret {
-            block,
-            offset: layout.offset_at(line, local_x),
-        })
+        grind_text::caret::hit(
+            &self.flow,
+            x - column_x,
+            y - body.y + self.page.scroll,
+            |block| self.layout_of(block),
+        )
     }
 
     /// How many lines a Page Up or Page Down moves.
@@ -3069,7 +3016,7 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
         return;
     }
     let text = window_text(edit);
-    let store = match state::to_store(&text) {
+    let store = match grind_sheet::formula::display::to_input(&text) {
         Ok(store) => store,
         // A formula that will not parse **does not commit**: the edit stays open with the caret
         // on the problem, because silently storing `=SUM(B2` as a piece of text is how a
@@ -3379,8 +3326,8 @@ fn history(hwnd: HWND, undo: bool) {
 }
 
 /// Put the selection on the clipboard as `CF_UNICODETEXT`, tab- and CRLF-separated
-/// (`sheet::clip::rect_text`), and with `cut`, clear it afterwards — one `App::clear_range`, so
-/// it is one undo step like Delete's.
+/// (`grind_sheet::clip::rect_text`), and with `cut`, clear it afterwards — one
+/// `App::clear_range`, so it is one undo step like Delete's.
 ///
 /// What travels is each cell's `App::input_text` — the raw number, or a formula in display
 /// form — rather than what the cell *displays*, for the reason `doc/windows-shell.md` decision
@@ -3391,8 +3338,12 @@ fn copy(hwnd: HWND, cut: bool) {
     // borrowed.
     unsafe {
         with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            let text = clip::rect_text(&state.app, state.sheet, start, end, App::input_text);
+            // A whole row or column is cut to what the sheet uses, or a copy of a column would
+            // be a million lines (`nav::target`).
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
+            let text =
+                clip::rect_text(&state.app, state.sheet, start, end, App::input_text, "\r\n");
             clipboard::set_text(hwnd, &text);
             if cut && let Err(error) = state.app.clear_range(state.sheet, start, end) {
                 state.say(Some(error.to_string()));
@@ -3403,8 +3354,8 @@ fn copy(hwnd: HWND, cut: bool) {
 }
 
 /// Read the clipboard and fill from the selection's top-left corner — `App::enter_range` under
-/// `sheet::clip::parse_rows`, one undo step for the whole rectangle. Nothing happens when the
-/// clipboard holds no text, which is what makes pasting an image or a file list silently do
+/// `grind_sheet::clip::parse_rows`, one undo step for the whole rectangle. Nothing happens when
+/// the clipboard holds no text, which is what makes pasting an image or a file list silently do
 /// nothing rather than write garbage into a cell.
 fn paste(hwnd: HWND) {
     let Some(text) = clipboard::get_text(hwnd) else {
@@ -3910,9 +3861,8 @@ fn set_currency(hwnd: HWND, index: usize) {
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
         with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
             let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = currency::target(start, end, used);
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
             let current = state
                 .app
                 .format_at(state.sheet, state.selection.active)
@@ -3935,7 +3885,7 @@ fn set_currency(hwnd: HWND, index: usize) {
 /// and what the same verb in the Format menu or on a key does, since those arrive here too.
 ///
 /// Every write is one `App::set_style` or `App::set_format` over the selection cut to the sheet in
-/// use (`currency::target`, which is `ui_sheet_gtk`'s `Grid::target`), so one Ctrl+Z takes back a
+/// use (`grind_sheet::nav::target`), so one Ctrl+Z takes back a
 /// formatted column. *Clear* is the one control that makes two calls, the same pair the GNOME
 /// strip's Clear makes — the core has one "plain again" per kind of property.
 fn format_control(hwnd: HWND, control: format::Control) {
@@ -3970,9 +3920,8 @@ fn format_write(
     // SAFETY: one borrow; the core's writes notify, and the observer posts rather than sends.
     unsafe {
         with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
             let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = currency::target(start, end, used);
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
             match write(state, start, end) {
                 Ok(_) => state.say(None),
                 Err(error) => state.say(Some(error.to_string())),
@@ -4462,11 +4411,8 @@ fn sheet_step(hwnd: HWND, by: i64) {
 
 fn sheet_add(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt — which runs a nested message loop.
-    let Some(suggested) = (unsafe {
-        with_sheet(hwnd, |state| {
-            format!("Sheet{}", state.app.sheet_count() + 1)
-        })
-    }) else {
+    let Some(suggested) = (unsafe { with_sheet(hwnd, |state| state.app.fresh_sheet_name()) })
+    else {
         return;
     };
     let Some(name) = dialog::prompt(hwnd, "Add Sheet", "Name for the new sheet:", &suggested)
@@ -5861,136 +5807,57 @@ const STRIP_BUTTONS: [markdown::Emphasis; 5] = [
     markdown::Emphasis::Code,
 ];
 
-/// The property this emphasis lives in, read off a style rather than written to one — the half of
-/// [`text_emphasise`]'s old inline closure that answering "is this on" and "what should it become"
-/// both need, and now shared between the two rather than duplicated for the strip.
-fn emphasis_field(style: &grind_text::CharStyle, emphasis: markdown::Emphasis) -> Option<String> {
-    match emphasis {
-        markdown::Emphasis::Bold => style.font_weight.clone(),
-        markdown::Emphasis::Italic => style.font_style.clone(),
-        markdown::Emphasis::Underline => style.underline.clone(),
-        markdown::Emphasis::Strike => style.line_through.clone(),
-        markdown::Emphasis::Code => style.font_family.clone(),
-    }
-}
-
-/// The value that means "off", for the three that have one — `Code` sets a family, which has no
-/// off value of its own, only "no family" (`None`).
-fn emphasis_off(emphasis: markdown::Emphasis) -> Option<&'static str> {
-    match emphasis {
-        markdown::Emphasis::Bold | markdown::Emphasis::Italic => Some("normal"),
-        markdown::Emphasis::Underline | markdown::Emphasis::Strike => Some("none"),
-        markdown::Emphasis::Code => None,
-    }
-}
-
-/// Whether `style` already has this emphasis — the question a toggle button answers before it
-/// decides which way to toggle, and the same one its own drawing asks to decide whether to press
-/// itself in.
-fn emphasis_active(style: &grind_text::CharStyle, emphasis: markdown::Emphasis) -> bool {
-    let field = emphasis_field(style, emphasis);
-    match emphasis_off(emphasis) {
-        Some(off) => field.as_deref().is_some_and(|v| v != off),
-        None => field.is_some(),
-    }
-}
-
-/// The style a toggle button reads before it draws itself: the selection's agreed style if there
-/// is one, or — with nothing selected — the style the *next* character typed would carry, which is
-/// [`Text::resume`] when a markdown span left one pending and otherwise the character just behind
-/// the caret. A document has no style "at" an empty caret; it has one on either side of it, and
-/// the one already typed is the one a toolbar showing current state means.
+/// The style a toggle button reads before it draws itself, and what every control changes:
+/// `grind_text::format::here` — the selection's agreed style, or with nothing selected the style
+/// the *next* character typed would carry. `ui_text_gtk` and `ui_web` ask the same function.
 fn text_style_here(text: &Text) -> grind_text::CharStyle {
-    if text.has_selection() {
-        let (from, to) = text.range();
-        return text.app.char_style(from, to).unwrap_or_default();
-    }
-    if let Some(resume) = &text.resume {
-        return resume.clone();
-    }
-    let caret = text.caret;
-    if caret.offset == 0 {
-        return grind_text::CharStyle::default();
-    }
-    let before = Caret {
-        block: caret.block,
-        offset: caret.offset - 1,
-    };
-    text.app.char_style(before, caret).unwrap_or_default()
+    let selection = text.has_selection().then(|| text.range());
+    grind_text::format::here(&text.app, selection, text.caret, text.resume.as_ref())
 }
 
 /// Which of the strip's five toggles should be drawn pressed in, for [`text::draw::paint`].
 fn format_state(text: &Text) -> [bool; 5] {
     let style = text_style_here(text);
-    STRIP_BUTTONS.map(|emphasis| emphasis_active(&style, emphasis))
+    STRIP_BUTTONS.map(|emphasis| grind_text::format::has(&style, emphasis))
 }
 
 /// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` named as
 /// still owed for W5b, and now drawn (`text::draw::paint`'s strip) as well as reachable from
-/// Ctrl+B/I/U and the Format menu, all three converging on this one function. `App::char_style`
-/// reports only what the whole span agrees on, which is the same question a toggle button would
-/// ask; `ui_tui::emphasise_selection` is the twin this mirrors so the notation reads one way
-/// everywhere.
+/// Ctrl+B/I/U and the Format menu, all three converging on this one function. On across the
+/// selection, or off when every character already has it (`Change::toggle`).
 fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            // With nothing selected this sets what the next character typed carries, rather than
-            // saying "nothing selected" — Bold, then type, is bold in every word processor, and
-            // `grind-text-gtk` and `grind-web` made the same change. `text_style_here` is what
-            // the strip already showed there, so pressing a button in turns what it showed.
-            let mut style = text_style_here(text);
-            let wanted = emphasis.style();
-            let field = |style: &grind_text::CharStyle| emphasis_field(style, emphasis);
-            let off = emphasis_off(emphasis);
-            let already = emphasis_active(&style, emphasis);
-            let value = match already {
-                true => off.map(str::to_owned),
-                false => field(&wanted),
-            };
-            match emphasis {
-                markdown::Emphasis::Bold => style.font_weight = value,
-                markdown::Emphasis::Italic => style.font_style = value,
-                markdown::Emphasis::Underline => style.underline = value,
-                markdown::Emphasis::Strike => style.line_through = value,
-                markdown::Emphasis::Code => style.font_family = value,
-            }
-            text_write_style(text, style);
-        });
-    }
-    refresh(hwnd);
+    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    text_format(hwnd, grind_text::format::Change::toggle(emphasis, &style));
 }
 
-/// Apply a formatting-bar change over the selection — [`text_emphasise`]'s general form, over
-/// [`grind_text::format::Change`] rather than one `markdown::Emphasis`, for the strip's four
-/// controls that write more than a boolean: Family, Size, the two swatches and Clear. The same
-/// vocabulary `grind-text-gtk`'s `format.rs` writes through, hoisted into `grind-text` itself so
-/// the two shells cannot disagree about what a control does.
+/// Apply a formatting-bar change over the selection — or, with nothing selected, hold it for the
+/// next character typed at the caret (`Text::resume`, which `type_markdown` already carried).
+/// Bold, then type, is bold in every word processor. `grind_text::format::apply` is the rule,
+/// shared with `grind-text-gtk`, `grind-web` and the Mac.
 fn text_format(hwnd: HWND, change: grind_text::format::Change) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            let mut style = text_style_here(text);
-            change.apply(&mut style);
-            text_write_style(text, style);
+            let selection = text.has_selection().then(|| text.range());
+            let landed = grind_text::format::apply(
+                &text.app,
+                selection,
+                text.caret,
+                text.resume.as_ref(),
+                &change,
+            );
+            match landed {
+                Ok(grind_text::format::Landed::Written) => text.say(None),
+                Ok(grind_text::format::Landed::Pending(style)) => {
+                    text.resume = Some(style);
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
         });
     }
     refresh(hwnd);
-}
-
-/// Write `style` over the selection — or, with nothing selected, hold it for the next character
-/// typed at the caret (`Text::resume`, which `type_markdown` already carried).
-fn text_write_style(text: &mut Text, style: grind_text::CharStyle) {
-    if !text.has_selection() {
-        text.resume = Some(style);
-        text.say(None);
-        return;
-    }
-    let (from, to) = text.range();
-    match text.app.set_char_style(from, to, &style) {
-        Ok(_) => text.say(None),
-        Err(error) => text.say(Some(error.to_string())),
-    }
 }
 
 /// The families the picker offers — curated rather than enumerated. `grind-text-gtk` lists every

@@ -23,6 +23,7 @@
 
 use std::ops::Range;
 
+use super::display::{self, TokenKind};
 use super::{friendly, funcs};
 
 /// One offer in a completion list.
@@ -139,6 +140,61 @@ pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
     None
 }
 
+/// Whether a reference may be inserted at `caret` — the predicate Point mode is.
+///
+/// A formula, and the last thing before the caret is something a reference can follow: an
+/// operator, a separator, an opening parenthesis, or the `=` itself. `SUM(B2` is *not*
+/// eligible — an arrow there moves on rather than pointing at a second cell, which is what
+/// stops a half-typed reference from being extended by accident.
+pub fn ref_eligible(text: &str, caret: usize) -> bool {
+    if !text.starts_with('=') {
+        return false;
+    }
+    let before = &text[..caret.min(text.len())];
+    match before.trim_end().chars().next_back() {
+        Some(c) => "=(;+-*/^&<>:,".contains(c),
+        // Nothing but the `=` and whitespace.
+        None => false,
+    }
+}
+
+/// F4: the reference to re-spell, and what to spell it as.
+///
+/// Excel's cycle, because everybody's fingers know it: `B2` → `$B$2` → `B$2` → `$B2` → `B2`.
+/// The reference is the one the caret is in or at the end of, found with `display::spans` —
+/// the same scanner that colours them, so what F4 acts on is what the user sees highlighted.
+pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)> {
+    let span = display::spans(text).into_iter().find(|span| {
+        span.kind == TokenKind::Ref && span.range.start <= caret && caret <= span.range.end
+    })?;
+    let mut reference = crate::a1::parse(&text[span.range.clone()]).ok()?;
+    // Both axes of both ends move together, which is what the four steps mean.
+    let (col, row) = reference
+        .start
+        .col
+        .zip(reference.start.row)
+        .map(|(c, r)| (c.absolute, r.absolute))
+        .unwrap_or((false, false));
+    let (col, row) = match (col, row) {
+        (false, false) => (true, true),
+        (true, true) => (false, true),
+        (false, true) => (true, false),
+        _ => (false, false),
+    };
+    for end in [Some(&mut reference.start), reference.end.as_mut()]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(axis) = end.col.as_mut() {
+            axis.absolute = col;
+        }
+        if let Some(axis) = end.row.as_mut() {
+            axis.absolute = row;
+        }
+    }
+    Some((span.range, display::reference_text(&reference)))
+}
+
 /// A function's signature split into a head and one part per parameter — the two spellings a
 /// hint can be drawn in, and the only difference between them.
 ///
@@ -176,6 +232,258 @@ pub fn brief(name: &str) -> Option<&'static str> {
 /// What a name is made of, in both a function name and a defined one.
 fn is_name_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '.'
+}
+
+// ---------------------------------------------------------------------------------------------
+// The offer machine and the band — hoisted out of `ui_win32/src/sheet/assist.rs` the day the
+// Mac's cell editor (`doc/macos-shell.md`, M8) would have been its second copy. Which *keys*
+// steer it is each shell's own (a Windows key code, a Mac selector); what a list of offers is,
+// how it narrows, what accepting replaces, and what a band of runs says, are here.
+// ---------------------------------------------------------------------------------------------
+
+/// How many offers fit on one line before the rest become a count.
+///
+/// Five, and the sixth is `+n`: a band is a line, and a line that scrolls off the window is worse
+/// than one that says how much it is not showing. One more keystroke narrows the list.
+pub const MAX_OFFERS: usize = 5;
+
+/// What the assist band is showing, and what a key would do to it.
+///
+/// Recomputed from the editor's text on every keystroke rather than updated in place — the same
+/// "asked for fresh, never stored" shape the view overlays follow, and for the same reason: a
+/// remembered completion goes stale the moment somebody moves the caret with the mouse.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Assist {
+    /// Everything worth offering for the word being typed. Empty when there is no such word,
+    /// when nothing matches it, or when the offers for it were dismissed with Escape.
+    pub offers: Vec<Candidate>,
+    /// What accepting an offer replaces — **byte** offsets into the editor's text.
+    pub span: Range<usize>,
+    /// Which offer is highlighted, and the one Tab accepts.
+    pub chosen: usize,
+    /// The call the caret is inside and which argument of it, for the signature hint. Answered
+    /// even while offers are showing, since the two are about different halves of the same line:
+    /// `=SUM(AV|` is both a word to complete and `SUM`'s first argument.
+    pub call: Option<(String, usize)>,
+    /// The span whose offers Escape dismissed, so they do not reappear on the next keystroke
+    /// inside the same word. Typing on past the end of it, or moving elsewhere, starts a new
+    /// word and offers again — which is what makes Escape "not this one" rather than a mode.
+    dismissed: Option<Range<usize>>,
+}
+
+impl Assist {
+    /// Read the editor's text at `caret` (a byte offset) and say what to show.
+    ///
+    /// `names` is the document's defined names, which the caller reads from `App::names` — this
+    /// module never touches a document.
+    pub fn refresh(&mut self, text: &str, caret: usize, names: &[String]) {
+        self.call = call_at(text, caret);
+        self.chosen = 0;
+        self.offers.clear();
+        self.span = 0..0;
+        let Some(span) = prefix_at(text, caret) else {
+            // Nothing to complete here: whatever was dismissed is finished business, so Escape
+            // does not have to be remembered past the word it was pressed in.
+            self.dismissed = None;
+            return;
+        };
+        self.span = span.clone();
+        if self.dismissed.as_ref() == Some(&span) {
+            return;
+        }
+        self.dismissed = None;
+        let offers = candidates(&text[span.clone()], names);
+        // A single offer already typed out in full is not an offer — `=SUM|` has nothing left to
+        // complete, and a list showing what is already there is noise over the grid.
+        if offers.len() == 1 && offers[0].name.eq_ignore_ascii_case(&text[span]) {
+            return;
+        }
+        self.offers = offers;
+    }
+
+    /// Whether there is a list to steer, which is what makes Tab and the arrows mean something
+    /// other than what they usually mean while editing.
+    pub fn is_offering(&self) -> bool {
+        !self.offers.is_empty()
+    }
+
+    /// Up and down the list, wrapping — a list this short is quicker to wrap than to stop.
+    pub fn step(&mut self, delta: i32) {
+        let count = self.offers.len() as i32;
+        if count == 0 {
+            return;
+        }
+        self.chosen = (self.chosen as i32 + delta).rem_euclid(count) as usize;
+    }
+
+    /// What accepting the highlighted offer replaces, and with what.
+    pub fn accept(&mut self) -> Option<(Range<usize>, String)> {
+        let offer = self.offers.get(self.chosen)?;
+        let replacement = offer.insert.clone();
+        let span = self.span.clone();
+        self.offers.clear();
+        Some((span, replacement))
+    }
+
+    /// Escape with a list up: close it and keep the edit, and do not offer for this word again.
+    pub fn dismiss(&mut self) {
+        self.dismissed = Some(self.span.clone());
+        self.offers.clear();
+    }
+
+    /// Forget everything — an edit that ended, by any door.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+/// How strongly one run of the band is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ink {
+    /// The theme's ordinary text: the parts of a signature the caret is not in.
+    Plain,
+    /// Quieter than the ground's text — separators, the summary, the offers not chosen.
+    Muted,
+    /// The accent, in bold: the argument being typed, and the offer Tab would take.
+    Strong,
+}
+
+/// One run of the band, drawn left to right in the ink it carries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Piece {
+    pub text: String,
+    pub ink: Ink,
+}
+
+impl Piece {
+    fn new(text: impl Into<String>, ink: Ink) -> Self {
+        Self {
+            text: text.into(),
+            ink,
+        }
+    }
+}
+
+/// The band's whole content, as runs — offers if there are any, otherwise the signature of the
+/// call the caret is in.
+///
+/// `friendly` picks which spelling of a signature is used, and it is the same switch the formula
+/// bar's own friendly view answers to: somebody who reads `Present Value(Rate: 0.05, …)` in the
+/// bar should be offered `Present Value(Rate; …)` while typing, not `PV( Number Rate ; … )`.
+///
+/// Empty when there is nothing to say, which is the caller's cue to take the band's height back
+/// out of the geometry.
+pub fn band(assist: &Assist, friendly: bool) -> Vec<Piece> {
+    if assist.is_offering() {
+        return offers_band(assist);
+    }
+    match &assist.call {
+        Some((name, argument)) => signature_band(name, *argument, friendly),
+        None => Vec::new(),
+    }
+}
+
+/// The offers, the chosen one in the accent, and its own summary after them.
+fn offers_band(assist: &Assist) -> Vec<Piece> {
+    let mut pieces = Vec::new();
+    for (at, offer) in assist.offers.iter().take(MAX_OFFERS).enumerate() {
+        if at > 0 {
+            pieces.push(Piece::new("   ", Ink::Muted));
+        }
+        let ink = match at == assist.chosen {
+            true => Ink::Strong,
+            false => Ink::Muted,
+        };
+        pieces.push(Piece::new(offer.name.clone(), ink));
+    }
+    let hidden = assist.offers.len().saturating_sub(MAX_OFFERS);
+    if hidden > 0 {
+        pieces.push(Piece::new(format!("   +{hidden}"), Ink::Muted));
+    }
+    // The chosen offer's own summary — the one line a vertical list would have shown beside it,
+    // and the reason a band is not simply a poorer popup.
+    if let Some(offer) = assist.offers.get(assist.chosen) {
+        pieces.push(Piece::new("   \u{00b7}   ", Ink::Muted));
+        pieces.push(Piece::new(offer.detail.clone(), Ink::Plain));
+    }
+    pieces
+}
+
+/// `Sum(Number…)`, with the argument the caret is in in the accent.
+///
+/// A repeating parameter is the last one however many arguments follow it, which is why the
+/// emphasised index is clamped rather than dropped — `=SUM(1;2;3;4;5|` is still inside `Number…`.
+fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
+    let Some((head, parts)) = signature_parts(name, friendly) else {
+        return Vec::new();
+    };
+    let last = parts.len().saturating_sub(1);
+    let mut pieces = vec![Piece::new(head, Ink::Plain), Piece::new("(", Ink::Muted)];
+    for (at, part) in parts.iter().enumerate() {
+        if at > 0 {
+            pieces.push(Piece::new("; ", Ink::Muted));
+        }
+        let ink = match at == argument.min(last) {
+            true => Ink::Strong,
+            false => Ink::Plain,
+        };
+        pieces.push(Piece::new(part.clone(), ink));
+    }
+    pieces.push(Piece::new(")", Ink::Muted));
+    if let Some(brief) = brief(name) {
+        pieces.push(Piece::new("   \u{00b7}   ", Ink::Muted));
+        pieces.push(Piece::new(brief, Ink::Muted));
+    }
+    pieces
+}
+
+/// What the formula bar shows for a cell, when the friendly view is on.
+///
+/// [`friendly::explain_inline`] — the aliased, parameter-labelled reading
+/// of a formula, never unfolded, which is exactly what `ui_sheet_gtk`'s formula bar puts in front
+/// of the stored text and what `grind sheet fmt --friendly --inline` prints. `None` for anything
+/// that is not a formula, or a formula this build cannot parse: the bar's own text is the answer
+/// then, since a reading nobody can produce must not blank out the line that can be typed.
+///
+/// It never round-trips and nothing here writes it back — R1 says the document's formula is
+/// ODF's, and this is a reading of one.
+pub fn friendly_line(text: &str) -> Option<String> {
+    if !text.starts_with('=') {
+        return None;
+    }
+    friendly::explain_inline(text).ok()
+}
+
+/// Every function this build implements, one line each, for the function list — the name, the
+/// plain-English alias, its category, and the spec's own summary.
+///
+/// `grind sheet functions --long` prints the same four columns from the same catalog, which is
+/// rule 4 satisfied by construction rather than by a second list here.
+pub fn function_lines() -> Vec<String> {
+    funcs::catalog()
+        .iter()
+        .map(|info| {
+            let alias = friendly::alias(info.name).unwrap_or(info.name);
+            let category = funcs::category(info);
+            format!(
+                "{:<12} {alias}  \u{00b7}  {category}  \u{00b7}  {}",
+                info.name, info.brief
+            )
+        })
+        .collect()
+}
+
+/// What picking row `at` of [`function_lines`] inserts into an edit: `=NAME(`.
+///
+/// The `=` is included because the common case is an empty cell, and a name with no `=` in front
+/// of it is a piece of text rather than a call. A cell that is *already* being edited gets the
+/// call without it — the caller decides, since only it knows whether an edit is open.
+pub fn function_insert(at: usize, editing: bool) -> Option<String> {
+    let info = funcs::catalog().get(at)?;
+    Some(match editing {
+        true => format!("{}(", info.name),
+        false => format!("={}(", info.name),
+    })
 }
 
 #[cfg(test)]
@@ -263,5 +571,214 @@ mod tests {
         let summary = brief("sum").expect("in the catalog");
         assert!(summary.to_lowercase().contains("sum"), "{summary}");
         assert_eq!(brief("NOSUCHFUNCTION"), None);
+    }
+
+    fn names() -> Vec<String> {
+        vec!["subtotal_2026".to_owned()]
+    }
+
+    fn read(text: &str, caret: usize) -> Assist {
+        let mut assist = Assist::default();
+        assist.refresh(text, caret, &names());
+        assist
+    }
+
+    #[test]
+    fn typing_a_word_offers_what_starts_with_it() {
+        let assist = read("=SU", 3);
+        assert!(assist.is_offering());
+        assert_eq!(assist.span, 1..3);
+        assert!(assist.offers.iter().any(|o| o.name == "SUM"));
+        // The document's own name is offered beside the functions.
+        assert!(assist.offers.iter().any(|o| o.name == "subtotal_2026"));
+        assert_eq!(assist.chosen, 0);
+    }
+
+    #[test]
+    fn a_value_is_not_a_formula_and_offers_nothing() {
+        let assist = read("hello", 5);
+        assert!(!assist.is_offering());
+        assert_eq!(assist.call, None);
+        assert_eq!(band(&assist, true), Vec::new());
+    }
+
+    /// The two halves are answered together: inside `SUM(` *and* typing a word is both a
+    /// completion and an argument, and only one of them can have the band.
+    #[test]
+    fn a_word_inside_a_call_is_both_and_the_offers_win() {
+        let assist = read("=SUM(AV", 7);
+        assert!(assist.is_offering());
+        assert_eq!(assist.call, Some(("SUM".to_owned(), 0)));
+        let pieces = band(&assist, true);
+        assert!(
+            pieces.iter().any(|p| p.text == "AVERAGE"),
+            "{pieces:#?}: the offers are what a half-typed word wants"
+        );
+    }
+
+    #[test]
+    fn a_finished_word_inside_a_call_shows_the_signature() {
+        let assist = read("=SUM(", 5);
+        assert!(!assist.is_offering());
+        let pieces = band(&assist, true);
+        let text: String = pieces.iter().map(|p| p.text.as_str()).collect();
+        assert!(text.starts_with("Sum(Number\u{2026})"), "{text}");
+        // The argument being typed is the one in the accent, and it is the only one.
+        let strong: Vec<&str> = pieces
+            .iter()
+            .filter(|p| p.ink == Ink::Strong)
+            .map(|p| p.text.as_str())
+            .collect();
+        assert_eq!(strong, ["Number\u{2026}"]);
+    }
+
+    /// The band's two spellings are the formula bar's two spellings — the switch is one.
+    #[test]
+    fn the_signature_is_spelled_the_way_the_bar_is() {
+        let assist = read("=PV(0.05;", 9);
+        let friendly: String = band(&assist, true)
+            .iter()
+            .map(|p| p.text.as_str())
+            .collect();
+        assert!(friendly.starts_with("Present Value("), "{friendly}");
+        let spec: String = band(&assist, false)
+            .iter()
+            .map(|p| p.text.as_str())
+            .collect();
+        assert!(spec.starts_with("PV("), "{spec}");
+        // Whichever spelling, it is the *second* argument that is emphasised.
+        for pieces in [band(&assist, true), band(&assist, false)] {
+            let strong = pieces.iter().find(|p| p.ink == Ink::Strong).expect("one");
+            assert!(!strong.text.is_empty(), "{pieces:#?}");
+        }
+    }
+
+    #[test]
+    fn the_offers_carry_the_chosen_ones_summary() {
+        let mut assist = read("=SU", 3);
+        let first = assist.offers[0].clone();
+        let pieces = band(&assist, true);
+        assert!(pieces.iter().any(|p| p.text == first.detail));
+        assert_eq!(
+            pieces
+                .iter()
+                .filter(|p| p.ink == Ink::Strong)
+                .map(|p| p.text.as_str())
+                .collect::<Vec<_>>(),
+            [first.name.as_str()],
+            "the chosen offer is the one in the accent"
+        );
+
+        // Stepping moves the accent and the summary together.
+        assist.step(1);
+        let pieces = band(&assist, true);
+        assert!(pieces.iter().any(|p| p.text == assist.offers[1].detail));
+        assert!(!pieces.iter().any(|p| p.text == first.detail));
+    }
+
+    #[test]
+    fn a_long_list_says_how_much_it_is_not_showing() {
+        let assist = read("=S", 2);
+        assert!(assist.offers.len() > MAX_OFFERS, "S is a busy letter");
+        let text: String = band(&assist, true)
+            .iter()
+            .map(|p| p.text.as_str())
+            .collect();
+        let hidden = assist.offers.len() - MAX_OFFERS;
+        assert!(text.contains(&format!("+{hidden}")), "{text}");
+    }
+
+    #[test]
+    fn stepping_wraps_both_ways() {
+        let mut assist = read("=SU", 3);
+        let count = assist.offers.len();
+        assist.step(-1);
+        assert_eq!(assist.chosen, count - 1);
+        assist.step(1);
+        assert_eq!(assist.chosen, 0);
+    }
+
+    #[test]
+    fn accepting_replaces_the_word_with_a_call() {
+        let mut assist = read("=SU", 3);
+        assist.chosen = assist
+            .offers
+            .iter()
+            .position(|o| o.name == "SUM")
+            .expect("SUM is offered");
+        let (span, replacement) = assist.accept().expect("something is chosen");
+        assert_eq!(span, 1..3);
+        assert_eq!(replacement, "SUM(");
+        assert!(!assist.is_offering(), "accepting closes the list");
+
+        // A defined name is inserted as itself — it is not a call.
+        let mut assist = read("=subt", 5);
+        let (_, replacement) = assist.accept().expect("the name is offered");
+        assert_eq!(replacement, "subtotal_2026");
+    }
+
+    /// Escape closes the list without ending the edit, and the same word does not offer again —
+    /// otherwise the next keystroke inside it would put the list straight back up.
+    #[test]
+    fn dismissing_lasts_as_long_as_the_word() {
+        let mut assist = read("=SU", 3);
+        assist.dismiss();
+        assert!(!assist.is_offering());
+        assist.refresh("=SU", 3, &names());
+        assert!(!assist.is_offering(), "the same word stays dismissed");
+        // Typing on is a new word, and it offers again.
+        assist.refresh("=SUM", 4, &names());
+        assert!(assist.is_offering());
+    }
+
+    #[test]
+    fn the_friendly_line_reads_a_formula_and_nothing_else() {
+        let line = friendly_line("=PV(0.05;10;-100)").expect("a formula this build parses");
+        assert!(line.starts_with("Present Value("), "{line}");
+        assert!(line.contains("Rate:"), "{line}");
+        // Not a formula, and a formula that will not parse: the bar's own text is the answer.
+        assert_eq!(friendly_line("12"), None);
+        assert_eq!(friendly_line("=SUM("), None);
+    }
+
+    #[test]
+    fn the_function_list_names_every_function_and_inserts_a_call() {
+        let lines = function_lines();
+        assert_eq!(
+            lines.len(),
+            funcs::implemented().len(),
+            "one line per function this build has"
+        );
+        let at = lines
+            .iter()
+            .position(|line| line.starts_with("PV "))
+            .expect("PV is implemented");
+        assert!(lines[at].contains("Present Value"), "{}", lines[at]);
+        assert!(lines[at].contains("Financial"), "{}", lines[at]);
+        assert_eq!(function_insert(at, false).as_deref(), Some("=PV("));
+        assert_eq!(function_insert(at, true).as_deref(), Some("PV("));
+        assert_eq!(function_insert(lines.len(), false), None);
+    }
+
+    /// Excel's cycle, because everybody's fingers know it.
+    #[test]
+    fn f4_walks_the_four_spellings_and_comes_back() {
+        let mut text = "=SUM(B2:B4)".to_owned();
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            let (span, replacement) = cycle_absolute(&text, 6).expect(&text);
+            text.replace_range(span, &replacement);
+            seen.push(replacement);
+        }
+        assert_eq!(
+            seen,
+            ["$B$2:$B$4", "B$2:B$4", "$B2:$B4", "B2:B4", "$B$2:$B$4"]
+        );
+    }
+
+    #[test]
+    fn f4_does_nothing_where_there_is_no_reference() {
+        assert!(cycle_absolute("=SUM(1;2)", 6).is_none());
+        assert!(cycle_absolute("hello", 2).is_none());
     }
 }

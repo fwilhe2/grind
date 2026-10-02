@@ -40,20 +40,7 @@
 //! `--render-to` lay a document out on a headless runner.
 
 use grind_text::BlockKind;
-
-/// How much bigger than the body text each heading level is.
-///
-/// The same six numbers `ui_text_gtk` uses, and deliberately so: two shells that scaled headings
-/// differently would break lines in different places, and a document is one document. Flat after
-/// level four, because a level-6 heading barely larger than the paragraph under it is exactly
-/// what a level-6 heading should look like.
-pub const HEADING_SCALE: [f64; 6] = [1.8, 1.5, 1.3, 1.15, 1.05, 1.0];
-
-/// `Title` and `Subtitle` — the two named paragraph styles LibreOffice's own blank document
-/// offers, and the only two this shell gives a face of their own. Everything else in
-/// `office:styles` is a name this build keeps and does not interpret (`doc/text-core.md`).
-pub const TITLE_SCALE: f64 = 2.4;
-pub const SUBTITLE_SCALE: f64 = 1.3;
+use grind_text::look::Role;
 
 /// The face prose is set in. Segoe UI is the shell font on every Windows this shell targets, and
 /// GDI substitutes when it is absent — which is what happens under Wine.
@@ -93,94 +80,29 @@ pub struct Spec {
 }
 
 impl Spec {
-    /// The body face at its own size, which is what a plain paragraph gets.
-    pub const BODY: Spec = Spec {
-        scale: 1.0,
-        bold: false,
-        italic: false,
-        family: None,
-    };
+    /// The face `role` is set in here: its scale and weight are `grind_text::look`'s, and the
+    /// monospace one is [`MONO_FACE`], since GDI resolves no generic family.
+    pub fn of(role: Role) -> Spec {
+        Spec {
+            scale: role.scale(),
+            bold: role.bold(),
+            italic: role.italic(),
+            family: role.mono().then_some(MONO_FACE),
+        }
+    }
 }
 
-/// The [`Spec`] for one block.
-///
-/// A named style wins over the block's own kind: `Title` and `Subtitle` are `BlockKind::Paragraph`
-/// whose only signal is the name. A heading deeper than the six levels there are scales for is
-/// set as the last of them rather than refused — the reader is *tolerant* (R5), so a level-9
-/// heading loads, and a shell that panicked on one would undo that.
+/// The [`Spec`] for one block — [`Role::of`], which decides which name wins over which kind and
+/// what a heading deeper than six levels is set in, for every shell that draws a page.
 pub fn spec_for(kind: &BlockKind, style: Option<&str>) -> Spec {
-    match style {
-        Some("Title") => {
-            return Spec {
-                scale: TITLE_SCALE,
-                bold: true,
-                ..Spec::BODY
-            };
-        }
-        Some("Subtitle") => {
-            return Spec {
-                scale: SUBTITLE_SCALE,
-                italic: true,
-                ..Spec::BODY
-            };
-        }
-        // A fence (```) is a paragraph *style* and nothing else — `grind_text::markdown` names
-        // it, LibreOffice writes it, and this is where a window makes it visible. A face rather
-        // than a drawing trick, because the same object measures the block: a monospace
-        // paragraph drawn in one font and measured in another breaks in the wrong places.
-        Some(grind_text::markdown::PREFORMATTED) => {
-            return Spec {
-                family: Some(MONO_FACE),
-                ..Spec::BODY
-            };
-        }
-        _ => {}
-    }
-    match kind {
-        BlockKind::Heading { level } => {
-            let index = (*level).max(1) as usize - 1;
-            let scale = HEADING_SCALE
-                .get(index)
-                .copied()
-                .unwrap_or(HEADING_SCALE[HEADING_SCALE.len() - 1]);
-            Spec {
-                scale,
-                bold: true,
-                ..Spec::BODY
-            }
-        }
-        _ => Spec::BODY,
-    }
+    Spec::of(Role::of(kind, style))
 }
 
-/// Every face a document can be set in, body first.
-///
-/// The list a window builds fonts for, and the reason [`Spec`] equality is enough to look one up:
-/// this and [`spec_for`] are the same decisions said twice, and the test at the bottom of this
-/// file holds them to each other on any host. A block whose spec is not in here would be drawn in
-/// the body face, which is a bug this makes visible rather than one it hides.
+/// Every face a document can be set in, body first — [`Role::ALL`], the list a window builds
+/// fonts for, and the reason [`Spec`] equality is enough to look one up. The test at the bottom
+/// of this file holds it to [`spec_for`] on any host.
 pub fn faces() -> Vec<Spec> {
-    let mut all = vec![Spec::BODY];
-    all.extend(HEADING_SCALE.iter().map(|scale| Spec {
-        scale: *scale,
-        bold: true,
-        ..Spec::BODY
-    }));
-    all.push(Spec {
-        scale: TITLE_SCALE,
-        bold: true,
-        ..Spec::BODY
-    });
-    all.push(Spec {
-        scale: SUBTITLE_SCALE,
-        italic: true,
-        ..Spec::BODY
-    });
-    all.push(Spec {
-        family: Some(MONO_FACE),
-        ..Spec::BODY
-    });
-    all
+    Role::ALL.into_iter().map(Spec::of).collect()
 }
 
 /// GDI's per-**code-unit** answer, folded into the per-`char` one [`grind_core::layout::Metrics`]
@@ -229,6 +151,7 @@ mod windows_impl {
     use grind_text::style::CharStyle;
 
     use crate::gdi::Font;
+    use crate::text::geom::{Across, Spacing};
     use crate::theme::Rgb;
 
     use super::{BODY_FACE, Spec, fold_advances, spec_for};
@@ -649,12 +572,13 @@ mod windows_impl {
     /// measured the paragraph below it with the heading's font. This shell inherits the fix and
     /// must not re-introduce it by reaching for `Uniform`.
     pub struct Faces<'a> {
-        width: f32,
-        /// How much narrower each nesting level of a list is. **The indent comes out of the
-        /// column**, so a list item is measured to less than the measure — and it has to be the
-        /// same subtraction the flow makes when it places the text, or a wrapped list item would
-        /// break its lines in one place and draw them in another.
-        indent: f32,
+        /// The text column's width, before any indent comes out of it.
+        column: f64,
+        /// The pane's numbers at this monitor's scaling. **The indent comes out of the column**,
+        /// so a list item is measured to less than the measure — and it is
+        /// [`Spacing::measure`], the very function the flow places the text with, or a wrapped
+        /// list item would break its lines in one place and draw them in another.
+        spacing: Spacing,
         /// Every face a block can be set in, body first. A flat list because the lookup is
         /// [`Spec`] equality — [`spec_for`] decides which face a block wants and this finds the
         /// one built for it, so the decision is written down once.
@@ -664,19 +588,19 @@ mod windows_impl {
         /// width, and every caret motion asks through here, so a Down-arrow inside a cell is
         /// measured where the ink is. Read by index and never by asking the document, since
         /// `grind_text::Faces::of` is called while `App` holds its read lock.
-        cells: &'a HashMap<usize, crate::text::geom::Across>,
+        cells: &'a HashMap<usize, Across>,
     }
 
     impl<'a> Faces<'a> {
         pub fn new(
             fonts: &'a Fonts,
-            width: f64,
-            indent: f64,
-            cells: &'a HashMap<usize, crate::text::geom::Across>,
+            column: f64,
+            spacing: Spacing,
+            cells: &'a HashMap<usize, Across>,
         ) -> Self {
             Faces {
-                width: width as f32,
-                indent: indent as f32,
+                column,
+                spacing,
                 cells,
                 all: super::faces()
                     .into_iter()
@@ -702,14 +626,11 @@ mod windows_impl {
 
     impl grind_text::Faces for Faces<'_> {
         fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
-            if let Some(cell) = self.cells.get(&index) {
-                return ((cell.width as f32).max(1.0), self.face(kind, style));
-            }
-            let indent = match kind {
-                BlockKind::ListItem { depth } => *depth as f32 * self.indent,
-                _ => 0.0,
+            let width = match self.cells.get(&index) {
+                Some(cell) => cell.width,
+                None => self.spacing.measure(kind, self.column),
             };
-            ((self.width - indent).max(1.0), self.face(kind, style))
+            ((width as f32).max(1.0), self.face(kind, style))
         }
     }
 
@@ -735,7 +656,7 @@ mod tests {
         let body = spec_for(&BlockKind::Paragraph, None);
         let h1 = spec_for(&BlockKind::Heading { level: 1 }, None);
         let title = spec_for(&BlockKind::Paragraph, Some("Title"));
-        assert_eq!(body, Spec::BODY);
+        assert_eq!(body, Spec::of(Role::Body));
         assert!(h1.scale > body.scale && h1.bold);
         assert!(title.scale > h1.scale);
         assert!(spec_for(&BlockKind::Paragraph, Some("Subtitle")).italic);
@@ -746,7 +667,7 @@ mod tests {
     #[test]
     fn a_heading_deeper_than_the_faces_go_is_set_as_the_last_of_them() {
         let deep = spec_for(&BlockKind::Heading { level: 9 }, None);
-        assert_eq!(deep.scale, HEADING_SCALE[HEADING_SCALE.len() - 1]);
+        assert_eq!(deep, Spec::of(Role::Heading(6)));
         assert!(deep.bold);
     }
 

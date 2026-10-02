@@ -35,6 +35,7 @@ pub mod odf;
 pub mod projection;
 pub mod search;
 pub mod style;
+pub mod utf16;
 
 pub use kind::{DocumentKind, kind};
 pub use observer::Observer;

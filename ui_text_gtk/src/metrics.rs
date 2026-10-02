@@ -49,25 +49,10 @@
 use libadwaita::gtk;
 
 use grind_core::style::TextStyle;
+use grind_text::look::{self, Role};
 use grind_text::style::CharStyle;
 use grind_text::{BlockKind, Metrics, RunView};
 use gtk::pango;
-
-/// How much bigger than the body text each heading level is.
-///
-/// Six levels because that is where `doc/text-core.md` stops authoring, and flat after level
-/// four because a level-6 heading that is barely larger than the paragraph under it is
-/// exactly what a level-6 heading should look like.
-const HEADING_SCALE: [f64; 6] = [1.8, 1.5, 1.3, 1.15, 1.05, 1.0];
-
-/// `Title` and `Subtitle` are the two named paragraph styles LibreOffice's own template offers
-/// on a blank document, and the only two this shell gives their own face — everything else in
-/// `office:styles` is a name this build keeps and does not interpret (`doc/text-core.md`).
-/// Larger than any heading, because a document's title sits above its outline rather than in
-/// it, and unlike a heading a `Title`/`Subtitle` block carries no `text:outline-level` for
-/// `HEADING_SCALE` to key off — the name on the block is the only signal there is.
-const TITLE_SCALE: f64 = 2.4;
-const SUBTITLE_SCALE: f64 = 1.3;
 
 /// One block-level face: a font, and a Pango layout kept to measure with.
 ///
@@ -377,13 +362,15 @@ impl Faces {
             }
             Face::new(context, font)
         };
-        let body = scaled(1.0, false, false);
-        let headings = HEADING_SCALE
-            .iter()
-            .map(|scale| scaled(*scale, true, false))
+        // Every size and weight is `grind_text::look`'s, so a document has one shape in every
+        // window that draws a page.
+        let face = |role: Role| scaled(role.scale(), role.bold(), role.italic());
+        let body = face(Role::Body);
+        let headings = (1..=look::HEADING_SCALE.len() as u8)
+            .map(|level| face(Role::Heading(level)))
             .collect();
-        let title = scaled(TITLE_SCALE, true, false);
-        let subtitle = scaled(SUBTITLE_SCALE, false, true);
+        let title = face(Role::Title);
+        let subtitle = face(Role::Subtitle);
         // The *generic* family, spelled the way the document spells it
         // (`grind_text::markdown::MONOSPACE`) — which monospace face a reader has is theirs to
         // know, and Pango resolves the generic through fontconfig exactly as the document
@@ -404,30 +391,15 @@ impl Faces {
         }
     }
 
-    /// The face a block is set in.
-    ///
-    /// A named style wins over the block's own kind — `Title` and `Subtitle` are paragraphs
-    /// (`BlockKind::Paragraph`) whose only signal is the name in `style`, so that is checked
-    /// first. A heading deeper than the six levels this shell has faces for is drawn as the
-    /// last of them rather than refused: the reader is *tolerant* (R5), so a level-9 heading
-    /// loads, and a shell that panicked on one would undo that.
+    /// The face a block is set in — [`Role::of`], which decides which name wins over which kind
+    /// and what a heading deeper than six levels is set in, for every shell that draws a page.
     pub fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
-        match style {
-            Some("Title") => return &self.title,
-            Some("Subtitle") => return &self.subtitle,
-            // A fence (```) is a paragraph *style* and nothing else — `grind_text::markdown`
-            // names it, LibreOffice writes it, and this is where a window makes it visible.
-            Some(grind_text::markdown::PREFORMATTED) => return &self.code,
-            _ => {}
-        }
-        match kind {
-            BlockKind::Heading { level } => {
-                let index = (*level).max(1) as usize - 1;
-                self.headings
-                    .get(index)
-                    .unwrap_or_else(|| self.headings.last().unwrap_or(&self.body))
-            }
-            _ => &self.body,
+        match Role::of(kind, style) {
+            Role::Body => &self.body,
+            Role::Heading(level) => &self.headings[usize::from(level) - 1],
+            Role::Title => &self.title,
+            Role::Subtitle => &self.subtitle,
+            Role::Code => &self.code,
         }
     }
 

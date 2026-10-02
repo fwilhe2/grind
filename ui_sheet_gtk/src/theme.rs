@@ -155,25 +155,17 @@ pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
 /// than a shortcut: a computed cell is "black" in every financial model ever coloured by
 /// hand, and black in a dark theme is the foreground. A label is that foreground, muted.
 pub fn role_color(role: grind_sheet::view::CellRole, palette: &Palette) -> Option<gdk::RGBA> {
-    use grind_sheet::view::CellRole as R;
-    let named = |name: &str| {
-        grind_sheet::style::palette(name)
+    use grind_sheet::view::Hue;
+    // Which colour each role is — the financial-modelling convention — is the core's
+    // (`CellRole::hue`); what is this window's is resolving the ink and lifting a hue until it
+    // is legible on this theme's ground.
+    match role.hue() {
+        Hue::None => None,
+        Hue::Palette(name) => grind_sheet::style::palette(name)
             .and_then(|hex| hex.parse::<gdk::RGBA>().ok())
-            .map(|hue| readable(hue, palette))
-    };
-    match role {
-        R::Empty => None,
-        // The financial-modelling convention this borrows: inputs blue, formulas black,
-        // another sheet green. The named/unnamed split is ours, and it is one hue apart
-        // rather than a different colour — both are inputs.
-        R::InputNamed => named("blue"),
-        R::InputUnnamed => named("navy"),
-        R::ConstantUnnamed => named("orange"),
-        R::ComputedLocal => Some(palette.foreground),
-        R::ComputedCrossSheet => named("olive"),
-        R::Label => Some(with_alpha(palette.foreground, 0.6)),
-        R::Error => named("red"),
-        R::Stale => named("maroon"),
+            .map(|hue| readable(hue, palette)),
+        Hue::Ink => Some(palette.foreground),
+        Hue::Quiet => Some(with_alpha(palette.foreground, 0.6)),
     }
 }
 
@@ -260,18 +252,20 @@ pub fn reference_attributes(text: &str, dark: bool) -> gtk::pango::AttrList {
 /// - **A colour of its own on a fill of its own**, or in a light theme, is the document's
 ///   decision about its own paper, and is drawn as it is.
 pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::RGBA {
-    use grind_core::color as core;
     let own = color.and_then(self::color);
     let fill = fill.and_then(self::color);
     match (own, fill) {
+        // The page's own ink and a document's own colour are handed back as they were, rather
+        // than through three bytes and back — a theme's ink need not be 8-bit.
         (None, None) => palette.foreground,
-        (None, Some(fill)) => rgba(core::automatic_ink(rgb8(fill), rgb8(palette.foreground))),
-        (Some(own), None) if is_dark(palette) => rgba(core::legible(
-            rgb8(own),
+        (Some(own), Some(_)) => own,
+        _ => rgba(grind_core::color::document_ink(
+            own.map(rgb8),
+            fill.map(rgb8),
             rgb8(palette.background),
-            core::TEXT,
+            rgb8(palette.foreground),
+            is_dark(palette),
         )),
-        (Some(own), _) => own,
     }
 }
 

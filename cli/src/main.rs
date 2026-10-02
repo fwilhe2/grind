@@ -1774,14 +1774,15 @@ enum Command {
     /// Append an empty sheet
     Add {
         file: PathBuf,
-        /// The new sheet's name, unique in the document
-        name: String,
+        /// The new sheet's name, unique in the document; default is the first unused Sheet1,
+        /// Sheet2, … — what every window's Add Sheet calls it
+        name: Option<String>,
     },
 
     /// Rename a sheet
     ///
-    /// Formulas naming the old sheet are not rewritten — they go stale, and recalculating
-    /// turns them into errors. `sheet info` lists the sheets.
+    /// Every formula, named expression and chart range naming the old sheet follows it, in
+    /// one undo step. `sheet info` lists the sheets.
     Rename {
         file: PathBuf,
         /// The sheet to rename
@@ -3014,7 +3015,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
 
         Command::Add { file, name } => {
             let app = load(file, cli)?;
-            app.add_sheet(name).say()?;
+            let name = name.clone().unwrap_or_else(|| app.fresh_sheet_name());
+            app.add_sheet(&name).say()?;
             finish(&app, cli, file, true)
         }
 

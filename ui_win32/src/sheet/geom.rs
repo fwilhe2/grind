@@ -98,211 +98,16 @@ pub enum Hit {
     Chrome,
 }
 
-/// How big each track on one axis is — column widths, or row heights.
+/// How big each track on one axis is — `grind_sheet::tracks`, hoisted out of this file and
+/// `ui_sheet_gtk`'s when the macOS shell would have been a third copy (`doc/macos-shell.md`, M1).
+pub use grind_sheet::tracks::Sizes;
+
+/// A millimetre in this shell's unit, at `dpi` — what [`Sizes::from_lengths`] is handed.
 ///
-/// One type for both, because the arithmetic is the same and a sheet that got its columns right
-/// and its rows wrong is the bug two copies would produce. A document sizes a handful of tracks
-/// out of sixteen thousand, so the sparse list plus a running total is what makes [`Sizes::at`]
-/// a binary search rather than a walk from column A.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Sizes {
-    default: f64,
-    count: u32,
-    /// Ascending by index, distinct: the tracks the document gave a size of their own.
-    sizes: Vec<(u32, f64)>,
-    /// `run[k]` is how much the first `k` entries have displaced everything after them — the
-    /// sum of their sizes *minus* what the default would have been. An offset is then
-    /// `index * default + run[entries before it]`, with no walk over the sheet.
-    run: Vec<f64>,
-}
-
-impl Sizes {
-    /// `sizes` is taken in any order; ties keep the last one given.
-    pub fn new(default: f64, count: u32, mut sizes: Vec<(u32, f64)>) -> Self {
-        // Reversed first, so that a stable sort leaves the *last* entry given for an index at
-        // the front of its run and `dedup` keeps that one.
-        sizes.reverse();
-        sizes.sort_by_key(|(i, _)| *i);
-        sizes.dedup_by_key(|(i, _)| *i);
-        // A zero is kept: that is a hidden track — a row a filter excludes (§9.4) — and it has
-        // to displace nothing rather than fall back to the default.
-        sizes.retain(|(i, size)| *i < count && *size >= 0.0);
-        let mut run = Vec::with_capacity(sizes.len() + 1);
-        let mut acc = 0.0;
-        run.push(acc);
-        for (_, size) in &sizes {
-            acc += size - default;
-            run.push(acc);
-        }
-        Self {
-            default,
-            count,
-            sizes,
-            run,
-        }
-    }
-
-    /// The axis a document describes: its sized tracks as ODF lengths, turned into pixels.
-    ///
-    /// The one place a physical length becomes a device one, so that "columns are as wide as
-    /// the document says" is a property of this function rather than of every caller. A length
-    /// this build cannot parse falls back to the default width rather than to zero, because
-    /// zero means *hidden* and silently hiding a column is worse than mis-sizing one.
-    ///
-    /// `hidden` is the tracks the document hides, which is a **separate question from their
-    /// size** — ODF hides a track with `table:visibility="collapse"` (§5.4), not by giving it a
-    /// width of zero, so a hidden column usually still carries a perfectly ordinary
-    /// `style:column-width`. Reading only the widths is why `hidden-rows-cols.fods` first drew
-    /// with every column showing. They go on *after* the lengths, so a hidden track is hidden
-    /// whatever size it was given: [`Sizes::new`] keeps the last entry for an index, and this
-    /// relies on it.
-    pub fn from_lengths(
-        default: f64,
-        count: u32,
-        lengths: &[(u32, String)],
-        hidden: &[u32],
-        dpi: u32,
-    ) -> Self {
-        let mut sizes: Vec<(u32, f64)> = lengths
-            .iter()
-            .filter_map(|(index, length)| {
-                Some((
-                    *index,
-                    scale(grind_core::style::length_mm(length)? * PX_PER_MM, dpi),
-                ))
-            })
-            .collect();
-        sizes.extend(hidden.iter().map(|index| (*index, 0.0)));
-        Self::new(default, count, sizes)
-    }
-
-    /// How many entries lie strictly before `index`.
-    fn before(&self, index: u32) -> usize {
-        self.sizes.partition_point(|(i, _)| *i < index)
-    }
-
-    pub fn size_of(&self, index: u32) -> f64 {
-        match self.sizes.binary_search_by_key(&index, |(i, _)| *i) {
-            Ok(k) => self.sizes[k].1,
-            Err(_) => self.default,
-        }
-    }
-
-    /// Content-space offset of a track's leading edge. `count` itself is the far end.
-    pub fn offset_of(&self, index: u32) -> f64 {
-        f64::from(index) * self.default + self.run[self.before(index)]
-    }
-
-    /// The track containing a content-space offset, clamped to the sheet.
-    pub fn at(&self, offset: f64) -> u32 {
-        let offset = offset.max(0.0);
-        // The last sized track that starts at or before `offset`; everything else is one of the
-        // uniform runs, before it or after it.
-        let k = self
-            .sizes
-            .partition_point(|(i, _)| self.offset_of(*i) <= offset);
-        let (from, at) = match k {
-            0 => (0, 0.0),
-            k => {
-                let (i, size) = self.sizes[k - 1];
-                let end = self.offset_of(i) + size;
-                if offset < end {
-                    return i;
-                }
-                (i + 1, end)
-            }
-        };
-        let index = u64::from(from) + ((offset - at) / self.default) as u64;
-        index.min(u64::from(self.count.saturating_sub(1))) as u32
-    }
-
-    pub fn count(&self) -> u32 {
-        self.count
-    }
-
-    /// Whether this track is a hidden one — zero size, kept explicitly rather than falling back
-    /// to the default (see [`Sizes::new`]).
-    pub fn is_hidden(&self, index: u32) -> bool {
-        self.size_of(index) == 0.0
-    }
-
-    /// The first track at or after `from` that has any width, or `None` past the end.
-    ///
-    /// Scrolling has to skip hidden tracks or the view stops moving: pressing the scrollbar's
-    /// arrow lands on a zero-width column, which occupies no pixels, and the screen does not
-    /// change while the position number does.
-    pub fn next_visible(&self, from: u32) -> Option<u32> {
-        (from..self.count).find(|i| !self.is_hidden(*i))
-    }
-
-    /// The nearest track to `index` that is not hidden, looking `forward` first and then the
-    /// other way.
-    ///
-    /// What Down-arrow needs. A hidden track occupies no pixels, so a cursor that lands on one
-    /// is a cursor nobody can see — the selection is real, the status bar reports it, and the
-    /// screen shows nothing at all. Every spreadsheet steps over hidden tracks for exactly this
-    /// reason, and this shell draws a hidden track as *gone* (`doc/windows-shell.md`'s named
-    /// gap), which makes it more important here rather than less.
-    ///
-    /// Falls back to `index` itself when every track in both directions is hidden, because
-    /// refusing to move is better than moving nowhere in particular.
-    pub fn nearest_visible(&self, index: u32, forward: bool) -> u32 {
-        if !self.is_hidden(index) {
-            return index;
-        }
-        let (first, second) = match forward {
-            true => (self.next_visible(index), self.prev_visible(index)),
-            false => (self.prev_visible(index), self.next_visible(index)),
-        };
-        first.or(second).unwrap_or(index)
-    }
-
-    /// The last track at or before `from` that has any width, or `None` before the start.
-    pub fn prev_visible(&self, from: u32) -> Option<u32> {
-        (0..=from.min(self.count.saturating_sub(1)))
-            .rev()
-            .find(|i| !self.is_hidden(*i))
-    }
-
-    /// The first track that puts `index` at the far end of a `span`-pixel view — the least
-    /// scrolling that brings a track into sight from below or from the right.
-    ///
-    /// Walked backwards from `index` rather than forwards from the current position, so that
-    /// jumping to the far corner of a sheet costs a screenful of arithmetic rather than a
-    /// million steps. `index` itself is always the answer's upper bound, which is what makes it
-    /// safe to use as one end of a clamp.
-    pub fn start_showing(&self, index: u32, span: f64) -> u32 {
-        let mut used = self.size_of(index);
-        let mut at = index;
-        while at > 0 {
-            let size = self.size_of(at - 1);
-            if used + size > span {
-                break;
-            }
-            used += size;
-            at -= 1;
-        }
-        at
-    }
-
-    /// The first track that can sit at the top (or left) of a `span`-pixel view without
-    /// leaving blank space after the last one — the scrollbar's maximum position.
-    ///
-    /// Answered by walking back from the end rather than by dividing, because the tracks near
-    /// the end may be any size at all.
-    pub fn last_start(&self, span: f64) -> u32 {
-        let mut used = 0.0;
-        let mut index = self.count;
-        while index > 0 {
-            let size = self.size_of(index - 1);
-            if used + size > span && used > 0.0 {
-                break;
-            }
-            used += size;
-            index -= 1;
-        }
-        index.min(self.count.saturating_sub(1))
-    }
+/// Converted to 96-dpi pixels first and *then* scaled, the order this shell always had, so
+/// that a frame rendered before the hoist and after it is the same bytes.
+pub fn mm_to_px(dpi: u32) -> impl Fn(f64) -> f64 {
+    move |mm| scale(mm * PX_PER_MM, dpi)
 }
 
 /// The number picker's width at 100% — room for `Date Time` or `General` and the chevron.
@@ -723,36 +528,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_offset_is_the_sum_of_everything_before_it() {
-        let s = Sizes::new(80.0, 100, vec![(3, 200.0), (1, 20.0)]);
-        assert_eq!(s.offset_of(0), 0.0);
-        assert_eq!(s.offset_of(1), 80.0);
-        assert_eq!(s.offset_of(2), 100.0);
-        assert_eq!(s.offset_of(3), 180.0);
-        assert_eq!(s.offset_of(4), 380.0);
-        assert_eq!(s.total_check(), 380.0 + 96.0 * 80.0);
-    }
-
-    impl Sizes {
-        fn total_check(&self) -> f64 {
-            self.offset_of(self.count)
-        }
-    }
-
-    #[test]
-    fn every_offset_lands_back_in_its_own_track() {
-        let s = Sizes::new(80.0, 100, vec![(3, 200.0), (1, 20.0), (7, 0.0)]);
-        for i in 0..100u32 {
-            if s.is_hidden(i) {
-                continue;
-            }
-            let start = s.offset_of(i);
-            assert_eq!(s.at(start), i, "start of {i}");
-            assert_eq!(s.at(start + s.size_of(i) - 0.5), i, "end of {i}");
-        }
-    }
-
     /// The round trip this module exists for: every rectangle contains the point that made it.
     #[test]
     fn a_cell_rect_contains_its_own_hit() {
@@ -941,60 +716,13 @@ mod tests {
         assert!(clipped.y + clipped.h <= body.y + body.h + 1e-9);
     }
 
-    /// A column the document sized is that wide in pixels, and the ones after it move over.
-    /// This is the W1 exit criterion, as arithmetic.
-    #[test]
-    fn a_documents_own_widths_decide_the_geometry() {
-        let lengths = vec![(0, "2.5cm".to_string()), (2, "10mm".to_string())];
-        let cols = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], 96);
-        assert!((cols.size_of(0) - 25.0 * PX_PER_MM).abs() < 1e-9);
-        assert!((cols.size_of(2) - 10.0 * PX_PER_MM).abs() < 1e-9);
-        assert_eq!(cols.size_of(1), 80.0, "unsized columns keep the default");
-        assert!((cols.offset_of(1) - 25.0 * PX_PER_MM).abs() < 1e-9);
-    }
-
-    /// A length this build cannot parse must not become a hidden column.
-    #[test]
-    fn an_unreadable_length_falls_back_to_the_default() {
-        let lengths = vec![(0, "wide".to_string())];
-        let cols = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], 96);
-        assert_eq!(cols.size_of(0), 80.0);
-    }
-
     #[test]
     fn dpi_multiplies_every_width() {
         let lengths = vec![(0, "25.4mm".to_string())];
-        let at_96 = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], 96);
-        let at_192 = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], 192);
+        let at_96 = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], mm_to_px(96));
+        let at_192 = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], mm_to_px(192));
         assert!((at_96.size_of(0) - 96.0).abs() < 1e-9);
         assert!((at_192.size_of(0) - 192.0).abs() < 1e-9);
-    }
-
-    /// A column ODF hides carries a perfectly ordinary width, and `table:visibility` is what
-    /// makes it gone. Reading only the widths drew every column of `hidden-rows-cols.fods`.
-    #[test]
-    fn a_hidden_track_is_hidden_whatever_width_it_was_given() {
-        let lengths = vec![(1, "2.5cm".to_string())];
-        let cols = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[1], 96);
-        assert_eq!(cols.size_of(1), 0.0);
-        assert!(cols.is_hidden(1));
-        // It displaces nothing: column C starts where column B would have.
-        assert_eq!(cols.offset_of(2), 80.0);
-    }
-
-    /// A cursor on a hidden track is a cursor nobody can see. It steps over, in the direction
-    /// it was travelling, and turns round rather than giving up at the ends.
-    #[test]
-    fn the_nearest_visible_track_is_the_one_in_the_direction_of_travel() {
-        let s = Sizes::new(20.0, 10, vec![(2, 0.0), (3, 0.0), (9, 0.0)]);
-        assert_eq!(s.nearest_visible(1, true), 1, "not hidden: stay put");
-        assert_eq!(s.nearest_visible(2, true), 4, "over both hidden tracks");
-        assert_eq!(s.nearest_visible(3, false), 1, "and backwards");
-        // At the end there is nothing ahead, so it comes back rather than sitting on nothing.
-        assert_eq!(s.nearest_visible(9, true), 8);
-        // Every track hidden: stay where you are, because there is nowhere better.
-        let none = Sizes::new(20.0, 3, vec![(0, 0.0), (1, 0.0), (2, 0.0)]);
-        assert_eq!(none.nearest_visible(1, true), 1);
     }
 
     #[test]
@@ -1020,19 +748,6 @@ mod tests {
         assert_eq!(g.first_col, 3);
         g.scroll_cols(-1);
         assert_eq!(g.first_col, 0);
-    }
-
-    /// Scrolling a track into view brings it to the *far* edge and no further, so that
-    /// arrowing down one row moves the view by one row rather than centring on it.
-    #[test]
-    fn the_least_scroll_that_shows_a_track_puts_it_at_the_far_edge() {
-        let s = Sizes::new(20.0, 100, vec![]);
-        // A 100px view holds five 20px rows, so row 9 at the bottom means row 5 at the top.
-        assert_eq!(s.start_showing(9, 100.0), 5);
-        // A track already at the top needs no scrolling, and one taller than the view is
-        // shown from its own start rather than not at all.
-        assert_eq!(s.start_showing(0, 100.0), 0);
-        assert_eq!(s.start_showing(3, 5.0), 3);
     }
 
     /// The whole of `reveal`, as arithmetic: the clamp only moves the view when the active

@@ -238,13 +238,15 @@ pub fn context_menu_model() -> gtk::gio::Menu {
 mod imp {
     use super::*;
 
-    use grind_core::layout::{Layout, Line};
+    use std::collections::HashMap;
+
+    use grind_core::layout::Layout;
     use grind_text::{BlockKind, loc};
     use gtk::graphene;
     use gtk::pango;
     use gtk::subclass::prelude::*;
 
-    use crate::geom;
+    use crate::geom::{self, Across};
     use crate::keymap::{self, Action, Key, Mods, Motion};
     use crate::metrics::{Face, Faces, run_attributes};
     use crate::theme::Palette;
@@ -277,7 +279,7 @@ mod imp {
         /// the document rather than by the screen, unlike everything else in this file; the
         /// upgrade path is a per-`BlockId` cache, and the reason not to have one yet is that
         /// it needs an invalidation rule the core does not hand out.
-        pub flow: RefCell<Option<(f64, Rc<Flow>)>>,
+        pub flow: RefCell<Option<Placed>>,
         pub faces: RefCell<Option<Rc<Faces>>>,
         pub palette: Cell<Option<Palette>>,
         /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
@@ -624,13 +626,14 @@ mod imp {
                     _ => palette.foreground,
                 };
 
-                if let BlockKind::ListItem { .. } = block.kind {
+                if let BlockKind::ListItem { depth } = block.kind {
                     // A bullet is drawn rather than inserted: the character is not in the
                     // document, and putting one there would make it a character the caret
-                    // could sit inside and a `p12+0` that means something else.
+                    // could sit inside and a `p12+0` that means something else. One mark per
+                    // depth, cycling — `grind_text::paint::bullet`, the same in every window.
                     draw_at(
                         snapshot,
-                        face.draw("\u{2022}"),
+                        face.draw(grind_text::paint::bullet(depth)),
                         x - BULLET_GAP,
                         y,
                         palette.dim,
@@ -639,28 +642,19 @@ mod imp {
 
                 // The selection's band, one rectangle per line it crosses, drawn under the
                 // text so a run painted over it stays legible.
-                if let Some((from, to)) = selection
-                    && slot.index >= from.block
-                    && slot.index <= to.block
+                if let Some((start, end)) = selection
+                    .and_then(|(from, to)| grind_text::paint::covered(slot.index, from, to))
                 {
-                    let start = if slot.index == from.block {
-                        from.offset
-                    } else {
-                        0
-                    };
-                    let end = if slot.index == to.block {
-                        to.offset
-                    } else {
-                        text.len()
-                    };
                     for line in layout.lines() {
-                        if let Some((left, width)) = selection_span(&layout, line, start, end) {
+                        if let Some((left, right)) =
+                            grind_text::paint::band(&layout, line, start, end)
+                        {
                             snapshot.append_color(
                                 &palette.selection,
                                 &rect(
                                     x + f64::from(left),
                                     y + f64::from(line.top),
-                                    f64::from(width),
+                                    f64::from(right - left),
                                     f64::from(line.height),
                                 ),
                             );
@@ -781,177 +775,51 @@ mod imp {
         /// Every block's box, measured at this width — cached, because a scroll must not
         /// re-lay-out the document.
         pub fn flow(&self, width: f64) -> Rc<Flow> {
+            self.placed(width).flow
+        }
+
+        /// The flow and the table-cell measures it was built with, for a widget `width` wide —
+        /// cached against the column they were measured at.
+        fn placed(&self, width: f64) -> Placed {
             let (_, column) = geom::column(width);
-            if let Some((measured, flow)) = self.flow.borrow().as_ref()
-                && *measured == column
+            if let Some(placed) = self.flow.borrow().as_ref()
+                && placed.column == column
             {
-                return flow.clone();
+                return placed.clone();
             }
-            let flow = Rc::new(self.build_flow(column));
-            self.flow.replace(Some((column, flow.clone())));
-            flow
+            let placed = self.place(column);
+            self.flow.replace(Some(placed.clone()));
+            placed
         }
 
-        fn build_flow(&self, column: f64) -> Flow {
-            // The page's top margin is part of the flow rather than a fixed band, so it
-            // scrolls away with the text the way the top of a page does.
-            let mut flow = Flow::new(geom::MARGIN, column);
-            let Some(app) = self.app() else { return flow };
-            let faces = self.faces();
-            let viewport = app.get_viewport(0..app.block_count());
-            let mut index = 0;
-            while index < viewport.len() {
-                let Some(block) = viewport.get(index) else {
-                    break;
+        /// Stack every block at `column` — `grind_text::flow`, the one stacking every shell that
+        /// draws a page shares, handed this window's numbers, its Pango faces and a way to size a
+        /// picture.
+        fn place(&self, column: f64) -> Placed {
+            let Some(app) = self.app() else {
+                return Placed {
+                    column,
+                    flow: Rc::new(Flow::new(geom::MARGIN, column)),
+                    across: Rc::default(),
                 };
-                // A table is laid out as a grid rather than stacked, and its blocks are placed
-                // rather than pushed. `App::table` is the same fold the writer and the
-                // projection use, asked of the core so that four callers cannot answer it four
-                // ways.
-                if block.cell.is_some()
-                    && let Some(table) = app.table(index)
-                {
-                    self.lay_out_table(&mut flow, &viewport, &table, column);
-                    index = table.blocks.end;
-                    continue;
-                }
-                let style = block.style.as_deref();
-                let indent = indent_of(&block.kind);
-                let height = self.block_height(block, column - indent, &faces);
-                let space = match (style, &block.kind) {
-                    (Some("Title" | "Subtitle"), _) | (_, BlockKind::Heading { .. }) => {
-                        geom::HEADING_GAP
-                    }
-                    _ => geom::GAP,
-                };
-                flow.push(block.index, height, indent, space, geom::GAP);
-                index += 1;
+            };
+            // Before the faces, which read it: a cell's measure is a fact about the table's
+            // shape and the column, and nothing about how tall anything is.
+            let across = Rc::new(grind_text::flow::across(&app, column, &geom::SPACING));
+            let faces = Column {
+                faces: self.faces(),
+                column,
+                across: across.clone(),
+            };
+            let picture = |block: &grind_text::BlockView, width: f64| {
+                picture_height(block, width, &faces.faces)
+            };
+            let flow = grind_text::flow::lay_out(&app, &faces, column, &geom::SPACING, &picture);
+            Placed {
+                column,
+                flow: Rc::new(flow),
+                across,
             }
-            flow
-        }
-
-        /// How tall one block comes out at `width` — a picture and its caption, or the lines
-        /// the core breaks its text into.
-        fn block_height(
-            &self,
-            block: &grind_text::BlockView,
-            width: f64,
-            faces: &Rc<Faces>,
-        ) -> f64 {
-            let Some(app) = self.app() else { return 0.0 };
-            match picture_of(block).and_then(|(image, caption)| Some((texture_of(image)?, caption)))
-            {
-                Some((texture, caption)) => {
-                    let picture = image_size(&texture, width).1;
-                    match caption {
-                        Some(caption) => {
-                            picture + CAPTION_GAP + caption_height(faces.body(), caption, width)
-                        }
-                        None => picture,
-                    }
-                }
-                None => {
-                    let face = faces.of(&block.kind, block.style.as_deref());
-                    app.layout_block(block.index, width as f32, face)
-                        .map(|layout| f64::from(layout.height()))
-                        .unwrap_or_else(|_| face.height())
-                }
-            }
-        }
-
-        /// One table, as a grid: equal columns across the measure, each row as tall as its
-        /// tallest cell, each cell's blocks stacked inside it.
-        ///
-        /// **The columns are equal shares**, and that is a shell decision with a reason: the
-        /// model carries no column widths (`grind_text::Cell` — a table's own style is not read),
-        /// so there is nothing to honour, and equal shares is the answer that never overflows
-        /// the measure. A `span=` cell takes the width of every column it covers, rules and all,
-        /// which is what makes a merged cell look merged rather than misaligned.
-        fn lay_out_table(
-            &self,
-            flow: &mut Flow,
-            viewport: &grind_text::Viewport,
-            table: &grind_text::Table,
-            column: f64,
-        ) {
-            let faces = self.faces();
-            let columns = table.columns.max(1);
-            let width = column / f64::from(columns);
-            let x_of = |c: u32| f64::from(c) * width;
-            let top = flow.height() + geom::GAP;
-
-            // Two passes, because a cell cannot be positioned until its row's height is known
-            // and a row's height is the tallest cell in it. A cell that spans rows contributes
-            // its share to each row it covers — the honest approximation, since which of the
-            // covered rows should grow is a question only a full table layout answers.
-            let cells: Vec<CellRun> = cell_runs(viewport, table);
-            let mut heights =
-                vec![faces.body().height() + 2.0 * geom::CELL_PAD; table.rows.max(1) as usize];
-            for cell in &cells {
-                let content = self.cell_height(viewport, cell, cell.width(width), &faces);
-                let over = cell.rows_spanned.max(1);
-                for row in cell.row..(cell.row + over).min(table.rows.max(1)) {
-                    let share = content / f64::from(over);
-                    let at = row as usize;
-                    if at < heights.len() {
-                        heights[at] = heights[at].max(share);
-                    }
-                }
-            }
-
-            let tops: Vec<f64> = heights
-                .iter()
-                .scan(top, |at, height| {
-                    let here = *at;
-                    *at += height;
-                    Some(here)
-                })
-                .collect();
-            for cell in &cells {
-                let row = cell.row as usize;
-                let Some(cell_top) = tops.get(row).copied() else {
-                    continue;
-                };
-                let over = cell.rows_spanned.max(1) as usize;
-                let height: f64 = heights[row..(row + over).min(heights.len())].iter().sum();
-                let left = x_of(cell.column);
-                flow.cell(geom::CellBox {
-                    top: cell_top,
-                    left,
-                    width: cell.width(width),
-                    height,
-                });
-                let inner = cell.width(width) - 2.0 * geom::CELL_PAD;
-                let mut at = cell_top + geom::CELL_PAD;
-                for index in &cell.blocks {
-                    let Some(block) = viewport.get(*index) else {
-                        continue;
-                    };
-                    let block_height = self.block_height(block, inner, &faces);
-                    flow.place(*index, at, block_height, left + geom::CELL_PAD, inner);
-                    at += block_height + geom::GAP;
-                }
-            }
-            flow.advance(top + heights.iter().sum::<f64>() + geom::GAP);
-        }
-
-        /// How tall one cell's blocks come out, stacked, with the padding above and below.
-        fn cell_height(
-            &self,
-            viewport: &grind_text::Viewport,
-            cell: &CellRun,
-            width: f64,
-            faces: &Rc<Faces>,
-        ) -> f64 {
-            let inner = width - 2.0 * geom::CELL_PAD;
-            let mut stacked = 0.0;
-            for index in &cell.blocks {
-                let Some(block) = viewport.get(*index) else {
-                    continue;
-                };
-                stacked += self.block_height(block, inner, faces) + geom::GAP;
-            }
-            (stacked - geom::GAP).max(0.0) + 2.0 * geom::CELL_PAD
         }
 
         /// One block's lines, measured in its own face — what a caret operation is asked in.
@@ -982,8 +850,8 @@ mod imp {
             self.flow
                 .borrow()
                 .as_ref()
-                .and_then(|(_, flow)| flow.slot(index).map(|slot| slot.width))
-                .unwrap_or_else(|| (column - indent_of(kind)).max(1.0))
+                .and_then(|placed| placed.flow.slot(index).map(|slot| slot.width))
+                .unwrap_or_else(|| geom::SPACING.measure(kind, column))
         }
 
         /// How each block is set — this window's [`grind_text::Faces`], which is what every
@@ -992,16 +860,15 @@ mod imp {
         /// Rebuilt per question rather than kept, because both halves of it change under the
         /// window: the faces on a theme change, the column on a resize.
         fn column(&self) -> Column {
-            let width = f64::from(self.obj().width());
-            let (_, column) = geom::column(width);
+            // The cached measures answer the width of a block inside a table cell, which no
+            // rule about the block's own kind can. Cloned rather than rebuilt: a motion asks per
+            // block, and rebuilding them per question would lay the document out once per
+            // keystroke.
+            let placed = self.placed(f64::from(self.obj().width()));
             Column {
                 faces: self.faces(),
-                column,
-                // The flow answers the width of a block inside a table cell, which no rule
-                // about the block's own kind can. Cloned rather than rebuilt: a motion asks per
-                // block, and rebuilding the flow per question would lay the document out once
-                // per keystroke.
-                flow: self.flow(width),
+                column: placed.column,
+                across: placed.across,
             }
         }
 
@@ -1122,80 +989,25 @@ mod imp {
                         );
                     }
                 }
-                Motion::DocStart => self.move_caret(
-                    Caret {
-                        block: 0,
-                        offset: 0,
-                    },
-                    true,
-                ),
-                Motion::DocEnd => {
-                    let block = app.block_count() - 1;
-                    self.move_caret(
-                        Caret {
-                            block,
-                            offset: self.block_len(&app, block),
-                        },
-                        true,
-                    );
-                }
+                Motion::DocStart => self.move_caret(grind_text::caret::START, true),
+                Motion::DocEnd => self.move_caret(grind_text::caret::end(&app), true),
             }
         }
 
-        /// One character left or right, rolling onto the neighbouring block at either end.
-        ///
-        /// The only arithmetic in this file, and it is over *characters* rather than over
-        /// layout — walking off the end of a block is a document fact, not a line one.
+        /// One character left or right, rolling onto the neighbouring block at either end —
+        /// `grind_text::caret::step`, which every shell's page shares.
         fn stepped(&self, app: &App, delta: i32) -> Caret {
-            let mut caret = self.caret.get();
-            if delta > 0 {
-                if caret.offset < self.block_len(app, caret.block) {
-                    caret.offset += 1;
-                } else if caret.block + 1 < app.block_count() {
-                    caret = Caret {
-                        block: caret.block + 1,
-                        offset: 0,
-                    };
-                }
-            } else if caret.offset > 0 {
-                caret.offset -= 1;
-            } else if caret.block > 0 {
-                caret = Caret {
-                    block: caret.block - 1,
-                    offset: self.block_len(app, caret.block - 1),
-                };
-            }
-            caret
+            grind_text::caret::step(app, self.caret.get(), delta)
         }
 
-        /// Where a word motion from the caret lands: the far edge of a word in this block, or —
-        /// with none left in that direction — the end of this block, then the near end of the
-        /// next, which is where a further press goes on from. `grind_text::word` owns what a
-        /// word is.
+        /// Where a word motion from the caret lands — `grind_text::caret::word`, the rule this
+        /// window and the Mac share.
         fn word_stepped(&self, app: &App, delta: i32) -> Caret {
-            let caret = self.caret.get();
-            let text = app.input_text(caret.block).unwrap_or_default();
-            let len = text.chars().count();
-            let within = match delta > 0 {
-                true => grind_text::word::next_end(&text, caret.offset),
-                false => grind_text::word::previous_start(&text, caret.offset),
-            };
-            let at = |offset| Caret {
-                block: caret.block,
-                offset,
-            };
-            match within {
-                Some(offset) => at(offset),
-                None if delta > 0 && caret.offset < len => at(len),
-                None if delta < 0 && caret.offset > 0 => at(0),
-                None => self.stepped(app, delta),
-            }
+            grind_text::caret::word(app, self.caret.get(), delta)
         }
 
         fn block_len(&self, app: &App, index: usize) -> usize {
-            app.input_text(index)
-                .map(|text| text.chars().count())
-                .unwrap_or(0)
+            grind_text::caret::block_len(app, index)
         }
 
         /// The block and offset a point in the widget lands on: which block the pointer is
@@ -1209,14 +1021,8 @@ mod imp {
             // Both coordinates, measured from the column's left edge: inside a table the cells
             // of one row share a band of the page, so "which block" is a horizontal question
             // as well as a vertical one.
-            let index = flow.at(x - left, y + scroll)?;
-            let slot = *flow.slot(index)?;
-            let (layout, _, _) = self.measured(slot.index)?;
-            let line = line_at_y(&layout, y + scroll - slot.top);
-            let offset = layout.offset_at(line, (x - left - slot.indent) as f32);
-            Some(Caret {
-                block: slot.index,
-                offset,
+            grind_text::caret::hit(&flow, x - left, y + scroll, |index| {
+                self.measured(index).map(|(layout, _, _)| layout)
             })
         }
 
@@ -1620,36 +1426,6 @@ mod imp {
         }
     }
 
-    /// The highlighted band's left edge and width for one line of a selection spanning
-    /// `start..end` (both block-relative character offsets), or `None` where the line has
-    /// nothing selected on it.
-    ///
-    /// `Layout::x_at` resolves an offset sitting exactly at a soft break to **the next
-    /// line's** start (`grind_core::layout::Line::line_at`'s own doc comment) — the right
-    /// convention for a caret walking off a wrapped line, and the wrong one for *this* line's
-    /// own right edge: asking it for `line.end` on every line but the last would silently
-    /// hand back 0, collapsing every one of them to a zero-width band. `Line::width` is that
-    /// same distance with no such ambiguity, so it stands in whenever the selection reaches
-    /// all the way to this line's own end.
-    fn selection_span(
-        layout: &Layout,
-        line: &Line,
-        start: usize,
-        end: usize,
-    ) -> Option<(f32, f32)> {
-        let from_x = start.max(line.start);
-        let to_x = end.min(line.end);
-        if from_x >= to_x {
-            return None;
-        }
-        let left = layout.x_at(from_x);
-        let right = match to_x == line.end {
-            true => line.width,
-            false => layout.x_at(to_x),
-        };
-        Some((left, right - left))
-    }
-
     /// Whether a block is a picture, optionally followed by its caption's plain text.
     ///
     /// `grind_text::picture_of`'s own doc comment has the rest; this is a re-export under this
@@ -1708,9 +1484,11 @@ mod imp {
         faces: Rc<Faces>,
         /// The text column's width in pixels, before any indent comes out of it.
         column: f64,
-        /// Where every block was placed, which is the only thing that knows a block is in a
-        /// table cell and therefore measured narrower than the column.
-        flow: Rc<Flow>,
+        /// Where every block in a table cell sits across the column
+        /// (`grind_text::flow::across`) — the only thing that knows a block is in a cell and
+        /// therefore measured narrower than the column. The flow was built through this same
+        /// `Faces`, so a caret motion and the paint cannot disagree about a cell's width.
+        across: Rc<HashMap<usize, Across>>,
     }
 
     impl grind_text::Faces for Column {
@@ -1720,74 +1498,34 @@ mod imp {
             kind: &BlockKind,
             style: Option<&str>,
         ) -> (f32, &dyn grind_text::Metrics) {
-            let width = self
-                .flow
-                .slot(index)
-                .map(|slot| slot.width)
-                .unwrap_or_else(|| (self.column - indent_of(kind)).max(1.0));
+            let width = match self.across.get(&index) {
+                Some(across) => across.width,
+                None => geom::SPACING.measure(kind, self.column),
+            };
             (width as f32, self.faces.of(kind, style))
         }
     }
 
-    /// One cell of a table being laid out: where it is, how far it reaches, and which blocks
-    /// are in it. Built from the blocks themselves — a cell *is* its blocks — rather than asked
-    /// for, since the viewport already has every one of them.
-    pub(super) struct CellRun {
-        row: u32,
-        column: u32,
-        columns_spanned: u32,
-        rows_spanned: u32,
-        blocks: Vec<usize>,
+    /// The flow at one column width, and the table-cell measures it was built with — cached
+    /// together, because a caret motion reads the one and a paint the other and both have to be
+    /// the same build.
+    #[derive(Clone)]
+    pub struct Placed {
+        column: f64,
+        flow: Rc<Flow>,
+        across: Rc<HashMap<usize, Across>>,
     }
 
-    impl CellRun {
-        /// How wide this cell is, given the width of one column: every column it spans, since
-        /// the positions between are covered rather than drawn.
-        fn width(&self, column: f64) -> f64 {
-            f64::from(self.columns_spanned.max(1)) * column
-        }
-    }
-
-    /// Every cell of a table, in the order its blocks appear.
-    fn cell_runs(viewport: &grind_text::Viewport, table: &grind_text::Table) -> Vec<CellRun> {
-        let mut out: Vec<CellRun> = Vec::new();
-        for index in table.blocks.clone() {
-            let Some(cell) = viewport.get(index).and_then(|b| b.cell.as_ref()) else {
-                continue;
-            };
-            match out
-                .iter_mut()
-                .find(|run| run.row == cell.row && run.column == cell.column)
-            {
-                Some(run) => run.blocks.push(index),
-                None => out.push(CellRun {
-                    row: cell.row,
-                    column: cell.column,
-                    columns_spanned: cell.columns_spanned,
-                    rows_spanned: cell.rows_spanned,
-                    blocks: vec![index],
-                }),
-            }
-        }
-        out
-    }
-
-    /// How far a block's text is indented — a list's nesting, and nothing else.
-    fn indent_of(kind: &BlockKind) -> f64 {
-        match kind {
-            BlockKind::ListItem { depth } => f64::from(*depth) * geom::INDENT,
-            _ => 0.0,
-        }
-    }
-
-    /// Which line of a layout a y coordinate is on, measured from the block's own top.
-    fn line_at_y(layout: &Layout, y: f64) -> usize {
-        let last = layout.lines().len().saturating_sub(1);
-        layout
-            .lines()
-            .iter()
-            .position(|line| y < f64::from(line.top + line.height))
-            .unwrap_or(last)
+    /// How tall a picture block comes out at `width` — the picture fitted to it and its
+    /// caption's lines under it — or `None` when the block is not a picture or its bytes will not
+    /// decode, in which case `grind_text::flow` measures it as text.
+    fn picture_height(block: &grind_text::BlockView, width: f64, faces: &Faces) -> Option<f64> {
+        let (image, caption) = picture_of(block)?;
+        let picture = image_size(&texture_of(image)?, width).1;
+        Some(match caption {
+            Some(caption) => picture + CAPTION_GAP + caption_height(faces.body(), caption, width),
+            None => picture,
+        })
     }
 
     fn draw_at(
@@ -1843,78 +1581,6 @@ mod imp {
             K::BackSpace => Key::Backspace,
             K::Delete | K::KP_Delete => Key::Delete,
             _ => Key::Other,
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use grind_core::layout::{Fixed, Fragment, wrap};
-        use grind_core::style::TextStyle;
-
-        /// `Layout` is the core's, so this checks only the shell's own reading of it: which
-        /// line a y coordinate falls on, including above and below the block.
-        #[test]
-        fn a_y_coordinate_picks_the_line_it_is_inside() {
-            let style = TextStyle::default();
-            let layout = wrap(
-                &[Fragment {
-                    text: "the cat sat on the mat",
-                    style: &style,
-                }],
-                10.0,
-                &Fixed,
-            );
-            assert!(layout.lines().len() > 1, "the fixture has to wrap");
-            assert_eq!(line_at_y(&layout, 0.0), 0);
-            assert_eq!(line_at_y(&layout, 1.5), 1, "one unit per line under Fixed");
-            assert_eq!(line_at_y(&layout, -50.0), 0, "above the block");
-            assert_eq!(
-                line_at_y(&layout, 500.0),
-                layout.lines().len() - 1,
-                "below it"
-            );
-        }
-
-        /// The bug a screenshot found: a selection spanning a soft line break (a `text:tab`
-        /// and `text:line-break` inside one paragraph both force one — `p12` typed as
-        /// `printf 'name\tvalue\nsecond line'` is exactly this) drew every line but the
-        /// selection's *last* as a zero-width band, because `Layout::x_at(line.end)`
-        /// resolves that boundary offset to the **next** line rather than this one's own
-        /// right edge.
-        #[test]
-        fn a_selection_ending_at_a_soft_break_still_highlights_that_lines_own_width() {
-            let style = TextStyle::default();
-            let layout = wrap(
-                &[Fragment {
-                    text: "name\tvalue\nsecond line",
-                    style: &style,
-                }],
-                1000.0,
-                &Fixed,
-            );
-            assert_eq!(
-                layout.lines().len(),
-                2,
-                "the line break forces a second visual line"
-            );
-            let first = &layout.lines()[0];
-            let (_, width) = selection_span(&layout, first, 0, layout.len())
-                .expect("the whole block, including its first line, is selected");
-            assert!(
-                width > 0.0,
-                "the first line's own highlight must not collapse to zero"
-            );
-        }
-
-        #[test]
-        fn only_a_list_item_is_indented_and_it_is_by_its_depth() {
-            assert_eq!(indent_of(&BlockKind::Paragraph), 0.0);
-            assert_eq!(indent_of(&BlockKind::Heading { level: 1 }), 0.0);
-            assert_eq!(
-                indent_of(&BlockKind::ListItem { depth: 2 }),
-                2.0 * geom::INDENT
-            );
         }
     }
 }

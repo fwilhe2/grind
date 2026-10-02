@@ -127,34 +127,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     }
 }
 
-/// Reconcile what the user asked for with what the file turned out to be.
-///
-/// Separated from the read so that the *rule* is testable without a filesystem — the read
-/// itself is three lines in `main.rs` and has nothing to decide.
-pub fn reconcile(
-    asked: Option<DocumentKind>,
-    found: DocumentKind,
-    shown: &str,
-) -> Result<DocumentKind, String> {
-    match asked {
-        Some(asked) if asked != found => Err(format!(
-            "{shown} is a {}, not a {}",
-            describe(found),
-            describe(asked)
-        )),
-        _ => Ok(found),
-    }
-}
-
-/// What a document type is called in a sentence.
-pub fn describe(kind: DocumentKind) -> &'static str {
-    match kind {
-        DocumentKind::Spreadsheet => "spreadsheet",
-        DocumentKind::Text => "text document",
-        _ => "document",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,30 +249,5 @@ mod tests {
             path,
             Some(PathBuf::from("C:\\Users\\florian\\My Book.fods"))
         );
-    }
-
-    #[test]
-    fn a_file_that_agrees_with_the_flag_is_fine() {
-        let found = DocumentKind::Text;
-        assert_eq!(
-            reconcile(Some(DocumentKind::Text), found, "a.fodt"),
-            Ok(found)
-        );
-        assert_eq!(reconcile(None, found, "a.fodt"), Ok(found));
-    }
-
-    /// The rule `ui_tui` already follows: a file decides, and disagreeing is an error rather
-    /// than an override, because opening a spreadsheet as a document shows an empty one.
-    #[test]
-    fn a_file_that_contradicts_the_flag_is_an_error() {
-        let error = reconcile(
-            Some(DocumentKind::Text),
-            DocumentKind::Spreadsheet,
-            "book.fods",
-        )
-        .unwrap_err();
-        assert!(error.contains("book.fods"), "{error}");
-        assert!(error.contains("spreadsheet"), "{error}");
-        assert!(error.contains("text document"), "{error}");
     }
 }

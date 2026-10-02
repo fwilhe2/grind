@@ -23,7 +23,7 @@ use libadwaita::prelude::*;
 use gtk::{gio, glib};
 
 use grind_sheet::formula::friendly;
-use grind_sheet::{App, CellValue, Pos, a1};
+use grind_sheet::{App, CellValue, a1};
 
 use crate::grid::{Grid, Notice};
 use crate::keymap::{Dir, Selection};
@@ -541,80 +541,16 @@ fn show_value(app: &App, value: &CellValue) -> String {
     }
 }
 
-/// An address or a defined name, as the name box takes it.
-///
-/// Resolved through `core::a1`, so what the name box means by `Data.B2:C9` is what a
-/// formula means by it — there is no second address parser anywhere in the workspace.
+/// An address or a defined name, as the name box takes it — `grind_sheet::place::locate`,
+/// shared with every shell's name box, and resolved through `core::a1`, so what the name box
+/// means by `Data.B2:C9` is what a formula means by it.
 fn locate(app: &App, sheet: usize, text: &str) -> Option<Selection> {
-    let text = text.trim();
-    if text.is_empty() {
-        return None;
-    }
-    // A defined name first: it is document-level, and a name that is also an address is
-    // refused when it is defined, so this cannot shadow a cell.
-    let expression = app
-        .names()
-        .into_iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(text))
-        .map(|(_, expression)| expression);
-    let reference = match &expression {
-        Some(expression) => a1::parse(strip_brackets(expression)).ok()?,
-        // A bare word is a *whole column* to the grammar — `foo` is `[.FOO]`, column 4460 —
-        // and taking that literally means no three-letter word can ever be a name, since
-        // every one of them is a column up to `XFD`. A name box wants the other reading, so
-        // an address without a `:` has to name both axes: `A1` and `Data.B2` are places,
-        // `A:A` and `3:3` are the whole column and the whole row, and `foo` is a name.
-        None => match a1::parse(text).ok()? {
-            reference if text.contains(':') || is_a_cell(&reference) => reference,
-            _ => return None,
-        },
-    };
-    let (found, start, end) = a1::resolve(app, &reference).ok()?;
-    // Navigating to another sheet is the sheet tabs' job, not the name box's, so a name
-    // that lives elsewhere is refused rather than silently landing on the wrong sheet.
-    //
-    // The active cell is the range's *start*: going to a range means looking at the top of
-    // it, and the active cell is what the grid scrolls to.
-    (found == sheet).then_some(Selection {
-        anchor: end,
-        active: start,
-    })
+    grind_sheet::place::locate(app, sheet, text)
 }
 
 /// What the name box shows for a selection: what it is called, or where it is.
 pub fn name_box_text(app: &App, sheet: usize, selection: Selection) -> String {
-    name_of(app, sheet, selection).unwrap_or_else(|| a1::format(None, selection.active))
-}
-
-/// The defined name covering exactly this selection, if there is one.
-///
-/// Exactly, not overlapping: a name is a handle on one range, and offering it for a
-/// selection that merely sits inside would put a word in the box that typing back would
-/// move the selection.
-fn name_of(app: &App, sheet: usize, selection: Selection) -> Option<String> {
-    let want = selection.rect();
-    app.names().into_iter().find_map(|(name, expression)| {
-        let reference = a1::parse(strip_brackets(&expression)).ok()?;
-        let (found, start, end) = a1::resolve(app, &reference).ok()?;
-        (found == sheet && (start, end) == want).then_some(name)
-    })
-}
-
-/// A stored definition without ODF's brackets — `[$Sheet1.$A$1]` is how a reference is
-/// written in a file, and `a1::parse` takes the address a person types.
-fn strip_brackets(expression: &str) -> &str {
-    expression
-        .strip_prefix('[')
-        .and_then(|rest| rest.strip_suffix(']'))
-        .unwrap_or(expression)
-}
-
-/// Whether a reference names a cell rather than a whole column or row — both axes present
-/// on both ends.
-fn is_a_cell(reference: &grind_sheet::formula::lex::Reference) -> bool {
-    std::iter::once(&reference.start)
-        .chain(reference.end.as_ref())
-        .all(|end| end.row.is_some() && end.col.is_some())
+    grind_sheet::place::name_box(app, sheet, selection)
 }
 
 /// Define `name` over whatever is selected — the other half of the name box.
@@ -938,7 +874,8 @@ pub fn tab_menu_model() -> gio::Menu {
 ///
 /// The aggregates are `App::preview` over generated formulas rather than a second summing
 /// loop here — `SUM`, `COUNTA` (a status bar's Count is non-empty, not numeric) and
-/// `AVERAGE` — so what the bar says and what a cell would say cannot differ.
+/// `AVERAGE` — so what the bar says and what a cell would say cannot differ. They are
+/// `grind_sheet::summary`'s, shared with every other shell's status bar.
 ///
 /// Debounced, because a drag changes the selection on every motion event and each change
 /// costs a walk of the range. ponytail: the walk runs on the main thread, so a selection
@@ -1045,56 +982,16 @@ pub fn bottom_bar(tabs: &impl IsA<gtk::Widget>, status: &impl IsA<gtk::Widget>) 
     bar
 }
 
-/// `B2:C4  ·  Sum 21215.51  ·  Count 6  ·  Average 3535.9`, the range alone when it holds
-/// nothing, and **nothing at all for one cell** — the name box is already saying where that is. The numbers are spelled the document's way
-/// ([`App::display_number`]), so a German document's sum reads `21215,51`, as its cells do.
+/// `grind_sheet::summary`'s sentence for a range, and **nothing at all for one cell** — the name
+/// box is already saying where that is (`grind_sheet::place::status`).
 fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
-    let (start, end) = selection.rect();
-    if selection.is_single() {
-        // One cell has nothing to add up, and every other spreadsheet stays quiet about it.
-        return String::new();
-    }
-    let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
-    // Clamped to the used extent first: a whole-column selection must not ask the evaluator
-    // to walk a million empty rows.
-    let Ok((rows, cols)) = app.used_extent(sheet) else {
-        return address;
-    };
-    let end = Pos::new(
-        end.row.min(rows.saturating_sub(1)),
-        end.col.min(cols.saturating_sub(1)),
-    );
-    if rows == 0 || cols == 0 || end.row < start.row || end.col < start.col {
-        return address;
-    }
-
-    let range = format!("[.{}:.{}]", a1::format(None, start), a1::format(None, end));
-    // Evaluated at a cell one past the used extent: a formula is evaluated *as if* it sat
-    // somewhere, and somewhere inside the range would be a circular reference.
-    let at = Pos::new(rows, 0);
-    let of = |formula: String| match app.preview(sheet, at, &formula) {
-        Ok(CellValue::Number(n)) => Some(n),
-        _ => None,
-    };
-    let count = of(format!("=COUNTA({range})")).unwrap_or(0.0);
-    if count == 0.0 {
-        return address;
-    }
-    let mut parts = vec![address, format!("Count {}", app.display_number(count))];
-    // Sum and Average of no numbers are not zero, they are nothing — AVERAGE says so with
-    // #DIV/0!, which is why both are read back as an optional number.
-    if let Some(sum) = of(format!("=SUM({range})"))
-        && let Some(average) = of(format!("=AVERAGE({range})"))
-    {
-        parts.insert(1, format!("Sum {}", app.display_number(sum)));
-        parts.push(format!("Average {}", app.display_number(average)));
-    }
-    parts.join("  ·  ")
+    grind_sheet::place::status(app, sheet, selection)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grind_sheet::Pos;
 
     /// The regression that made friendly mode look broken on any sheet but the first: the
     /// buffer's display form has to be converted before it is explained, or a
@@ -1136,57 +1033,5 @@ mod tests {
         assert_eq!(show_value(&app, &CellValue::Number(0.25)), "0,25");
         // One cell is the name box's to show, and the bar says nothing rather than repeat it.
         assert_eq!(status_text(&app, 0, Selection::at(Pos::new(0, 1))), "");
-    }
-
-    /// The name box's whole ambiguity, pinned: a word is a name, an address is a place, and
-    /// a whole column has to be asked for as a range. Without the last rule every word up to
-    /// `XFD` would silently be a column instead of a name.
-    #[test]
-    fn a_word_is_a_name_and_an_address_is_a_place() {
-        let app = App::new();
-        let go = |text: &str| locate(&app, 0, text);
-
-        // Places, with both axes named.
-        assert_eq!(go("A1").expect("A1 is a cell").active, Pos::new(0, 0));
-        assert_eq!(go("b3:c9").expect("a range").active, Pos::new(2, 1));
-        // A whole column, asked for the way a name box asks.
-        assert!(go("A:A").is_some());
-
-        // Words. Every one of these parses as a column and must not be taken as one.
-        for word in ["foo", "abc", "sales", "Total"] {
-            assert!(go(word).is_none(), "{word} should be a name, not a column");
-        }
-
-        // Until it is defined, and then it is where it points.
-        app.set_name("foo", "[$Sheet1.$B$2:.$B$4]").expect("a name");
-        assert_eq!(
-            go("foo").expect("foo is defined now").active,
-            Pos::new(1, 1)
-        );
-    }
-
-    /// The name box shows a name when the selection is exactly that name's range, and the
-    /// bare address otherwise — including when the selection only overlaps a name rather
-    /// than matching it.
-    #[test]
-    fn the_name_box_shows_a_name_when_the_selection_is_exactly_one() {
-        let app = App::new();
-        app.set_name("total", "[$Sheet1.$B$2:.$B$4]")
-            .expect("a name");
-
-        let exact = Selection {
-            anchor: Pos::new(1, 1),
-            active: Pos::new(3, 1),
-        };
-        assert_eq!(name_box_text(&app, 0, exact), "total");
-
-        let overlapping = Selection {
-            anchor: Pos::new(1, 1),
-            active: Pos::new(2, 1),
-        };
-        assert_eq!(name_box_text(&app, 0, overlapping), "B3");
-
-        let plain = Selection::at(Pos::new(0, 0));
-        assert_eq!(name_box_text(&app, 0, plain), "A1");
     }
 }

@@ -28,11 +28,17 @@
 //! keep moving it. That is why the mode enum has three variants and the behaviour has four:
 //! "am I pointing" is a question about the *text*, and a flag would go stale the moment
 //! someone moved the caret.
+//!
+//! ponytail: `ui_win32/src/sheet/state.rs` is this machine mirrored rather than shared, and the
+//! macOS shell will be a third. `doc/macos-shell.md`'s M1 asked whether one abstract key type
+//! fits all three shells' inputs, and it does not: this one takes a `Key` that already carries
+//! its character, Windows' takes a `WM_KEYDOWN` and a `WM_CHAR` separately and asks its menu
+//! accelerators first, and the Mac gets *selectors* from its field editor. What is not about
+//! keys is shared — `grind_sheet::formula::display::to_input` is what a commit stores, and
+//! `grind_sheet::nav` the motions. **The trigger is a fourth copy**, or the first time two of
+//! them answer the same keystroke differently for a reason that is not their input model.
 
-use std::ops::Range;
-
-use grind_sheet::formula::display::{self, TokenKind};
-use grind_sheet::{Pos, a1};
+use grind_sheet::Pos;
 
 use crate::keymap::{self, Dir, Key, Mods, Motion};
 
@@ -164,60 +170,10 @@ fn editing(at: Where, key: Key, mods: Mods) -> Outcome {
     }
 }
 
-/// Whether a reference may be inserted at `caret` — the predicate Point mode is.
-///
-/// A formula, and the last thing before the caret is something a reference can follow: an
-/// operator, a separator, an opening parenthesis, or the `=` itself. `SUM(B2` is *not*
-/// eligible — an arrow there moves on rather than pointing at a second cell, which is what
-/// stops a half-typed reference from being extended by accident.
-pub fn ref_eligible(text: &str, caret: usize) -> bool {
-    if !text.starts_with('=') {
-        return false;
-    }
-    let before = &text[..caret.min(text.len())];
-    match before.trim_end().chars().next_back() {
-        Some(c) => "=(;+-*/^&<>:,".contains(c),
-        // Nothing but the `=` and whitespace.
-        None => false,
-    }
-}
-
-/// F4: the reference to re-spell, and what to spell it as.
-///
-/// Excel's cycle, because everybody's fingers know it: `B2` → `$B$2` → `B$2` → `$B2` → `B2`.
-/// The reference is the one the caret is in or at the end of, found with `display::spans` —
-/// the same scanner that colours them, so what F4 acts on is what the user sees highlighted.
-pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)> {
-    let span = display::spans(text).into_iter().find(|span| {
-        span.kind == TokenKind::Ref && span.range.start <= caret && caret <= span.range.end
-    })?;
-    let mut reference = a1::parse(&text[span.range.clone()]).ok()?;
-    // Both axes of both ends move together, which is what the four steps mean.
-    let (col, row) = reference
-        .start
-        .col
-        .zip(reference.start.row)
-        .map(|(c, r)| (c.absolute, r.absolute))
-        .unwrap_or((false, false));
-    let (col, row) = match (col, row) {
-        (false, false) => (true, true),
-        (true, true) => (false, true),
-        (false, true) => (true, false),
-        _ => (false, false),
-    };
-    for end in [Some(&mut reference.start), reference.end.as_mut()]
-        .into_iter()
-        .flatten()
-    {
-        if let Some(axis) = end.col.as_mut() {
-            axis.absolute = col;
-        }
-        if let Some(axis) = end.row.as_mut() {
-            axis.absolute = row;
-        }
-    }
-    Some((span.range, display::reference_text(&reference)))
-}
+/// Whether a reference may be inserted at the caret — the predicate Point mode is — and F4's
+/// `$` cycle. Both are questions about display syntax and a caret, and are the core's since the
+/// macOS shell wanted the same answers (the way `call_at` below came to be).
+pub use grind_sheet::formula::assist::{cycle_absolute, ref_eligible};
 
 /// Which call the caret is inside, and which argument of it — what a signature hint shows.
 ///
@@ -437,28 +393,6 @@ mod tests {
             on_key(moving, Key::Tab, plain()),
             Outcome::Commit(Some(Dir::Right))
         );
-    }
-
-    /// Excel's cycle, because everybody's fingers know it.
-    #[test]
-    fn f4_walks_the_four_spellings_and_comes_back() {
-        let mut text = "=SUM(B2:B4)".to_owned();
-        let mut seen = Vec::new();
-        for _ in 0..5 {
-            let (span, replacement) = cycle_absolute(&text, 6).expect(&text);
-            text.replace_range(span, &replacement);
-            seen.push(replacement);
-        }
-        assert_eq!(
-            seen,
-            ["$B$2:$B$4", "B$2:B$4", "$B2:$B4", "B2:B4", "$B$2:$B$4"]
-        );
-    }
-
-    #[test]
-    fn f4_does_nothing_where_there_is_no_reference() {
-        assert!(cycle_absolute("=SUM(1;2)", 6).is_none());
-        assert!(cycle_absolute("hello", 2).is_none());
     }
 
     /// Tab-column memory: Enter after a run of Tabs returns to where the run began.

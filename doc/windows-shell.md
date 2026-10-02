@@ -329,9 +329,10 @@ must not depend on.
 plus `clear_range` for cut and `enter_range` under the paste. `clipboard.rs` is the only file
 that opens the clipboard, on `gdi.rs`'s pattern: one `OpenClipboard`/`CloseClipboard` pair per
 call, closed on every path including the early returns, so a half-finished copy cannot leave it
-open for the rest of the process. `sheet/clip.rs` is the portable half either side of it — the
-codec between a rectangle of `App::input_text` and a `String` — tested on Linux the way
-`sheet/keymap.rs` is. This is the one place where the Windows shell is *ahead* rather than
+open for the rest of the process. `grind_sheet::clip` is the portable half either side of it —
+the codec between a rectangle of `App::input_text` and a `String`, tested on any host. It was
+`sheet/clip.rs` here until the macOS shell would have made it a fifth copy, and was hoisted in
+that shell's M1. This is the one place where the Windows shell is *ahead* rather than
 behind: `grind-tui` has only its own vi register (a terminal cannot reach a system clipboard
 without a protocol the host may not speak) and `grind-text-gtk` has no clipboard at all.
 
@@ -577,7 +578,8 @@ ui_win32/
                           over a real `App`
       state.rs          * Ready / Enter / Edit, the editing state machine, and the two
                           conversions an edit needs (display syntax, and UTF-8 bytes <-> the
-                          UTF-16 units EM_GETSEL/EM_SETSEL count, both ways)
+                          UTF-16 units EM_GETSEL/EM_SETSEL count, both ways — the latter
+                          `grind_core::utf16` since the Mac's M1, in the control's `i32`)
       assist.rs         * W9: what to offer somebody typing a formula and what the call under
                           the caret wants next, over `grind_sheet::formula::assist`; the runs
                           the band draws; the keys a list of offers claims; and the function
@@ -675,7 +677,9 @@ things had to move together, and the split is the point of it:
   the window under Wine rather than assumed.
 - **A list item in a cell keeps its indent inside the cell**, so its bullet stays in the cell.
 - **All of it is portable** and tested on Linux — six tests in `text/geom.rs`, including the empty
-  table that used to be the gap.
+  table that used to be the gap. Since `doc/macos-shell.md`'s M1 the flow, the table layout,
+  `across` and those tests are `grind_text::flow`'s, shared with `ui_text_gtk`; `text/geom.rs`
+  keeps this pane's numbers (`spacing`) and thin `flow_of`/`across` wrappers over them.
 
 **A number is never elided.** `DrawTextW`'s `DT_END_ELLIPSIS` applied to every cell, so a
 currency one pixel too wide came out as `3,710.0…` — a magnitude with a digit missing. A number
@@ -712,7 +716,7 @@ Measured rather than argued, and measurable from Linux: compiling both spellings
 
 | **W11** | **The welcome screen** — *done* | `welcome.rs` (portable: the cards, the layout, the hit test, the keyboard) plus its GDI half; `Pane::Welcome`, so a window with no document is neither application rather than the spreadsheet one; `menu::Surface`, which is what the menu bar asks about now; `Command::NewSheet`/`NewText` replacing the kind-locked `New`, and `Command::Welcome` to go back; `main.rs`'s `resolve` answering `None` for "nobody said" | **Met.** `grind-win32` with no arguments opens on three cards — New Spreadsheet, New Text Document, Open a Document… — navigable by arrows, Tab and Enter as well as the pointer, with the menu bar reduced to File and Help; clicking a card turns the window into that document and the bar back into the full one; File ▸ Welcome Screen returns, asking about unsaved work on the way. `--sheet` and `--text` still skip it. 228 tests on Linux, and `--render-to` with no file draws the pane in both palettes, which is how it was looked at at all — the first frame had the bug below in it |
 
-| **W12** | **The grid's format strip** — *done* | `sheet/format.rs` (portable: the controls, what each reads off the active cell, the read-change-write a toggle makes, the nine number kinds and what picking one writes, the decimal steps, the picker's face); `strip.rs` (portable layout, GDI painting) now drawn by **both** panes; a format band over the name box; `Command::AlignLeft/Center/Right`, `PickBackground`, `NumberFormat`, `FewerDecimals`, `MoreDecimals`; Bold, Italic, Text Colour and Clear Formatting made both panes' verbs | **Met.** The row `doc/feature-matrix.md` §8 ranked first — *this window can barely format a cell* — is closed: under Wine a label was made bold with a click and with Ctrl+B, a currency stepped from two decimals to four with two quick clicks, turned into a percentage and back with one Ctrl+Z, coloured blue on yellow, and cleared; the saved file projects as `style B3 bold=#true color="#0074d9" background="#ffdc00"` and lints clean. The Format menu is the strip's verbs in the strip's order, checked as the strip draws them. 276 tests on Linux. The text pane renders **byte-identical** to its frames from before its painting moved into `strip.rs`, in both palettes. Two bugs found by *running* it — see below |
+| **W12** | **The grid's format strip** — *done* | `sheet/format.rs` (portable: the controls, what each reads off the active cell, the read-change-write a toggle makes — `grind_sheet::format`'s since the Mac's M1, with the colours and the decimal steps — the nine number kinds and what picking one writes, the decimal steps, the picker's face); `strip.rs` (portable layout, GDI painting) now drawn by **both** panes; a format band over the name box; `Command::AlignLeft/Center/Right`, `PickBackground`, `NumberFormat`, `FewerDecimals`, `MoreDecimals`; Bold, Italic, Text Colour and Clear Formatting made both panes' verbs | **Met.** The row `doc/feature-matrix.md` §8 ranked first — *this window can barely format a cell* — is closed: under Wine a label was made bold with a click and with Ctrl+B, a currency stepped from two decimals to four with two quick clicks, turned into a percentage and back with one Ctrl+Z, coloured blue on yellow, and cleared; the saved file projects as `style B3 bold=#true color="#0074d9" background="#ffdc00"` and lints clean. The Format menu is the strip's verbs in the strip's order, checked as the strip draws them. 276 tests on Linux. The text pane renders **byte-identical** to its frames from before its painting moved into `strip.rs`, in both palettes. Two bugs found by *running* it — see below |
 
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
@@ -1320,7 +1324,7 @@ Added in W3, once cells could be typed into:
 | Claim | How it was checked |
 |---|---|
 | A value typed lands in the document, formatted, with the cursor moved on | Under Xvfb, driven by XTEST: `12` and Enter into E14 draws `12` right-aligned in that cell — a number, not the control's own left-aligned text — and leaves the cursor on E15 |
-| A formula is typed in **display syntax** and stored in ODF's | `=SUM(B3:B4)` typed into E16 shows `720`, and `grind sheet view` on the saved file agrees. The conversion is `state::to_store`, which is `formula::display::from_display` and nothing else |
+| A formula is typed in **display syntax** and stored in ODF's | `=SUM(B3:B4)` typed into E16 shows `720`, and `grind sheet view` on the saved file agrees. The conversion was `state::to_store`, which is `formula::display::from_display` and nothing else — `formula::display::to_input` since the Mac's M1, shared with every shell |
 | A formula that will not parse does **not** commit | `=SUM(` and Enter leaves the editor open with the caret on the problem and the notice bar reading *"Not a formula: expected a value. Esc leaves the cell as it was."*; Escape then leaves the cell exactly as it was |
 | Escape throws an edit away and Enter does not | `999` then Escape leaves the cell empty and closes the editor; the same text then Enter stores it |
 | F2 and a double-click open the cell rather than replace it | A double-click on B3 opens the editor holding `500` — `App::input_text`, so a formula would come back in display syntax and a date in the ISO spelling that types back in |
@@ -1346,7 +1350,7 @@ Added in W4, once the clipboard existed:
 | Copy puts the selection on the clipboard as `App::input_text`, tab- and CRLF-separated | Under Xvfb, driven by XTEST: Ctrl+C on A4 (`Transport`) then Ctrl+V on the empty A19 shows `Transport` there, with `App::input_text` — not the display value — as the round trip |
 | Cut clears the source in the same step, as one undo entry | Ctrl+X on B3 (`500.00 €`) empties it immediately; pasting it into B19 restores `500` and every formula reading B3 (`Total`, `Spend ratio`) recalculates against the new layout |
 | The Edit menu carries Cut/Copy/Paste, and Ctrl+X/C/V reach them ahead of the grid's own use of those letters | `menu::accelerator` consulted before `sheet/keymap.rs`'s navigation table, same as every other verb; `every_accelerator_names_a_command_that_is_in_a_menu` extended to the three |
-| The portable codec round-trips through `App::enter_range`, including a formula and a cell holding a literal tab | `sheet/clip.rs`'s own tests, on Linux — no window, no clipboard, no `cfg(windows)` |
+| The portable codec round-trips through `App::enter_range`, including a formula and a cell holding a literal tab | `grind_sheet::clip`'s own tests (hoisted from `sheet/clip.rs`), on Linux — no window, no clipboard, no `cfg(windows)` |
 | `clipboard.rs` is Windows-only, holds every `OpenClipboard`/`CloseClipboard` pair, and adds only the three namespaces it needs | `#![cfg(windows)]`; `cargo tree` after W4 shows the three new feature-gated modules and no new crate |
 | The shell still imports only OS DLLs, with the clipboard API in it | `objdump -p`: adds nothing beyond `user32` and `KERNEL32`, which already carried `OpenClipboard`/`SetClipboardData`/`GetClipboardData` and `GlobalAlloc`/`GlobalLock` |
 | The whole thing still lints and tests on Linux | `cargo clippy` clean for **both** targets, `cargo test -p grind-win32`: 107 passed |

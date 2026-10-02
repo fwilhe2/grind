@@ -402,8 +402,9 @@ common case — Small-Group-only documents — feels live.
   while a background write runs; paint from the cached `Viewport`, queue no edits
   (header-bar spinner, "Calculating…"), skip preview/stale meanwhile. The upgrade is
   core-side snapshotting, not shell cleverness.
-- Saves are explicit (Ctrl+S, close-confirm); R6 keeps them small-diffed. Autosave is a
-  named later toggle, not v1.
+- Saves are explicit (Ctrl+S, close-confirm); R6 keeps them small-diffed. Autosave is not
+  this window's: it is the macOS shell's alone, by platform convention (`doc/macos-shell.md`
+  decision 5, `doc/not-doing.md` §3).
 
 ### Theme, accessibility
 
@@ -747,7 +748,7 @@ spaces, so the rectangle survives; the upgrade is quoting, in a codec shared wit
 paste`) · rich clipboard flavours, so a copy carries values and formulas as text and
 nothing else · freeze panes (the same-widget-headers
 design accommodates them) · window-state persistence (needs a GSettings schema —
-post-packaging) · autosave · a manage-names dialog (the capability exists; `sheet name`
+post-packaging) · autosave (the Mac's alone, by platform convention) · a manage-names dialog (the capability exists; `sheet name`
 reaches it) · merged-cell rendering (the model does not carry spans; cells render
 unmerged) · full grid accessibility · typing during a background recalc · locale argument
 separators · **the document's default cell font size**, which the reader does not keep (the

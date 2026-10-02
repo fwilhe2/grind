@@ -233,11 +233,14 @@ they were closed here first because this is the shell the suite showcases:
   character everywhere in this suite, so a menu item whose result was `\u{fffc}` would be a bug
   report. The MIME type comes from GIO's own content-type guess over the name *and* the bytes.
 
-**Tables are drawn, and what that cost is worth writing down.** The grid is `geom.rs`'s: a
+**Tables are drawn, and what that cost is worth writing down.** The grid was `geom.rs`'s and
+`view.rs`'s, and is `grind_text::flow`'s since `doc/macos-shell.md`'s M1 hoisted it, shared with
+`ui_win32` — which is also when this window stopped leaving two gaps above a table and one below
+it, and started indenting a list item inside its cell. A
 `Slot` now carries the box a block was laid out in rather than only its height, because a block
 in a cell is measured at the *cell's* width and nothing about the block itself says so — and
-`view.rs`'s `Column` reads that same width back, which is what makes Down-arrow inside a cell
-land where the ink is. **The columns are equal shares of the measure**, because the model
+`view.rs`'s `Column` reads that same width back (`grind_text::flow::across`, which the flow is
+built through as well), which is what makes Down-arrow inside a cell land where the ink is. **The columns are equal shares of the measure**, because the model
 carries no column widths (`doc/text-core.md`: a table's own style is not read), so there is
 nothing to honour and equal shares is the answer that never overflows. A click is answered by
 `Flow::at`, which takes both coordinates now: the cells of one row share a band of the page, so
@@ -333,7 +336,7 @@ scripts/run.sh web /tmp/grind-demo/sample.fodt       # served next to the page, 
 ```
 
 `cargo test -p grind-text-gtk` runs two kinds of test. `geom.rs` and `keymap.rs` are pure
-arithmetic and pure key mapping and always run — that is where the stacking, the scrolling and
-every binding are checked. The widget tests in `view.rs` need a display and **skip with a
+arithmetic and pure key mapping and always run — that is where the column and every binding are
+checked; the stacking and the scrolling are `grind_text::flow`'s, and tested there. The widget tests in `view.rs` need a display and **skip with a
 notice** where there is none, which is where CI runs: `.github/workflows/gtk.yml` installs the
 GTK development packages and no compositor, on purpose.

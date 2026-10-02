@@ -100,6 +100,31 @@ impl DocumentKind {
     }
 }
 
+/// What a shell opens, when a person named a kind (`--sheet`, `--text`) **and** a file.
+///
+/// **The file decides**: its bytes are what the reader will parse, and opening a spreadsheet as
+/// a text document shows an empty one rather than an error (see this module's first
+/// paragraph). So the flag only gets to agree, and disagreeing is an error naming both kinds
+/// rather than an override — `shown` is the file as the person will recognise it.
+///
+/// Every shell that takes both on its command line asks this: `ui_tui`, `ui_win32` and
+/// `ui_mac` each had a copy until the third one pulled the trigger (`doc/macos-shell.md`, M1).
+/// It is the rule, and not the read, so it is testable without a filesystem.
+pub fn reconcile(
+    asked: Option<DocumentKind>,
+    found: DocumentKind,
+    shown: &str,
+) -> Result<DocumentKind, String> {
+    match asked {
+        Some(asked) if asked != found => Err(format!(
+            "{shown} is a {}, not a {}",
+            found.label(),
+            asked.label()
+        )),
+        _ => Ok(found),
+    }
+}
+
 /// How many XML events to look at before giving up on the flat form.
 ///
 /// The root element carries `office:mimetype` and is the first event, so one would nearly
@@ -211,6 +236,36 @@ fn flat_kind(bytes: &[u8]) -> Option<DocumentKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_that_agrees_with_the_flag_is_fine() {
+        let found = DocumentKind::Text;
+        assert_eq!(
+            reconcile(Some(DocumentKind::Text), found, "a.fodt"),
+            Ok(found)
+        );
+        assert_eq!(reconcile(None, found, "a.fodt"), Ok(found), "no flag");
+    }
+
+    /// A file decides, and disagreeing is an error rather than an override, because opening a
+    /// spreadsheet as a document shows an empty one.
+    #[test]
+    fn a_file_that_contradicts_the_flag_is_an_error_naming_both() {
+        let error = reconcile(
+            Some(DocumentKind::Text),
+            DocumentKind::Spreadsheet,
+            "book.fods",
+        )
+        .unwrap_err();
+        assert_eq!(error, "book.fods is a spreadsheet, not a text document");
+        let error = reconcile(
+            Some(DocumentKind::Spreadsheet),
+            DocumentKind::Presentation,
+            "deck.odp",
+        )
+        .unwrap_err();
+        assert_eq!(error, "deck.odp is a presentation, not a spreadsheet");
+    }
     /// The `office:` namespace, for a test that builds documents by hand.
     use crate::odf::names::OFFICE as OFFICE_NS;
 

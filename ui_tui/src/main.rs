@@ -91,24 +91,20 @@ fn main() -> ExitCode {
         }
     }
 
-    // A file decides for itself. `--sheet`/`--text` only answer the empty case, and disagreeing
-    // with the file is an error rather than a silent override — opening a spreadsheet as a
-    // document would show an empty one, which is exactly the confusion `kind` exists to stop.
+    // A file decides for itself (`grind_core::kind::reconcile`). `--sheet`/`--text` only answer
+    // the empty case, and disagreeing with the file is an error rather than a silent override —
+    // opening a spreadsheet as a document would show an empty one, which is exactly the
+    // confusion `kind` exists to stop.
     let kind = match &path {
         Some(path) => match sniff(path) {
             Ok(found) => {
-                if let Some(asked) = kind
-                    && asked != found
-                {
-                    eprintln!(
-                        "grind-tui: {} is a {}, not a {}",
-                        path.display(),
-                        describe(found),
-                        describe(asked)
-                    );
-                    return ExitCode::FAILURE;
+                match grind_core::kind::reconcile(kind, found, &path.display().to_string()) {
+                    Ok(found) => found,
+                    Err(error) => {
+                        eprintln!("grind-tui: {error}");
+                        return ExitCode::FAILURE;
+                    }
                 }
-                found
             }
             Err(error) => {
                 eprintln!("grind-tui: {}: {error}", path.display());
@@ -145,14 +141,6 @@ fn sniff(path: &Path) -> io::Result<DocumentKind> {
             "not an ODF spreadsheet or text document",
         )
     })
-}
-
-fn describe(kind: DocumentKind) -> &'static str {
-    match kind {
-        DocumentKind::Spreadsheet => "spreadsheet",
-        DocumentKind::Text => "text document",
-        _ => "document",
-    }
 }
 
 fn run_sheet(mut path: Option<PathBuf>) -> io::Result<()> {

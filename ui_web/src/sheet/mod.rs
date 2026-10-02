@@ -27,7 +27,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use grind_core::utf16;
 use grind_sheet::find::{self, Search, Towards};
+use grind_sheet::format::{self, Toggle};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
@@ -680,7 +682,7 @@ impl Ui {
     /// Every verb this pane answers, by the id the palette, the toolbar and the keyboard all
     /// name it with ([`crate::command::SHEET`]).
     pub fn run(&self, id: &str) {
-        let style = |set: fn(&mut CellStyle)| self.merge_style(set);
+        let style = |write: fn(&CellStyle) -> Option<CellStyle>| self.merge_style(write);
         match id {
             "sheet.recalc" => self.recalc(),
             "view.roles" => self.overlay(true),
@@ -697,15 +699,19 @@ impl Ui {
             "sheet.format-table" => self.format_table(None),
             "sheet.format-table-totals" => self.format_table_with_totals(),
 
-            "style.bold" => style(|s| toggle(&mut s.font_weight, "bold")),
-            "style.italic" => style(|s| toggle(&mut s.font_style, "italic")),
-            "style.align-left" => style(|s| set(&mut s.align, "start")),
-            "style.align-center" => style(|s| set(&mut s.align, "center")),
-            "style.align-right" => style(|s| set(&mut s.align, "end")),
-            "style.align-clear" => style(|s| s.align = None),
-            "style.wrap" => style(|s| toggle(&mut s.wrap, "wrap")),
-            "style.border" => style(|s| s.set_border(Some(BORDER.to_owned()))),
-            "style.border-clear" => style(|s| s.set_border(None)),
+            "style.bold" => style(|s| Toggle::Bold.flipped(s)),
+            "style.italic" => style(|s| Toggle::Italic.flipped(s)),
+            // The alignments *set* rather than flip here, with a command of their own to clear
+            // them, because a palette row has no pressed state to flip from.
+            "style.align-left" => style(|s| Toggle::AlignStart.set(s, true)),
+            "style.align-center" => style(|s| Toggle::AlignCenter.set(s, true)),
+            "style.align-right" => style(|s| Toggle::AlignEnd.set(s, true)),
+            "style.align-clear" => style(|s| format::restyled(s, |s| s.align = None)),
+            "style.wrap" => style(|s| Toggle::Wrap.flipped(s)),
+            "style.border" => {
+                style(|s| format::restyled(s, |s| s.set_border(Some(BORDER.to_owned()))))
+            }
+            "style.border-clear" => style(|s| format::restyled(s, |s| s.set_border(None))),
             "style.clear" => self.set_style_of_selection(None),
 
             "format.general" => self.set_format_of_selection(None),
@@ -1013,17 +1019,18 @@ impl Ui {
     /// Read the active cell's style, change one field, write the whole rectangle.
     ///
     /// `App::set_style` *replaces* rather than merges, deliberately (`sheet/src/lib.rs`) — so
-    /// the merge policy is here, where "make this bold as well" is a sentence about what is
-    /// under the cursor rather than about every cell in the range.
-    fn merge_style(&self, change: impl Fn(&mut CellStyle)) {
-        let mut style = self
+    /// the merge is here, where "make this bold as well" is a sentence about what is under the
+    /// cursor rather than about every cell in the range. `write` is one of
+    /// `grind_sheet::format`'s, which answer `None` for a style that sets nothing: un-bolding the
+    /// only bold cell used to leave an empty `style:style` behind.
+    fn merge_style(&self, write: impl Fn(&CellStyle) -> Option<CellStyle>) {
+        let style = self
             .app
             .style_at(self.sheet.get(), self.selection.get().active)
             .ok()
             .flatten()
             .unwrap_or_default();
-        change(&mut style);
-        self.set_style_of_selection(Some(style));
+        self.set_style_of_selection(write(&style));
     }
 
     fn set_style_of_selection(&self, style: Option<CellStyle>) {
@@ -1054,31 +1061,25 @@ impl Ui {
         self.set_format_of_selection(Some(numfmt::preset(Kind::Currency, 2, true, symbol)));
     }
 
-    /// More or fewer decimal places, keeping whatever kind the cell already had — General
-    /// becomes a plain number, which is what pressing it on an unformatted cell means.
-    fn step_decimals(&self, by: i16) {
-        let current = self
-            .app
-            .format_at(self.sheet.get(), self.selection.get().active)
-            .ok()
-            .flatten();
-        let (kind, decimals, grouping, symbol) = match &current {
-            Some(format) => format.preset_params(),
-            None => (Kind::Number, 2, false, String::new()),
-        };
-        let decimals = (i16::from(decimals) + by).clamp(0, 10) as u8;
-        let symbol = match symbol.is_empty() {
-            true => CURRENCY.to_owned(),
-            false => symbol,
-        };
-        self.set_format_of_selection(Some(numfmt::preset(kind, decimals, grouping, &symbol)));
+    /// More or fewer decimal places — `grind_sheet::format::stepped`, which keeps whatever
+    /// kind the cell already had and starts a plain cell from the decimals it *shows*. A date,
+    /// text, or a format this build did not write has no decimals to step, and nothing is
+    /// written: this used to turn a date into a number format with decimals.
+    fn step_decimals(&self, by: i8) {
+        let (sheet, at) = (self.sheet.get(), self.selection.get().active);
+        let current = self.app.format_at(sheet, at).ok().flatten();
+        let shown = self.app.value_text(sheet, at).unwrap_or_default();
+        let shown = format::decimals_shown(&shown, self.app.locale().as_ref());
+        if let Some(stepped) = format::stepped(current.as_ref(), by, shown, None) {
+            self.set_format_of_selection(Some(stepped));
+        }
     }
 
     /// A colour picked from the swatch grid — `"color"` for the text, `"fill"` for behind it.
     pub fn set_color(&self, target: &str, hex: Option<String>) {
         match target {
-            "color" => self.merge_style(|s| s.color = hex.clone()),
-            "fill" => self.merge_style(|s| s.background = hex.clone()),
+            "color" => self.merge_style(|s| format::coloured(s, false, hex.clone())),
+            "fill" => self.merge_style(|s| format::coloured(s, true, hex.clone())),
             _ => {}
         }
     }
@@ -1093,23 +1094,15 @@ impl Ui {
             .ok()
             .flatten()
             .unwrap_or_default();
-        set_pressed(
-            document,
-            "s-bold",
-            style.font_weight.as_deref() == Some("bold"),
-        );
-        set_pressed(
-            document,
-            "s-italic",
-            style.font_style.as_deref() == Some("italic"),
-        );
-        set_pressed(document, "s-wrap", style.wrap.as_deref() == Some("wrap"));
-        for (id, value) in [
-            ("s-align-left", "start"),
-            ("s-align-center", "center"),
-            ("s-align-right", "end"),
+        for (id, toggle) in [
+            ("s-bold", Toggle::Bold),
+            ("s-italic", Toggle::Italic),
+            ("s-wrap", Toggle::Wrap),
+            ("s-align-left", Toggle::AlignStart),
+            ("s-align-center", Toggle::AlignCenter),
+            ("s-align-right", Toggle::AlignEnd),
         ] {
-            set_pressed(document, id, style.align.as_deref() == Some(value));
+            set_pressed(document, id, toggle.is_on(&style));
         }
         set_swatch(document, "s-color-bar", style.color.as_deref());
         set_swatch(document, "s-fill-bar", style.background.as_deref());
@@ -1125,42 +1118,31 @@ impl Ui {
     // --- the clipboard ---
 
     /// The selection as tab-separated text — the shape every spreadsheet on every platform
-    /// reads, so a range copied here pastes into one of them and back.
+    /// reads, so a range copied here pastes into one of them and back. The codec is
+    /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
     ///
     /// The cells' *input* text, not their displayed text: a formula copies as a formula, which
     /// is what a user who copies `=SUM(A1:A9)` means. It is also what `paste_text` feeds back
     /// to `App::enter_range`, so a round trip through the clipboard is lossless.
     pub fn clipboard_text(&self) -> Option<String> {
         let (start, end) = self.rect();
-        let sheet = self.sheet.get();
-        let mut out = String::new();
-        for row in start.row..=end.row {
-            if row > start.row {
-                out.push('\n');
-            }
-            for col in start.col..=end.col {
-                if col > start.col {
-                    out.push('\t');
-                }
-                let text = self.app.input_text(sheet, Pos::new(row, col)).ok()?;
-                // A tab or a newline *inside* a cell would be read back as a cell boundary.
-                // Spaces are the lossy-but-legible answer; a quoting scheme would be a second
-                // dialect of TSV that nothing else reads.
-                out.push_str(&text.replace(['\t', '\n'], " "));
-            }
-        }
-        Some(out)
+        let text = grind_sheet::clip::rect_text(
+            &self.app,
+            self.sheet.get(),
+            start,
+            end,
+            App::input_text,
+            "\n",
+        );
+        Some(text)
     }
 
     /// Tab-separated text, entered as a rectangle from the active cell — one undo step,
     /// because `App::enter_range` is one action.
     pub fn paste_text(&self, text: &str) {
-        let rows: Vec<Vec<String>> = text
-            .replace("\r\n", "\n")
-            .trim_end_matches('\n')
-            .split('\n')
-            .map(|line| line.split('\t').map(str::to_owned).collect())
-            .collect();
+        // Display syntax back to ODF's (`grind_sheet::clip`) — without it a formula copied here
+        // pasted back as `#NAME?`.
+        let rows = grind_sheet::clip::parse_rows(text);
         if rows.is_empty() {
             return;
         }
@@ -1200,13 +1182,7 @@ impl Ui {
     // --- the workbook ---
 
     fn add_sheet(&self) {
-        let taken: Vec<String> = (0..self.app.sheet_count())
-            .filter_map(|i| self.app.sheet_name(i).ok())
-            .collect();
-        let name = (1..)
-            .map(|n| format!("Sheet{n}"))
-            .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
-            .expect("there is always a free number");
+        let name = self.app.fresh_sheet_name();
         match self.app.add_sheet(&name) {
             Ok(index) => {
                 let _ = self.switch_to(index);
@@ -1639,7 +1615,7 @@ impl Ui {
         // Focusing an `<input>` selects it in some browsers, and the caret belongs
         // after what is there or the next keystroke deletes the seed — the same trap
         // `ui_sheet_gtk`'s `Grid::begin` documents, in a different toolkit.
-        let end = text.chars().count() as u32;
+        let end = utf16::units_before(&text, text.len()) as u32;
         self.dom.formula.set_selection_range(end, end)?;
         self.set_message(String::new());
         self.refresh_assist()
@@ -1654,15 +1630,12 @@ impl Ui {
             return self.render_assist();
         }
         let text = self.dom.formula.value();
-        // `selection_start` counts in the same units the rest of this file already treats a
-        // caret position as (`begin`'s and `commit`'s own `chars().count()`), not strict
-        // UTF-16 — formula text is overwhelmingly ASCII, and a second, more careful caret
-        // arithmetic for the rare astral character is not worth a second convention.
-        let caret_chars = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
-        let caret = text
-            .char_indices()
-            .nth(caret_chars)
-            .map_or(text.len(), |(byte, _)| byte);
+        // `selection_start` counts UTF-16 code units, as every DOM offset does, and the assist
+        // counts bytes — `grind_core::utf16` is the conversion, the one `ui_win32`'s
+        // `EM_GETSEL` goes through too. Counting `char`s instead put the caret one place off
+        // for every emoji before it.
+        let units = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
+        let caret = utf16::byte_of(&text, units);
         let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
         self.assist.borrow_mut().refresh(&text, caret, &names);
         self.render_assist()
@@ -1699,7 +1672,7 @@ impl Ui {
         next.push_str(&replacement);
         next.push_str(&text[span.end..]);
         let caret_byte = span.start + replacement.len();
-        let caret = next[..caret_byte].chars().count() as u32;
+        let caret = utf16::units_before(&next, caret_byte) as u32;
         self.dom.formula.set_value(&next);
         self.dom.formula.focus()?;
         self.dom.formula.set_selection_range(caret, caret)?;
@@ -1725,19 +1698,16 @@ impl Ui {
         let before = self.app.input_text(sheet, active).unwrap_or_default();
 
         if before != text {
-            let input = match text.starts_with('=') {
-                true => match display::from_display(&text) {
-                    Ok(canonical) => canonical,
-                    Err(error) => {
-                        // The edit stays open, with the caret on the problem.
-                        self.set_message(format!("{} (at {})", error.message, error.at));
-                        let at = text[..error.at.min(text.len())].chars().count() as u32;
-                        self.dom.formula.focus()?;
-                        self.dom.formula.set_selection_range(at, at)?;
-                        return Ok(());
-                    }
-                },
-                false => text,
+            let input = match display::to_input(&text) {
+                Ok(input) => input,
+                Err(error) => {
+                    // The edit stays open, with the caret on the problem.
+                    self.set_message(format!("{} (at {})", error.message, error.at));
+                    let at = utf16::units_before(&text, error.at) as u32;
+                    self.dom.formula.focus()?;
+                    self.dom.formula.set_selection_range(at, at)?;
+                    return Ok(());
+                }
             };
             match self.app.enter(sheet, active, &input, RecalcMode::Document) {
                 Ok(outcome) => self.set_message(match outcome.recalc.filter(|r| r.spoiled > 0) {
@@ -1975,17 +1945,6 @@ const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
 
 /// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
 /// opposed to a value a picker sets.
-fn toggle(field: &mut Option<String>, value: &str) {
-    *field = match field.as_deref() == Some(value) {
-        true => None,
-        false => Some(value.to_owned()),
-    };
-}
-
-fn set(field: &mut Option<String>, value: &str) {
-    *field = Some(value.to_owned());
-}
-
 /// Which of the format `<select>`'s options a cell's format *is* — the command id, so the
 /// toolbar reports in the same vocabulary it commands in.
 ///

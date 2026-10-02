@@ -13,3 +13,7 @@
 /ui_web/.smoke
 /ui_web/node_modules
 /ui_web/package-lock.json
+
+# scripts/mac-remote.sh downloads
+/mac-frames/
+/mac-drive/

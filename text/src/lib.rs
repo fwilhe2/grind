@@ -29,7 +29,8 @@
 //! supplies font metrics through [`Metrics`] and nothing else — plus, through [`Faces`], which
 //! of them each block is set in, because a heading and the paragraph under it are not the same
 //! font and a motion by line crosses between them. Pagination is still gated, and layout is
-//! left-to-right only by explicit decision.
+//! left-to-right only by explicit decision. The stacking above the lines — where each block
+//! sits down a continuous page, and a table's on its grid — is [`flow`], for the same reason.
 //!
 //! **Character formatting is direct formatting** ([`style`]). A run carries the properties an
 //! `office:automatic-styles` entry set on it — bold, italic, a family, a size, a colour — and
@@ -45,12 +46,16 @@
 //! reads here as formatting lost; pages.
 
 pub mod action;
+pub mod caret;
+pub mod flow;
 pub mod format;
 pub mod lint;
 pub mod loc;
+pub mod look;
 pub mod markdown;
 pub mod model;
 pub mod odf;
+pub mod paint;
 pub mod projection;
 pub mod style;
 pub mod word;
@@ -756,6 +761,47 @@ impl App {
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
         Ok(lay_out(block, width, metrics))
+    }
+
+    /// One block laid out as if `text` had been typed at `at` — an **input method's
+    /// composition**, set in the line it will land in before it has landed. **Nothing is
+    /// written**: a composition is the state of an input method between keystrokes (dead keys,
+    /// press-and-hold accents, a CJK conversion), and becomes a document edit only when the
+    /// input method commits it, as one `type_markdown`.
+    ///
+    /// Here rather than in a shell because it is line layout (`doc/text-layout.md`, Path C): the
+    /// composed text takes the formatting the character typed at `at` would — `resume` when a
+    /// markdown span left one pending, otherwise [`App::insert_text`]'s rule — and a line that
+    /// the composition pushes past the measure breaks where the committed text will. The offsets
+    /// in the answer count the composed characters, so the caret inside a composition is
+    /// `at.offset` plus its own position in `text`.
+    pub fn layout_composing(
+        &self,
+        at: Caret,
+        text: &str,
+        resume: Option<&CharStyle>,
+        width: f32,
+        metrics: &dyn Metrics,
+    ) -> Result<Layout> {
+        let state = self.state.read().unwrap();
+        let mut block = block_at(&state, at.block)?;
+        if !text.is_empty() {
+            let (mut runs, tail) = model::split_runs(&block.runs, at.offset.min(block.len()));
+            let (style, props, href) = match resume {
+                Some(props) => (None, props.clone(), None),
+                None => caret_formatting(&runs, &tail),
+            };
+            runs.push(Run::Text {
+                text: text.to_owned(),
+                style,
+                props,
+                href,
+            });
+            runs.extend(tail);
+            model::coalesce(&mut runs);
+            block.runs = runs;
+        }
+        Ok(lay_out(&block, width, metrics))
     }
 
     /// The x of a caret within its line — what a shell remembers as the **goal column** while

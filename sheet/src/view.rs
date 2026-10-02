@@ -121,6 +121,30 @@ impl CellRole {
         }
     }
 
+    /// What colour this role's marker is drawn in — the financial-modelling convention this
+    /// mode borrows (inputs blue, formulas the ordinary ink, another sheet's a third hue),
+    /// decided once. The colour is a property of the *mode*, not of a toolkit: `ui_sheet_gtk`
+    /// and `ui_win32` each carried this table, and the Mac would have been the third
+    /// (`doc/macos-shell.md`, M8). What a shell decides is only how it resolves the ink and how
+    /// far it lifts a palette colour to be legible on its own ground.
+    pub fn hue(self) -> Hue {
+        match self {
+            CellRole::Empty => Hue::None,
+            // Inputs blue; the named/unnamed split is ours, and it is one hue apart rather
+            // than a different colour — both are inputs.
+            CellRole::InputNamed => Hue::Palette("blue"),
+            CellRole::InputUnnamed => Hue::Palette("navy"),
+            CellRole::ConstantUnnamed => Hue::Palette("orange"),
+            // A computed cell is "black" in every model ever coloured by hand, and black in a
+            // dark theme is the foreground.
+            CellRole::ComputedLocal => Hue::Ink,
+            CellRole::ComputedCrossSheet => Hue::Palette("olive"),
+            CellRole::Label => Hue::Quiet,
+            CellRole::Error => Hue::Palette("red"),
+            CellRole::Stale => Hue::Palette("maroon"),
+        }
+    }
+
     /// Whether this role is also a **diagnostic** — something wrong rather than something
     /// true (§4.3).
     ///
@@ -147,6 +171,19 @@ impl CellRole {
         CellRole::Error,
         CellRole::Stale,
     ];
+}
+
+/// How a [`CellRole`]'s marker is coloured ([`CellRole::hue`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hue {
+    /// Drawn as nothing at all — an empty cell.
+    None,
+    /// A `grind_core::style::PALETTE` colour, by its name.
+    Palette(&'static str),
+    /// The theme's own ink.
+    Ink,
+    /// The theme's ink, quieter: present, but not what you are reading — a label.
+    Quiet,
 }
 
 /// Where a named expression lives: a name, and the rectangle it denotes.
@@ -940,6 +977,20 @@ mod tests {
             for col in 0..16 {
                 let role = view.role(row, col).expect("a role for every cell");
                 assert!(CellRole::ALL.contains(&role));
+            }
+        }
+    }
+
+    /// Every role that is drawn has a colour, and every palette colour named is one.
+    #[test]
+    fn every_drawn_role_has_a_hue_the_palette_knows() {
+        for role in CellRole::ALL {
+            match role.hue() {
+                Hue::None => assert_eq!(role, CellRole::Empty),
+                Hue::Palette(name) => {
+                    assert!(grind_core::style::palette(name).is_some(), "{name}")
+                }
+                Hue::Ink | Hue::Quiet => {}
             }
         }
     }

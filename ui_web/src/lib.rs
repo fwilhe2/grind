@@ -958,10 +958,7 @@ impl Shell {
         if replacing
             && !confirm(&format!(
                 "Start a new {}? Unsaved changes to the one you have will be lost.",
-                match kind {
-                    DocumentKind::Spreadsheet => "spreadsheet",
-                    _ => "text document",
-                }
+                kind.label()
             ))
         {
             return;

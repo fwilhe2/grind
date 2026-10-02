@@ -189,13 +189,13 @@ impl Grid {
         self.imp().clear();
     }
 
-    /// Select the used extent — Ctrl+A's twin.
+    /// Select the used extent — Ctrl+A's twin, `grind_sheet::nav::all`: the active cell stays
+    /// at A1, so the view goes home rather than to the far corner.
     pub fn select_all(&self) {
-        let (rows, cols) = self.imp().used_extent();
-        self.set_selection(Selection {
-            anchor: Pos::new(0, 0),
-            active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
-        });
+        let Some(app) = self.imp().app.borrow().clone() else {
+            return;
+        };
+        self.set_selection(grind_sheet::nav::all(&app, self.imp().sheet.get()));
     }
 
     /// Filter the selection, or clear the filter the sheet already has (§9.4) — the
@@ -328,16 +328,11 @@ impl Grid {
     pub fn target(&self) -> Option<(usize, Pos, Pos)> {
         let app = self.imp().app.borrow().clone()?;
         let sheet = self.sheet();
-        let (start, end) = self.selection().rect();
-        let (rows, cols) = app.used_extent(sheet).ok()?;
-        Some((
-            sheet,
-            start,
-            Pos::new(
-                end.row.min(rows.saturating_sub(1)).max(start.row),
-                end.col.min(cols.saturating_sub(1)).max(start.col),
-            ),
-        ))
+        let used = app.used_extent(sheet).ok()?;
+        // Only a whole row or column is cut to what the sheet uses; a dragged rectangle is a
+        // request for exactly those cells (`grind_sheet::nav::target`).
+        let (start, end) = grind_sheet::nav::target(self.selection(), used);
+        Some((sheet, start, end))
     }
 
     /// Called after every selection change, with the selection that resulted — what the
@@ -632,8 +627,7 @@ pub fn cell_menu_model() -> gio::Menu {
 mod imp {
     use super::*;
 
-    use grind_sheet::formula::value::FormulaError;
-    use grind_sheet::{CellValue, Pos};
+    use grind_sheet::Pos;
     use gtk::graphene;
     use gtk::gsk;
     use gtk::pango;
@@ -673,11 +667,6 @@ mod imp {
     const FIT_SLACK: f64 = 2.0;
     /// Space above and below it, which is what makes the default row taller than a line.
     const ROW_PAD: f64 = 8.0;
-    /// The size a cell that names none is, in points — `style:default-style`'s
-    /// `fo:font-size` in every document LibreOffice writes, and what a spreadsheet has meant
-    /// by "no size given" since long before ODF. A cell's own size is drawn as a multiple of
-    /// it rather than as an absolute; [`font`] is where that happens and why.
-    const DEFAULT_FONT_PT: f64 = 10.0;
     /// How much sheet is measured for natural row heights. A row above the view still
     /// displaces the ones below it, so this pass cannot be limited to what is on screen —
     /// past this much document every row keeps the default height instead.
@@ -1763,12 +1752,7 @@ mod imp {
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
                         continue;
                     };
-                    let text_style = grind_core::style::TextStyle {
-                        font_family: None,
-                        font_size: style.font_size.clone(),
-                        font_weight: style.font_weight.clone(),
-                        font_style: style.font_style.clone(),
-                    };
+                    let text_style = look::text_style(Some(style));
                     // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
                     // mandatory break, which is what the un-wrapped case wants (a cell whose
                     // only reason to be here is an oversized font).
@@ -2023,16 +2007,10 @@ mod imp {
             };
             let selection = match action {
                 Action::Move { motion, extend } => {
-                    let app = self.app.borrow().clone();
-                    let sheet = self.sheet.get();
-                    // One cell read per probe. ponytail: a scan across a sparse million-row
-                    // sheet is a million point reads; the fix is a used-extent walk in the
-                    // core, not a cache here.
-                    let occupied = |pos: Pos| {
-                        app.as_ref()
-                            .and_then(|app| app.get(sheet, pos).ok())
-                            .is_some_and(|value| !value.is_empty())
+                    let Some(app) = self.app.borrow().clone() else {
+                        return glib::Propagation::Stop;
                     };
+                    let occupied = grind_sheet::nav::occupied(&app, self.sheet.get());
                     keymap::moved(
                         self.selection.get(),
                         motion,
@@ -2042,11 +2020,10 @@ mod imp {
                     )
                 }
                 Action::SelectAll => {
-                    let (rows, cols) = self.used_extent();
-                    Selection {
-                        anchor: Pos::new(0, 0),
-                        active: Pos::new(rows.saturating_sub(1), cols.saturating_sub(1)),
-                    }
+                    let Some(app) = self.app.borrow().clone() else {
+                        return glib::Propagation::Stop;
+                    };
+                    grind_sheet::nav::all(&app, self.sheet.get())
                 }
                 Action::Copy => {
                     self.copy(false);
@@ -2132,13 +2109,10 @@ mod imp {
                 // where the eye already is.
                 None => Selection::at(self.selection.get().active),
             };
-            let app = self.app.borrow().clone();
-            let sheet = self.sheet.get();
-            let occupied = |pos: Pos| {
-                app.as_ref()
-                    .and_then(|app| app.get(sheet, pos).ok())
-                    .is_some_and(|value| !value.is_empty())
+            let Some(app) = self.app.borrow().clone() else {
+                return;
             };
+            let occupied = grind_sheet::nav::occupied(&app, self.sheet.get());
             let moved = keymap::moved(from, motion, extend, self.extent(), &occupied);
             self.set_pending(moved, pending.map(|p| p.span));
         }
@@ -2302,16 +2276,13 @@ mod imp {
                 self.move_after_commit(active, direction);
                 return;
             }
-            let input = match text.starts_with('=') {
-                true => match display::from_display(&text) {
-                    Ok(canonical) => canonical,
-                    Err(e) => {
-                        self.editor.set_position(caret_at(&text, e.at));
-                        self.notice(Notice::BadFormula(e.message, e.at));
-                        return;
-                    }
-                },
-                false => text,
+            let input = match display::to_input(&text) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.editor.set_position(caret_at(&text, e.at));
+                    self.notice(Notice::BadFormula(e.message, e.at));
+                    return;
+                }
             };
 
             // `RecalcMode::Document` is what makes a GUI feel live: the ripple lands in the
@@ -2426,15 +2397,9 @@ mod imp {
                 .set_text(&self.rect_text(&app, start, end, App::value_text));
         }
 
-        /// Every cell in a rectangle, tab- and newline-separated, by whatever `get` reads
-        /// for one — `App::input_text` for `copy`, `App::value_text` for `copy_value`. What
-        /// travels is the raw number or the formula in display form, not what the cell
-        /// *displays*: pasted back here it reproduces the cells exactly, and pasted into
-        /// another spreadsheet `1234.5` is a number where `1,234.50 €` is a guess about that
-        /// program's locale — `copy_value` is the one place that guess is exactly the point.
-        ///
-        /// ponytail: a cell holding a tab or a newline has them replaced with spaces, so the
-        /// rectangle survives. The upgrade is quoting, in a codec shared with `sheet paste`.
+        /// Every cell in a rectangle, tab- and newline-separated, by whatever `get` reads for
+        /// one — `App::input_text` for `copy`, `App::value_text` for `copy_value`. The codec is
+        /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
         fn rect_text(
             &self,
             app: &App,
@@ -2442,20 +2407,7 @@ mod imp {
             end: Pos,
             get: impl Fn(&App, usize, Pos) -> grind_sheet::Result<String>,
         ) -> String {
-            let sheet = self.sheet.get();
-            (start.row..=end.row)
-                .map(|row| {
-                    (start.col..=end.col)
-                        .map(|col| {
-                            get(app, sheet, Pos::new(row, col))
-                                .unwrap_or_default()
-                                .replace(['\t', '\n', '\r'], " ")
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\t")
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
+            grind_sheet::clip::rect_text(app, self.sheet.get(), start, end, get, "\n")
         }
 
         /// Extend the selection's first row (`Dir::Down`) or first column (`Dir::Right`)
@@ -2572,21 +2524,8 @@ mod imp {
                     move |result| {
                         let Ok(Some(text)) = result else { return };
                         // Display form back to canonical, cell by cell — the same step
-                        // `commit` takes for a single cell. A formula that will not parse
-                        // is passed through as typed, which `enter_range` then stores
-                        // verbatim rather than losing.
-                        let rows: Vec<Vec<String>> = text
-                            .lines()
-                            .map(|line| {
-                                line.split('\t')
-                                    .map(|cell| match cell.starts_with('=') {
-                                        true => display::from_display(cell)
-                                            .unwrap_or_else(|_| cell.to_owned()),
-                                        false => cell.to_owned(),
-                                    })
-                                    .collect()
-                            })
-                            .collect();
+                        // `commit` takes for a single cell (`grind_sheet::clip`).
+                        let rows = grind_sheet::clip::parse_rows(&text);
                         let imp = grid.imp();
                         let app = imp.app.borrow().clone();
                         let Some(app) = app else { return };
@@ -4004,9 +3943,9 @@ mod imp {
                         });
                     let align = style
                         .and_then(|s| s.align.as_deref())
-                        .and_then(aligned)
-                        .unwrap_or_else(|| alignment(value));
-                    let valign = valigned(style.and_then(|s| s.vertical_align.as_deref()));
+                        .and_then(look::by_style)
+                        .unwrap_or_else(|| look::by_type(value));
+                    let valign = look::valign(style);
                     let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
 
                     let mut cell = geom.cell_rect(row, col);
@@ -4235,8 +4174,8 @@ mod imp {
                 let style = viewport.style(row, col);
                 let align = style
                     .and_then(|s| s.align.as_deref())
-                    .and_then(aligned)
-                    .or_else(|| value.map(alignment))
+                    .and_then(look::by_style)
+                    .or_else(|| value.map(look::by_type))
                     .unwrap_or(Align::Right);
                 layout.set_text(&anchor.name);
                 let (hint_w, hint_h) = layout.pixel_size();
@@ -4546,43 +4485,9 @@ mod imp {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Align {
-        Left,
-        Center,
-        Right,
-    }
-
-    /// Where a cell's text sits in it vertically. Middle unless the cell says otherwise —
-    /// which is the same default `style:vertical-align="automatic"` means for a value.
-    #[derive(Clone, Copy, PartialEq, Eq, Default)]
-    enum VAlign {
-        Top,
-        #[default]
-        Middle,
-        Bottom,
-    }
-
-    /// `fo:text-align` as this grid draws it (§16.5, and `core/src/style.rs` keeps the ODF
-    /// spelling verbatim). `start`/`end` are relative to the writing direction, and this grid
-    /// is left-to-right; anything else — `justify`, a value from a newer ODF — falls back to
-    /// the value's own rule rather than guessing.
-    fn aligned(value: &str) -> Option<Align> {
-        match value {
-            "start" | "left" => Some(Align::Left),
-            "center" => Some(Align::Center),
-            "end" | "right" => Some(Align::Right),
-            _ => None,
-        }
-    }
-
-    fn valigned(value: Option<&str>) -> VAlign {
-        match value {
-            Some("top") => VAlign::Top,
-            Some("bottom") => VAlign::Bottom,
-            _ => VAlign::Middle,
-        }
-    }
+    // Where a cell's text sits — across by the style or else by the value's type, and down by
+    // the style — is `grind_sheet::look`'s, shared with every shell that draws a grid.
+    use grind_sheet::look::{self, Align, VAlign};
 
     /// A cell's font as Pango attributes, or `None` when neither the cell nor the zoom has
     /// anything to say about one.
@@ -4591,7 +4496,7 @@ mod imp {
     /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
     /// nothing here to set a family from.
     ///
-    /// **The size is a multiple of [`DEFAULT_FONT_PT`], not an absolute**, and that is the
+    /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute**, and that is the
     /// whole point of this function. A document says what it means twice over: once per cell
     /// in `fo:font-size`, and once for every cell that names none in
     /// `style:default-style` — which this build does not read (the `ponytail:` in
@@ -4648,7 +4553,7 @@ mod imp {
         any.then_some(attrs)
     }
 
-    /// A cell's `fo:font-size` as a multiple of [`DEFAULT_FONT_PT`], or `None` when it names
+    /// A cell's `fo:font-size` as a multiple of [`look::DEFAULT_FONT_PT`], or `None` when it names
     /// none.
     ///
     /// A length in points, which is what a spreadsheet's font size always is. A
@@ -4665,25 +4570,7 @@ mod imp {
     /// parse either way, which is the point: a cell drawn at one size and measured at another
     /// is exactly the drift `doc/text-layout.md` decision 3 warns a shell into.
     pub(super) fn scale_of(font_size: Option<&str>) -> Option<f64> {
-        font_size
-            .and_then(|size| size.strip_suffix("pt"))
-            .and_then(|points| points.parse::<f64>().ok())
-            .filter(|points| *points > 0.0)
-            .map(|points| points / DEFAULT_FONT_PT)
-    }
-
-    /// What a value's type says about where it sits in its cell.
-    ///
-    /// The spreadsheet convention, and it carries information: a number that reads as text
-    /// is visibly left-aligned, which is how a user spots the import that went wrong.
-    /// Errors are centred, as LibreOffice and Excel both draw them.
-    fn alignment(value: &CellValue) -> Align {
-        match value {
-            CellValue::Number(_) => Align::Right,
-            CellValue::Bool(_) => Align::Center,
-            CellValue::Text(s) if FormulaError::from_name(s).is_some() => Align::Center,
-            _ => Align::Left,
-        }
+        look::font_scale(font_size)
     }
 
     /// Draw `layout` aligned within `cell`, clipped to `paint` — which is the same

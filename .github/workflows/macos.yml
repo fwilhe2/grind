@@ -1,0 +1,142 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: macos
+
+# See `ci.yml` for why `push` is restricted to `main`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# The macOS shell (`doc/macos-shell.md`) is developed on a machine that is not a Mac, and this
+# workflow is the two halves of how that works:
+#
+#   * `check-from-linux` is `win32.yml`'s job for the other platform. `cargo check`, `clippy` and
+#     `rustdoc` never link, and objc2's framework crates are pure Rust with bindings checked in,
+#     so the whole AppKit half type-checks on Ubuntu with no SDK. It is the fast signal and the
+#     one a contributor can reproduce on a Linux laptop.
+#   * `probe` is M0's measurement on a real Mac. It answers what the plan could not assume: does
+#     the whole core run, can CoreText draw with no window server, is there a GUI session to open
+#     a window in, and do synthesized events reach it. Its output is an artifact, and the answers
+#     are copied into the doc's *Evidence* table. **It is temporary**: from M2 the shell's own
+#     `--render-to` and drive scripts replace it, as later steps of `artifacts.yml`'s single
+#     release build, and this job goes.
+jobs:
+  check-from-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Its own key: two targets no other job builds for, sharing one target directory.
+          shared-key: linux-apple-check
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Both architectures, because the release is universal (decision 11) and a `cfg` that
+      # differs between them is exactly what one of them alone would miss.
+      - name: Type-check the macOS source without a Mac
+        run: |
+          cargo check --locked -p grind-mac --all-targets --target aarch64-apple-darwin
+          cargo check --locked -p grind-mac --all-targets --target x86_64-apple-darwin
+      - name: Lint it, for macOS, without a Mac
+        run: |
+          cargo clippy --locked -p grind-mac --all-targets --target aarch64-apple-darwin -- -D warnings
+          cargo clippy --locked -p grind-mac --all-targets --target x86_64-apple-darwin -- -D warnings
+      # `ci.yml`'s `docs` job documents this crate on the host, where every
+      # `cfg(target_os = "macos")` item is compiled out — so a broken link in the AppKit half
+      # is invisible there. `win32.yml` learned that with six of them.
+      - name: Document it, for macOS, without a Mac
+        run: cargo doc --no-deps --locked -p grind-mac --target aarch64-apple-darwin
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Test the portable half
+        run: cargo test --locked -p grind-mac
+
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the current release (decision 11): a floor that is never run is a claim
+        # that is never checked.
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    # A window that never appears must not become a job that never ends.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: ${{ matrix.os }}-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: The machine
+        run: |
+          mkdir -p probe
+          {
+            sw_vers
+            uname -m
+            echo "console user: $(stat -f %Su /dev/console)"
+            system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|Display Type|Main Display' || echo 'no display reported'
+          } | tee probe/machine.txt
+      # The whole core, on macOS, before a line of shell code runs. `ui_win32`'s W0 found a stack
+      # overflow this way that had nothing to do with the shell; this asks the same question.
+      - name: The suite's core runs on macOS
+        run: |
+          cargo build --locked -p grind-cli
+          grind=target/debug/grind
+          $grind sheet new probe/book.fods
+          $grind sheet set probe/book.fods A1 3
+          $grind sheet set probe/book.fods A2 6
+          $grind sheet set probe/book.fods A3 '=SUM([.A1:.A2])'
+          $grind sheet recalc probe/book.fods
+          $grind sheet view probe/book.fods A1:A3 | tee probe/core.txt
+          $grind lint probe/book.fods | tee -a probe/core.txt
+          test "$(sed -n 3p probe/core.txt)" = 9
+      - name: Probe CoreText, a window and synthesized events
+        run: cargo run --locked -p grind-mac --example probe -- probe | tee probe/probe.txt
+      # A second opinion on the window, from outside the process. It needs Screen Recording
+      # permission, which `runner-images` grants `/bin/bash` in TCC — this measures whether that
+      # grant reaches a child process. Nothing in the plan depends on it: the probe's own
+      # in-process snapshot is the one that does.
+      - name: screencapture, from outside
+        run: |
+          if screencapture -x probe/screen.png; then
+            echo "screencapture: $(stat -f %z probe/screen.png) bytes" | tee -a probe/probe.txt
+          else
+            echo "screencapture: failed ($?)" | tee -a probe/probe.txt
+          fi
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.os }}"
+            echo '```'
+            cat probe/machine.txt probe/probe.txt 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The same answers as annotations, one per file. The summary and the artifact both need
+          # a signed-in reader; an annotation is served by the public API to anyone
+          # (`/repos/<owner>/<repo>/check-runs/<job>/annotations`), which is how a session with
+          # no credentials fills in doc/macos-shell.md's Evidence. `%` and line breaks are the
+          # two characters a workflow command must escape.
+          for file in machine core probe; do
+            if [ -f "probe/$file.txt" ]; then
+              body="$(sed -e 's/%/%25/g' "probe/$file.txt" | awk 'BEGIN { ORS = "%0A" } { print }')"
+              echo "::notice title=${{ matrix.os }} $file.txt::$body"
+            fi
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: probe-${{ matrix.os }}
+          path: probe/
+          if-no-files-found: error

@@ -1,0 +1,142 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-mac"
+version = "0.0.0"
+description = "An ODF-native office suite — the macOS shell"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "grind-mac"
+path = "src/main.rs"
+
+# The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
+[features]
+default = ["xlsx"]
+xlsx = ["dep:grind-xlsx"]
+
+[dependencies]
+grind-core = { path = "../core" }
+grind-xlsx = { path = "../xlsx", optional = true }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+# `--render-to`'s PNG (`png.rs`): both already in the workspace through `zip`, with the backend
+# `zip` asks for, so this adds no crate.
+crc32fast = "1"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSAttributedString",
+    "NSData",
+    "NSDate",
+    "NSDictionary",
+    "NSError",
+    "NSGeometry",
+    "NSRange",
+    "NSIndexSet",
+    "NSNotification",
+    "NSObject",
+    "NSProcessInfo",
+    "NSRunLoop",
+    "NSString",
+    "NSTimer",
+    "NSURL",
+    "NSUserDefaults",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "NSAccessibility",
+    "NSAccessibilityConstants",
+    "NSAccessibilityProtocols",
+    "NSAlert",
+    "NSApplication",
+    "NSApplicationScripting",
+    "NSAttributedString",
+    "NSBitmapImageRep",
+    "NSButton",
+    "NSCell",
+    "NSClipView",
+    "NSColor",
+    "NSCursor",
+    "NSColorPanel",
+    "NSColorSpace",
+    "NSColorWell",
+    "NSControl",
+    "NSDocument",
+    "NSDocumentController",
+    "NSEvent",
+    "NSFont",
+    "NSFontManager",
+    "NSGraphics",
+    "NSGraphicsContext",
+    "NSImage",
+    "NSImageRep",
+    "NSLayoutConstraint",
+    "NSMenu",
+    "NSMenuItem",
+    "NSOpenPanel",
+    "NSPanel",
+    "NSPasteboard",
+    "NSPopUpButton",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSSavePanel",
+    "NSScreen",
+    "NSScrollView",
+    "NSSearchField",
+    "NSSegmentedControl",
+    "NSSplitViewController",
+    "NSSplitViewItem",
+    "NSText",
+    "NSTableColumn",
+    "NSTableHeaderView",
+    "NSTableView",
+    "NSTextField",
+    "NSTextInputClient",
+    "NSTextInputContext",
+    "NSTextStorage",
+    "NSTextView",
+    "NSTitlebarAccessoryViewController",
+    "NSToolbar",
+    "NSToolbarItem",
+    "NSUserInterfaceItemIdentification",
+    "NSView",
+    "NSViewController",
+    "NSWindow",
+    "NSWindowController",
+    "NSWorkspace",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFAttributedString",
+    "CFCGTypes",
+    "CFDictionary",
+    "CFNumber",
+    "CFString",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGImage",
+    "CGPath",
+] }
+objc2-core-text = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-graphics",
+    "CTFont",
+    "CTFontTraits",
+    "CTLine",
+    "CTStringAttributes",
+] }

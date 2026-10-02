@@ -120,6 +120,26 @@ pub fn reference_text(reference: &Reference) -> String {
     Bare(&Expr::Ref(reference.clone())).to_string()
 }
 
+/// What somebody typed into a cell, as the input [`crate::App::enter`] takes.
+///
+/// The one conversion between the two, and the whole difference: a formula is typed in
+/// **display syntax** (`=SUM(B2:B4)`) and stored in ODF's (`=SUM([.B2:.B4])`), through
+/// [`from_display`]. Everything else passes through untouched, because the typing rule that
+/// decides what `12`, `'12` and `TRUE` mean is `App::enter`'s, and a second copy of it here
+/// would be a second answer.
+///
+/// A formula that will not parse is an `Err` carrying where it broke, and **must not be stored**:
+/// the edit stays open with the caret on the problem, because storing `=SUM(B2` as a piece of
+/// text is how a spreadsheet loses somebody's work. Every shell's Enter comes through here, as
+/// does [`crate::App::replace`]; there were five copies of it until the macOS shell would have
+/// made a sixth (`doc/macos-shell.md`, M1).
+pub fn to_input(text: &str) -> Result<String, DisplayError> {
+    match text.starts_with('=') {
+        true => from_display(text),
+        false => Ok(text.to_owned()),
+    }
+}
+
 /// Display form → canonical: `=SUM(B2:B4)` → `=SUM([.B2:.B4])`.
 ///
 /// Validated and normalised by the *existing* lexer and parser, so what comes back is a
@@ -470,6 +490,23 @@ fn scan_end(chars: &[(usize, char)], start: usize) -> Option<(usize, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_input_is_a_formula_converted_or_anything_else_untouched() {
+        assert_eq!(to_input("=SUM(B2:B4)").unwrap(), "=SUM([.B2:.B4])");
+        assert_eq!(to_input("12").unwrap(), "12");
+        assert_eq!(to_input("'=not a formula").unwrap(), "'=not a formula");
+        assert_eq!(to_input("").unwrap(), "");
+    }
+
+    /// A formula that will not parse comes back as an error with a place to put the caret,
+    /// rather than being stored as a string that looks like a formula and is not one.
+    #[test]
+    fn typed_input_that_will_not_parse_says_where() {
+        let error = to_input("=SUM(B2").unwrap_err();
+        assert!(error.at <= "=SUM(B2".len(), "{error:?}");
+        assert!(!error.message.is_empty());
+    }
 
     fn there_and_back(canonical: &str) -> String {
         let display = to_display(canonical).expect(canonical);

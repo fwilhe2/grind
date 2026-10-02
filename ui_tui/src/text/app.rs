@@ -68,20 +68,6 @@ fn indent_of(kind: &BlockKind) -> u16 {
     }
 }
 
-/// The bullet a list item's first line wears, sitting in the last two cells of its own indent.
-///
-/// One glyph per depth, cycling — the convention every word processor uses, and it is *drawn*
-/// rather than inserted: a marker in the text would be a character the core never measured, which
-/// puts every caret after it in the wrong column (`doc/tui-shell.md`, decision 2). This is
-/// outside the block's measure altogether, which is why it is allowed where `**` is not.
-fn bullet_of(depth: u32) -> &'static str {
-    match depth.max(1) % 3 {
-        1 => "\u{2022} ",
-        2 => "\u{25e6} ",
-        _ => "\u{2023} ",
-    }
-}
-
 /// How wide each block is measured, and in what — this shell's [`grind_text::Faces`].
 ///
 /// Two things make a block narrower than the window: a **list item**'s own depth, which
@@ -595,43 +581,14 @@ impl App {
 
     /// Turn one emphasis on across the selection, or off when the whole of it already has it —
     /// `App::char_style` reports only what a span *agrees* about, which is exactly the question
-    /// a toggle asks.
+    /// a toggle asks, and `grind_text::format::Change::toggle` is every shell's answer to it.
     fn emphasise_selection(&mut self, emphasis: Emphasis) {
         let Some((from, to)) = self.selection() else {
             self.status = "nothing selected — v starts a selection".to_string();
             return;
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
-        let wanted = emphasis.style();
-        let field = |style: &CharStyle| match emphasis {
-            Emphasis::Bold => style.font_weight.clone(),
-            Emphasis::Italic => style.font_style.clone(),
-            Emphasis::Underline => style.underline.clone(),
-            Emphasis::Strike => style.line_through.clone(),
-            Emphasis::Code => style.font_family.clone(),
-        };
-        // The four switches have an explicit "off" the document can hold; a *family* does not
-        // — the way to have none is to have none, which is `None`.
-        let off = match emphasis {
-            Emphasis::Bold | Emphasis::Italic => Some("normal"),
-            Emphasis::Underline | Emphasis::Strike => Some("none"),
-            Emphasis::Code => None,
-        };
-        let already = match off {
-            Some(off) => field(&style).as_deref().is_some_and(|v| v != off),
-            None => field(&style).is_some(),
-        };
-        let value = match already {
-            true => off.map(str::to_owned),
-            false => field(&wanted),
-        };
-        match emphasis {
-            Emphasis::Bold => style.font_weight = value,
-            Emphasis::Italic => style.font_style = value,
-            Emphasis::Underline => style.underline = value,
-            Emphasis::Strike => style.line_through = value,
-            Emphasis::Code => style.font_family = value,
-        }
+        grind_text::format::Change::toggle(emphasis, &style).apply(&mut style);
         self.set_selection_style(&style, emphasis.markers());
     }
 
@@ -708,50 +665,23 @@ impl App {
             }
             Motion::DocStart => {
                 self.goal_x = None;
-                self.caret = Caret {
-                    block: 0,
-                    offset: 0,
-                };
+                self.caret = grind_text::caret::START;
             }
             Motion::DocEnd => {
                 self.goal_x = None;
-                let block = blocks - 1;
-                self.caret = Caret {
-                    block,
-                    offset: self.block_len(block),
-                };
+                self.caret = grind_text::caret::end(&self.core);
             }
         }
     }
 
-    /// One character left or right, rolling onto the neighbouring block at either end.
+    /// One character left or right, rolling onto the neighbouring block at either end —
+    /// `grind_text::caret::step`, which every shell's page shares.
     fn stepped(&self, delta: i32) -> Caret {
-        let mut caret = self.caret;
-        if delta > 0 {
-            if caret.offset < self.block_len(caret.block) {
-                caret.offset += 1;
-            } else if caret.block + 1 < self.core.block_count() {
-                caret = Caret {
-                    block: caret.block + 1,
-                    offset: 0,
-                };
-            }
-        } else if caret.offset > 0 {
-            caret.offset -= 1;
-        } else if caret.block > 0 {
-            caret = Caret {
-                block: caret.block - 1,
-                offset: self.block_len(caret.block - 1),
-            };
-        }
-        caret
+        grind_text::caret::step(&self.core, self.caret, delta)
     }
 
     fn block_len(&self, index: usize) -> usize {
-        self.core
-            .input_text(index)
-            .map(|t| t.chars().count())
-            .unwrap_or(0)
+        grind_text::caret::block_len(&self.core, index)
     }
 
     fn open_below(&mut self) {
@@ -2038,7 +1968,11 @@ const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 fn indent_text(kind: &BlockKind, indent: u16, first: bool) -> String {
     match (first, kind) {
         (true, BlockKind::ListItem { depth }) => {
-            let bullet = bullet_of(*depth);
+            // One glyph per depth, cycling (`grind_text::paint::bullet`, every page's), and a
+            // space after it, in the last two cells of the indent. *Drawn* rather than inserted:
+            // a marker in the text would be a character the core never measured, which puts
+            // every caret after it in the wrong column (`doc/tui-shell.md`, decision 2).
+            let bullet = format!("{} ", grind_text::paint::bullet(*depth));
             format!(
                 "{}{bullet}",
                 " ".repeat(usize::from(indent).saturating_sub(bullet.chars().count()))

@@ -15,7 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 Rule 4 is checked mechanically, and only down one column: `cli/tests/parity.rs` reads
 `sheet/src/lib.rs` and `text/src/lib.rs` against `doc/cli-parity-sheet.md` and
 `doc/cli-parity-text.md`, so **the CLI's column cannot silently lose a row**. Nothing checks the
-other five. Each shell names its own gaps in its own document, which is the right place for the
+other six. Each shell names its own gaps in its own document, which is the right place for the
 *reason* — and it is the wrong place to see that `grind-win32` cannot bold a cell while
 `grind-tui` can, because no reader holds five gap lists in their head at once.
 
@@ -35,6 +35,7 @@ re-derive it, and why that step is worth keeping.
 | **TUI** | `grind-tui` | `grind-tui` | both, one binary | vi keys and a `:` command line |
 | **Web** | `grind-web` | one wasm bundle | both, one bundle | verb bar, one tool row per type, **Ctrl+K palette** |
 | **Win32** | `grind-win32` | `grind-win32.exe` | both, one binary | **menu bar**, context menus, format strip |
+| **Mac** | `grind-mac` | `Grind.app` | both, one binary | **menu bar**, toolbar, sidebar, context menus |
 
 The GTK pair is two binaries **by decision** (`doc/suite.md`, "One binary per document type —
 for GTK only"): a `.desktop` file's `MimeType=` is per application. Everywhere else one binary
@@ -43,30 +44,35 @@ opens either kind, dispatched on `grind_core::kind` from the file's bytes.
 **Legend.** ● built · ◐ partial, see the notes under the table · ○ absent, and deferred by
 decision · — not applicable to this client.
 
+**The Mac column means *written*, not *seen working*.** It is read out of `ui_mac` as built and
+type-checked from Linux; none of it has run on a Mac yet (`doc/macos-shell.md`, M2–M10), and the
+runner's first green `artifacts.yml` job is what turns its ● into the others' ●. Its notes are
+numbered, under each table, so they cannot collide with the lettered ones.
+
 ## 2. Suite-wide
 
-| | CLI | Sheet GTK | Text GTK | TUI | Web | Win32 |
-|---|---|---|---|---|---|---|
-| Opens a spreadsheet | ● | ● | — | ● | ● | ● |
-| Opens a text document | ● | — | ● | ● | ● | ● |
-| Reads all three forms (`.ods`/`.fods`, `.odt`/`.fodt`, `.grind`) | ● | ● | ● | ● | ● | ● |
-| Writes all three forms | ● | ● | ● | ● | ● | ● |
-| Flat-first default (`doc/flat-first.md`) | ● | ● | ● | ● | ● | ● |
-| New, empty document | ● | ● | ● | ◐ ᵃ | ● | ● |
-| A **welcome screen** with no document open | — | ○ | ○ | ○ | ● | ● |
-| New document of the *other* kind, in place | — ⁱ | ○ | ○ | ○ | ● | ● |
-| Undo / redo — spreadsheet | ◐ ᵇ | ● | — | ● | ● | ● |
-| Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● |
-| Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● |
-| Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● |
-| Go to an address | ● | ● | ● | ● | ● | ● |
-| Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● |
-| About / build stamp | ● | ● | ● | ● ʰ | ○ | ● |
-| Recent files | — | ● | ○ | ○ | ○ | ○ |
-| Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● |
-| Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP |
-| `.deb` + `.rpm` | ● | ● | ● | ● | — | — |
-| Accessibility floor | — ᵍ | announce | announce | terminal | ARIA labels | system caret |
+| | CLI | Sheet GTK | Text GTK | TUI | Web | Win32 | Mac |
+|---|---|---|---|---|---|---|---|
+| Opens a spreadsheet | ● | ● | — | ● | ● | ● | ● |
+| Opens a text document | ● | — | ● | ● | ● | ● | ● |
+| Reads all three forms (`.ods`/`.fods`, `.odt`/`.fodt`, `.grind`) | ● | ● | ● | ● | ● | ● | ● |
+| Writes all three forms | ● | ● | ● | ● | ● | ● | ● |
+| Flat-first default (`doc/flat-first.md`) | ● | ● | ● | ● | ● | ● | ● ¹ |
+| New, empty document | ● | ● | ● | ◐ ᵃ | ● | ● | ● |
+| A **welcome screen** with no document open | — | ○ | ○ | ○ | ● | ● | ● |
+| New document of the *other* kind, in place | — ⁱ | ○ | ○ | ○ | ● | ● | ● ² |
+| Undo / redo — spreadsheet | ◐ ᵇ | ● | — | ● | ● | ● | ● |
+| Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● | ● |
+| Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● | ● |
+| Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
+| Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
+| Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
+| About / build stamp | ● | ● | ● | ● ʰ | ○ | ● | ● ⁶ |
+| Recent files | — | ● | ○ | ○ | ○ | ○ | ● |
+| Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● | ● |
+| Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
+| `.deb` + `.rpm` | ● | ● | ● | ● | — | — | — ⁷ |
+| Accessibility floor | — ᵍ | announce | announce | terminal | ARIA labels | system caret | text area, announce |
 
 ᵃ `grind-tui --sheet` / `--text` starts an empty document; there is no in-session "new".
 ⁱ `grind sheet new` / `grind text new` make one, which is the same capability; "in place" is a
@@ -90,21 +96,30 @@ the check it lacks, and its twin's banner is the shape of the answer.
 ᵍ A pipe is the accessible surface, which is `doc/view-modes.md` §4.6's argument for why the
 CLI matters most exactly where a GUI's whole output is colour.
 
+**Mac.** ¹ An untitled document saves flat: the document answers `fods` or `fodt` itself (M10),
+since the type it is declared under would have said `.ods`. ² A window of its own beside this
+one — one window per document is decision 5. ³ The sidebar's Problems section rather than a
+dialog, every row a jump (M8). ⁴ The grid's name box (⌘L) takes any address; on a page ⌘L
+asks for one in an alert, and its sidebar's outline and bookmarks are jumps too. ⁵ Every menu item shows
+its key, and Help ▸ Search finds any item — the platform's own key list. ⁶ The standard About
+panel, told `grind_core::build_info`'s stamp: the version, the commit and the build, and when. ⁷ A universal,
+ad-hoc-signed `Grind.app` in a DMG instead (M10).
+
 ## 3. Spreadsheet — navigation and selection
 
-| | CLI | Sheet GTK | TUI | Web | Win32 |
-|---|---|---|---|---|---|
-| Move by cell, row, page, document | — | ● | ● | ● | ● |
-| Jump to the edge of a block (Ctrl+arrow) | — | ● | ○ | ○ | ● |
-| Jump to the start or end of the sheet | — | ● | ● | ● | ● |
-| Select a rectangle | ● ᵃ | ● | ● | ● | ● |
-| Select whole rows / columns from a header | ● ᵃ | ● | ○ | ○ | ● |
-| Select the whole sheet | ● ᵃ | ● | ○ | ● | ● |
-| Name box / address field | ● | ● | ● | ● | ● |
-| Go to a defined name | ● | ● | ● | ● | ● |
-| Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ○ | ● |
-| Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn |
-| Zoom | — | ● | ○ | ○ | ○ |
+| | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
+|---|---|---|---|---|---|---|
+| Move by cell, row, page, document | — | ● | ● | ● | ● | ● |
+| Jump to the edge of a block (Ctrl+arrow) | — | ● | ○ | ○ | ● | ● |
+| Jump to the start or end of the sheet | — | ● | ● | ● | ● | ● |
+| Select a rectangle | ● ᵃ | ● | ● | ● | ● | ● |
+| Select whole rows / columns from a header | ● ᵃ | ● | ○ | ○ | ● | ● |
+| Select the whole sheet | ● ᵃ | ● | ○ | ● | ● | ● |
+| Name box / address field | ● | ● | ● | ● | ● | ● |
+| Go to a defined name | ● | ● | ● | ● | ● | ● |
+| Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ○ | ● | ● |
+| Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn | sidebar |
+| Zoom | — | ● | ○ | ○ | ○ | ● |
 
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
@@ -116,32 +131,32 @@ than as a cursor on a hidden row.
 
 ## 4. Spreadsheet — editing and formulas
 
-| | CLI | Sheet GTK | TUI | Web | Win32 |
-|---|---|---|---|---|---|
-| The typing rule (`=` formula, `'` text, empty clears) | ● | ● | ● | ● | ● |
-| In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● |
-| Formula bar | — | ● | ◐ ᵃ | ● | ● |
-| Clear a cell or a range | ● | ● | ● | ● | ● |
-| Clear only the formula, keeping the value | ● | ○ | ○ | ○ | ○ |
-| Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● |
-| System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● |
-| Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ |
-| Fill down / fill right | ● | ● | ● | ● | ○ |
-| Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ |
-| Recalculate | ● | ● | ● | ● | ● |
-| Stale-value warning | ● | ● | ● | ● | ● |
-| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ |
-| Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● |
-| Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● |
-| Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● |
-| Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ |
-| Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ○ | ○ | ● |
-| Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● |
-| The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● |
-| Read a formula through the document's names | ● | ● | ● | ○ | ○ |
-| Every calculated cell, searchable | ● | ● | ○ | ○ | ○ |
-| Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ |
-| Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ |
+| | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
+|---|---|---|---|---|---|---|
+| The typing rule (`=` formula, `'` text, empty clears) | ● | ● | ● | ● | ● | ● |
+| In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● | ● |
+| Formula bar | — | ● | ◐ ᵃ | ● | ● | ● ¹ |
+| Clear a cell or a range | ● | ● | ● | ● | ● | ● |
+| Clear only the formula, keeping the value | ● | ○ | ○ | ○ | ○ | ● |
+| Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
+| System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
+| Copy Value — the formatted result, not the formula | ● | ● | ○ | ○ | ○ | ● |
+| Fill down / fill right | ● | ● | ● | ● | ○ | ● |
+| Fill one cell across a rectangle (references shifted) | ● | ● | ● | ○ | ○ | ● |
+| Recalculate | ● | ● | ● | ● | ● | ● ² |
+| Stale-value warning | ● | ● | ● | ● | ● | ● |
+| Evaluate a formula without storing it | ● | ● ᵈ | ● | ○ | ○ | ● |
+| Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
+| Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
+| Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
+| Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ | ● |
+| Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ○ | ○ | ● | ● |
+| Explain a nested formula, unfolded | ● | ● | ○ | ○ | ● | ● |
+| The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● | ● |
+| Read a formula through the document's names | ● | ● | ● | ○ | ○ | ● |
+| Every calculated cell, searchable | ● | ● | ○ | ○ | ○ | ● |
+| Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
+| Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
@@ -169,31 +184,35 @@ match-case or whole-cell control.
 asked through `dialog::prompt` and the answers said on the notice bar (`notice::found`,
 `notice::replaced`). The same step as the other two. No match-case or whole-cell control.
 
+**Mac.** ¹ A read-out above the grid that reads a formula in plain English at rest, and an editor
+of the cell once clicked — the same edit the in-cell editor is. ² Edit ▸ Recalculate,
+on ⌘= — Excel for Mac's key — and the banner's Recalculate Anyway.
+
 ## 5. Spreadsheet — formatting
 
 This table's last column was the single largest divergence in the suite until W12 gave the
 Windows grid its format strip (`ui_win32/src/sheet/format.rs`); what is left of it is wrap and
 borders, which that window does not draw either.
 
-| | CLI | Sheet GTK | TUI | Web | Win32 |
-|---|---|---|---|---|---|
-| Bold, italic | ● | ● | ● | ● | ● |
-| Alignment | ● | ● | ● | ● | ● |
-| Wrap text | ● | ● | ● | ● | ○ ˣ |
-| Borders | ● | ○ ᵃ | ● | ● | ○ ˣ |
-| Text colour, cell background | ● | ● | ● | ● | ● |
-| Clear formatting | ● | ● | ● | ● | ● |
-| Number formats — the eight presets | ● | ● | ● | ● | ● |
-| Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ |
-| Read a cell's style / format back | ● | ● | ● | ● | ● |
-| A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ |
-| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ |
-| **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● |
-| **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● |
-| **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● |
-| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ |
-| **Drawn**: wrapped text | — | ● | ○ | ● | ○ |
-| **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● |
+| | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
+|---|---|---|---|---|---|---|
+| Bold, italic | ● | ● | ● | ● | ● | ● |
+| Alignment | ● | ● | ● | ● | ● | ● |
+| Wrap text | ● | ● | ● | ● | ○ ˣ | ● |
+| Borders | ● | ○ ᵃ | ● | ● | ○ ˣ | ● |
+| Text colour, cell background | ● | ● | ● | ● | ● | ● |
+| Clear formatting | ● | ● | ● | ● | ● | ● |
+| Number formats — the eight presets | ● | ● | ● | ● | ● | ● |
+| Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ | ◐ ² |
+| Read a cell's style / format back | ● | ● | ● | ● | ● | ● |
+| A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ | ● |
+| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ | ● |
+| **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
+| **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
+| **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
+| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ | ◐ ³ |
+| **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ● ¹ |
+| **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 
 ᵃ **A real gap, and this table is where it became visible.** Nothing in `ui_sheet_gtk` writes
 `CellStyle::borders`; the strip carries bold, italic, three alignments, wrap, two colour
@@ -229,39 +248,42 @@ the GNOME window hashed a number only when it was right-aligned, the Windows win
 every cell, and the browser clipped without a mark — and did not honour a column's width at all
 once its content was wider, since a `max-content` table sizes its columns from what is in them.
 
+**Mac.** ¹ Broken at the column's width and drawn as lines, and a row with no height of its own
+grown to hold them, as the GNOME window grows one. ² The toolbar's two steps and Format ▸ Number's; no grouping or currency-symbol control. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
+
 ## 6. Spreadsheet — structure, charts and interchange
 
-| | CLI | Sheet GTK | TUI | Web | Win32 |
-|---|---|---|---|---|---|
-| Add / rename / delete a sheet | ● | ● | ● | ● | ● |
-| Rename carries every reference with it (D10) | ● | ● | ● | ● | ● |
-| Set a column width or row height | ● | ● | ● | ○ | ○ |
-| Drag a track edge to resize | — | ● | ○ | ○ | ○ |
-| Autofit a column | ● | ● | ○ | ○ | ○ |
-| Row auto-height from content (L3) | — | ● | ○ | ○ | ○ |
-| **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● |
-| Hide / unhide a row or column | ● | ● | ● | ○ | ○ |
-| **Honours** hidden tracks | ● | ● | ● | ● | ● |
-| Create or clear a filter | ● | ● | ○ | ○ | ○ |
-| **Honours** a filter | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ● | ○ | ○ |
-| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ |
-| Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ |
-| Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ |
-| Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ |
-| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ |
-| A chart's own title and legend | ● | ● | ○ | ○ | ○ |
-| A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ |
-| **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ |
-| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ |
-| Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ |
-| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ |
-| An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ |
-| Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ |
-| Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ |
-| Cell roles overlay (V6) | ● | ● | ● | ● | ● |
-| Name-anchor overlay (V4) | ● | ● | ● | ● | ● |
-| Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ |
+| | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
+|---|---|---|---|---|---|---|
+| Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
+| Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
+| Set a column width or row height | ● | ● | ● | ○ | ○ | ● |
+| Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
+| Autofit a column | ● | ● | ○ | ○ | ○ | ● |
+| Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ● |
+| **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
+| Hide / unhide a row or column | ● | ● | ● | ○ | ○ | ● |
+| **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
+| Create or clear a filter | ● | ● | ○ | ○ | ○ | ● |
+| **Honours** a filter | ● | ● | ● | ● | ● | ● |
+| Define, redefine or delete a name | ● | ● | ● | ○ | ○ | ● ³ |
+| Rename a name, carrying every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
+| Inline a name into every use (§6.5) | ● | ○ | ○ | ○ | ○ | ● ³ |
+| Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
+| Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
+| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
+| A chart's own title and legend | ● | ● | ○ | ○ | ○ | ● ⁵ |
+| A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
+| **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
+| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
+| Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ● ² |
+| Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ● ⁴ |
+| An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ | ○ |
+| Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● |
+| Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
+| Cell roles overlay (V6) | ● | ● | ● | ● | ● | ● |
+| Name-anchor overlay (V4) | ● | ● | ● | ● | ● | ● |
+| Every cell's formula at once | ● ᵍ | ○ | ○ | ○ | ○ | ● |
 
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
@@ -307,53 +329,63 @@ what the function does.
 `App::preview_chart` — `add_chart`/`edit_chart` without the write — and a new chart lands beside
 the table it was made from (`doc/chart-format.md`, The shell).
 
+**Mac.** ¹ In the sidebar's Names section, and the name box takes one. ² A CSV opens as a new,
+untitled spreadsheet of its own (the next row), and File ▸ Import CSV… reads one into the open
+sheet at the active cell, sniffed.
+³ Insert ▸ Name… defines one over the selection; a name's row in the sidebar has a context
+menu that renames it with every use following, redefines it, inlines it everywhere or deletes it.
+⁴ File ▸ Export as CSV…, the sheet's used rectangle with shown values, its delimiter picked by
+the name — `.tsv` is tabs. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
+as the core reads it; a right-click on a chart sets its title, its kind and its legend or removes
+it, and dragging one moves it. There is no dialog, and resizing or recolouring one is the CLI's.
+
 ## 7. Word processor
 
-| | CLI | Text GTK | TUI | Web | Win32 |
-|---|---|---|---|---|---|
-| **Caret and selection** | | | | | |
-| Motion by character, line, page, document | ● | ● | ● | ● | ● |
-| Home / End on the **wrapped** line | ● | ● | ● | ● | ● |
-| Selection by Shift+arrow | — | ● | ● ᵃ | ● | ● |
-| Selection by click, drag, Shift+click | — | ● | — | ● | ● |
-| **Editing** | | | | | |
-| Type, Enter, Backspace, Delete | ● | ● | ● | ● | ● |
-| Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● |
-| Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ |
-| System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● |
-| Find | ● | ● | ● ᶠ | ○ | ○ |
-| Replace | ● | ○ | ● | ○ | ○ |
-| Word count | ● | ● | ● | ● | ● |
-| **Character formatting** | | | | | |
-| Bold, italic, underline | ● | ● | ● | ● | ● |
-| Strikethrough | ● | ● | ● | ● | ◐ ᵉ |
-| Monospace / code | ● | ● | ● | ◐ ᵉ | ◐ ᵉ |
-| Colour, highlight | ● | ● | ● | ● | ○ |
-| Font family, font size | ● | ● | ○ | ○ | ○ |
-| Clear formatting | ● | ● | ● | ● | ○ |
-| **Drawn**: the four booleans | — | ● | ● | ● | ● |
-| **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ○ |
-| **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ |
-| **Block structure** | | | | | |
-| Paragraph, Heading 1–3 | ● | ● | ● | ● | ● |
-| Heading 4–6 | ● | ● | ● | ◐ ʲ | ● |
-| Title, Subtitle | ● | ● | ● | ● | ○ |
-| List item | ● | ● | ● | ● | ● |
-| Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ |
-| A named paragraph style | ● | ○ | ● | ○ | ○ |
-| **Addressing and navigation** | | | | | |
-| `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● |
-| Outline, each row a jump | ● | ● | ● | ● | ● |
-| Create a bookmark | ● | ○ | ● | ○ | ○ |
-| Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ |
-| **Pictures** | | | | | |
-| Insert an image | ● | ● | ○ | ○ | ○ |
-| **Draws** an image | — | ● | ○ | ● | ○ |
-| **Tables** | | | | | |
-| Insert a table | ● | ● | ● | ○ | ○ |
-| Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ |
-| **Draws** a table as a grid | — | ● | ● ᵠ | ● | ● ᵖ |
-| Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ |
+| | CLI | Text GTK | TUI | Web | Win32 | Mac |
+|---|---|---|---|---|---|---|
+| **Caret and selection** | | | | | | |
+| Motion by character, line, page, document | ● | ● | ● | ● | ● | ● |
+| Home / End on the **wrapped** line | ● | ● | ● | ● | ● | ● |
+| Selection by Shift+arrow | — | ● | ● ᵃ | ● | ● | ● |
+| Selection by click, drag, Shift+click | — | ● | — | ● | ● | ● |
+| **Editing** | | | | | | |
+| Type, Enter, Backspace, Delete | ● | ● | ● | ● | ● | ● |
+| Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● | ● |
+| Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ◐ ³ |
+| System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● | ● |
+| Find | ● | ● | ● ᶠ | ○ | ○ | ● |
+| Replace | ● | ○ | ● | ○ | ○ | ● |
+| Word count | ● | ● | ● | ● | ● | ● |
+| **Character formatting** | | | | | | |
+| Bold, italic, underline | ● | ● | ● | ● | ● | ● |
+| Strikethrough | ● | ● | ● | ● | ◐ ᵉ | ● |
+| Monospace / code | ● | ● | ● | ◐ ᵉ | ◐ ᵉ | ● |
+| Colour, highlight | ● | ● | ● | ● | ○ | ● |
+| Font family, font size | ● | ● | ○ | ○ | ○ | ● ¹ |
+| Clear formatting | ● | ● | ● | ● | ○ | ● |
+| **Drawn**: the four booleans | — | ● | ● | ● | ● | ● |
+| **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ○ | ● |
+| **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ | ● |
+| **Block structure** | | | | | | |
+| Paragraph, Heading 1–3 | ● | ● | ● | ● | ● | ● |
+| Heading 4–6 | ● | ● | ● | ◐ ʲ | ● | ● ² |
+| Title, Subtitle | ● | ● | ● | ● | ○ | ● ² |
+| List item | ● | ● | ● | ● | ● | ● |
+| Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
+| A named paragraph style | ● | ○ | ● | ○ | ○ | ● |
+| **Addressing and navigation** | | | | | | |
+| `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
+| Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
+| Create a bookmark | ● | ○ | ● | ○ | ○ | ● |
+| Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
+| **Pictures** | | | | | | |
+| Insert an image | ● | ● | ○ | ○ | ○ | ● |
+| **Draws** an image | — | ● | ○ | ● | ○ | ● |
+| **Tables** | | | | | | |
+| Insert a table | ● | ● | ● | ○ | ○ | ● |
+| Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ | ● |
+| **Draws** a table as a grid | — | ● | ● ᵠ | ● | ● ᵖ | ● |
+| Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ |
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
 ᵇ `o` opens a paragraph below, `X` deletes the block, `:move <address>` puts it elsewhere.
@@ -385,7 +417,7 @@ inside a cell before any client knew tables existed. **Every client now also dra
 `grind-web` stacked a cell's blocks like any other paragraph until its UX pass
 (`ui_web/src/text/table.rs`), and `grind-win32` did until the pass after that
 (`ui_win32/src/text/geom.rs`'s `across` and `lay_out_table`, `ui_text_gtk`'s answers carried over
-to GDI).
+to GDI — and both desktop windows' copies are one `grind_text::flow` since the macOS shell's M1).
 ᵠ Box-drawing rules, every column the same width. `grind_text::Faces` is handed a block's kind
 and not its cell, so `grind-tui` builds a map of which block is in which cell once per frame and
 reads it back — the shape `ui_text_gtk/src/view.rs`'s `Column` has, and required rather than
@@ -396,6 +428,12 @@ either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**
 one, and no client sets a column width, because the model carries no table style
 (`doc/text-core.md`).
+
+**Mac.** ¹ Through the system font panel (⌘T), whose answer becomes a family, a size and the
+weight and slant, as one undo step (M7). ² Format ▸ Paragraph and the toolbar's
+pop-up set all six levels, Title and Subtitle; ⌥⌘0–6 reach Body and the headings. ³ Edit ▸ Go To… (⌘L) asks for one; a sidebar
+row or a Problems finding goes to one too, and Format ▸ Paragraph moves the selected paragraphs
+up or down past their neighbour or deletes them — by where the caret is, not by address. ⁴ The sidebar's Outline section.
 
 ## 8. The divergences that matter, ranked
 
@@ -450,14 +488,22 @@ of a client's own job is missing.
     it is a decision about `grind_text::Action` rather than about the CLI.
 13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
 
+**Amended on 2026-10-02 for the Mac**, which is now on the authoring side of five of these rows —
+written and type-checked, not yet run (§1): it sets and draws borders (row 2), has point mode
+(row 5), sizes tracks by dragging and fitting, turns a filter on and chooses its values, and
+defines, redefines, renames, inlines and deletes names — the renaming and inlining first in any
+window (row 7) — inserts and draws charts (row 8), and inserts and draws pictures (row 9).
+
 ## 9. Absent from every client
 
 Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` or a gate in a
 shell document, and none of them is reachable from the CLI either.
 
 **Spreadsheet.** Conditional formatting · merged-cell rendering (the model carries no spans) ·
-freeze panes · sort · autosave · printing · pivot tables · macros
+freeze panes · sort · printing · pivot tables · macros
 (`doc/not-doing.md` §1 — the generator is the answer, and `grind build` is a CLI verb by R11).
+**Autosave is no longer in this list**: the macOS shell has it, by platform convention, and no
+other client does (`doc/not-doing.md` §3, *Autosave*).
 
 **Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style
 *definitions* (a named character style is kept and never interpreted) · pages · printing · an
@@ -484,11 +530,12 @@ sed -n '/pub const MENUS/,/^];/p' ui_win32/src/menu.rs    # plus `accelerator` a
 sed -n '/fn actions/,/^}/p'      ui_sheet_gtk/src/main.rs
 sed -n '/fn actions/,/^}/p'      ui_text_gtk/src/main.rs
 grep -n 'pub const HELP'         ui_tui/src/sheet/mod.rs ui_tui/src/text/mod.rs
+sed -n '/pub static MENUS/,/^];/p' ui_mac/src/menu.rs      # and Command::applies, and tools.rs
 grind sheet --help; grind text --help
 
 # 3. The cross-check, which is what actually caught §8's first two rows: a verb table can
 #    promise anything, and a shell that never calls the core method cannot deliver it.
-for d in ui_sheet_gtk ui_text_gtk ui_tui ui_web ui_win32; do
+for d in ui_sheet_gtk ui_text_gtk ui_tui ui_web ui_win32 ui_mac; do
   echo "== $d"; grep -rhoE '\.(set_style|set_format|set_filter|set_col_width|import_csv)\(' $d/src | sort -u
 done
 ```
@@ -506,6 +553,11 @@ tuples, a `&str` of help text, an HTML file, a `match`), and normalising all fiv
 piece of work than the one thing it would buy: this file going stale is visible the first time
 somebody reads it beside a shell, where a broken ratchet is visible immediately. Until then it
 carries a date.
+
+**Amended on 2026-10-01** for the Mac column (`doc/macos-shell.md`'s M11), read out of `ui_mac`
+through M10 by the same three steps — every row judged against the code, its notes numbered so
+they cannot collide with the lettered ones — and none of it yet seen running. Nothing else was
+re-derived.
 
 **Amended on 2026-09-22** for §5's three locale rows — a document now states its own locale, the
 GNOME window and the CLI set it, and every client honours it since the core does the spelling —
