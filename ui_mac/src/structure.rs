@@ -150,7 +150,7 @@ impl Pane {
                 };
                 match verbs::locale(&typed) {
                     Ok(locale) => self.app.set_locale(locale),
-                    Err(()) => {
+                    Err(_) => {
                         prompt::tell(mtm, "That is not a locale.", "A tag such as de-DE.");
                         return;
                     }

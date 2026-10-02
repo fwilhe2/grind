@@ -42,6 +42,7 @@ pub mod style;
 pub mod summary;
 pub mod table_format;
 pub mod tracks;
+pub mod verbs;
 pub mod view;
 
 /// What this crate takes from `grind-core` and hands on under its own name.
