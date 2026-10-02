@@ -891,6 +891,10 @@ impl App {
             // cell, so a selection several lines across is one call per line.
             "down" => self.cmd_fill(true),
             "right" => self.cmd_fill(false),
+            "across" => self.cmd_across(),
+            "value" => self.cmd_value(),
+            "filter" => self.cmd_filter(),
+            "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
             "hide" => self.cmd_hide(true, false),
             "hide rows" => self.cmd_hide(true, true),
@@ -912,6 +916,8 @@ impl App {
             _ if cmd.starts_with("width ") => self.cmd_width(Some(cmd[6..].trim())),
             _ if cmd.starts_with("height ") => self.cmd_height(Some(cmd[7..].trim())),
             _ if cmd.starts_with("name ") => self.cmd_name(cmd[5..].trim()),
+            _ if cmd.starts_with("rename ") => self.cmd_rename_name(cmd[7..].trim()),
+            _ if cmd.starts_with("inline ") => self.cmd_inline_name(cmd[7..].trim()),
             _ if cmd.starts_with("format-table ") => self.cmd_table(cmd[13..].trim()),
             _ if cmd.starts_with("csv-in ") => self.cmd_csv_in(cmd[7..].trim()),
             _ if cmd.starts_with("csv-out ") => self.cmd_csv_out(cmd[8..].trim()),
@@ -934,11 +940,8 @@ impl App {
     /// selection shape is a common one.
     fn cmd_fill(&mut self, down: bool) {
         let (start, end) = self.rect();
-        let (from, to) = match down {
-            true => (start.row, end.row),
-            false => (start.col, end.col),
-        };
-        if to <= from {
+        let lines = grind_sheet::nav::fill_lines(start, end, down);
+        if lines.is_empty() {
             self.status = match down {
                 true => "select more than one row first".to_owned(),
                 false => "select more than one column first".to_owned(),
@@ -947,24 +950,7 @@ impl App {
         }
         let mut cells = 0;
         let mut failed = None;
-        // The source is the leading line; the targets are everything after it.
-        let lines = match down {
-            true => start.col..=end.col,
-            false => start.row..=end.row,
-        };
-        for line in lines {
-            let (source, first, last) = match down {
-                true => (
-                    Pos::new(from, line),
-                    Pos::new(from + 1, line),
-                    Pos::new(to, line),
-                ),
-                false => (
-                    Pos::new(line, from),
-                    Pos::new(line, from + 1),
-                    Pos::new(line, to),
-                ),
-            };
+        for (source, first, last) in lines {
             match self
                 .core
                 .fill(self.sheet, source, first, last, RecalcMode::Document)
@@ -978,6 +964,99 @@ impl App {
             Some(e) => e,
             None => format!("filled {cells} cell(s)"),
         };
+    }
+
+    /// `:across` — the active cell into the whole selection, references shifted: one
+    /// `App::fill` and so one undo step, where `:down` and `:right` are one per line.
+    fn cmd_across(&mut self) {
+        let (start, end) = self.rect();
+        // The cell the selection grew *from*: here the active cell is the end being dragged,
+        // where every other shell's is the one that stays put.
+        let source = self.anchor.unwrap_or(self.active);
+        self.status = match self
+            .core
+            .fill(self.sheet, source, start, end, RecalcMode::Document)
+        {
+            Ok(outcome) => format!("filled {} cell(s)", outcome.cells),
+            Err(e) => e.to_string(),
+        };
+        self.leave_visual();
+    }
+
+    /// `:value` — every formula in the selection dropped, each cell keeping the value it last
+    /// computed (`grind_sheet::verbs::formulas_to_values`, the Mac's and the browser's too).
+    fn cmd_value(&mut self) {
+        let (start, end) = self.rect();
+        self.status =
+            match grind_sheet::verbs::formulas_to_values(&self.core, self.sheet, start, end) {
+                Ok(0) => "no formula in the selection".to_owned(),
+                Ok(n) => format!("{n} formula(s) are plain values now \u{2014} u takes each back"),
+                Err(e) => e.to_string(),
+            };
+        self.leave_visual();
+    }
+
+    /// `:filter` — an autofilter over the selection (or, from one cell, the table around it), or
+    /// off again when the sheet has one. `grind_sheet::Filter::over_selection` is the rule every
+    /// shell shares; the dropdowns themselves are not drawn here, so choosing values is `grind
+    /// sheet filter`'s.
+    fn cmd_filter(&mut self) {
+        if self.core.filter(self.sheet).ok().flatten().is_some() {
+            self.status = match self.core.set_filter(self.sheet, None) {
+                Ok(()) => "filter off".to_owned(),
+                Err(e) => e.to_string(),
+            };
+            return;
+        }
+        let (start, end) = self.rect();
+        let used = self.core.used_extent(self.sheet).unwrap_or((0, 0));
+        self.status = match grind_sheet::Filter::over_selection(start, end, used) {
+            Ok(filter) => match self.core.set_filter(self.sheet, Some(filter)) {
+                Ok(()) => "filter on".to_owned(),
+                Err(e) => e.to_string(),
+            },
+            Err(why) => why.to_owned(),
+        };
+        self.leave_visual();
+    }
+
+    /// `:rename <old> <new>` — a defined name renamed, every formula and name that uses it
+    /// following (`App::rename_name`, one undo step).
+    fn cmd_rename_name(&mut self, args: &str) {
+        let mut words = args.split_whitespace();
+        let (Some(from), Some(to), None) = (words.next(), words.next(), words.next()) else {
+            self.status = "usage: :rename <old> <new>".to_owned();
+            return;
+        };
+        self.status = match self.core.rename_name(from, to) {
+            Ok(n) => format!("{from} is {to} now \u{2014} {n} use(s) rewritten"),
+            Err(e) => e.to_string(),
+        };
+    }
+
+    /// `:inline <name>` — the name's definition written into every use, and the name dropped
+    /// (`App::inline_name`, one undo step).
+    fn cmd_inline_name(&mut self, name: &str) {
+        self.status = match self.core.inline_name(name) {
+            Ok(n) => format!("{name} inlined \u{2014} {n} use(s) rewritten"),
+            Err(e) => e.to_string(),
+        };
+    }
+
+    /// `:yank-values` — the selection as it is *shown* into the register, a formula's result
+    /// rather than its source (`App::value_text`), for pasting somewhere that is not a sheet.
+    fn cmd_yank_values(&mut self) {
+        let (start, end) = self.rect();
+        self.register = grind_sheet::clip::rect_text(
+            &self.core,
+            self.sheet,
+            start,
+            end,
+            CoreApp::value_text,
+            "\n",
+        );
+        self.leave_visual();
+        self.status = "yanked the values as shown".to_owned();
     }
 
     /// `:eval <formula>` — what it would come to, storing nothing and creating no undo entry.
@@ -2755,6 +2834,48 @@ mod tests {
         assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
         assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
         assert!(app.status.starts_with("filled"), "{}", app.status);
+    }
+
+    /// `:across` fills the whole selection from the active cell, `:value` freezes formulas into
+    /// what they show, `:yank-values` copies the shown text, and `:filter` toggles an autofilter.
+    #[test]
+    fn across_value_yank_values_and_filter() {
+        let mut app = app();
+        for (pos, text) in [
+            (Pos::new(0, 0), "Item"),
+            (Pos::new(1, 0), "2"),
+            (Pos::new(2, 0), "3"),
+            (Pos::new(1, 1), "=[.A2]*10"),
+        ] {
+            app.core
+                .enter(0, pos, text, RecalcMode::Document)
+                .expect("enters");
+        }
+        app.active = Pos::new(1, 1);
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('j'));
+        app.run_command("across");
+        assert_eq!(
+            app.core.get(0, Pos::new(2, 1)).unwrap(),
+            30.0.into(),
+            "{}",
+            app.status
+        );
+
+        app.active = Pos::new(1, 1);
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('j'));
+        app.run_command("yank-values");
+        assert_eq!(app.register, "20\n30");
+        app.run_command("value");
+        assert_eq!(app.core.formula(0, Pos::new(2, 1)).unwrap(), None);
+        assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 30.0.into());
+
+        app.active = Pos::new(0, 0);
+        app.run_command("filter");
+        assert!(app.core.filter(0).unwrap().is_some(), "{}", app.status);
+        app.run_command("filter");
+        assert!(app.core.filter(0).unwrap().is_none());
     }
 
     /// The status bar adds the selection up, through the evaluator rather than through a

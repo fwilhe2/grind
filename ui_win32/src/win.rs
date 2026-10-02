@@ -3455,7 +3455,7 @@ fn fill(hwnd: HWND, down: bool) {
     refresh(hwnd);
 }
 
-/// Edit ▸ Fill Across — the active cell into the whole selection, references shifted, as one
+/// Edit ▸ Fill Across — the cell the selection grew from, into the whole selection, references shifted, as one
 /// `App::fill` and so one undo step.
 fn fill_across(hwnd: HWND) {
     // SAFETY: one borrow, no dialog.
@@ -3465,7 +3465,8 @@ fn fill_across(hwnd: HWND) {
             state.say(Some(
                 match state.app.fill(
                     state.sheet,
-                    state.selection.active,
+                    // The cell the selection grew from, which is the one somebody means.
+                    state.selection.anchor,
                     start,
                     end,
                     RecalcMode::Document,

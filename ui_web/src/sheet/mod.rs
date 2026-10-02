@@ -1162,12 +1162,14 @@ impl Ui {
         )
     }
 
-    /// The active cell into the whole selection, references shifted — one `App::fill`.
+    /// The cell the selection grew from into the whole selection, references shifted — one
+    /// `App::fill`.
     fn fill_across(&self) {
         let (start, end) = self.rect();
         match self.app.fill(
             self.sheet.get(),
-            self.selection.get().active,
+            // The cell the selection grew from, which is the one somebody means.
+            self.selection.get().anchor,
             start,
             end,
             RecalcMode::Document,

@@ -45,11 +45,11 @@ impl Pane {
                         .fill(sheet, source, start, end, RecalcMode::Document)
                         .map(|_| ())
                 }),
-            // The active cell into the whole selection — one `App::fill`, one undo step.
+            // The cell the selection grew from into the whole selection — one `App::fill`, one undo step.
             Command::FillAcross => {
                 let (start, end) = selection.rect();
                 self.app
-                    .fill(sheet, selection.active, start, end, RecalcMode::Document)
+                    .fill(sheet, selection.anchor, start, end, RecalcMode::Document)
                     .map(|_| ())
             }
             Command::Rows(Track::Hide) => self

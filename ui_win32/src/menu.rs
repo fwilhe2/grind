@@ -77,7 +77,8 @@ pub enum Command {
     /// `App::fill` over `grind_sheet::nav::fills`, the lines the Mac and the browser fill too.
     FillDown,
     FillRight,
-    /// The active cell copied across the whole selection, references shifted — one `App::fill`.
+    /// The cell the selection grew from, copied across the whole selection, references shifted —
+    /// one `App::fill`.
     FillAcross,
     /// Copy the selection as it is *shown* — a formula's formatted result rather than its source
     /// (`App::value_text`), for pasting into something that is not a spreadsheet.

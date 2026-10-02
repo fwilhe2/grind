@@ -137,10 +137,10 @@ than as a cursor on a hidden row.
 | In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● | ● |
 | Formula bar | — | ● | ◐ ᵃ | ● | ● | ● ¹ |
 | Clear a cell or a range | ● | ● | ● | ● | ● | ● |
-| Clear only the formula, keeping the value | ● | ○ | ○ | ● | ● | ● |
+| Clear only the formula, keeping the value | ● | ○ | ● ᵗᵘ | ● | ● | ● |
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
-| Copy Value — the formatted result, not the formula | ● | ● | ○ | ● | ● | ● |
+| Copy Value — the formatted result, not the formula | ● | ● | ● ᵗᵘ | ● | ● | ● |
 | Fill down / fill right | ● | ● | ● | ● | ● | ● |
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ● | ● | ● |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
@@ -261,11 +261,11 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
-| Create or clear a filter | ● | ● | ○ | ● | ● | ● |
+| Create or clear a filter | ● | ● | ● ᵗᵘ | ● | ● | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
 | Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ◐ | ● ³ |
-| Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ○ | ● ᵖᵃ | ○ | ● ³ |
-| Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ○ | ● ᵖᵃ | ○ | ● ³ |
+| Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ○ | ● ³ |
+| Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ○ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ○ | ○ | ○ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ○ | ○ | ● ⁵ |
@@ -284,6 +284,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 
 ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
 ᵖᵇ Two more buttons on each row of the *Names…* dialog — rename (an alert with an entry) and inline — over `App::rename_name` / `inline_name`, each saying how many uses it rewrote; closed 2026-10-02, compile- and lint-checked only.
+ᵗᵘ Terminal verbs, closed 2026-10-02: `:filter` (no dropdowns drawn), `:rename`, `:inline`, `:value`, `:yank-values`, `:across`.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.

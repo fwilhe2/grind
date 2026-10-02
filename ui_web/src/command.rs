@@ -218,7 +218,7 @@ pub const SHEET: &[Command] = &[
     cmd("edit.evaluate", "Evaluate a formula…", "Edit", "", false),
     cmd(
         "edit.fill-across",
-        "Fill the selection from the active cell",
+        "Fill the selection from its first cell",
         "Edit",
         "",
         false,

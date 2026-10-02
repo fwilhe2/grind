@@ -27,9 +27,15 @@ Spreadsheet:
   :find <text>            — every cell whose text or formula holds it; n / N step
   :s/old/new/             — replace it in every cell, one undo step
   :down  :right           — fill the selection from its first cell (references shift)
+  :across                 — the cell the selection grew from, into all of it; one undo step
+  :value                  — formulas in the selection become the values they show
+  :yank-values            — the selection as shown (results, not formulas) into the register
+  :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
   :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers
   :name <name>  :name!    — define a name over the selection, or drop the one on it
+  :rename <old> <new>     — rename a name, every formula that uses it following
+  :inline <name>          — write a name's definition into every use and drop it
   :format-table [--no-header] [--totals [FUNC]] [--name NAME]
                            — autofilter, banding, an optional totals row and a name;
                              FUNC is sum (the default), average, count, count-numbers,
