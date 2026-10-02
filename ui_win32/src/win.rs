@@ -3249,6 +3249,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillDown => fill(hwnd, true),
         Command::FillRight => fill(hwnd, false),
         Command::FillAcross => fill_across(hwnd),
+        Command::BordersAll => borders(hwnd, true),
+        Command::BordersNone => borders(hwnd, false),
         Command::CopyValue => copy_value(hwnd),
         Command::FormulaToValue => formula_to_value(hwnd),
         Command::HideRows => hide_tracks(hwnd, true, true),
@@ -3475,6 +3477,32 @@ fn fill_across(hwnd: HWND) {
                     Err(error) => error.to_string(),
                 },
             ));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Format ▸ All Borders / No Borders — read the active cell's style, set or clear the hairline on
+/// every edge, write it over the selection: `grind_sheet::format::bordered`, one undo step.
+fn borders(hwnd: HWND, on: bool) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let style = state
+                .app
+                .style_at(state.sheet, state.selection.active)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            if let Err(error) = state.app.set_style(
+                state.sheet,
+                start,
+                end,
+                grind_sheet::format::bordered(&style, on),
+            ) {
+                state.say(Some(error.to_string()));
+            }
         });
     }
     refresh(hwnd);
@@ -4892,6 +4920,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::BordersAll
+        | Command::BordersNone
         | Command::HideRows
         | Command::ShowRows
         | Command::HideColumns
@@ -5940,6 +5970,8 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::BordersAll
+        | Command::BordersNone
         | Command::HideRows
         | Command::ShowRows
         | Command::HideColumns

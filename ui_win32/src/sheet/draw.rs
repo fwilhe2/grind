@@ -421,6 +421,46 @@ mod windows_impl {
             }
         }
 
+        // The cells' own borders, after every cell so that a neighbour's fill cannot cover half of
+        // a line centred on the edge they share. `look::border_strokes` is the geometry — the
+        // Mac draws the same list — in points, so the cell goes in as points and the strokes come
+        // back to pixels; a hairline is one device pixel.
+        {
+            let to_pt = 72.0 / f64::from(g.dpi);
+            let to_px = f64::from(g.dpi) / 72.0;
+            let dark = theme.mode == crate::theme::Mode::Dark;
+            for row in g.visible_rows() {
+                for col in g.visible_cols() {
+                    let Some(style) = frame.viewport.style(row, col) else {
+                        continue;
+                    };
+                    if style.borders.iter().all(Option::is_none) {
+                        continue;
+                    }
+                    let rect = g.cell_rect(row, col);
+                    for stroke in grind_sheet::look::border_strokes(
+                        (
+                            rect.x * to_pt,
+                            rect.y * to_pt,
+                            rect.w * to_pt,
+                            rect.h * to_pt,
+                        ),
+                        style,
+                        theme.background.into(),
+                        dark,
+                        to_pt,
+                    ) {
+                        let (x, y, w, h) = stroke.rect;
+                        let left = (x * to_px).round() as i32;
+                        let top = (y * to_px).round() as i32;
+                        let right = ((x + w) * to_px).round().max(f64::from(left) + 1.0) as i32;
+                        let bottom = ((y + h) * to_px).round().max(f64::from(top) + 1.0) as i32;
+                        gdi::fill(dc, left, top, right, bottom, stroke.color.into());
+                    }
+                }
+            }
+        }
+
         // `doc/view-modes.md`'s name overlay: where a defined name anchors, outlined if it
         // covers more than one cell. Drawn after every cell so the outline sits on the grid
         // lines the way the selection's own does, and before the headers for the same reason.

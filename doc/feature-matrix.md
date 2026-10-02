@@ -199,7 +199,7 @@ borders, which that window does not draw either.
 | Bold, italic | ● | ● | ● | ● | ● | ● |
 | Alignment | ● | ● | ● | ● | ● | ● |
 | Wrap text | ● | ● | ● | ● | ○ ˣ | ● |
-| Borders | ● | ● ᵃ | ● | ● | ○ ˣ | ● |
+| Borders | ● | ● ᵃ | ● | ● | ● ʷᵇ | ● |
 | Text colour, cell background | ● | ● | ● | ● | ● | ● |
 | Clear formatting | ● | ● | ● | ● | ● | ● |
 | Number formats — the eight presets | ● | ● | ● | ● | ● | ● |
@@ -210,7 +210,7 @@ borders, which that window does not draw either.
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
-| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ○ | ◐ ³ |
+| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
 | **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 
@@ -222,6 +222,7 @@ currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `gri
 Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Currency and the cells'
 context menu, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
 No grouping toggle and no other symbol.
+ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
 ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
 nor borders, and a control whose effect cannot be seen is not offered.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).

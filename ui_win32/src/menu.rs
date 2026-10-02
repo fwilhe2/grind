@@ -80,6 +80,11 @@ pub enum Command {
     /// The cell the selection grew from, copied across the whole selection, references shifted —
     /// one `App::fill`.
     FillAcross,
+    /// A hairline round every selected cell, or every edge taken away — `grind_sheet::format::
+    /// bordered`, the call every other shell's Borders control makes. The grid draws them
+    /// (`look::border_strokes`).
+    BordersAll,
+    BordersNone,
     /// Copy the selection as it is *shown* — a formula's formatted result rather than its source
     /// (`App::value_text`), for pasting into something that is not a spreadsheet.
     CopyValue,
@@ -284,6 +289,8 @@ impl Command {
         Command::FillDown,
         Command::FillRight,
         Command::FillAcross,
+        Command::BordersAll,
+        Command::BordersNone,
         Command::CopyValue,
         Command::FormulaToValue,
         Command::HideRows,
@@ -695,6 +702,14 @@ pub const MENUS: &[Menu] = &[
                 label: "&Highlight…",
             },
             Item::Verb {
+                command: Command::BordersAll,
+                label: "All Bord&ers",
+            },
+            Item::Verb {
+                command: Command::BordersNone,
+                label: "Remo&ve Borders",
+            },
+            Item::Verb {
                 command: Command::PickBackground,
                 label: "Cell Backgr&ound…",
             },
@@ -971,6 +986,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::BordersAll
+        | Command::BordersNone
         | Command::HideRows
         | Command::ShowRows
         | Command::HideColumns
@@ -1339,6 +1356,8 @@ mod tests {
             Command::CopyValue,
             Command::FormulaToValue,
             Command::FillAcross,
+            Command::BordersAll,
+            Command::BordersNone,
             Command::HideRows,
             Command::ShowRows,
             Command::HideColumns,
@@ -1484,6 +1503,8 @@ mod tests {
                 Command::AlignCenter,
                 Command::AlignRight,
                 Command::PickColor,
+                Command::BordersAll,
+                Command::BordersNone,
                 Command::PickBackground,
                 Command::NumberFormat,
                 Command::FewerDecimals,
