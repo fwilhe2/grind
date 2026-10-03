@@ -247,6 +247,11 @@ pub enum Command {
     /// Name the style of the paragraph the selection touches (`App::set_style`); an empty answer
     /// takes the name away. A named style is kept and never interpreted (`doc/text-core.md`).
     ParagraphStyle,
+    /// Swap the paragraphs the selection touches past their neighbour, or delete them —
+    /// `grind_text::blocks::shift` / `remove`, one undo step each, the Mac's Format ▸ Paragraph.
+    ParagraphUp,
+    ParagraphDown,
+    ParagraphDelete,
     /// The document as its own projection (D9) — a modal list of its lines, `App::project`'s
     /// text-form, opened on whichever line the pane's own selection or caret projects to. Applies
     /// to both document types, the same as `App::project` reaching both.
@@ -352,6 +357,9 @@ impl Command {
         Command::InsertTable,
         Command::Bookmark,
         Command::ParagraphStyle,
+        Command::ParagraphUp,
+        Command::ParagraphDown,
+        Command::ParagraphDelete,
         Command::ShowSource,
         Command::CheckDocument,
         Command::ToggleRoles,
@@ -793,6 +801,18 @@ pub const MENUS: &[Menu] = &[
                 command: Command::ParagraphStyle,
                 label: "Paragraph St&yle Name…",
             },
+            Item::Verb {
+                command: Command::ParagraphUp,
+                label: "Mo&ve Paragraph Up",
+            },
+            Item::Verb {
+                command: Command::ParagraphDown,
+                label: "Move Paragraph Do&wn",
+            },
+            Item::Verb {
+                command: Command::ParagraphDelete,
+                label: "Delete Para&graph",
+            },
         ],
     },
     Menu {
@@ -1056,7 +1076,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::InsertPicture
         | Command::InsertTable
         | Command::Bookmark
-        | Command::ParagraphStyle => matches!(kind, Text),
+        | Command::ParagraphStyle
+        | Command::ParagraphUp
+        | Command::ParagraphDown
+        | Command::ParagraphDelete => matches!(kind, Text),
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1338,6 +1361,9 @@ mod tests {
             Command::InsertTable,
             Command::Bookmark,
             Command::ParagraphStyle,
+            Command::ParagraphUp,
+            Command::ParagraphDown,
+            Command::ParagraphDelete,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");

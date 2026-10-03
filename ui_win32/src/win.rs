@@ -3322,7 +3322,10 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::InsertPicture
         | Command::InsertTable
         | Command::Bookmark
-        | Command::ParagraphStyle => {}
+        | Command::ParagraphStyle
+        | Command::ParagraphUp
+        | Command::ParagraphDown
+        | Command::ParagraphDelete => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
@@ -4981,6 +4984,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::InsertTable
         | Command::Bookmark
         | Command::ParagraphStyle
+        | Command::ParagraphUp
+        | Command::ParagraphDown
+        | Command::ParagraphDelete
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleRoles
@@ -5957,6 +5963,9 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::InsertTable => text_insert_table(hwnd),
         Command::Bookmark => text_bookmark(hwnd),
         Command::ParagraphStyle => text_paragraph_style(hwnd),
+        Command::ParagraphUp => text_move_paragraphs(hwnd, true),
+        Command::ParagraphDown => text_move_paragraphs(hwnd, false),
+        Command::ParagraphDelete => text_delete_paragraphs(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
@@ -6613,6 +6622,54 @@ fn text_paragraph_style(hwnd: HWND) {
         Some(Ok(_)) => refresh(hwnd),
         None => {}
     }
+}
+
+/// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
+fn text_blocks(text: &Text) -> std::ops::RangeInclusive<usize> {
+    let (from, to) = text::keymap::ordered(text.anchor, text.caret);
+    from.block..=to.block
+}
+
+/// Format ▸ Move Paragraph Up / Down — `grind_text::blocks::shift`, the caret and selection going
+/// with the paragraphs.
+fn text_move_paragraphs(hwnd: HWND, up: bool) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_text(hwnd, |text| {
+            match grind_text::blocks::shift(&text.app, text_blocks(text), up) {
+                Ok(()) => {
+                    let step = |caret: &mut Caret| match up {
+                        true => caret.block -= 1,
+                        false => caret.block += 1,
+                    };
+                    step(&mut text.caret);
+                    step(&mut text.anchor);
+                    text.say(None);
+                }
+                Err(why) => text.say(Some(why)),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Format ▸ Delete Paragraph — `grind_text::blocks::remove`, the caret at the start of what
+/// followed.
+fn text_delete_paragraphs(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_text(hwnd, |text| {
+            match grind_text::blocks::remove(&text.app, text_blocks(text)) {
+                Ok(block) => {
+                    text.place(Caret { block, offset: 0 }, false);
+                    text.caret_on = true;
+                    text.say(None);
+                }
+                Err(why) => text.say(Some(why)),
+            }
+        });
+    }
+    refresh(hwnd);
 }
 
 fn text_history(hwnd: HWND, undo: bool) {
