@@ -98,6 +98,64 @@ pub fn insert_chart(
     Ok(app.charts(sheet)?.len().saturating_sub(1))
 }
 
+/// Restyle the chart at `index` on `sheet` from a person's words — `line`, `bar` or `pie`;
+/// `title=Quarterly sales` (to the end of the line) or `no-title`; `legend=top|bottom|start|end`
+/// or `legend=none` — everything else about it kept (`ChartSpec::of`, then `App::edit_chart`: one
+/// undo step). What a window with no chart dialog asks in place of one. Answers the sentence to
+/// say, or why it could not.
+pub fn restyle_chart(
+    app: &App,
+    sheet: usize,
+    index: usize,
+    words: &str,
+) -> std::result::Result<String, String> {
+    let chart = app
+        .charts(sheet)
+        .map_err(|e| e.to_string())?
+        .get(index)
+        .cloned()
+        .ok_or("there is no such chart")?;
+    let mut spec = crate::ChartSpec::of(&chart);
+    let mut said = Vec::new();
+    let mut rest = words.trim();
+    while !rest.is_empty() {
+        let (word, after) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        rest = after.trim_start();
+        match word {
+            "bar" => spec.kind = crate::ChartKind::Bar,
+            "line" => spec.kind = crate::ChartKind::Line,
+            "pie" => spec.kind = crate::ChartKind::Pie,
+            "no-title" => spec.title = None,
+            "legend=none" => spec.legend = None,
+            "legend=top" => spec.legend = Some(crate::ChartLegend::Top),
+            "legend=bottom" => spec.legend = Some(crate::ChartLegend::Bottom),
+            "legend=start" => spec.legend = Some(crate::ChartLegend::Start),
+            "legend=end" => spec.legend = Some(crate::ChartLegend::End),
+            _ if word.starts_with("title=") => {
+                // The title is the rest of the line: it has spaces in it.
+                let title = format!("{} {}", &word["title=".len()..], rest);
+                spec.title = Some(title.trim().to_owned()).filter(|t| !t.is_empty());
+                rest = "";
+            }
+            other => {
+                return Err(format!(
+                    "“{other}” is not a chart word — bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none"
+                ));
+            }
+        }
+        said.push(word);
+    }
+    if said.is_empty() {
+        return Err(
+            "say what to change — bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none"
+                .to_owned(),
+        );
+    }
+    app.edit_chart(sheet, index, &spec)
+        .map_err(|e| e.to_string())?;
+    Ok("The chart is changed.".to_owned())
+}
+
 /// What a formula typed in display syntax — with or without its `=` — comes to at `at`, spelled
 /// for a sentence, or why it could not be worked out. Nothing is stored and no undo step is made
 /// (`App::preview`, `grind sheet eval`'s call): relative references are relative to `at`, the
@@ -208,6 +266,40 @@ mod tests {
         assert_eq!(app.charts(0).unwrap().len(), 1);
         assert!(insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |_, _| (0.0, 0.0)).is_ok());
         assert_eq!(app.charts(0).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_chart_is_restyled_in_words() {
+        let app = App::new();
+        for (r, row) in [["Month", "Sales"], ["Jan", "5"], ["Feb", "7"]]
+            .iter()
+            .enumerate()
+        {
+            for (c, text) in row.iter().enumerate() {
+                app.enter(
+                    0,
+                    Pos::new(r as u32, c as u32),
+                    text,
+                    crate::RecalcMode::Document,
+                )
+                .unwrap();
+            }
+        }
+        insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |_, _| (0.0, 0.0)).unwrap();
+        restyle_chart(&app, 0, 0, "pie legend=top title=Quarterly sales").unwrap();
+        let chart = app.charts(0).unwrap()[0].clone();
+        assert_eq!(chart.kind, crate::ChartKind::Pie);
+        assert_eq!(chart.legend, Some(crate::ChartLegend::Top));
+        assert_eq!(chart.title.as_deref(), Some("Quarterly sales"));
+        restyle_chart(&app, 0, 0, "no-title legend=none line").unwrap();
+        let chart = app.charts(0).unwrap()[0].clone();
+        assert_eq!(
+            (chart.kind, chart.legend, chart.title),
+            (crate::ChartKind::Line, None, None)
+        );
+        assert!(restyle_chart(&app, 0, 0, "shout").is_err());
+        assert!(restyle_chart(&app, 0, 0, "").is_err());
+        assert!(restyle_chart(&app, 0, 5, "pie").is_err());
     }
 
     #[test]
