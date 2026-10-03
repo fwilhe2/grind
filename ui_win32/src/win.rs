@@ -468,6 +468,8 @@ struct Sheet {
     /// The reference being pointed at while a formula is typed (point mode): where its text is in
     /// the editor, as bytes, and the cell it names.
     pointing: Option<(std::ops::Range<usize>, Pos)>,
+    /// Whether a formula cell draws its formula instead of its result (View ▸ Show Formulas).
+    formulas: bool,
     /// Whether the formula bar shows the friendly *reading* of a formula rather than the text
     /// that would be typed back in — View ▸ Friendly Formulas. Presentation state, like the
     /// selection and the overlays: nothing here is ever written, and the document's formula stays
@@ -1317,6 +1319,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         assist: assist::Assist::default(),
         hint: Vec::new(),
         pointing: None,
+        formulas: false,
         // **On**, which is `ui_sheet_gtk`'s own default (`chrome::formula_bar(.., true)`) and is
         // the reason to have one default rather than two: a formula reads the same in both
         // windows unless somebody says otherwise. It costs nothing to be wrong about, either —
@@ -1908,7 +1911,7 @@ fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
     // reads `false` there rather than a second flag nothing ever sets.
-    let (surface, roles_on, names_on, friendly_on) = unsafe {
+    let (surface, roles_on, names_on, friendly_on, formulas_on) = unsafe {
         with_pane(hwnd, |pane| {
             let surface = pane.surface();
             match pane {
@@ -1917,15 +1920,16 @@ fn build_menu(hwnd: HWND) {
                     sheet.overlays.roles,
                     sheet.overlays.names,
                     sheet.friendly,
+                    sheet.formulas,
                 ),
-                Pane::Text(text) => (surface, false, text.show_names, false),
+                Pane::Text(text) => (surface, false, text.show_names, false, false),
                 // No document, so none of the three checkmarks means anything — and `items_for`
                 // leaves every menu they live in out of the bar anyway.
-                Pane::Welcome(_) => (surface, false, false, false),
+                Pane::Welcome(_) => (surface, false, false, false, false),
             }
         })
     }
-    .unwrap_or((menu::Surface::Welcome, false, false, false));
+    .unwrap_or((menu::Surface::Welcome, false, false, false, false));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -1961,6 +1965,7 @@ fn build_menu(hwnd: HWND) {
                             Command::ToggleRoles => Some(roles_on),
                             Command::ToggleNames => Some(names_on),
                             Command::ToggleFriendly => Some(friendly_on),
+                            Command::ToggleFormulas => Some(formulas_on),
                             _ => None,
                         };
                         if let Some(checked) = checked {
@@ -3399,6 +3404,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleRoles => toggle_overlay(hwnd, false),
+        Command::ToggleFormulas => toggle_formulas(hwnd),
         Command::ToggleNames => toggle_overlay(hwnd, true),
         // Handled above, before the commit — but the match stays exhaustive, which is what says
         // every command has a handler.
@@ -4024,6 +4030,17 @@ fn toggle_overlay(hwnd: HWND, names: bool) {
             true => state.overlays.names = !state.overlays.names,
             false => state.overlays.roles = !state.overlays.roles,
         });
+    }
+    build_menu(hwnd);
+    refresh(hwnd);
+}
+
+/// View ▸ Show Formulas — each formula cell draws its formula instead of its result. A reading:
+/// nothing is written, and the menu is rebuilt for the checkmark's sake like the overlays'.
+fn toggle_formulas(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| state.formulas = !state.formulas);
     }
     build_menu(hwnd);
     refresh(hwnd);
@@ -5279,6 +5296,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ParagraphDelete
         | Command::ShowSource
         | Command::CheckDocument
+        | Command::ToggleFormulas
         | Command::ToggleRoles
         | Command::ToggleNames => {}
     }
@@ -5407,6 +5425,21 @@ fn draw_frame(dc: HDC, state: &Sheet) {
         .flatten()
         .unwrap_or_default();
     let number = state.app.format_at(state.sheet, active).ok().flatten();
+    // With formulas shown, the formula's own text stands in for the result in every formula cell
+    // the viewport covers (`App::input_text`, display syntax).
+    let mut formula_text = std::collections::HashMap::new();
+    if state.formulas {
+        for row in state.geom.visible_rows() {
+            for col in state.geom.visible_cols() {
+                let pos = Pos::new(row, col);
+                if state.app.formula(state.sheet, pos).ok().flatten().is_some()
+                    && let Ok(text) = state.app.input_text(state.sheet, pos)
+                {
+                    formula_text.insert((row, col), text);
+                }
+            }
+        }
+    }
     let charts = state.app.charts(state.sheet).unwrap_or_default();
     let chart_data: Vec<Option<grind_sheet::ChartData>> = (0..charts.len())
         .map(|index| state.app.chart_data(state.sheet, index).ok())
@@ -5416,6 +5449,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
         &Frame {
             charts: &charts,
             chart_data: &chart_data,
+            formula_text: &formula_text,
             geom: &state.geom,
             theme: state.theme,
             format: FormatStrip {
@@ -6332,6 +6366,7 @@ fn text_command(hwnd: HWND, command: Command) {
         // keeps both out of this pane's File menu rather than leaving them to be no-ops.
         | Command::ImportCsv
         | Command::ExportCsv
+        | Command::ToggleFormulas
         | Command::ToggleRoles => {}
     }
 }

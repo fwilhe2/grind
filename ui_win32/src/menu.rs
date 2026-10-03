@@ -275,6 +275,9 @@ pub enum Command {
     /// `doc/view-modes.md`'s role overlay, on or off. The grid's alone: the text pane has no
     /// `CellRole`.
     ToggleRoles,
+    /// Show each formula cell's formula instead of what it came to — `grind sheet view --formulas`,
+    /// a reading like the two overlays beside it: nothing is written.
+    ToggleFormulas,
     /// `doc/view-modes.md`'s name overlay, on or off — a defined name's range on the grid,
     /// `BlockView::marks`' bookmarks on the text pane (`:names`' equivalent there, since a
     /// bookmark contributes no characters of its own). Both document types.
@@ -381,6 +384,7 @@ impl Command {
         Command::ShowSource,
         Command::CheckDocument,
         Command::ToggleRoles,
+        Command::ToggleFormulas,
         Command::ToggleNames,
         Command::Shortcuts,
         Command::About,
@@ -874,6 +878,10 @@ pub const MENUS: &[Menu] = &[
                 label: "&Names",
             },
             Item::Verb {
+                command: Command::ToggleFormulas,
+                label: "Show Fo&rmulas",
+            },
+            Item::Verb {
                 command: Command::ToggleFriendly,
                 label: "&Friendly Formulas",
             },
@@ -1090,6 +1098,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ExportCsv
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
+        | Command::ToggleFormulas
         | Command::ToggleRoles => matches!(kind, Spreadsheet),
         // Bold, italic, a text colour and Clear mean the same thing to a run and to a cell, and each
         // pane answers them over its own style — `CharStyle` there, `CellStyle` here — so they are

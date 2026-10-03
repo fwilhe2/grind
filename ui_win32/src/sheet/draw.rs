@@ -314,6 +314,9 @@ mod windows_impl {
         /// The sheet's charts and, for each, the data it draws — read fresh for this frame like
         /// everything else here (`sheet/chart.rs`).
         pub charts: &'a [grind_sheet::Chart],
+        /// With View ▸ Show Formulas, the formula text of each formula cell in view, which is drawn
+        /// in place of the result.
+        pub formula_text: &'a std::collections::HashMap<(u32, u32), String>,
         pub chart_data: &'a [Option<grind_sheet::ChartData>],
         /// How far the document's own content reaches — `App::used_extent`, the same answer the
         /// status bar reports. Past it the hairlines are drawn quieter (`Theme::grid_line_soft`).
@@ -460,7 +463,12 @@ mod windows_impl {
                         );
                     }
 
-                    let Some(text) = frame.viewport.text(row, col) else {
+                    let Some(text) = frame
+                        .formula_text
+                        .get(&(row, col))
+                        .map(String::as_str)
+                        .or_else(|| frame.viewport.text(row, col))
+                    else {
                         continue;
                     };
                     if text.is_empty() {
