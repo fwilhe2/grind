@@ -14,7 +14,7 @@
 //! they are a test with a hostile fixture rather than a paragraph.
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use crate::names::{RelType, Seen};
 use crate::{Error, Result};
@@ -182,14 +182,13 @@ impl<'a> Package<'a> {
     pub fn part(&mut self, name: &str) -> Option<Vec<u8>> {
         let index = *self.index.get(&normalise(name)?)?;
         let mut file = self.archive.by_index(index).ok()?;
-        // Capacity from the entry's *claim*, capped at something a hostile file cannot turn
-        // into an allocation: a header saying 512 MB costs nothing to write.
-        let mut out = Vec::with_capacity(file.size().min(1 << 20) as usize);
-        // Not `?`: a corrupt deflate stream is a damaged *part*, and losing one optional part
-        // is not a reason to refuse a workbook. `grind_core`'s package reader learned the
-        // same lesson from loop A, where an `io::Error` claimed the filesystem had failed.
-        file.read_to_end(&mut out).ok()?;
-        Some(out)
+        // Bounded whatever the header claimed — the claims were checked on opening, and a
+        // header costs nothing to lie in — and never allocated up front from a claim; the
+        // suite's one bounded reader. Not `?`: a corrupt deflate stream is a damaged *part*,
+        // and losing one optional part is not a reason to refuse a workbook. `grind_core`'s
+        // package reader learned the same lesson from loop A, where an `io::Error` claimed the
+        // filesystem had failed.
+        grind_sheet::odf::package::read_entry(&mut file).ok()
     }
 
     /// The relationships declared *by* a part, already resolved to part names.

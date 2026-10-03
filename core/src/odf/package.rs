@@ -16,6 +16,83 @@ use crate::{Error, Result};
 /// be the first entry (§1.1).
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
+/// No document has this many parts. A package that does is a zip bomb or a mistake — the same
+/// line `grind_xlsx`'s package reader draws.
+pub const MAX_PARTS: usize = 16_384;
+
+/// Any single part, decompressed. A 4 GB `content.xml` is not a document.
+pub const MAX_PART_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Every part together, decompressed — what a zip bomb's amplification is measured against.
+pub const MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Open a package, refusing one whose own directory already says it is a bomb: more parts
+/// than [`MAX_PARTS`], or sizes claimed past [`MAX_PART_BYTES`] or [`MAX_TOTAL_BYTES`].
+///
+/// A claim is only a claim — the header that says how big a part is costs nothing to write —
+/// so this is the cheap half, and [`read_entry`] is the half that holds whatever a header
+/// said. Loop A found the reason for both: a 375-byte `.ods` whose `content.xml` claimed 4 GB
+/// aborted the process, because the reader trusted the claim with `Vec::with_capacity`.
+pub fn archive(bytes: &[u8]) -> Result<zip::ZipArchive<Cursor<&[u8]>>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|e| Error::Package(format!("not a readable ODF package: {e}")))?;
+    if archive.len() > MAX_PARTS {
+        return Err(Error::Package(format!(
+            "{} parts, more than the {MAX_PARTS} any document has",
+            archive.len()
+        )));
+    }
+    let mut total: u64 = 0;
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index_raw(i)
+            .map_err(|e| Error::Package(format!("unreadable entry {i}: {e}")))?;
+        let size = entry.size();
+        if size > MAX_PART_BYTES {
+            return Err(Error::Package(format!(
+                "{} claims {size} bytes, more than any document's part",
+                entry.name()
+            )));
+        }
+        total = total.saturating_add(size);
+        if total > MAX_TOTAL_BYTES {
+            return Err(Error::Package(
+                "the package decompresses to more than any document does".to_owned(),
+            ));
+        }
+    }
+    Ok(archive)
+}
+
+/// One entry's bytes, read to the end — but never more than [`MAX_PART_BYTES`] whatever its
+/// header claimed, never allocated up front from that claim, and an allocation that fails an
+/// error rather than an abort. Every decompression of a package part in the suite goes through
+/// here.
+pub fn read_entry(entry: &mut impl Read) -> std::io::Result<Vec<u8>> {
+    read_bounded(entry, MAX_PART_BYTES)
+}
+
+fn read_bounded(entry: &mut impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        let n = match entry.read(&mut chunk) {
+            Ok(0) => return Ok(out),
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        if out.len() as u64 + n as u64 > limit {
+            return Err(std::io::Error::other(format!(
+                "decompresses to more than {limit} bytes"
+            )));
+        }
+        out.try_reserve(n)
+            .map_err(|_| std::io::Error::other("not enough memory to decompress it"))?;
+        out.extend_from_slice(&chunk[..n]);
+    }
+}
+
 /// Is this the package form rather than the flat form?
 ///
 /// Sniffed from the bytes, not the file extension: `.fods` content turns up under `.xml`,
@@ -36,8 +113,7 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
         return Ok(bytes.to_vec());
     }
 
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
-        .map_err(|e| Error::Package(format!("not a readable ODF package: {e}")))?;
+    let mut archive = archive(bytes)?;
 
     if is_encrypted(&mut archive) {
         return Err(Error::Encrypted);
@@ -46,15 +122,13 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut file = archive
         .by_name("content.xml")
         .map_err(|e| Error::Package(format!("no content.xml in package: {e}")))?;
-    let mut out = Vec::with_capacity(file.size() as usize);
     // **Not `?`.** Decompressing a zip entry reports a corrupt one — a bad CRC-32, a truncated
     // deflate stream — as an `io::Error`, and letting that convert into [`Error::Io`] would say
     // "the filesystem failed" about a file that was read from disk perfectly and is simply
     // damaged inside. Loop A found this: a fuzzer's corrupt `.odt` came back as `io: Invalid
     // checksum`, which is true of no filesystem anywhere.
-    file.read_to_end(&mut out)
-        .map_err(|e| Error::Package(format!("content.xml will not decompress: {e}")))?;
-    Ok(out)
+    read_entry(&mut file)
+        .map_err(|e| Error::Package(format!("content.xml will not decompress: {e}")))
 }
 
 /// `styles.xml`, if the package has one.
@@ -77,11 +151,9 @@ pub fn part(bytes: &[u8], path: &str) -> Option<Vec<u8>> {
     if !is_package(bytes) {
         return None;
     }
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
+    let mut archive = archive(bytes).ok()?;
     let mut file = archive.by_name(path).ok()?;
-    let mut out = Vec::with_capacity(file.size() as usize);
-    file.read_to_end(&mut out).ok()?;
-    Some(out)
+    read_entry(&mut file).ok()
 }
 
 /// Does the manifest declare any part as encrypted?
@@ -93,10 +165,9 @@ fn is_encrypted<R: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<
     let Ok(mut manifest) = archive.by_name("META-INF/manifest.xml") else {
         return false;
     };
-    let mut buf = Vec::new();
-    if manifest.read_to_end(&mut buf).is_err() {
+    let Ok(buf) = read_entry(&mut manifest) else {
         return false;
-    }
+    };
     // `manifest:encryption-data` appears only on entries that are actually encrypted, so
     // its presence anywhere is sufficient — no parse needed for a yes/no question.
     buf.windows(b"encryption-data".len())
@@ -245,6 +316,58 @@ pub fn write_package_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A package whose `content.xml` *claims* `size` bytes, in both the local header and the
+    /// central directory — what a hostile file costs nothing to write.
+    fn lying(size: u32) -> Vec<u8> {
+        let mut bytes = write_package(
+            "application/vnd.oasis.opendocument.spreadsheet",
+            "<office:document-content/>",
+        )
+        .expect("writes");
+        let name = b"content.xml";
+        let local = bytes
+            .windows(4)
+            .enumerate()
+            .filter(|(_, w)| *w == b"PK\x03\x04")
+            .map(|(i, _)| i)
+            .find(|&i| bytes[i + 30..].starts_with(name))
+            .expect("a local header");
+        bytes[local + 22..local + 26].copy_from_slice(&size.to_le_bytes());
+        let central = bytes
+            .windows(4)
+            .enumerate()
+            .filter(|(_, w)| *w == b"PK\x01\x02")
+            .map(|(i, _)| i)
+            .find(|&i| bytes[i + 46..].starts_with(name))
+            .expect("a central entry");
+        bytes[central + 24..central + 28].copy_from_slice(&size.to_le_bytes());
+        bytes
+    }
+
+    /// The audit's 375-byte `.ods`: its `content.xml` claimed 4 GB, the reader believed it
+    /// with `Vec::with_capacity`, and the allocation aborted the process — every window with
+    /// unsaved work in it gone on File ▸ Open.
+    #[test]
+    fn a_part_claiming_gigabytes_is_an_error_not_an_abort() {
+        let bytes = lying(0xFFFF_FFF0);
+        assert!(matches!(content_xml(&bytes), Err(Error::Package(_))));
+        assert_eq!(part(&bytes, "content.xml"), None);
+        // Sniffing the kind reads the same part, and must not trust the claim either.
+        let _ = crate::kind::kind(&bytes);
+    }
+
+    /// A header can also claim *less* than the part holds; the reader stops at its own limit
+    /// whatever the header said, and allocates only what actually arrived.
+    #[test]
+    fn reading_stops_at_the_limit_whatever_the_stream_holds() {
+        let mut endless = std::io::repeat(0);
+        let error = read_bounded(&mut endless, 1 << 20).expect_err("stops");
+        assert!(error.to_string().contains("more than"), "{error}");
+
+        let mut small = &b"<x/>"[..];
+        assert_eq!(read_bounded(&mut small, 1 << 20).unwrap(), b"<x/>");
+    }
 
     /// §1.1's fixed-offset contract, which is the whole reason `mimetype` is written the way
     /// it is: a reader identifies the document *without unzipping anything*, so the entry has

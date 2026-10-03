@@ -18,7 +18,7 @@
 //! up under `.xml`, and an extension is a hint from a filesystem rather than a fact about the
 //! data.
 
-use std::io::{Cursor, Read};
+use std::io::Read;
 
 use quick_xml::NsReader;
 use quick_xml::events::Event;
@@ -164,10 +164,11 @@ pub fn kind(bytes: &[u8]) -> Option<DocumentKind> {
 /// is missing or unreadable falls back to `content.xml`'s root, which is what actually decides
 /// how the document is parsed.
 fn package_kind(bytes: &[u8]) -> Option<DocumentKind> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
-    if let Ok(mut entry) = archive.by_name("mimetype") {
+    let mut archive = crate::odf::package::archive(bytes).ok()?;
+    if let Ok(entry) = archive.by_name("mimetype") {
+        // A media type is a few dozen bytes; a `mimetype` entry that is not is not one.
         let mut media = String::new();
-        if entry.read_to_string(&mut media).is_ok()
+        if entry.take(256).read_to_string(&mut media).is_ok()
             && let Some(kind) = DocumentKind::from_media_type(&media)
         {
             return Some(kind);
@@ -176,8 +177,7 @@ fn package_kind(bytes: &[u8]) -> Option<DocumentKind> {
     // No usable `mimetype`. `content.xml` has no `office:mimetype` either, so this lands on
     // the body element — which is the more authoritative answer anyway.
     let mut content = archive.by_name("content.xml").ok()?;
-    let mut buf = Vec::with_capacity(content.size() as usize);
-    content.read_to_end(&mut buf).ok()?;
+    let buf = crate::odf::package::read_entry(&mut content).ok()?;
     flat_kind(&buf)
 }
 

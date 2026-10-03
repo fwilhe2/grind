@@ -36,7 +36,7 @@
 //! of the elements a picture can hang off — never a document type's (R8).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use quick_xml::NsReader;
 use quick_xml::XmlVersion;
@@ -442,16 +442,23 @@ struct Archive {
 impl Archive {
     fn read(bytes: &[u8]) -> Result<Self> {
         let zip = |e: zip::result::ZipError| Error::Package(e.to_string());
-        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(zip)?;
+        let mut archive = super::package::archive(bytes)?;
         let mut files = BTreeMap::new();
+        let mut total: u64 = 0;
         for i in 0..archive.len() {
             let mut file = archive.by_index(i).map_err(zip)?;
             if file.is_dir() {
                 continue;
             }
-            let mut out = Vec::new();
-            file.read_to_end(&mut out)
+            let out = super::package::read_entry(&mut file)
                 .map_err(|e| Error::Package(format!("{} will not decompress: {e}", file.name())))?;
+            // The claims were checked on opening; this holds what the parts actually held.
+            total += out.len() as u64;
+            if total > super::package::MAX_TOTAL_BYTES {
+                return Err(Error::Package(
+                    "the package decompresses to more than any document does".to_owned(),
+                ));
+            }
             files.insert(file.name().to_owned(), out);
         }
         Ok(Self { files })
