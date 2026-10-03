@@ -113,11 +113,17 @@ Addressing is the unusual part, and it is what makes a document scriptable: a pl
 character offset. The last two keep meaning the same place after you edit somewhere else in the
 document.
 
-Page size, margins, headers, footers and page breaks are read, kept and written back untouched —
-they are simply never *drawn* as pages. **Line** layout, though, lives in the shared core, so
-`j`, `k`, Home and End mean exactly the same thing in every front end and the command line can
-answer them too; each front end supplies only font metrics. What is missing beyond pages: tables,
-footnotes, fields, style definitions, and right-to-left layout.
+Page size, margins, headers, footers and page breaks are read and kept — they are simply never
+*drawn* as pages. They survive an edit that changes a paragraph's text or style in place; an edit
+that changes the block sequence (splitting or joining a paragraph, inserting or deleting a block)
+or a save to a package regenerates the document, and **today that drops what the model does not
+carry — page layout and master styles included**. Carrying those through is the next fix, and until
+it lands, keep a copy of a document LibreOffice wrote before editing it here.
+
+**Line** layout, though, lives in the shared core, so `j`, `k`, Home and End mean exactly the same
+thing in every front end and the command line can answer them too; each front end supplies only
+font metrics. Tables are built — read, written, edited cell by cell and drawn as a grid in every
+front end — though a table has no widths or borders of its own. What is missing beyond pages: footnotes, fields, style definitions, and right-to-left layout.
 
 ## Five ways in
 
@@ -249,9 +255,11 @@ executable is built and tested on `windows-latest` in CI and kept as an artifact
 development it is linked with `cargo-xwin` and run under Wine, which is how most of its bugs were
 found — every one of them was one glance at a screenshot and none was visible in review.
 
-**The macOS client is planned, and has no window yet.** `doc/macos-shell.md` is the plan: one
-`Grind.app` for both document types, written in Rust over AppKit. AppKit draws the chrome — the
-menu bar, the toolbar, the sidebar and the document windows — and the shell draws only the grid
+**The macOS client is written and not yet proven on a Mac.** `doc/macos-shell.md` is the plan
+and the record: one `Grind.app` for both document types, written in Rust over AppKit. Its window,
+editing, clipboard, page, menus and packaging are built and are exercised on GitHub's macOS
+runners, but nobody has used it on a Mac by hand yet, so it is not part of any release. AppKit
+draws the chrome — the menu bar, the toolbar, the sidebar and the document windows — and the shell draws only the grid
 and the page, measured and drawn by CoreText. It follows the Windows shell's way of being
 developed on Linux, with one change. There is no Wine for AppKit, so the AppKit half is
 type-checked and linted here (`cargo check --target aarch64-apple-darwin` needs no SDK) and is
@@ -402,8 +410,9 @@ with `.fods` / `.fodt`, a new document is flat, and naming `book.ods` is how you
 package. No document is ever converted behind your back.
 
 Strictness on the way out, tolerance on the way in: everything written is valid ODF, and
-everything LibreOffice writes reads — unknown elements and attributes included, kept intact
-rather than dropped.
+everything LibreOffice writes reads, and unknown elements and attributes are kept intact for as
+long as the document is edited in place rather than regenerated (see above for what a
+regenerating save loses).
 
 ## How it is checked
 
