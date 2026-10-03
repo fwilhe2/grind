@@ -117,7 +117,7 @@ ad-hoc-signed `Grind.app` in a DMG instead (M10).
 | Jump to the edge of a block (Ctrl+arrow) | — | ● | ● ᵉᵈ | ● ᵉᵈ | ● | ● |
 | Jump to the start or end of the sheet | — | ● | ● | ● | ● | ● |
 | Select a rectangle | ● ᵃ | ● | ● | ● | ● | ● |
-| Select whole rows / columns from a header | ● ᵃ | ● | ● ᵉᵈ | ○ | ● | ● |
+| Select whole rows / columns from a header | ● ᵃ | ● | ● ᵉᵈ | ● ʷʰ | ● | ● |
 | Select the whole sheet | ● ᵃ | ● | ● ᵉᵈ | ● | ● | ● |
 | Name box / address field | ● | ● | ● | ● | ● | ● |
 | Go to a defined name | ● | ● | ● | ● | ● | ● |
@@ -126,6 +126,7 @@ ad-hoc-signed `Grind.app` in a DMG instead (M10).
 | Zoom | — | ● | ○ | ○ | ○ | ● |
 
 ᵉᵈ Closed 2026-10-02 over `grind_sheet::nav`'s edge rule: the browser's Ctrl+arrow (Shift extends); the terminal's `w b } {` and Ctrl+arrows, with `V` (row), Ctrl+V (column) and Ctrl+A (sheet) as visual selections of the used part — no header to click in a terminal.
+ʷʰ A click on a column's letter or a row's number selects the whole track (the smoke test clicks one); dragging a column header's right edge sizes the column through its `<col>` and writes one `set_col_width` on release — the drag is build-checked, jsdom having no layout. Rows are sized by the *Row height…* verb (2026-10-02).
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
 ʷᵉ The GNOME grid applies `nav::onto_visible` after its move (closing the gap `doc/sheet-shell.md` named; lint-checked only). The browser's motions are `grind_sheet::nav::moved` now, then `nav::onto_visible` over the hidden and filtered tracks — the rule the Windows and Mac grids use (2026-10-02). It replaces the browser's own `keymap::moved`, so selection and Shift-extend behave as they do there.
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
@@ -268,7 +269,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
-| Drag a track edge to resize | — | ● | ○ | ○ | ● ʷᵈ | ● |
+| Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
 | Autofit a column | ● | ● | ○ | ○ | ● ᶠᶜ | ● |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |

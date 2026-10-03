@@ -638,6 +638,14 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
 
   await goTo("A3");
   check("the row Banana was on is hidden", rowStyle().includes("display:none"), true);
+
+  // A header is a button for its whole track: a click on a column's letter selects the column,
+  // and on a row's number the row.
+  document
+    .querySelector("th.head.col")
+    .dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+  await frame();
+  check("clicking a column header selects the whole column", byId("address").value, "A1:A1048576");
   await goTo("A2");
   check("an Apple row still shows", shown(), "Apple");
   check("with no display:none of its own", rowStyle().includes("display:none"), false);

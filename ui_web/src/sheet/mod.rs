@@ -111,6 +111,20 @@ impl Selection {
     }
 }
 
+/// A column being sized: which, where the pointer was and how wide the column was, the `<col>`
+/// element that draws it (its index in the colgroup), and the width the pointer has made it.
+#[derive(Clone, Copy, Debug)]
+struct Sizing {
+    col: u32,
+    from: f64,
+    width: f64,
+    index: u32,
+    now: f64,
+}
+
+/// How near a header's right edge a press is taken as grabbing it, in CSS pixels.
+const EDGE_GRAB: f64 = 5.0;
+
 /// The elements this shell writes to. No document state — that is all in the core.
 /// The elements this pane writes to. No document state — that is all in the core.
 ///
@@ -186,6 +200,9 @@ pub struct Ui {
     editing: Cell<bool>,
     /// Whether the pointer is down and dragging a rectangle out.
     dragging: Cell<bool>,
+    /// A column header's right edge being dragged to size the column; the document is written
+    /// once, when the button comes up.
+    sizing: Cell<Option<Sizing>>,
     /// The formula assist band's own state — autocomplete offers or a signature hint,
     /// recomputed from the formula bar's text and caret on every change (`assist.rs`).
     assist: RefCell<assist::Assist>,
@@ -227,6 +244,7 @@ impl Ui {
             scroll: Cell::new(Pos::new(0, 0)),
             editing: Cell::new(false),
             dragging: Cell::new(false),
+            sizing: Cell::new(None),
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             formulas: Cell::new(false),
@@ -1432,6 +1450,22 @@ impl Ui {
         self.set_message(format!("Filled {cells} cell(s)"));
     }
 
+    /// A column let go: its width is written once, in the document's own unit, as one undo step.
+    /// A press and release with no drag between them is a click on the edge, not a new width.
+    fn size_column(&self, sizing: Sizing) {
+        if (sizing.now - sizing.width).abs() < 0.5 {
+            return;
+        }
+        let width = grind_sheet::style::mm_length(sizing.now / PX_PER_MM);
+        if let Err(error) =
+            self.app
+                .set_col_width(self.sheet.get(), sizing.col..sizing.col + 1, Some(width))
+        {
+            self.set_message(error.to_string());
+        }
+        self.request_repaint();
+    }
+
     /// A selection in the core's own type, for `grind_sheet::verbs`.
     fn nav_selection(&self) -> grind_sheet::nav::Selection {
         let selection = self.selection.get();
@@ -2196,6 +2230,63 @@ impl Ui {
         if let Some(sheet) = closest_number(&target, "button.tab", "data-sheet") {
             return self.switch_to(sheet as usize);
         }
+        // A column header: its right edge is taken to size the column, anywhere else on it selects
+        // the whole column; a row header selects the whole row. Either way it is not a cell.
+        if let Some(head) = target.closest("th.head.col")?
+            && let Some(col) = attribute(&head, "data-col")
+        {
+            self.dragging.set(false);
+            if self.editing.get() {
+                self.commit(None)?;
+            }
+            let width = head
+                .clone()
+                .dyn_into::<web_sys::HtmlElement>()
+                .map_or(0.0, |head| f64::from(head.offset_width()));
+            // (A width of zero is a page with no layout, where nothing is an edge.)
+            if width > 0.0 && width - f64::from(event.offset_x()) <= EDGE_GRAB {
+                let mut index = 0;
+                let mut before = head.previous_element_sibling();
+                while let Some(sibling) = before {
+                    index += 1;
+                    before = sibling.previous_element_sibling();
+                }
+                self.sizing.set(Some(Sizing {
+                    col,
+                    from: f64::from(event.client_x()),
+                    width,
+                    index,
+                    now: width,
+                }));
+                return Ok(());
+            }
+            let anchor = match event.shift_key() {
+                true => self.selection.get().anchor,
+                false => Pos::new(0, col),
+            };
+            self.set_selection(Selection {
+                anchor,
+                active: Pos::new(MAX_ROWS - 1, col),
+            });
+            return self.dom.surface.focus();
+        }
+        if let Some(head) = target.closest("th.head.row")?
+            && let Some(row) = attribute(&head, "data-row")
+        {
+            self.dragging.set(false);
+            if self.editing.get() {
+                self.commit(None)?;
+            }
+            let anchor = match event.shift_key() {
+                true => self.selection.get().anchor,
+                false => Pos::new(row, 0),
+            };
+            self.set_selection(Selection {
+                anchor,
+                active: Pos::new(row, MAX_COLS - 1),
+            });
+            return self.dom.surface.focus();
+        }
         // A filter button beats the cell under it, for the same reason the fill handle would:
         // it sits over the corner of a cell that is also a click target for selecting it.
         if let Some(button) = target.closest("button.filter-btn")? {
@@ -2540,6 +2631,16 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
     // selection, which is the gesture every grid has and this one did not.
     let drag = ui.clone();
     listen(&ui.dom.surface, "mousemove", move |event: MouseEvent| {
+        // A column being sized follows the pointer by its `<col>` element, which is what a fixed
+        // table lays its columns out from; the document waits for the button to come up.
+        if let Some(mut sizing) = drag.sizing.get() {
+            sizing.now = (sizing.width + f64::from(event.client_x()) - sizing.from).max(8.0);
+            drag.sizing.set(Some(sizing));
+            if let Some(col) = drag.dom.cols.children().item(sizing.index) {
+                let _ = col.set_attribute("style", &format!("width:{:.1}px", sizing.now));
+            }
+            return;
+        }
         if !drag.dragging.get() || drag.editing.get() {
             return;
         }
@@ -2558,6 +2659,9 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
         let release = ui.clone();
         listen(&window, "mouseup", move |_: MouseEvent| {
             release.dragging.set(false);
+            if let Some(sizing) = release.sizing.take() {
+                release.size_column(sizing);
+            }
         })?;
     }
 
