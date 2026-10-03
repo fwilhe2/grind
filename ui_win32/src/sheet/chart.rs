@@ -12,12 +12,12 @@
 
 use grind_sheet::Chart;
 
-/// A chart's frame in pixels from the corner of A1, at `dpi` — `draw:frame`'s own position and
+/// A chart's frame in pixels from the corner of A1, at `dpi` and the grid's `zoom` — `draw:frame`'s own position and
 /// size, or `None` for a length this build cannot read, which is a chart it does not draw rather
 /// than one drawn in the wrong place.
-pub fn frame_of(chart: &Chart, dpi: u32) -> Option<(f64, f64, f64, f64)> {
+pub fn frame_of(chart: &Chart, dpi: u32, zoom: f64) -> Option<(f64, f64, f64, f64)> {
     let px = super::geom::mm_to_px(dpi);
-    let length = |text: &str| grind_sheet::style::length_mm(text).map(&px);
+    let length = |text: &str| grind_sheet::style::length_mm(text).map(|mm| px(mm) * zoom);
     let (x, y, w, h) = (
         length(&chart.x)?,
         length(&chart.y)?,
@@ -74,6 +74,7 @@ mod gdi_half {
             face,
             dpi: geom.dpi,
             default_pt: 9.0,
+            zoom: geom.zoom,
         };
         // SAFETY: the DC is live; the clip is undone by the matching `RestoreDC` below.
         let saved = unsafe {
@@ -83,7 +84,7 @@ mod gdi_half {
             saved
         };
         for (index, chart) in charts.iter().enumerate() {
-            let Some((x, y, w, h)) = frame_of(chart, geom.dpi) else {
+            let Some((x, y, w, h)) = frame_of(chart, geom.dpi, geom.zoom) else {
                 continue;
             };
             let Some(Some(data)) = data.get(index) else {
@@ -199,11 +200,13 @@ mod tests {
             "5.08cm".into(),
             "2.54cm".into(),
         );
-        let (x, _, w, h) = frame_of(&chart, 96).unwrap();
+        let (x, _, w, h) = frame_of(&chart, 96, 1.0).unwrap();
         assert!((x - 96.0).abs() < 0.5 && (w - 192.0).abs() < 0.5 && (h - 96.0).abs() < 0.5);
-        let (x2, ..) = frame_of(&chart, 192).unwrap();
+        let (x2, ..) = frame_of(&chart, 192, 1.0).unwrap();
         assert!((x2 - 192.0).abs() < 0.5);
+        let (x3, ..) = frame_of(&chart, 96, 2.0).unwrap();
+        assert!((x3 - 192.0).abs() < 0.5, "a zoom scales the frame");
         chart.width = "wide".into();
-        assert!(frame_of(&chart, 96).is_none());
+        assert!(frame_of(&chart, 96, 1.0).is_none());
     }
 }

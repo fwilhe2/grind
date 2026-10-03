@@ -26,6 +26,8 @@ pub struct CellMetrics<'a> {
     pub dpi: u32,
     /// The size, in points, of text whose style names none.
     pub default_pt: f64,
+    /// The grid's zoom, a factor on every size: text is measured at the size it is drawn at.
+    pub zoom: f64,
 }
 
 impl CellMetrics<'_> {
@@ -36,7 +38,7 @@ impl CellMetrics<'_> {
             .and_then(|size| size.strip_suffix("pt"))
             .and_then(|size| size.parse::<f64>().ok())
             .unwrap_or(self.default_pt);
-        let px = (points * f64::from(self.dpi) / 72.0).round() as i32;
+        let px = (points * f64::from(self.dpi) * self.zoom / 72.0).round() as i32;
         Font::styled(
             self.face,
             px.max(6),

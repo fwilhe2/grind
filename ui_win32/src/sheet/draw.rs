@@ -162,7 +162,8 @@ mod windows_impl {
             dc,
             face: frame.face,
             dpi,
-            default_pt: f64::from(frame.font_px) * 72.0 / f64::from(dpi),
+            default_pt: f64::from(frame.font_px) * 72.0 / (f64::from(dpi) * frame.geom.zoom),
+            zoom: frame.geom.zoom,
         };
         let pad = crate::sheet::geom::scale(PAD, dpi).round();
         let text_style = look::text_style(style);
@@ -538,8 +539,8 @@ mod windows_impl {
         // Mac draws the same list — in points, so the cell goes in as points and the strokes come
         // back to pixels; a hairline is one device pixel.
         {
-            let to_pt = 72.0 / f64::from(g.dpi);
-            let to_px = f64::from(g.dpi) / 72.0;
+            let to_pt = 72.0 / (f64::from(g.dpi) * g.zoom);
+            let to_px = f64::from(g.dpi) * g.zoom / 72.0;
             let dark = theme.mode == crate::theme::Mode::Dark;
             for row in g.visible_rows() {
                 for col in g.visible_cols() {

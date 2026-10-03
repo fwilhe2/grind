@@ -175,6 +175,9 @@ pub struct GridGeom {
     /// copies of one number is how a `WM_DPICHANGED` that rebuilt the geometry but not the
     /// fonts happens.
     pub dpi: u32,
+    /// The zoom, a factor on every cell (the tracks are built already scaled by it; this is what
+    /// the painter needs to scale what it draws in them). 1.0 is 100%.
+    pub zoom: f64,
 }
 
 impl GridGeom {
@@ -576,6 +579,7 @@ mod tests {
             width: 800.0,
             height: 600.0,
             dpi: 96,
+            zoom: 1.0,
         }
     }
 

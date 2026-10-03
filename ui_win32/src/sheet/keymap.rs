@@ -148,6 +148,9 @@ pub fn key_for(vk: u32) -> Key {
         VK_F8 => Key::F8,
         VK_F9 => Key::F9,
         0x30..=0x39 | 0x41..=0x5a => Key::Char(char::from(vk as u8)),
+        // The zoom keys: the main row's `=`/`+` and `-`, and the numeric pad's.
+        0xBB | 0x6B => Key::Char('='),
+        0xBD | 0x6D => Key::Char('-'),
         _ => Key::Other,
     }
 }

@@ -281,6 +281,10 @@ pub enum Command {
     /// Show each formula cell's formula instead of what it came to — `grind sheet view --formulas`,
     /// a reading like the two overlays beside it: nothing is written.
     ToggleFormulas,
+    /// The grid's zoom — a factor on every cell, 25% to 400%, never stored.
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
     /// `doc/view-modes.md`'s name overlay, on or off — a defined name's range on the grid,
     /// `BlockView::marks`' bookmarks on the text pane (`:names`' equivalent there, since a
     /// bookmark contributes no characters of its own). Both document types.
@@ -389,6 +393,9 @@ impl Command {
         Command::CheckDocument,
         Command::ToggleRoles,
         Command::ToggleFormulas,
+        Command::ZoomIn,
+        Command::ZoomOut,
+        Command::ZoomReset,
         Command::ToggleNames,
         Command::Shortcuts,
         Command::About,
@@ -889,6 +896,19 @@ pub const MENUS: &[Menu] = &[
                 command: Command::ToggleFormulas,
                 label: "Show Fo&rmulas",
             },
+            Item::Separator,
+            Item::Verb {
+                command: Command::ZoomIn,
+                label: "Zoom &In\tCtrl+=",
+            },
+            Item::Verb {
+                command: Command::ZoomOut,
+                label: "Zoom O&ut\tCtrl+-",
+            },
+            Item::Verb {
+                command: Command::ZoomReset,
+                label: "Reset &Zoom",
+            },
             Item::Verb {
                 command: Command::ToggleFriendly,
                 label: "&Friendly Formulas",
@@ -971,6 +991,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::PageDown, true, _) => Some(Command::SheetNext),
         (Key::PageUp, true, _) => Some(Command::SheetPrevious),
         (Key::F9, false, false) => Some(Command::Recalculate),
+        (Key::Char('='), true, _) => Some(Command::ZoomIn),
+        (Key::Char('-'), true, false) => Some(Command::ZoomOut),
         (Key::Char('D'), true, false) => Some(Command::FillDown),
         (Key::Char('R'), true, false) => Some(Command::FillRight),
         (Key::Char('B'), true, false) => Some(Command::Bold),
@@ -1108,6 +1130,9 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleFormulas
+        | Command::ZoomIn
+        | Command::ZoomOut
+        | Command::ZoomReset
         | Command::ToggleRoles => matches!(kind, Spreadsheet),
         // Bold, italic, a text colour and Clear mean the same thing to a run and to a cell, and each
         // pane answers them over its own style — `CharStyle` there, `CellStyle` here — so they are

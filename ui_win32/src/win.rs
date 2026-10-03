@@ -574,25 +574,30 @@ impl Sheet {
             header_w: scale(draw::HEADER_W, dpi),
             header_h: scale(draw::HEADER_H, dpi),
             status_h: scale(draw::STATUS_H, dpi),
+            // Every cell track is built from the document's lengths and then scaled by the zoom —
+            // the arithmetic downstream stays in one space (`Sizes::scaled`).
             cols: Sizes::from_lengths(
                 scale(draw::COL_W, dpi),
                 MAX_COLS,
                 &widths,
                 &hidden_cols,
                 mm_to_px(dpi),
-            ),
+            )
+            .scaled(self.geom.zoom),
             rows: Sizes::from_lengths(
                 scale(draw::ROW_H, dpi),
                 MAX_ROWS,
                 &heights,
                 &hidden_rows,
                 mm_to_px(dpi),
-            ),
+            )
+            .scaled(self.geom.zoom),
             first_row: self.geom.first_row,
             first_col: self.geom.first_col,
             width,
             height,
             dpi,
+            zoom: self.geom.zoom,
         };
         // Every row with no height of its own grows to hold what is in it — a cell that wraps,
         // or one set in a larger face (L3). Measured in GDI, the engine that draws it.
@@ -602,8 +607,10 @@ impl Sheet {
                 face: face(),
                 dpi,
                 default_pt: theme::text::CELL * 72.0 / 96.0,
+                zoom: self.geom.zoom,
             };
-            let row_h = scale(draw::ROW_H, dpi);
+            let zoom = self.geom.zoom;
+            let row_h = scale(draw::ROW_H, dpi) * zoom;
             // A cell's padding either side (`draw`'s `PAD`, 4 pixels at 100%).
             let pad = scale(4.0, dpi).round();
             let grown = grind_sheet::autoheight::grown_rows(
@@ -621,7 +628,10 @@ impl Sheet {
                 // keeps the last entry given for a row, so they win.
                 let to_px = mm_to_px(dpi);
                 sizes.extend(heights.iter().filter_map(|(row, length)| {
-                    Some((*row, grind_core::style::length_mm(length).map(&to_px)?))
+                    Some((
+                        *row,
+                        grind_core::style::length_mm(length).map(&to_px)? * zoom,
+                    ))
                 }));
                 sizes.extend(hidden_rows.iter().map(|row| (*row, 0.0)));
                 self.geom.rows = Sizes::new(row_h, MAX_ROWS, sizes);
@@ -1309,6 +1319,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
             width: 0.0,
             height: 0.0,
             dpi: 96,
+            zoom: 1.0,
         },
         theme,
         selection: Selection::default(),
@@ -2278,6 +2289,11 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
         text_wheel(hwnd, notches, lines);
         return;
     }
+    // Ctrl+wheel zooms the grid, as it does in every spreadsheet.
+    if mods().ctrl {
+        zoom_by(hwnd, if notches > 0.0 { 1.25 } else { 0.8 });
+        return;
+    }
     // Zero means "do not scroll", which is a real setting. `WHEEL_PAGESCROLL` (0xFFFFFFFF)
     // means a screenful, and is answered with the page rather than with 4 294 967 295 rows.
     // SAFETY: no nested loop inside.
@@ -3064,7 +3080,7 @@ fn button_up(hwnd: HWND) {
             if (now - from).abs() < 0.5 {
                 return Some(Ok(0));
             }
-            let to_mm = 1.0 / mm_to_px(state.geom.dpi)(1.0);
+            let to_mm = 1.0 / (mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
             Some(match edge {
                 Edge::Col(col) => state.app.set_col_width(
                     state.sheet,
@@ -3563,6 +3579,9 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleRoles => toggle_overlay(hwnd, false),
         Command::ToggleFormulas => toggle_formulas(hwnd),
+        Command::ZoomIn => zoom_by(hwnd, 1.25),
+        Command::ZoomOut => zoom_by(hwnd, 0.8),
+        Command::ZoomReset => zoom_to(hwnd, 1.0),
         Command::ToggleNames => toggle_overlay(hwnd, true),
         // Handled above, before the commit — but the match stays exhaustive, which is what says
         // every command has a handler.
@@ -3745,7 +3764,7 @@ fn insert_chart(hwnd: HWND) {
     unsafe {
         with_sheet(hwnd, |state| {
             let (start, end) = state.selection.rect();
-            let px = 1.0 / crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0);
+            let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
             let result = grind_sheet::verbs::insert_chart(
                 &state.app,
                 state.sheet,
@@ -4231,6 +4250,26 @@ fn toggle_overlay(hwnd: HWND, names: bool) {
         });
     }
     build_menu(hwnd);
+    refresh(hwnd);
+}
+
+/// View ▸ Zoom In / Out / 100% — a factor on every cell (25%–400%), a reading that is never stored:
+/// nothing measured is saved zoomed. Ctrl+wheel does the same.
+fn zoom_by(hwnd: HWND, factor: f64) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    let now = unsafe { with_sheet(hwnd, |state| state.geom.zoom) }.unwrap_or(1.0);
+    zoom_to(hwnd, now * factor);
+}
+
+fn zoom_to(hwnd: HWND, zoom: f64) {
+    let zoom = zoom.clamp(0.25, 4.0);
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.geom.zoom = zoom;
+            state.say(Some(format!("Zoom {:.0}%.", zoom * 100.0)));
+        });
+    }
     refresh(hwnd);
 }
 
@@ -5497,6 +5536,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleFormulas
+        | Command::ZoomIn
+        | Command::ZoomOut
+        | Command::ZoomReset
         | Command::ToggleRoles
         | Command::ToggleNames => {}
     }
@@ -5671,7 +5713,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             selection: state.selection,
             filter: state.app.filter(state.sheet).ok().flatten(),
             used: state.app.used_extent(state.sheet).unwrap_or((0, 0)),
-            font_px: scale(theme::text::CELL, state.geom.dpi).round() as i32,
+            font_px: (scale(theme::text::CELL, state.geom.dpi) * state.geom.zoom).round() as i32,
             caption_px: scale(theme::text::CAPTION, state.geom.dpi).round() as i32,
             body_px: scale(theme::text::BODY, state.geom.dpi).round() as i32,
             face: face(),
@@ -6568,6 +6610,9 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ImportCsv
         | Command::ExportCsv
         | Command::ToggleFormulas
+        | Command::ZoomIn
+        | Command::ZoomOut
+        | Command::ZoomReset
         | Command::ToggleRoles => {}
     }
 }

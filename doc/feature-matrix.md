@@ -123,13 +123,14 @@ ad-hoc-signed `Grind.app` in a DMG instead (M10).
 | Go to a defined name | ● | ● | ● | ● | ● | ● |
 | Skip a hidden or filtered row while moving | — | ● ʷᵉ | ● ᶜ | ● ʷᵉ | ● | ● |
 | Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn | sidebar |
-| Zoom | — | ● | ○ | ● ʷᶻ | ○ | ● |
+| Zoom | — | ● | ○ | ● ʷᶻ | ● ʷᵐ | ● |
 
 ᵉᵈ Closed 2026-10-02 over `grind_sheet::nav`'s edge rule: the browser's Ctrl+arrow (Shift extends); the terminal's `w b } {` and Ctrl+arrows, with `V` (row), Ctrl+V (column) and Ctrl+A (sheet) as visual selections of the used part — no header to click in a terminal.
 ʷʰ A click on a column's letter or a row's number selects the whole track (the smoke test clicks one); dragging a column header's right edge sizes the column through its `<col>` and writes one `set_col_width` on release — the drag is build-checked, jsdom having no layout. Rows are sized by the *Row height…* verb (2026-10-02).
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
 ʷᵉ The GNOME grid applies `nav::onto_visible` after its move (closing the gap `doc/sheet-shell.md` named; lint-checked only). The browser's motions are `grind_sheet::nav::moved` now, then `nav::onto_visible` over the hidden and filtered tracks — the rule the Windows and Mac grids use (2026-10-02). It replaces the browser's own `keymap::moved`, so selection and Shift-extend behave as they do there.
 ʷᶻ Ctrl+`+`/`-`/`0`, Ctrl+wheel and palette verbs scale the table and the charts over it with CSS `zoom` (25%–400%); a reading, never stored. Hit-testing is the DOM's; how many cells fit divides the room by the factor. Compile- and smoke-checked, not seen (2026-10-02).
+ʷᵐ View ▸ Zoom In/Out/Reset (Ctrl+`=`, Ctrl+`-`, Ctrl+wheel), 25%–400%: every track is scaled by the zoom (`Sizes::scaled`), and the cell font, wrapped lines, row heights, borders and charts follow it. A Wine render at 150% checked the cells, text and a chart (2026-10-02).
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
 so skipping means handing it the hidden set.
 ᶜ Every motion counts in tracks that are **drawn** (`ui_tui/src/sheet/keymap.rs`'s `walk`), on
