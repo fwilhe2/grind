@@ -98,8 +98,10 @@ mod tests {
         .unwrap();
         app.enter(0, Pos::new(1, 0), "plain", RecalcMode::Document)
             .unwrap();
-        let mut style = crate::style::CellStyle::default();
-        style.wrap = Some("wrap".into());
+        let style = crate::style::CellStyle {
+            wrap: Some("wrap".into()),
+            ..Default::default()
+        };
         app.set_style(0, Pos::new(0, 0), Pos::new(0, 0), Some(style))
             .unwrap();
         let grown = grown_rows(&app, 0, &|_| 20.0, 4.0, 4.0, 5.0, &Fixed);
