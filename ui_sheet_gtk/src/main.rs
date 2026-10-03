@@ -781,6 +781,42 @@ impl Ui {
     /// knob is `grind sheet import-csv`'s, and `csv::Import::sniffed` is where the choice of
     /// which ones a window sets is written down.
     fn import_csv(self: &Rc<Self>) {
+        self.pick_csv(String::new());
+    }
+
+    /// *Import CSV with Options…* — the options asked first, in words (`csv::Import::amended`:
+    /// `delimiter=semicolon locale=de-DE text formulas trim no-dates`), then the same picker.
+    fn import_csv_with(self: &Rc<Self>) {
+        let entry = gtk::Entry::builder()
+            .placeholder_text("delimiter=semicolon locale=de-DE text formulas trim no-dates")
+            .activates_default(true)
+            .build();
+        let dialog = adw::AlertDialog::new(
+            Some("Import CSV with Options"),
+            Some("Leave empty to let the file decide the delimiter."),
+        );
+        dialog.set_extra_child(Some(&entry));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("choose", "Choose File…");
+        dialog.set_response_appearance("choose", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("choose"));
+        dialog.set_close_response("cancel");
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response == "choose" {
+                        ui.pick_csv(entry.text().to_string());
+                    }
+                }
+            ),
+        );
+    }
+
+    fn pick_csv(self: &Rc<Self>, words: String) {
         let dialog = gtk::FileDialog::builder()
             .title("Import CSV")
             .filters(&csv_filters())
@@ -793,14 +829,14 @@ impl Ui {
                 self,
                 move |result| {
                     if let Some(path) = result.ok().and_then(|file| file.path()) {
-                        ui.read_csv(&path);
+                        ui.read_csv(&path, &words);
                     }
                 }
             ),
         );
     }
 
-    fn read_csv(self: &Rc<Self>, path: &Path) {
+    fn read_csv(self: &Rc<Self>, path: &Path, words: &str) {
         let text = match std::fs::read(path)
             .map_err(|error| error.to_string())
             .and_then(|bytes| csv::decode(bytes).map_err(str::to_owned))
@@ -812,7 +848,10 @@ impl Ui {
         };
         let sheet = self.grid.sheet();
         let at = self.grid.selection().active;
-        let options = csv::Import::sniffed(&text);
+        let options = match csv::Import::sniffed(&text).amended(words) {
+            Ok(options) => options,
+            Err(why) => return self.toast(&why),
+        };
         match self
             .app
             .import_csv(sheet, at, &text, &options, RecalcMode::Document)
@@ -1992,6 +2031,13 @@ fn actions() -> Vec<Verb> {
         verb("csv-import", &[], "Import CSV…", "Document", |ui| {
             ui.import_csv()
         }),
+        verb(
+            "csv-import-with",
+            &[],
+            "Import CSV with Options…",
+            "Document",
+            |ui| ui.import_csv_with(),
+        ),
         verb("csv-export", &[], "Export CSV…", "Document", |ui| {
             ui.export_csv()
         }),
