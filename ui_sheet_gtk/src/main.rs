@@ -1136,6 +1136,100 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
+    /// The function list: every function with its plain-English name and what it does — `grind
+    /// sheet functions --long`'s columns from the same catalog — searchable; picking one starts
+    /// an edit in the active cell seeded `=NAME(`.
+    fn explore_functions(self: &Rc<Self>) {
+        let search = gtk::SearchEntry::builder()
+            .placeholder_text("Search functions by name or plain-English name")
+            .build();
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        list.add_css_class("boxed-list");
+        let dialog = adw::Dialog::builder()
+            .title("Functions")
+            .content_width(560)
+            .content_height(520)
+            .build();
+
+        let refresh: Rc<dyn Fn()> = {
+            let (list, search) = (list.clone(), search.clone());
+            let (grid, dialog) = (self.grid.clone(), dialog.clone());
+            Rc::new(move || {
+                while let Some(row) = list.first_child() {
+                    list.remove(&row);
+                }
+                let wanted = search.text().to_uppercase();
+                let mut shown: Vec<_> = grind_sheet::formula::funcs::catalog()
+                    .iter()
+                    .filter_map(|info| {
+                        let friendly = grind_sheet::formula::friendly::signature(info.name)
+                            .map(|(head, _)| head)
+                            .unwrap_or_else(|| info.name.to_owned());
+                        (info.name.to_uppercase().contains(&wanted)
+                            || friendly.to_uppercase().contains(&wanted))
+                        .then_some((info, friendly))
+                    })
+                    .collect();
+                shown.sort_by_key(|(info, _)| info.name);
+                for (info, friendly) in shown {
+                    let row = adw::ActionRow::builder()
+                        .title(glib::markup_escape_text(&format!(
+                            "{} \u{2014} {friendly}",
+                            info.name
+                        )))
+                        .subtitle(glib::markup_escape_text(&format!(
+                            "{} ({})",
+                            info.brief,
+                            grind_sheet::formula::funcs::category(info)
+                        )))
+                        .activatable(true)
+                        .build();
+                    row.connect_activated(glib::clone!(
+                        #[weak]
+                        grid,
+                        #[weak]
+                        dialog,
+                        #[to_owned(rename_to = name)]
+                        info.name,
+                        move |_| {
+                            dialog.close();
+                            grid.begin_with(&format!("={name}("));
+                        }
+                    ));
+                    list.append(&row);
+                }
+            })
+        };
+        refresh();
+        search.connect_search_changed(glib::clone!(
+            #[strong]
+            refresh,
+            move |_| refresh()
+        ));
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        content.append(&search);
+        content.append(&list);
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .child(&content)
+            .build();
+        let view = adw::ToolbarView::builder().content(&scroller).build();
+        view.add_top_bar(&adw::HeaderBar::new());
+        dialog.set_child(Some(&view));
+        dialog.present(Some(&self.window));
+    }
+
     // --- charts ---
 
     /// The chart dialog (`chart_dialog.rs`): `None` inserts a chart of the selection,
@@ -1923,6 +2017,9 @@ fn actions() -> Vec<Verb> {
             |ui| ui.explore_calculations(),
         ),
         verb("names", &[], "Names…", "Document", |ui| ui.manage_names()),
+        verb("functions", &[], "Functions…", "Document", |ui| {
+            ui.explore_functions()
+        }),
         verb(
             "document-settings",
             &[],

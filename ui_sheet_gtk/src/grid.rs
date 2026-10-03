@@ -256,6 +256,12 @@ impl Grid {
         self.imp().begin(crate::state::Seed::Cell, focus_cell);
     }
 
+    /// Start an edit of the active cell with `text` already typed and the caret after it — the
+    /// function list's `=SUM(`, ready for its first argument.
+    pub fn begin_with(&self, text: &str) {
+        self.imp().begin_with(text);
+    }
+
     /// Store what the buffer holds and move on; the formula bar's Enter key.
     pub fn commit(&self, direction: Option<crate::keymap::Dir>) {
         self.imp().commit(direction);
@@ -2071,6 +2077,21 @@ mod imp {
                 // the seed; the caret belongs at the end of what is there.
                 self.editor.set_position(-1);
             }
+            self.restyle_formula();
+            self.update_completion();
+            self.obj().queue_allocate();
+            self.obj().queue_draw();
+        }
+
+        /// An edit that begins with `text` typed: Enter mode, the buffer replaced, the caret last.
+        pub fn begin_with(&self, text: &str) {
+            self.pending.replace(None);
+            self.buffer.set_text(text);
+            self.mode.set(Mode::Enter);
+            self.editor.set_visible(true);
+            self.editing_changed(true);
+            self.editor.grab_focus();
+            self.editor.set_position(-1);
             self.restyle_formula();
             self.update_completion();
             self.obj().queue_allocate();
