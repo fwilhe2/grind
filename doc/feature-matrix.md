@@ -583,17 +583,24 @@ piece of work than the one thing it would buy: this file going stale is visible 
 somebody reads it beside a shell, where a broken ratchet is visible immediately. Until then it
 carries a date.
 
-**Amended on 2026-10-02/03** after a gap-closing pass over all clients. Closed: find and replace over
-the text pane in Win32, the browser and (replace) GNOME; bookmark / named style / insert table in the
-browser and Win32; borders drawn and settable in Win32 and settable in GNOME; fill, hide, sizes,
-define name, evaluate, copy value, formula-to-value in Win32; the same family in the browser and
-terminal; rename/inline name in GNOME and the terminal. The Windows text column and the browser's
-hide/filter cells were **already stale** and were corrected. Shared pieces hoisted into the cores so
-shells cannot diverge: `grind_text::{find, table}`, `grind_sheet::{verbs, nav::fills,
-Filter::over_selection, look::border_strokes, format::bordered}`. Still open and heavy: charts
-(authoring in Win32/TUI/Web, drawing in Win32), zoom and drag-resize/autofit outside GNOME and Mac,
-point mode outside GNOME and Mac, wrapped-text drawing in Win32/TUI, the text-pane image story in
-the terminal, and the text pane's insert/delete/move-block verbs in the windows.
+**Amended on 2026-10-02/03** after a gap-closing pass over all clients, in about eighty commits. Every
+row it touched carries a note saying what was done and how far it was *checked*: Wine renders for the
+Windows grid's borders, charts, wrapped text and zoom; a pty run for the terminal's in-session
+`:new`/`:open`; the jsdom smoke test for the browser's header click; and **build- and lint-checked
+only** for the GNOME additions (no display here), the Windows pointer paths (resize drag, point mode,
+recent documents) and the browser's drag, zoom and point mode. The Windows text column and the
+browser's hide/filter cells were already stale and were corrected. Shared pieces were hoisted into
+the cores so shells cannot diverge: `grind_text::{find, table, blocks, picture}` and
+`grind_sheet::{verbs, autoheight, chart_paint, nav::fills, Filter::over_selection,
+look::border_strokes, format::bordered}`.
+
+**Still open**, as the ○ cells above say: charts — a preview, editing and restyling outside GNOME and
+the Mac, and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
+its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal
+and the browser's auto-height; the seven CSV import options in any window; a welcome screen and a
+second document kind in the two GNOME shells (by decision); recent files in the terminal and the
+browser; the number-format sample outside GNOME and the Mac; and the browser's and the Windows
+pane's reading of a formula through its names.
 
 **Amended on 2026-10-01** for the Mac column (`doc/macos-shell.md`'s M11), read out of `ui_mac`
 through M10 by the same three steps — every row judged against the code, its notes numbered so
