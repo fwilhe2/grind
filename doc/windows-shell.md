@@ -804,12 +804,13 @@ this shell's whole half of it, and is compiled out with the crate's `xlsx` featu
 
 R10 allows per-shell feature gaps and requires them to be named. These are the named ones.
 
-**Wrap and borders, on the grid.** The format strip (W12) carries everything else the GNOME
-strip does, and leaves these two out on purpose rather than by omission. *Wrap* would set
-`fo:wrap-option` on a cell this window then draws on one line — a toggle whose effect cannot be
-seen is worse than no toggle, and the fix is drawing wrapped text (and the row auto-height that
-comes with it, `ui_sheet_gtk`'s M10), not a button. *Borders* this window does not draw either
-(`doc/feature-matrix.md` §5), and the GNOME strip has no border control to mirror. A decimal count
+**Wrap and borders, on the grid — closed 2026-10-02.** They were left off the strip on purpose
+while the grid drew neither: a toggle whose effect cannot be seen is worse than none. The grid now
+draws both — borders through `grind_sheet::look::border_strokes`, wrapped text through
+`grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) with rows grown by
+`grind_sheet::autoheight` — and Format has *Wrap Text*, *All Borders* and *Remove Borders*
+(menu verbs, not strip buttons; the strip keeps its admission test). `dashed` and `dotted` borders
+draw solid. A decimal count
 beyond one step at a time, a grouping toggle and a currency other than `numfmt::CURRENCIES`' three
 are `grind sheet format`'s; this strip's number picker is one click per kind.
 
