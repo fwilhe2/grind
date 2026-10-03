@@ -63,6 +63,41 @@ pub fn formulas_to_values(app: &App, sheet: usize, start: Pos, end: Pos) -> crat
     Ok(dropped)
 }
 
+/// A new chart's size — the GNOME window's — and its gap from the table it charts.
+pub const CHART_WIDTH: &str = "12cm";
+pub const CHART_HEIGHT: &str = "7.5cm";
+pub const CHART_MARGIN_MM: f64 = 6.0;
+
+/// *Insert Chart*: a chart of the table the selection means (`App::suggest_chart` — which way the
+/// series run, what names them, what kind the cells want), placed beside it at the GNOME
+/// window's size. One undo step. `place` is the shell's own geometry: given the column just right
+/// of the table and its first row, it answers that corner's `(x, y)` in millimetres from the
+/// sheet's origin — the one thing a shell knows and the core does not. Answers the new chart's
+/// index.
+pub fn insert_chart(
+    app: &App,
+    sheet: usize,
+    start: Pos,
+    end: Pos,
+    place: impl Fn(u32, u32) -> (f64, f64),
+) -> crate::Result<usize> {
+    let guessed = app.suggest_chart(sheet, start, end, None)?;
+    let spec = crate::ChartSpec {
+        legend: guessed.spec.default_legend(),
+        ..guessed.spec
+    };
+    let (x, y) = place(guessed.end.col + 1, guessed.start.row);
+    app.add_chart(
+        sheet,
+        &spec,
+        &crate::style::mm_length(x + CHART_MARGIN_MM),
+        &crate::style::mm_length(y),
+        CHART_WIDTH,
+        CHART_HEIGHT,
+    )?;
+    Ok(app.charts(sheet)?.len().saturating_sub(1))
+}
+
 /// What a formula typed in display syntax — with or without its `=` — comes to at `at`, spelled
 /// for a sentence, or why it could not be worked out. Nothing is stored and no undo step is made
 /// (`App::preview`, `grind sheet eval`'s call): relative references are relative to `at`, the
@@ -146,6 +181,33 @@ mod tests {
         );
         assert_eq!(app.formula(0, Pos::new(1, 0)).unwrap(), None);
         assert_eq!(app.value_text(0, Pos::new(1, 0)).unwrap(), "6");
+    }
+
+    #[test]
+    fn a_chart_goes_in_beside_the_table_it_charts() {
+        let app = App::new();
+        for (r, row) in [["Month", "Sales"], ["Jan", "5"], ["Feb", "7"]]
+            .iter()
+            .enumerate()
+        {
+            for (c, text) in row.iter().enumerate() {
+                app.enter(
+                    0,
+                    Pos::new(r as u32, c as u32),
+                    text,
+                    crate::RecalcMode::Document,
+                )
+                .unwrap();
+            }
+        }
+        let index = insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |col, row| {
+            (f64::from(col) * 20.0, f64::from(row) * 5.0)
+        })
+        .unwrap();
+        assert_eq!(index, 0);
+        assert_eq!(app.charts(0).unwrap().len(), 1);
+        assert!(insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |_, _| (0.0, 0.0)).is_ok());
+        assert_eq!(app.charts(0).unwrap().len(), 2);
     }
 
     #[test]
