@@ -137,6 +137,8 @@ pub struct App {
     find: Find,
     /// The completion band, while a formula is being typed (`super::assist`).
     assist: Assist,
+    /// `:functions`, when it is showing — one row per function, Enter starts a formula with it.
+    functions: crate::pick::Pick,
     /// The reference being pointed at while a formula is typed (point mode), if one is.
     point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
@@ -184,6 +186,7 @@ impl App {
             overlays: grind_sheet::view::Overlays::NONE,
             find: Find::default(),
             assist: Assist::default(),
+            functions: crate::pick::Pick::default(),
             point: None,
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
@@ -235,6 +238,18 @@ impl App {
         }
         if self.problems.is_open() {
             self.on_problems_key(key.code);
+            return;
+        }
+        if self.functions.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(name) = self.functions.on_key(key.code, height) {
+                self.begin_edit(true);
+                if let Mode::Insert { buf, cursor } = &mut self.mode {
+                    *buf = format!("={name}(").chars().collect();
+                    *cursor = buf.len();
+                }
+                self.refresh_assist();
+            }
             return;
         }
         match self.mode {
@@ -1017,6 +1032,8 @@ impl App {
             "across" => self.cmd_across(),
             "value" => self.cmd_value(),
             "explain" => self.cmd_explain(),
+            "functions" => self.cmd_functions(""),
+            _ if cmd.starts_with("functions ") => self.cmd_functions(cmd[10..].trim()),
             "filter" => self.cmd_filter(),
             "chart" => self.cmd_chart(),
             "chart!" => self.cmd_unchart(),
@@ -1157,6 +1174,34 @@ impl App {
                 Err(e) => e.to_string(),
             },
         };
+    }
+
+    /// `:functions [text]` — the functions this build implements, each with its plain-English name
+    /// and what it does (`grind sheet functions --long`'s columns, from the same catalog), in a
+    /// list pane; Enter starts a formula in the active cell with the one chosen.
+    fn cmd_functions(&mut self, filter: &str) {
+        let wanted = filter.to_uppercase();
+        let mut rows: Vec<crate::pick::Row> = grind_sheet::formula::funcs::catalog()
+            .iter()
+            .filter_map(|info| {
+                let friendly = grind_sheet::formula::friendly::signature(info.name)
+                    .map(|(head, _)| head)
+                    .unwrap_or_else(|| info.name.to_owned());
+                (info.name.to_uppercase().contains(&wanted)
+                    || friendly.to_uppercase().contains(&wanted))
+                .then(|| crate::pick::Row {
+                    address: info.name.to_owned(),
+                    label: format!(
+                        "{friendly} \u{2014} {} ({})",
+                        info.brief,
+                        grind_sheet::formula::funcs::category(info)
+                    ),
+                    depth: 0,
+                })
+            })
+            .collect();
+        rows.sort_by(|a, b| a.address.cmp(&b.address));
+        self.functions.open("Functions", rows, None);
     }
 
     /// `:explain` — the active cell's formula in plain words, one line on the status bar
@@ -1867,6 +1912,10 @@ impl App {
         if self.problems.is_open() {
             let title = self.document_name();
             self.problems.draw(frame, area, &title);
+            return;
+        }
+        if self.functions.is_open() {
+            self.functions.draw(frame, area, "functions");
             return;
         }
         if let Some(projection) = self.source.take() {
@@ -3019,6 +3068,23 @@ mod tests {
         assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
         assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
         assert!(app.status.starts_with("filled"), "{}", app.status);
+    }
+
+    /// `:functions` is a pane of the catalog, and Enter starts an edit with the chosen function.
+    #[test]
+    fn the_function_list_starts_a_formula() {
+        let mut app = app();
+        app.run_command("functions sum");
+        assert!(app.functions.is_open());
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.functions.is_open());
+        match &app.mode {
+            Mode::Insert { buf, .. } => {
+                let text: String = buf.iter().collect();
+                assert!(text.starts_with('=') && text.ends_with('('), "{text}");
+            }
+            _ => panic!("an edit is open"),
+        }
     }
 
     /// `w` jumps to the edge of the data, and `V`, Ctrl+V and Ctrl+A select a row, a column and
