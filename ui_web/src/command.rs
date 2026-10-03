@@ -186,6 +186,9 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    cmd("view.zoom-in", "Zoom in", "View", "", false),
+    cmd("view.zoom-out", "Zoom out", "View", "", false),
+    cmd("view.zoom-reset", "Zoom to 100%", "View", "", false),
     // `doc/dsl.md` §6. The same command turns it off, like the two above, and for the same
     // reason: it is a *reading* of the document and writes nothing.
     cmd("view.source", "Show the source", "View", "", false),

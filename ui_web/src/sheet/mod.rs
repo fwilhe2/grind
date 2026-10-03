@@ -213,6 +213,10 @@ pub struct Ui {
     /// Whether a formula cell shows its formula instead of its result (`grind sheet view
     /// --formulas`). A reading, like the overlays: nothing is written.
     formulas: Cell<bool>,
+    /// The zoom, as a factor on how big the grid is drawn — a reading, never stored (nothing
+    /// measured is stored zoomed). The browser scales the table and the charts over it with CSS
+    /// `zoom`; hit-testing is the DOM's, so only how many cells fit needs to know.
+    zoom: Cell<f64>,
     message: RefCell<String>,
     /// The word the last cell picked from the palette was found by — what F3 and Shift+F3
     /// step through, and what *Replace in every cell…* offers to replace.
@@ -248,6 +252,7 @@ impl Ui {
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             formulas: Cell::new(false),
+            zoom: Cell::new(1.0),
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
             filter_field: Cell::new(None),
@@ -638,9 +643,11 @@ impl Ui {
 
     fn visible_with(&self, widths: &Tracks, heights: &Tracks) -> (u32, u32) {
         let scroll = self.scroll.get();
+        // The room is measured in the unit the tracks are, so a zoomed grid fits fewer cells.
+        let zoom = self.zoom.get();
         (
-            heights.fit(scroll.row, self.dom.surface.client_height() as f64),
-            widths.fit(scroll.col, self.dom.surface.client_width() as f64),
+            heights.fit(scroll.row, self.dom.surface.client_height() as f64 / zoom),
+            widths.fit(scroll.col, self.dom.surface.client_width() as f64 / zoom),
         )
     }
 
@@ -770,6 +777,9 @@ impl Ui {
             "sheet.recalc" => self.recalc(),
             "view.roles" => self.overlay(true),
             "view.names" => self.overlay(false),
+            "view.zoom-in" => self.zoom_by(1.25),
+            "view.zoom-out" => self.zoom_by(0.8),
+            "view.zoom-reset" => self.zoom_to(1.0),
             "view.formulas" => {
                 self.formulas.set(!self.formulas.get());
                 self.request_repaint();
@@ -1449,6 +1459,31 @@ impl Ui {
             }
         }
         self.set_message(format!("Filled {cells} cell(s)"));
+    }
+
+    /// Zoom by a factor, within the range where text is still text and a grid still a grid.
+    fn zoom_by(&self, factor: f64) {
+        self.zoom_to(self.zoom.get() * factor);
+    }
+
+    /// Set the zoom (25%–400%) and draw again. `CSS zoom` on the table and on the layer the charts
+    /// float in, so both scale about the same corner and a chart stays over the cells it covers.
+    fn zoom_to(&self, zoom: f64) {
+        let zoom = zoom.clamp(0.25, 4.0);
+        self.zoom.set(zoom);
+        for element in [
+            self.dom.cols.parent_element(),
+            Some(self.dom.charts.clone().into()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Ok(element) = element.dyn_into::<HtmlElement>() {
+                let _ = element.style().set_property("zoom", &format!("{zoom:.3}"));
+            }
+        }
+        self.set_message(format!("Zoom {:.0}%", zoom * 100.0));
+        self.request_repaint();
     }
 
     /// A column let go: its width is written once, in the document's own unit, as one undo step.
@@ -2366,6 +2401,13 @@ impl Ui {
     }
 
     fn on_wheel(&self, event: &WheelEvent) {
+        // Ctrl+wheel zooms, as it does in every grid and in the browser's own page; claimed here
+        // so the page does not zoom the whole window instead.
+        if event.ctrl_key() || event.meta_key() {
+            event.prevent_default();
+            self.zoom_by(if event.delta_y() < 0.0 { 1.25 } else { 0.8 });
+            return;
+        }
         // The surface scrolls by whole cells rather than pixels: the viewport is
         // addressed in rows and columns, so anything else would ask the core for a
         // fraction of a cell it has no way to give.

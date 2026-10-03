@@ -115,6 +115,11 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
             // Replace's key in both other spreadsheets. Ctrl+F is not here: it opens the
             // palette, which `lib.rs` catches before any pane sees a key.
             "h" | "H" => Some(Action::Run("edit.replace")),
+            // The grid's own zoom, the keys the GNOME window uses; the browser's page zoom is
+            // left to the menu, since this claims the chord.
+            "+" | "=" => Some(Action::Run("view.zoom-in")),
+            "-" => Some(Action::Run("view.zoom-out")),
+            "0" => Some(Action::Run("view.zoom-reset")),
             "ArrowLeft" => Some(edge(Dir::Left, chord.shift)),
             "ArrowRight" => Some(edge(Dir::Right, chord.shift)),
             "ArrowUp" => Some(edge(Dir::Up, chord.shift)),
@@ -449,6 +454,26 @@ mod tests {
                 false
             ),
             Some(edge(Dir::Up, true))
+        );
+    }
+
+    #[test]
+    fn ctrl_plus_minus_and_zero_zoom_the_grid() {
+        assert_eq!(
+            action_for(&primary("+"), false),
+            Some(Action::Run("view.zoom-in"))
+        );
+        assert_eq!(
+            action_for(&primary("="), false),
+            Some(Action::Run("view.zoom-in"))
+        );
+        assert_eq!(
+            action_for(&primary("-"), false),
+            Some(Action::Run("view.zoom-out"))
+        );
+        assert_eq!(
+            action_for(&primary("0"), false),
+            Some(Action::Run("view.zoom-reset"))
         );
     }
 }
