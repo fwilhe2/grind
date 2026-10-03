@@ -609,6 +609,20 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   const filterLabels = () =>
     [...document.querySelectorAll("#filter-list .filter-row span")].map((s) => s.textContent);
 
+  // A chart's preview: the dialog draws it, and nothing is written until Insert.
+  await goTo("A1:B2");
+  await command("Preview the chart");
+  const preview = document.querySelector(".chart-preview");
+  check("the preview dialog opens", preview !== null, true);
+  check("it draws the chart", preview && preview.querySelectorAll("svg").length, 1);
+  check("and writes nothing", document.querySelectorAll("#charts .chart").length, 1);
+  [...preview.querySelectorAll("button")]
+    .find((b) => b.textContent === "Insert")
+    .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  await frame();
+  check("Insert closes it", document.querySelector(".chart-preview"), null);
+  check("and inserts the chart", document.querySelectorAll("#charts .chart").length, 2);
+
   await openFile("filter.fods", FILTER);
   check("a fresh table has no filter button", document.querySelectorAll("button.filter-btn").length, 0);
 

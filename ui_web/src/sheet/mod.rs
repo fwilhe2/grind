@@ -817,6 +817,7 @@ impl Ui {
             "edit.explain" => self.explain(),
             "doc.locale" => self.document_locale(),
             "chart.insert" => self.insert_chart(),
+            "chart.preview" => self.preview_chart(),
             "chart.delete" => self.delete_chart(),
             "chart.restyle" => self.restyle_chart(),
             "edit.fill-across" => self.fill_across(),
@@ -1665,6 +1666,78 @@ impl Ui {
             Ok(_) => self.set_message("A chart beside the table — Ctrl+Z takes it back".to_owned()),
             Err(error) => self.set_message(error.to_string()),
         }
+    }
+
+    /// *Preview the chart for the selection…* — the chart *Insert* would make, drawn by the same
+    /// `chart::svg` the sheet uses, in a dialog with **Insert** and **Cancel**. Nothing is written
+    /// until Insert (`verbs::preview_insert_chart`).
+    fn preview_chart(&self) {
+        let (start, end) = self.rect();
+        let (chart_, data) =
+            match grind_sheet::verbs::preview_insert_chart(&self.app, self.sheet.get(), start, end)
+            {
+                Ok(shown) => shown,
+                Err(error) => return self.set_message(error.to_string()),
+            };
+        if let Err(error) = self.show_chart_preview(&chart::svg(&chart_, &data, 420.0, 260.0)) {
+            self.set_message(format!("The preview would not open: {error:?}"));
+        }
+    }
+
+    fn show_chart_preview(&self, svg: &str) -> Result<(), JsValue> {
+        let document = &self.dom.document;
+        let overlay = document.create_element("div")?;
+        overlay.set_class_name("palette chart-preview");
+        overlay.set_attribute("data-chart-preview", "")?;
+        let sheet = document.create_element("div")?;
+        sheet.set_class_name("palette-sheet");
+        sheet.set_attribute("role", "dialog")?;
+        sheet.set_attribute("aria-label", "Chart preview")?;
+        let picture = document.create_element("div")?;
+        picture.set_class_name("chart");
+        picture.set_attribute(
+            "style",
+            "position:static;width:420px;max-width:100%;height:260px;margin:1rem auto",
+        )?;
+        picture.set_inner_html(svg);
+        let row = document.create_element("div")?;
+        row.set_attribute(
+            "style",
+            "display:flex;gap:.5rem;justify-content:flex-end;padding:0 1rem 1rem",
+        )?;
+        let cancel = document.create_element("button")?;
+        cancel.set_text_content(Some("Cancel"));
+        cancel.set_attribute("type", "button")?;
+        let insert = document.create_element("button")?;
+        insert.set_text_content(Some("Insert"));
+        insert.set_attribute("type", "button")?;
+        row.append_child(&cancel)?;
+        row.append_child(&insert)?;
+        sheet.append_child(&picture)?;
+        sheet.append_child(&row)?;
+        overlay.append_child(&sheet)?;
+        document
+            .body()
+            .ok_or_else(|| JsValue::from_str("no body"))?
+            .append_child(&overlay)?;
+        let close = {
+            let overlay = overlay.clone();
+            move || overlay.remove()
+        };
+        let on_cancel = close.clone();
+        listen(&cancel, "click", move |_: MouseEvent| on_cancel())?;
+        let on_insert = close.clone();
+        listen(&insert, "click", move |_: MouseEvent| {
+            on_insert();
+            crate::run_command("chart.insert");
+        })?;
+        listen(&overlay, "keydown", move |event: KeyboardEvent| {
+            if event.key() == "Escape" {
+                close();
+            }
+        })?;
+        insert.unchecked_into::<web_sys::HtmlElement>().focus()?;
+        Ok(())
     }
 
     /// *Change the last chart…* — its kind, title and legend, in words (`verbs::restyle_chart`).

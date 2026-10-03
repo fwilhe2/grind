@@ -251,6 +251,13 @@ pub const SHEET: &[Command] = &[
     // Charts: authored beside the table the selection means (`verbs::insert_chart`) and changed in
     // words (`verbs::restyle_chart`); drawn already.
     cmd(
+        "chart.preview",
+        "Preview the chart for the selection…",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
         "chart.insert",
         "Insert a chart from the selection",
         "Charts",
