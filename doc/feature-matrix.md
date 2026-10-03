@@ -68,7 +68,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
-| Recent files | — | ● | ○ | ○ | ○ | ● ʷʳ | ● |
+| Recent files | — | ● | ● | ○ | ○ | ● ʷʳ | ● |
 | Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
 | `.deb` + `.rpm` | ● | ● | ● | ● | — | — | — ⁷ |
