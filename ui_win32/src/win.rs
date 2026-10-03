@@ -5101,9 +5101,15 @@ fn draw_frame(dc: HDC, state: &Sheet) {
         .flatten()
         .unwrap_or_default();
     let number = state.app.format_at(state.sheet, active).ok().flatten();
+    let charts = state.app.charts(state.sheet).unwrap_or_default();
+    let chart_data: Vec<Option<grind_sheet::ChartData>> = (0..charts.len())
+        .map(|index| state.app.chart_data(state.sheet, index).ok())
+        .collect();
     let tabs = draw::paint(
         dc,
         &Frame {
+            charts: &charts,
+            chart_data: &chart_data,
             geom: &state.geom,
             theme: state.theme,
             format: FormatStrip {

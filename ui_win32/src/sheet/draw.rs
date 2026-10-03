@@ -227,6 +227,10 @@ mod windows_impl {
         /// out of `geom.rows` before this frame was asked for, so there is nothing left to draw
         /// differently about them.
         pub filter: Option<grind_sheet::Filter>,
+        /// The sheet's charts and, for each, the data it draws — read fresh for this frame like
+        /// everything else here (`sheet/chart.rs`).
+        pub charts: &'a [grind_sheet::Chart],
+        pub chart_data: &'a [Option<grind_sheet::ChartData>],
         /// How far the document's own content reaches — `App::used_extent`, the same answer the
         /// status bar reports. Past it the hairlines are drawn quieter (`Theme::grid_line_soft`).
         pub used: (u32, u32),
@@ -460,6 +464,9 @@ mod windows_impl {
                 }
             }
         }
+
+        // The charts float over the cells and their borders, under the overlays and the selection.
+        crate::sheet::chart::paint(dc, g, theme, frame.face, frame.charts, frame.chart_data);
 
         // `doc/view-modes.md`'s name overlay: where a defined name anchors, outlined if it
         // covers more than one cell. Drawn after every cell so the outline sits on the grid

@@ -19,6 +19,7 @@
 //! developed on the Linux machine this repository lives on.
 
 pub mod assist;
+pub mod chart;
 pub mod currency;
 pub mod draw;
 pub mod format;
