@@ -34,6 +34,7 @@ Word processor:
   :find <text>   :s/old/new/        :words
   :outline       — every heading, indented; Enter goes to one
   :table [rows cols]                — a table before this block, drawn as a grid
+  :image <file>                     — a picture below this block (drawn by the other windows)
   :move <address>                   — this block, put before that one
   :mark <name>   :mark!             — anchor a bookmark here, or drop the one that is
   :names         — show where each bookmark anchors, which is otherwise invisible

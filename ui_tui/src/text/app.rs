@@ -926,6 +926,7 @@ impl App {
             "lint" => self.cmd_lint(false),
             "lint hints" | "lint!" => self.cmd_lint(true),
             "outline" => self.cmd_outline(),
+            _ if cmd.starts_with("image ") => self.cmd_image(cmd[6..].trim()),
             // The word processor's half of inline names (§3.6). A verb rather than a key,
             // and the same word turns it off: nothing is written either way.
             "names" => {
@@ -1031,6 +1032,33 @@ impl App {
             return;
         }
         self.quit = true;
+    }
+
+    /// `:image <file>` — a picture below the caret's paragraph (`grind_text::picture`, the placement
+    /// every window shares). The terminal cannot draw one, so it shows as the placeholder
+    /// character here and as a picture in the other windows; what it does is put one in.
+    fn cmd_image(&mut self, path: &str) {
+        let data = match std::fs::read(path) {
+            Ok(data) => data,
+            Err(error) => {
+                self.status = format!("{path}: {error}");
+                return;
+            }
+        };
+        let Some(mime) = grind_text::picture::mime(&data) else {
+            self.status = format!("{path} is not a picture (PNG, JPEG, GIF, WebP, BMP or SVG)");
+            return;
+        };
+        match grind_text::picture::insert_below(&self.core, self.caret.block, mime, data) {
+            Ok(block) => {
+                self.caret = Caret { block, offset: 1 };
+                self.anchor = None;
+                self.goal_x = None;
+                self.status =
+                    "a picture \u{2014} drawn by the other windows; u takes it back".to_string();
+            }
+            Err(error) => self.status = error.to_string(),
+        }
     }
 
     /// `:outline` — every heading, indented by its level, each row a jump.
@@ -2479,6 +2507,24 @@ mod tests {
         assert_eq!(app.caret.block, 0, "the caret followed it");
         press(&mut app, KeyCode::Char('u'));
         assert_eq!(text(&app), "first\nsecond\nthird");
+    }
+
+    /// `:image` puts a picture below the caret's paragraph and refuses what is not one.
+    #[test]
+    fn an_image_goes_in_below_and_a_non_picture_is_refused() {
+        let dir = std::env::temp_dir().join("grind-tui-image-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("p.png");
+        std::fs::write(&png, b"\x89PNG\r\n\x1a\n....").unwrap();
+        let text = dir.join("t.txt");
+        std::fs::write(&text, b"hello").unwrap();
+        let mut app = app(&["one"]);
+        app.run_command(&format!("image {}", text.display()));
+        assert!(app.status.contains("not a picture"), "{}", app.status);
+        assert_eq!(app.core.block_count(), 1);
+        app.run_command(&format!("image {}", png.display()));
+        assert_eq!(app.core.block_count(), 2, "{}", app.status);
+        assert_eq!(app.caret.block, 1);
     }
 
     /// `:outline` opens a pane rather than printing into the status bar, and every row is a jump.
