@@ -146,7 +146,7 @@ than as a cursor on a hidden row.
 | In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● | ● |
 | Formula bar | — | ● | ◐ ᵃ | ● | ● | ● ¹ |
 | Clear a cell or a range | ● | ● | ● | ● | ● | ● |
-| Clear only the formula, keeping the value | ● | ○ | ● ᵗᵘ | ● | ● | ● |
+| Clear only the formula, keeping the value | ● | ● ᵍᶠ | ● ᵗᵘ | ● | ● | ● |
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
 | Copy Value — the formatted result, not the formula | ● | ● | ● ᵗᵘ | ● | ● | ● |
@@ -156,8 +156,8 @@ than as a cursor on a hidden row.
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
 | Evaluate a formula without storing it | ● | ● ᵈ | ● | ● ᵖᵃ | ● | ● |
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
-| Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
-| Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
+| Autocomplete while typing a formula | ● ᶜ | ● | ● | ● | ● | ● |
+| Signature hint for the call the caret is in | ● ᶜ | ● | ● | ● | ● | ● |
 | Point mode — arrow keys build a reference | — | ● | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
@@ -174,6 +174,8 @@ than as a cursor on a hidden row.
 ᶠᵒ `:formulas` in the terminal, a palette verb in the browser, View ▸ Show Formulas in Windows and GNOME (the GNOME one draws the cell text only, and is lint-checked rather than seen): each formula cell shows its formula text (display syntax) instead of its result — a reading, nothing is written (2026-10-02).
 ˡᵒ `:locale [tag|none]`, a palette verb and Data ▸ Document Locale…: a tag such as `de-DE` through `verbs::locale`, then `App::set_locale` — one undo step (2026-10-02).
 ʲʷ In words rather than checkboxes, through `csv::Import::amended` (`delimiter=semicolon locale=de-DE text formulas trim no-dates`): `:csv-in <file> with …` in the terminal, *Import CSV with Options…* in GNOME's palette (an alert, then the picker), *Import CSV with Options…* in the Mac's File menu (type-checked only), *Import CSV with options…* in the browser's palette and File ▸ Import CSV with Options… in Windows — the options asked first (the browser) or after the file (Windows) — 2026-10-02.
+ᵍᶠ *Replace Formulas with Values* in GNOME's palette (`verbs::formulas_to_values` over the selection; lint-checked only).
+ʷⁿ A *Names* menu: Define for the Selection, Rename, Inline into Formulas, Delete — typed by name in a prompt, over the core's own calls (2026-10-02).
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the
@@ -281,9 +283,9 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ● ᵗᵘ | ● | ● | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
-| Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ◐ | ● ³ |
-| Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ○ | ● ³ |
-| Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ○ | ● ³ |
+| Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ● ʷⁿ | ● ³ |
+| Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
+| Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |

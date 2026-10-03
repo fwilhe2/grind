@@ -116,6 +116,12 @@ pub enum Command {
     /// A name for the selection, to use in formulas instead of its address (`App::set_name`
     /// through `grind_sheet::a1::definition`, as `grind sheet name` reads one).
     DefineName,
+    /// A defined name renamed with every formula that uses it, written into every use and
+    /// dropped, or just dropped — typed by name in a prompt (`App::rename_name`, `inline_name`,
+    /// `clear_name`; one undo step each, except the last, which is the core's own).
+    RenameName,
+    InlineName,
+    DeleteName,
     /// The document's own locale, asked for as a tag (`de-DE`) — how it spells its numbers
     /// (`App::set_locale`, `grind sheet locale`'s call).
     DocumentLocale,
@@ -338,6 +344,9 @@ impl Command {
         Command::FitColumns,
         Command::ColumnWidth,
         Command::DefineName,
+        Command::RenameName,
+        Command::InlineName,
+        Command::DeleteName,
         Command::DocumentLocale,
         Command::FindCalculation,
         Command::Evaluate,
@@ -701,10 +710,6 @@ pub const MENUS: &[Menu] = &[
                 command: Command::DocumentLocale,
                 label: "Docu&ment Locale…",
             },
-            Item::Verb {
-                command: Command::DefineName,
-                label: "Define &Name…",
-            },
             Item::Separator,
             Item::Verb {
                 command: Command::ToggleFilter,
@@ -717,6 +722,27 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FormatTableTotals,
                 label: "Format as Table with &Totals…",
+            },
+        ],
+    },
+    Menu {
+        title: "&Names",
+        items: &[
+            Item::Verb {
+                command: Command::DefineName,
+                label: "&Define for the Selection…",
+            },
+            Item::Verb {
+                command: Command::RenameName,
+                label: "&Rename…",
+            },
+            Item::Verb {
+                command: Command::InlineName,
+                label: "&Inline into Formulas…",
+            },
+            Item::Verb {
+                command: Command::DeleteName,
+                label: "De&lete…",
             },
         ],
     },
@@ -1111,6 +1137,9 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::RenameName
+        | Command::InlineName
+        | Command::DeleteName
         | Command::DocumentLocale
         | Command::FindCalculation
         | Command::Evaluate
@@ -1498,6 +1527,9 @@ mod tests {
             Command::FitColumns,
             Command::ColumnWidth,
             Command::DefineName,
+            Command::RenameName,
+            Command::InlineName,
+            Command::DeleteName,
             Command::DocumentLocale,
             Command::FindCalculation,
             Command::Evaluate,

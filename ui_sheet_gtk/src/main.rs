@@ -1193,6 +1193,20 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
+    /// *Replace Formulas with Values* over the selection.
+    fn formulas_to_values(self: &Rc<Self>) {
+        let used = self.app.used_extent(self.grid.sheet()).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(self.grid.selection(), used);
+        match grind_sheet::verbs::formulas_to_values(&self.app, self.grid.sheet(), start, end) {
+            Ok(0) => self.toast("There was no formula in the selection."),
+            Ok(n) => self.toast(&format!(
+                "{} now plain values.",
+                counted(n, "formula is", "formulas are")
+            )),
+            Err(error) => self.toast(&error.to_string()),
+        }
+    }
+
     /// The function list: every function with its plain-English name and what it does — `grind
     /// sheet functions --long`'s columns from the same catalog — searchable; picking one starts
     /// an edit in the active cell seeded `=NAME(`.
@@ -2082,6 +2096,15 @@ fn actions() -> Vec<Verb> {
             |ui| ui.explore_calculations(),
         ),
         verb("names", &[], "Names…", "Document", |ui| ui.manage_names()),
+        // Each formula in the selection dropped, the cell keeping the value it last computed —
+        // `verbs::formulas_to_values`, one undo step per formula (the core has no range form).
+        verb(
+            "formulas-to-values",
+            &[],
+            "Replace Formulas with Values",
+            "Document",
+            |ui| ui.formulas_to_values(),
+        ),
         verb("functions", &[], "Functions…", "Document", |ui| {
             ui.explore_functions()
         }),

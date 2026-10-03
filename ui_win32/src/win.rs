@@ -3552,6 +3552,9 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FitColumns => fit_columns(hwnd),
         Command::ColumnWidth => track_size(hwnd, false),
         Command::DefineName => define_name(hwnd),
+        Command::RenameName => rename_name(hwnd),
+        Command::InlineName => inline_name(hwnd),
+        Command::DeleteName => delete_name(hwnd),
         Command::DocumentLocale => document_locale(hwnd),
         Command::FindCalculation => find_calculation(hwnd),
         Command::Evaluate => evaluate(hwnd),
@@ -4187,6 +4190,71 @@ fn define_name(hwnd: HWND) {
             state.say(Some(match result {
                 Ok(()) => notice::name_defined(&name, &target),
                 Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// The name asked for in a prompt, trimmed, or `None` when cancelled or empty.
+fn ask_name(hwnd: HWND, title: &str, prompt: &str, default: &str) -> Option<String> {
+    let name = dialog::prompt(hwnd, title, prompt, default)?;
+    let name = name.trim().to_owned();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Names ▸ Rename… — the name and its new spelling; every formula and every other name that uses
+/// it follows (`App::rename_name`, one undo step).
+fn rename_name(hwnd: HWND) {
+    let Some(from) = ask_name(hwnd, "Rename Name", "Rename which name:", "") else {
+        return;
+    };
+    let Some(to) = ask_name(hwnd, "Rename Name", &format!("Rename “{from}” to:"), &from) else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialogs.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(match state.app.rename_name(&from, &to) {
+                Ok(uses) => format!(
+                    "“{from}” is “{to}” now — {uses} use(s) rewritten. Ctrl+Z takes it back."
+                ),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Names ▸ Inline into Formulas… — the name's definition written into every use, and the name
+/// dropped (`App::inline_name`, one undo step).
+fn inline_name(hwnd: HWND) {
+    let Some(name) = ask_name(hwnd, "Inline Name", "Inline which name:", "") else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(match state.app.inline_name(&name) {
+                Ok(uses) => format!("“{name}” inlined — {uses} use(s) rewritten, the name is gone. Ctrl+Z takes it back."),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Names ▸ Delete… — the definition only; a formula that used it will say `#NAME?`.
+fn delete_name(hwnd: HWND) {
+    let Some(name) = ask_name(hwnd, "Delete Name", "Delete which name:", "") else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(match state.app.clear_name(&name) {
+                true => format!("“{name}” deleted. Ctrl+Z takes it back."),
+                false => format!("There is no name “{name}”."),
             }));
         });
     }
@@ -5528,6 +5596,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::RenameName
+        | Command::InlineName
+        | Command::DeleteName
         | Command::DocumentLocale
         | Command::FindCalculation
         | Command::Evaluate
@@ -6634,6 +6705,9 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::RenameName
+        | Command::InlineName
+        | Command::DeleteName
         | Command::DocumentLocale
         | Command::FindCalculation
         | Command::Evaluate
