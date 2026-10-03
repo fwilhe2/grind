@@ -20,7 +20,7 @@ pub struct Imported {
     pub summary: String,
 }
 
-/// `Some` when `bytes` are a workbook or a CSV, imported; `None` for anything else, which goes
+/// `Some` when `bytes` are a workbook, a CSV or a markdown file, imported; `None` for anything else, which goes
 /// on to `grind_core::kind` as before.
 pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
     #[cfg(feature = "xlsx")]
@@ -39,6 +39,16 @@ pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
     // no signature — arrives the same way: flat ODF, renamed `.fods`.
     if grind_core::kind(bytes).is_none()
         && let Some(opened) = grind_sheet::csv::open(name, bytes)
+    {
+        return Some(opened.map(|opened| Imported {
+            name: opened.name,
+            odf: opened.odf,
+            summary: opened.summary,
+        }));
+    }
+    // Markdown arrives the same way, as a text document: flat ODF, renamed `.fodt`.
+    if grind_core::kind(bytes).is_none()
+        && let Some(opened) = grind_text::commonmark::open(name, bytes)
     {
         return Some(opened.map(|opened| Imported {
             name: opened.name,
@@ -82,5 +92,22 @@ mod csv_tests {
             Some(grind_core::DocumentKind::Spreadsheet)
         );
         assert!(workbook("notes.txt", b"a,b").is_none());
+    }
+}
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::*;
+
+    #[test]
+    fn markdown_becomes_a_flat_text_document_under_an_odf_name() {
+        let imported = workbook("notes.md", b"# Hi\n\ntext\n")
+            .expect("markdown")
+            .unwrap();
+        assert_eq!(imported.name, "notes.fodt");
+        assert_eq!(
+            grind_core::kind(&imported.odf),
+            Some(grind_core::DocumentKind::Text)
+        );
     }
 }

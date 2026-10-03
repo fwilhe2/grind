@@ -377,6 +377,8 @@ impl TextPane {
                 self.app.set_bookmark(&name, Some(block)).map(|_| ())
             }
             Command::InsertPicture => return self.insert_picture(mtm),
+            Command::ImportMarkdown => return self.import_markdown(mtm),
+            Command::ExportMarkdown => return self.export_markdown(mtm),
             Command::MoveParagraph(up) => {
                 return self.act_on(|page, app, _| page.move_paragraphs(app, up));
             }
@@ -417,6 +419,69 @@ impl TextPane {
 }
 
 impl TextPane {
+    /// File ▸ Import Markdown…: a markdown file read in before the caret's block, one undo step
+    /// (`App::import_markdown`) — where Open would make it a document of its own.
+    fn import_markdown(&self, mtm: MainThreadMarker) {
+        let panel = NSOpenPanel::openPanel(mtm);
+        panel.setCanChooseDirectories(false);
+        panel.setAllowsMultipleSelection(false);
+        panel.setPrompt(Some(&NSString::from_str("Import")));
+        if panel.runModal() != NSModalResponseOK {
+            return;
+        }
+        let Some(path) = panel.URL().and_then(|url| url.to_file_path()) else {
+            return;
+        };
+        let text = std::fs::read(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned()));
+        let block = self.state.borrow().caret.block;
+        let done = text
+            .and_then(|text| {
+                self.app
+                    .import_markdown(block, &text)
+                    .map_err(|error| error.to_string())
+            })
+            .map_err(|why| format!("{}: {why}", path.display()));
+        match done {
+            Ok(_) => self.go_to(grind_text::Caret { block, offset: 0 }),
+            Err(why) => prompt::tell(mtm, "That file could not be imported.", &why),
+        }
+    }
+
+    /// File ▸ Export as Markdown…: the selected paragraphs, or the whole page with no selection,
+    /// as CommonMark in a file the save panel names. Writes a file and changes nothing.
+    fn export_markdown(&self, mtm: MainThreadMarker) {
+        let panel = NSSavePanel::savePanel(mtm);
+        panel.setNameFieldStringValue(&NSString::from_str("Untitled.md"));
+        if panel.runModal() != NSModalResponseOK {
+            return;
+        }
+        let Some(path) = panel.URL().and_then(|url| url.to_file_path()) else {
+            return;
+        };
+        let blocks = {
+            let state = self.state.borrow();
+            match state.selection().is_some() {
+                true => {
+                    let blocks = state.blocks();
+                    *blocks.start()..*blocks.end() + 1
+                }
+                false => 0..self.app.block_count(),
+            }
+        };
+        let done = self
+            .app
+            .export_markdown(blocks)
+            .map_err(|error| error.to_string())
+            .and_then(|text| {
+                std::fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))
+            });
+        if let Err(why) = done {
+            prompt::tell(mtm, "That could not be exported.", &why);
+        }
+    }
+
     /// Insert ▸ Picture…: a file the open panel names, embedded in the document — a picture is
     /// its bytes, never a link to them — in a paragraph of its own: the caret's, when that one is
     /// empty, and otherwise a new one after it. The caret lands just past the picture, so what is

@@ -112,6 +112,11 @@ pub enum Command {
     ImportCsvWith,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
+    /// A markdown file read into the page before the caret's block — File ▸ Import Markdown….
+    ImportMarkdown,
+    /// The page as CommonMark, the selected paragraphs or all of it — File ▸ Export as
+    /// Markdown….
+    ExportMarkdown,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
     Evaluate,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
@@ -251,6 +256,8 @@ impl Command {
             Command::ExportCsv,
             Command::ImportCsv,
             Command::ImportCsvWith,
+            Command::ImportMarkdown,
+            Command::ExportMarkdown,
             Command::About,
             Command::InsertChart,
             Command::PreviewChart,
@@ -291,6 +298,8 @@ impl Command {
                 | Command::ExportCsv
                 | Command::ImportCsv
                 | Command::ImportCsvWith
+                | Command::ImportMarkdown
+                | Command::ExportMarkdown
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
@@ -337,6 +346,8 @@ impl Command {
             | Command::InsertTable
             | Command::InsertBookmark
             | Command::InsertPicture
+            | Command::ImportMarkdown
+            | Command::ExportMarkdown
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
             | Command::ParagraphStyle => text,
@@ -804,6 +815,8 @@ pub static MENUS: &[Menu] = &[
             command("Import CSV…", None, Command::ImportCsv),
             command("Import CSV with Options…", None, Command::ImportCsvWith),
             command("Export as CSV…", None, Command::ExportCsv),
+            command("Import Markdown…", None, Command::ImportMarkdown),
+            command("Export as Markdown…", None, Command::ExportMarkdown),
             Item::Submenu {
                 title: "Revert To",
                 menu: &REVERT_TO,

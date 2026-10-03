@@ -267,6 +267,8 @@ impl Delegate {
             Command::InsertTable
             | Command::InsertBookmark
             | Command::InsertPicture
+            | Command::ImportMarkdown
+            | Command::ExportMarkdown
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
             | Command::ParagraphStyle => {

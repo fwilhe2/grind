@@ -48,7 +48,7 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 |---|---|
 | **Writing `.xlsx`** | Writing Excel means owning the Excel semantics this project was built to not have — the 1900 leap-year bug, a different error set, a different text→number rule. Reading it is a cheap escape hatch and stays *possible*; writing it is not. |
 | **`.xls`** | Same, plus a binary format. |
-| **Anything that is not ODF, for writing** | CSV is the one exception, and it is in §2 because it carries no semantics to get wrong. |
+| **Anything that is not ODF, for writing** | CSV is the exception for the spreadsheet, and it is in §2 because it carries no semantics to get wrong. CommonMark is its counterpart for text (`text/src/commonmark.rs`, `grind text export-md`): read by `pulldown-cmark`, written by a fold over the block model, and it writes only what CommonMark can say — underline, colour, size, bookmarks and pictures are dropped rather than approximated. |
 
 ### OpenFormula beyond the line
 

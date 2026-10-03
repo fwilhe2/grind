@@ -151,6 +151,15 @@ pub const TYPES: &[Type] = &[
         role: Role::Viewer,
         declared: Declared::System,
     },
+    Type {
+        name: "Markdown",
+        identifier: "net.daringfireball.markdown",
+        extension: "md",
+        mime: "text/markdown",
+        rank: Rank::Alternate,
+        role: Role::Viewer,
+        declared: Declared::Imported(PLAIN),
+    },
 ];
 
 /// `s` as XML character data.

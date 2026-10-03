@@ -328,6 +328,22 @@ pub const TEXT: &[Command] = &[
     cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
+    // Markdown, the word processor's CSV: read in before the caret's block, written out from the
+    // selection (or the whole document). A download names itself, so no dialect to choose.
+    cmd(
+        "doc.import-markdown",
+        "Import Markdown…",
+        "Document",
+        "",
+        false,
+    ),
+    cmd(
+        "doc.export-markdown",
+        "Export as Markdown",
+        "Document",
+        "",
+        false,
+    ),
     cmd("edit.copy", "Copy", "Edit", "Ctrl+C", true),
     cmd("edit.cut", "Cut", "Edit", "Ctrl+X", false),
     cmd("edit.paste", "Paste", "Edit", "Ctrl+V", false),
@@ -537,6 +553,20 @@ mod tests {
     #[test]
     fn a_letter_that_is_not_there_matches_nothing() {
         assert!(filter(SHEET, "zzzz").is_empty());
+    }
+
+    /// Markdown is blocks in both directions, so both rows are the page's alone.
+    #[test]
+    fn the_markdown_verbs_are_the_pages_alone_and_findable_by_name() {
+        for id in ["doc.import-markdown", "doc.export-markdown"] {
+            assert!(TEXT.iter().any(|command| command.id == id), "{id}");
+            assert!(!SHEET.iter().any(|command| command.id == id), "{id}");
+        }
+        assert!(
+            filter(TEXT, "markdown")
+                .iter()
+                .any(|entry| entry.id == "doc.export-markdown")
+        );
     }
 
     /// CSV is cells in both directions, so all three rows are the grid's — and each is findable

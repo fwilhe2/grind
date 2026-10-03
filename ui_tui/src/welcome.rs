@@ -32,7 +32,7 @@ const CARDS: [(&str, char, &str); 3] = [
     (
         "Open a Document…",
         'o',
-        "a path: .ods .fods .odt .fodt .grind .xlsx .csv",
+        "a path: .ods .fods .odt .fodt .grind .xlsx .csv .md",
     ),
 ];
 

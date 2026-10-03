@@ -90,6 +90,11 @@ pub const TYPES: &[FileType] = &[
         prog_id: "Grind.Tsv",
         description: "Tab-Separated Values (opened as a new ODF document)",
     },
+    FileType {
+        extension: ".md",
+        prog_id: "Grind.Markdown",
+        description: "Markdown (opened as a new ODF document)",
+    },
 ];
 
 /// The name the application goes by in *Open with* and in Default apps.

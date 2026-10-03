@@ -275,6 +275,7 @@ impl Pane {
     fn suggested(&self) -> Option<PathBuf> {
         match self {
             Pane::Sheet(sheet) => sheet.path.clone().or_else(|| sheet.imported.clone()),
+            Pane::Text(text) => text.path.clone().or_else(|| text.imported.clone()),
             _ => self.path(),
         }
     }
@@ -368,7 +369,10 @@ impl Pane {
                         sheet.path = Some(path.to_owned());
                         sheet.imported = None;
                     }
-                    Pane::Text(text) => text.path = Some(path.to_owned()),
+                    Pane::Text(text) => {
+                        text.path = Some(path.to_owned());
+                        text.imported = None;
+                    }
                     Pane::Welcome(_) => {}
                 }
                 self.set_dirty(false);
@@ -784,6 +788,9 @@ impl Sheet {
 struct Text {
     app: grind_text::App,
     path: Option<PathBuf>,
+    /// For an imported markdown file, which has no `path`: the ODF name beside it, where Save As
+    /// starts — `Sheet::imported`'s twin.
+    imported: Option<PathBuf>,
     theme: Theme,
     dirty: bool,
     /// The window's bands and how far down the document the body starts.
@@ -1244,12 +1251,23 @@ fn opened_welcome(theme: Theme) -> Welcome {
 /// The word processor's pane, on a document or on nothing.
 fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
     let app = grind_text::App::new();
-    if let Some(path) = &path {
-        app.open_file(path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut imported = None;
+    let mut path = path;
+    if let Some(given) = &path {
+        let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", given.display());
+        let bytes = std::fs::read(given).map_err(|error| fail(&error))?;
+        if crate::import::is_markdown(given, &bytes) {
+            // A new, unsaved document with no path for Save to write the markdown back over.
+            imported = Some(crate::import::open_markdown(&app, given, &bytes)?);
+            path = None;
+        } else {
+            app.open_bytes(&given.display().to_string(), &bytes)
+                .map_err(|error| fail(&error))?;
+        }
     }
-    Ok(Text {
+    let mut text = Text {
         app,
+        imported: None,
         path,
         theme,
         dirty: false,
@@ -1276,7 +1294,14 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         needle: String::new(),
         hover: None,
         pressed: None,
-    })
+    };
+    // The report's sentence on the notice bar, where a state the document is in belongs.
+    if let Some(imported) = imported {
+        text.imported = Some(imported.suggested);
+        text.dirty = true;
+        text.say(Some(imported.summary));
+    }
+    Ok(text)
 }
 
 fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
@@ -3628,7 +3653,9 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ParagraphStyle
         | Command::ParagraphUp
         | Command::ParagraphDown
-        | Command::ParagraphDelete => {}
+        | Command::ParagraphDelete
+        | Command::ImportMarkdown
+        | Command::ExportMarkdown => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
@@ -5691,6 +5718,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ParagraphUp
         | Command::ParagraphDown
         | Command::ParagraphDelete
+        | Command::ImportMarkdown
+        | Command::ExportMarkdown
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleFormulas
@@ -6727,6 +6756,8 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ParagraphUp => text_move_paragraphs(hwnd, true),
         Command::ParagraphDown => text_move_paragraphs(hwnd, false),
         Command::ParagraphDelete => text_delete_paragraphs(hwnd),
+        Command::ImportMarkdown => text_import_markdown(hwnd),
+        Command::ExportMarkdown => text_export_markdown(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
@@ -7416,6 +7447,97 @@ fn text_delete_paragraphs(hwnd: HWND) {
                 }
                 Err(why) => text.say(Some(why)),
             }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// File ▸ Import Markdown… — a markdown file read in before the caret's block, one undo step
+/// (`App::import_markdown`). The dialog runs a nested message loop, so nothing is borrowed across
+/// it (decision 7).
+fn text_import_markdown(hwnd: HWND) {
+    let Some(path) = dialog::open_markdown_path(hwnd) else {
+        return;
+    };
+    let markdown = match std::fs::read(&path)
+        .map_err(|error| error.to_string())
+        .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned()))
+    {
+        Ok(markdown) => markdown,
+        Err(why) => {
+            return dialog::error(
+                hwnd,
+                &format!("Could not read {}:\n\n{why}", path.display()),
+            );
+        }
+    };
+    // SAFETY: one borrow, taken after the dialog has closed.
+    unsafe {
+        with_text(hwnd, |text| {
+            let block = text.caret.block;
+            match text.app.import_markdown(block, &markdown) {
+                Ok(count) => {
+                    text.place(Caret { block, offset: 0 }, false);
+                    text.caret_on = true;
+                    text.say(Some(format!("Imported {count} block(s) from Markdown.")));
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// File ▸ Export Markdown… — the blocks the selection touches, or the whole document when there is
+/// no selection, written as CommonMark. **Writes a file and changes nothing**: no undo entry, no
+/// dirty flag.
+fn text_export_markdown(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog.
+    let suggested = unsafe {
+        with_text(hwnd, |text| {
+            let stem = text
+                .path
+                .as_deref()
+                .or(text.imported.as_deref())
+                .and_then(Path::file_stem)
+                .map(|stem| stem.to_string_lossy().into_owned());
+            format!("{}.md", stem.unwrap_or_else(|| "Untitled".to_owned()))
+        })
+    }
+    .unwrap_or_else(|| "Untitled.md".to_owned());
+    let Some(path) = dialog::save_markdown_path(hwnd, &suggested) else {
+        return;
+    };
+    // SAFETY: one borrow, taken after the dialog has closed.
+    let written = unsafe {
+        with_text(hwnd, |text| {
+            let blocks = match text.anchor == text.caret {
+                true => 0..text.app.block_count(),
+                false => {
+                    let blocks = text_blocks(text);
+                    *blocks.start()..*blocks.end() + 1
+                }
+            };
+            text.app
+                .export_markdown(blocks)
+                .map_err(|error| error.to_string())
+        })
+    };
+    let markdown = match written {
+        Some(Ok(markdown)) => markdown,
+        Some(Err(why)) => return dialog::error(hwnd, &why),
+        None => return,
+    };
+    if let Err(error) = std::fs::write(&path, markdown) {
+        return dialog::error(
+            hwnd,
+            &format!("Could not write {}:\n\n{error}", path.display()),
+        );
+    }
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.say(Some(format!("Wrote {}.", path.display())));
         });
     }
     refresh(hwnd);

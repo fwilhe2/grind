@@ -45,6 +45,30 @@ pub fn open_delimited(app: &App, path: &Path, bytes: &[u8]) -> Result<Imported, 
     })
 }
 
+/// Whether `path` is a markdown file opened as a text document of its own: bytes that are not
+/// ODF, under a markdown name (`grind_text::commonmark::is_markdown_name`).
+pub fn is_markdown(path: &Path, bytes: &[u8]) -> bool {
+    grind_core::kind(bytes).is_none()
+        && grind_text::commonmark::is_markdown_name(&path.display().to_string())
+}
+
+/// Open the markdown at `path` into `core` as a new document named `notes.fodt`, with no path —
+/// the shape a CSV has. Only called once [`is_markdown`] said yes.
+pub fn open_markdown(
+    core: &grind_text::App,
+    path: &Path,
+    bytes: &[u8],
+) -> Result<Imported, String> {
+    let opened = grind_text::commonmark::open(&path.display().to_string(), bytes)
+        .ok_or("not a markdown file")??;
+    core.open_bytes(&opened.name, &opened.odf)
+        .map_err(|e| e.to_string())?;
+    Ok(Imported {
+        name: opened.name,
+        summary: opened.summary,
+    })
+}
+
 /// Whether these bytes are a workbook this build imports.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
@@ -112,5 +136,23 @@ mod csv_tests {
         assert_eq!(imported.name, "prices.fods");
         assert!(imported.summary.starts_with("Imported from CSV"));
         assert!(!is_delimited(Path::new("notes.txt"), bytes));
+    }
+}
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::*;
+
+    #[test]
+    fn a_markdown_file_opens_as_an_unsaved_text_document() {
+        let path = Path::new("/somewhere/notes.md");
+        let bytes = b"# Hi\n\ntext\n";
+        assert!(is_markdown(path, bytes));
+        let core = grind_text::App::new();
+        let imported = open_markdown(&core, path, bytes).unwrap();
+        assert_eq!(imported.name, "/somewhere/notes.fodt");
+        assert!(imported.summary.starts_with("Imported from Markdown"));
+        assert_eq!(core.block_count(), 2);
+        assert!(!is_markdown(Path::new("notes.txt"), bytes));
     }
 }

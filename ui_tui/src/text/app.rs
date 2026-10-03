@@ -943,6 +943,8 @@ impl App {
             "find" => self.cmd_find(""),
             "mark!" => self.cmd_unmark(),
             "table" => self.cmd_table("2 2"),
+            _ if cmd.starts_with("md-in ") => self.cmd_md_in(cmd[6..].trim()),
+            _ if cmd.starts_with("md-out ") => self.cmd_md_out(cmd[7..].trim()),
             _ if cmd.starts_with("mark ") => self.cmd_mark(cmd[5..].trim()),
             _ if cmd.starts_with("table ") => self.cmd_table(cmd[6..].trim()),
             _ if cmd.starts_with("move ") => self.cmd_move(cmd[5..].trim()),
@@ -972,6 +974,57 @@ impl App {
             // `p12`, `#intro` or `§2.1`, which is the thing no word processor's UI offers.
             _ => self.cmd_jump(cmd),
         }
+    }
+
+    /// Start as an imported markdown file: its summary on the status bar, and no path to write to.
+    pub fn noticed(mut self, imported: Option<crate::import::Imported>) -> Self {
+        if let Some(imported) = imported {
+            self.status = imported.summary;
+        }
+        self
+    }
+
+    /// `:md-in <file>` — markdown inserted before the caret's block, one undo step.
+    fn cmd_md_in(&mut self, path: &str) {
+        let text = match std::fs::read(path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => {
+                self.status = format!("{path}: {e}");
+                return;
+            }
+        };
+        match self.core.import_markdown(self.caret.block, &text) {
+            Ok(n) => {
+                self.caret.offset = 0;
+                self.goal_x = None;
+                self.status = format!("{n} block(s) from {path} \u{2014} u takes them back");
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:md-out <file>` — the selection's blocks, or the whole document, as CommonMark.
+    fn cmd_md_out(&mut self, path: &str) {
+        if path.is_empty() {
+            self.status = "usage: :md-out <file>".to_string();
+            return;
+        }
+        let blocks = match self.anchor {
+            Some(anchor) => {
+                let (a, b) = (anchor.block, self.caret.block);
+                a.min(b)..a.max(b) + 1
+            }
+            None => 0..self.core.block_count(),
+        };
+        let result = self
+            .core
+            .export_markdown(blocks)
+            .map_err(|e| e.to_string())
+            .and_then(|md| std::fs::write(path, md).map_err(|e| format!("{path}: {e}")));
+        self.status = match result {
+            Ok(()) => format!("wrote {path}"),
+            Err(e) => e,
+        };
     }
 
     /// Write the document; whether it was written.
@@ -2454,6 +2507,23 @@ mod tests {
 
         app.run_command("table 0 3");
         assert!(app.status.starts_with("usage:"), "{}", app.status);
+    }
+
+    /// `:md-out` writes CommonMark and `:md-in` reads it back before the caret's block.
+    #[test]
+    fn markdown_goes_out_and_comes_back_in() {
+        let dir = std::env::temp_dir().join(format!("grind-tui-md-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.md");
+        let path = file.display().to_string();
+        let mut app = app(&["one", "two"]);
+        app.run_command(&format!("md-out {path}"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "one\n\ntwo\n");
+        app.run_command(&format!("md-in {path}"));
+        assert_eq!(app.core.block_count(), 4, "{}", app.status);
+        press(&mut app, KeyCode::Char('u'));
+        assert_eq!(app.core.block_count(), 2, "one import, one undo");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// A list item is indented and wears a bullet, and the bullet is **drawn** rather than typed

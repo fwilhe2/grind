@@ -23,7 +23,7 @@ The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
 out, and **has all three shells** — `grind-tui` opens both document types in one binary,
 `grind-text-gtk` is its window, and `grind-web`'s one bundle holds both panes. The two GUI
 shells are deliberately *minimal*; `doc/text-shell.md` lists what they do and do not do.
-`examples/sample-text.sh` builds a document out of every feature it has, through the CLI only.
+`examples/sample-text.sh` builds a document out of every feature it has, through the CLI only. **Markdown in and out** is the word processor's CSV (`text/src/commonmark.rs`: `pulldown-cmark` reads, our own fold writes; `grind text import-md`/`export-md`, and every shell opens a `.md` as a new unsaved document and has Import/Export Markdown).
 Loops A and C are both green. **Line layout lives in `grind-core`** (`doc/text-layout.md`,
 decided on Path C), so `j`/`k`/Home/End mean one thing in every shell and the CLI can answer
 them; a shell supplies only font metrics. **Tables are built** (`doc/text-core.md`'s Tables

@@ -153,8 +153,9 @@ const DESKTOPS: [Desktop; 2] = [
             "application/vnd.oasis.opendocument.text-flat-xml",
         ],
         // A workbook is a spreadsheet: the word processor's window hands one to Sheet rather
-        // than claiming it.
-        imports: &[],
+        // than claiming it. Markdown is opened by importing it, as a new document of this kind
+        // (`grind_text::commonmark::open`).
+        imports: &["text/markdown"],
     },
 ];
 

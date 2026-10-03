@@ -101,6 +101,9 @@ fn sniff(path: &Path) -> Result<DocumentKind, String> {
     if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
         return Ok(DocumentKind::Spreadsheet);
     }
+    if import::is_markdown(path, &bytes) {
+        return Ok(DocumentKind::Text);
+    }
     grind_core::kind(&bytes).ok_or_else(|| {
         format!(
             "{}: not an ODF spreadsheet or text document",

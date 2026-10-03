@@ -243,7 +243,8 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             if let Some(path) = &opening.path {
                 let bytes =
                     std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-                app.open_bytes(&path.display().to_string(), &bytes)
+                let opened = import::open(&path.display().to_string(), &bytes)?;
+                app.open_bytes(&opened.name, &opened.bytes)
                     .map_err(|error| format!("{}: {error}", path.display()))?;
             }
             let fonts = metrics::CoreText::new(metrics::BASE_PT);

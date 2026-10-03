@@ -76,13 +76,15 @@ const UNTITLED_TEXT: &str = "untitled.fodt";
 /// A CSV or TSV is opened too, as a new spreadsheet (`import.rs`) — where the sheet pane's own
 /// *Import CSV* puts the fields into the sheet already open.
 #[cfg(not(feature = "xlsx"))]
-const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab";
+const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab,.md,.markdown";
 /// And an Excel workbook, which is imported on arrival (`import.rs`, X6).
 #[cfg(feature = "xlsx")]
-const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm,.csv,.tsv,.tab";
+const DOCUMENT_TYPES: &str =
+    ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm,.csv,.tsv,.tab,.md,.markdown";
 /// Delimited text, including `.txt`, which is what a great many exports are called — the
 /// delimiter is sniffed from the content, so the name never has to carry it.
 const IMAGE_TYPES: &str = "image/*";
+const MARKDOWN_TYPES: &str = ".md,.markdown,.mdown,.txt,text/markdown";
 const CSV_TYPES: &str = ".csv,.tsv,.tab,.txt,text/csv";
 
 thread_local! {
@@ -315,6 +317,8 @@ enum Pick {
     CsvWith,
     /// A picture to put below the caret's paragraph.
     Image,
+    /// Markdown to read into the open text document, before the caret's block.
+    Markdown,
 }
 
 impl Shell {
@@ -507,6 +511,8 @@ impl Shell {
                 self.raise_picker(Pick::CsvWith, CSV_TYPES);
             }
             "block.picture" => self.raise_picker(Pick::Image, IMAGE_TYPES),
+            "doc.import-markdown" => self.raise_picker(Pick::Markdown, MARKDOWN_TYPES),
+            "doc.export-markdown" => self.export_markdown(),
             "doc.export-csv" => self.export_csv("csv"),
             "doc.export-tsv" => self.export_csv("tsv"),
             "doc.undo" => self.undo(),
@@ -829,6 +835,35 @@ impl Shell {
         match csv::decode(js_sys::Uint8Array::new(&buffer).to_vec()) {
             Ok(text) => self.sheet.import_csv(&text, &words),
             Err(why) => self.set_message(format!("{name}: {why}")),
+        }
+    }
+
+    /// The same read, for markdown to go into the open text document.
+    async fn load_markdown(self: Rc<Self>, file: File) {
+        let name = file.name();
+        let buffer = match JsFuture::from(file.array_buffer()).await {
+            Ok(buffer) => buffer,
+            Err(_) => return self.set_message(format!("Could not read {name}")),
+        };
+        match String::from_utf8(js_sys::Uint8Array::new(&buffer).to_vec()) {
+            Ok(text) => self.text.import_markdown(&text),
+            Err(_) => self.set_message(format!("{name}: not UTF-8")),
+        }
+    }
+
+    /// Hand the selection, or the whole document, to a download as CommonMark.
+    fn export_markdown(&self) {
+        let stem = std::path::Path::new(&self.document_name())
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_owned());
+        let name = format!("{stem}.md");
+        let Some(text) = self.text.export_markdown() else {
+            return;
+        };
+        match self.download(&name, text.as_bytes()) {
+            Ok(()) => self.set_message(format!("Saved {name} to your downloads")),
+            Err(_) => self.set_message(format!("The browser refused to download {name}")),
         }
     }
 
@@ -1575,6 +1610,7 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
             Pick::Csv => spawn_local(shell.clone().load_csv(file)),
             Pick::CsvWith => spawn_local(shell.clone().load_csv(file)),
             Pick::Image => spawn_local(shell.clone().load_image(file)),
+            Pick::Markdown => spawn_local(shell.clone().load_markdown(file)),
         }
     })
 }

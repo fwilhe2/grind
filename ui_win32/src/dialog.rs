@@ -181,6 +181,8 @@ fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     // A CSV opened here is a document of its own, like a workbook; *Import CSV* on the Data
     // menu is the one that puts the fields into the sheet already open.
     filters.push((gdi::wide("CSV and TSV"), gdi::wide("*.csv;*.tsv;*.tab")));
+    // And markdown, opened the same way as a text document (`grind_text::commonmark::open`).
+    filters.push((gdi::wide("Markdown"), gdi::wide("*.md;*.markdown")));
     filters
 }
 
@@ -318,6 +320,43 @@ pub fn save_csv_path(owner: HWND, suggested: &str) -> Option<PathBuf> {
         let _ = dialog.SetFileTypeIndex(1);
         let _ = dialog.SetDefaultExtension(PCWSTR(extension.as_ptr()));
         let _ = dialog.SetTitle(PCWSTR(gdi::wide("Export CSV").as_ptr()));
+        let _ = dialog.SetFileName(PCWSTR(name.as_ptr()));
+        dialog.Show(Some(owner)).ok()?;
+        item_path(&dialog.GetResult().ok()?)
+    }
+}
+
+/// Ask for a markdown file to read in. `None` means the user cancelled.
+pub fn open_markdown_path(owner: HWND) -> Option<PathBuf> {
+    let filters = vec![(
+        gdi::wide("Markdown"),
+        gdi::wide("*.md;*.markdown;*.mdown;*.txt"),
+    )];
+    let specs = specs(&filters);
+    // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
+    unsafe {
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let _ = dialog.SetFileTypes(&specs);
+        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Import Markdown").as_ptr()));
+        dialog.Show(Some(owner)).ok()?;
+        item_path(&dialog.GetResult().ok()?)
+    }
+}
+
+/// Ask where to write markdown out.
+pub fn save_markdown_path(owner: HWND, suggested: &str) -> Option<PathBuf> {
+    let filters = vec![(gdi::wide("Markdown"), gdi::wide("*.md"))];
+    let specs = specs(&filters);
+    let name = gdi::wide(suggested);
+    let extension = gdi::wide("md");
+    // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
+    unsafe {
+        let dialog: IFileSaveDialog =
+            CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let _ = dialog.SetFileTypes(&specs);
+        let _ = dialog.SetDefaultExtension(PCWSTR(extension.as_ptr()));
+        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Export Markdown").as_ptr()));
         let _ = dialog.SetFileName(PCWSTR(name.as_ptr()));
         dialog.Show(Some(owner)).ok()?;
         item_path(&dialog.GetResult().ok()?)

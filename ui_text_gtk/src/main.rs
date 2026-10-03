@@ -102,26 +102,38 @@ fn main() -> ExitCode {
 
     // The document is opened before the toolkit starts, so a bad path is a shell error with
     // an exit code rather than an empty window with a dialog in front of it.
-    if let Some(path) = &path
-        && let Err(error) = app.open_file(path)
-    {
-        eprintln!("grind-text-gtk: {}: {error}", path.display());
-        if is_spreadsheet(path) {
-            eprintln!(
-                "grind-text-gtk: that is a spreadsheet — try: {SHEET_APP} {}",
-                path.display()
-            );
+    let mut notice = None;
+    let named = path.is_some();
+    if let Some(given) = path.clone() {
+        match open_path(&app, &given) {
+            Ok(Some(summary)) => {
+                notice = Some(summary);
+                path = None;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("grind-text-gtk: {}: {error}", given.display());
+                if is_spreadsheet(&given) {
+                    eprintln!(
+                        "grind-text-gtk: that is a spreadsheet — try: {SHEET_APP} {}",
+                        given.display()
+                    );
+                }
+                return ExitCode::FAILURE;
+            }
         }
-        return ExitCode::FAILURE;
     }
     // An empty document still needs a paragraph to type into.
-    if path.is_none() {
+    if !named {
         let _ = app.insert(0, BlockKind::Paragraph, "");
     }
 
     let application = adw::Application::builder().application_id(APP_ID).build();
     application.connect_activate(move |application| {
         let ui = Ui::build(application, &app, path.clone());
+        if let Some(summary) = &notice {
+            ui.toast(summary);
+        }
         if names {
             ui.doc.set_names(true);
         }
@@ -650,13 +662,23 @@ impl Ui {
     }
 
     fn load(self: &Rc<Self>, path: &Path) {
-        self.loading.set(true);
-        match self.app.open_file(path) {
-            Ok(()) => {
-                *self.path.borrow_mut() = Some(path.to_owned());
+        // An ODF document is a load, not an edit. A markdown file is imported as an unsaved
+        // document, so it is the one open that *should* leave the window dirty.
+        let imported = std::fs::read(path).is_ok_and(|bytes| kind(&bytes).is_none())
+            && grind_text::commonmark::is_markdown_name(&path.display().to_string());
+        self.loading.set(!imported);
+        match open_path(&self.app, path) {
+            Ok(summary) => {
+                *self.path.borrow_mut() = match summary {
+                    Some(_) => None,
+                    None => Some(path.to_owned()),
+                };
                 self.banner.set_revealed(false);
                 self.doc.reset();
-                remember_recent(path);
+                match summary {
+                    Some(summary) => self.toast(&summary),
+                    None => remember_recent(path),
+                }
             }
             Err(error) => {
                 self.loading.set(false);
@@ -668,6 +690,90 @@ impl Ui {
                 }
             }
         }
+    }
+
+    /// File ▸ Import Markdown… — a markdown file read in before the caret's block, one undo
+    /// step (`App::import_markdown`), where Open would make it a document of its own.
+    fn import_markdown(self: &Rc<Self>) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Import Markdown")
+            .filters(&markdown_filters())
+            .build();
+        dialog.open(
+            Some(&self.window),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |result| {
+                    let Some(path) = result.ok().and_then(|file| file.path()) else {
+                        return;
+                    };
+                    let text = match std::fs::read(&path) {
+                        Ok(bytes) => String::from_utf8(bytes)
+                            .map_err(|_| format!("{}: not UTF-8", path.display())),
+                        Err(error) => Err(format!("{}: {error}", path.display())),
+                    };
+                    let block = ui.doc.caret().block;
+                    match text.and_then(|text| {
+                        ui.app
+                            .import_markdown(block, &text)
+                            .map_err(|error| error.to_string())
+                    }) {
+                        Ok(count) => {
+                            ui.doc.go_to(grind_text::Caret { block, offset: 0 });
+                            ui.toast(&format!("Imported {count} block(s) from Markdown"));
+                        }
+                        Err(error) => ui.toast(&format!("Could not import: {error}")),
+                    }
+                }
+            ),
+        );
+    }
+
+    /// File ▸ Export Markdown… — the blocks the selection touches, or the whole document with
+    /// none, as CommonMark. Writes a file and changes nothing.
+    fn export_markdown(self: &Rc<Self>) {
+        let stem = self
+            .path
+            .borrow()
+            .as_deref()
+            .and_then(Path::file_stem)
+            .map_or_else(
+                || "Untitled".to_owned(),
+                |s| s.to_string_lossy().into_owned(),
+            );
+        let dialog = gtk::FileDialog::builder()
+            .title("Export Markdown")
+            .filters(&markdown_filters())
+            .initial_name(format!("{stem}.md"))
+            .build();
+        dialog.save(
+            Some(&self.window),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |result| {
+                    let Some(path) = result.ok().and_then(|file| file.path()) else {
+                        return;
+                    };
+                    let blocks = match ui.doc.selection() {
+                        Some((from, to)) => from.block..to.block + 1,
+                        None => 0..ui.app.block_count(),
+                    };
+                    match ui
+                        .app
+                        .export_markdown(blocks)
+                        .map_err(|error| error.to_string())
+                        .and_then(|md| std::fs::write(&path, md).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => ui.toast(&format!("Wrote {}", path.display())),
+                        Err(error) => ui.toast(&format!("Could not export: {error}")),
+                    }
+                }
+            ),
+        );
     }
 
     /// The banner that says "this is a spreadsheet", with the button that opens it there.
@@ -1207,6 +1313,8 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("open", &["<Control>o"][..], |ui| ui.open()),
         ("save", &["<Control>s"][..], |ui| ui.save()),
         ("save-as", &["<Control><Shift>s"][..], |ui| ui.save_as()),
+        ("import-markdown", &[][..], |ui| ui.import_markdown()),
+        ("export-markdown", &[][..], |ui| ui.export_markdown()),
         ("undo", &["<Control>z"][..], |ui| {
             ui.app.undo();
         }),
@@ -1361,6 +1469,12 @@ fn primary_menu() -> gio::Menu {
     files.append(Some("Save As…"), Some("win.save-as"));
     menu.append_section(None, &files);
 
+    // Markdown, the word processor's CSV: blocks in before the caret, blocks out.
+    let markdown = gio::Menu::new();
+    markdown.append(Some("Import Markdown…"), Some("win.import-markdown"));
+    markdown.append(Some("Export Markdown…"), Some("win.export-markdown"));
+    menu.append_section(None, &markdown);
+
     // **The document and the window, and nothing about the selection** — the HIG's rule for a
     // primary menu, which the spreadsheet's already keeps (`doc/sheet-shell.md`, "Four
     // surfaces"). The clipboard went to the page's own right-click menu, and the block kinds
@@ -1413,6 +1527,25 @@ fn text_filters() -> gio::ListStore {
     // cannot reach, so the pattern is not optional.
     filter.add_pattern("*.grind");
 
+    // A markdown file opens as a document of its own (`open_path`), so Open has to reach one.
+    let markdown = gtk::FileFilter::new();
+    markdown.set_name(Some("Markdown"));
+    markdown.add_pattern("*.md");
+    markdown.add_pattern("*.markdown");
+
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    filters.append(&markdown);
+    filters
+}
+
+/// What Import and Export Markdown show.
+fn markdown_filters() -> gio::ListStore {
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Markdown"));
+    for pattern in ["*.md", "*.markdown", "*.mdown", "*.txt"] {
+        filter.add_pattern(pattern);
+    }
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
     filters
@@ -1468,6 +1601,25 @@ fn image_mime(path: &Path, data: &[u8]) -> String {
 
 fn remember_recent(path: &Path) {
     gtk::RecentManager::default().add_item(&gio::File::for_path(path).uri());
+}
+
+/// Read `path` into `app`. `Ok(Some(summary))` when it was a markdown file — imported as a new,
+/// unsaved document under an ODF name, so there is no path for Save to write it back over, and
+/// the sentence is the notice every shell shows (`grind_text::commonmark::open`). `Ok(None)` for
+/// an ODF document, which keeps its path.
+fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    if kind(&bytes).is_none()
+        && let Some(opened) = grind_text::commonmark::open(&path.display().to_string(), &bytes)
+    {
+        let opened = opened?;
+        app.open_bytes(&opened.name, &opened.odf)
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(opened.summary));
+    }
+    app.open_bytes(&path.display().to_string(), &bytes)
+        .map_err(|error| error.to_string())?;
+    Ok(None)
 }
 
 fn document_name(path: Option<&Path>) -> String {

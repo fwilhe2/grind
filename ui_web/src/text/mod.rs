@@ -901,6 +901,39 @@ impl Ui {
         }
     }
 
+    // --- markdown ---
+
+    /// Markdown read in before the caret's block (`App::import_markdown`), one undo step.
+    pub fn import_markdown(&self, markdown: &str) {
+        let at = self.caret.get().block;
+        match self.app.import_markdown(at, markdown) {
+            Ok(n) => {
+                self.anchor.set(None);
+                self.set_caret(Caret {
+                    block: at,
+                    offset: 0,
+                });
+                self.set_message(format!("Imported {n} block(s) from Markdown"));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// The selection's blocks, or the whole document, as CommonMark.
+    pub fn export_markdown(&self) -> Option<String> {
+        let blocks = match self.selection() {
+            Some((from, to)) => from.block..to.block + 1,
+            None => 0..self.app.block_count(),
+        };
+        match self.app.export_markdown(blocks) {
+            Ok(text) => Some(text),
+            Err(error) => {
+                self.set_message(error.to_string());
+                None
+            }
+        }
+    }
+
     // --- tables ---
 
     /// *Insert a table…* — a size, then a table below the caret's block

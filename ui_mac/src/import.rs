@@ -34,6 +34,14 @@ pub fn is_delimited(path: &Path, bytes: &[u8]) -> bool {
         && grind_sheet::csv::is_delimited_name(&path.display().to_string())
 }
 
+/// Whether `path` is a markdown file this shell opens as a text document of its own: bytes that
+/// are not ODF, under a markdown name (`grind_text::commonmark::is_markdown_name`) — plain text
+/// has no signature, so its name is all there is, asked after the bytes have spoken.
+pub fn is_markdown(path: &Path, bytes: &[u8]) -> bool {
+    grind_core::kind(bytes).is_none()
+        && grind_text::commonmark::is_markdown_name(&path.display().to_string())
+}
+
 /// What a document opens: the bytes to hand `App::open_bytes`, the name it goes by, and whether
 /// it came from somewhere it must never be saved back to.
 #[derive(Debug, PartialEq, Eq)]
@@ -62,6 +70,17 @@ pub fn open(name: &str, bytes: &[u8]) -> Result<Opened, String> {
     }
     if is_delimited(Path::new(name), bytes)
         && let Some(opened) = grind_sheet::csv::open(name, bytes)
+    {
+        let opened = opened?;
+        return Ok(Opened {
+            name: opened.name,
+            bytes: opened.odf,
+            untitled: true,
+            summary: Some(opened.summary),
+        });
+    }
+    if is_markdown(Path::new(name), bytes)
+        && let Some(opened) = grind_text::commonmark::open(name, bytes)
     {
         let opened = opened?;
         return Ok(Opened {
@@ -125,6 +144,18 @@ mod tests {
             app.value_text(0, grind_sheet::Pos::new(1, 1)).unwrap(),
             "2.5"
         );
+    }
+
+    #[test]
+    fn markdown_opens_untitled_as_a_flat_text_document() {
+        let opened = open("notes.md", b"# Hi\n\ntext\n").unwrap();
+        assert!(opened.untitled);
+        assert_eq!(opened.name, "notes.fodt");
+        assert_eq!(
+            grind_core::kind(&opened.bytes),
+            Some(grind_core::DocumentKind::Text)
+        );
+        assert!(!is_markdown(Path::new("notes.txt"), b"# Hi"));
     }
 
     #[test]

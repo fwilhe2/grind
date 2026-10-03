@@ -75,6 +75,25 @@ pub fn is_delimited(path: &Path, bytes: &[u8]) -> bool {
         && grind_sheet::csv::is_delimited_name(&path.display().to_string())
 }
 
+/// Whether `path` is a markdown file this shell opens as a text document of its own: bytes that
+/// are not ODF, under a markdown name.
+pub fn is_markdown(path: &Path, bytes: &[u8]) -> bool {
+    grind_core::kind(bytes).is_none()
+        && grind_text::commonmark::is_markdown_name(&path.display().to_string())
+}
+
+/// Read the markdown at `path` into `app` — a new, unsaved document, the shape a CSV has.
+pub fn open_markdown(app: &grind_text::App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
+    let name = path.display().to_string();
+    let opened = grind_text::commonmark::open(&name, bytes).ok_or("not a markdown file")??;
+    app.open_bytes(&opened.name, &opened.odf)
+        .map_err(|error| format!("{name}: {error}"))?;
+    Ok(Imported {
+        suggested: PathBuf::from(opened.name),
+        summary: opened.summary,
+    })
+}
+
 #[cfg(all(test, feature = "xlsx"))]
 mod tests {
     use super::*;
@@ -116,5 +135,22 @@ mod csv_tests {
         let viewport = app.get_viewport(0, 1..2, 0..2).unwrap();
         assert_eq!(viewport.text(1, 0), Some("nut"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::*;
+
+    #[test]
+    fn markdown_opens_unsaved_with_an_odf_name_beside_it() {
+        let path = Path::new("notes.md");
+        let bytes = b"# Hi\n\ntext\n";
+        assert!(is_markdown(path, bytes));
+        let app = grind_text::App::new();
+        let imported = open_markdown(&app, path, bytes).unwrap();
+        assert_eq!(imported.suggested, PathBuf::from("notes.fodt"));
+        assert_eq!(app.block_count(), 2);
+        assert!(!is_markdown(Path::new("notes.txt"), bytes));
     }
 }

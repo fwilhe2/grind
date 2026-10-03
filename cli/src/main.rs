@@ -371,6 +371,47 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             finish_text(&app, cli, file, true)
         }
 
+        TextCommand::ImportMd {
+            file,
+            source,
+            at: address,
+            after,
+        } => {
+            let app = open_text(file)?;
+            let index = match address {
+                Some(address) => at(&app, address)? + usize::from(*after),
+                None => app.block_count(),
+            };
+            let markdown = read_text_file_or_stdin(source)?;
+            app.import_markdown(index, &markdown)
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::ExportMd { file, range, out } => {
+            let app = open_text(file)?;
+            let blocks = match range {
+                Some(range) => span(&app, range)?,
+                None => 0..app.block_count(),
+            };
+            let markdown = app.export_markdown(blocks).map_err(|e| e.to_string())?;
+            match out {
+                Some(path) => {
+                    std::fs::write(path, &markdown)
+                        .map_err(|e| format!("{}: {e}", path.display()))?;
+                    text_lines(vec![show_path(path)])
+                }
+                None => text_lines(
+                    markdown
+                        .strip_suffix('\n')
+                        .unwrap_or(&markdown)
+                        .split('\n')
+                        .map(str::to_owned)
+                        .collect(),
+                ),
+            }
+        }
+
         TextCommand::Table {
             file,
             at: address,
@@ -1019,6 +1060,38 @@ enum TextCommand {
         /// The table's name, which is its identity; generated when omitted
         #[arg(long)]
         name: Option<String>,
+    },
+
+    /// Import CommonMark into the document — the word processor's `import-csv`
+    ///
+    /// Read by `pulldown-cmark`: headings, paragraphs, lists (nested), bold, italic,
+    /// strikethrough, `code`, links, fenced code and pipe tables become what they are in the
+    /// document. What it has no place for is dropped rather than approximated — rules, raw
+    /// HTML, images (their alt text is kept) — and an ordered list becomes a bulleted one.
+    /// One undo entry. `-` reads standard input.
+    ImportMd {
+        file: PathBuf,
+        /// The markdown file, or - for stdin
+        source: String,
+        /// Insert before this block, e.g. p3 — omit to append to the end
+        at: Option<String>,
+        /// Insert after the address rather than before it
+        #[arg(long)]
+        after: bool,
+    },
+
+    /// Export the document, or a range of it, as CommonMark
+    ///
+    /// Underline, colour, size, bookmarks and pictures have no CommonMark spelling and are not
+    /// written. A table's first row becomes its header. Prints to stdout unless `--out` names
+    /// a file.
+    ExportMd {
+        file: PathBuf,
+        /// A block range, e.g. p3:p9 or §2 for a whole section — omit for everything
+        range: Option<String>,
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 
     /// Insert an image at a caret, from a file on disk

@@ -159,6 +159,12 @@ pub enum Command {
     /// (`csv::Dialect::for_name`, the two filters below it), then `App::export_csv`. Nothing is
     /// stored, so the document is untouched by it.
     ExportCsv,
+    /// Read a markdown file in before the caret's block — a file dialog, then
+    /// `App::import_markdown`, one undo step. The page's alone, as CSV is the grid's.
+    ImportMarkdown,
+    /// Write the selected blocks, or the whole document when nothing is selected, as CommonMark
+    /// (`App::export_markdown`). Nothing is stored, so the document is untouched by it.
+    ExportMarkdown,
     Recalculate,
     /// Every function this build implements, as a list to pick from — `sheet/assist.rs`'s
     /// `function_lines`, which is `grind sheet functions --long`'s four columns in a dialog.
@@ -362,6 +368,8 @@ impl Command {
         Command::ImportCsv,
         Command::ImportCsvWith,
         Command::ExportCsv,
+        Command::ImportMarkdown,
+        Command::ExportMarkdown,
         Command::Recalculate,
         Command::FunctionList,
         Command::ExplainFormula,
@@ -533,6 +541,15 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ExportCsv,
                 label: "&Export CSV…",
+            },
+            // The word processor's twin of the three above: blocks in, blocks out.
+            Item::Verb {
+                command: Command::ImportMarkdown,
+                label: "&Import Markdown…",
+            },
+            Item::Verb {
+                command: Command::ExportMarkdown,
+                label: "&Export Markdown…",
             },
             Item::Separator,
             Item::Verb {
@@ -1220,7 +1237,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ParagraphStyle
         | Command::ParagraphUp
         | Command::ParagraphDown
-        | Command::ParagraphDelete => matches!(kind, Text),
+        | Command::ParagraphDelete
+        // Markdown is blocks: they land between a document's paragraphs and come out of them.
+        | Command::ImportMarkdown
+        | Command::ExportMarkdown => matches!(kind, Text),
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1505,6 +1525,8 @@ mod tests {
             Command::ParagraphUp,
             Command::ParagraphDown,
             Command::ParagraphDelete,
+            Command::ImportMarkdown,
+            Command::ExportMarkdown,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");

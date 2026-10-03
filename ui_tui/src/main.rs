@@ -187,13 +187,25 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
     match kind {
         DocumentKind::Text => {
             let core = Arc::new(grind_text::App::new());
-            if let Some(path) = &path {
-                core.open_file(path)
-                    .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+            let (mut path, mut notice) = (path, None);
+            if let Some(given) = path.clone() {
+                let bytes = std::fs::read(&given)?;
+                let fail = |e: &dyn std::fmt::Display| {
+                    io::Error::other(format!("{}: {e}", given.display()))
+                };
+                if import::is_markdown(&given, &bytes) {
+                    // Markdown is opened the way a CSV is: a new document, and no path.
+                    notice =
+                        Some(import::open_markdown(&core, &given, &bytes).map_err(|e| fail(&e))?);
+                    path = None;
+                } else {
+                    core.open_bytes(&given.display().to_string(), &bytes)
+                        .map_err(|e| fail(&e))?;
+                }
             }
-            Ok(Pane::Text(Box::new(text::app::App::new(
-                core, redraw, path,
-            ))))
+            Ok(Pane::Text(Box::new(
+                text::app::App::new(core, redraw, path).noticed(notice),
+            )))
         }
         _ => {
             let core = Arc::new(grind_sheet::App::new());
@@ -242,6 +254,9 @@ fn sniff(path: &Path) -> io::Result<DocumentKind> {
     // does not know it, and should not: it answers which ODF document type some bytes are.
     if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
         return Ok(DocumentKind::Spreadsheet);
+    }
+    if import::is_markdown(path, &bytes) {
+        return Ok(DocumentKind::Text);
     }
     grind_core::kind(&bytes).ok_or_else(|| {
         io::Error::new(

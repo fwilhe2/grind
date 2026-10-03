@@ -274,6 +274,18 @@ text lint "$doc" --rules
 say "lint: this document"
 text lint "$doc" || true
 
+# --- markdown: CommonMark in and out, the way the spreadsheet does CSV --------------------------
+# Read by pulldown-cmark, written by `text/src/commonmark.rs`. What CommonMark cannot say
+# (underline, colour, a picture) is not written; what the model cannot hold (a rule, raw HTML)
+# is not read.
+
+say "export-md / import-md: CommonMark both ways"
+text export-md "$doc" > "$out/sample.md"
+sed -n '1,12p' "$out/sample.md"
+text new "$out/from-md.fodt" --force
+text import-md "$out/from-md.fodt" "$out/sample.md"
+text outline "$out/from-md.fodt"
+
 # --- build: a document generated from a script -------------------------------------------------
 # `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
 # loop write them, with the same inline notation this document was typed with. The arrow points

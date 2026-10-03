@@ -56,6 +56,9 @@ pub fn sniff(name: &str, bytes: &[u8]) -> Result<DocumentKind, String> {
     {
         return Ok(DocumentKind::Spreadsheet);
     }
+    if crate::import::is_markdown(std::path::Path::new(name), bytes) {
+        return Ok(DocumentKind::Text);
+    }
     match grind_core::kind(bytes) {
         Some(DocumentKind::Presentation) => Err(format!(
             "{name} is a presentation, and this build opens spreadsheets and text documents"

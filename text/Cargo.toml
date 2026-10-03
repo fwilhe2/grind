@@ -17,6 +17,7 @@ grind-core = { path = "../core" }
 # `office:binary-data`'s own encoding (rng:7681) — an embedded image is base64 and nothing else
 # in the schema says otherwise.
 base64 = "0.23"
+pulldown-cmark = { version = "0.13", default-features = false }
 
 [dev-dependencies]
 # Loop A matches on `grind_core::Error::Encrypted` directly — the one documented loosening.

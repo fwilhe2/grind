@@ -48,6 +48,7 @@
 pub mod action;
 pub mod blocks;
 pub mod caret;
+pub mod commonmark;
 pub mod find;
 pub mod flow;
 pub mod format;
@@ -1298,6 +1299,45 @@ impl App {
             }
             Self::commit(state, Action::Batch(batch))
         })
+    }
+
+    /// Insert markdown's blocks before block `index` ([`commonmark`]) — the word processor's
+    /// `import_csv`. One undo step; answers how many blocks it added.
+    pub fn import_markdown(&self, index: usize, markdown: &str) -> Result<usize> {
+        self.mutate(|state| {
+            if index > state.doc.blocks.len() {
+                return Err(Error::Xml(format!(
+                    "{} is past the end",
+                    loc::format(index)
+                )));
+            }
+            let blocks = commonmark::parse(markdown, &mut state.doc);
+            let count = blocks.len();
+            if count == 0 {
+                return Ok(0);
+            }
+            let batch = blocks
+                .into_iter()
+                .enumerate()
+                .map(|(n, block)| Action::InsertBlock {
+                    index: index + n,
+                    block: Box::new(block),
+                })
+                .collect();
+            Self::commit(state, Action::Batch(batch))?;
+            Ok(count)
+        })
+    }
+
+    /// The blocks in `range` as CommonMark ([`commonmark::write`]) — `export_csv`'s twin.
+    pub fn export_markdown(&self, range: Range<usize>) -> Result<String> {
+        let state = self.state.read().unwrap();
+        let blocks = state
+            .doc
+            .blocks
+            .get(range)
+            .ok_or_else(|| Error::Xml("that range runs past the end".to_owned()))?;
+        Ok(commonmark::write(blocks))
     }
 
     /// The table the block at `index` is in: where it starts and ends, how big it is, and what
