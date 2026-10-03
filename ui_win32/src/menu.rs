@@ -104,6 +104,8 @@ pub enum Command {
     /// A length asked for in a prompt — `2.5cm`, `1in`, `64pt` — set on every selected row or
     /// column in one undo step: `App::set_row_height` / `set_col_width`, which check the length.
     RowHeight,
+    /// Each selected column set to its widest text — measured in the font it is drawn in.
+    FitColumns,
     ColumnWidth,
     /// A name for the selection, to use in formulas instead of its address (`App::set_name`
     /// through `grind_sheet::a1::definition`, as `grind sheet name` reads one).
@@ -309,6 +311,7 @@ impl Command {
         Command::HideColumns,
         Command::ShowColumns,
         Command::RowHeight,
+        Command::FitColumns,
         Command::ColumnWidth,
         Command::DefineName,
         Command::Evaluate,
@@ -616,6 +619,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ColumnWidth,
                 label: "Column &Width…",
+            },
+            Item::Verb {
+                command: Command::FitColumns,
+                label: "&Fit Column Width",
             },
         ],
     },
@@ -1029,6 +1036,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::HideColumns
         | Command::ShowColumns
         | Command::RowHeight
+        | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
         | Command::Evaluate
@@ -1407,6 +1415,7 @@ mod tests {
             Command::HideColumns,
             Command::ShowColumns,
             Command::RowHeight,
+            Command::FitColumns,
             Command::ColumnWidth,
             Command::DefineName,
             Command::Evaluate,

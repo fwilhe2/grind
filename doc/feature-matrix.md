@@ -257,7 +257,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
-| Autofit a column | ● | ● | ○ | ○ | ○ | ● |
+| Autofit a column | ● | ● | ○ | ○ | ● ᶠᶜ | ● |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
@@ -287,6 +287,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵖᵇ Two more buttons on each row of the *Names…* dialog — rename (an alert with an entry) and inline — over `App::rename_name` / `inline_name`, each saying how many uses it rewrote; closed 2026-10-02, compile- and lint-checked only.
 ᵗᵘ Terminal verbs, closed 2026-10-02: `:filter` (no dropdowns drawn), `:rename`, `:inline`, `:value`, `:yank-values`, `:across`.
 ᵉˣ `:explain` and the palette's *Explain this formula in words* say the active cell's formula on one line (`friendly::explain_inline`) — not unfolded, and the formula bar does not read friendly at rest. Closed in part 2026-10-02.
+ᶠᶜ Sheet ▸ Fit Column Width, measured in the cell font by GDI; from the menu, not a double-click on the edge — 2026-10-02.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.

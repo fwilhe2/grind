@@ -3260,6 +3260,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::HideColumns => hide_tracks(hwnd, false, true),
         Command::ShowColumns => hide_tracks(hwnd, false, false),
         Command::RowHeight => track_size(hwnd, true),
+        Command::FitColumns => fit_columns(hwnd),
         Command::ColumnWidth => track_size(hwnd, false),
         Command::DefineName => define_name(hwnd),
         Command::Evaluate => evaluate(hwnd),
@@ -3661,6 +3662,64 @@ fn track_size(hwnd: HWND, rows: bool) {
                 Ok(count) => notice::track_sized(count, rows),
                 Err(error) => error.to_string(),
             }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Sheet ▸ Fit Column Width — each selected column becomes as wide as its widest text, measured
+/// in the font that text is drawn in (decision 3: one engine for measuring and drawing), with the
+/// cell's padding either side. A column holding nothing goes back to the default. The same
+/// answer the GNOME window's double-click on a column edge gives, from the menu.
+fn fit_columns(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let Some(dib) = gdi::Dib::new(1, 1) else {
+                return;
+            };
+            let dc = dib.dc();
+            let dpi = state.geom.dpi;
+            let px = scale(theme::text::CELL, dpi).round() as i32;
+            let (regular, bold) = (
+                gdi::Font::new(face(), px, false),
+                gdi::Font::new(face(), px, true),
+            );
+            let used = state
+                .app
+                .used_extent(state.sheet)
+                .unwrap_or((0, 0))
+                .0
+                .min(5000);
+            let (start, end) = state.selection.rect();
+            let pad = 2.0 * scale(4.0, dpi) + 6.0;
+            let to_mm = 1.0 / crate::sheet::geom::mm_to_px(dpi)(1.0);
+            let mut changed = 0;
+            for col in start.col..=end.col {
+                let widest = state
+                    .app
+                    .get_viewport(state.sheet, 0..used, col..col + 1)
+                    .map(|view| {
+                        (0..used)
+                            .filter_map(|row| {
+                                let text = view.text(row, col).filter(|text| !text.is_empty())?;
+                                let heavy = view.style(row, col).is_some_and(|style| {
+                                    grind_sheet::format::Toggle::Bold.is_on(style)
+                                });
+                                let _font =
+                                    gdi::Selected::font(dc, if heavy { &bold } else { &regular });
+                                Some(f64::from(gdi::text_width(dc, text)))
+                            })
+                            .fold(0.0, f64::max)
+                    })
+                    .unwrap_or(0.0);
+                let width =
+                    (widest > 0.0).then(|| grind_sheet::style::mm_length((widest + pad) * to_mm));
+                if let Ok(n) = state.app.set_col_width(state.sheet, col..col + 1, width) {
+                    changed += n;
+                }
+            }
+            state.say(Some(notice::track_sized(changed, false)));
         });
     }
     refresh(hwnd);
@@ -4985,6 +5044,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::HideColumns
         | Command::ShowColumns
         | Command::RowHeight
+        | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
         | Command::Evaluate
@@ -6049,6 +6109,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::HideColumns
         | Command::ShowColumns
         | Command::RowHeight
+        | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
         | Command::Evaluate
