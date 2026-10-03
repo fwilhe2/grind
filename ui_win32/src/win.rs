@@ -62,20 +62,21 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu,
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
-    EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetMessageW, GetParent,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW,
-    MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow,
-    PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP,
-    SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO,
-    SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetMenu, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE,
-    WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL,
-    WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetCursorPos, GetMessageW, GetParent,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZENS,
+    IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
+    MF_UNCHECKED, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM,
+    SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK,
+    SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE,
+    SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
+    SendMessageW, SetCursor, SetMenu, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
+    SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage,
+    WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT,
+    WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION,
+    WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS,
+    WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL,
+    WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -112,7 +113,7 @@ use crate::sheet::assist;
 use crate::sheet::currency;
 use crate::sheet::draw::{self, FormatStrip, Frame};
 use crate::sheet::format;
-use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, mm_to_px, scale};
+use crate::sheet::geom::{Edge, GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, mm_to_px, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
 use crate::sheet::measure;
 use crate::sheet::state::{self, Outcome, Seed};
@@ -425,6 +426,10 @@ struct Sheet {
     selection: Selection,
     /// What a held mouse button is extending, if anything.
     drag: Option<Drag>,
+    /// A header boundary being dragged to size a track: which, where the pointer was and how big
+    /// the track was when it was taken. The live size is drawn from `geom`; the document is
+    /// written once, on release, as one undo step.
+    resize: Option<(Edge, f64, f64)>,
     /// The child `EDIT` that *is* the name box while somebody is typing in it.
     ///
     /// Created hidden and shown over the drawn box on demand. The box itself is painted by
@@ -1308,6 +1313,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         theme,
         selection: Selection::default(),
         drag: None,
+        resize: None,
         name_box: HWND::default(),
         name_box_open: false,
         editor: HWND::default(),
@@ -1578,6 +1584,10 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             mouse_move(hwnd, lparam);
             LRESULT(0)
         }
+        // The two-headed arrow over a header boundary, and while one is being dragged — the
+        // pointer is reset to the class cursor by every `WM_SETCURSOR`, so it is answered here or
+        // not at all.
+        WM_SETCURSOR if set_resize_cursor(hwnd) => LRESULT(1),
         WM_LBUTTONDOWN => {
             button_down(hwnd, lparam);
             LRESULT(0)
@@ -2309,6 +2319,22 @@ fn mouse_move(hwnd: HWND, lparam: LPARAM) {
             // *changes* — the text pane's rule, which keeps a move across the grid to one
             // comparison. `WM_MOUSELEAVE` is not tracked: the strip is inside the client area, and
             // a pointer leaving the window through it is answered by the next move anywhere.
+            // A track being sized follows the pointer, never smaller than a few pixels so it
+            // cannot be dragged out of reach (hiding is its own verb).
+            if let Some((edge, from, size)) = state.resize {
+                let min = scale(8.0, state.geom.dpi);
+                match edge {
+                    Edge::Col(col) => {
+                        let wide = (size + x - from).max(min);
+                        state.geom.cols = state.geom.cols.with(col, wide);
+                    }
+                    Edge::Row(row) => {
+                        let tall = (size + y - from).max(min);
+                        state.geom.rows = state.geom.rows.with(row, tall);
+                    }
+                }
+                return true;
+            }
             let hover = state.geom.format_hit(x, y);
             if hover != state.format_hover {
                 state.format_hover = hover;
@@ -2334,6 +2360,44 @@ fn mouse_move(hwnd: HWND, lparam: LPARAM) {
             let _ = InvalidateRect(Some(hwnd), None, false);
         }
     }
+}
+
+/// Show the resize cursor when the pointer is on a header boundary or a track is being sized.
+/// `true` when it did, and `WM_SETCURSOR` is then answered.
+fn set_resize_cursor(hwnd: HWND) -> bool {
+    if is_welcome(hwnd) || is_text(hwnd) {
+        return false;
+    }
+    let mut at = windows::Win32::Foundation::POINT::default();
+    // SAFETY: `at` is a live local; the point is converted into this window's client space.
+    unsafe {
+        if GetCursorPos(&mut at).is_err() {
+            return false;
+        }
+        let _ = ScreenToClient(hwnd, &mut at);
+    }
+    // SAFETY: one borrow; arithmetic.
+    let edge = unsafe {
+        with_sheet(hwnd, |state| {
+            state
+                .resize
+                .map(|(edge, ..)| edge)
+                .or_else(|| state.geom.edge_at(f64::from(at.x), f64::from(at.y)))
+        })
+    }
+    .flatten();
+    let cursor = match edge {
+        Some(Edge::Col(_)) => IDC_SIZEWE,
+        Some(Edge::Row(_)) => IDC_SIZENS,
+        None => return false,
+    };
+    // SAFETY: a system cursor, which is never freed.
+    unsafe {
+        if let Ok(cursor) = LoadCursorW(None, cursor) {
+            SetCursor(Some(cursor));
+        }
+    }
+    true
 }
 
 /// Where a mouse message happened, in client space.
@@ -2757,6 +2821,30 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
         }
         None => {}
     }
+    // A header boundary: taken to size the track it ends. The size is previewed in `geom` while the
+    // pointer moves and written once on release (`button_up`).
+    // SAFETY: one borrow; arithmetic. `SetCapture` sends messages, so it comes after the borrow.
+    let grabbed = unsafe {
+        with_sheet(hwnd, |state| {
+            let edge = state.geom.edge_at(x, y)?;
+            let (at, size) = match edge {
+                Edge::Col(col) => (x, state.geom.cols.size_of(col)),
+                Edge::Row(row) => (y, state.geom.rows.size_of(row)),
+            };
+            state.resize = Some((edge, at, size));
+            state.drag = None;
+            Some(())
+        })
+    }
+    .flatten();
+    if grabbed.is_some() {
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = SetCapture(hwnd);
+            let _ = SetFocus(Some(hwnd));
+        }
+        return;
+    }
     let extend = mods().shift;
     // The two fields on the strip are drawn chrome until they are clicked, at which point the
     // control hiding behind the drawing appears over it. Deciding that needs the geometry, so it
@@ -2880,6 +2968,30 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
     }
     // A double-click on a tab renames the sheet, as it does in every spreadsheet — the first
     // click has already brought it to the front.
+    // A double-click on a header boundary: the column fits its widest text, the row goes back to
+    // the height its content wants — what every spreadsheet's edge does.
+    // SAFETY: one borrow; arithmetic.
+    let edge = unsafe { with_sheet(hwnd, |state| state.geom.edge_at(x, y)) }.flatten();
+    match edge {
+        Some(Edge::Col(col)) => {
+            // SAFETY: one borrow; the press that began this pair started a resize.
+            unsafe { with_sheet(hwnd, |state| state.resize = None) };
+            fit_columns_in(hwnd, Some(col..col + 1));
+            return;
+        }
+        Some(Edge::Row(row)) => {
+            // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
+            unsafe {
+                with_sheet(hwnd, |state| {
+                    state.resize = None;
+                    let _ = state.app.set_row_height(state.sheet, row..row + 1, None);
+                })
+            };
+            refresh(hwnd);
+            return;
+        }
+        None => {}
+    }
     // SAFETY: one borrow, released before the rename prompt's nested loop.
     let tab = unsafe { with_sheet(hwnd, |state| sheet_tab_at(state, x, y)) }.flatten();
     if let Some(crate::sheet::tabs::Target::Sheet(_)) = tab {
@@ -2937,6 +3049,51 @@ fn button_up(hwnd: HWND) {
         unsafe {
             let _ = InvalidateRect(Some(hwnd), None, false);
         }
+        return;
+    }
+    // A track let go: its new size is written once, in the document's own unit, as one undo step.
+    // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
+    let resized = unsafe {
+        with_sheet(hwnd, |state| {
+            let (edge, _, from) = state.resize.take()?;
+            let now = match edge {
+                Edge::Col(col) => state.geom.cols.size_of(col),
+                Edge::Row(row) => state.geom.rows.size_of(row),
+            };
+            // A press and release with no drag is a click on the boundary, not a new size.
+            if (now - from).abs() < 0.5 {
+                return Some(Ok(0));
+            }
+            let to_mm = 1.0 / mm_to_px(state.geom.dpi)(1.0);
+            Some(match edge {
+                Edge::Col(col) => state.app.set_col_width(
+                    state.sheet,
+                    col..col + 1,
+                    Some(grind_sheet::style::mm_length(
+                        state.geom.cols.size_of(col) * to_mm,
+                    )),
+                ),
+                Edge::Row(row) => state.app.set_row_height(
+                    state.sheet,
+                    row..row + 1,
+                    Some(grind_sheet::style::mm_length(
+                        state.geom.rows.size_of(row) * to_mm,
+                    )),
+                ),
+            })
+        })
+    }
+    .flatten();
+    if let Some(result) = resized {
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = ReleaseCapture();
+        }
+        if let Err(error) = result {
+            // SAFETY: one borrow, no dialog.
+            unsafe { with_sheet(hwnd, |state| state.say(Some(error.to_string()))) };
+        }
+        refresh(hwnd);
         return;
     }
     // A strip control that was pressed and is still under the pointer is *now* activated.
@@ -3802,6 +3959,12 @@ fn track_size(hwnd: HWND, rows: bool) {
 /// cell's padding either side. A column holding nothing goes back to the default. The same
 /// answer the GNOME window's double-click on a column edge gives, from the menu.
 fn fit_columns(hwnd: HWND) {
+    fit_columns_in(hwnd, None);
+}
+
+/// [`fit_columns`] for these columns, or the selected ones when none are named — a double-click on
+/// a column's edge names its own.
+fn fit_columns_in(hwnd: HWND, columns: Option<std::ops::Range<u32>>) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_sheet(hwnd, |state| {
@@ -3822,10 +3985,11 @@ fn fit_columns(hwnd: HWND) {
                 .0
                 .min(5000);
             let (start, end) = state.selection.rect();
+            let range = columns.clone().unwrap_or(start.col..end.col + 1);
             let pad = 2.0 * scale(4.0, dpi) + 6.0;
             let to_mm = 1.0 / crate::sheet::geom::mm_to_px(dpi)(1.0);
             let mut changed = 0;
-            for col in start.col..=end.col {
+            for col in range {
                 let widest = state
                     .app
                     .get_viewport(state.sheet, 0..used, col..col + 1)
