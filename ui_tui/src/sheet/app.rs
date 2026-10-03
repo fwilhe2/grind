@@ -1911,44 +1911,24 @@ impl App {
     /// (`grind_sheet::numfmt::preset`) rather than a format-code string — this build has no
     /// such thing, which is `doc/ods-format.md` §5.2's decision and not this shell's.
     fn cmd_format(&mut self, what: &str) {
-        let mut words = what.split_whitespace();
-        let kind = words.next().unwrap_or_default();
-        // `:format number 3` — the decimals, where a preset takes any.
-        let decimals: u8 = words.next().and_then(|n| n.parse().ok()).unwrap_or(2);
-        let format = match kind {
-            "general" | "" => None,
-            "int" | "integer" => Some(numfmt::preset(Kind::Number, 0, true, "")),
-            "number" => Some(numfmt::preset(Kind::Number, decimals, true, "")),
-            "percent" => Some(numfmt::preset(Kind::Percentage, 0, false, "")),
-            // `:format currency usd` — a word, because `$` and `£` are keys and `€` often is
-            // not; the euro when nothing is named (`numfmt::currency_named`).
-            "currency" => {
-                let named = what.split_whitespace().nth(1);
-                let symbol = match named {
-                    None => CURRENCY,
-                    Some(word) => match numfmt::currency_named(word) {
-                        Some(symbol) => symbol,
-                        None => {
-                            self.status =
-                                format!("not a currency: {word} — eur, usd or gbp (or € $ £)");
-                            return;
-                        }
-                    },
-                };
-                Some(numfmt::preset(Kind::Currency, 2, true, symbol))
+        match parse_format(what) {
+            Ok(format) => {
+                let kind = what.split_whitespace().next().unwrap_or_default();
+                self.write_format(format, kind)
             }
-            "date" => Some(numfmt::preset(Kind::Date, 0, false, "")),
-            "time" => Some(numfmt::preset(Kind::Time, 0, false, "")),
-            "datetime" => Some(numfmt::datetime_preset()),
-            other => {
-                self.status = format!(
-                    "not a format: {other} — general int number percent currency [eur|usd|gbp] \
-                     date time datetime"
-                );
-                return;
-            }
-        };
-        self.write_format(format, kind);
+            Err(message) => self.status = message,
+        }
+    }
+
+    /// What the active cell would show under the `:format` being typed — `App::shown_as`, and
+    /// nothing written. `None` while the words are not yet a format, or the cell shows nothing.
+    fn format_sample(&self, typed: &str) -> Option<String> {
+        let what = typed.strip_prefix("format")?.trim_start();
+        let format = parse_format(what).ok()?;
+        self.core
+            .shown_as(self.sheet, self.active, format.as_ref())
+            .ok()
+            .filter(|shown| !shown.is_empty())
     }
 
     fn cmd_sheet_add(&mut self) {
@@ -2399,7 +2379,11 @@ impl App {
             Mode::Command { .. } => chrome::Mode::Command,
         };
         let says = match &self.mode {
-            Mode::Command { buf } => format!(":{buf}"),
+            Mode::Command { buf } => match self.format_sample(buf) {
+                // The sample is what `:format` would make of the active cell, shown before Enter.
+                Some(shown) => format!(":{buf}   → {shown}"),
+                None => format!(":{buf}"),
+            },
             Mode::Insert { .. } => "Enter commits, Esc cancels".to_string(),
             // Short on purpose: the right-hand end of this bar is carrying the arithmetic, which
             // is what a reader with a range selected is actually looking at. The rest of the
@@ -2435,6 +2419,41 @@ impl App {
             frame.set_cursor_position(chrome::command_cursor(status_area, mode, buf));
         }
     }
+}
+
+/// `:format`'s words as a number format — the core's own vocabulary
+/// (`grind_sheet::numfmt::preset`), or the sentence that says what was not understood.
+fn parse_format(what: &str) -> Result<Option<numfmt::Format>, String> {
+    let mut words = what.split_whitespace();
+    let kind = words.next().unwrap_or_default();
+    // `:format number 3` — the decimals, where a preset takes any.
+    let decimals: u8 = words.next().and_then(|n| n.parse().ok()).unwrap_or(2);
+    Ok(match kind {
+        "general" | "" => None,
+        "int" | "integer" => Some(numfmt::preset(Kind::Number, 0, true, "")),
+        "number" => Some(numfmt::preset(Kind::Number, decimals, true, "")),
+        "percent" => Some(numfmt::preset(Kind::Percentage, 0, false, "")),
+        // `:format currency usd` — a word, because `$` and `£` are keys and `€` often is
+        // not; the euro when nothing is named (`numfmt::currency_named`).
+        "currency" => {
+            let symbol = match what.split_whitespace().nth(1) {
+                None => CURRENCY,
+                Some(word) => numfmt::currency_named(word).ok_or_else(|| {
+                    format!("not a currency: {word} — eur, usd or gbp (or € $ £)")
+                })?,
+            };
+            Some(numfmt::preset(Kind::Currency, 2, true, symbol))
+        }
+        "date" => Some(numfmt::preset(Kind::Date, 0, false, "")),
+        "time" => Some(numfmt::preset(Kind::Time, 0, false, "")),
+        "datetime" => Some(numfmt::datetime_preset()),
+        other => {
+            return Err(format!(
+                "not a format: {other} — general int number percent currency [eur|usd|gbp] \
+                 date time datetime"
+            ));
+        }
+    })
 }
 
 /// The header bands, the name box and a search mark — the four places this shell paints a ground
@@ -3064,6 +3083,19 @@ mod tests {
         press(&mut app, KeyCode::Char(':'));
         type_str(&mut app, "general");
         press(&mut app, KeyCode::Enter);
+        assert_eq!(app.core.value_text(0, Pos::new(1, 1)).unwrap(), "1200");
+    }
+
+    /// While `:format percent` is still being typed the status bar says what it would make of the
+    /// active cell, and nothing has been written.
+    #[test]
+    fn a_format_being_typed_shows_what_it_would_display() {
+        let mut app = filled();
+        app.active = Pos::new(1, 1); // B2, 1200
+        press(&mut app, KeyCode::Char(':'));
+        type_str(&mut app, "format percent");
+        let status = screen(&mut app, 80, 8).last().cloned().unwrap_or_default();
+        assert!(status.contains("→ 120000%"), "{status:?}");
         assert_eq!(app.core.value_text(0, Pos::new(1, 1)).unwrap(), "1200");
     }
 
