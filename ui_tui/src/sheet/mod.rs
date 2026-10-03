@@ -19,6 +19,8 @@ Spreadsheet:
   i, a  edit the cell     c  edit from empty
   x, d  clear the cell, or everything selected
   n, N  the next / previous match of the last :find
+  w b } {  jump to the next edge of the data (Ctrl+arrows too)
+  V  select the row   Ctrl+V  the column   Ctrl+A  everything the sheet uses
   While typing a formula: Tab accepts a completion, Up/Down pick one, Esc dismisses
   After `=`, an operator or `(` the arrows point at a cell and write its address (point mode);
   they keep moving it until you type something else

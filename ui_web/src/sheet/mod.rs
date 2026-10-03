@@ -1866,7 +1866,35 @@ impl Ui {
         let extent = self.app.used_extent(sheet).unwrap_or((0, 0));
         let selection = self.selection.get();
         let page = self.visible().0.saturating_sub(1);
-        let active = keymap::moved(selection.active, motion, extent, page);
+        let active = match motion {
+            // The next edge of the data is a question for the document: `grind_sheet::nav`'s
+            // rule, over the occupied cells, the same one every other window asks.
+            Motion::Edge(dir) => {
+                use grind_sheet::nav;
+                let dir = match dir {
+                    keymap::Dir::Left => nav::Dir::Left,
+                    keymap::Dir::Right => nav::Dir::Right,
+                    keymap::Dir::Up => nav::Dir::Up,
+                    keymap::Dir::Down => nav::Dir::Down,
+                };
+                nav::moved(
+                    nav::Selection {
+                        anchor: selection.anchor,
+                        active: selection.active,
+                    },
+                    nav::Motion::Edge(dir),
+                    false,
+                    nav::Extent {
+                        rows: extent.0,
+                        cols: extent.1,
+                        page: page.max(1),
+                    },
+                    &nav::occupied(&self.app, sheet),
+                )
+                .active
+            }
+            _ => keymap::moved(selection.active, motion, extent, page),
+        };
         self.set_selection(match extend {
             true => Selection {
                 anchor: selection.anchor,

@@ -33,10 +33,20 @@ pub enum Dir {
 pub enum Motion {
     By(Dir),
     Page(Dir),
+    /// The next edge of the data — Ctrl+arrow, resolved against the document by the pane
+    /// (`grind_sheet::nav`'s rule), since this file has no document to ask.
+    Edge(Dir),
     RowStart,
     RowEnd,
     SheetStart,
     SheetEnd,
+}
+
+fn edge(dir: Dir, extend: bool) -> Action {
+    Action::Move {
+        motion: Motion::Edge(dir),
+        extend,
+    }
 }
 
 /// A key as the page reports it, with ⌘/Ctrl already collapsed into one flag.
@@ -105,6 +115,10 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
             // Replace's key in both other spreadsheets. Ctrl+F is not here: it opens the
             // palette, which `lib.rs` catches before any pane sees a key.
             "h" | "H" => Some(Action::Run("edit.replace")),
+            "ArrowLeft" => Some(edge(Dir::Left, chord.shift)),
+            "ArrowRight" => Some(edge(Dir::Right, chord.shift)),
+            "ArrowUp" => Some(edge(Dir::Up, chord.shift)),
+            "ArrowDown" => Some(edge(Dir::Down, chord.shift)),
             "Home" => Some(Action::Move {
                 motion: Motion::SheetStart,
                 extend: chord.shift,
@@ -161,6 +175,8 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
 pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
     let page = page.max(1);
     match motion {
+        // Needs the document; the pane answers it (`Ui::move_to`). One cell, if asked here.
+        Motion::Edge(dir) => step(from, dir, 1),
         Motion::By(dir) => step(from, dir, 1),
         Motion::Page(dir) => step(from, dir, page),
         Motion::RowStart => Pos::new(from.row, 0),
@@ -416,5 +432,23 @@ mod tests {
         );
         assert_eq!(after_commit(Pos::new(0, 0), Some(Dir::Up)), Pos::new(0, 0));
         assert_eq!(after_commit(Pos::new(3, 3), None), Pos::new(3, 3));
+    }
+
+    #[test]
+    fn ctrl_arrow_jumps_to_the_edge_of_the_data() {
+        assert_eq!(
+            action_for(&primary("ArrowRight"), false),
+            Some(edge(Dir::Right, false))
+        );
+        assert_eq!(
+            action_for(
+                &Chord {
+                    shift: true,
+                    ..primary("ArrowUp")
+                },
+                false
+            ),
+            Some(edge(Dir::Up, true))
+        );
     }
 }

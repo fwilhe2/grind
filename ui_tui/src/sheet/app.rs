@@ -253,6 +253,10 @@ impl App {
         };
         match action {
             Action::Move(motion) => self.go(motion),
+            Action::Edge(dir) => self.edge(dir),
+            Action::SelectRow => self.select_extent(true, false),
+            Action::SelectColumn => self.select_extent(false, true),
+            Action::SelectAll => self.select_extent(true, true),
             Action::Insert => self.begin_edit(false),
             Action::Change => self.begin_edit(true),
             Action::Clear => self.clear_selection(),
@@ -414,6 +418,58 @@ impl App {
             cols: &cols,
         };
         self.active = keymap::moved(self.active, motion, extent, self.visible_rows, folded);
+    }
+
+    /// `w` `b` `}` `{` — jump to the next edge of the data: `grind_sheet::nav`'s rule over the
+    /// occupied cells, the same Ctrl+arrow every window answers. Extends the selection in Visual
+    /// mode, as a motion does.
+    fn edge(&mut self, dir: Dir) {
+        use grind_sheet::nav;
+        let nav_dir = match dir {
+            Dir::Left => nav::Dir::Left,
+            Dir::Right => nav::Dir::Right,
+            Dir::Up => nav::Dir::Up,
+            Dir::Down => nav::Dir::Down,
+        };
+        let extent = self.core.used_extent(self.sheet).unwrap_or((0, 0));
+        let moved = nav::moved(
+            nav::Selection {
+                anchor: self.active,
+                active: self.active,
+            },
+            nav::Motion::Edge(nav_dir),
+            false,
+            nav::Extent {
+                rows: extent.0,
+                cols: extent.1,
+                page: self.visible_rows.max(1),
+            },
+            &nav::occupied(&self.core, self.sheet),
+        );
+        self.active = moved.active;
+    }
+
+    /// `V`, Ctrl+V, Ctrl+A — the whole row, the whole column, or everything the sheet uses, as a
+    /// selection. A row or column is cut to the used part, as every verb over one is
+    /// (`nav::target`), so a verb over a "whole" column never walks a million cells.
+    fn select_extent(&mut self, rows: bool, cols: bool) {
+        let (used_rows, used_cols) = self.core.used_extent(self.sheet).unwrap_or((0, 0));
+        let last = Pos::new(used_rows.saturating_sub(1), used_cols.saturating_sub(1));
+        let (anchor, active) = match (rows, cols) {
+            (true, true) => (Pos::new(0, 0), last),
+            (true, false) => (
+                Pos::new(self.active.row, 0),
+                Pos::new(self.active.row, last.col),
+            ),
+            _ => (
+                Pos::new(0, self.active.col),
+                Pos::new(last.row, self.active.col),
+            ),
+        };
+        self.anchor = Some(anchor);
+        self.active = active;
+        self.mode = Mode::Visual;
+        self.status.clear();
     }
 
     // --- the code view (doc/dsl.md §6, D9) ---
@@ -2963,6 +3019,29 @@ mod tests {
         assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
         assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
         assert!(app.status.starts_with("filled"), "{}", app.status);
+    }
+
+    /// `w` jumps to the edge of the data, and `V`, Ctrl+V and Ctrl+A select a row, a column and
+    /// everything the sheet uses.
+    #[test]
+    fn edges_and_whole_selections() {
+        let mut app = app();
+        for (pos, text) in [
+            (Pos::new(0, 0), "a"),
+            (Pos::new(0, 1), "b"),
+            (Pos::new(0, 2), "c"),
+            (Pos::new(2, 0), "d"),
+        ] {
+            app.core
+                .enter(0, pos, text, RecalcMode::Document)
+                .expect("enters");
+        }
+        app.active = Pos::new(0, 0);
+        press(&mut app, KeyCode::Char('w'));
+        assert_eq!(app.active, Pos::new(0, 2), "the end of the run");
+        press(&mut app, KeyCode::Char('V'));
+        assert_eq!(app.rect(), (Pos::new(0, 0), Pos::new(0, 2)));
+        press(&mut app, KeyCode::Esc);
     }
 
     /// Point mode: in a formula where a reference could go, the arrows point at a cell and write

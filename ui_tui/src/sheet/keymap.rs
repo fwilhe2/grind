@@ -95,6 +95,14 @@ pub enum Action {
     Italic,
     /// `-` — back to no styling at all.
     Plain,
+    /// `w` `b` `}` `{` (and Ctrl+arrow) — to the next edge of the data in that direction, the rule
+    /// every window's Ctrl+arrow follows (`grind_sheet::nav`).
+    Edge(Dir),
+    /// `V` — the whole row, as a selection; Ctrl+V the whole column; Ctrl+A the whole sheet's
+    /// used part. Vi's linewise and blockwise visual, and the select-all everyone has.
+    SelectRow,
+    SelectColumn,
+    SelectAll,
     /// `n` / `N` — the next or previous match of the last `:find`, vi's own two keys for it.
     Next(bool),
     /// `Esc` — leave Visual mode, changing nothing.
@@ -109,6 +117,17 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
     let ctrl = mods.contains(KeyModifiers::CONTROL);
     let by = |dir| Some(Action::Move(Motion::By(dir)));
     match code {
+        KeyCode::Char('v') if ctrl => Some(Action::SelectColumn),
+        KeyCode::Char('a') if ctrl => Some(Action::SelectAll),
+        KeyCode::Char('V') => Some(Action::SelectRow),
+        KeyCode::Char('w') => Some(Action::Edge(Dir::Right)),
+        KeyCode::Char('b') if !ctrl => Some(Action::Edge(Dir::Left)),
+        KeyCode::Char('}') => Some(Action::Edge(Dir::Down)),
+        KeyCode::Char('{') => Some(Action::Edge(Dir::Up)),
+        KeyCode::Left if ctrl => Some(Action::Edge(Dir::Left)),
+        KeyCode::Right if ctrl => Some(Action::Edge(Dir::Right)),
+        KeyCode::Up if ctrl => Some(Action::Edge(Dir::Up)),
+        KeyCode::Down if ctrl => Some(Action::Edge(Dir::Down)),
         KeyCode::Char('v') => Some(Action::Visual),
         KeyCode::Esc => Some(Action::Escape),
         KeyCode::Char('y') => Some(Action::Yank),

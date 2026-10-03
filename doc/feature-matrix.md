@@ -110,17 +110,18 @@ ad-hoc-signed `Grind.app` in a DMG instead (M10).
 | | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
 |---|---|---|---|---|---|---|
 | Move by cell, row, page, document | — | ● | ● | ● | ● | ● |
-| Jump to the edge of a block (Ctrl+arrow) | — | ● | ○ | ○ | ● | ● |
+| Jump to the edge of a block (Ctrl+arrow) | — | ● | ● ᵉᵈ | ● ᵉᵈ | ● | ● |
 | Jump to the start or end of the sheet | — | ● | ● | ● | ● | ● |
 | Select a rectangle | ● ᵃ | ● | ● | ● | ● | ● |
-| Select whole rows / columns from a header | ● ᵃ | ● | ○ | ○ | ● | ● |
-| Select the whole sheet | ● ᵃ | ● | ○ | ● | ● | ● |
+| Select whole rows / columns from a header | ● ᵃ | ● | ● ᵉᵈ | ○ | ● | ● |
+| Select the whole sheet | ● ᵃ | ● | ● ᵉᵈ | ● | ● | ● |
 | Name box / address field | ● | ● | ● | ● | ● | ● |
 | Go to a defined name | ● | ● | ● | ● | ● | ● |
 | Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ○ | ● | ● |
 | Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn | sidebar |
 | Zoom | — | ● | ○ | ○ | ○ | ● |
 
+ᵉᵈ Closed 2026-10-02 over `grind_sheet::nav`'s edge rule: the browser's Ctrl+arrow (Shift extends); the terminal's `w b } {` and Ctrl+arrows, with `V` (row), Ctrl+V (column) and Ctrl+A (sheet) as visual selections of the used part — no header to click in a terminal.
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
 so skipping means handing it the hidden set.
