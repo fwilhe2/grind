@@ -24,6 +24,8 @@ pub enum Switch {
     New(DocumentKind),
     /// This file, whose kind was read from its bytes by `crate::sniff`.
     Open(PathBuf, DocumentKind),
+    /// The pane with no document in it (`crate::welcome`) — what `:welcome` goes back to.
+    Welcome,
 }
 
 /// Set by the core whenever the document changes; the event loop redraws when it is. The

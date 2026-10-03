@@ -28,6 +28,7 @@ mod pick;
 mod problems;
 mod sheet;
 mod text;
+mod welcome;
 
 use std::io::{self, Stdout};
 use std::path::{Path, PathBuf};
@@ -57,7 +58,7 @@ fn usage() -> String {
     format!(
         "usage: grind-tui [--sheet|--text] [file]\n\n\
          The document type is read out of the file, not guessed from its name. With no file,\n\
-         --sheet (the default) or --text says which to start empty.\n\
+         the welcome screen offers the choice; --sheet or --text skips it and starts that kind empty.\n\
          \n{}\n{}\n{}",
         crate::help::COMMON,
         crate::sheet::HELP,
@@ -68,6 +69,7 @@ fn usage() -> String {
 fn main() -> ExitCode {
     let mut kind: Option<DocumentKind> = None;
     let mut path: Option<PathBuf> = None;
+    let mut asked = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "-h" | "--help" => {
@@ -81,8 +83,14 @@ fn main() -> ExitCode {
                 );
                 return ExitCode::SUCCESS;
             }
-            "--sheet" => kind = Some(DocumentKind::Spreadsheet),
-            "--text" => kind = Some(DocumentKind::Text),
+            "--sheet" => {
+                kind = Some(DocumentKind::Spreadsheet);
+                asked = true;
+            }
+            "--text" => {
+                kind = Some(DocumentKind::Text);
+                asked = true;
+            }
             other if other.starts_with('-') => {
                 eprintln!("grind-tui: unknown option {other}");
                 return ExitCode::FAILURE;
@@ -114,7 +122,9 @@ fn main() -> ExitCode {
         None => kind.unwrap_or(DocumentKind::Spreadsheet),
     };
 
-    let result = session(kind, path);
+    // Nothing named at all is the welcome screen, not a guess.
+    let welcome = path.is_none() && !asked;
+    let result = session(kind, path, welcome);
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -126,9 +136,12 @@ fn main() -> ExitCode {
 
 /// The terminal, and the panes that come and go in it: the first is what the command line named,
 /// and `:new` and `:open` (`app::Switch`) replace it without leaving the terminal.
-fn session(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<()> {
+fn session(kind: DocumentKind, path: Option<PathBuf>, welcome: bool) -> io::Result<()> {
     // Read before the terminal is taken, so an unreadable file is an error on a normal screen.
-    let mut next = Some(prepare(kind, path)?);
+    let mut next = Some(match welcome {
+        true => welcome_pane(),
+        false => prepare(kind, path)?,
+    });
     let mut terminal = setup_terminal()?;
     let mut result = Ok(());
     while let Some(pane) = next.take() {
@@ -137,6 +150,10 @@ fn session(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<()> {
                 let (kind, path) = match switch {
                     app::Switch::New(kind) => (kind, None),
                     app::Switch::Open(path, kind) => (kind, Some(path)),
+                    app::Switch::Welcome => {
+                        next = Some(welcome_pane());
+                        continue;
+                    }
                 };
                 match prepare(kind, path) {
                     Ok(pane) => next = Some(pane),
@@ -155,6 +172,13 @@ fn session(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<()> {
 enum Pane {
     Sheet(Box<sheet::app::App>),
     Text(Box<text::app::App>),
+    Welcome(Box<welcome::Welcome>),
+}
+
+fn welcome_pane() -> Pane {
+    let redraw = Arc::new(RedrawFlag::default());
+    redraw.raise();
+    Pane::Welcome(Box::new(welcome::Welcome::new(redraw)))
 }
 
 fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
@@ -207,6 +231,7 @@ fn run_pane(terminal: &mut Tui, pane: Pane) -> io::Result<Option<app::Switch>> {
     match pane {
         Pane::Sheet(mut pane) => event_loop(terminal, &mut *pane),
         Pane::Text(mut pane) => event_loop(terminal, &mut *pane),
+        Pane::Welcome(mut pane) => event_loop(terminal, &mut *pane),
     }
 }
 
@@ -265,6 +290,7 @@ macro_rules! shell {
 
 shell!(sheet::app::App);
 shell!(text::app::App);
+shell!(welcome::Welcome);
 
 fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<app::Switch>> {
     let redraw = shell.redraw();

@@ -304,3 +304,11 @@ cargo test -p grind-tui                   # both keymaps, the notation, and rend
 and everything about the picture goes through ratatui's `TestBackend` — which is how "a bold
 run is drawn bold" and "a number sits to the right of its column" are checked rather than
 described.
+
+## The welcome pane (2026-10-03)
+
+`grind-tui` with no file and neither `--sheet` nor `--text` no longer guesses a spreadsheet: it
+opens `ui_tui/src/welcome.rs`, three choices (`s` new spreadsheet, `t` new text document, `o` a
+path to open — the arrows and Enter work too) and `q` to leave. `:welcome` returns to it from
+either pane, refusing over unsaved work like `:new`; `:welcome!` discards. Recent files stay a
+named gap: a list needs a store this shell does not have.

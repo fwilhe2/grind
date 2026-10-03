@@ -59,7 +59,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Writes all three forms | ● | ● | ● | ● | ● | ● | ● |
 | Flat-first default (`doc/flat-first.md`) | ● | ● | ● | ● | ● | ● | ● ¹ |
 | New, empty document | ● | ● | ● | ● ᵗⁿ | ● | ● | ● |
-| A **welcome screen** with no document open | — | ○ | ○ | ○ | ● | ● | ● |
+| A **welcome screen** with no document open | — | ○ | ○ | ● ᵗʷ | ● | ● | ● |
 | New document of the *other* kind, in place | — ⁱ | ○ | ○ | ● ᵗⁿ | ● | ● | ● ² |
 | Undo / redo — spreadsheet | ◐ ᵇ | ● | — | ● | ● | ● | ● |
 | Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● | ● |
@@ -309,6 +309,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ʷᵈ Drag a column's or row's header boundary: the size follows the pointer, the two-headed cursor shows over the boundary, and release writes one `set_col_width`/`set_row_height` (2026-10-02). The geometry (`GridGeom::edge_at`) is unit-tested; the mouse path is build-checked only — no Windows pointer was available to drive it.
 ᶠᶜ Sheet ▸ Fit Column Width, measured in the cell font by GDI; from the menu, and by double-clicking the column's edge (a row's edge goes back to its content's height) — 2026-10-02.
 ᶠⁱ `:fit` — the selection's columns, each as wide as its widest text in terminal cells (`unicode-width`) plus the blank between columns — 2026-10-03.
+ᵗʷ `grind-tui` with no file and neither `--sheet` nor `--text` opens `welcome.rs` — s, t, o, the arrows and Enter, with a path prompt for Open — and `:welcome` goes back from either pane (refused over unsaved work; `:welcome!` discards) — 2026-10-03.
 ʷᶠ Ctrl+K ▸ *Fit column width to text* — widest text in cells × an estimated 7.4px plus padding (`layout::fit_px`), estimated rather than measured because the grid's size is declared (`CELL`) — 2026-10-03.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the

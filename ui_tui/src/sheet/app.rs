@@ -1022,6 +1022,8 @@ impl App {
             "help" | "h?" => self.help.open(),
             "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
+            "welcome" => self.cmd_welcome(false),
+            "welcome!" => self.cmd_welcome(true),
             "new" => self.cmd_new("", false),
             "new!" => self.cmd_new("", true),
             _ if cmd.starts_with("new ") => self.cmd_new(cmd[4..].trim(), false),
@@ -1821,6 +1823,16 @@ impl App {
             return;
         }
         self.switch = Some(crate::app::Switch::New(kind));
+    }
+
+    /// `:welcome` — back to the pane with no document in it, where either kind starts. Replaces
+    /// this pane, so unsaved work is refused unless the verb is `:welcome!`.
+    fn cmd_welcome(&mut self, force: bool) {
+        if !force && self.unsaved() {
+            self.status = "unsaved changes — :welcome! to discard, :w to save".to_string();
+            return;
+        }
+        self.switch = Some(crate::app::Switch::Welcome);
     }
 
     /// `:open <path>` — that file in this terminal, whichever kind its bytes say it is. Replaces
@@ -3307,6 +3319,8 @@ mod tests {
             app.take_switch(),
             Some(crate::app::Switch::New(grind_core::DocumentKind::Text))
         );
+        app.run_command("welcome");
+        assert_eq!(app.take_switch(), Some(crate::app::Switch::Welcome));
         app.run_command("open /definitely/not/a/file.fods");
         assert!(app.take_switch().is_none());
         assert!(app.status.contains("not/a/file"), "{}", app.status);
