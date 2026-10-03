@@ -3249,6 +3249,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillDown => fill(hwnd, true),
         Command::FillRight => fill(hwnd, false),
         Command::FillAcross => fill_across(hwnd),
+        Command::InsertChart => insert_chart(hwnd),
+        Command::DeleteChart => delete_chart(hwnd),
         Command::BordersAll => borders(hwnd, true),
         Command::BordersNone => borders(hwnd, false),
         Command::CopyValue => copy_value(hwnd),
@@ -3455,6 +3457,57 @@ fn fill(hwnd: HWND, down: bool) {
                 }
             }
             state.say(Some(notice::filled(cells, down)));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Insert Chart — `grind_sheet::verbs::insert_chart` over the selection; this window says
+/// only where a column and a row sit, in millimetres.
+fn insert_chart(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let px = 1.0 / crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0);
+            let result = grind_sheet::verbs::insert_chart(
+                &state.app,
+                state.sheet,
+                start,
+                end,
+                |col, row| {
+                    (
+                        state.geom.cols.offset_of(col) * px,
+                        state.geom.rows.offset_of(row) * px,
+                    )
+                },
+            );
+            state.say(Some(match result {
+                Ok(_) => "A chart beside the table. Ctrl+Z takes it back.".to_owned(),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Delete Last Chart — a chart is not hit-tested in this window, so the last one is the
+/// one that goes.
+fn delete_chart(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let count = state
+                .app
+                .charts(state.sheet)
+                .map_or(0, |charts| charts.len());
+            state.say(Some(match count {
+                0 => "This sheet has no chart.".to_owned(),
+                n => match state.app.remove_chart(state.sheet, n - 1) {
+                    Ok(()) => "Deleted the last chart. Ctrl+Z brings it back.".to_owned(),
+                    Err(error) => error.to_string(),
+                },
+            }));
         });
     }
     refresh(hwnd);
@@ -4923,6 +4976,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::InsertChart
+        | Command::DeleteChart
         | Command::BordersAll
         | Command::BordersNone
         | Command::HideRows
@@ -5985,6 +6040,8 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::InsertChart
+        | Command::DeleteChart
         | Command::BordersAll
         | Command::BordersNone
         | Command::HideRows

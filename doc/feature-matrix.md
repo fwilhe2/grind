@@ -268,12 +268,12 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ○ | ● ³ |
 | Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ○ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
-| Add, edit, remove, move or restyle a chart | ● | ● | ○ | ◐ ᶜʰ | ○ | ◐ ⁵ |
-| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ● ᶜʰ | ○ | ● ⁵ |
-| A chart's own title and legend | ● | ● | ○ | ○ | ○ | ● ⁵ |
+| Add, edit, remove, move or restyle a chart | ● | ● | ○ | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ⁵ |
+| A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ○ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
+| A chart's own title and legend | ● | ● | ○ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
-| **Draws** a chart | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
-| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ○ ᵇ | ● |
+| **Draws** a chart | — | ● | ○ ᵇ | ● | ● ᶜʰ | ● |
+| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ● ᶜʰ | ● |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ● ² |
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ● ⁴ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ○ ʲ | ○ ʲ | ○ ʲ | ○ ʲ | ○ |
@@ -430,7 +430,7 @@ either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ʸ A second row in the find bar — *Replace with* and **Replace All** (`App::replace`: every occurrence, exact, one undo step); closed 2026-10-02. Its widget test skips without a display.
 ᶻ Closed 2026-10-02, each a prompt over the core's own verb: the browser's palette verbs *Insert a table…*, *Bookmark this paragraph…* and *Name this paragraph's style…*, and the Windows Format menu's *Insert Table…* (Ctrl+Shift+T), *Bookmark Here…* (Ctrl+Shift+B) and *Paragraph Style Name…*. A table's size and place are `grind_text::table`'s — below the caret's block or table, never last — which the GNOME window asks too.
 ᵍᵖ Move paragraph up/down and delete paragraph (`grind_text::blocks`, by caret and selection, not by address), 2026-10-02: the GNOME page's context menu, the browser's palette, the Windows Format menu. The GNOME context menu also has *Bookmark Here…* and *Paragraph Style Name…* (an alert with an entry). Insert-by-address is still the CLI's and the terminal's.
-ᶜʰ Palette verbs *Insert a chart from the selection* (`verbs::insert_chart`, placed beside the table) and *Delete the last chart*; no edit, move or restyle — 2026-10-02.
+ᶜʰ Palette verbs *Insert a chart from the selection* (`verbs::insert_chart`, placed beside the table) and *Delete the last chart*; no edit, move or restyle — 2026-10-02. Win32 has the same two as Data-menu items and **draws** charts (`sheet/chart.rs` over `grind_sheet::chart_paint`, the Mac's marks hoisted; a Wine render checks it).
 ˣ The palette is the find box, as over cells (Ctrl+F, or two characters typed after the verbs); picking a hit selects it, F3/Shift+F3 step, and Ctrl+H is *Replace in the document…* — closed 2026-10-02, over `grind_text::find`.
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**

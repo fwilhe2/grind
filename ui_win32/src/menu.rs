@@ -80,6 +80,10 @@ pub enum Command {
     /// The cell the selection grew from, copied across the whole selection, references shifted —
     /// one `App::fill`.
     FillAcross,
+    /// A chart of the table the selection means, placed beside it (`grind_sheet::verbs::
+    /// insert_chart`), and the last chart taken away again. Drawn by `sheet/chart.rs`.
+    InsertChart,
+    DeleteChart,
     /// A hairline round every selected cell, or every edge taken away — `grind_sheet::format::
     /// bordered`, the call every other shell's Borders control makes. The grid draws them
     /// (`look::border_strokes`).
@@ -294,6 +298,8 @@ impl Command {
         Command::FillDown,
         Command::FillRight,
         Command::FillAcross,
+        Command::InsertChart,
+        Command::DeleteChart,
         Command::BordersAll,
         Command::BordersNone,
         Command::CopyValue,
@@ -628,6 +634,14 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ExplainFormula,
                 label: "&Explain Formula…\tCtrl+Shift+E",
+            },
+            Item::Verb {
+                command: Command::InsertChart,
+                label: "Insert &Chart",
+            },
+            Item::Verb {
+                command: Command::DeleteChart,
+                label: "Delete &Last Chart",
             },
             Item::Verb {
                 command: Command::Evaluate,
@@ -1006,6 +1020,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::InsertChart
+        | Command::DeleteChart
         | Command::BordersAll
         | Command::BordersNone
         | Command::HideRows
@@ -1382,6 +1398,8 @@ mod tests {
             Command::CopyValue,
             Command::FormulaToValue,
             Command::FillAcross,
+            Command::InsertChart,
+            Command::DeleteChart,
             Command::BordersAll,
             Command::BordersNone,
             Command::HideRows,
