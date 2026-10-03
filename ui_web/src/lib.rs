@@ -466,6 +466,12 @@ impl Shell {
                 let _ = self.show(Mode::Welcome);
             }
             "doc.save" => self.save(),
+            // The version, the commit and when it was built — `grind_core::build_info`, the one
+            // place this fact is formatted for every window.
+            "doc.about" => self.set_message(grind_core::build_info::describe(
+                "grind-web",
+                env!("CARGO_PKG_VERSION"),
+            )),
             // Only in `command::SHEET`, so the text pane never offers them — but the ids are
             // answered here rather than in the pane, because a file and a download are the
             // chrome's and the pane has neither.

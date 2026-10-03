@@ -74,6 +74,7 @@ pub const SHEET: &[Command] = &[
     // growable surface.
     cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
+    cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     cmd("sheet.recalc", "Recalculate", "Document", "F9", true),
@@ -275,6 +276,7 @@ pub const TEXT: &[Command] = &[
     cmd("doc.new-text", "New text document", "Document", "", false),
     cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
+    cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     cmd("edit.copy", "Copy", "Edit", "Ctrl+C", true),

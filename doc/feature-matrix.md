@@ -67,7 +67,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
 | Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
-| About / build stamp | ● | ● | ● | ● ʰ | ○ | ● | ● ⁶ |
+| About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
 | Recent files | — | ● | ○ | ○ | ○ | ○ | ● |
 | Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
@@ -95,6 +95,8 @@ the check it lacks, and its twin's banner is the shape of the answer.
 ʰ `:about`, on the status line — there is no dialog to put it in.
 ᵍ A pipe is the accessible surface, which is `doc/view-modes.md` §4.6's argument for why the
 CLI matters most exactly where a GUI's whole output is colour.
+
+ʷᵃ *About this build* in the palette says `grind_core::build_info::describe` on the message line — no dialog to put it in (2026-10-02).
 
 **Mac.** ¹ An untitled document saves flat: the document answers `fods` or `fodt` itself (M10),
 since the type it is declared under would have said `.ods`. ² A window of its own beside this
