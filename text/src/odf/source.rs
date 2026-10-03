@@ -95,6 +95,33 @@ pub struct Source {
     /// decides numbered or bulleted, its `xml:id`. A regenerated body opens its lists with
     /// these rather than bare.
     pub lists: HashMap<BlockId, Vec<(usize, String)>>,
+    /// Every picture's outermost `draw:frame`, by what it read as ([`image_key`]): its extent
+    /// in [`Source::bytes`]. The model carries a picture's bytes, size and anchor and nothing
+    /// else of the frame — its `draw:name`, its `draw:style-name` (wrap, position, border), the
+    /// resizing frame and caption LibreOffice nests inside it, a package's `Pictures/` reference.
+    /// A regenerated paragraph writes the file's own frame for a picture that is still the one
+    /// it read, wherever the edit moved it, so none of that goes.
+    pub frames: Vec<(u64, Range<usize>)>,
+}
+
+/// What a picture read as — its type, bytes, size and anchor — as one number, so the writer can
+/// tell whether an image run is still a frame the file spelled ([`Source::frames`]). `None` for
+/// any other run.
+pub fn image_key(run: &crate::model::Run) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let crate::model::Run::Image {
+        mime,
+        data,
+        width,
+        height,
+        anchor,
+    } = run
+    else {
+        return None;
+    };
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (mime, data, width, height, anchor).hash(&mut hasher);
+    Some(hasher.finish())
 }
 
 /// One element of the body the model does not read: the prelude (`text:sequence-decls`,
@@ -204,6 +231,7 @@ impl Source {
             package: None,
             siblings: Vec::new(),
             lists: HashMap::new(),
+            frames: Vec::new(),
         }
     }
 }

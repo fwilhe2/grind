@@ -129,6 +129,8 @@ struct PendingImage {
     /// it lands *after* the image rather than before it however the caption's text nodes and
     /// its sequence field arrive.
     caption: String,
+    /// The outermost frame's start tag in the source, for [`super::source::Source::frames`].
+    start: Option<std::ops::Range<usize>>,
 }
 
 /// One `style:style` of family `text`, as the document declared it.
@@ -251,6 +253,20 @@ impl Builder {
         block.cell = self.cell.clone();
         self.doc.blocks.push(block);
         id
+    }
+
+    /// Remember where a picture's outermost frame is, so a regenerated paragraph can write the
+    /// file's own frame back rather than one rebuilt from the four things the model reads.
+    fn record_frame(&mut self, image: &Run, start_tag: Option<std::ops::Range<usize>>) {
+        let (Some(key), Some(start_tag)) = (super::source::image_key(image), start_tag) else {
+            return;
+        };
+        let Some(source) = self.doc.source.as_deref_mut() else {
+            return;
+        };
+        if let Some(range) = element_extent(&source.bytes, start_tag) {
+            source.frames.push((key, range));
+        }
     }
 
     /// R6: remember where this block's element is, so a later save can replace it in place.
@@ -936,7 +952,11 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
 /// (through a `draw:text-box`) purely for resizing. Only the first frame's size is kept unless
 /// it did not say, and only the outermost frame's [`Frame::end`] turns any of this into a run.
 fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
+    let outermost = b.frame_depth == 0;
     let pending = b.image.get_or_insert_with(PendingImage::default);
+    if outermost {
+        pending.start = Some(attrs.span());
+    }
     if pending.width.is_none() {
         pending.width = attrs.get(Ns::Svg, "width").map(str::to_owned);
     }
@@ -996,13 +1016,15 @@ impl Context<Builder> for Frame {
             && let Some(pending) = b.image.take()
             && let (Some(mime), Some(data)) = (pending.mime, pending.data)
         {
-            b.push_run(Run::Image {
+            let image = Run::Image {
                 mime,
                 data,
                 width: pending.width,
                 height: pending.height,
                 anchor: pending.anchor,
-            });
+            };
+            b.record_frame(&image, pending.start);
+            b.push_run(image);
             // After the image, never before it — whatever order its text nodes and its
             // sequence field arrived in while the text-box was still open.
             if !pending.caption.is_empty() {

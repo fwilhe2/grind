@@ -83,13 +83,18 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         if !lost.is_empty() {
             return Err(grind_core::Error::WouldLose(lost));
         }
-        verify(doc, &content)?;
     }
-    match (form, source.and_then(|source| source.package.as_deref())) {
-        (Form::Package, Some(original)) => envelope::repackage(original, &content, &[], &[], &[]),
-        (Form::Package, None) => write_package(MIMETYPE, &String::from_utf8_lossy(&content)),
-        _ => Ok(content),
+    let bytes = match (form, source.and_then(|source| source.package.as_deref())) {
+        (Form::Package, Some(original)) => envelope::repackage(original, &content, &[], &[], &[])?,
+        (Form::Package, None) => write_package(MIMETYPE, &String::from_utf8_lossy(&content))?,
+        _ => content,
+    };
+    // The bytes that will actually be written, package and all: a picture's `xlink:href`
+    // names a part of the package, and a bare `content.xml` has no part to resolve it in.
+    if source.is_some() {
+        verify(doc, &bytes)?;
     }
+    Ok(bytes)
 }
 
 /// **The edits themselves, checked**: what is about to replace somebody's file is read back and
@@ -224,10 +229,21 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         return None;
     }
 
-    // Every character style the document now needs, under the name this *file* gives it. A
+    // Every character style the *edited* blocks need, under the name this file gives it. A
     // formatting the file has no name for cannot be spliced, because the declaration would have
-    // to go somewhere these patches do not reach.
-    let pool = Pool::spliced(doc, source)?;
+    // to go somewhere these patches do not reach. Only the edited ones: a block nobody touched
+    // goes back as its own bytes and names whatever it named, so a run whose resolved
+    // formatting has no exact twin among the file's automatic styles must not turn an
+    // untouched save into a regenerate (`sw/qa`'s `tdf97879.odt` did).
+    let pool = Pool::spliced(
+        doc.blocks
+            .iter()
+            .filter(|block| doc.edits.blocks.contains(&block.id))
+            .flat_map(|block| block.runs.iter())
+            .filter_map(Run::props)
+            .filter(|props| !props.is_plain()),
+        source,
+    )?;
 
     // Which elements have to be rewritten. Every edited block must sit in one the file
     // actually spelled — one that does not means regenerating, because a document half in its
@@ -336,6 +352,11 @@ struct Pool {
     /// Names taken from the file this document was read from, whose declaration is already
     /// there and is left exactly as the file spells it rather than re-declared.
     declared: std::collections::HashSet<String>,
+    /// The file's own picture frames, by what each read as ([`super::source::Source::frames`]),
+    /// and whether one has been written yet — each is handed out once, so two identical
+    /// pictures do not both come back under the first one's `draw:name`.
+    frames: Vec<(u64, String)>,
+    used: std::cell::RefCell<Vec<bool>>,
 }
 
 impl Pool {
@@ -377,7 +398,37 @@ impl Pool {
             };
             pool.entries.push((props.clone(), name));
         }
+        if let Some(source) = source {
+            pool.take_frames(source);
+        }
         pool
+    }
+
+    /// Remember the file's own frames, so [`Pool::frame`] can write one back.
+    fn take_frames(&mut self, source: &super::source::Source) {
+        self.frames = source
+            .frames
+            .iter()
+            .filter_map(|(key, range)| {
+                let bytes = source.bytes.get(range.clone())?;
+                Some((*key, std::str::from_utf8(bytes).ok()?.to_owned()))
+            })
+            .collect();
+        self.used = std::cell::RefCell::new(vec![false; self.frames.len()]);
+    }
+
+    /// The file's own `draw:frame` for this image run, if the file spelled one that read as
+    /// exactly this picture and it has not been written already.
+    fn frame(&self, run: &Run) -> Option<&str> {
+        let key = super::source::image_key(run)?;
+        let mut used = self.used.borrow_mut();
+        let at = self
+            .frames
+            .iter()
+            .enumerate()
+            .position(|(i, (k, _))| *k == key && !used[i])?;
+        used[at] = true;
+        Some(&self.frames[at].1)
     }
 
     /// The same pool built entirely out of names `source` already declares — `None` when the
@@ -388,15 +439,19 @@ impl Pool {
     /// `office:automatic-styles` — a *second* fragile offset, for an edit that is rare — the
     /// writer takes the honest fallback the spreadsheet takes for a cell style the file has no
     /// entry for.
-    fn spliced(doc: &Document, source: &super::source::Source) -> Option<Self> {
+    fn spliced<'a>(
+        needed: impl Iterator<Item = &'a CharStyle>,
+        source: &super::source::Source,
+    ) -> Option<Self> {
         let mut pool = Pool::default();
-        for props in props_of(doc) {
+        for props in needed {
             if pool.name(props).is_some() {
                 continue;
             }
             let name = source.style_named(props)?;
             pool.entries.push((props.clone(), name.to_owned()));
         }
+        pool.take_frames(source);
         Some(pool)
     }
 
@@ -940,6 +995,7 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
         Run::Bookmark { name } => {
             let _ = write!(out, "<text:bookmark text:name=\"{}\"/>", esc(name));
         }
+        Run::Image { .. } if let Some(frame) = pool.frame(run) => out.push_str(frame),
         Run::Image {
             mime,
             data,
