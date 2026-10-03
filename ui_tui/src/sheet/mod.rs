@@ -35,6 +35,7 @@ Spreadsheet:
   :value                  — formulas in the selection become the values they show
   :yank-values            — the selection as shown (results, not formulas) into the register
   :chart  :chart!         — a chart of the table here (drawn by the other windows); drop the last
+  :calc [text]            — every formula in the document, searchable; Enter jumps to its cell
   :functions [text]       — the functions, with plain names; Enter starts a formula with one
   :explain                — the active cell's formula in plain words
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop

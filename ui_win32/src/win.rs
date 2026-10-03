@@ -3373,6 +3373,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FitColumns => fit_columns(hwnd),
         Command::ColumnWidth => track_size(hwnd, false),
         Command::DefineName => define_name(hwnd),
+        Command::FindCalculation => find_calculation(hwnd),
         Command::Evaluate => evaluate(hwnd),
         Command::GoTo => open_name_box(hwnd),
         Command::Find => find(hwnd),
@@ -3846,6 +3847,54 @@ fn fit_columns(hwnd: HWND) {
         });
     }
     refresh(hwnd);
+}
+
+/// Data ▸ Find a Calculation… — a word (empty for all), then every formula whose sheet, address,
+/// formula text or function name has it, in a list; choosing one goes to its cell.
+fn find_calculation(hwnd: HWND) {
+    let Some(word) = dialog::prompt(
+        hwnd,
+        "Find a Calculation",
+        "A word in the formula, its address or a function it calls (empty lists all):",
+        "",
+    ) else {
+        return;
+    };
+    // SAFETY: one borrow, released before the list — which runs a nested message loop.
+    let Some(found) = (unsafe {
+        with_sheet(hwnd, |state| {
+            state
+                .app
+                .calculations()
+                .into_iter()
+                .filter(|calc| calc.matches(word.trim()))
+                .collect::<Vec<_>>()
+        })
+    }) else {
+        return;
+    };
+    if found.is_empty() {
+        // SAFETY: one borrow, no dialog.
+        unsafe {
+            with_sheet(hwnd, |state| {
+                state.say(Some(
+                    "Nothing here is calculated, or nothing matches. A cell starting with = is."
+                        .to_owned(),
+                ))
+            })
+        };
+        return refresh(hwnd);
+    }
+    let rows: Vec<String> = found
+        .iter()
+        .map(|calc| format!("{}   {} = {}", calc.address(), calc.formula, calc.value))
+        .collect();
+    let Some(at) = dialog::choose(hwnd, "Calculations", &rows, 0) else {
+        return;
+    };
+    if let Some(calc) = found.get(at) {
+        go_to_address(hwnd, &calc.address());
+    }
 }
 
 /// Data ▸ Define Name… — a name for the selection, sheet-qualified so it means the same place from
@@ -5171,6 +5220,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::FindCalculation
         | Command::Evaluate
         | Command::GoTo
         | Command::Find
@@ -6237,6 +6287,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::FindCalculation
         | Command::Evaluate
         | Command::SheetAdd
         | Command::SheetRename

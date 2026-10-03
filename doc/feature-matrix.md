@@ -155,13 +155,14 @@ than as a cursor on a hidden row.
 | Explain a nested formula, unfolded | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
 | The 110 functions as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |
 | Read a formula through the document's names | ● | ● | ● | ○ | ○ | ● |
-| Every calculated cell, searchable | ● | ● | ○ | ○ | ○ | ● |
+| Every calculated cell, searchable | ● | ● | ● ᶜᵃ | ◐ ᶜᵃ | ● ᶜᵃ | ● |
 | Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 | Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 
 ᵖᵐ Where `ref_eligible` says a reference could go, the four arrows point (one cell, no range extension) and write the address into the edit line; the pointed cell is drawn in magenta. Closed 2026-10-02; the browser does the same in the formula bar (UTF-16 offsets through `grind_core::utf16`), writing the address without highlighting the cell — compile- and lint-checked only. Win32 does it in the in-cell `EDIT` through `EM_REPLACESEL` (Enter mode starts one; Edit mode keeps the caret) — also checked only by build.
 ᶠⁿ Type two letters of a function's name or plain-English name in the palette: up to five rows follow the verbs, and picking one starts an edit seeded `=NAME(`. A search, not a scrolling list — 2026-10-02.
 ᶠᵍ *Functions…* in the GNOME palette (a searchable dialog) and `:functions [text]` in the terminal (a list pane): name, plain-English name, brief and category from `funcs::catalog`; picking one starts an edit seeded `=NAME(`. 2026-10-02.
+ᶜᵃ `:calc [text]` (a list pane) and Data ▸ Find a Calculation… (a prompt, then a list) over `App::calculations`; each row a jump. The browser's palette find already matches a cell's formula text, which is the half of it. 2026-10-02.
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the

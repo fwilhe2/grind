@@ -139,6 +139,8 @@ pub struct App {
     assist: Assist,
     /// `:functions`, when it is showing — one row per function, Enter starts a formula with it.
     functions: crate::pick::Pick,
+    /// `:calc`, when it is showing — every formula in the document, each row a jump.
+    calculations: crate::pick::Pick,
     /// The reference being pointed at while a formula is typed (point mode), if one is.
     point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
@@ -187,6 +189,7 @@ impl App {
             find: Find::default(),
             assist: Assist::default(),
             functions: crate::pick::Pick::default(),
+            calculations: crate::pick::Pick::default(),
             point: None,
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
@@ -238,6 +241,13 @@ impl App {
         }
         if self.problems.is_open() {
             self.on_problems_key(key.code);
+            return;
+        }
+        if self.calculations.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(address) = self.calculations.on_key(key.code, height) {
+                self.cmd_jump(&address);
+            }
             return;
         }
         if self.functions.is_open() {
@@ -1033,6 +1043,8 @@ impl App {
             "value" => self.cmd_value(),
             "explain" => self.cmd_explain(),
             "functions" => self.cmd_functions(""),
+            "calc" => self.cmd_calc(""),
+            _ if cmd.starts_with("calc ") => self.cmd_calc(cmd[5..].trim()),
             _ if cmd.starts_with("functions ") => self.cmd_functions(cmd[10..].trim()),
             "filter" => self.cmd_filter(),
             "chart" => self.cmd_chart(),
@@ -1174,6 +1186,24 @@ impl App {
                 Err(e) => e.to_string(),
             },
         };
+    }
+
+    /// `:calc [text]` — every formula in the document (`App::calculations`, the GNOME window's
+    /// *Find a Calculation*), filtered by a sheet, address, formula or function name, each row a
+    /// jump to its cell.
+    fn cmd_calc(&mut self, needle: &str) {
+        let rows: Vec<crate::pick::Row> = self
+            .core
+            .calculations()
+            .into_iter()
+            .filter(|calc| calc.matches(needle))
+            .map(|calc| crate::pick::Row {
+                address: calc.address(),
+                label: format!("{} = {}", calc.formula, calc.value),
+                depth: 0,
+            })
+            .collect();
+        self.calculations.open("Calculations", rows, None);
     }
 
     /// `:functions [text]` — the functions this build implements, each with its plain-English name
@@ -1916,6 +1946,10 @@ impl App {
         }
         if self.functions.is_open() {
             self.functions.draw(frame, area, "functions");
+            return;
+        }
+        if self.calculations.is_open() {
+            self.calculations.draw(frame, area, "calculations");
             return;
         }
         if let Some(projection) = self.source.take() {
@@ -3068,6 +3102,22 @@ mod tests {
         assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
         assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
         assert!(app.status.starts_with("filled"), "{}", app.status);
+    }
+
+    /// `:calc` lists the document's formulas and Enter goes to the chosen one's cell.
+    #[test]
+    fn the_calculation_list_jumps_to_a_formula() {
+        let mut app = app();
+        for (pos, text) in [(Pos::new(0, 0), "2"), (Pos::new(3, 2), "=[.A1]*5")] {
+            app.core
+                .enter(0, pos, text, RecalcMode::Document)
+                .expect("enters");
+        }
+        app.run_command("calc");
+        assert!(app.calculations.is_open());
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.calculations.is_open());
+        assert_eq!(app.active, Pos::new(3, 2));
     }
 
     /// `:functions` is a pane of the catalog, and Enter starts an edit with the chosen function.
