@@ -102,7 +102,11 @@ impl Pane {
                 return;
             }
             Command::ImportCsv => {
-                self.import_csv(mtm);
+                self.import_csv(mtm, false);
+                return;
+            }
+            Command::ImportCsvWith => {
+                self.import_csv(mtm, true);
                 return;
             }
             Command::InsertChart => self.insert_chart(),
@@ -231,7 +235,7 @@ impl Pane {
     /// File ▸ Import CSV…: a delimited file read into this sheet at the active cell, its
     /// delimiter sniffed and each field read as if typed (`csv::Import::sniffed`, the one answer
     /// every window gives), in one undo step. Not UTF-8 is refused with `csv::NOT_UTF8`'s words.
-    fn import_csv(&self, mtm: MainThreadMarker) {
+    fn import_csv(&self, mtm: MainThreadMarker, with_options: bool) {
         let panel = NSOpenPanel::openPanel(mtm);
         panel.setCanChooseDirectories(false);
         panel.setAllowsMultipleSelection(false);
@@ -255,8 +259,28 @@ impl Pane {
                 );
             }
         };
+        // The options in words (`csv::Import::amended`), asked after the file so the panel that
+        // chose it is not left open under a question.
+        let words = match with_options {
+            true => {
+                let Some(words) = prompt::ask(
+                    mtm,
+                    "Import Options",
+                    "delimiter=semicolon locale=de-DE text formulas trim no-dates — or leave it empty to let the file decide.",
+                    "Import",
+                    "",
+                ) else {
+                    return;
+                };
+                words
+            }
+            false => String::new(),
+        };
         let at = self.selection.get().active;
-        let options = grind_sheet::csv::Import::sniffed(&text);
+        let options = match grind_sheet::csv::Import::sniffed(&text).amended(&words) {
+            Ok(options) => options,
+            Err(why) => return prompt::tell(mtm, "Those options cannot be used.", &why),
+        };
         match self
             .app
             .import_csv(self.sheet.get(), at, &text, &options, RecalcMode::Document)

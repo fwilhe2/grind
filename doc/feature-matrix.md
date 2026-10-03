@@ -173,7 +173,7 @@ than as a cursor on a hidden row.
 ᶜᵃ `:calc [text]` (a list pane) and Data ▸ Find a Calculation… (a prompt, then a list) over `App::calculations`; each row a jump. The browser's palette find already matches a cell's formula text, which is the half of it. 2026-10-02.
 ᶠᵒ `:formulas` in the terminal, a palette verb in the browser, View ▸ Show Formulas in Windows and GNOME (the GNOME one draws the cell text only, and is lint-checked rather than seen): each formula cell shows its formula text (display syntax) instead of its result — a reading, nothing is written (2026-10-02).
 ˡᵒ `:locale [tag|none]`, a palette verb and Data ▸ Document Locale…: a tag such as `de-DE` through `verbs::locale`, then `App::set_locale` — one undo step (2026-10-02).
-ʲʷ In words rather than checkboxes, through `csv::Import::amended` (`delimiter=semicolon locale=de-DE text formulas trim no-dates`): `:csv-in <file> with …` in the terminal, *Import CSV with Options…* in GNOME's palette (an alert, then the picker), *Import CSV with options…* in the browser's palette and File ▸ Import CSV with Options… in Windows — the options asked first (the browser) or after the file (Windows) — 2026-10-02.
+ʲʷ In words rather than checkboxes, through `csv::Import::amended` (`delimiter=semicolon locale=de-DE text formulas trim no-dates`): `:csv-in <file> with …` in the terminal, *Import CSV with Options…* in GNOME's palette (an alert, then the picker), *Import CSV with Options…* in the Mac's File menu (type-checked only), *Import CSV with options…* in the browser's palette and File ▸ Import CSV with Options… in Windows — the options asked first (the browser) or after the file (Windows) — 2026-10-02.
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the
@@ -293,7 +293,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Draws** its title and legend | — | ● | ○ ᵇ | ● | ● ᶜʰ | ● |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ● ² |
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ● ⁴ |
-| An import's seven options (`--text`, `--locale`, …) | ● | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ | ○ |
+| An import's seven options (`--text`, `--locale`, …) | ● | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ |
 | Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● |
 | Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● | ● |

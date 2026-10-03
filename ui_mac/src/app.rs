@@ -256,6 +256,7 @@ impl Delegate {
             | Command::Calculations
             | Command::DocumentLocale
             | Command::ExportCsv
+            | Command::ImportCsvWith
             | Command::ImportCsv => {
                 if let Some(pane) = self.front_pane() {
                     pane.structure(command, self.mtm());

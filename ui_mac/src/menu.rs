@@ -107,6 +107,9 @@ pub enum Command {
     About,
     /// A delimited file read into the sheet at the active cell — File ▸ Import CSV….
     ImportCsv,
+    /// [`Command::ImportCsv`], having first asked for options in words — `delimiter=semicolon
+    /// locale=de-DE text trim` (`csv::Import::amended`) — File ▸ Import CSV with Options….
+    ImportCsvWith,
     /// The sheet showing, as comma-separated values — File ▸ Export as CSV….
     ExportCsv,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
@@ -244,6 +247,7 @@ impl Command {
             Command::DefineName,
             Command::ExportCsv,
             Command::ImportCsv,
+            Command::ImportCsvWith,
             Command::About,
             Command::InsertChart,
             Command::Filter,
@@ -282,6 +286,7 @@ impl Command {
                 | Command::DefineName
                 | Command::ExportCsv
                 | Command::ImportCsv
+                | Command::ImportCsvWith
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
@@ -357,6 +362,7 @@ impl Command {
             | Command::FillAcross
             | Command::Calculations
             | Command::ExportCsv
+            | Command::ImportCsvWith
             | Command::ImportCsv => sheet,
         }
     }
@@ -790,6 +796,7 @@ pub static MENUS: &[Menu] = &[
             standard("Rename…", None, "renameDocument:"),
             standard("Move To…", None, "moveDocument:"),
             command("Import CSV…", None, Command::ImportCsv),
+            command("Import CSV with Options…", None, Command::ImportCsvWith),
             command("Export as CSV…", None, Command::ExportCsv),
             Item::Submenu {
                 title: "Revert To",
