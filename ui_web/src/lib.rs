@@ -82,6 +82,7 @@ const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab";
 const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm,.csv,.tsv,.tab";
 /// Delimited text, including `.txt`, which is what a great many exports are called — the
 /// delimiter is sniffed from the content, so the name never has to carry it.
+const IMAGE_TYPES: &str = "image/*";
 const CSV_TYPES: &str = ".csv,.tsv,.tab,.txt,text/csv";
 
 thread_local! {
@@ -307,6 +308,8 @@ enum Pick {
     Document,
     /// A delimited file to read into the open spreadsheet at the cursor.
     Csv,
+    /// A picture to put below the caret's paragraph.
+    Image,
 }
 
 impl Shell {
@@ -464,6 +467,7 @@ impl Shell {
             // answered here rather than in the pane, because a file and a download are the
             // chrome's and the pane has neither.
             "doc.import-csv" => self.import_picker(),
+            "block.picture" => self.raise_picker(Pick::Image, IMAGE_TYPES),
             "doc.export-csv" => self.export_csv("csv"),
             "doc.export-tsv" => self.export_csv("tsv"),
             "doc.undo" => self.undo(),
@@ -786,6 +790,19 @@ impl Shell {
             Ok(text) => self.sheet.import_csv(&text),
             Err(why) => self.set_message(format!("{name}: {why}")),
         }
+    }
+
+    /// The same read, for a picture to go below the caret's paragraph. The type is read from the
+    /// bytes' signature (`grind_text::picture::mime`) rather than from the name, which a browser
+    /// may get wrong or leave empty.
+    async fn load_image(self: Rc<Self>, file: File) {
+        let name = file.name();
+        let buffer = match JsFuture::from(file.array_buffer()).await {
+            Ok(buffer) => buffer,
+            Err(_) => return self.set_message(format!("Could not read {name}")),
+        };
+        self.text
+            .insert_picture(js_sys::Uint8Array::new(&buffer).to_vec());
     }
 
     /// Hand the selection to a download as delimited text.
@@ -1516,6 +1533,7 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
         match shell.pick.get() {
             Pick::Document => spawn_local(shell.clone().load(file)),
             Pick::Csv => spawn_local(shell.clone().load_csv(file)),
+            Pick::Image => spawn_local(shell.clone().load_image(file)),
         }
     })
 }

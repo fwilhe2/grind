@@ -870,6 +870,27 @@ impl Ui {
         }
     }
 
+    // --- pictures ---
+
+    /// A picture's bytes below the caret's paragraph, the caret past it
+    /// (`grind_text::picture::insert_below`). Anything the signature does not name as a picture is
+    /// said so rather than embedded.
+    pub fn insert_picture(&self, data: Vec<u8>) {
+        let Some(mime) = grind_text::picture::mime(&data) else {
+            return self.set_message(
+                "That file is not a picture — a PNG, JPEG, GIF, WebP, BMP or SVG can go in"
+                    .to_owned(),
+            );
+        };
+        match grind_text::picture::insert_below(&self.app, self.caret.get().block, mime, data) {
+            Ok(block) => {
+                self.anchor.set(None);
+                self.set_caret(Caret { block, offset: 1 });
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
     // --- tables ---
 
     /// *Insert a table…* — a size, then a table below the caret's block

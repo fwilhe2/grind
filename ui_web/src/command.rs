@@ -336,6 +336,7 @@ pub const TEXT: &[Command] = &[
     cmd("block.down", "Move paragraph down", "Structure", "", false),
     cmd("block.delete", "Delete paragraph", "Structure", "", false),
     cmd("block.table", "Insert a table…", "Structure", "", false),
+    cmd("block.picture", "Insert a picture…", "Structure", "", false),
     cmd(
         "block.bookmark",
         "Bookmark this paragraph…",
