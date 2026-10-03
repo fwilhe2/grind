@@ -148,6 +148,9 @@ pub struct App {
     point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
+    /// `:charts` — the same scrolling text pane, holding what [`super::chartview`] drew.
+    charts: crate::help::Help,
+    charts_text: String,
     /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
     ///
     /// Projected **once, when the pane opens**, and dropped when it closes — which is §6.3's
@@ -198,6 +201,8 @@ impl App {
             calculations: crate::pick::Pick::default(),
             point: None,
             help: crate::help::Help::default(),
+            charts: crate::help::Help::default(),
+            charts_text: String::new(),
             code: crate::code::Code::default(),
             source: None,
             problems: crate::problems::Problems::default(),
@@ -250,6 +255,14 @@ impl App {
             let text = crate::sheet::help();
             self.help
                 .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
+        if self.charts.is_open() {
+            self.charts.on_key(
+                key.code,
+                self.charts_text.lines().count(),
+                self.help_height(),
+            );
             return;
         }
         if self.code.is_open() {
@@ -1082,6 +1095,7 @@ impl App {
             "locale" => self.cmd_locale(None),
             _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
             "chart" => self.cmd_chart(),
+            "charts" => self.cmd_charts(),
             "chart!" => self.cmd_unchart(),
             _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
             "yank-values" => self.cmd_yank_values(),
@@ -1207,6 +1221,31 @@ impl App {
             Err(e) => e.to_string(),
         };
         self.leave_visual();
+    }
+
+    /// `:charts` — every chart on this sheet drawn in characters (`chartview`), in the scrolling
+    /// pane `:help` uses. Reads and shows; nothing is written.
+    fn cmd_charts(&mut self) {
+        let charts = self.core.charts(self.sheet).unwrap_or_default();
+        if charts.is_empty() {
+            self.status = "no chart on this sheet \u{2014} :chart makes one".to_owned();
+            return;
+        }
+        let mut text = String::new();
+        for (index, chart) in charts.iter().enumerate() {
+            match self.core.chart_data(self.sheet, index) {
+                Ok(data) => {
+                    for line in super::chartview::lines(chart, &data, 72) {
+                        text.push_str(&line);
+                        text.push('\n');
+                    }
+                }
+                Err(error) => text.push_str(&format!("{error}\n")),
+            }
+            text.push('\n');
+        }
+        self.charts_text = text;
+        self.charts.open();
     }
 
     /// `:chart <words>` — the sheet's last chart changed: `line`, `bar` or `pie`, `title=…` or
@@ -2088,6 +2127,11 @@ impl App {
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
             self.help.draw(frame, area, &crate::sheet::help());
+            return;
+        }
+        if self.charts.is_open() {
+            self.charts
+                .draw_titled(frame, area, &self.charts_text, " charts — j/k scroll ");
             return;
         }
         if self.problems.is_open() {
@@ -3084,6 +3128,23 @@ mod tests {
         type_str(&mut app, "general");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.core.value_text(0, Pos::new(1, 1)).unwrap(), "1200");
+    }
+
+    /// `:charts` draws what `:chart` made, in characters, and says so when there is none.
+    #[test]
+    fn charts_draws_the_chart_the_terminal_inserted() {
+        let mut app = filled();
+        app.run_command("charts");
+        assert!(app.status.contains("no chart"), "{}", app.status);
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('l'));
+        press(&mut app, KeyCode::Char('j'));
+        app.run_command("chart");
+        app.run_command("charts");
+        let text = screen(&mut app, 80, 14).join("\n");
+        assert!(text.contains("charts"), "{text}");
+        assert!(text.contains("CDU"), "{text}");
+        assert!(text.contains('█'), "{text}");
     }
 
     /// While `:format percent` is still being typed the status bar says what it would make of the

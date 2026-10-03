@@ -289,10 +289,10 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
-| A chart's own title and legend | ● | ● | ○ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
+| A chart's own title and legend | ● | ● | ● ᵗᶜ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ○ | ○ | ○ | ○ |
-| **Draws** a chart | — | ● | ○ ᵇ | ● | ● ᶜʰ | ● |
-| **Draws** its title and legend | — | ● | ○ ᵇ | ● | ● ᶜʰ | ● |
+| **Draws** a chart | — | ● | ◐ ᵗᶜ | ● | ● ᶜʰ | ● |
+| **Draws** its title and legend | — | ● | ◐ ᵗᶜ | ● | ● ᶜʰ | ● |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ● ² |
 | Export CSV / TSV | ● | ● ʰ | ● | ● ⁱ | ● ʰ | ● ⁴ |
 | An import's seven options (`--text`, `--locale`, …) | ● | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ |
@@ -309,6 +309,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ʷᵈ Drag a column's or row's header boundary: the size follows the pointer, the two-headed cursor shows over the boundary, and release writes one `set_col_width`/`set_row_height` (2026-10-02). The geometry (`GridGeom::edge_at`) is unit-tested; the mouse path is build-checked only — no Windows pointer was available to drive it.
 ᶠᶜ Sheet ▸ Fit Column Width, measured in the cell font by GDI; from the menu, and by double-clicking the column's edge (a row's edge goes back to its content's height) — 2026-10-02.
 ᶠⁱ `:fit` — the selection's columns, each as wide as its widest text in terminal cells (`unicode-width`) plus the blank between columns — 2026-10-03.
+ᵗᶜ `:charts` — every chart of the sheet drawn **in characters** (`sheet/chartview.rs`): the title, the legend where it asked for one, then a block bar per value, a sparkline per series or each slice's share. A picture of what the chart says, not of its page geometry, so ◐ — 2026-10-03.
 ᵗˢ While `:format …` is typed the status bar appends `→ <what the active cell would show>` (`App::shown_as`, nothing written); the browser's palette rows and Win32's chooser show the same beside each row — 2026-10-03.
 ᵗʷ `grind-tui` with no file and neither `--sheet` nor `--text` opens `welcome.rs` — s, t, o, the arrows and Enter, with a path prompt for Open — and `:welcome` goes back from either pane (refused over unsaved work; `:welcome!` discards) — 2026-10-03.
 ʷᶠ Ctrl+K ▸ *Fit column width to text* — widest text in cells × an estimated 7.4px plus padding (`layout::fit_px`), estimated rather than measured because the grid's size is declared (`CELL`) — 2026-10-03.

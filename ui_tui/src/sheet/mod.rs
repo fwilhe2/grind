@@ -10,6 +10,7 @@
 
 pub mod app;
 pub mod assist;
+pub mod chartview;
 pub mod geom;
 pub mod keymap;
 
@@ -42,6 +43,7 @@ Spreadsheet:
   :explain                — the active cell's formula in plain words
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
+  :charts   — the sheet's charts, drawn in characters
   :width [n|auto]  :fit  :height [n]   :hide  :show   — the columns the selection covers
   :name <name>  :name!    — define a name over the selection, or drop the one on it
   :rename <old> <new>     — rename a name, every formula that uses it following

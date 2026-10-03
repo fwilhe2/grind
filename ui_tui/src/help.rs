@@ -101,6 +101,12 @@ impl Help {
     /// Draw it over `area`, from `text` — the whole area, because a key list is what the
     /// reader asked to look at and half of one is worse than none.
     pub fn draw(self, frame: &mut Frame, area: Rect, text: &str) {
+        self.draw_titled(frame, area, text, " grind-tui — keys and commands ");
+    }
+
+    /// [`Help::draw`] under a title of the caller's — the pane is a scrolling read-only text, and
+    /// `:charts` is one too.
+    pub fn draw_titled(self, frame: &mut Frame, area: Rect, text: &str, title: &str) {
         let height = usize::from(area.height);
         let lines: Vec<Line> = text
             .lines()
@@ -123,7 +129,7 @@ impl Help {
             Paragraph::new(lines).block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" grind-tui — keys and commands ")
+                    .title(title.to_owned())
                     .title_bottom(more)
                     .style(Style::default().bg(Color::Reset)),
             ),
