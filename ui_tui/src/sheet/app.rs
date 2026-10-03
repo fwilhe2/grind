@@ -1096,6 +1096,7 @@ impl App {
             _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
             "chart" => self.cmd_chart(),
             "charts" => self.cmd_charts(),
+            "chart preview" => self.cmd_chart_preview(),
             "chart!" => self.cmd_unchart(),
             _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
             "yank-values" => self.cmd_yank_values(),
@@ -1221,6 +1222,24 @@ impl App {
             Err(e) => e.to_string(),
         };
         self.leave_visual();
+    }
+
+    /// `:chart preview` — the chart `:chart` would insert for this selection, drawn in the same
+    /// pane as `:charts` and not written (`verbs::preview_insert_chart`).
+    fn cmd_chart_preview(&mut self) {
+        let (start, end) = self.rect();
+        match grind_sheet::verbs::preview_insert_chart(&self.core, self.sheet, start, end) {
+            Ok((chart, data)) => {
+                let mut text = String::from("Preview — not inserted yet; :chart inserts it\n\n");
+                for line in super::chartview::lines(&chart, &data, 72) {
+                    text.push_str(&line);
+                    text.push('\n');
+                }
+                self.charts_text = text;
+                self.charts.open();
+            }
+            Err(error) => self.status = error.to_string(),
+        }
     }
 
     /// `:charts` — every chart on this sheet drawn in characters (`chartview`), in the scrolling
@@ -3139,6 +3158,14 @@ mod tests {
         press(&mut app, KeyCode::Char('v'));
         press(&mut app, KeyCode::Char('l'));
         press(&mut app, KeyCode::Char('j'));
+        app.run_command("chart preview");
+        let preview = screen(&mut app, 80, 14).join("\n");
+        assert!(preview.contains("Preview"), "{preview}");
+        assert!(
+            app.core.charts(0).unwrap().is_empty(),
+            "a preview writes nothing"
+        );
+        press(&mut app, KeyCode::Char('q')); // any key closes the pane
         app.run_command("chart");
         app.run_command("charts");
         let text = screen(&mut app, 80, 14).join("\n");

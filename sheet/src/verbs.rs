@@ -68,6 +68,28 @@ pub const CHART_WIDTH: &str = "12cm";
 pub const CHART_HEIGHT: &str = "7.5cm";
 pub const CHART_MARGIN_MM: f64 = 6.0;
 
+/// What *Insert Chart* would make of a guess: the guessed spec with the legend a new chart of that
+/// kind gets. One place, so [`insert_chart`] and [`preview_insert_chart`] cannot disagree.
+fn insert_spec(guessed: &crate::chart::Guess) -> crate::ChartSpec {
+    crate::ChartSpec {
+        legend: guessed.spec.default_legend(),
+        ..guessed.spec.clone()
+    }
+}
+
+/// *Insert Chart*, **without inserting** — the chart [`insert_chart`] would make of this selection
+/// and the data it would draw (`App::preview_chart`), so a shell with no dialog can show the
+/// picture before it is committed to. Nothing is written.
+pub fn preview_insert_chart(
+    app: &App,
+    sheet: usize,
+    start: Pos,
+    end: Pos,
+) -> crate::Result<(crate::Chart, crate::ChartData)> {
+    let guessed = app.suggest_chart(sheet, start, end, None)?;
+    app.preview_chart(sheet, &insert_spec(&guessed), None)
+}
+
 /// *Insert Chart*: a chart of the table the selection means (`App::suggest_chart` — which way the
 /// series run, what names them, what kind the cells want), placed beside it at the GNOME
 /// window's size. One undo step. `place` is the shell's own geometry: given the column just right
@@ -82,10 +104,7 @@ pub fn insert_chart(
     place: impl Fn(u32, u32) -> (f64, f64),
 ) -> crate::Result<usize> {
     let guessed = app.suggest_chart(sheet, start, end, None)?;
-    let spec = crate::ChartSpec {
-        legend: guessed.spec.default_legend(),
-        ..guessed.spec
-    };
+    let spec = insert_spec(&guessed);
     let (x, y) = place(guessed.end.col + 1, guessed.start.row);
     app.add_chart(
         sheet,
