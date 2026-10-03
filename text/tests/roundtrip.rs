@@ -1150,6 +1150,14 @@ fn sample(root: &Path) -> Vec<(PathBuf, Document)> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
+            // LibreOffice's own `fail/` directories hold documents it is *meant* to refuse —
+            // fuzzer reproducers like `odt/fail/forcepoint-xstor-1.odt`, whose package it will
+            // not open. A save now carries a package's entries as they were, so our copy is
+            // exactly as unopenable as the original, and a differential needs an oracle that
+            // can read the thing being compared. Loop A still reads every one of them.
+            if path.is_dir() && path.file_name().is_some_and(|name| name == "fail") {
+                continue;
+            }
             if path.is_dir() {
                 collect(&path, out);
             } else if matches!(
@@ -1209,14 +1217,17 @@ fn libreoffice_documents_survive_our_writer() {
             let bytes = grind_text::write_bytes(doc, Form::Package).unwrap();
             // Numbered: corpus stems are not unique across `sw/qa`'s many directories.
             let staged = lab.input(&format!("{i:03}.odt"), &bytes);
-            (path.clone(), doc, staged)
+            // The original as well, untouched, for LibreOffice to round-trip on its own.
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("odt");
+            let own = lab.input(&format!("{i:03}-own.{ext}"), &std::fs::read(path).unwrap());
+            (path.clone(), doc, staged, own)
         })
         .collect();
 
     // A comparison finds nothing in a document that holds nothing, so the sample has to be
     // shown to have substance — otherwise a drifting filter turns this into twenty empty
     // documents agreeing with twenty empty documents, which passes forever.
-    let blocks: usize = staged.iter().map(|(_, doc, _)| doc.blocks.len()).sum();
+    let blocks: usize = staged.iter().map(|(_, doc, _, _)| doc.blocks.len()).sum();
     eprintln!(
         "loop C (text, back): {} documents, {blocks} blocks",
         files.len()
@@ -1226,17 +1237,26 @@ fn libreoffice_documents_survive_our_writer() {
         "sample holds only {blocks} blocks; it is not testing the writer"
     );
 
-    let out = lab.convert(&staged.iter().map(|(_, _, p)| p.clone()).collect::<Vec<_>>());
+    let inputs: Vec<PathBuf> = staged
+        .iter()
+        .flat_map(|(_, _, ours, own)| [ours.clone(), own.clone()])
+        .collect();
+    let out = lab.convert(&inputs);
 
     let mut failures = Vec::new();
-    for (original, doc, path) in &staged {
+    for (original, doc, path, own) in &staged {
         let label = original.file_name().unwrap().to_str().unwrap();
-        failures.extend(differences(
-            label,
-            doc,
-            &converted(&out, path),
-            Styling::Ignored,
-        ));
+        // What LibreOffice does to the original on its own is the oracle's behaviour, not a
+        // fault in what we wrote: a save carries every block nobody edited as the file's own
+        // bytes, so LibreOffice treats it exactly as it treats the original. A difference counts
+        // only where its round-trip of the original does not show it too — the same rule as
+        // the spreadsheet's loop C (back).
+        let theirs = differences(label, doc, &converted(&out, own), Styling::Ignored);
+        failures.extend(
+            differences(label, doc, &converted(&out, path), Styling::Ignored)
+                .into_iter()
+                .filter(|difference| !theirs.contains(difference)),
+        );
     }
 
     for f in failures.iter().take(30) {

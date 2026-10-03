@@ -1145,14 +1145,18 @@ fn libreoffice_documents_survive_our_writer() {
             let bytes = grind_sheet::write_bytes(&doc, Form::Package).unwrap();
             // Numbered: corpus stems are not unique across `ods/` and `fods/`.
             let staged = lab.input(&format!("{i:03}.ods"), &bytes);
-            (path.clone(), doc, staged)
+            // The original as well, untouched, for LibreOffice to round-trip on its own: what
+            // it does to a file nobody else wrote is the oracle's behaviour, not ours.
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("ods");
+            let own = lab.input(&format!("{i:03}-own.{ext}"), &std::fs::read(path).unwrap());
+            (path.clone(), doc, staged, own)
         })
         .collect();
 
     // A comparison finds nothing in a document that holds nothing, so the sample has to be
     // shown to have substance — otherwise a drifting filter turns this into twenty empty
     // documents agreeing with twenty empty documents, which passes forever.
-    let cells: usize = staged.iter().map(|(_, doc, _)| values(doc)).sum();
+    let cells: usize = staged.iter().map(|(_, doc, _, _)| values(doc)).sum();
     eprintln!(
         "loop C (back): {} value-only documents, {cells} cells",
         files.len()
@@ -1162,12 +1166,30 @@ fn libreoffice_documents_survive_our_writer() {
         "sample holds only {cells} cells; it is not testing the writer"
     );
 
-    let out = lab.convert(&staged.iter().map(|(_, _, p)| p.clone()).collect::<Vec<_>>());
+    let inputs: Vec<PathBuf> = staged
+        .iter()
+        .flat_map(|(_, _, ours, own)| [ours.clone(), own.clone()])
+        .collect();
+    let out = lab.convert(&inputs);
 
     let mut failures = Vec::new();
-    for (original, doc, path) in &staged {
+    for (original, doc, path, own) in &staged {
         let label = original.file_name().unwrap().to_str().unwrap();
-        failures.extend(differences(label, doc, &converted(&out, path)));
+        // What LibreOffice does to the original on its own is the oracle's behaviour, not a
+        // fault in what we wrote. A save carries everything nobody edited as the file's own
+        // bytes, so it gets the same treatment the original does — and two kinds of it are
+        // measured on this sample: a row whose style says `use-optimal-row-height` is
+        // re-measured on load against the fonts `styles.xml` names (`0.2083in` back as
+        // `0.487cm`, `new_cond_format_test.ods`), and a date whose style states no language
+        // is shown in the converting machine's locale (`16-07-12` back as `07/16/12`,
+        // `pivot-table-shared-cache-with-group.ods`; `doc/ods-format.md` §5.2). A difference
+        // counts only where LibreOffice's round-trip of the original does not show it too.
+        let theirs = differences(label, doc, &converted(&out, own));
+        failures.extend(
+            differences(label, doc, &converted(&out, path))
+                .into_iter()
+                .filter(|difference| !theirs.contains(difference)),
+        );
     }
 
     for f in failures.iter().take(30) {

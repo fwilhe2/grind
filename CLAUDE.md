@@ -617,9 +617,14 @@ loops now run in CI (`build`, `oracle`, `corpus` jobs — `oracle` is loops C-ou
 want the same `soffice` and the same compile) rather than only where a
 developer's machine happens to have a LibreOffice checkout.
 
-Each loop has exactly one documented loosening (loop A accepts `Error::Encrypted`; loop C
-compares doubles at 15 significant digits, all LibreOffice writes). A third exception is a
-bug in the code, not the loop.
+Each loop has its documented loosenings and no others: loop A accepts `Error::Encrypted`;
+loop C compares doubles at 15 significant digits, all LibreOffice writes, and on the way
+*back* counts only a difference LibreOffice's own round-trip of the untouched original does
+not show too — since a save carries every untouched row and block as the file's own bytes, it
+gets exactly the treatment the original gets (an optimal-height row re-measured, a date with no
+language shown in the machine's locale), and that is the oracle's behaviour. Its sample also
+skips LibreOffice's own `fail/` directories, which hold files the oracle refuses to open. Any
+other exception is a bug in the code, not the loop.
 
 ## CI, and the one rule that shapes it
 
