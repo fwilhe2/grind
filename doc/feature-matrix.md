@@ -240,6 +240,7 @@ currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `gri
 Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Currency and the cells'
 context menu, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
 No grouping toggle and no other symbol.
+ʷᵗ The table grows a wrapped or oversized-font row itself (see the 2026-10-03 note at the end); the shell's row count does not know. Not seen drawn.
 ʷʷ Closed 2026-10-02: Format ▸ Wrap Text; the grid breaks a wrapped cell with `grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) and grows rows through `grind_sheet::autoheight` (hoisted from the Mac) — checked by a Wine render.
 ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
 ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
@@ -277,7 +278,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
 | Autofit a column | ● | ● | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● |
-| Row auto-height from content (L3) | — | ● | ○ | ○ | ● ʷʷ | ● |
+| Row auto-height from content (L3) | — | ● | ○ | ◐ ʷᵗ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
@@ -608,8 +609,7 @@ look::border_strokes, format::bordered}`.
 
 **Still open**, as the ○ cells above say: charts — a preview, editing and restyling outside GNOME and
 the Mac, and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
-its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal
-and the browser's auto-height; the seven CSV import options in any window; a welcome screen and a
+its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal; the seven CSV import options in any window; a welcome screen and a
 second document kind in the two GNOME shells (by decision); recent files in the terminal and the
 browser; and the number-format sample in the terminal.
 
@@ -644,3 +644,5 @@ gave it a formatting bar, a clipboard, block structure and Insert Picture (`doc/
 and `grind-tui` through the pass that gave it chrome, column widths, a formula-completion band,
 cell search, the track and name verbs, CSV both ways, bookmarks, `:move`, an outline pane and a
 table drawn as a grid (`doc/tui-shell.md`).
+
+**Re-read on 2026-10-03:** the browser's row auto-height (§6 ʷᵗ) was never a gap in the way the ○ said. The grid is a `<table>`; `.grid td`'s `height` is a minimum there, a row is given an inline height only when the document sized it, and a wrapped cell's inline `white-space:normal` and its `font-size` both reach the cell — so the browser grows the row itself. What it does not do is tell the shell: `visible()` still counts rows at the nominal 24px, so a tall row lets the last visible row spill past the surface rather than scrolling it. Read from the CSS and the code, not seen drawn.
