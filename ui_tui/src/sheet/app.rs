@@ -1629,7 +1629,11 @@ impl App {
     /// It used to say that and pass `Import::default()`, which is the comma whatever the file
     /// holds; the options a window uses are the core's now, so the four shells cannot read one
     /// file four ways.
-    fn cmd_csv_in(&mut self, path: &str) {
+    fn cmd_csv_in(&mut self, rest: &str) {
+        // `:csv-in data.txt with delimiter=semicolon locale=de-DE trim` — the words after `with`
+        // are `csv::Import::amended`'s, the same options `grind sheet import-csv` has as flags.
+        let (path, words) = rest.split_once(" with ").unwrap_or((rest, ""));
+        let path = path.trim();
         let text = match std::fs::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| grind_sheet::csv::decode(bytes).map_err(str::to_owned))
@@ -1640,7 +1644,13 @@ impl App {
                 return;
             }
         };
-        let options = grind_sheet::csv::Import::sniffed(&text);
+        let options = match grind_sheet::csv::Import::sniffed(&text).amended(words) {
+            Ok(options) => options,
+            Err(why) => {
+                self.status = why;
+                return;
+            }
+        };
         match self.core.import_csv(
             self.sheet,
             self.active,

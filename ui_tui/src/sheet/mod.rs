@@ -49,7 +49,8 @@ Spreadsheet:
                            — autofilter, banding, an optional totals row and a name;
                              FUNC is sum (the default), average, count, count-numbers,
                              min, max, stdev or var
-  :csv-in <file>  :csv-out <file>
+  :csv-in <file> [with delimiter=semicolon locale=de-DE text formulas trim no-dates]
+  :csv-out <file>
   :formulas               — show each formula instead of its result (a reading; the same word undoes it)
   :roles  :names          — what each cell is, and what it is called (a reading;
                             nothing is written, and the same word turns it off)

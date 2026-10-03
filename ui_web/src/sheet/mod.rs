@@ -1840,10 +1840,13 @@ impl Ui {
     /// reason); what is this pane's is where the fields land and what they are read as, and
     /// both come from what it already holds. `csv::Import::sniffed` is the same answer every
     /// other window gives, so one file imports the same way in all four.
-    pub fn import_csv(&self, text: &str) {
+    pub fn import_csv(&self, text: &str, words: &str) {
         let sheet = self.sheet.get();
         let at = self.selection.get().active;
-        let options = csv::Import::sniffed(text);
+        let options = match csv::Import::sniffed(text).amended(words) {
+            Ok(options) => options,
+            Err(why) => return self.set_message(why),
+        };
         match self
             .app
             .import_csv(sheet, at, text, &options, RecalcMode::Document)

@@ -85,6 +85,13 @@ pub const SHEET: &[Command] = &[
     // choice in the surface this shell has. Importing needs no such row: the delimiter is read
     // out of the file's own content.
     cmd("doc.import-csv", "Import CSV…", "Document", "", false),
+    cmd(
+        "doc.import-csv-with",
+        "Import CSV with options…",
+        "Document",
+        "",
+        false,
+    ),
     cmd("doc.export-csv", "Export as CSV", "Document", "", false),
     cmd("doc.export-tsv", "Export as TSV", "Document", "", false),
     // --- the selection ---
@@ -505,7 +512,12 @@ mod tests {
     /// bar to put them in.
     #[test]
     fn the_csv_verbs_are_the_grids_alone_and_findable_by_name() {
-        for id in ["doc.import-csv", "doc.export-csv", "doc.export-tsv"] {
+        for id in [
+            "doc.import-csv",
+            "doc.import-csv-with",
+            "doc.export-csv",
+            "doc.export-tsv",
+        ] {
             assert!(SHEET.iter().any(|command| command.id == id), "{id}");
             assert!(
                 !TEXT.iter().any(|command| command.id == id),

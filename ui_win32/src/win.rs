@@ -3559,7 +3559,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FindNext => find_step(hwnd, find::Towards::Next),
         Command::FindPrevious => find_step(hwnd, find::Towards::Previous),
         Command::Replace => replace(hwnd),
-        Command::ImportCsv => import_csv(hwnd),
+        Command::ImportCsv => import_csv(hwnd, false),
+        Command::ImportCsvWith => import_csv(hwnd, true),
         Command::ExportCsv => export_csv(hwnd),
         Command::Recalculate => recalculate(hwnd),
         Command::ToggleFilter => toggle_filter(hwnd),
@@ -5021,7 +5022,7 @@ fn replace(hwnd: HWND) {
     refresh(hwnd);
 }
 
-fn import_csv(hwnd: HWND) {
+fn import_csv(hwnd: HWND, with_options: bool) {
     // The dialog runs a nested message loop, so nothing may be borrowed across it (decision 7).
     let Some(path) = dialog::open_csv_path(hwnd) else {
         return;
@@ -5038,11 +5039,28 @@ fn import_csv(hwnd: HWND) {
             );
         }
     };
+    // The options, in words, when they were asked for (`csv::Import::amended`) — after the file,
+    // so the dialog that chose it is not left open under a prompt.
+    let words = match with_options {
+        true => match dialog::prompt(
+            hwnd,
+            "Import CSV",
+            "Options — delimiter=semicolon locale=de-DE text formulas trim no-dates:",
+            "",
+        ) {
+            Some(words) => words,
+            None => return,
+        },
+        false => String::new(),
+    };
     // SAFETY: one borrow, taken after the dialog has closed.
     unsafe {
         with_sheet(hwnd, |state| {
             let at = state.selection.active;
-            let options = csv::Import::sniffed(&text);
+            let options = match csv::Import::sniffed(&text).amended(&words) {
+                Ok(options) => options,
+                Err(why) => return state.say(Some(why)),
+            };
             match state
                 .app
                 .import_csv(state.sheet, at, &text, &options, RecalcMode::Document)
@@ -5485,6 +5503,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FindPrevious
         | Command::Replace
         | Command::ImportCsv
+        | Command::ImportCsvWith
         | Command::ExportCsv
         | Command::Recalculate
         | Command::FunctionList
@@ -6608,6 +6627,7 @@ fn text_command(hwnd: HWND, command: Command) {
         // CSV is cells in both directions, so neither means anything here — and `applies_to`
         // keeps both out of this pane's File menu rather than leaving them to be no-ops.
         | Command::ImportCsv
+        | Command::ImportCsvWith
         | Command::ExportCsv
         | Command::ToggleFormulas
         | Command::ZoomIn

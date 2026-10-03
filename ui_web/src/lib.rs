@@ -150,6 +150,7 @@ pub fn start() -> Result<(), JsValue> {
         source: RefCell::new(None),
         problems: RefCell::new(None),
         pick: Cell::new(Pick::Document),
+        csv_words: RefCell::new(String::new()),
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
@@ -294,6 +295,8 @@ struct Shell {
     /// What the one file input was raised for, since the page has exactly one and the pick
     /// comes back as a `change` event with no memory of the click that caused it.
     pick: Cell<Pick>,
+    /// What a person typed for the next CSV import (`Pick::CsvWith`), taken by it.
+    csv_words: RefCell<String>,
 }
 
 /// Which of the two things a picked file is.
@@ -308,6 +311,8 @@ enum Pick {
     Document,
     /// A delimited file to read into the open spreadsheet at the cursor.
     Csv,
+    /// The same, with options a person typed first (`csv::Import::amended`).
+    CsvWith,
     /// A picture to put below the caret's paragraph.
     Image,
 }
@@ -476,6 +481,21 @@ impl Shell {
             // answered here rather than in the pane, because a file and a download are the
             // chrome's and the pane has neither.
             "doc.import-csv" => self.import_picker(),
+            "doc.import-csv-with" => {
+                // The options are asked first, the file second: a picker cannot be asked
+                // anything once it is open. Remembered for the one import that follows.
+                let Some(window) = web_sys::window() else {
+                    return;
+                };
+                let Ok(Some(words)) = window.prompt_with_message_and_default(
+                    "Import options — delimiter=semicolon locale=de-DE text formulas trim no-dates",
+                    "",
+                ) else {
+                    return;
+                };
+                *self.csv_words.borrow_mut() = words;
+                self.raise_picker(Pick::CsvWith, CSV_TYPES);
+            }
             "block.picture" => self.raise_picker(Pick::Image, IMAGE_TYPES),
             "doc.export-csv" => self.export_csv("csv"),
             "doc.export-tsv" => self.export_csv("tsv"),
@@ -795,8 +815,9 @@ impl Shell {
             Ok(buffer) => buffer,
             Err(_) => return self.set_message(format!("Could not read {name}")),
         };
+        let words = self.csv_words.take();
         match csv::decode(js_sys::Uint8Array::new(&buffer).to_vec()) {
-            Ok(text) => self.sheet.import_csv(&text),
+            Ok(text) => self.sheet.import_csv(&text, &words),
             Err(why) => self.set_message(format!("{name}: {why}")),
         }
     }
@@ -1542,6 +1563,7 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
         match shell.pick.get() {
             Pick::Document => spawn_local(shell.clone().load(file)),
             Pick::Csv => spawn_local(shell.clone().load_csv(file)),
+            Pick::CsvWith => spawn_local(shell.clone().load_csv(file)),
             Pick::Image => spawn_local(shell.clone().load_image(file)),
         }
     })

@@ -141,6 +141,9 @@ pub enum Command {
     /// `csv::Import::sniffed`, one undo step. The grid's alone: a text document has no cells
     /// for fields to land in.
     ImportCsv,
+    /// [`Command::ImportCsv`], having first asked for options in words — `delimiter=semicolon
+    /// locale=de-DE text trim` (`csv::Import::amended`), the flags `grind sheet import-csv` has.
+    ImportCsvWith,
     /// Write the selection out as one — a save dialog whose **name** says which delimiter
     /// (`csv::Dialect::for_name`, the two filters below it), then `App::export_csv`. Nothing is
     /// stored, so the document is untouched by it.
@@ -341,6 +344,7 @@ impl Command {
         Command::FindPrevious,
         Command::Replace,
         Command::ImportCsv,
+        Command::ImportCsvWith,
         Command::ExportCsv,
         Command::Recalculate,
         Command::FunctionList,
@@ -505,6 +509,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ImportCsv,
                 label: "&Import CSV…",
+            },
+            Item::Verb {
+                command: Command::ImportCsvWith,
+                label: "Import CSV wit&h Options…",
             },
             Item::Verb {
                 command: Command::ExportCsv,
@@ -1126,6 +1134,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // CSV is cells: fields land in a grid and a range comes out of one, so both are the
         // spreadsheet's even though they sit in the File menu with the universal verbs.
         | Command::ImportCsv
+        | Command::ImportCsvWith
         | Command::ExportCsv
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
@@ -1494,6 +1503,7 @@ mod tests {
             // In the File menu beside the universal four, and still the grid's: a text
             // document has no cells for fields to land in.
             Command::ImportCsv,
+            Command::ImportCsvWith,
             Command::ExportCsv,
             // A cell's currency: the text pane's runs have no number format.
             Command::CurrencyEuro,
