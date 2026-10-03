@@ -4871,21 +4871,27 @@ fn format_pick_color(hwnd: HWND, background: bool) {
 /// already is, and one click is the whole request (`format::format_for_kind`).
 fn format_pick_number(hwnd: HWND) {
     // SAFETY: one borrow, released before the chooser's nested loop.
-    let Some(current) = (unsafe {
+    let Some((current, items)) = (unsafe {
         with_sheet(hwnd, |state| {
-            state
-                .app
-                .format_at(state.sheet, state.selection.active)
-                .ok()
-                .flatten()
+            let at = state.selection.active;
+            let current = state.app.format_at(state.sheet, at).ok().flatten();
+            let locale = grind_sheet::locale::from_environment();
+            // The live sample: what the cell would show under each row, `App::shown_as` and
+            // nothing written — the line the GNOME popover and the Mac's menu items carry.
+            let items: Vec<String> = format::KINDS
+                .iter()
+                .enumerate()
+                .map(|(index, (label, _))| {
+                    let format = format::format_for_kind(current.as_ref(), index, locale.clone());
+                    let sample = state.app.shown_as(state.sheet, at, format.as_ref()).ok();
+                    format::row_label(label, sample.as_deref())
+                })
+                .collect();
+            (current, items)
         })
     }) else {
         return;
     };
-    let items: Vec<String> = format::KINDS
-        .iter()
-        .map(|(label, _)| (*label).to_owned())
-        .collect();
     let initial = format::kind_of(current.as_ref()).unwrap_or(0);
     let Some(choice) = dialog::choose(hwnd, format::Control::Number.name(), &items, initial) else {
         return;

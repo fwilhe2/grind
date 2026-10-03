@@ -168,6 +168,15 @@ pub fn kind_of(format: Option<&Format>) -> Option<usize> {
     KINDS.iter().position(|(_, p)| *p == preset)
 }
 
+/// A picker row: its label, and after a dash the cell's own value as that row would show
+/// it. Nothing is added for an empty sample (an empty cell shows nothing under any row).
+pub fn row_label(label: &str, sample: Option<&str>) -> String {
+    match sample.filter(|s| !s.is_empty()) {
+        Some(sample) => format!("{label} \u{2014} {sample}"),
+        None => label.to_owned(),
+    }
+}
+
 /// What the picker's face says about a cell formatted `format` ([`Preset::face`]).
 pub fn face(format: Option<&Format>) -> String {
     Preset::face(format)
@@ -234,6 +243,16 @@ mod tests {
                 "{control:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_row_carries_its_sample_only_when_there_is_one() {
+        assert_eq!(
+            row_label("Number", Some("1,234.50")),
+            "Number \u{2014} 1,234.50"
+        );
+        assert_eq!(row_label("Number", Some("")), "Number");
+        assert_eq!(row_label("Number", None), "Number");
     }
 
     /// The picker's rows are the core's presets, all of them, in the core's order — and each
