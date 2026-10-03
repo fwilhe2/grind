@@ -243,3 +243,128 @@ fn saving_into_the_other_form_carries_everything() {
         }
     }
 }
+
+/// A cell style with what the model reads (a colour) and what it does not: a rotation, cell
+/// protection, shrink-to-fit, a parent style and a conditional `style:map` — the shape
+/// LibreOffice writes. B1 names a common style directly.
+const STYLED: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:styles>
+  <style:style style:name="Accent" style:family="table-cell"><style:text-properties fo:font-style="italic"/></style:style>
+ </office:styles>
+ <office:automatic-styles>
+  <style:style style:name="ce1" style:family="table-cell" style:parent-style-name="Accent">
+   <style:table-cell-properties style:rotation-angle="45" style:cell-protect="none" style:shrink-to-fit="true"/>
+   <style:text-properties fo:color="#ff0000" fo:font-weight="bold"/>
+   <style:map style:condition="cell-content()&gt;3" style:apply-style-name="Accent" style:base-cell-address="Sheet1.A1"/>
+  </style:style>
+ </office:automatic-styles>
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Sheet1">
+    <table:table-row>
+     <table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell>
+     <table:table-cell table:style-name="Accent" office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+  </office:spreadsheet>
+ </office:body>
+</office:document>
+"##;
+
+/// The element of the automatic style a cell names, out of a flat document.
+fn style_of(xml: &str, cell: usize) -> String {
+    let tags: Vec<&str> = xml
+        .match_indices("<table:table-cell ")
+        .map(|(i, _)| &xml[i..])
+        .collect();
+    let tag = &tags[cell][..tags[cell].find('>').unwrap()];
+    let name = tag
+        .split("table:style-name=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let start = xml
+        .find(&format!("<style:style style:name=\"{name}\""))
+        .unwrap();
+    let end = start + xml[start..].find("</style:style>").unwrap();
+    xml[start..end].to_owned()
+}
+
+/// **Restyling a cell keeps everything about its style the model does not read** — the hole
+/// `doc/not-doing.md` named: the new style used to be built from the model's reading of the
+/// old one, so a rotation, a protection flag, a parent style or a conditional format went with
+/// the first click on Bold. It is the old style's element now, renamed, with only what the
+/// model owns rewritten.
+#[test]
+fn restyling_a_cell_keeps_what_the_model_does_not_read() {
+    let restyle = |change: fn(&mut grind_sheet::style::CellStyle), col: u32| {
+        let app = App::new();
+        app.open_bytes("styled.fods", STYLED.as_bytes()).unwrap();
+        let pos = Pos::new(0, col);
+        let mut style = app.style_at(0, pos).unwrap().unwrap_or_default();
+        change(&mut style);
+        app.set_style(0, pos, pos, Some(style)).unwrap();
+        String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap()
+    };
+
+    let out = restyle(|s| s.background = Some("#ffff00".into()), 0);
+    let style = style_of(&out, 0);
+    for kept in [
+        "style:parent-style-name=\"Accent\"",
+        "style:rotation-angle=\"45\"",
+        "style:cell-protect=\"none\"",
+        "style:shrink-to-fit=\"true\"",
+        "fo:color=\"#ff0000\"",
+        "fo:font-weight=\"bold\"",
+        "<style:map style:condition=",
+        "fo:background-color=\"#ffff00\"",
+    ] {
+        assert!(style.contains(kept), "{kept} is missing from\n{style}");
+    }
+
+    // Clearing what the model owns clears exactly that.
+    let out = restyle(|s| s.font_weight = None, 0);
+    let style = style_of(&out, 0);
+    assert!(!style.contains("font-weight"), "{style}");
+    assert!(style.contains("style:rotation-angle=\"45\""), "{style}");
+
+    // A cell naming a common style directly keeps it as its new style's parent.
+    let out = restyle(|s| s.font_weight = Some("bold".into()), 1);
+    let style = style_of(&out, 1);
+    assert!(
+        style.contains("style:parent-style-name=\"Accent\""),
+        "{style}"
+    );
+    assert!(style.contains("fo:font-weight=\"bold\""), "{style}");
+}
+
+/// **A byte-order mark does not shift the file under a save.** `quick-xml` measures positions
+/// after one, so every range a reader recorded in such a file used to point three bytes early,
+/// and the first splice cut `<office:spreadsheet>` short — refused by the writer's own check on
+/// `sc/qa`'s `tdf117948_CollapseBeforeShape.ods`. Every vendored document, with one put in front.
+#[test]
+fn a_byte_order_mark_does_not_shift_a_save() {
+    for path in documents()
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "fods"))
+    {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let bytes = [b"\xEF\xBB\xBF".as_slice(), &std::fs::read(&path).unwrap()].concat();
+        let app = App::new();
+        app.open_bytes(&name, &bytes).expect("opens");
+        app.set_cell(0, Pos::new(0, 0), 7.0).unwrap();
+        let out = app
+            .save_bytes(Form::Flat)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let back = App::new();
+        back.open_bytes(&name, &out).expect("reopens");
+        assert_eq!(
+            back.get(0, Pos::new(0, 0)).unwrap(),
+            grind_sheet::CellValue::Number(7.0),
+            "{name}"
+        );
+    }
+}

@@ -132,6 +132,7 @@ pub(crate) fn scan(bytes: &[u8]) -> Option<Tree> {
     let mut reader = NsReader::from_reader(bytes);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
+    let shift = super::xml::bom_len(bytes);
 
     let mut root_start = None;
     let root_end;
@@ -142,9 +143,9 @@ pub(crate) fn scan(bytes: &[u8]) -> Option<Tree> {
     let mut top: Option<usize> = None;
 
     loop {
-        let from = reader.buffer_position() as usize;
+        let from = reader.buffer_position() as usize + shift;
         let event = reader.read_event_into(&mut buf).ok()?;
-        let span = from..reader.buffer_position() as usize;
+        let span = from..reader.buffer_position() as usize + shift;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
                 let empty = matches!(event, Event::Empty(_));
@@ -556,6 +557,191 @@ pub fn default_style_range(bytes: &[u8], family: &str) -> Option<Range<usize>> {
         .map(|n| n.range.clone())
 }
 
+/// Where `bytes`' automatic style named `name`, of family `family`, is declared — the element,
+/// start tag through end tag. What a writer restyling something builds the new style *from*
+/// (`patch_style`), so that what its model never read on the old one is not lost.
+pub fn automatic_style_range(bytes: &[u8], family: &str, name: &str) -> Option<Range<usize>> {
+    let tree = scan(bytes)?;
+    let (index, _) = tree.find_top("automatic-styles")?;
+    tree.children(index)
+        .find(|n| {
+            n.is(Ns::Style, "style")
+                && n.family.as_deref() == Some(family)
+                && n.name.as_deref() == Some(name)
+        })
+        .map(|n| n.range.clone())
+}
+
+/// Where a new automatic style can go in `bytes` without touching anything else: the start of
+/// `office:automatic-styles`' end tag. `None` when the document has no such element, or it is
+/// self-closed — a splice then has nowhere to put a declaration and the writer regenerates.
+pub fn automatic_styles_end(bytes: &[u8]) -> Option<usize> {
+    let tree = scan(bytes)?;
+    let (_, node) = tree.find_top("automatic-styles")?;
+    (node.range != node.start).then(|| {
+        let element = &bytes[node.range.clone()];
+        node.range.start + element.iter().rposition(|c| *c == b'<').unwrap_or(0)
+    })
+}
+
+/// One property element of a style and the attributes to set (`Some`) or remove (`None`) on it,
+/// all by qualified name as the document spells them.
+pub type PropertyPatch<'a> = (&'a str, Vec<(String, Option<String>)>);
+
+/// A `style:style` element rebuilt for a new name with only some of its properties changed:
+/// `attributes` set or removed on its own start tag, and each of `properties` on the property
+/// element it names — added, in the place `order` gives it among its siblings, when the
+/// style had none and something is to be set on it, and left out when it would come out empty.
+/// **Every other byte is the element's own**: its parent style, the properties no model reads,
+/// its `style:map`s, a vendor's attributes.
+///
+/// The whole of "restyling never loses what the model does not read": a writer that changes a
+/// cell's background or a run's weight hands this the old style's element and the properties it
+/// owns, and gets back a style that differs from the old one in exactly those. `None` when the
+/// element cannot be read, and the caller writes a style of its own instead.
+pub fn patch_style(
+    element: &str,
+    attributes: &[(&str, Option<&str>)],
+    properties: &[PropertyPatch],
+    order: &[&str],
+) -> Option<String> {
+    use quick_xml::Reader;
+    // The start tag, and each child's qualified name and extent.
+    let mut reader = Reader::from_str(element);
+    reader.config_mut().trim_text(false);
+    let mut depth = 0usize;
+    let mut start_tag: Option<Range<usize>> = None;
+    let mut close: Option<Range<usize>> = None;
+    let mut children: Vec<(String, Range<usize>, Range<usize>)> = Vec::new();
+    let mut open_child: Option<(String, Range<usize>)> = None;
+    loop {
+        let from = reader.buffer_position() as usize;
+        let event = reader.read_event().ok()?;
+        let span = from..reader.buffer_position() as usize;
+        match event {
+            Event::Start(ref e) | Event::Empty(ref e) => {
+                let empty = matches!(event, Event::Empty(_));
+                let name = e.name().as_ref().to_owned();
+                match depth {
+                    0 => {
+                        start_tag = Some(span.clone());
+                        if empty {
+                            break;
+                        }
+                    }
+                    1 if empty => children.push((name, span.clone(), span.clone())),
+                    1 => open_child = Some((name, span.clone())),
+                    _ => {}
+                }
+                if !empty {
+                    depth += 1;
+                }
+            }
+            Event::End(_) => {
+                depth -= 1;
+                match depth {
+                    0 => {
+                        close = Some(span);
+                        break;
+                    }
+                    1 => {
+                        if let Some((name, start)) = open_child.take() {
+                            children.push((name, start.clone(), start.start..span.end));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Event::Eof => return None,
+            _ => {}
+        }
+    }
+    let start_tag = start_tag?;
+    let tag = set_attributes(&element[start_tag.clone()], attributes);
+
+    // Each property element, patched in place or created.
+    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    let mut added: Vec<(usize, String)> = Vec::new();
+    for (child, changes) in properties {
+        let changes: Vec<(&str, Option<&str>)> = changes
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_deref()))
+            .collect();
+        match children.iter().find(|(name, _, _)| name == child) {
+            Some((_, _, whole)) => {
+                let patched = set_attributes(&element[whole.clone()], &changes);
+                // A property element left with nothing to say goes, rather than staying as an
+                // empty declaration of nothing.
+                let bare = format!("<{child}/>");
+                let open = format!("<{child}></{child}>");
+                let replacement = match patched.trim() == bare || patched.trim() == open {
+                    true => String::new(),
+                    false => patched,
+                };
+                edits.push((whole.clone(), replacement));
+            }
+            None => {
+                let set: String = changes
+                    .iter()
+                    .filter_map(|(name, value)| {
+                        value.map(|v| format!(" {name}=\"{}\"", crate::odf::xml::esc(v)))
+                    })
+                    .collect();
+                if set.is_empty() {
+                    continue;
+                }
+                // Before the first sibling that comes after it in `order`, or the first child
+                // that is no property element at all (a `style:map`), or the close.
+                let rank = order.iter().position(|o| o == child).unwrap_or(order.len());
+                let at = children
+                    .iter()
+                    .find(|(name, _, _)| {
+                        order
+                            .iter()
+                            .position(|o| o == name)
+                            .is_none_or(|r| r > rank)
+                    })
+                    .map(|(_, start, _)| start.start)
+                    .or_else(|| close.as_ref().map(|c| c.start))
+                    .unwrap_or(start_tag.end);
+                added.push((at, format!("<{child}{set}/>")));
+            }
+        }
+    }
+    for (at, text) in added {
+        edits.push((at..at, text));
+    }
+    edits.sort_by_key(|(range, _)| (range.start, range.end));
+
+    let mut out = String::with_capacity(element.len() + 64);
+    let self_closed = close.is_none();
+    match self_closed {
+        // `<style:style …/>` with children to add opens and closes around them.
+        true if !edits.is_empty() => {
+            let open = tag.trim_end_matches("/>").trim_end();
+            out.push_str(open);
+            out.push('>');
+            for (_, text) in &edits {
+                out.push_str(text);
+            }
+            let name = String::from_utf8_lossy(qname(tag.as_bytes())).into_owned();
+            out.push_str(&format!("</{name}>"));
+            return Some(out);
+        }
+        true => return Some(tag),
+        false => {}
+    }
+    out.push_str(&tag);
+    let mut at = start_tag.end;
+    for (range, text) in edits {
+        out.push_str(&element[at..range.start]);
+        out.push_str(&text);
+        at = range.end;
+    }
+    out.push_str(&element[at..]);
+    Some(out)
+}
+
 /// **The last thing before bytes reach a file**: is this well-formed XML whose every element
 /// and attribute prefix is bound? A writer that merges or splices into somebody's document
 /// calls this on the result and refuses to write when it fails — a save that errors leaves the
@@ -659,11 +845,12 @@ fn vocabulary_within(
 ) -> Option<BTreeMap<String, usize>> {
     let mut reader = NsReader::from_reader(document);
     let mut buf = Vec::new();
+    let shift = super::xml::bom_len(document);
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     // Depth inside `office:body`, 0 when outside it.
     let mut inside = 0usize;
     loop {
-        let from = reader.buffer_position() as usize;
+        let from = reader.buffer_position() as usize + shift;
         let event = reader.read_event_into(&mut buf).ok()?;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
@@ -920,17 +1107,18 @@ fn rewrite_manifest(
     let text = String::from_utf8_lossy(manifest).into_owned();
     let mut reader = NsReader::from_reader(text.as_bytes());
     reader.config_mut().trim_text(false);
+    let shift = super::xml::bom_len(text.as_bytes());
     let mut buf = Vec::new();
     let mut cut: Vec<Range<usize>> = Vec::new();
     let mut kept: HashSet<String> = HashSet::new();
     let mut root_end = None;
     let mut depth = 0usize;
     loop {
-        let from = reader.buffer_position() as usize;
+        let from = reader.buffer_position() as usize + shift;
         let event = reader
             .read_event_into(&mut buf)
             .map_err(|e| Error::Package(format!("manifest: {e}")))?;
-        let span = from..reader.buffer_position() as usize;
+        let span = from..reader.buffer_position() as usize + shift;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
                 let empty = matches!(event, Event::Empty(_));

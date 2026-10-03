@@ -798,6 +798,7 @@ fn cases() -> Vec<(String, Document)> {
                             line_through: Some("solid".to_owned()),
                             color: Some("#001f3f".to_owned()),
                             background: Some("#ffdc00".to_owned()),
+                            origin: Default::default(),
                         },
                     ),
                     // The same formatting twice must pool into one declaration, and still be

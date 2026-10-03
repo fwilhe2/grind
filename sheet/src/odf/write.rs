@@ -578,7 +578,7 @@ fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) ->
             &value,
             formula,
             kind,
-            (effective(sheet, pos), sheet.style(pos)),
+            (effective(sheet, pos), sheet.style(pos), None),
             null_date,
             repeat,
             // The element's own unmanaged attributes, verbatim — its style name, its merge
@@ -616,6 +616,7 @@ fn content(
     let mut pool = Pool::scoped(doc, scopes.as_deref());
     if let Some(source) = origin {
         pool.avoid(&envelope::automatic_style_names(&source.bytes));
+        pool.adopt_bases(&source.bytes);
     }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     // Declare only the namespaces this part actually uses (§1.4). `table:formula`'s `of:`
@@ -786,6 +787,7 @@ impl Scope {
             rows: self.rows.clone(),
             heights: self.heights.clone(),
             columns: self.columns,
+            bases: self.bases.clone(),
         }
     }
 }
@@ -845,10 +847,19 @@ fn plan(doc: &Document, source: &super::source::Source) -> Vec<Plan> {
                 covered = covered.max(span.end);
                 let tag = std::str::from_utf8(&source.bytes[e.start.clone()]).unwrap_or("");
                 let mut patches: BTreeMap<u32, RowPatch> = BTreeMap::new();
+                let mut scanned: Option<Vec<super::source::Cell>> = None;
                 for pos in p.cells.iter().filter(|pos| span.contains(&pos.row)) {
                     patches.entry(pos.row).or_default().cells.push(pos.col);
                     if p.looks.contains(pos) {
                         scope.cells.insert(*pos);
+                        let cells = scanned.get_or_insert_with(|| scan_cells(&source.bytes, e).0);
+                        let own = cells
+                            .iter()
+                            .find(|c| c.cols.contains(&pos.col))
+                            .and_then(|c| tag_attr(&c.keep, &format!("{tp}:style-name")));
+                        if let Some(base) = own.or_else(|| t.column_default(pos.col)) {
+                            scope.bases.insert(*pos, unescape(base));
+                        }
                     }
                 }
                 for row in p.rows.iter().filter(|row| span.contains(row)) {
@@ -1369,7 +1380,7 @@ fn patched_row(
         let mut col = width;
         while col <= *last {
             let pos = Pos::new(row, col);
-            let look = (effective(sheet, pos), sheet.style(pos));
+            let look = pool.look(sheet, pos);
             if !carries(sheet, pos) {
                 let run = (col..=*last)
                     .take_while(|c| !carries(sheet, Pos::new(row, *c)))
@@ -1439,7 +1450,7 @@ fn restyle(
             out.push_str(&copy(col - cursor, None));
         }
         let pos = Pos::new(row, col);
-        let attr = pool.attr((effective(sheet, pos), sheet.style(pos)));
+        let attr = pool.attr(pool.look(sheet, pos));
         out.push_str(&copy(
             1,
             Some(tag_attr(&attr, "table:style-name").map(str::to_owned)),
@@ -1557,7 +1568,7 @@ fn rewrite_cells(
         let pos = Pos::new(row, col);
         let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
         let restyled = looks.contains(&pos);
-        let look = (effective(sheet, pos), sheet.style(pos));
+        let look = pool.look(sheet, pos);
         let repeat = match formula.is_some() {
             true => 1,
             false => (col..at.cols.end)
@@ -1567,7 +1578,7 @@ fn rewrite_cells(
                         && sheet.formula(p).is_none()
                         && sheet.kind(p) == kind
                         && looks.contains(&p) == restyled
-                        && (!restyled || (effective(sheet, p), sheet.style(p)) == look)
+                        && (!restyled || pool.look(sheet, p) == look)
                 })
                 .count() as u32,
         };
@@ -1705,7 +1716,12 @@ fn effective(sheet: &Sheet, pos: Pos) -> Option<&Format> {
 /// How one cell is written: its number format and its styling, which travel together on a
 /// single `style:style` and are therefore pooled together (§5.3). A cell with neither gets
 /// no `table:style-name` at all.
-type Look<'a> = (Option<&'a Format>, Option<&'a CellStyle>);
+///
+/// The third member is the cell's *base*, an index into [`Pool::bases`]: the style a restyled
+/// cell had in the file, which its new style is built from so that what the model does not
+/// read on it survives (`envelope::patch_style`). Part of the identity, since two cells that
+/// now look the same but had different styles in the file carry different unread properties.
+type Look<'a> = (Option<&'a Format>, Option<&'a CellStyle>, Option<usize>);
 
 /// Every distinct format and every distinct look in the document, in first-seen order.
 ///
@@ -1724,6 +1740,13 @@ struct Pool<'a> {
     col_index: HashMap<&'a str, usize>,
     rows: Vec<&'a str>,
     row_index: HashMap<&'a str, usize>,
+    /// The style names restyled cells had in the file (`Scope::bases`), each once, and by sheet
+    /// name and position which of them a cell had.
+    bases: Vec<String>,
+    based: HashMap<&'a str, HashMap<Pos, usize>>,
+    /// Each base's element, when it is one of the file's own automatic styles — what a new
+    /// style is patched from. `None` for a named style, which a new one takes as its parent.
+    base_elements: Vec<Option<String>>,
     /// Where each family's numbering starts — `ce`, `co`, `ro` and `N` — so that a pool written
     /// into a file that already declares `ce1`…`ce9` starts at `ce10` and never takes a name the
     /// file uses (`envelope::merge` keeps the file's own automatic styles beside these).
@@ -1744,6 +1767,9 @@ struct Scope {
     heights: BTreeSet<u32>,
     /// Whether this save writes the column declarations.
     columns: bool,
+    /// The style each restyled cell had in the file — its own `table:style-name`, or its
+    /// column's default — which its new style is built from.
+    bases: HashMap<Pos, String>,
 }
 
 impl<'a> Pool<'a> {
@@ -1759,6 +1785,9 @@ impl<'a> Pool<'a> {
             col_index: HashMap::new(),
             rows: Vec::new(),
             row_index: HashMap::new(),
+            bases: Vec::new(),
+            based: HashMap::new(),
+            base_elements: Vec::new(),
             offsets: [0; 4],
         };
         for (i, sheet) in doc.sheets.iter().enumerate() {
@@ -1793,6 +1822,21 @@ impl<'a> Pool<'a> {
                     pool.rows.push(height);
                 }
             }
+            if let Some(scope) = scope {
+                for (pos, base) in &scope.bases {
+                    let at = match pool.bases.iter().position(|b| b == base) {
+                        Some(at) => at,
+                        None => {
+                            pool.bases.push(base.clone());
+                            pool.bases.len() - 1
+                        }
+                    };
+                    pool.based
+                        .entry(sheet.name.as_str())
+                        .or_default()
+                        .insert(*pos, at);
+                }
+            }
             let formatted = sheet.formats().map(|(pos, _)| pos);
             let dated = sheet.kinds().map(|(pos, _)| pos);
             let styled = sheet.styles().map(|(pos, _)| pos);
@@ -1800,7 +1844,7 @@ impl<'a> Pool<'a> {
                 if !cell_written(pos) {
                     continue;
                 }
-                let look = (effective(sheet, pos), sheet.style(pos));
+                let look = pool.look(sheet, pos);
                 if let Some(format) = look.0 {
                     pool.add(format);
                 }
@@ -1814,6 +1858,35 @@ impl<'a> Pool<'a> {
             }
         }
         pool
+    }
+
+    /// How the cell at `pos` is written: its format, its styling, and the style it had in the
+    /// file when this save restyled it.
+    fn look(&self, sheet: &'a Sheet, pos: Pos) -> Look<'a> {
+        let base = self
+            .based
+            .get(sheet.name.as_str())
+            .and_then(|cells| cells.get(&pos))
+            .copied();
+        (effective(sheet, pos), sheet.style(pos), base)
+    }
+
+    /// Read each base's element out of the file this document came from.
+    fn adopt_bases(&mut self, source: &[u8]) {
+        // The patch spells attributes as LibreOffice and this writer both do; a file binding
+        // `style:` or `fo:` to other prefixes gets styles of this writer's own instead.
+        let standard = envelope::prefix_for(source, STYLE).as_deref() == Some("style")
+            && envelope::prefix_for(source, FO).as_deref() == Some("fo");
+        self.base_elements = self
+            .bases
+            .iter()
+            .map(|base| {
+                let range = envelope::automatic_style_range(source, "table-cell", base)?;
+                let element = std::str::from_utf8(&source[range]).ok()?.to_owned();
+                Some(element)
+            })
+            .map(|element| element.filter(|_| standard))
+            .collect();
     }
 
     /// Pool a format, and the target of every `style:map` it carries — a branch is a style
@@ -1904,14 +1977,47 @@ impl<'a> Pool<'a> {
         for (i, format) in self.formats.iter().enumerate() {
             let _ = writeln!(out, "  {}", data_style(format, i, self));
         }
-        for (i, (format, style)) in self.looks.iter().enumerate() {
-            let data = match format.and_then(|f| self.index.get(f)) {
-                Some(n) => format!(" style:data-style-name=\"{}\"", self.n(*n)),
+        for (i, (format, style, base)) in self.looks.iter().enumerate() {
+            let data_name = format.and_then(|f| self.index.get(f)).map(|n| self.n(*n));
+            // A restyled cell's style is its old one, renamed, with only what the model owns
+            // rewritten — so a rotation, a protection flag, a parent style or a conditional
+            // `style:map` the model never read is carried rather than dropped.
+            if let Some(base) = base {
+                let name = self.ce(i);
+                let patched = self
+                    .base_elements
+                    .get(*base)
+                    .and_then(Option::as_deref)
+                    .and_then(|element| {
+                        envelope::patch_style(
+                            element,
+                            &[
+                                ("style:name", Some(name.as_str())),
+                                ("style:data-style-name", data_name.as_deref()),
+                            ],
+                            &owned_properties(*style),
+                            &PROPERTY_ORDER,
+                        )
+                    });
+                if let Some(patched) = patched {
+                    let _ = writeln!(out, "  {patched}");
+                    continue;
+                }
+            }
+            let data = match &data_name {
+                Some(n) => format!(" style:data-style-name=\"{n}\""),
                 None => String::new(),
             };
+            // A cell that pointed at a *named* style keeps it as the new style's parent, as
+            // LibreOffice writes one.
+            let parent =
+                match base.filter(|b| self.base_elements.get(*b).is_some_and(Option::is_none)) {
+                    Some(b) => format!(" style:parent-style-name=\"{}\"", esc(&self.bases[b])),
+                    None => String::new(),
+                };
             let _ = write!(
                 out,
-                "  <style:style style:name=\"{}\" style:family=\"table-cell\"{data}",
+                "  <style:style style:name=\"{}\" style:family=\"table-cell\"{parent}{data}",
                 self.ce(i)
             );
             match style {
@@ -1944,6 +2050,67 @@ impl<'a> Pool<'a> {
         }
         out.push_str(" </office:automatic-styles>\n");
     }
+}
+
+/// The property elements of a cell style in the schema's order — where a patch puts one the old
+/// style did not have.
+const PROPERTY_ORDER: [&str; 3] = [
+    "style:table-cell-properties",
+    "style:paragraph-properties",
+    "style:text-properties",
+];
+
+/// Every attribute [`properties`] writes, set to `style`'s value or removed — the whole of what
+/// a cell style's properties mean *to the model*, and so exactly what a restyle may change on
+/// the style it is built from. Must name every attribute `properties` does, or a property set
+/// on the old style and cleared in the model would survive the clearing.
+fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'static>> {
+    let value = |v: Option<&Option<String>>| v.and_then(|v| v.clone());
+    let s = style;
+    let mut cell = vec![
+        (
+            "fo:background-color".to_owned(),
+            value(s.map(|s| &s.background)),
+        ),
+        (
+            "style:vertical-align".to_owned(),
+            value(s.map(|s| &s.vertical_align)),
+        ),
+        ("fo:wrap-option".to_owned(), value(s.map(|s| &s.wrap))),
+    ];
+    match s.and_then(|s| s.uniform_border()) {
+        Some(border) => {
+            cell.push(("fo:border".to_owned(), Some(border.to_owned())));
+            for edge in EDGES {
+                cell.push((format!("fo:border-{edge}"), None));
+            }
+        }
+        None => {
+            cell.push(("fo:border".to_owned(), None));
+            for (i, edge) in EDGES.iter().enumerate() {
+                cell.push((format!("fo:border-{edge}"), value(s.map(|s| &s.borders[i]))));
+            }
+        }
+    }
+    vec![
+        ("style:table-cell-properties", cell),
+        (
+            "style:paragraph-properties",
+            vec![("fo:text-align".to_owned(), value(s.map(|s| &s.align)))],
+        ),
+        (
+            "style:text-properties",
+            vec![
+                (
+                    "fo:font-weight".to_owned(),
+                    value(s.map(|s| &s.font_weight)),
+                ),
+                ("fo:font-style".to_owned(), value(s.map(|s| &s.font_style))),
+                ("fo:font-size".to_owned(), value(s.map(|s| &s.font_size))),
+                ("fo:color".to_owned(), value(s.map(|s| &s.color))),
+            ],
+        ),
+    ]
 }
 
 /// The property children of a cell style (§5.1), in the order the schema declares them.
@@ -2736,7 +2903,7 @@ fn write_row(
         let pos = Pos::new(row, col);
         let value = sheet.get(pos);
         let formula = sheet.formula(pos);
-        let look = (effective(sheet, pos), sheet.style(pos));
+        let look = pool.look(sheet, pos);
         // Only blank runs are compressed. Repeating a *valued* cell would need the formula
         // to repeat with it, and a formula is position-dependent — a correctness trap for
         // bytes nobody is short of. A run of blanks sharing one format compresses like any
@@ -2747,7 +2914,7 @@ fn write_row(
                     let p = Pos::new(row, *c);
                     sheet.get(p).is_empty()
                         && sheet.formula(p).is_none()
-                        && (effective(sheet, p), sheet.style(p)) == look
+                        && pool.look(sheet, p) == look
                 })
                 .count() as u32
         } else {

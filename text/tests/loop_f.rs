@@ -516,6 +516,14 @@ fn spellable(block: &Block) -> Vec<Run> {
             run => runs.push(run.clone()),
         }
     }
+    // Where a run's formatting was read from (`CharStyle::origin`) is provenance, not content,
+    // and the projection has nowhere to keep it — so it is not what this loop compares. Without
+    // this, two runs an image used to separate stay apart on one side only.
+    for run in &mut runs {
+        if let Run::Text { props, .. } = run {
+            props.origin = Default::default();
+        }
+    }
     grind_text::model::coalesce(&mut runs);
     runs
 }

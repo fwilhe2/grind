@@ -326,6 +326,7 @@ fn embedded(flat: &[u8]) -> Result<(Vec<Embedded>, Vec<Part>)> {
         .unwrap_or_default();
     let mut reader = NsReader::from_reader(flat);
     reader.config_mut().trim_text(false);
+    let shift = super::xml::bom_len(flat);
     let mut buf = Vec::new();
     let mut found = Vec::new();
     let mut documents = Vec::new();
@@ -333,11 +334,11 @@ fn embedded(flat: &[u8]) -> Result<(Vec<Embedded>, Vec<Part>)> {
     // A `draw:object` just opened, waiting to see whether its first child is a document.
     let mut pending: Option<(std::ops::Range<usize>, std::ops::Range<usize>)> = None;
     loop {
-        let from = reader.buffer_position() as usize;
+        let from = reader.buffer_position() as usize + shift;
         let event = reader
             .read_event_into(&mut buf)
             .map_err(|_| malformed("the document"))?;
-        let span = from..reader.buffer_position() as usize;
+        let span = from..reader.buffer_position() as usize + shift;
         if from < skip_to {
             if matches!(event, Event::Eof) {
                 break;
@@ -783,14 +784,15 @@ fn inline(
     let office = envelope::prefix_for(part, OFFICE).unwrap_or_else(|| "office".to_owned());
     let mut reader = NsReader::from_reader(part);
     reader.config_mut().trim_text(false);
+    let shift = super::xml::bom_len(part);
     let mut buf = Vec::new();
     let mut edits: Vec<(std::ops::Range<usize>, Vec<u8>)> = Vec::new();
     loop {
-        let from = reader.buffer_position() as usize;
+        let from = reader.buffer_position() as usize + shift;
         let event = reader
             .read_event_into(&mut buf)
             .map_err(|_| malformed("a part"))?;
-        let span = from..reader.buffer_position() as usize;
+        let span = from..reader.buffer_position() as usize + shift;
         let (e, empty) = match event {
             Event::Start(ref e) => (e, false),
             Event::Empty(ref e) => (e, true),

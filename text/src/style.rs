@@ -61,12 +61,88 @@ pub struct CharStyle {
     pub color: Option<String>,
     /// `fo:background-color` — `#rrggbb` or `transparent`. Text highlighting.
     pub background: Option<String>,
+    /// The automatic style this formatting was read from, when that style says something the
+    /// fields above do not — superscript, a language, letter spacing. **Not formatting**, and
+    /// equal to every other [`Origin`]: what it is for is a save, which builds a restyled
+    /// run's new style from that one rather than from these fields alone, so what the model
+    /// never read is not lost (`grind_core::odf::envelope::patch_style`).
+    pub origin: Origin,
+}
+
+/// Where a run's formatting came from, for a save's sake — see [`CharStyle::origin`].
+///
+/// Equal to every other, so comparing two documents, two runs or two formattings is about what
+/// they *say* (loop C and loop F compare exactly that, and LibreOffice renames every style it
+/// writes). [`CharStyle::same`] is the comparison that does see it, for the two places that must:
+/// joining runs and pooling styles, where a superscript run and a plain one that look alike to
+/// the model must stay apart.
+#[derive(Clone, Debug, Default)]
+pub struct Origin(Option<std::sync::Arc<str>>);
+
+impl Origin {
+    pub fn new(name: &str) -> Self {
+        Origin(Some(name.into()))
+    }
+
+    /// The automatic style's name in the file it was read from.
+    pub fn name(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
+
+impl PartialEq for Origin {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Origin {}
+
+impl std::hash::Hash for Origin {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
 
 impl CharStyle {
     /// Nothing set at all — formatting worth neither writing nor pooling.
+    ///
+    /// About what the formatting *says*, so a run whose only distinction is where it was read
+    /// from ([`Origin`]) is plain here; a writer asks [`CharStyle::needs_style`] instead.
     pub fn is_plain(&self) -> bool {
         *self == CharStyle::default()
+    }
+
+    /// Whether writing this formatting takes a style — anything set, or an [`Origin`] whose
+    /// style says what the fields cannot (a superscript with nothing else on it).
+    pub fn needs_style(&self) -> bool {
+        !self.is_plain() || self.origin.name().is_some()
+    }
+
+    /// Equal *and* read from the same style — [`Origin`] is the one difference `==` ignores.
+    pub fn same(&self, other: &CharStyle) -> bool {
+        self == other && self.origin.name() == other.origin.name()
+    }
+
+    /// The attributes that turn `base`'s properties into these: each field that differs, set or
+    /// removed, and nothing else — so a restyle built on the old style's element
+    /// (`envelope::patch_style`) keeps the file's own spelling of everything it did not change.
+    /// A changed family also drops `style:font-name`, the reference into the font declarations
+    /// the reader resolved it from, which would otherwise win over the new one.
+    pub fn patch_against(&self, base: &CharStyle) -> Vec<(String, Option<String>)> {
+        let mut out = Vec::new();
+        for ((name, new), (_, old)) in self.pairs().into_iter().zip(base.pairs()) {
+            if new == old {
+                continue;
+            }
+            let value = new.map(|v| match name {
+                "fo:font-family" => quote_family(v),
+                _ => v.to_owned(),
+            });
+            if name == "fo:font-family" {
+                out.push(("style:font-name".to_owned(), None));
+            }
+            out.push((name.to_owned(), value));
+        }
+        out
     }
 
     /// The metrics half, for `grind_core::layout`.
@@ -124,6 +200,8 @@ impl CharStyle {
             line_through: agreed(&self.line_through, &other.line_through),
             color: agreed(&self.color, &other.color),
             background: agreed(&self.background, &other.background),
+            // A reading for a toolbar, not a run: it came from nowhere.
+            origin: Origin::default(),
         }
     }
 

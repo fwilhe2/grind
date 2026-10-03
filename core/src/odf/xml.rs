@@ -63,6 +63,22 @@ fn tag_at(bytes: &[u8], at: usize, tag: &[u8]) -> bool {
     )
 }
 
+/// How many bytes of `bytes` are a UTF-8 byte-order mark: 3 or 0.
+///
+/// **Every position `quick-xml` reports is measured after one**: it skips a leading BOM and
+/// counts from the byte that follows, so `<a>` at bytes 3..6 comes back as 0..3. A reader that
+/// records where an element was (R6's splicing, the envelope's merge) has to add this back, or
+/// every range in such a file is three bytes early — which is how a save of
+/// `sc/qa`'s `tdf117948_CollapseBeforeShape.ods` cut `<office:spreadsheet>` short and was
+/// refused by the writer's own check.
+pub fn bom_len(bytes: &[u8]) -> usize {
+    if bytes.starts_with(b"\xEF\xBB\xBF") {
+        3
+    } else {
+        0
+    }
+}
+
 /// The full extent of an element in the bytes it was parsed from, given the span of its
 /// **start tag**. **\[GENERIC\]**
 ///

@@ -62,6 +62,10 @@ pub struct TextStyle {
     pub name: String,
     pub parent: Option<String>,
     pub props: CharStyle,
+    /// Whether it says anything `props` does not carry — superscript, a language. Such a style
+    /// is never reused for formatting that merely *looks* like it to the model
+    /// ([`Source::style_named`]); it is only ever a restyled run's base.
+    pub extras: bool,
 }
 
 /// The bytes a document was read from, plus where its blocks are in them.
@@ -144,10 +148,17 @@ impl Source {
     /// parent twice — once as the outer span and once through the inheritance — and the second
     /// read would compose the name into itself. A style with a parent is left alone and the
     /// edit regenerates, which is the safe half of a choice that only costs bytes.
+    /// The automatic style a run's formatting was read from, when it says more than the model
+    /// reads ([`CharStyle::origin`]) — what a restyle of that run is built from.
+    pub fn base_of(&self, props: &CharStyle) -> Option<&TextStyle> {
+        let name = props.origin.name()?;
+        self.styles.iter().find(|style| style.name == name)
+    }
+
     pub fn style_named(&self, props: &CharStyle) -> Option<&str> {
         self.styles
             .iter()
-            .find(|style| style.parent.is_none() && style.props == *props)
+            .find(|style| style.parent.is_none() && !style.extras && style.props.same(props))
             .map(|style| style.name.as_str())
     }
 }

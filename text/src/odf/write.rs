@@ -254,14 +254,22 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
             .filter(|block| doc.edits.blocks.contains(&block.id))
             .flat_map(|block| block.runs.iter())
             .filter_map(Run::props)
-            .filter(|props| !props.is_plain()),
+            .filter(|props| props.needs_style()),
         source,
     )?;
+    // A formatting the file has no style for is declared at the end of its own automatic
+    // styles — the one splice site outside the body, found by structure rather than kept as
+    // an offset — so a click on Bold stays a splice rather than a regenerate of everything.
+    let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    let declarations = pool.declarations();
+    if !declarations.is_empty() {
+        let at = envelope::automatic_styles_end(&source.bytes)?;
+        patches.push((at..at, declarations));
+    }
 
     // Which elements have to be rewritten. Every edited block must sit in one the file
     // actually spelled — one that does not means regenerating, because a document half in its
     // original bytes and half not would lose the other half silently.
-    let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
     for block in &doc.blocks {
         if !doc.edits.blocks.contains(&block.id) {
             continue;
@@ -370,6 +378,10 @@ struct Pool {
     /// pictures do not both come back under the first one's `draw:name`.
     frames: Vec<(u64, String)>,
     used: std::cell::RefCell<Vec<bool>>,
+    /// A new style built from the one its run was read from, by name: that style's element,
+    /// renamed, with only the properties that changed rewritten — so superscript, a language
+    /// or letter spacing the model never read survive a click on Bold.
+    patched: std::collections::HashMap<String, String>,
 }
 
 impl Pool {
@@ -389,6 +401,29 @@ impl Pool {
         let mut next = 1;
         for props in props_of(doc) {
             if pool.name(props).is_some() {
+                continue;
+            }
+            // Formatting read from a style that says more than the model does: its own name
+            // while what the model reads of it is unchanged, and a style built from it when not.
+            if let Some(base) = source.and_then(|source| source.base_of(props)) {
+                if base.props == *props {
+                    pool.declared.insert(base.name.clone());
+                    pool.entries.push((props.clone(), base.name.clone()));
+                    continue;
+                }
+                let name = loop {
+                    let name = format!("T{next}");
+                    next += 1;
+                    if !reserved.contains(&name)
+                        && !pool.entries.iter().any(|(_, taken)| *taken == name)
+                    {
+                        break name;
+                    }
+                };
+                if let Some(element) = source.and_then(|source| based(source, base, props, &name)) {
+                    pool.patched.insert(name.clone(), element);
+                }
+                pool.entries.push((props.clone(), name));
                 continue;
             }
             let reused = source
@@ -457,21 +492,80 @@ impl Pool {
         source: &super::source::Source,
     ) -> Option<Self> {
         let mut pool = Pool::default();
+        let reserved = envelope::automatic_style_names(&source.bytes);
+        let standard = envelope::prefix_for(&source.bytes, STYLE).as_deref() == Some("style")
+            && envelope::prefix_for(&source.bytes, FO).as_deref() == Some("fo");
+        let mut next = 1;
+        let mut fresh = |pool: &Pool| loop {
+            let name = format!("T{next}");
+            next += 1;
+            if !reserved.contains(&name) && !pool.entries.iter().any(|(_, n)| *n == name) {
+                break name;
+            }
+        };
         for props in needed {
             if pool.name(props).is_some() {
                 continue;
             }
-            let name = source.style_named(props)?;
-            pool.entries.push((props.clone(), name.to_owned()));
+            match source.base_of(props) {
+                // Unchanged formatting from a style the model does not wholly read: its name.
+                Some(base) if base.props == *props => {
+                    pool.declared.insert(base.name.clone());
+                    pool.entries.push((props.clone(), base.name.clone()));
+                }
+                // Changed: a style built from that one, declared beside the file's own.
+                Some(base) => {
+                    let name = fresh(&pool);
+                    pool.patched
+                        .insert(name.clone(), based(source, base, props, &name)?);
+                    pool.entries.push((props.clone(), name));
+                }
+                None => match source.style_named(props) {
+                    Some(name) => {
+                        pool.declared.insert(name.to_owned());
+                        pool.entries.push((props.clone(), name.to_owned()));
+                    }
+                    // A formatting the file has no style for: one of this writer's own.
+                    None if standard => {
+                        let name = fresh(&pool);
+                        pool.entries.push((props.clone(), name));
+                    }
+                    None => return None,
+                },
+            }
         }
         pool.take_frames(source);
         Some(pool)
     }
 
+    /// Every style this pool declares that the file does not, as `style:style` elements — what
+    /// a splice inserts into the file's own `office:automatic-styles`.
+    fn declarations(&self) -> String {
+        let mut out = String::new();
+        for (props, name) in &self.entries {
+            if self.declared.contains(name) {
+                continue;
+            }
+            match self.patched.get(name) {
+                Some(element) => out.push_str(element),
+                None => {
+                    let _ = write!(
+                        out,
+                        "<style:style style:name=\"{}\" style:family=\"text\">\
+                         <style:text-properties{}/></style:style>",
+                        esc(name),
+                        props.attributes()
+                    );
+                }
+            }
+        }
+        out
+    }
+
     fn name(&self, props: &CharStyle) -> Option<&str> {
         self.entries
             .iter()
-            .find(|(style, _)| style == props)
+            .find(|(style, _)| style.same(props))
             .map(|(_, name)| name.as_str())
     }
 
@@ -480,13 +574,38 @@ impl Pool {
     }
 }
 
+/// `base`'s element in the file, renamed `name`, with what differs between its properties and
+/// `props` rewritten (`envelope::patch_style`). `None` when the file spells `style:` or `fo:`
+/// with prefixes of its own, or the element cannot be found — and the run gets a style of this
+/// writer's own, as every run did before.
+fn based(
+    source: &super::source::Source,
+    base: &super::source::TextStyle,
+    props: &CharStyle,
+    name: &str,
+) -> Option<String> {
+    let standard = envelope::prefix_for(&source.bytes, STYLE).as_deref() == Some("style")
+        && envelope::prefix_for(&source.bytes, FO).as_deref() == Some("fo");
+    if !standard {
+        return None;
+    }
+    let range = envelope::automatic_style_range(&source.bytes, "text", &base.name)?;
+    let element = std::str::from_utf8(source.bytes.get(range)?).ok()?;
+    envelope::patch_style(
+        element,
+        &[("style:name", Some(name))],
+        &[("style:text-properties", props.patch_against(&base.props))],
+        &["style:text-properties"],
+    )
+}
+
 /// Every non-plain run formatting in the document, in document order.
 fn props_of(doc: &Document) -> impl Iterator<Item = &CharStyle> {
     doc.blocks
         .iter()
         .flat_map(|block| block.runs.iter())
         .filter_map(Run::props)
-        .filter(|props| !props.is_plain())
+        .filter(|props| props.needs_style())
 }
 
 /// The `content.xml` payload, which in the flat form is the whole document.
@@ -554,6 +673,10 @@ fn automatic_styles(out: &mut String, pool: &Pool) {
     out.push_str(" <office:automatic-styles>\n");
     for (props, name) in &pool.entries {
         if pool.declared.contains(name) {
+            continue;
+        }
+        if let Some(element) = pool.patched.get(name) {
+            let _ = writeln!(out, "  {element}");
             continue;
         }
         let _ = writeln!(

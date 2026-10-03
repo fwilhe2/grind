@@ -140,6 +140,8 @@ struct TextFamily {
     automatic: bool,
     parent: Option<String>,
     props: CharStyle,
+    /// Whether it says anything `props` does not carry ([`CharStyle::origin`]).
+    extras: bool,
 }
 
 impl Builder {
@@ -187,8 +189,13 @@ impl Builder {
     fn open_span(&mut self, name: Option<&str>) {
         let mut props = self.props.last().cloned().unwrap_or_default();
         let kept = match name.and_then(|name| self.styles.get(name).map(|s| (name, s))) {
-            Some((_, style)) if style.automatic => {
+            Some((name, style)) if style.automatic => {
                 props.layer(&style.props);
+                // Where the formatting came from, when that style says more than the fields
+                // do — so restyling this run later starts from it ([`CharStyle::origin`]).
+                if style.extras {
+                    props.origin = crate::style::Origin::new(name);
+                }
                 style.parent.clone()
             }
             // A declared *named* style: its properties are the document's own vocabulary and
@@ -229,11 +236,12 @@ impl Builder {
         let mut styles: Vec<super::source::TextStyle> = self
             .styles
             .iter()
-            .filter(|(_, style)| style.automatic && !style.props.is_plain())
+            .filter(|(_, style)| style.automatic && (style.extras || !style.props.is_plain()))
             .map(|(name, style)| super::source::TextStyle {
                 name: name.clone(),
                 parent: style.parent.clone(),
                 props: style.props.clone(),
+                extras: style.extras,
             })
             .collect();
         styles.sort_by(|a, b| a.name.cmp(&b.name));
@@ -462,6 +470,7 @@ impl Context<Builder> for Styles {
             name: attrs.get(Ns::Style, "name").map(str::to_owned),
             parent: attrs.get(Ns::Style, "parent-style-name").map(str::to_owned),
             props: CharStyle::default(),
+            extras: false,
         }))
     }
 }
@@ -472,11 +481,15 @@ struct TextStyleDef {
     name: Option<String>,
     parent: Option<String>,
     props: CharStyle,
+    /// Whether the style says anything [`CharStyle`] does not read.
+    extras: bool,
 }
 
 impl Context<Builder> for TextStyleDef {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         if !name.is(Ns::Style, "text-properties") {
+            // A paragraph's or a graphic's properties on a character style: nothing a run reads.
+            self.extras = true;
             return None;
         }
         // `style:font-name` is LibreOffice's spelling and `fo:font-family` the schema's plain
@@ -502,7 +515,27 @@ impl Context<Builder> for TextStyleDef {
                 .map(str::to_owned),
             color: attrs.get(Ns::Fo, "color").map(str::to_owned),
             background: attrs.get(Ns::Fo, "background-color").map(str::to_owned),
+            origin: Default::default(),
         };
+        // Anything else on the element is something this model does not read — superscript,
+        // a language, letter spacing — and makes the style one a restyle must build *from*.
+        const READ: [(Ns, &str); 9] = [
+            (Ns::Fo, "font-family"),
+            (Ns::Style, "font-name"),
+            (Ns::Fo, "font-size"),
+            (Ns::Fo, "font-weight"),
+            (Ns::Fo, "font-style"),
+            (Ns::Style, "text-underline-style"),
+            (Ns::Style, "text-line-through-style"),
+            (Ns::Fo, "color"),
+            (Ns::Fo, "background-color"),
+        ];
+        if attrs
+            .names()
+            .any(|n| !READ.iter().any(|(ns, local)| n.is(*ns, local)))
+        {
+            self.extras = true;
+        }
         None
     }
 
@@ -514,6 +547,7 @@ impl Context<Builder> for TextStyleDef {
                 automatic: self.automatic,
                 parent: self.parent.take(),
                 props: std::mem::take(&mut self.props),
+                extras: self.extras,
             },
         );
     }

@@ -237,3 +237,109 @@ fn saving_into_the_other_form_carries_everything() {
         }
     }
 }
+
+/// A run that is superscript, German and bold — two of which `CharStyle` does not read — and a
+/// run that is only bold, as LibreOffice writes them.
+const SUPERSCRIPT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+ <office:automatic-styles>
+  <style:style style:name="T1" style:family="text"><style:text-properties style:text-position="super 58%" fo:language="de" fo:country="DE" fo:font-weight="bold"/></style:style>
+  <style:style style:name="T2" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+ </office:automatic-styles>
+ <office:body>
+  <office:text>
+   <text:p>E = mc<text:span text:style-name="T1">2</text:span> and <text:span text:style-name="T2">bold</text:span> words.</text:p>
+  </office:text>
+ </office:body>
+</office:document>
+"##;
+
+/// The `style:text-properties` of the style a span names, in a flat document.
+fn span_properties(xml: &str, text: &str) -> String {
+    let span = xml
+        .match_indices("<text:span text:style-name=\"")
+        .map(|(i, _)| &xml[i..])
+        .find(|rest| rest[rest.find('>').unwrap() + 1..].starts_with(text))
+        .unwrap_or_else(|| panic!("no span around {text:?} in\n{xml}"));
+    let name = span.split('"').nth(1).unwrap();
+    let start = xml
+        .find(&format!("<style:style style:name=\"{name}\""))
+        .unwrap();
+    let end = start + xml[start..].find("</style:style>").unwrap();
+    xml[start..end].to_owned()
+}
+
+/// **Restyling a run keeps everything about its style the model does not read**, the text half
+/// of the restyle hole: a superscript's new style is its old one with only what changed
+/// rewritten — and a style that says more than the model reads is never borrowed for a run
+/// that merely looks the same to it, which used to *add* the superscript to somebody's bold.
+#[test]
+fn restyling_a_run_keeps_what_the_model_does_not_read() {
+    let restyle = |at: &str, end: usize, bold: bool| {
+        let app = App::new();
+        app.open_bytes("superscript.fodt", SUPERSCRIPT.as_bytes())
+            .unwrap();
+        let start = caret(&app, at);
+        let mut style = CharStyle::default();
+        if bold {
+            style.font_weight = Some("bold".into());
+        }
+        app.set_char_style(
+            start,
+            grind_text::Caret {
+                offset: end,
+                ..start
+            },
+            &style,
+        )
+        .unwrap();
+        String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap()
+    };
+
+    // Unbold the superscript: it stays superscript and German.
+    let out = restyle("p1+6", 7, false);
+    let two = span_properties(&out, "2<");
+    assert!(two.contains("style:text-position=\"super 58%\""), "{two}");
+    assert!(two.contains("fo:language=\"de\""), "{two}");
+    assert!(!two.contains("font-weight"), "{two}");
+
+    // Bold "words": the plain bold style, never the superscript one.
+    let out = restyle("p1+17", 22, true);
+    let words = span_properties(&out, "words");
+    assert!(!words.contains("text-position"), "{words}");
+    // And the superscript nobody touched keeps the file's own name for its style.
+    assert!(
+        out.contains("<text:span text:style-name=\"T1\">2</text:span>"),
+        "{out}"
+    );
+}
+
+/// **A byte-order mark does not shift the file under a save** — the text half of the
+/// spreadsheet's test of the same name: every range a reader records is measured from the
+/// file's first byte, a BOM included.
+#[test]
+fn a_byte_order_mark_does_not_shift_a_save() {
+    for path in documents()
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "fodt"))
+    {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let bytes = [b"\xEF\xBB\xBF".as_slice(), &std::fs::read(&path).unwrap()].concat();
+        let app = App::new();
+        app.open_bytes(&name, &bytes).expect("opens");
+        app.insert_text(caret(&app, "p1+0"), "x").unwrap();
+        let out = app
+            .save_bytes(Form::Flat)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let back = App::new();
+        back.open_bytes(&name, &out).expect("reopens");
+        assert!(
+            back.get_viewport(0..1)
+                .get(0)
+                .unwrap()
+                .text
+                .starts_with('x'),
+            "{name}"
+        );
+    }
+}

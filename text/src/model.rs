@@ -397,7 +397,7 @@ pub fn coalesce(runs: &mut Vec<Run>) {
                     props: pb,
                     href: hb,
                 },
-            ) if sa == sb && pa == pb && ha == hb => Some(format!("{a}{b}")),
+            ) if sa == sb && pa.same(pb) && ha == hb => Some(format!("{a}{b}")),
             _ => None,
         };
         match joined {

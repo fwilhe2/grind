@@ -113,6 +113,9 @@ pub fn here(
 }
 
 /// Where a bar's change landed.
+// One is returned per click on a control, and every shell matches it by value; boxing the
+// formatting would cost each of them a dereference to save bytes nobody keeps.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Landed {
     /// Written over the selection — one undo step.

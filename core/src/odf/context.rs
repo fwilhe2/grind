@@ -57,6 +57,12 @@ impl Attrs {
         self.span.clone()
     }
 
+    /// Every attribute's name, in document order — for a reader asking whether an element says
+    /// anything beyond what it reads.
+    pub fn names(&self) -> impl Iterator<Item = &Name> {
+        self.items.iter().map(|(name, _)| name)
+    }
+
     pub fn get(&self, ns: Ns, local: &str) -> Option<&str> {
         self.items
             .iter()
@@ -194,17 +200,19 @@ pub fn parse<R: BufRead, S>(mut input: R, root: Box<dyn Context<S>>, sink: &mut 
 
     let mut stack: Vec<Box<dyn Context<S>>> = vec![root];
     let mut buf = Vec::new();
+    // Positions as indices into `input_bytes`, a byte-order mark included (`xml::bom_len`).
+    let shift = super::xml::bom_len(&input_bytes);
 
     loop {
         // Where this event begins, for [`Attrs::span`]. `buffer_position` after a read points
         // just past the event, so the previous one's end is this one's start — and because
         // `trim_text` is off, the whitespace between two elements arrives as its own `Text`
         // event rather than being folded into the next element's span.
-        let from = reader.buffer_position() as usize;
+        let from = reader.buffer_position() as usize + shift;
         let event = reader
             .read_event_into(&mut buf)
             .map_err(|e| Error::Xml(e.to_string()))?;
-        let span = from..reader.buffer_position() as usize;
+        let span = from..reader.buffer_position() as usize + shift;
 
         match event {
             Event::Start(e) => {

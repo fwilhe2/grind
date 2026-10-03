@@ -1881,7 +1881,10 @@ fn restyled(block: &Block, start: usize, end: usize, style: &CharStyle) -> Optio
     }
     for run in &mut middle {
         if let Run::Text { props, .. } = run {
+            // What the model does not read stays where it was read from.
+            let origin = std::mem::take(&mut props.origin);
             *props = style.clone();
+            props.origin = origin;
         }
     }
     let mut runs = head;
