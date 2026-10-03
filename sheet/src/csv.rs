@@ -470,6 +470,53 @@ impl Import {
     }
 }
 
+impl Import {
+    /// These options with a person's words laid over them — what a window with no flags takes
+    /// instead of seven checkboxes: `delimiter=semicolon locale=de-DE text trim`. A bare word
+    /// switches an option on, `no-dates` switches `dates` (on by default in a window) off, and
+    /// `delimiter=` takes a name (`comma`, `semicolon`, `tab`, `pipe`, `space`) or one character,
+    /// the way `grind sheet import-csv --delimiter` does. `Err` names the word it did not
+    /// understand, so a typo is a sentence rather than a silently ignored option.
+    pub fn amended(mut self, words: &str) -> std::result::Result<Import, String> {
+        for word in words.split_whitespace() {
+            match word.split_once('=') {
+                Some(("delimiter" | "d", value)) => {
+                    self.dialect.delimiter = match value {
+                        "comma" => ',',
+                        "semicolon" => ';',
+                        "tab" | "\\t" => '\t',
+                        "pipe" => '|',
+                        "space" => ' ',
+                        one if one.chars().count() == 1 => one.chars().next().unwrap_or(','),
+                        _ => {
+                            return Err(format!(
+                                "delimiter {value:?} is not comma, semicolon, tab, pipe, space or one character"
+                            ));
+                        }
+                    }
+                }
+                Some(("locale" | "l", value)) => {
+                    self.locale = Some(
+                        Locale::parse(value)
+                            .ok_or_else(|| format!("{value:?} is not a locale (try de-DE)"))?,
+                    )
+                }
+                None if word == "text" => self.text = true,
+                None if word == "formulas" => self.formulas = true,
+                None if word == "dates" => self.dates = true,
+                None if word == "no-dates" => self.dates = false,
+                None if word == "trim" => self.trim = true,
+                _ => {
+                    return Err(format!(
+                        "{word:?} is not an import option — delimiter=, locale=, text, formulas, dates, no-dates, trim"
+                    ));
+                }
+            }
+        }
+        Ok(self)
+    }
+}
+
 /// The format a field needs to be read as a date, a datetime or a time — or `None`, which is
 /// every other field.
 ///
@@ -1043,5 +1090,22 @@ mod tests {
             refused.contains("latin1.csv") && refused.contains("UTF-8"),
             "{refused}"
         );
+    }
+
+    #[test]
+    fn a_persons_words_lay_over_the_defaults() {
+        let base = Import::sniffed("a,b\n1,2\n");
+        let amended = base
+            .clone()
+            .amended("delimiter=semicolon locale=de-DE text trim no-dates")
+            .unwrap();
+        assert_eq!(amended.dialect.delimiter, ';');
+        assert!(amended.text && amended.trim && !amended.dates);
+        assert!(amended.locale.is_some());
+        assert!(!amended.formulas);
+        assert_eq!(base.clone().amended("d=|").unwrap().dialect.delimiter, '|');
+        assert!(base.clone().amended("delimiter=ab").is_err());
+        assert!(base.clone().amended("locale=nowhere-at-all").is_err());
+        assert!(base.amended("shout").unwrap_err().contains("shout"));
     }
 }
