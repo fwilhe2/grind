@@ -276,7 +276,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
-| Autofit a column | ● | ● | ○ | ○ | ● ᶠᶜ | ● |
+| Autofit a column | ● | ● | ● ᶠⁱ | ○ | ● ᶠᶜ | ● |
 | Row auto-height from content (L3) | — | ● | ○ | ○ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
@@ -308,6 +308,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵉˣ `:explain` and the palette's *Explain this formula in words* say the active cell's formula on one line (`friendly::explain_inline`) — not unfolded, and the formula bar does not read friendly at rest. Closed in part 2026-10-02.
 ʷᵈ Drag a column's or row's header boundary: the size follows the pointer, the two-headed cursor shows over the boundary, and release writes one `set_col_width`/`set_row_height` (2026-10-02). The geometry (`GridGeom::edge_at`) is unit-tested; the mouse path is build-checked only — no Windows pointer was available to drive it.
 ᶠᶜ Sheet ▸ Fit Column Width, measured in the cell font by GDI; from the menu, and by double-clicking the column's edge (a row's edge goes back to its content's height) — 2026-10-02.
+ᶠⁱ `:fit` — the selection's columns, each as wide as its widest text in terminal cells (`unicode-width`) plus the blank between columns — 2026-10-03.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.

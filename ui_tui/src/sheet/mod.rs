@@ -42,7 +42,7 @@ Spreadsheet:
   :explain                — the active cell's formula in plain words
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
-  :width [n|auto]  :height [n]   :hide  :show   — the columns the selection covers
+  :width [n|auto]  :fit  :height [n]   :hide  :show   — the columns the selection covers
   :name <name>  :name!    — define a name over the selection, or drop the one on it
   :rename <old> <new>     — rename a name, every formula that uses it following
   :inline <name>          — write a name's definition into every use and drop it

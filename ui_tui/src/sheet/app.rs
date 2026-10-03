@@ -1089,6 +1089,7 @@ impl App {
             "show" => self.cmd_hide(false, false),
             "show rows" => self.cmd_hide(false, true),
             "width" | "width auto" => self.cmd_width(None),
+            "fit" => self.cmd_fit(),
             "height" | "height auto" => self.cmd_height(None),
             "name!" => self.cmd_unname(),
             "format-table" => self.cmd_table(""),
@@ -1437,6 +1438,45 @@ impl App {
             }
             Err(e) => self.status = e.to_string(),
         }
+    }
+
+    /// `:fit` — each selected column becomes as wide as its widest text, measured in terminal
+    /// cells (`unicode-width`, so a CJK column fits too), plus the one blank the grid leaves
+    /// between columns. The twin of the GNOME window's double-click on a column edge; an empty
+    /// column goes back to the default width.
+    fn cmd_fit(&mut self) {
+        use unicode_width::UnicodeWidthStr;
+        let (start, end) = self.rect();
+        let rows = self
+            .core
+            .used_extent(self.sheet)
+            .map_or(0, |(rows, _)| rows);
+        let mut fitted = 0;
+        for col in start.col..=end.col {
+            let widest = self
+                .core
+                .get_viewport(self.sheet, 0..rows, col..col + 1)
+                .map(|view| {
+                    (0..rows)
+                        .filter_map(|row| view.text(row, col).map(|text| text.width()))
+                        .max()
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            let width = match widest {
+                0 => None,
+                n => Some(geom::length(u16::try_from(n + 1).unwrap_or(u16::MAX))),
+            };
+            match self.core.set_col_width(self.sheet, col..col + 1, width) {
+                Ok(n) => fitted += n,
+                Err(e) => {
+                    self.status = e.to_string();
+                    return;
+                }
+            }
+        }
+        self.leave_visual();
+        self.status = format!("{fitted} column(s) fitted to their text");
     }
 
     /// `:height [n]` — the row twin of [`App::cmd_width`], in ODF's own unit.
@@ -3085,6 +3125,17 @@ mod tests {
                 .map(|(i, _)| i),
             Some(usize::from(ROW_HEADER_WIDTH) + 10 + 4)
         );
+    }
+
+    /// `:fit` measures the widest text in terminal cells and writes the width back.
+    #[test]
+    fn fit_makes_a_column_as_wide_as_its_widest_text() {
+        let mut app = filled();
+        app.run_command("fit");
+        let widths = app.core.col_widths(app.sheet).expect("widths");
+        // "Party" is five cells, and one blank follows it.
+        assert_eq!(widths, vec![(0, geom::length(6))]);
+        assert!(app.status.contains("fitted"), "{}", app.status);
     }
 
     /// A hidden column is *absent*, exactly as a filtered row already was — the other axis of
