@@ -30,6 +30,7 @@ Word processor:
     ``` on its own — a code block; ``` again ends it
 
   :color <name>  :highlight <name>  :plain
+  :font <family>  :size <length>    over the selection (14pt); none to put the document's own back
   :h <level>     :li [depth]        :style [name]
   :find <text>   :s/old/new/        :words
   :outline       — every heading, indented; Enter goes to one

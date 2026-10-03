@@ -949,6 +949,14 @@ impl App {
             // than a caret move: `App::replace` changes every match, which is what `/g` means
             // and the only thing this build's core offers.
             _ if cmd.starts_with("s/") => self.cmd_substitute(&cmd[2..]),
+            _ if cmd.starts_with("font ") => {
+                self.cmd_char(grind_text::format::Change::Family(non_empty(&cmd[5..])))
+            }
+            "font" => self.cmd_char(grind_text::format::Change::Family(None)),
+            _ if cmd.starts_with("size ") => {
+                self.cmd_char(grind_text::format::Change::Size(non_empty(&cmd[5..])))
+            }
+            "size" => self.cmd_char(grind_text::format::Change::Size(None)),
             _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
             _ if cmd.starts_with("highlight ") => self.cmd_color(cmd[10..].trim(), true),
             _ if cmd.starts_with("li") => self.cmd_list(cmd[2..].trim()),
@@ -1308,6 +1316,20 @@ impl App {
             }
             Err(e) => self.status = e.to_string(),
         }
+    }
+
+    /// `:font <family>` and `:size <length>` — the family or the size over the selection, as the
+    /// document stores them (`fo:font-family`'s name, an ODF length such as `14pt`); with no
+    /// argument the document's own is put back. One font at one size is a terminal's nature, so
+    /// nothing changes on screen here: the other windows draw what this writes.
+    fn cmd_char(&mut self, change: grind_text::format::Change) {
+        let Some((from, to)) = self.selection() else {
+            self.status = "nothing selected — v starts a selection".to_string();
+            return;
+        };
+        let mut style = self.core.char_style(from, to).unwrap_or_default();
+        change.apply(&mut style);
+        self.set_selection_style(&style, "font");
     }
 
     /// A colour over the selection, by the core's own palette name or an `#rrggbb` — the same
@@ -2212,6 +2234,12 @@ fn describe_block(kind: &BlockKind, style: Option<&str>) -> String {
     }
 }
 
+/// A command argument, or `None` when there is nothing in it.
+fn non_empty(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2507,6 +2535,56 @@ mod tests {
         assert_eq!(app.caret.block, 0, "the caret followed it");
         press(&mut app, KeyCode::Char('u'));
         assert_eq!(text(&app), "first\nsecond\nthird");
+    }
+
+    /// `:font` and `:size` write the family and the size over the selection.
+    #[test]
+    fn font_and_size_are_written_over_the_selection() {
+        let mut app = app(&["hello world"]);
+        press(&mut app, KeyCode::Char('v'));
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Char('l'));
+        }
+        app.run_command("font Georgia");
+        let style = app
+            .core
+            .char_style(
+                Caret {
+                    block: 0,
+                    offset: 0,
+                },
+                Caret {
+                    block: 0,
+                    offset: 4,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            style.font_family.as_deref(),
+            Some("Georgia"),
+            "{}",
+            app.status
+        );
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Char('v'));
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Char('l'));
+        }
+        app.run_command("size 14pt");
+        let style = app
+            .core
+            .char_style(
+                Caret {
+                    block: 0,
+                    offset: 0,
+                },
+                Caret {
+                    block: 0,
+                    offset: 4,
+                },
+            )
+            .unwrap();
+        assert_eq!(style.font_size.as_deref(), Some("14pt"));
     }
 
     /// `:image` puts a picture below the caret's paragraph and refuses what is not one.

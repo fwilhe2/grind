@@ -376,9 +376,9 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
 | Strikethrough | ● | ● | ● | ● | ● | ● |
-| Monospace / code | ● | ● | ● | ◐ ᵉ | ● | ● |
+| Monospace / code | ● | ● | ● | ● ᶠˢ | ● | ● |
 | Colour, highlight | ● | ● | ● | ● | ● | ● |
-| Font family, font size | ● | ● | ○ | ○ | ● | ● ¹ |
+| Font family, font size | ● | ● | ● ᶠˢ | ● ᶠˢ | ● | ● ¹ |
 | Clear formatting | ● | ● | ● | ● | ● | ● |
 | **Drawn**: the four booleans | — | ● | ● | ● | ● | ● |
 | **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ● | ● |
@@ -447,6 +447,7 @@ either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ᵍᵖ Move paragraph up/down and delete paragraph (`grind_text::blocks`, by caret and selection, not by address), 2026-10-02: the GNOME page's context menu, the browser's palette, the Windows Format menu. The GNOME context menu also has *Bookmark Here…* and *Paragraph Style Name…* (an alert with an entry). Insert-by-address is still the CLI's and the terminal's.
 ᶜʰ Palette verbs *Insert a chart from the selection* (`verbs::insert_chart`, placed beside the table) and *Delete the last chart*; no edit, move or restyle — 2026-10-02. The terminal has `:chart` and `:chart!` (it writes the chart and draws none). Win32 has the same two as Data-menu items and **draws** charts (`sheet/chart.rs` over `grind_sheet::chart_paint`, the Mac's marks hoisted; a Wine render checks it).
 ᵖⁱ *Insert a picture…* from the palette raises the file picker; the type is read from the bytes (`grind_text::picture::mime`) and `insert_below` places it — the same call GNOME, Windows and the Mac make. Closed 2026-10-02.
+ᶠˢ The browser's palette has *Font family…*, *Font size…* (a prompt each) and *Monospace*; the terminal has `:font <family>` and `:size <length>` over a selection. Both write `Change::Family`/`Size`; the terminal draws neither, being one font at one size — so its drawn-family row stays ○ (2026-10-02).
 ᵗⁱ `:image <file>` puts the picture in below the caret's paragraph (`grind_text::picture`); the terminal still draws it as the placeholder character — the drawing row stays ○ (2026-10-02).
 ˣ The palette is the find box, as over cells (Ctrl+F, or two characters typed after the verbs); picking a hit selects it, F3/Shift+F3 step, and Ctrl+H is *Replace in the document…* — closed 2026-10-02, over `grind_text::find`.
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it

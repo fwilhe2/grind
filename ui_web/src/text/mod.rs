@@ -727,6 +727,14 @@ impl Ui {
             "char.italic" => self.toggle_char(Emphasis::Italic),
             "char.underline" => self.toggle_char(Emphasis::Underline),
             "char.strike" => self.toggle_char(Emphasis::Strike),
+            "char.code" => self.toggle_char(Emphasis::Code),
+            "char.family" => self.ask_char("Font family — empty for the document's own", |name| {
+                Change::Family(name)
+            }),
+            "char.size" => self
+                .ask_char("Font size — 14pt, 1.2em; empty for the default", |size| {
+                    Change::Size(size)
+                }),
             "char.clear" => self.change_char(Change::Clear),
             "block.body" => self.set_kind(BlockKind::Paragraph, None),
             "block.title" => self.set_kind(BlockKind::Paragraph, Some("Title")),
@@ -1184,6 +1192,20 @@ impl Ui {
             }
             Err(error) => self.set_message(error.to_string()),
         }
+    }
+
+    /// Ask for a value in a prompt and apply it over the selection (or the next typed character):
+    /// the family or the size, as the document stores them — `fo:font-family`'s name, an ODF
+    /// length. Empty puts the document's own back.
+    fn ask_char(&self, message: &str, change: impl Fn(Option<String>) -> Change) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Ok(Some(answer)) = window.prompt_with_message_and_default(message, "") else {
+            return;
+        };
+        let answer = answer.trim();
+        self.change_char(change((!answer.is_empty()).then(|| answer.to_owned())));
     }
 
     /// What the tool row shows and what a toggle changes (`grind_text::format::here`).
