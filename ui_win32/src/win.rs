@@ -5101,6 +5101,7 @@ fn write(hwnd: HWND, path: &Path) -> bool {
             false
         }
         None => {
+            add_recent(path);
             refresh(hwnd);
             true
         }
@@ -5306,11 +5307,27 @@ fn open_document(hwnd: HWND) {
     // Read into a *new* pane rather than over the live one, so that a file that turns out to be
     // unreadable leaves the window showing what it was showing.
     match opened(Some(kind), Some(path.clone()), theme) {
-        Ok(pane) => adopt(hwnd, pane),
+        Ok(pane) => {
+            adopt(hwnd, pane);
+            add_recent(&path);
+        }
         Err(error) => dialog::error(
             hwnd,
             &format!("Could not open {}:\n\n{error}", path.display()),
         ),
+    }
+}
+
+/// Tell Windows this document was just used, so it is in the taskbar jump list and in every file
+/// dialog's *Recent* — the platform's own recent-documents list, which is why this window keeps
+/// none of its own (`doc/windows-shell.md`: "the answer is `SHAddToRecentDocs`, not a file of
+/// ours"). Best-effort: a path Windows will not take is not worth an error box.
+fn add_recent(path: &Path) {
+    use windows::Win32::UI::Shell::{SHARD_PATHW, SHAddToRecentDocs};
+    let wide = gdi::wide(&path.to_string_lossy());
+    // SAFETY: the buffer is a NUL-terminated local that outlives the call, which only reads it.
+    unsafe {
+        SHAddToRecentDocs(SHARD_PATHW.0 as u32, Some(wide.as_ptr().cast()));
     }
 }
 
