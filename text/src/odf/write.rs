@@ -75,9 +75,14 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         }
     };
     // Whatever touched somebody's file is checked before it can replace it: a save that fails
-    // leaves the original on disk, and one that writes something unreadable does not.
+    // leaves the original on disk, and one that writes something unreadable — or that drops
+    // what the model never read — does not.
     if let Some(source) = source {
         envelope::check_against(&source.bytes, &content)?;
+        let lost = envelope::losses(&source.bytes, &content, &owned).unwrap_or_default();
+        if !lost.is_empty() {
+            return Err(grind_core::Error::WouldLose(lost));
+        }
     }
     match (form, source.and_then(|source| source.package.as_deref())) {
         (Form::Package, Some(original)) => envelope::repackage(original, &content, &[], &[], &[]),
@@ -85,6 +90,71 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         _ => Ok(content),
     }
 }
+
+/// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: an element of
+/// `doc/text-core.md`'s scope line, or an attribute the model carries or the writer puts back
+/// (`Origin`, a spliced block's kept attributes). A count of anything else going down is
+/// content the model never saw, and the save is refused rather than allowed to drop it.
+fn owned(key: &str) -> bool {
+    let (element, attribute) = match key.split_once('@') {
+        Some((element, attribute)) => (element, Some(attribute)),
+        None => (key, None),
+    };
+    let name = |uri: &str, local: &str| format!("{{{uri}}}{local}");
+    let is = |uri: &str, locals: &[&str]| locals.iter().any(|local| element == name(uri, local));
+    let modelled = is(
+        TEXT,
+        &["p", "h", "list", "list-item", "list-header", "span", "s"],
+    ) || is(
+        TEXT,
+        &["tab", "line-break", "a", "bookmark", "soft-page-break"],
+    ) || is(DRAW, &["frame", "image"])
+        || is(OFFICE, &["binary-data", "text"])
+        || is(TABLE, &["table", "table-column", "table-row", "table-cell"])
+        || is(TABLE, &["covered-table-cell"]);
+    let Some(attribute) = attribute else {
+        return modelled;
+    };
+    // LibreOffice's revision-save ids: editing-session bookkeeping, recomputed on its next save.
+    if attribute.starts_with(&format!("{{{OFFICEOOO}}}")) {
+        return true;
+    }
+    let attr = |uri: &str, local: &str| attribute == name(uri, local);
+    match () {
+        // A block's own element: what the model writes, and every other attribute is put back
+        // verbatim — from the file's bytes for a block nobody edited, from its kept attributes
+        // for one somebody did.
+        _ if is(TEXT, &["p", "h"]) => true,
+        // A list opens with the attributes its `text:list` had in the file (`Origin::list`).
+        _ if is(TEXT, &["list", "list-item", "list-header"]) => true,
+        _ if is(TEXT, &["span"]) => attr(TEXT, "style-name"),
+        _ if is(TEXT, &["s"]) => attr(TEXT, "c"),
+        _ if is(TEXT, &["bookmark"]) => attr(TEXT, "name"),
+        // A hyperlink's target is the model's; how a viewer opens it is a hint.
+        _ if is(TEXT, &["a"]) => {
+            attr(XLINK, "href")
+                || attr(XLINK, "type")
+                || attr(XLINK, "show")
+                || attr(OFFICE, "target-frame-name")
+        }
+        _ if is(DRAW, &["frame"]) => {
+            attr(SVG, "width") || attr(SVG, "height") || attr(TEXT, "anchor-type")
+        }
+        // A package's picture is written back inline, so where it was stored goes.
+        _ if is(DRAW, &["image"]) => {
+            attr(DRAW, "mime-type") || attribute.starts_with(&format!("{{{XLINK}}}"))
+        }
+        _ if is(TABLE, &["table"]) => attr(TABLE, "name"),
+        _ if is(TABLE, &["table-column"]) => attr(TABLE, "number-columns-repeated"),
+        _ if is(TABLE, &["table-cell"]) => {
+            attr(TABLE, "number-columns-spanned") || attr(TABLE, "number-rows-spanned")
+        }
+        _ => false,
+    }
+}
+
+/// LibreOffice's own namespace for editing-session bookkeeping (`officeooo:rsid`).
+const OFFICEOOO: &str = "http://openoffice.org/2009/office";
 
 /// The file this document was read from, with the edited blocks put back in place.
 ///
@@ -345,7 +415,8 @@ fn content(
     out.push_str(">\n");
     automatic_styles(&mut out, &pool);
     out.push_str(" <office:body>\n  <office:text>\n");
-    body(&mut out, doc, &pool);
+    let origin = source.map(|source| Origin::new(source, &doc.edits.blocks));
+    body(&mut out, doc, &pool, origin.as_ref());
     out.push_str("  </office:text>\n </office:body>\n");
     let _ = writeln!(out, "</{root}>");
     out
@@ -386,26 +457,174 @@ fn automatic_styles(out: &mut String, pool: &Pool) {
 /// the same trade the model makes on purpose, and both are a walk rather than a traversal.
 /// Tables are the outer one because a cell holds blocks and a list item does not hold a table
 /// in this model.
-fn body(out: &mut String, doc: &Document, pool: &Pool) {
+fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) {
+    // What the file had in its body that the model has no block for, by the index of the block
+    // it now follows — `None` for ahead of every block.
+    let placed = origin
+        .map(|origin| origin.placements(doc))
+        .unwrap_or_default();
+    let carry = |out: &mut String, after: Option<usize>| {
+        for bytes in placed.get(&after).into_iter().flatten() {
+            let _ = writeln!(out, "{}{bytes}", pad(3, origin));
+        }
+    };
+    carry(out, None);
+
     let mut index = 0;
     while index < doc.blocks.len() {
         match doc.blocks[index].cell {
             None => {
-                let end = doc.blocks[index..]
+                let mut end = doc.blocks[index..]
                     .iter()
                     .position(|block| block.cell.is_some())
                     .map_or(doc.blocks.len(), |offset| index + offset);
-                blocks(out, &doc.blocks[index..end], 0, pool);
+                // A kept element after one of these blocks ends the run there, so that a list
+                // it followed closes before it, as it did in the file.
+                if let Some(at) = (index..end).find(|i| placed.contains_key(&Some(*i))) {
+                    end = at + 1;
+                }
+                blocks(out, &doc.blocks[index..end], 0, pool, origin);
+                carry(out, Some(end - 1));
                 index = end;
             }
             Some(_) => {
                 // The maximal run naming this table — the model's own fold, asked of the
                 // model rather than repeated here.
                 let range = doc.table(index).unwrap_or(index..index + 1);
-                table(out, doc, range.clone(), pool);
+                table(out, doc, range.clone(), pool, origin);
+                for i in range.clone() {
+                    carry(out, Some(i));
+                }
                 index = range.end;
             }
         }
+    }
+}
+
+/// The file a regenerated body is being written for, and what has changed since it was read.
+///
+/// A body regenerates because its block *sequence* changed — and that says nothing about the
+/// blocks themselves. One that was not edited is written as the file's own bytes, which keeps
+/// whatever the model never read inside it (a footnote, a field, a vendor's attribute); one that
+/// was keeps its unmodelled attributes; a list opens with the attributes its `text:list` had;
+/// and every element of the body the model has no block for is put back after the block it
+/// followed. What is left for the model to write is only what it changed.
+struct Origin<'a> {
+    source: &'a super::source::Source,
+    edited: &'a std::collections::BTreeSet<crate::model::BlockId>,
+    /// The original lists already opened once, by where they start — a second opening (the
+    /// same list, split by an edit) must not repeat its `xml:id`.
+    opened: std::cell::RefCell<std::collections::HashSet<usize>>,
+    /// How much deeper (or shallower) than this writer's own the file indents a block of its
+    /// body — measured off the first element of the body it kept.
+    shift: isize,
+}
+
+impl<'a> Origin<'a> {
+    fn new(
+        source: &'a super::source::Source,
+        edited: &'a std::collections::BTreeSet<crate::model::BlockId>,
+    ) -> Self {
+        // The whitespace in front of the first element of the body, back to its line's start.
+        let first = source
+            .blocks
+            .values()
+            .map(|at| at.range.start)
+            .chain(source.siblings.iter().map(|s| s.range.start))
+            .min();
+        let shift = first
+            .and_then(|start| {
+                let line = source.bytes[..start]
+                    .iter()
+                    .rposition(|c| *c == b'\n')
+                    .map_or(0, |p| p + 1);
+                let lead = &source.bytes[line..start];
+                lead.iter()
+                    .all(|c| *c == b' ')
+                    .then(|| lead.len() as isize - 4)
+            })
+            .unwrap_or(0);
+        Origin {
+            source,
+            edited,
+            opened: Default::default(),
+            shift,
+        }
+    }
+
+    /// The file's own bytes for a block nobody edited.
+    fn verbatim(&self, block: &Block) -> Option<&'a str> {
+        if self.edited.contains(&block.id) {
+            return None;
+        }
+        let at = self.source.blocks.get(&block.id)?;
+        std::str::from_utf8(self.source.bytes.get(at.range.clone())?).ok()
+    }
+
+    /// The unmodelled attributes of an edited block's original element.
+    fn keep(&self, block: &Block) -> &'a str {
+        self.source
+            .blocks
+            .get(&block.id)
+            .map_or("", |at| at.keep.as_str())
+    }
+
+    /// The attributes for the `text:list` opened at `level` (0 outermost) around `block`.
+    fn list(&self, block: &Block, level: u32) -> String {
+        let Some((start, attributes)) = self
+            .source
+            .lists
+            .get(&block.id)
+            .and_then(|lists| lists.get(level as usize))
+        else {
+            return String::new();
+        };
+        if self.opened.borrow_mut().insert(*start) {
+            return attributes.clone();
+        }
+        super::source::attributes(format!("<x{attributes}>").as_bytes(), &["xml:id"])
+    }
+
+    /// Every kept element of the body, by the index of the block it now follows: the block it
+    /// followed in the file, or — when that one is gone — the nearest earlier block of the
+    /// file's that is still here.
+    fn placements(&self, doc: &Document) -> std::collections::HashMap<Option<usize>, Vec<&'a str>> {
+        let index: std::collections::HashMap<crate::model::BlockId, usize> = doc
+            .blocks
+            .iter()
+            .enumerate()
+            .map(|(i, block)| (block.id, i))
+            .collect();
+        // The file's blocks in file order, to walk back from a block that is gone.
+        let mut order: Vec<(usize, crate::model::BlockId)> = self
+            .source
+            .blocks
+            .iter()
+            .map(|(id, at)| (at.range.start, *id))
+            .collect();
+        order.sort();
+        let mut placed: std::collections::HashMap<Option<usize>, Vec<&'a str>> = Default::default();
+        for sibling in &self.source.siblings {
+            let Some(bytes) = self
+                .source
+                .bytes
+                .get(sibling.range.clone())
+                .and_then(|b| std::str::from_utf8(b).ok())
+            else {
+                continue;
+            };
+            let after = sibling.after.and_then(|id| {
+                index.get(&id).copied().or_else(|| {
+                    order
+                        .iter()
+                        .rev()
+                        .filter(|(start, _)| *start < sibling.range.start)
+                        .find_map(|(_, id)| index.get(id).copied())
+                })
+            });
+            placed.entry(after).or_default().push(bytes);
+        }
+        placed
     }
 }
 
@@ -414,7 +633,13 @@ fn body(out: &mut String, doc: &Document, pool: &Pool) {
 /// The rectangle comes from the coordinates: a position no block names is written as an empty
 /// cell, and a position covered by a span is written as `table:covered-table-cell` (rng:14298),
 /// which is what keeps a merged table the same shape after a regenerate.
-fn table(out: &mut String, doc: &Document, range: std::ops::Range<usize>, pool: &Pool) {
+fn table(
+    out: &mut String,
+    doc: &Document,
+    range: std::ops::Range<usize>,
+    pool: &Pool,
+    origin: Option<&Origin>,
+) {
     let name = match doc.blocks[range.start].cell.as_ref() {
         Some(cell) => cell.table.clone(),
         None => return,
@@ -425,7 +650,7 @@ fn table(out: &mut String, doc: &Document, range: std::ops::Range<usize>, pool: 
     let _ = writeln!(
         out,
         "{}<table:table table:name=\"{}\">",
-        indent(3),
+        pad(3, origin),
         esc(&name)
     );
     // At least one `table:table-column` is required — `table-columns-and-groups` is a
@@ -435,10 +660,10 @@ fn table(out: &mut String, doc: &Document, range: std::ops::Range<usize>, pool: 
         1 => String::new(),
         n => format!(" table:number-columns-repeated=\"{n}\""),
     };
-    let _ = writeln!(out, "{}<table:table-column{repeat}/>", indent(4));
+    let _ = writeln!(out, "{}<table:table-column{repeat}/>", pad(4, origin));
 
     for row in 0..rows.max(1) {
-        let _ = writeln!(out, "{}<table:table-row>", indent(4));
+        let _ = writeln!(out, "{}<table:table-row>", pad(4, origin));
         let mut column = 0;
         while column < columns.max(1) {
             let cell = blocks_in.iter().find_map(|b| {
@@ -459,11 +684,11 @@ fn table(out: &mut String, doc: &Document, range: std::ops::Range<usize>, pool: 
                         // Reading it back makes one empty paragraph again — the normalisation
                         // `TableCell::end` performs, and the same one LibreOffice performs
                         // (`doc/odt-format.md` §5b), so the two agree.
-                        let _ = writeln!(out, "{}<table:table-cell{spans}/>", indent(5));
+                        let _ = writeln!(out, "{}<table:table-cell{spans}/>", pad(5, origin));
                     } else {
-                        let _ = writeln!(out, "{}<table:table-cell{spans}>", indent(5));
-                        blocks(out, &content, 3, pool);
-                        let _ = writeln!(out, "{}</table:table-cell>", indent(5));
+                        let _ = writeln!(out, "{}<table:table-cell{spans}>", pad(5, origin));
+                        blocks(out, &content, 3, pool, origin);
+                        let _ = writeln!(out, "{}</table:table-cell>", pad(5, origin));
                     }
                     column += 1;
                 }
@@ -475,14 +700,14 @@ fn table(out: &mut String, doc: &Document, range: std::ops::Range<usize>, pool: 
                         true => "table:covered-table-cell",
                         false => "table:table-cell",
                     };
-                    let _ = writeln!(out, "{}<{element}/>", indent(5));
+                    let _ = writeln!(out, "{}<{element}/>", pad(5, origin));
                     column += 1;
                 }
             }
         }
-        let _ = writeln!(out, "{}</table:table-row>", indent(4));
+        let _ = writeln!(out, "{}</table:table-row>", pad(4, origin));
     }
-    let _ = writeln!(out, "{}</table:table>", indent(3));
+    let _ = writeln!(out, "{}</table:table>", pad(3, origin));
 }
 
 /// `table:number-columns-spanned` / `table:number-rows-spanned` (rng:16102), written only where
@@ -519,11 +744,13 @@ fn covered(blocks: &[Block], row: u32, column: u32) -> bool {
 /// `extra` is how much further in this sequence sits than the body does — three levels inside a
 /// table cell, nothing at the top. The fold itself is the same either way, which is the point
 /// of it being one function: a list inside a cell nests exactly as a list in the body does.
-fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool) {
+fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Option<&Origin>) {
     // How many `text:list` elements are currently open. The model is flat and the file is
     // not, so this counter *is* the reconstruction: a depth rise opens elements, a fall closes
     // them, and the end of the sequence closes whatever is left.
     let mut open = 0u32;
+    // Where a block outside any list sits: three levels into the body, `extra` more in a cell.
+    let base = 3 + extra;
 
     for block in list {
         let depth = match block.kind {
@@ -533,29 +760,50 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool) {
 
         // Close deeper lists, then open shallower ones, so a jump of two levels is two
         // elements rather than a malformed one.
+        // A tree, one level per element: a list at `base`, its items one deeper, what they hold
+        // one deeper again — the shape LibreOffice indents a list in, so a regenerated list in
+        // its file lines up with the one it replaced.
         while open > depth {
             open -= 1;
-            let _ = writeln!(out, "{}</text:list-item>", indent(open + 2 + extra));
-            let _ = writeln!(out, "{}</text:list>", indent(open + 1 + extra));
+            let _ = writeln!(out, "{}</text:list-item>", pad(base + 2 * open + 1, origin));
+            let _ = writeln!(out, "{}</text:list>", pad(base + 2 * open, origin));
         }
         while open < depth {
-            let _ = writeln!(out, "{}<text:list>", indent(open + 1 + extra));
-            let _ = writeln!(out, "{}<text:list-item>", indent(open + 2 + extra));
+            let attributes = origin.map_or(String::new(), |origin| origin.list(block, open));
+            let _ = writeln!(
+                out,
+                "{}<text:list{attributes}>",
+                pad(base + 2 * open, origin)
+            );
+            let _ = writeln!(out, "{}<text:list-item>", pad(base + 2 * open + 1, origin));
             open += 1;
         }
         // A sibling item at the same depth closes the previous item and opens a new one.
         if depth > 0 && !just_opened(out) {
-            let _ = writeln!(out, "{}</text:list-item>", indent(open + 2 + extra));
-            let _ = writeln!(out, "{}<text:list-item>", indent(open + 2 + extra));
+            let item = pad(base + 2 * (open - 1) + 1, origin);
+            let _ = writeln!(out, "{item}</text:list-item>");
+            let _ = writeln!(out, "{item}<text:list-item>");
         }
 
-        paragraph(out, block, indent(open + 3 + extra), "", pool);
+        let at = pad(base + 2 * open, origin);
+        match origin.and_then(|origin| origin.verbatim(block)) {
+            Some(bytes) => {
+                let _ = writeln!(out, "{at}{bytes}");
+            }
+            None => paragraph(
+                out,
+                block,
+                at,
+                origin.map_or("", |origin| origin.keep(block)),
+                pool,
+            ),
+        }
     }
 
     while open > 0 {
         open -= 1;
-        let _ = writeln!(out, "{}</text:list-item>", indent(open + 2 + extra));
-        let _ = writeln!(out, "{}</text:list>", indent(open + 1 + extra));
+        let _ = writeln!(out, "{}</text:list-item>", pad(base + 2 * open + 1, origin));
+        let _ = writeln!(out, "{}</text:list>", pad(base + 2 * open, origin));
     }
 }
 
@@ -565,8 +813,12 @@ fn just_opened(out: &str) -> bool {
     out.trim_end().ends_with("<text:list-item>")
 }
 
-fn indent(depth: u32) -> String {
-    " ".repeat(depth as usize + 1)
+/// `depth + 1` spaces — moved to wherever the file being regenerated indents its body, so a new
+/// paragraph in a LibreOffice document sits at LibreOffice's depth and an Enter is two lines of
+/// diff rather than every line of the body.
+fn pad(depth: u32, origin: Option<&Origin>) -> String {
+    let shift = origin.map_or(0, |origin| origin.shift);
+    " ".repeat((depth as isize + 1 + shift).max(0) as usize)
 }
 
 /// One `text:p` or `text:h`.

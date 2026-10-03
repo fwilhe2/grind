@@ -74,6 +74,9 @@ pub struct Builder {
     href: Option<String>,
     /// How deep in `text:list` elements we are. 0 outside any list.
     list_depth: u32,
+    /// The `text:list` elements open right now, outermost first — where each starts and its
+    /// attributes — recorded against every block read inside them (`Source::lists`).
+    open_lists: Vec<(usize, String)>,
     /// The tables currently open, outermost first — each with the row number the next
     /// `table:table-row` in it will take. A stack, because `table-table-cell-content` admits
     /// `table:table` (rng:16126) and a table inside a cell counts its own rows.
@@ -151,6 +154,7 @@ impl Builder {
             fonts: HashMap::new(),
             href: None,
             list_depth: 0,
+            open_lists: Vec::new(),
             tables: Vec::new(),
             next_table: 0,
             cell: None,
@@ -265,10 +269,28 @@ impl Builder {
         let Some(range) = element_extent(&source.bytes, start_tag) else {
             return;
         };
+        let lists = self.open_lists.clone();
         if let Some(source) = self.doc.source.as_deref_mut() {
             source
                 .blocks
                 .insert(id, super::source::Block { range, keep });
+            if !lists.is_empty() {
+                source.lists.insert(id, lists);
+            }
+        }
+    }
+
+    /// Remember an element of `office:text` the model does not read, and which block it came
+    /// after (`super::source::Sibling`).
+    fn record_sibling(&mut self, start_tag: std::ops::Range<usize>) {
+        let after = self.doc.blocks.last().map(|block| block.id);
+        let Some(source) = self.doc.source.as_deref_mut() else {
+            return;
+        };
+        if let Some(range) = element_extent(&source.bytes, start_tag) {
+            source
+                .siblings
+                .push(super::source::Sibling { after, range });
         }
     }
 
@@ -479,7 +501,14 @@ struct Text;
 
 impl Context<Builder> for Text {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        block_child(name, attrs, b)
+        let child = block_child(name, attrs, b);
+        // Something the model has no block for — the prelude's `text:sequence-decls`, a
+        // section, a table of contents. Its bytes are kept with the block it followed, so a
+        // save that regenerates the body puts it back where it was.
+        if child.is_none() {
+            b.record_sibling(attrs.span());
+        }
+        child
     }
 }
 
@@ -513,7 +542,19 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             b.record(id, attrs.span());
             Some(Box::new(Paragraph))
         }
-        (Ns::Text, "list") => Some(Box::new(List::new())),
+        (Ns::Text, "list") => {
+            let before = b.open_lists.len();
+            if let Some(tag) = b
+                .doc
+                .source
+                .as_deref()
+                .and_then(|source| source.bytes.get(attrs.span()))
+            {
+                let kept = super::source::attributes(tag, &[]);
+                b.open_lists.push((attrs.span().start, kept));
+            }
+            Some(Box::new(List::new(before)))
+        }
         // `table:table` is one of `text-content`'s own alternatives (rng:16938), which is why
         // it belongs here beside the paragraph and not somewhere special: in a text document a
         // table is a *block*, and its cells hold blocks in turn.
@@ -767,11 +808,17 @@ struct List {
     /// still reads its items; it just stops making the number bigger, and has to remember not
     /// to decrement on the way out.
     counted: bool,
+    /// How many entries [`Builder::open_lists`] had before this one, so its `end` restores
+    /// exactly that.
+    open: usize,
 }
 
 impl List {
-    fn new() -> Self {
-        List { counted: false }
+    fn new(open: usize) -> Self {
+        List {
+            counted: false,
+            open,
+        }
     }
 }
 
@@ -797,6 +844,7 @@ impl Context<Builder> for List {
         if self.counted {
             b.list_depth = b.list_depth.saturating_sub(1);
         }
+        b.open_lists.truncate(self.open);
     }
 }
 

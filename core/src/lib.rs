@@ -68,6 +68,11 @@ pub enum Error {
     /// that are not an ODF document at all. Carries what `kind` made of it, because "this is a
     /// presentation" and "this is not a document" want different words in front of a user.
     UnsupportedKind(Option<DocumentKind>),
+    /// **A save that would make the file worse, refused.** Saving over a document must never
+    /// drop what this build cannot carry (`odf::envelope`), so a save that would is an error
+    /// rather than a smaller file: the document on disk is left exactly as it was. Carries
+    /// what would have gone, already spelled for a person (`2 × text:note`).
+    WouldLose(Vec<String>),
     Io(std::io::Error),
 }
 
@@ -83,6 +88,12 @@ impl fmt::Display for Error {
                 None => write!(f, "{}s are not something this build opens", kind.label()),
             },
             Error::UnsupportedKind(None) => write!(f, "not an OpenDocument file"),
+            Error::WouldLose(what) => write!(
+                f,
+                "not saved: saving over this file would drop what this build cannot carry ({}) \
+                 — undo the edit that changed it, or save a copy under another name",
+                what.join(", ")
+            ),
             Error::Io(e) => write!(f, "io: {e}"),
         }
     }

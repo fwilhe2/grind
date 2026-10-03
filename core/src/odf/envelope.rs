@@ -28,7 +28,7 @@
 //! top-level part, which is why it can stay generic: the only vocabulary it knows is the
 //! document envelope (`office:`) and a style's identity (`style:name`, `style:family`).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{Cursor, Write};
 use std::ops::Range;
 
@@ -324,7 +324,36 @@ pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
         let element = &original[node.range.clone()];
         match (node.ns, node.local.as_str()) {
             (Ns::Office, "body") => match &g_body {
-                Some(body) => out.extend_from_slice(&declared(&generated[body.clone()], &local)),
+                Some(body) => {
+                    match inner_ranges(&o, index, original, &g, generated) {
+                        // The file's own `office:body` and `office:text` (or `office:spreadsheet`)
+                        // tags, indentation and all, around the generated content.
+                        Some((o_inner, g_inner)) => {
+                            let o_open = &original[node.start.end..o_inner.start];
+                            out.extend_from_slice(&original[node.range.start..node.start.end]);
+                            // The whitespace, then the child's start tag with any local
+                            // declarations the generated content needs.
+                            let lt = o_open.iter().position(|c| *c == b'<').unwrap_or(0);
+                            out.extend_from_slice(&o_open[..lt]);
+                            out.extend_from_slice(&declared(&o_open[lt..], &local));
+                            let g_content = &generated[g_inner.clone()];
+                            let trimmed = g_content.len()
+                                - g_content
+                                    .iter()
+                                    .rev()
+                                    .take_while(|c| c.is_ascii_whitespace())
+                                    .count();
+                            out.extend_from_slice(&g_content[..trimmed]);
+                            out.extend_from_slice(leading_whitespace(
+                                original,
+                                o_inner.start,
+                                o_inner.end,
+                            ));
+                            out.extend_from_slice(&original[o_inner.end..node.range.end]);
+                        }
+                        None => out.extend_from_slice(&declared(&generated[body.clone()], &local)),
+                    }
+                }
                 None => out.extend_from_slice(element),
             },
             (Ns::Office, local_name @ ("automatic-styles" | "styles" | "font-face-decls")) => {
@@ -353,6 +382,39 @@ pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
     insert_before(&mut out, None);
     out.extend_from_slice(&original[o.root_end.start..]);
     Some(out)
+}
+
+/// Inside the one element each `office:body` holds — `office:text`, `office:spreadsheet` — when
+/// both bodies hold exactly one, of the same name: the byte range of its content in the
+/// original and in the generated document. `None` sends the caller back to replacing the whole
+/// body, which is always correct and only costs the file's own tags.
+fn inner_ranges(
+    o: &Tree,
+    o_body: usize,
+    original: &[u8],
+    g: &Tree,
+    generated: &[u8],
+) -> Option<(Range<usize>, Range<usize>)> {
+    let (g_body, _) = g.find_top("body")?;
+    let only = |tree: &Tree, body: usize| {
+        let children: Vec<&Node> = tree.children(body).collect();
+        (children.len() == 1).then(|| children[0].clone())
+    };
+    let oc = only(o, o_body)?;
+    let gc = only(g, g_body)?;
+    if (oc.ns, &oc.local) != (gc.ns, &gc.local) || oc.start == oc.range || gc.start == gc.range {
+        return None;
+    }
+    let end_tag = |bytes: &[u8], node: &Node| {
+        bytes[node.range.clone()]
+            .iter()
+            .rposition(|c| *c == b'<')
+            .map(|p| node.range.start + p)
+    };
+    Some((
+        oc.start.end..end_tag(original, &oc)?,
+        gc.start.end..end_tag(generated, &gc)?,
+    ))
 }
 
 /// One styles container, the original's children and the generated ones together.
@@ -540,6 +602,101 @@ pub fn check_against(original: &[u8], output: &[u8]) -> Result<()> {
         Err(error) if check(original).is_ok() => Err(error),
         _ => Ok(()),
     }
+}
+
+/// Every element and every attribute inside `office:body`, counted — keyed by namespace URI
+/// rather than by prefix (`{uri}local` for an element, `{uri}element@{uri}attribute` for an
+/// attribute), so that two documents spelling one namespace with two prefixes still agree.
+///
+/// What a save is held to. A writer knows which of these keys it *owns* — the ones its model
+/// carries and regenerates, whose counts may move with any edit — and [`losses`] says which of
+/// the rest went down. Those are content the model never saw, and a save that drops them makes
+/// the file worse. `None` when the document cannot be read at all.
+pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
+    let mut reader = NsReader::from_reader(document);
+    let mut buf = Vec::new();
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    // Depth inside `office:body`, 0 when outside it.
+    let mut inside = 0usize;
+    loop {
+        let event = reader.read_event_into(&mut buf).ok()?;
+        match event {
+            Event::Start(ref e) | Event::Empty(ref e) => {
+                let empty = matches!(event, Event::Empty(_));
+                let (ns, local) = reader.resolver().resolve_element(e.name());
+                let uri = match ns {
+                    ResolveResult::Bound(n) => n.as_ref().to_owned(),
+                    _ => String::new(),
+                };
+                let element = format!("{{{uri}}}{}", local.as_ref());
+                if inside == 0 {
+                    if Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body" && !empty {
+                        inside = 1;
+                    }
+                    buf.clear();
+                    continue;
+                }
+                *counts.entry(element.clone()).or_default() += 1;
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref().starts_with("xmlns") {
+                        continue;
+                    }
+                    let (ns, local) = reader.resolver().resolve_attribute(attr.key);
+                    let uri = match ns {
+                        ResolveResult::Bound(n) => n.as_ref().to_owned(),
+                        _ => String::new(),
+                    };
+                    *counts
+                        .entry(format!("{element}@{{{uri}}}{}", local.as_ref()))
+                        .or_default() += 1;
+                }
+                if !empty {
+                    inside += 1;
+                }
+            }
+            Event::End(_) if inside > 0 => {
+                inside -= 1;
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Some(counts)
+}
+
+/// What `output`'s body has fewer of than `original`'s, among the keys `owned` does not claim
+/// — each spelled with the prefixes `original` declares (`2 × text:note`,
+/// `text:list@text:style-name`). Empty is the only answer a save may go ahead on.
+pub fn losses(original: &[u8], output: &[u8], owned: &dyn Fn(&str) -> bool) -> Option<Vec<String>> {
+    if original == output {
+        return Some(Vec::new());
+    }
+    let before = body_vocabulary(original)?;
+    let after = body_vocabulary(output)?;
+    let prefixes: Vec<(String, String)> = scan(original)
+        .map(|tree| tree.declarations)
+        .unwrap_or_default();
+    let spell = |key: &str| {
+        let mut out = key.to_owned();
+        for (prefix, uri) in &prefixes {
+            out = out.replace(&format!("{{{uri}}}"), &format!("{prefix}:"));
+        }
+        out.replace("{}", "")
+    };
+    Some(
+        before
+            .iter()
+            .filter(|(key, _)| !owned(key))
+            .filter_map(|(key, count)| {
+                let left = after.get(key).copied().unwrap_or(0);
+                (left < *count).then(|| match count - left {
+                    1 => spell(key),
+                    n => format!("{n} × {}", spell(key)),
+                })
+            })
+            .collect(),
+    )
 }
 
 /// The prefix `document` binds to `uri` on its root, if any — what a caller patching an
@@ -906,6 +1063,30 @@ mod tests {
         assert!(check_against(broken, broken).is_ok());
         assert!(check_against(broken, b"<a:x xmlns:a=\"u\"><b:y/><a:z/></a:x>").is_ok());
         assert!(check_against(b"<a:x xmlns:a=\"u\"/>", broken).is_err());
+    }
+
+    #[test]
+    fn a_body_losing_what_nobody_owns_is_named() {
+        let original = format!(
+            "<office:document xmlns:office=\"{O}\" xmlns:x=\"urn:x\"><office:meta><x:gone/></office:meta>\
+             <office:body><x:p x:style=\"a\">one<x:note/></x:p><x:p>two</x:p></office:body>\
+             </office:document>"
+        );
+        // A different prefix for the same namespace is the same vocabulary.
+        let output = format!(
+            "<office:document xmlns:office=\"{O}\" xmlns:y=\"urn:x\"><office:body>\
+             <y:p>one, edited</y:p><y:p>two</y:p><y:p>three</y:p></office:body></office:document>"
+        );
+        let owned = |key: &str| key == "{urn:x}p";
+        let lost = losses(original.as_bytes(), output.as_bytes(), &owned).unwrap();
+        assert_eq!(
+            lost,
+            ["x:note", "x:p@x:style"],
+            "outside the body does not count"
+        );
+        let owned = |key: &str| key.starts_with("{urn:x}p");
+        let lost = losses(original.as_bytes(), output.as_bytes(), &owned).unwrap();
+        assert_eq!(lost, ["x:note"]);
     }
 
     #[test]

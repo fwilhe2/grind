@@ -206,43 +206,63 @@ fn editing_a_heading_keeps_its_level() {
 
 // --- the boundaries, asserted rather than inferred -------------------------------------------
 
-/// Inserting a block changes the **sequence**, which the file's structure is. Splicing that
-/// means deciding where the bytes go and with what indentation, for a diff that is no longer
-/// obviously smaller — so the document regenerates, and this test is what keeps that a stated
-/// rule rather than an accident.
+/// Everything in [`RICH`] the model does not read, which a save must carry whatever was edited.
+const UNMODELLED: [&str; 8] = [
+    "<text:tracked-changes>",
+    "<text:section text:name=\"s1\">",
+    "<text:table-of-content>",
+    "<office:annotation>",
+    "vendor:tracking=\"7\"",
+    "xml:id=\"p1\"",
+    "text:class-names=\"a b\"",
+    "Inside a section.",
+];
+
+/// Inserting a block changes the **sequence**, which no splice describes, so the body
+/// regenerates — and a regenerated body is written *for the file it came from*: every block
+/// nobody edited is its own bytes, and every element the model has no block for goes back after
+/// the block it followed. One new paragraph is one new line, and nothing else moves.
 #[test]
-fn inserting_a_block_regenerates_rather_than_splicing() {
+fn inserting_a_block_adds_one_line_and_keeps_everything_else() {
     let app = open(RICH.as_bytes());
     app.insert(0, BlockKind::Paragraph, "new first")
         .expect("inserts");
     let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
 
-    assert!(out.contains("new first"));
-    // The regenerating writer knows only what the model carries, so the unmodelled markup is
-    // gone. That is the documented cost, and `doc/not-doing.md` carries the row.
-    assert!(
-        !out.contains("text:tracked-changes"),
-        "a regenerate should not be claiming to preserve things:\n{out}"
-    );
+    for kept in UNMODELLED {
+        assert!(out.contains(kept), "{kept} did not survive:\n{out}");
+    }
+    let (removed, added) = changed_lines(RICH, &out);
+    assert!(removed.is_empty(), "removed: {removed:#?}");
+    assert_eq!(added, ["      <text:p>new first</text:p>"], "{out}");
+    // Ahead of the heading and after the prelude it followed, as in the file.
+    assert!(out.find("new first") > out.find("</text:tracked-changes>"));
+    assert!(out.find("new first") < out.find("Title"));
 }
 
+/// Deleting one is the same rule the other way: one line goes, and the section that followed
+/// the block before it is still exactly where it was.
 #[test]
-fn deleting_a_block_regenerates_too() {
+fn deleting_a_block_removes_one_line_and_keeps_everything_else() {
     let app = open(RICH.as_bytes());
     app.delete(0..1).expect("deletes");
     let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
-    assert!(!out.contains("text:section"), "regenerated, as documented");
+    for kept in UNMODELLED {
+        assert!(out.contains(kept), "{kept} did not survive:\n{out}");
+    }
+    let (removed, added) = changed_lines(RICH, &out);
+    assert_eq!(removed.len(), 1, "removed: {removed:#?}");
+    assert!(removed[0].contains("Title"));
+    assert!(added.is_empty(), "added: {added:#?}");
 }
 
-/// A zip has no diff to preserve, so the package form always regenerates — and a document read
-/// from one carries no source at all.
+/// Saving into the *other* form is a conversion, and a conversion starts from nothing: there
+/// is no file of that form for it to be merged into.
 #[test]
-fn the_package_form_never_splices() {
+fn converting_between_forms_starts_from_nothing() {
     let app = open(RICH.as_bytes());
     let packaged = app.save_bytes(Form::Package).expect("saves");
     let reopened = open(&packaged);
-    // Reading it back and saving it flat cannot return the original bytes, because there were
-    // none to keep.
     let flat = reopened.save_bytes(Form::Flat).expect("saves");
     assert_ne!(String::from_utf8_lossy(&flat), RICH);
     // But the content still survives the trip, which is what the round-trip tests cover.
@@ -287,4 +307,36 @@ fn two_edits_are_two_lines_and_stay_in_file_order() {
         out.find("First, edited.") < out.find("Second, edited."),
         "the two edits landed out of order:\n{out}"
     );
+}
+
+/// **The guard.** Typing into a paragraph rewrites it from the model, and the model has no
+/// footnote — so the save is refused, naming what it would have dropped, and the file on disk
+/// is never touched. The same edit to a paragraph with nothing unmodelled in it saves.
+#[test]
+fn a_save_that_would_drop_a_footnote_is_refused() {
+    let with_note = RICH.replace(
+        "Second paragraph.</text:p>",
+        "Second<text:note text:note-class=\"footnote\"><text:note-citation>1</text:note-citation>\
+         <text:note-body><text:p>The note.</text:p></text:note-body></text:note> paragraph.</text:p>",
+    );
+    let app = open(with_note.as_bytes());
+    let view = app.get_viewport(0..app.block_count());
+    let second = view
+        .iter()
+        .position(|b| b.text.starts_with("Second"))
+        .expect("there");
+    app.set_text(second, "Second, edited.").expect("edits");
+    match app.save_bytes(Form::Flat) {
+        Err(grind_text::Error::WouldLose(lost)) => {
+            assert!(lost.iter().any(|l| l.contains("text:note")), "{lost:?}");
+        }
+        other => panic!("expected a refusal, got {:?}", other.map(|b| b.len())),
+    }
+
+    // A structural edit elsewhere leaves that paragraph's bytes alone, footnote and all.
+    let app = open(with_note.as_bytes());
+    app.insert(0, BlockKind::Paragraph, "new first")
+        .expect("inserts");
+    let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
+    assert!(out.contains("<text:note-body><text:p>The note.</text:p></text:note-body>"));
 }

@@ -24,11 +24,11 @@
 //!
 //! * **Only content edits splice.** Retyping a paragraph, restyling one, changing what kind of
 //!   block it is — those replace an element the file already spells. *Inserting* a block,
-//!   deleting one or moving one changes the **sequence**, and the sequence is what the file's
-//!   structure is; splicing that means deciding where the new bytes go and with what
-//!   indentation, for a diff that is no longer obviously smaller. The document regenerates,
-//!   loudly and by one named rule. `grind_sheet` draws its line in the same place: a cell that
-//!   did not exist regenerates too.
+//!   deleting one or moving one changes the **sequence**, and the body regenerates — but for
+//!   the file it came from (`odf::write`'s `Origin`): every block nobody edited is written as
+//!   its own bytes, each list opens with its [`Source::lists`] attributes, and every
+//!   [`Sibling`] goes back after the block it followed. An Enter in a LibreOffice document is
+//!   one line out and two lines in.
 //! * **A package splices its `content.xml`.** A `.odt` is a zip, so [`Source::bytes`] is the
 //!   `content.xml` inside it and [`Source::package`] the archive around it; a save splices the
 //!   one and rebuilds the other from its own entries (`grind_core::odf::envelope::repackage`),
@@ -36,8 +36,9 @@
 //!
 //! Both fall back to regenerating the **body**, which is merged back into the original
 //! (`grind_core::odf::envelope::merge`): every part outside `office:body` — styles, master
-//! pages, metadata, settings — is the file's own. Saving never makes an existing file worse
-//! there; what a regenerated body can still drop is listed in `doc/not-doing.md` §2.
+//! pages, metadata, settings — is the file's own. **Saving never makes an existing file
+//! worse**: what an edited block cannot carry (a footnote inside it, say) makes the save an
+//! `Error::WouldLose` rather than a smaller file.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -86,6 +87,26 @@ pub struct Source {
     /// (`grind_core::odf::envelope::repackage`), so `styles.xml`, `meta.xml`, `settings.xml`
     /// and the pictures survive.
     pub package: Option<Vec<u8>>,
+    /// The elements of `office:text` the model has no block for, in file order — kept so a
+    /// regenerated body can put each one back after the block it followed.
+    pub siblings: Vec<Sibling>,
+    /// The `text:list` elements around each list item, outermost first: where each one starts
+    /// in [`Source::bytes`] (its identity) and its attributes, verbatim — the list style that
+    /// decides numbered or bulleted, its `xml:id`. A regenerated body opens its lists with
+    /// these rather than bare.
+    pub lists: HashMap<BlockId, Vec<(usize, String)>>,
+}
+
+/// One element of the body the model does not read: the prelude (`text:sequence-decls`,
+/// `text:variable-decls`), a `text:section`, a `text:table-of-content`, a vendor's own. Never
+/// interpreted — its bytes are the file's, and a regenerated body carries them through
+/// verbatim at the same place in the sequence.
+#[derive(Clone, Debug)]
+pub struct Sibling {
+    /// The block it came after, or `None` for one ahead of every block.
+    pub after: Option<BlockId>,
+    /// Its extent in [`Source::bytes`].
+    pub range: Range<usize>,
 }
 
 impl Source {
@@ -126,8 +147,13 @@ pub struct Block {
 /// one-element diff back into a whole-file one.
 pub fn kept_attributes(start_tag: &[u8]) -> String {
     // What the writer always emits, and what would therefore appear twice.
-    const DROP: [&str; 2] = ["text:style-name", "text:outline-level"];
+    attributes(start_tag, &["text:style-name", "text:outline-level"])
+}
 
+/// Every attribute of a start tag except those named in `drop`, spelled as the file spelled
+/// them — a list's own `text:style-name` and `xml:id`, kept for the `text:list` a regenerated
+/// body opens around the same items.
+pub fn attributes(start_tag: &[u8], drop: &[&str]) -> String {
     let Ok(tag) = std::str::from_utf8(start_tag) else {
         return String::new();
     };
@@ -152,7 +178,7 @@ pub fn kept_attributes(start_tag: &[u8]) -> String {
             break;
         };
         let end = open + 1 + len + 1;
-        if !name.is_empty() && !DROP.contains(&name) {
+        if !name.is_empty() && !drop.contains(&name) {
             out.push(' ');
             out.push_str(name);
             out.push('=');
@@ -171,6 +197,8 @@ impl Source {
             blocks: HashMap::new(),
             styles: Vec::new(),
             package: None,
+            siblings: Vec::new(),
+            lists: HashMap::new(),
         }
     }
 }
