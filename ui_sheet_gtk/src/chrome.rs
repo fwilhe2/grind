@@ -682,6 +682,7 @@ pub fn view_menu_model() -> gio::Menu {
     let readings = gio::Menu::new();
     readings.append(Some("Show Where Names Live"), Some("win.show-names"));
     readings.append(Some("Show What Each Cell Is"), Some("win.show-roles"));
+    readings.append(Some("Show Formulas"), Some("win.show-formulas"));
     readings.append(Some("Show the Source"), Some("win.show-source"));
     model.append_section(None, &readings);
 

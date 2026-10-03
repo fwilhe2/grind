@@ -123,6 +123,16 @@ impl Grid {
     /// Draw the overlays, or stop drawing them — a **reading** of the document and never a
     /// write, so this changes nothing but the paint. Toggling one back off restores exactly
     /// what was on screen before, because nothing was stored in the first place.
+    /// Show each formula instead of its result (View ▸ Show Formulas).
+    pub fn set_formulas(&self, on: bool) {
+        self.imp().formulas.set(on);
+        self.queue_draw();
+    }
+
+    pub fn formulas(&self) -> bool {
+        self.imp().formulas.get()
+    }
+
     pub fn set_overlays(&self, overlays: grind_sheet::view::Overlays) {
         self.imp().overlays.set(overlays);
         self.queue_draw();
@@ -767,6 +777,9 @@ mod imp {
         /// the document, never a change to it, so it belongs with the presentation state
         /// rather than in the core's document.
         pub overlays: Cell<grind_sheet::view::Overlays>,
+        /// Whether a formula cell draws its formula instead of its result (`grind sheet view
+        /// --formulas`) — a reading, like the overlays.
+        pub formulas: Cell<bool>,
         pub on_overlays: RefCell<Vec<OverlaysHook>>,
         /// Presentation state, and the only state this widget has.
         pub selection: Cell<Selection>,
@@ -916,6 +929,7 @@ mod imp {
                 palette: RefCell::new(None),
                 layout: RefCell::new(None),
                 overlays: Cell::new(grind_sheet::view::Overlays::NONE),
+                formulas: Cell::new(false),
                 on_overlays: RefCell::new(Vec::new()),
                 selection: Cell::new(Selection::default()),
                 drag: Cell::new(None),
@@ -3936,7 +3950,20 @@ mod imp {
                     if value.is_empty() {
                         continue;
                     }
-                    let text = viewport.text(row, col).unwrap_or_default();
+                    // With formulas shown, a formula cell's own text stands in for its result.
+                    let formula = self
+                        .formulas
+                        .get()
+                        .then(|| {
+                            let app = self.app.borrow().clone()?;
+                            let pos = Pos::new(row, col);
+                            app.formula(self.sheet.get(), pos).ok().flatten()?;
+                            app.input_text(self.sheet.get(), pos).ok()
+                        })
+                        .flatten();
+                    let text = formula
+                        .as_deref()
+                        .unwrap_or_else(|| viewport.text(row, col).unwrap_or_default());
                     if text.is_empty() {
                         continue;
                     }

@@ -167,7 +167,7 @@ than as a cursor on a hidden row.
 ᶠⁿ Type two letters of a function's name or plain-English name in the palette: up to five rows follow the verbs, and picking one starts an edit seeded `=NAME(`. A search, not a scrolling list — 2026-10-02.
 ᶠᵍ *Functions…* in the GNOME palette (a searchable dialog) and `:functions [text]` in the terminal (a list pane): name, plain-English name, brief and category from `funcs::catalog`; picking one starts an edit seeded `=NAME(`. 2026-10-02.
 ᶜᵃ `:calc [text]` (a list pane) and Data ▸ Find a Calculation… (a prompt, then a list) over `App::calculations`; each row a jump. The browser's palette find already matches a cell's formula text, which is the half of it. 2026-10-02.
-ᶠᵒ `:formulas` in the terminal, a palette verb in the browser, View ▸ Show Formulas in Windows: each formula cell shows its formula text (display syntax) instead of its result — a reading, nothing is written (2026-10-02).
+ᶠᵒ `:formulas` in the terminal, a palette verb in the browser, View ▸ Show Formulas in Windows and GNOME (the GNOME one draws the cell text only, and is lint-checked rather than seen): each formula cell shows its formula text (display syntax) instead of its result — a reading, nothing is written (2026-10-02).
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the
@@ -292,7 +292,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
 | Cell roles overlay (V6) | ● | ● | ● | ● | ● | ● |
 | Name-anchor overlay (V4) | ● | ● | ● | ● | ● | ● |
-| Every cell's formula at once | ● ᵍ | ○ | ● ᶠᵒ | ● ᶠᵒ | ● ᶠᵒ | ● |
+| Every cell's formula at once | ● ᵍ | ● ᶠᵒ | ● ᶠᵒ | ● ᶠᵒ | ● ᶠᵒ | ● |
 
 ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
 ᵖᵇ Two more buttons on each row of the *Names…* dialog — rename (an alert with an entry) and inline — over `App::rename_name` / `inline_name`, each saying how many uses it rewrote; closed 2026-10-02, compile- and lint-checked only.

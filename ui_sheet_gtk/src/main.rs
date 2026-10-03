@@ -442,6 +442,24 @@ impl Ui {
             accelerate(application, name);
         }
 
+        // The third reading: each formula shown instead of its result, as `grind sheet view
+        // --formulas` prints it. Stateful and written to nothing, like the two above.
+        let shown = gio::SimpleAction::new_stateful(
+            "show-formulas",
+            None,
+            &self.grid.formulas().to_variant(),
+        );
+        shown.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |action, _| {
+                let on = !ui.grid.formulas();
+                ui.grid.set_formulas(on);
+                action.set_state(&on.to_variant());
+            }
+        ));
+        self.window.add_action(&shown);
+
         // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the
         // stack. Stateful like the two overlays above and for the same reason: it is a way of
         // *looking* at the document, it writes nothing, and the same item turns it off.
@@ -1624,7 +1642,7 @@ struct Verb {
 /// Named here rather than inside `wire` so that the View menu, the palette and the shortcuts
 /// window read the same list the wiring does. None of them writes a byte, which is why they
 /// need no confirmation, no dirty flag and no undo entry.
-const READINGS: [(&str, &str, &str); 4] = [
+const READINGS: [(&str, &str, &str); 5] = [
     (
         "friendly-formulas",
         "Read Formulas as Sentences",
@@ -1632,6 +1650,7 @@ const READINGS: [(&str, &str, &str); 4] = [
     ),
     ("show-names", "Show Where Names Live", "<Control><Shift>n"),
     ("show-roles", "Show What Each Cell Is", "<Control><Shift>r"),
+    ("show-formulas", "Show Formulas Instead of Results", ""),
     ("show-source", "Show the Source", "<Control><Shift>u"),
 ];
 
