@@ -831,16 +831,9 @@ impl Ui {
             "style.border-clear" => style(|s| format::restyled(s, |s| s.set_border(None))),
             "style.clear" => self.set_style_of_selection(None),
 
-            "format.general" => self.set_format_of_selection(None),
-            "format.integer" => self.preset(Kind::Number, 0),
-            "format.number" => self.preset(Kind::Number, 2),
-            "format.percent" => self.preset(Kind::Percentage, 0),
-            "format.currency" => self.currency(numfmt::DEFAULT_CURRENCY),
-            "format.currency-usd" => self.currency("$"),
-            "format.currency-gbp" => self.currency("£"),
-            "format.date" => self.preset(Kind::Date, 0),
-            "format.time" => self.preset(Kind::Time, 0),
-            "format.datetime" => self.set_format_of_selection(Some(numfmt::datetime_preset())),
+            id if preset_of(id).is_some() => {
+                self.set_format_of_selection(preset_of(id).flatten());
+            }
             "format.more" => self.step_decimals(1),
             "format.fewer" => self.step_decimals(-1),
 
@@ -1205,18 +1198,16 @@ impl Ui {
         }
     }
 
-    /// One of the number-format presets, in the core's own vocabulary
-    /// (`grind_sheet::numfmt::preset`) rather than a format-code string — this build has no
-    /// such thing, which is `doc/ods-format.md` §5.2's decision and not this shell's.
-    fn preset(&self, kind: Kind, decimals: u8) {
-        let grouping = matches!(kind, Kind::Number | Kind::Currency) && decimals > 0;
-        self.set_format_of_selection(Some(numfmt::preset(kind, decimals, grouping, CURRENCY)));
-    }
-
-    /// A currency with two decimals and grouping, in the symbol a command named — one command
-    /// per [`numfmt::CURRENCIES`] entry, so none of them has to be typed.
-    fn currency(&self, symbol: &str) {
-        self.set_format_of_selection(Some(numfmt::preset(Kind::Currency, 2, true, symbol)));
+    /// What the active cell would show under the number-format command `id` — the palette row's
+    /// live sample, `App::shown_as` and nothing written. `None` for a command that is not a
+    /// preset, or for an empty cell.
+    pub fn number_sample(&self, id: &str) -> Option<String> {
+        let format = preset_of(id)?;
+        let (sheet, at) = (self.sheet.get(), self.selection.get().active);
+        self.app
+            .shown_as(sheet, at, format.as_ref())
+            .ok()
+            .filter(|shown| !shown.is_empty())
     }
 
     /// More or fewer decimal places — `grind_sheet::format::stepped`, which keeps whatever
@@ -2501,6 +2492,30 @@ fn replaced(what: &str, done: &find::Replaced) -> String {
 /// What `format.currency` spells: the suite's default currency, the euro, so a cell formatted
 /// here looks the way the same command formats it everywhere else.
 const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
+
+/// The format a `format.*` preset command writes: `Some(None)` is *General* (no format),
+/// `None` is a command that is not a preset. One table for the verb and for its sample, so the
+/// row cannot promise one thing and write another. Presets are the core's vocabulary
+/// (`grind_sheet::numfmt::preset`), never a format-code string (`doc/ods-format.md` §5.2).
+fn preset_of(id: &str) -> Option<Option<grind_sheet::numfmt::Format>> {
+    let preset = |kind: Kind, decimals: u8, symbol: &str| {
+        let grouping = matches!(kind, Kind::Number | Kind::Currency) && decimals > 0;
+        Some(Some(numfmt::preset(kind, decimals, grouping, symbol)))
+    };
+    match id {
+        "format.general" => Some(None),
+        "format.integer" => preset(Kind::Number, 0, CURRENCY),
+        "format.number" => preset(Kind::Number, 2, CURRENCY),
+        "format.percent" => preset(Kind::Percentage, 0, CURRENCY),
+        "format.currency" => preset(Kind::Currency, 2, numfmt::DEFAULT_CURRENCY),
+        "format.currency-usd" => preset(Kind::Currency, 2, "$"),
+        "format.currency-gbp" => preset(Kind::Currency, 2, "£"),
+        "format.date" => preset(Kind::Date, 0, CURRENCY),
+        "format.time" => preset(Kind::Time, 0, CURRENCY),
+        "format.datetime" => Some(Some(numfmt::datetime_preset())),
+        _ => None,
+    }
+}
 
 /// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
 /// opposed to a value a picker sets.

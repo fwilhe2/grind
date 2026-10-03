@@ -427,7 +427,17 @@ impl Shell {
             // Three verbs and no targets: there is no document to go anywhere in.
             Mode::Welcome => (command::WELCOME, Vec::new()),
         };
+        let verbs_from = entries.len();
         entries.extend(command::filter(table, query));
+        // A number-format row says what the active cell would show under it, in the slot a
+        // shortcut would take: nothing to press, and a sample is what picking it is for.
+        if self.mode.get() == Mode::Sheet {
+            for entry in &mut entries[verbs_from..] {
+                if let Some(sample) = self.sheet.number_sample(&entry.id) {
+                    entry.keys = format!("\u{2192} {sample}");
+                }
+            }
+        }
         // The cells holding the query, *after* the verbs (`sheet::Ui::found` says why).
         match self.mode.get() {
             Mode::Sheet => {
