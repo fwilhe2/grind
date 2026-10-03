@@ -91,7 +91,7 @@ impl fmt::Display for Error {
             Error::WouldLose(what) => write!(
                 f,
                 "not saved: saving over this file would drop what this build cannot carry ({}) \
-                 — undo the edit that changed it, or save a copy under another name",
+                 — undo the edit that changed it",
                 what.join(", ")
             ),
             Error::Io(e) => write!(f, "io: {e}"),

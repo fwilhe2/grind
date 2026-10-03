@@ -49,8 +49,21 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     if form == Form::Projection {
         return Ok(crate::projection::save(doc));
     }
-    // The file this document came from, when it is being saved in the same form. A save into
-    // the other form is a conversion and starts from nothing.
+    // A save into the *other* form of the file this document came from is a save into its own
+    // form — with every guard that has — moved across by `forms::convert`, which carries every
+    // part and refuses what the other form has no place for. Starting from nothing instead used
+    // to drop the page layout, the named styles and every element the model does not read, with
+    // no error at all.
+    if let Some(source) = doc.source.as_deref()
+        && source.form != form
+        && source.form != Form::Projection
+    {
+        let own = write(doc, source.form)?;
+        let converted = grind_core::odf::forms::convert(&own, form)?;
+        verify(doc, &converted)?;
+        return Ok(converted);
+    }
+    // The file this document came from, when it is being saved in the same form.
     let source = doc.source.as_deref().filter(|source| source.form == form);
 
     // R6 first: a document that came from a file and has only had cells edited goes back as

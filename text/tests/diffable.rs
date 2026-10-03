@@ -256,16 +256,19 @@ fn deleting_a_block_removes_one_line_and_keeps_everything_else() {
     assert!(added.is_empty(), "added: {added:#?}");
 }
 
-/// Saving into the *other* form is a conversion, and a conversion starts from nothing: there
-/// is no file of that form for it to be merged into.
+/// Saving into the *other* form used to start from nothing, and so dropped everything the model
+/// does not read. It is a save into the document's own form moved across now
+/// (`grind_core::odf::forms`), so what the model never saw survives a trip through the package
+/// and back as it survives an edit.
 #[test]
-fn converting_between_forms_starts_from_nothing() {
+fn converting_between_forms_carries_what_the_model_does_not_read() {
     let app = open(RICH.as_bytes());
     let packaged = app.save_bytes(Form::Package).expect("saves");
     let reopened = open(&packaged);
-    let flat = reopened.save_bytes(Form::Flat).expect("saves");
-    assert_ne!(String::from_utf8_lossy(&flat), RICH);
-    // But the content still survives the trip, which is what the round-trip tests cover.
+    let flat = String::from_utf8(reopened.save_bytes(Form::Flat).expect("saves")).unwrap();
+    for kept in UNMODELLED {
+        assert!(flat.contains(kept), "{kept} did not survive:\n{flat}");
+    }
     assert_eq!(reopened.outline().len(), 1);
 }
 

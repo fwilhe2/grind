@@ -548,6 +548,17 @@ returns, so there is no child element to wait for. Losing the picture rather tha
 if the path is not actually in the zip, the same "keep the document, drop the one thing that
 did not resolve" rule `styles_xml` already followed.
 
+### An embedded formula in the flat form is bare MathML — VERIFIED
+
+Measured on `sw/qa/core/exportdata/ooxml/pass/tdf89191-1.odt`, converted to `.fodt` by
+LibreOffice 26.8: the package's `Object 1/` holds a `content.xml` whose root is MathML's
+`<math>`, not `office:document-content`, plus a `settings.xml` (the formula's base font
+height and the rest) and `Configurations2/`. The flat file writes the `draw:object` with that
+`<math>` element as its only child — rng:5306's `math:math` choice, not an `office:document`
+— and the object's settings appear nowhere in it. `grind_core::odf::forms` moves a formula
+into the flat form the same way, and so lets those settings go: there is no place in that
+shape to put them.
+
 ### The oracle: the pin had no Writer in it, and now does
 
 **`ci/libreoffice-image` could not serve `grind-text`.** The image these figures were first

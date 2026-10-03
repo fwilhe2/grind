@@ -41,20 +41,20 @@ use crate::{Error, Result};
 
 /// One element at depth one or two of a document, found by [`scan`].
 #[derive(Clone, Debug)]
-struct Node {
+pub(crate) struct Node {
     /// 1 for a child of the root, 2 for a grandchild.
-    depth: u8,
+    pub(crate) depth: u8,
     /// Index of the depth-one node holding a depth-two one.
-    parent: Option<usize>,
-    ns: Ns,
-    local: String,
+    pub(crate) parent: Option<usize>,
+    pub(crate) ns: Ns,
+    pub(crate) local: String,
     /// `style:name` and `style:family`, which together are a style's identity.
-    name: Option<String>,
-    family: Option<String>,
+    pub(crate) name: Option<String>,
+    pub(crate) family: Option<String>,
     /// The start tag alone.
-    start: Range<usize>,
+    pub(crate) start: Range<usize>,
     /// Start tag through end tag (equal to `start` when self-closed).
-    range: Range<usize>,
+    pub(crate) range: Range<usize>,
 }
 
 impl Node {
@@ -63,7 +63,7 @@ impl Node {
     }
 
     /// What makes two style declarations "the same one" for a merge.
-    fn key(&self) -> (Ns, &str, Option<&str>, Option<&str>) {
+    pub(crate) fn key(&self) -> (Ns, &str, Option<&str>, Option<&str>) {
         (
             self.ns,
             self.local.as_str(),
@@ -75,18 +75,18 @@ impl Node {
 
 /// The root element and the two levels below it.
 #[derive(Debug)]
-struct Tree {
+pub(crate) struct Tree {
     /// The root's start tag.
-    root_start: Range<usize>,
+    pub(crate) root_start: Range<usize>,
     /// The root's end tag.
-    root_end: Range<usize>,
+    pub(crate) root_end: Range<usize>,
     /// `xmlns:prefix="uri"` declarations on the root, in order.
-    declarations: Vec<(String, String)>,
-    nodes: Vec<Node>,
+    pub(crate) declarations: Vec<(String, String)>,
+    pub(crate) nodes: Vec<Node>,
 }
 
 impl Tree {
-    fn top(&self) -> impl Iterator<Item = (usize, &Node)> {
+    pub(crate) fn top(&self) -> impl Iterator<Item = (usize, &Node)> {
         self.nodes.iter().enumerate().filter(|(_, n)| n.depth == 1)
     }
 
@@ -94,7 +94,7 @@ impl Tree {
         self.top().find(|(_, n)| n.is(Ns::Office, local))
     }
 
-    fn children(&self, parent: usize) -> impl Iterator<Item = &Node> {
+    pub(crate) fn children(&self, parent: usize) -> impl Iterator<Item = &Node> {
         self.nodes
             .iter()
             .filter(move |n| n.depth == 2 && n.parent == Some(parent))
@@ -128,7 +128,7 @@ fn style_attribute(reader: &NsReader<&[u8]>, e: &BytesStart, wanted: &str) -> Op
 
 /// The root and its first two levels, with every byte range. `None` for anything that is not
 /// a well-formed document with one root — a merge never guesses.
-fn scan(bytes: &[u8]) -> Option<Tree> {
+pub(crate) fn scan(bytes: &[u8]) -> Option<Tree> {
     let mut reader = NsReader::from_reader(bytes);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -213,7 +213,7 @@ fn scan(bytes: &[u8]) -> Option<Tree> {
 
 /// Where a top-level part sits in the schema's order, shared by `office:document` (rng:1060)
 /// and `office:document-content` (rng:1093), which is a subsequence of it.
-fn rank(node: &Node) -> Option<u8> {
+pub(crate) fn rank(node: &Node) -> Option<u8> {
     if node.ns != Ns::Office {
         return None;
     }
@@ -231,7 +231,7 @@ fn rank(node: &Node) -> Option<u8> {
 }
 
 /// The qualified name of a start tag, as spelled — `office:styles` out of `<office:styles …>`.
-fn qname(tag: &[u8]) -> &[u8] {
+pub(crate) fn qname(tag: &[u8]) -> &[u8] {
     let rest = tag.strip_prefix(b"<").unwrap_or(tag);
     let end = rest
         .iter()
@@ -639,14 +639,23 @@ pub fn check_against(original: &[u8], output: &[u8]) -> Result<()> {
 /// the rest went down. Those are content the model never saw, and a save that drops them makes
 /// the file worse. `None` when the document cannot be read at all.
 pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
-    vocabulary_within(document, None)
+    vocabulary_within(document, None, false)
+}
+
+/// [`body_vocabulary`] for the whole document — every part, the styles, master pages, metadata
+/// and settings as well as the body; everything but the root. What a conversion between the
+/// two forms (`odf::forms`) is held to: the same document, every element and attribute of it
+/// counted the same, whichever form it is in.
+pub fn document_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
+    vocabulary_within(document, None, true)
 }
 
 /// [`body_vocabulary`], counting only elements whose start tag lies inside one of `ranges` —
-/// `None` for the whole body.
+/// `None` for the whole body — or, when `whole`, everything below the root.
 fn vocabulary_within(
     document: &[u8],
     ranges: Option<&[Range<usize>]>,
+    whole: bool,
 ) -> Option<BTreeMap<String, usize>> {
     let mut reader = NsReader::from_reader(document);
     let mut buf = Vec::new();
@@ -667,7 +676,11 @@ fn vocabulary_within(
                 let element = format!("{{{uri}}}{}", local.as_ref());
                 let counted = ranges.is_none_or(|ranges| ranges.iter().any(|r| r.contains(&from)));
                 if inside == 0 {
-                    if Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body" && !empty {
+                    let opens = match whole {
+                        true => true,
+                        false => Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body",
+                    };
+                    if opens && !empty {
                         inside = 1;
                     }
                     buf.clear();
@@ -729,7 +742,7 @@ pub fn losses_allowing(
     }
     let mut before = body_vocabulary(original)?;
     if !removed.is_empty() {
-        for (key, count) in vocabulary_within(original, Some(removed))? {
+        for (key, count) in vocabulary_within(original, Some(removed), false)? {
             if let Some(total) = before.get_mut(&key) {
                 *total = total.saturating_sub(count);
             }

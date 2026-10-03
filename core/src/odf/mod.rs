@@ -15,6 +15,7 @@
 
 pub mod context;
 pub mod envelope;
+pub mod forms;
 pub mod names;
 pub mod package;
 pub mod xml;

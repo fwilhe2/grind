@@ -168,3 +168,72 @@ fn every_edit_to_a_writer_document_saves_or_is_refused() {
         .collect();
     assert_eq!(refused, expected, "the refusals moved");
 }
+
+/// Every element and attribute outside `office:body`, counted — the page layout, the named
+/// styles, the fonts, the metadata, the settings.
+fn envelope_vocabulary(flat: &[u8]) -> std::collections::BTreeMap<String, usize> {
+    use grind_core::odf::envelope;
+    let mut whole = envelope::document_vocabulary(flat).expect("reads");
+    for (key, count) in envelope::body_vocabulary(flat).expect("reads") {
+        if let Some(total) = whole.get_mut(&key) {
+            *total = total.saturating_sub(count);
+        }
+    }
+    whole.retain(|_, count| *count > 0);
+    whole
+}
+
+/// **Saving into the other form is not a way round any of this.** A `.fodt` saved as an `.odt`
+/// — or an `.ods` as a `.fods` — used to start from nothing and drop everything the model does
+/// not own, with no error. Untouched, the document in the other form is every element and
+/// attribute of the original, counted the same; after an edit, nothing outside the body has
+/// gone, and an edit a same-form save refuses is refused here too.
+#[test]
+fn saving_into_the_other_form_carries_everything() {
+    use grind_core::odf::{envelope, forms};
+    let flat = |bytes: &[u8]| forms::convert(bytes, Form::Flat).expect("converts to flat");
+    for path in documents() {
+        let bytes = std::fs::read(&path).expect("reads");
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let other = match Form::from_path(&path) {
+            Form::Package => Form::Flat,
+            _ => Form::Package,
+        };
+        let original = flat(&bytes);
+
+        let app = App::new();
+        app.open_bytes(&name, &bytes).expect("opens");
+        let out = app
+            .save_bytes(other)
+            .unwrap_or_else(|e| panic!("{name}: an untouched save into the other form: {e}"));
+        assert_eq!(
+            envelope::document_vocabulary(&flat(&out)),
+            envelope::document_vocabulary(&original),
+            "{name}: not the same document in the other form"
+        );
+
+        let before = envelope_vocabulary(&original);
+        for (label, edit) in EDITS {
+            let app = App::new();
+            app.open_bytes(&name, &bytes).expect("opens");
+            edit(&app);
+            match app.save_bytes(other) {
+                Ok(out) => {
+                    let after = envelope_vocabulary(&flat(&out));
+                    for (key, count) in &before {
+                        let left = after.get(key).copied().unwrap_or(0);
+                        assert!(
+                            left >= *count,
+                            "{name}, {label}: {key} went from {count} to {left} in the other form"
+                        );
+                    }
+                }
+                Err(grind_core::Error::WouldLose(_)) => assert!(
+                    REFUSED.iter().any(|(n, l)| *n == name && *l == *label),
+                    "{name}, {label}: refused in the other form only"
+                ),
+                Err(other) => panic!("{name}, {label}: neither saved nor refused: {other}"),
+            }
+        }
+    }
+}

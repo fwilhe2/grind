@@ -24,3 +24,6 @@ unicode-linebreak = "0.1.5"
 # building the retain-and-splice machinery a third time. `span` is not optional here — the
 # span map (§6.2) is what a code view's selection sync is made of.
 kdl = "6.7.1"
+# `office:binary-data` (rng:7681): a picture moved out of a package into a flat file
+# (`odf::forms`) is base64 and nothing else.
+base64 = "0.23"
