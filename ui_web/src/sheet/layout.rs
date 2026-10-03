@@ -53,6 +53,38 @@ pub const CELL: Metrics = Metrics {
     cell_h: 24.0,
 };
 
+/// How wide one character of a cell's text is taken to be, in CSS pixels, and the padding a
+/// cell keeps either side — the grid is 13px type, so this is **estimated** the way the chart's
+/// tick text is (`chart.rs`'s `TICK_CHAR_W`) rather than measured: measuring a rendered cell is
+/// the loop `CELL`'s own comment rules out.
+const FIT_CHAR_W: f64 = 7.4;
+const FIT_PAD: f64 = 14.0;
+/// No fitted column is narrower than this.
+const FIT_MIN: f64 = 24.0;
+
+/// How wide a column must be to hold `widest` characters of text on one line, in CSS pixels.
+/// `None` for an empty column, which goes back to the default width.
+pub fn fit_px(widest: usize) -> Option<f64> {
+    (widest > 0).then(|| (widest as f64 * FIT_CHAR_W + FIT_PAD).max(FIT_MIN))
+}
+
+/// The columns of a text, counted in cells: an East Asian ideograph or full-width form takes two.
+pub fn text_cells(text: &str) -> usize {
+    text.chars()
+        .map(|c| match c as u32 {
+            0x1100..=0x115F
+            | 0x2E80..=0xA4CF
+            | 0xAC00..=0xD7A3
+            | 0xF900..=0xFAFF
+            | 0xFE30..=0xFE4F
+            | 0xFF00..=0xFF60
+            | 0xFFE0..=0xFFE6
+            | 0x1F300..=0x1FAFF => 2,
+            _ => 1,
+        })
+        .sum()
+}
+
 /// The sizes a document gave particular columns or rows, over a default for the rest.
 ///
 /// Sparse, because a spreadsheet sizes a handful of tracks and leaves thousands alone —
@@ -167,6 +199,15 @@ pub fn scrolled_by(scroll: Pos, rows: i64, cols: i64) -> Pos {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_fitted_column_grows_with_its_widest_text_and_an_empty_one_has_no_width() {
+        assert_eq!(super::fit_px(0), None);
+        assert_eq!(fit_px(1), Some(FIT_MIN));
+        assert!(fit_px(20) > fit_px(10));
+        assert_eq!(text_cells("日本"), 4);
+        assert_eq!(text_cells("abc"), 3);
+    }
+
     use super::*;
 
     /// The bug this shell shipped with: the cell size was *measured* from a rendered

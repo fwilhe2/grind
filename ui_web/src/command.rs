@@ -216,6 +216,13 @@ pub const SHEET: &[Command] = &[
     // browser has no edge to drag.
     cmd("sheet.row-height", "Row height…", "Sheets", "", false),
     cmd("sheet.col-width", "Column width…", "Sheets", "", false),
+    cmd(
+        "sheet.fit-cols",
+        "Fit column width to text",
+        "Sheets",
+        "",
+        false,
+    ),
     // §6.5: a name for the selection, and the three things done to one that carries every use.
     cmd(
         "name.define",
