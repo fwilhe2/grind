@@ -895,6 +895,8 @@ impl App {
             "value" => self.cmd_value(),
             "explain" => self.cmd_explain(),
             "filter" => self.cmd_filter(),
+            "chart" => self.cmd_chart(),
+            "chart!" => self.cmd_unchart(),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
             "hide" => self.cmd_hide(true, false),
@@ -995,6 +997,43 @@ impl App {
                 Err(e) => e.to_string(),
             };
         self.leave_visual();
+    }
+
+    /// `:chart` — a chart of the table the selection means (`grind_sheet::verbs::insert_chart`),
+    /// written into the document beside it. A terminal draws no chart, so where it sits is a
+    /// default column width and row height: the other shells will draw it where the table is.
+    fn cmd_chart(&mut self) {
+        let (start, end) = self.rect();
+        let (col_mm, row_mm) = (25.0, 5.0);
+        self.status = match grind_sheet::verbs::insert_chart(
+            &self.core,
+            self.sheet,
+            start,
+            end,
+            |col, row| (f64::from(col) * col_mm, f64::from(row) * row_mm),
+        ) {
+            Ok(_) => {
+                "a chart beside the table, drawn by the other windows \u{2014} u takes it back"
+                    .to_owned()
+            }
+            Err(e) => e.to_string(),
+        };
+        self.leave_visual();
+    }
+
+    /// `:chart!` — the sheet's last chart removed.
+    fn cmd_unchart(&mut self) {
+        let count = self
+            .core
+            .charts(self.sheet)
+            .map_or(0, |charts| charts.len());
+        self.status = match count {
+            0 => "no chart on this sheet".to_owned(),
+            n => match self.core.remove_chart(self.sheet, n - 1) {
+                Ok(()) => "dropped the last chart \u{2014} u brings it back".to_owned(),
+                Err(e) => e.to_string(),
+            },
+        };
     }
 
     /// `:explain` — the active cell's formula in plain words, one line on the status bar
@@ -2891,6 +2930,12 @@ mod tests {
         assert!(app.core.filter(0).unwrap().is_some(), "{}", app.status);
         app.run_command("filter");
         assert!(app.core.filter(0).unwrap().is_none());
+
+        app.active = Pos::new(0, 0);
+        app.run_command("chart");
+        assert_eq!(app.core.charts(0).unwrap().len(), 1, "{}", app.status);
+        app.run_command("chart!");
+        assert!(app.core.charts(0).unwrap().is_empty());
     }
 
     /// The status bar adds the selection up, through the evaluator rather than through a
