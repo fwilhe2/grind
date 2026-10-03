@@ -736,6 +736,9 @@ impl Ui {
             "block.h3" => self.set_kind(BlockKind::Heading { level: 3 }, None),
             "block.h4" => self.set_kind(BlockKind::Heading { level: 4 }, None),
             "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
+            "block.up" => self.move_blocks(true),
+            "block.down" => self.move_blocks(false),
+            "block.delete" => self.delete_blocks(),
             "block.table" => self.insert_table(),
             "block.bookmark" => self.bookmark(),
             "block.style" => self.name_style(),
@@ -829,6 +832,42 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- whole paragraphs ---
+
+    /// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
+    fn touched(&self) -> std::ops::RangeInclusive<usize> {
+        match self.selection() {
+            Some((from, to)) => from.block..=to.block,
+            None => self.caret.get().block..=self.caret.get().block,
+        }
+    }
+
+    /// *Move paragraph up / down* — `grind_text::blocks::shift`, caret and selection going along.
+    fn move_blocks(&self, up: bool) {
+        match grind_text::blocks::shift(&self.app, self.touched(), up) {
+            Ok(()) => {
+                let step = |caret: Caret| Caret {
+                    block: if up { caret.block - 1 } else { caret.block + 1 },
+                    ..caret
+                };
+                self.anchor.set(self.anchor.get().map(step));
+                self.set_caret(step(self.caret.get()));
+            }
+            Err(why) => self.set_message(why),
+        }
+    }
+
+    /// *Delete paragraph* — `grind_text::blocks::remove`, the caret at the start of what followed.
+    fn delete_blocks(&self) {
+        match grind_text::blocks::remove(&self.app, self.touched()) {
+            Ok(block) => {
+                self.anchor.set(None);
+                self.set_caret(Caret { block, offset: 0 });
+            }
+            Err(why) => self.set_message(why),
+        }
     }
 
     // --- tables ---

@@ -332,6 +332,9 @@ pub const TEXT: &[Command] = &[
         "Shift+Tab",
         false,
     ),
+    cmd("block.up", "Move paragraph up", "Structure", "", false),
+    cmd("block.down", "Move paragraph down", "Structure", "", false),
+    cmd("block.delete", "Delete paragraph", "Structure", "", false),
     cmd("block.table", "Insert a table…", "Structure", "", false),
     cmd(
         "block.bookmark",
