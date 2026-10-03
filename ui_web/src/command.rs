@@ -605,4 +605,39 @@ mod tests {
             assert_eq!(ids.len(), count, "a duplicate id");
         }
     }
+
+    /// A verb the page answers but the table never lists is a verb no palette row, button or key
+    /// can reach — the handler is there and nothing calls it. Held in the direction that fails
+    /// quietly: every id a pane's `run` matches on is in the table.
+    #[test]
+    fn every_verb_a_pane_answers_is_in_the_table() {
+        let handled = |source: &str| -> Vec<String> {
+            let from = source.find("pub fn run(&self, id: &str)").expect("a run");
+            source[from..]
+                .lines()
+                .take(200)
+                .filter_map(|line| {
+                    let line = line.trim_start();
+                    let rest = line.strip_prefix('"')?;
+                    let (id, after) = rest.split_once('"')?;
+                    let after = after.trim_start();
+                    (id.contains('.') && (after.starts_with("=>") || after.starts_with('|')))
+                        .then(|| id.to_owned())
+                })
+                .collect()
+        };
+        for (pane, table, source) in [
+            ("sheet", SHEET, include_str!("sheet/mod.rs")),
+            ("text", TEXT, include_str!("text/mod.rs")),
+        ] {
+            let ids = handled(source);
+            assert!(ids.len() > 10, "{pane}: the scan found {ids:?}");
+            for id in ids {
+                assert!(
+                    table.iter().any(|command| command.id == id),
+                    "{pane} answers {id}, which its command table does not list"
+                );
+            }
+        }
+    }
 }
