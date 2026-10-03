@@ -9,7 +9,7 @@
 //! applications and choosing for the person. Three choices, each a key: `s` a new spreadsheet,
 //! `t` a new text document, `o` a path to open. The arrows and Enter work as well, and the open
 //! prompt is the only place this pane takes text. Like `ui_win32`'s welcome pane it owns no
-//! document, so what it hands back is an [`app::Switch`] and the event loop does the rest.
+//! document, so what it hands back is an [`crate::app::Switch`] and the event loop does the rest.
 
 use std::path::PathBuf;
 use std::sync::Arc;
