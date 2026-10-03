@@ -3535,6 +3535,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FitColumns => fit_columns(hwnd),
         Command::ColumnWidth => track_size(hwnd, false),
         Command::DefineName => define_name(hwnd),
+        Command::DocumentLocale => document_locale(hwnd),
         Command::FindCalculation => find_calculation(hwnd),
         Command::Evaluate => evaluate(hwnd),
         Command::GoTo => open_name_box(hwnd),
@@ -4065,6 +4066,40 @@ fn find_calculation(hwnd: HWND) {
     if let Some(calc) = found.get(at) {
         go_to_address(hwnd, &calc.address());
     }
+}
+
+/// Data ▸ Document Locale… — a tag (`de-DE`, `fr`; empty for none) for how this document spells and
+/// reads numbers. `grind_sheet::verbs::locale` reads the tag, `App::set_locale` is one undo step.
+fn document_locale(hwnd: HWND) {
+    // SAFETY: one borrow, released before the prompt.
+    let Some(now) = (unsafe {
+        with_sheet(hwnd, |state| {
+            state.app.locale().map(|l| l.tag()).unwrap_or_default()
+        })
+    }) else {
+        return;
+    };
+    let Some(typed) = dialog::prompt(
+        hwnd,
+        "Document Locale",
+        "A locale tag such as de-DE (empty for none):",
+        &now,
+    ) else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(match grind_sheet::verbs::locale(&typed) {
+                Ok(locale) => match state.app.set_locale(locale) {
+                    Ok(()) => "The document's locale is set. Ctrl+Z takes it back.".to_owned(),
+                    Err(error) => error.to_string(),
+                },
+                Err(_) => format!("“{}” is not a locale — try de-DE.", typed.trim()),
+            }));
+        });
+    }
+    refresh(hwnd);
 }
 
 /// Data ▸ Define Name… — a name for the selection, sheet-qualified so it means the same place from
@@ -5402,6 +5437,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::DocumentLocale
         | Command::FindCalculation
         | Command::Evaluate
         | Command::GoTo
@@ -6502,6 +6538,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::DocumentLocale
         | Command::FindCalculation
         | Command::Evaluate
         | Command::SheetAdd

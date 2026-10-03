@@ -170,6 +170,7 @@ than as a cursor on a hidden row.
 ᶠᵍ *Functions…* in the GNOME palette (a searchable dialog) and `:functions [text]` in the terminal (a list pane): name, plain-English name, brief and category from `funcs::catalog`; picking one starts an edit seeded `=NAME(`. 2026-10-02.
 ᶜᵃ `:calc [text]` (a list pane) and Data ▸ Find a Calculation… (a prompt, then a list) over `App::calculations`; each row a jump. The browser's palette find already matches a cell's formula text, which is the half of it. 2026-10-02.
 ᶠᵒ `:formulas` in the terminal, a palette verb in the browser, View ▸ Show Formulas in Windows and GNOME (the GNOME one draws the cell text only, and is lint-checked rather than seen): each formula cell shows its formula text (display syntax) instead of its result — a reading, nothing is written (2026-10-02).
+ˡᵒ `:locale [tag|none]`, a palette verb and Data ▸ Document Locale…: a tag such as `de-DE` through `verbs::locale`, then `App::set_locale` — one undo step (2026-10-02).
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the
@@ -218,7 +219,7 @@ borders, which that window does not draw either.
 | Decimal places, grouping, currency symbol | ● | ● | ◐ ᵇ | ◐ ᶜ | ◐ ʷ | ◐ ² |
 | Read a cell's style / format back | ● | ● | ● | ● | ● | ● |
 | A live sample of a number format before it is set | — | ● ᶠ | ○ | ○ | ○ | ● |
-| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ○ | ○ | ○ | ● |
+| Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ● ˡᵒ | ● ˡᵒ | ● ˡᵒ | ● |
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |

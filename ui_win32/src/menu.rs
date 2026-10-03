@@ -114,6 +114,9 @@ pub enum Command {
     /// A name for the selection, to use in formulas instead of its address (`App::set_name`
     /// through `grind_sheet::a1::definition`, as `grind sheet name` reads one).
     DefineName,
+    /// The document's own locale, asked for as a tag (`de-DE`) — how it spells its numbers
+    /// (`App::set_locale`, `grind sheet locale`'s call).
+    DocumentLocale,
     /// Every formula in the document in a list, filtered by a word, each a jump to its cell
     /// (`App::calculations`, the GNOME window's *Find a Calculation*).
     FindCalculation,
@@ -325,6 +328,7 @@ impl Command {
         Command::FitColumns,
         Command::ColumnWidth,
         Command::DefineName,
+        Command::DocumentLocale,
         Command::FindCalculation,
         Command::Evaluate,
         Command::GoTo,
@@ -670,6 +674,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FindCalculation,
                 label: "Find a Calc&ulation…",
+            },
+            Item::Verb {
+                command: Command::DocumentLocale,
+                label: "Docu&ment Locale…",
             },
             Item::Verb {
                 command: Command::DefineName,
@@ -1065,6 +1073,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FitColumns
         | Command::ColumnWidth
         | Command::DefineName
+        | Command::DocumentLocale
         | Command::FindCalculation
         | Command::Evaluate
         | Command::SheetAdd
@@ -1446,6 +1455,7 @@ mod tests {
             Command::FitColumns,
             Command::ColumnWidth,
             Command::DefineName,
+            Command::DocumentLocale,
             Command::FindCalculation,
             Command::Evaluate,
             Command::FunctionList,

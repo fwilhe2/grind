@@ -794,6 +794,7 @@ impl Ui {
             "name.delete" => self.delete_name(),
             "edit.evaluate" => self.evaluate(),
             "edit.explain" => self.explain(),
+            "doc.locale" => self.document_locale(),
             "chart.insert" => self.insert_chart(),
             "chart.delete" => self.delete_chart(),
             "edit.fill-across" => self.fill_across(),
@@ -1610,6 +1611,23 @@ impl Ui {
         match self.app.remove_chart(sheet, count - 1) {
             Ok(()) => self.set_message("Deleted the last chart — Ctrl+Z brings it back".to_owned()),
             Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// *Document locale…* — the document's own locale (`de-DE`, `fr`), which decides how every
+    /// unmarked number is shown and how a typed one is read; empty takes it away. One undo step
+    /// (`App::set_locale`, `grind sheet locale`'s call).
+    fn document_locale(&self) {
+        let now = self.app.locale().map(|l| l.tag()).unwrap_or_default();
+        let Some(typed) = self.ask("A locale tag such as de-DE; empty for none", &now) else {
+            return;
+        };
+        match grind_sheet::verbs::locale(&typed) {
+            Ok(locale) => self.set_message(match self.app.set_locale(locale) {
+                Ok(()) => "The document's locale is set — Ctrl+Z takes it back".to_owned(),
+                Err(error) => error.to_string(),
+            }),
+            Err(_) => self.set_message(format!("“{}” is not a locale — try de-DE", typed.trim())),
         }
     }
 

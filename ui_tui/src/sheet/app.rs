@@ -1077,6 +1077,8 @@ impl App {
             _ if cmd.starts_with("calc ") => self.cmd_calc(cmd[5..].trim()),
             _ if cmd.starts_with("functions ") => self.cmd_functions(cmd[10..].trim()),
             "filter" => self.cmd_filter(),
+            "locale" => self.cmd_locale(None),
+            _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
             "chart" => self.cmd_chart(),
             "chart!" => self.cmd_unchart(),
             "yank-values" => self.cmd_yank_values(),
@@ -1262,6 +1264,29 @@ impl App {
             .collect();
         rows.sort_by(|a, b| a.address.cmp(&b.address));
         self.functions.open("Functions", rows, None);
+    }
+
+    /// `:locale [tag]` — the document's own locale (`de-DE`, `fr`): how it spells its numbers and
+    /// reads the ones typed into it, one undo step. With nothing it says what it is now; `none`
+    /// takes it away. `App::set_locale`, `grind sheet locale`'s call.
+    fn cmd_locale(&mut self, tag: Option<&str>) {
+        let Some(tag) = tag else {
+            self.status = match self.core.locale() {
+                Some(locale) => format!("locale {}", locale.tag()),
+                None => "no locale of its own \u{2014} :locale <tag> sets one".to_owned(),
+            };
+            return;
+        };
+        let typed = if tag == "none" { "" } else { tag };
+        match grind_sheet::verbs::locale(typed) {
+            Ok(locale) => {
+                self.status = match self.core.set_locale(locale) {
+                    Ok(()) => format!("locale {} \u{2014} u takes it back", tag),
+                    Err(e) => e.to_string(),
+                }
+            }
+            Err(_) => self.status = format!("not a locale: {tag} (a tag such as de-DE)"),
+        }
     }
 
     /// `:explain` — the active cell's formula in plain words, one line on the status bar

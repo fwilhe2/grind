@@ -37,6 +37,7 @@ Spreadsheet:
   :chart  :chart!         — a chart of the table here (drawn by the other windows); drop the last
   :calc [text]            — every formula in the document, searchable; Enter jumps to its cell
   :functions [text]       — the functions, with plain names; Enter starts a formula with one
+  :locale [tag|none]      — the document's own locale (de-DE): how it spells numbers
   :explain                — the active cell's formula in plain words
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
