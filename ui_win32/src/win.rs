@@ -5291,7 +5291,7 @@ fn export_csv(hwnd: HWND) {
         Ok(written) => written,
         Err(why) => return dialog::error(hwnd, &why),
     };
-    if let Err(error) = std::fs::write(&path, text) {
+    if let Err(error) = grind_core::atomic::write(&path, text) {
         return dialog::error(
             hwnd,
             &format!("Could not write {}:\n\n{error}", path.display()),
@@ -7528,7 +7528,7 @@ fn text_export_markdown(hwnd: HWND) {
         Some(Err(why)) => return dialog::error(hwnd, &why),
         None => return,
     };
-    if let Err(error) = std::fs::write(&path, markdown) {
+    if let Err(error) = grind_core::atomic::write(&path, markdown) {
         return dialog::error(
             hwnd,
             &format!("Could not write {}:\n\n{error}", path.display()),

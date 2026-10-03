@@ -330,7 +330,8 @@ impl Pane {
             ),
         };
         let written = text.map_err(|error| error.to_string()).and_then(|text| {
-            std::fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))
+            grind_core::atomic::write(&path, text)
+                .map_err(|error| format!("{}: {error}", path.display()))
         });
         if let Err(message) = written {
             self.say(Some((&message, None)));
@@ -475,7 +476,8 @@ impl TextPane {
             .export_markdown(blocks)
             .map_err(|error| error.to_string())
             .and_then(|text| {
-                std::fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))
+                grind_core::atomic::write(&path, text)
+                    .map_err(|error| format!("{}: {error}", path.display()))
             });
         if let Err(why) = done {
             prompt::tell(mtm, "That could not be exported.", &why);

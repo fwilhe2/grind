@@ -397,7 +397,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             let markdown = app.export_markdown(blocks).map_err(|e| e.to_string())?;
             match out {
                 Some(path) => {
-                    std::fs::write(path, &markdown)
+                    grind_core::atomic::write(path, &markdown)
                         .map_err(|e| format!("{}: {e}", path.display()))?;
                     text_lines(vec![show_path(path)])
                 }
@@ -2733,7 +2733,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             };
             match out {
                 Some(path) => {
-                    std::fs::write(path, &csv).map_err(|e| format!("{}: {e}", path.display()))?;
+                    grind_core::atomic::write(path, &csv)
+                        .map_err(|e| format!("{}: {e}", path.display()))?;
                     text_lines(vec![show_path(path)])
                 }
                 // Split rather than `lines()`, which would eat the `\r` of a CRLF file: the
@@ -3835,7 +3836,7 @@ fn save_session(app: &App, cli: &Cli) -> Result<(), String> {
         return Ok(());
     };
     let session = serde_json::to_string(&app.session()).expect("session is serializable");
-    std::fs::write(path, session)
+    grind_core::atomic::write(path, session)
         .map_err(|e| format!("cannot write session {}: {e}", path.display()))
 }
 

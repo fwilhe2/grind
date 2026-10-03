@@ -1804,7 +1804,7 @@ impl App {
             .core
             .export_csv(self.sheet, start, end, &options)
             .map_err(|e| e.to_string())
-            .and_then(|text| std::fs::write(path, text).map_err(|e| e.to_string()))
+            .and_then(|text| grind_core::atomic::write(path, text).map_err(|e| e.to_string()))
         {
             Ok(()) => {
                 self.leave_visual();

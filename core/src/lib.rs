@@ -24,6 +24,7 @@
 
 use std::fmt;
 
+pub mod atomic;
 pub mod build_info;
 pub mod color;
 pub mod kind;

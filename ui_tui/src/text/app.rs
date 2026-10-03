@@ -1020,7 +1020,7 @@ impl App {
             .core
             .export_markdown(blocks)
             .map_err(|e| e.to_string())
-            .and_then(|md| std::fs::write(path, md).map_err(|e| format!("{path}: {e}")));
+            .and_then(|md| grind_core::atomic::write(path, md).map_err(|e| format!("{path}: {e}")));
         self.status = match result {
             Ok(()) => format!("wrote {path}"),
             Err(e) => e,

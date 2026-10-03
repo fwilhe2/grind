@@ -145,7 +145,7 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
 /// Write a document, choosing the form from the extension — `.odt` the package,
 /// **anything else flat** ([`Form::from_path`], `doc/flat-first.md`).
 pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
-    std::fs::write(path, write_bytes(doc, Form::from_path(path))?)?;
+    grind_core::atomic::write(path, &write_bytes(doc, Form::from_path(path))?)?;
     Ok(())
 }
 

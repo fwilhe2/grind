@@ -766,8 +766,9 @@ impl Ui {
                         .app
                         .export_markdown(blocks)
                         .map_err(|error| error.to_string())
-                        .and_then(|md| std::fs::write(&path, md).map_err(|e| e.to_string()))
-                    {
+                        .and_then(|md| {
+                            grind_core::atomic::write(&path, md).map_err(|e| e.to_string())
+                        }) {
                         Ok(()) => ui.toast(&format!("Wrote {}", path.display())),
                         Err(error) => ui.toast(&format!("Could not export: {error}")),
                     }

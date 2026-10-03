@@ -407,7 +407,9 @@ uses.
 And that is the **default**, not a setting to hunt for: in doubt this suite writes the flat form,
 because the property above is worth nothing if the file it applies to is a zip. Save dialogs lead
 with `.fods` / `.fodt`, a new document is flat, and naming `book.ods` is how you ask for a
-package. No document is ever converted behind your back.
+package. No document is ever converted behind your back. A save writes a temporary file beside
+the document and renames it into place, so a crash or a full disk mid-save leaves the old file
+rather than half of the new one.
 
 Strictness on the way out, tolerance on the way in: everything written is valid ODF, and
 everything LibreOffice writes reads, and unknown elements and attributes are kept intact for as

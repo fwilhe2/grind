@@ -2895,6 +2895,6 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
 /// the form from the bytes, but writing has to pick one, and the name the user typed is
 /// the only statement of intent available.
 pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
-    std::fs::write(path, write_bytes(doc, Form::from_path(path))?)?;
+    grind_core::atomic::write(path, &write_bytes(doc, Form::from_path(path))?)?;
     Ok(())
 }

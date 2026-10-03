@@ -926,8 +926,9 @@ impl Ui {
             .app
             .export_csv(sheet, start, end, &options)
             .map_err(|error| error.to_string())
-            .and_then(|text| std::fs::write(path, text).map_err(|error| error.to_string()))
-        {
+            .and_then(|text| {
+                grind_core::atomic::write(path, text).map_err(|error| error.to_string())
+            }) {
             Ok(()) => self.toast(&format!(
                 "{}:{} exported to {name}",
                 a1::format(None, start),
