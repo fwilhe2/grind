@@ -703,6 +703,8 @@ impl Ui {
             "name.delete" => self.delete_name(),
             "edit.evaluate" => self.evaluate(),
             "edit.explain" => self.explain(),
+            "chart.insert" => self.insert_chart(),
+            "chart.delete" => self.delete_chart(),
             "edit.fill-across" => self.fill_across(),
             "edit.formula-to-value" => self.formula_to_value(),
             "sheet.filter" => self.toggle_filter(),
@@ -1423,6 +1425,44 @@ impl Ui {
             true => format!("“{}” deleted", name.trim()),
             false => format!("There is no name “{}”", name.trim()),
         });
+    }
+
+    /// *Insert a chart from the selection* — `grind_sheet::verbs::insert_chart`, which reads the
+    /// table the way the CLI and the GNOME window do; this shell says only where a column and a
+    /// row sit.
+    fn insert_chart(&self) {
+        let (start, end) = self.rect();
+        let (widths, heights) = (self.widths(), self.heights());
+        match grind_sheet::verbs::insert_chart(
+            &self.app,
+            self.sheet.get(),
+            start,
+            end,
+            |col, row| {
+                (
+                    widths.span(0, col) / PX_PER_MM,
+                    heights.span(0, row) / PX_PER_MM,
+                )
+            },
+        ) {
+            Ok(_) => self.set_message("A chart beside the table — Ctrl+Z takes it back".to_owned()),
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// *Delete the last chart* — a chart is picked by clicking it in the GNOME window; here there is no pick.
+    fn delete_chart(&self) {
+        let sheet = self.sheet.get();
+        let Ok(count) = self.app.charts(sheet).map(|charts| charts.len()) else {
+            return;
+        };
+        if count == 0 {
+            return self.set_message("This sheet has no chart".to_owned());
+        }
+        match self.app.remove_chart(sheet, count - 1) {
+            Ok(()) => self.set_message("Deleted the last chart — Ctrl+Z brings it back".to_owned()),
+            Err(error) => self.set_message(error.to_string()),
+        }
     }
 
     /// *Explain this formula in words* — the active cell's formula with its functions by their
