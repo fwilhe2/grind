@@ -416,23 +416,7 @@ impl TextPane {
             );
         };
         let block = self.state.borrow().caret.block;
-        let empty = self.app.input_text(block).is_ok_and(|text| text.is_empty());
-        let at = match empty {
-            true => Ok(block),
-            false => self
-                .app
-                .insert(block + 1, grind_text::BlockKind::Paragraph, "")
-                .map(|_| block + 1),
-        };
-        let done = at.and_then(|at| {
-            let caret = grind_text::Caret {
-                block: at,
-                offset: 0,
-            };
-            self.app
-                .insert_image(caret, mime.to_owned(), data, None, None)
-                .map(|()| at)
-        });
+        let done = grind_text::picture::insert_below(&self.app, block, mime, data);
         match done {
             Ok(at) => self.go_to(grind_text::Caret {
                 block: at,

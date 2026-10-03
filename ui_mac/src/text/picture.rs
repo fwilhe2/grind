@@ -35,37 +35,7 @@ impl Decoder for Undecoded {
     }
 }
 
-/// The MIME type of a picture's bytes, read from their signature rather than a file's name —
-/// the way `grind_core::kind` reads a document's — or `None` for bytes that are no picture this
-/// build knows. The list is what `NSImage` reads and an ODF consumer can be expected to.
-pub fn mime(bytes: &[u8]) -> Option<&'static str> {
-    let at = |offset: usize, magic: &[u8]| bytes.get(offset..offset + magic.len()) == Some(magic);
-    Some(match () {
-        _ if at(0, b"\x89PNG\r\n\x1a\n") => "image/png",
-        _ if at(0, b"\xff\xd8\xff") => "image/jpeg",
-        _ if at(0, b"GIF87a") || at(0, b"GIF89a") => "image/gif",
-        _ if at(0, b"II*\0") || at(0, b"MM\0*") => "image/tiff",
-        _ if at(0, b"RIFF") && at(8, b"WEBP") => "image/webp",
-        _ if at(0, b"BM") => "image/bmp",
-        _ if at(4, b"ftypheic") || at(4, b"ftypheix") || at(4, b"ftypmif1") => "image/heic",
-        _ if svg(bytes) => "image/svg+xml",
-        _ => return None,
-    })
-}
-
-/// Whether some bytes are an SVG document: text whose first element is `svg`, after any XML
-/// declaration, comment or doctype.
-fn svg(bytes: &[u8]) -> bool {
-    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(1024)]);
-    let mut rest = head.trim_start_matches('\u{feff}').trim_start();
-    while let Some(after) = rest.strip_prefix("<?").or_else(|| rest.strip_prefix("<!")) {
-        let Some(end) = after.find('>') else {
-            return false;
-        };
-        rest = after[end + 1..].trim_start();
-    }
-    rest.starts_with("<svg")
-}
+pub use grind_text::picture::mime;
 
 /// How big a picture of natural size `size` is drawn in a column `width` wide.
 pub fn fitted(size: (f64, f64), width: f64) -> (f64, f64) {
@@ -130,22 +100,6 @@ mod tests {
         fn size(&self, _: &ImageView) -> Option<(f64, f64)> {
             Some((400.0, 200.0))
         }
-    }
-
-    #[test]
-    fn a_picture_is_known_by_its_signature() {
-        assert_eq!(mime(b"\x89PNG\r\n\x1a\n...."), Some("image/png"));
-        assert_eq!(mime(b"\xff\xd8\xff\xe0"), Some("image/jpeg"));
-        assert_eq!(mime(b"GIF89a"), Some("image/gif"));
-        assert_eq!(mime(b"RIFF\0\0\0\0WEBPVP8 "), Some("image/webp"));
-        assert_eq!(mime(b"\0\0\0\x18ftypheic"), Some("image/heic"));
-        assert_eq!(
-            mime(b"<?xml version=\"1.0\"?>\n<!-- drawn -->\n<svg xmlns=\"...\">"),
-            Some("image/svg+xml")
-        );
-        assert_eq!(mime(b"<html>"), None);
-        assert_eq!(mime(b"PK\x03\x04"), None, "a document is not a picture");
-        assert_eq!(mime(b""), None);
     }
 
     #[test]

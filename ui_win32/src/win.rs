@@ -6632,35 +6632,7 @@ fn text_insert_picture(hwnd: HWND) {
     // sends.
     let outcome = unsafe {
         with_text(hwnd, |text| {
-            let block = text.caret.block;
-            let empty = text
-                .app
-                .input_text(block)
-                .is_ok_and(|content| content.is_empty());
-            let at = match empty {
-                true => block,
-                false => {
-                    if let Err(error) =
-                        text.app
-                            .insert(block + 1, grind_text::BlockKind::Paragraph, "")
-                    {
-                        return Err(error.to_string());
-                    }
-                    block + 1
-                }
-            };
-            text.app
-                .insert_image(
-                    Caret {
-                        block: at,
-                        offset: 0,
-                    },
-                    mime,
-                    data,
-                    None,
-                    None,
-                )
-                .map(|()| at)
+            grind_text::picture::insert_below(&text.app, text.caret.block, &mime, data)
                 .map_err(|error| error.to_string())
         })
     };

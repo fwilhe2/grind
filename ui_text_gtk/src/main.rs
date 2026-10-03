@@ -1058,29 +1058,11 @@ impl Ui {
             }
         };
         let mime = image_mime(path, &data);
-        let caret = self.doc.caret();
-        let empty = self
-            .app
-            .input_text(caret.block)
-            .is_ok_and(|text| text.is_empty());
-        let at = match empty {
-            true => caret.block,
-            false => {
-                if let Err(error) = self.app.insert(caret.block + 1, BlockKind::Paragraph, "") {
-                    return self.toast(&error.to_string());
-                }
-                caret.block + 1
-            }
-        };
-        let at = grind_text::Caret {
-            block: at,
-            offset: 0,
-        };
-        match self.app.insert_image(at, mime, data, None, None) {
+        match grind_text::picture::insert_below(&self.app, self.doc.caret().block, &mime, data) {
             // Past the picture, which is one caret position — so the next thing typed is a
             // caption rather than text wrapped around a frame nothing lays out yet.
-            Ok(()) => self.doc.go_to(grind_text::Caret {
-                block: at.block,
+            Ok(at) => self.doc.go_to(grind_text::Caret {
+                block: at,
                 offset: 1,
             }),
             Err(error) => self.toast(&error.to_string()),
