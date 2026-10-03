@@ -45,6 +45,15 @@ rustflags = [
     "-C", "link-arg=/STACK:8388608",
 ]
 
+# The browser shell gets the stack every native shell's main thread has: 8 MB, where
+# `wasm32-unknown-unknown` defaults to 1 MB. The formula parser's limits
+# (`grind_sheet::formula::parse::{MAX_NESTING, MAX_DEPTH}`) are measured against 8 MB, since
+# that is what Linux and macOS give a main thread and what the Windows flags above reserve;
+# a page with an eighth of it would crash recalculating a formula every other client opens.
+# `-z stack-size` is `wasm-ld`'s, and the linear memory grows to hold it.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]
+
 # The oldest macOS this suite runs on (`doc/macos-shell.md`, decision 11) — the oldest one
 # GitHub still runs, because a floor that is never run is a claim that is never checked. Read
 # by rustc for the Apple targets only, and ignored everywhere else. `[env]` does not override a

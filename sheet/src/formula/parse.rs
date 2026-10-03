@@ -63,6 +63,22 @@ pub(crate) fn infix_bp(op: Op) -> u8 {
 pub(crate) const POSTFIX_BP: u8 = 60;
 pub(crate) const PREFIX_BP: u8 = 70;
 
+/// How deeply a formula may *nest* — parentheses, calls and prefix signs inside one another.
+///
+/// Every function that walks an expression (the evaluator, the serialiser, the formula bar's
+/// display, renaming, shifting) recurses once per level, so a formula nested deeply enough
+/// takes the stack — and the process, and every unsaved document in it — with it. Measured
+/// before this existed: `((…((1))…))` 3000 deep aborted `grind sheet recalc` in a debug build
+/// on Linux's 8 MB stack, and 10000 deep in a release one — and parsing alone costs a nested
+/// *call* more than 8 KB of stack a level in a debug build (128 of them overflowed 1 MB). Excel
+/// stops at 64 levels of function nesting; no formula a person wrote comes near this.
+pub const MAX_NESTING: usize = 100;
+
+/// How deep the expression *tree* may be, which a long operator chain grows without nesting
+/// anything: `=[.A1]+[.A2]+…` is as deep as it has terms, since every operator is
+/// left-associative (§5.5). Measured: 10000 terms aborted the same debug build, 3000 did not.
+pub const MAX_DEPTH: usize = 1024;
+
 /// Parse a `table:formula` attribute value, or anything a user typed.
 ///
 /// Handles the namespace prefix documents carry (`of:=SUM(…)`, doc/ods-format.md §4) and
@@ -75,11 +91,17 @@ pub fn parse(formula: &str) -> Result<Expr, SyntaxError> {
     // adding it back is what makes the reported position an offset into what was passed in.
     let intro = formula.chars().count() - body.chars().count();
     let (tokens, offsets) = lex_spans(body).map_err(|e| shift(e, intro))?;
-    let mut p = Parser { tokens, pos: 0 };
-    let parsed = p.expr(0).and_then(|expr| match p.pos == p.tokens.len() {
-        true => Ok(expr),
-        false => p.fail("unexpected trailing input"),
-    });
+    let mut p = Parser {
+        tokens,
+        pos: 0,
+        nesting: 0,
+    };
+    let parsed = p
+        .expr(0)
+        .and_then(|(expr, _)| match p.pos == p.tokens.len() {
+            true => Ok(expr),
+            false => p.fail("unexpected trailing input"),
+        });
     // The parser counts in tokens, which is the only unit it has; a caller wants a caret.
     parsed.map_err(|e| SyntaxError {
         at: offsets
@@ -134,6 +156,8 @@ fn is_prefix_char(c: char) -> bool {
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    /// How many parentheses, calls and prefix signs are open around the current token.
+    nesting: usize,
 }
 
 impl Parser {
@@ -166,8 +190,12 @@ impl Parser {
     }
 
     /// Pratt: parse a prefix, then absorb every operator that binds tighter than `min_bp`.
-    fn expr(&mut self, min_bp: u8) -> Result<Expr, SyntaxError> {
-        let mut lhs = self.prefix()?;
+    ///
+    /// Each expression comes back with its tree's depth, counted as it is built: a chain
+    /// refused only after it was built would be too deep to *drop* safely, since dropping a
+    /// tree recurses through it as well.
+    fn expr(&mut self, min_bp: u8) -> Result<(Expr, usize), SyntaxError> {
+        let (mut lhs, mut depth) = self.prefix()?;
         while let Some(&Token::Op(op)) = self.peek() {
             let bp = infix_bp(op);
             // `<=` rather than `<`: every operator in Table 1 is left-associative, and
@@ -175,38 +203,61 @@ impl Parser {
             if bp <= min_bp {
                 break;
             }
+            if depth >= MAX_DEPTH {
+                return self.fail(&format!(
+                    "the formula is more than {MAX_DEPTH} operations deep"
+                ));
+            }
             self.pos += 1;
             if op == Op::Percent {
                 lhs = Expr::Postfix(op, Box::new(lhs));
+                depth += 1;
                 continue;
             }
-            let rhs = self.expr(bp)?;
+            let (rhs, right) = self.expr(bp)?;
             lhs = Expr::Binary(op, Box::new(lhs), Box::new(rhs));
+            depth = depth.max(right) + 1;
         }
-        Ok(lhs)
+        Ok((lhs, depth))
     }
 
-    fn prefix(&mut self) -> Result<Expr, SyntaxError> {
+    /// One more level of nesting around `inner` — refused past [`MAX_NESTING`] before the
+    /// recursion that would parse it, since the parser recurses per level too.
+    fn nested<T>(
+        &mut self,
+        inner: impl FnOnce(&mut Self) -> Result<T, SyntaxError>,
+    ) -> Result<T, SyntaxError> {
+        if self.nesting >= MAX_NESTING {
+            return self.fail(&format!(
+                "the formula nests more than {MAX_NESTING} levels deep"
+            ));
+        }
+        self.nesting += 1;
+        let result = inner(self);
+        self.nesting -= 1;
+        result
+    }
+
+    fn prefix(&mut self) -> Result<(Expr, usize), SyntaxError> {
         match self.next() {
-            Some(Token::Number(n)) => Ok(Expr::Number(n)),
-            Some(Token::Text(s)) => Ok(Expr::Text(s)),
-            Some(Token::Error(e)) => Ok(Expr::Error(e)),
-            Some(Token::Ref(r)) => Ok(Expr::Ref(r)),
-            Some(Token::Name(name)) => Ok(Expr::Name(name)),
+            Some(Token::Number(n)) => Ok((Expr::Number(n), 1)),
+            Some(Token::Text(s)) => Ok((Expr::Text(s), 1)),
+            Some(Token::Error(e)) => Ok((Expr::Error(e), 1)),
+            Some(Token::Ref(r)) => Ok((Expr::Ref(r), 1)),
+            Some(Token::Name(name)) => Ok((Expr::Name(name), 1)),
             Some(Token::Func(name)) => {
                 self.expect(Token::LParen, "expected `(` after a function name")?;
-                Ok(Expr::Call {
-                    name,
-                    args: self.args()?,
-                })
+                let (args, depth) = self.nested(Self::args)?;
+                Ok((Expr::Call { name, args }, depth + 1))
             }
             Some(Token::LParen) => {
-                let inner = self.expr(0)?;
+                let (inner, depth) = self.nested(|p| p.expr(0))?;
                 self.expect(Token::RParen, "expected `)`")?;
-                Ok(Expr::Paren(Box::new(inner)))
+                Ok((Expr::Paren(Box::new(inner)), depth + 1))
             }
             Some(Token::Op(op @ (Op::Add | Op::Sub))) => {
-                Ok(Expr::Prefix(op, Box::new(self.expr(PREFIX_BP)?)))
+                let (inner, depth) = self.nested(|p| p.expr(PREFIX_BP))?;
+                Ok((Expr::Prefix(op, Box::new(inner)), depth + 1))
             }
             _ => {
                 self.pos -= 1;
@@ -216,22 +267,27 @@ impl Parser {
     }
 
     /// §5.6 `ParameterList`, the `(` already consumed.
-    fn args(&mut self) -> Result<Vec<Expr>, SyntaxError> {
+    fn args(&mut self) -> Result<(Vec<Expr>, usize), SyntaxError> {
         // "An empty list of parameters is considered a call with 0 parameters, not a call
         // with one parameter that happens to be empty" — TRUE() takes none.
         if self.peek() == Some(&Token::RParen) {
             self.pos += 1;
-            return Ok(Vec::new());
+            return Ok((Vec::new(), 0));
         }
         let mut args = Vec::new();
+        let mut deepest = 0;
         loop {
             args.push(match self.peek() {
                 Some(Token::Semi | Token::RParen) => Expr::Empty,
-                _ => self.expr(0)?,
+                _ => {
+                    let (arg, depth) = self.expr(0)?;
+                    deepest = deepest.max(depth);
+                    arg
+                }
             });
             match self.next() {
                 Some(Token::Semi) => {}
-                Some(Token::RParen) => return Ok(args),
+                Some(Token::RParen) => return Ok((args, deepest)),
                 _ => {
                     self.pos -= 1;
                     return self.fail("expected `;` or `)`");
@@ -325,6 +381,23 @@ mod tests {
         assert_eq!(shape("=SUM([.A1]:[.B2])"), "SUM([.A1]:[.B2])");
         assert_eq!(shape("=[.A1:.C4]![.B1:.B5]"), "[.A1:.C4]![.B1:.B5]");
         assert_eq!(shape("=1+[.A1]:[.B2]"), "1+[.A1]:[.B2]");
+    }
+
+    #[test]
+    fn a_formula_too_deep_to_walk_is_a_syntax_error_rather_than_a_crash() {
+        let nested = |n: usize| format!("={}1{}", "(".repeat(n), ")".repeat(n));
+        assert!(parse(&nested(MAX_NESTING)).is_ok());
+        let error = parse(&nested(100_000)).expect_err("refused");
+        assert!(error.message.contains("nests"), "{error:?}");
+        let signs = format!("={}1", "-".repeat(100_000));
+        assert!(parse(&signs).is_err());
+        let calls = format!("={}1{}", "ABS(".repeat(100_000), ")".repeat(100_000));
+        assert!(parse(&calls).is_err());
+
+        let chain = |n: usize| format!("={}", vec!["[.A1]"; n].join("+"));
+        assert!(parse(&chain(MAX_DEPTH - 1)).is_ok());
+        let error = parse(&chain(100_000)).expect_err("refused");
+        assert!(error.message.contains("deep"), "{error:?}");
     }
 
     #[test]

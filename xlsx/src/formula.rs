@@ -38,6 +38,9 @@
 use grind_sheet::formula::lex::{Axis, CellRef, Op, Reference};
 use grind_sheet::formula::parse::Expr;
 use grind_sheet::formula::value::FormulaError;
+// The core parser's limits, so a workbook cannot hand the suite a tree its own formulas could
+// not have: one too deep to walk, or to drop, without taking the stack.
+use grind_sheet::formula::parse::{MAX_DEPTH, MAX_NESTING};
 use grind_sheet::{MAX_COLS, MAX_ROWS};
 
 use crate::report::Dropped;
@@ -127,8 +130,12 @@ pub fn translate(src: &str) -> Result<Expr, Refusal> {
     if chars.is_empty() {
         return Err(Refusal::Syntax);
     }
-    let mut p = Parser { src: &chars, at: 0 };
-    let expr = p.expr(0)?;
+    let mut p = Parser {
+        src: &chars,
+        at: 0,
+        nesting: 0,
+    };
+    let (expr, _) = p.expr(0)?;
     p.space();
     match p.at == p.src.len() {
         true => Ok(expr),
@@ -159,6 +166,9 @@ const RANGE_BP: u8 = 100;
 struct Parser<'a> {
     src: &'a [char],
     at: usize,
+    /// Parentheses, calls, signs and `@` markers open around the cursor — held to the core
+    /// parser's own [`MAX_NESTING`], since what this produces is walked by the same code.
+    nesting: usize,
 }
 
 /// One end of a reference, before it is known whether there is a second.
@@ -208,8 +218,25 @@ impl<'a> Parser<'a> {
 
     // ---- the Pratt loop ----
 
-    fn expr(&mut self, min_bp: u8) -> Result<Expr, Refusal> {
-        let mut lhs = self.prefix()?;
+    /// One more level of nesting around `inner`, refused past [`MAX_NESTING`] — as an
+    /// unreadable expression, which is what a formula this build cannot walk is.
+    fn nested<T>(
+        &mut self,
+        inner: impl FnOnce(&mut Self) -> Result<T, Refusal>,
+    ) -> Result<T, Refusal> {
+        if self.nesting >= MAX_NESTING {
+            return Err(Refusal::Syntax);
+        }
+        self.nesting += 1;
+        let result = inner(self);
+        self.nesting -= 1;
+        result
+    }
+
+    /// Every expression comes back with its tree's depth, counted as it is built — a chain
+    /// refused only once built would be too deep to drop safely.
+    fn expr(&mut self, min_bp: u8) -> Result<(Expr, usize), Refusal> {
+        let (mut lhs, mut depth) = self.prefix()?;
         loop {
             let spaced = self.space();
             let Some((op, bp, len)) = self.peek_infix() else {
@@ -223,12 +250,16 @@ impl<'a> Parser<'a> {
             if bp < min_bp {
                 break;
             }
+            if depth >= MAX_DEPTH {
+                return Err(Refusal::Syntax);
+            }
             self.at += len;
             // Every binary operator here is left-associative, `^` included (§5.5 Table 1).
-            let rhs = self.expr(bp + 1)?;
+            let (rhs, right) = self.expr(bp + 1)?;
             lhs = Expr::Binary(op, Box::new(lhs), Box::new(rhs));
+            depth = depth.max(right) + 1;
         }
-        Ok(lhs)
+        Ok((lhs, depth))
     }
 
     /// The operator at the cursor, its binding power, and how many characters it is.
@@ -259,19 +290,17 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn prefix(&mut self) -> Result<Expr, Refusal> {
+    fn prefix(&mut self) -> Result<(Expr, usize), Refusal> {
         self.space();
         match self.peek() {
-            Some('-') => {
+            Some(sign @ ('-' | '+')) => {
                 self.at += 1;
-                Ok(Expr::Prefix(Op::Sub, Box::new(self.expr(PREFIX_BP)?)))
-            }
-            Some('+') => {
-                self.at += 1;
-                Ok(Expr::Prefix(Op::Add, Box::new(self.expr(PREFIX_BP)?)))
+                let op = if sign == '-' { Op::Sub } else { Op::Add };
+                let (inner, depth) = self.nested(|p| p.expr(PREFIX_BP))?;
+                Ok((Expr::Prefix(op, Box::new(inner)), depth + 1))
             }
             _ => {
-                let mut expr = self.primary()?;
+                let (mut expr, mut depth) = self.primary()?;
                 // Postfix `%`, which may repeat: `A1%%` is a hundredth of a hundredth.
                 //
                 // The whitespace before it is looked past rather than consumed: a space this
@@ -284,15 +313,19 @@ impl<'a> Parser<'a> {
                         self.at = save;
                         break;
                     }
+                    if depth >= MAX_DEPTH {
+                        return Err(Refusal::Syntax);
+                    }
                     self.at += 1;
                     expr = Expr::Postfix(Op::Percent, Box::new(expr));
+                    depth += 1;
                 }
-                Ok(expr)
+                Ok((expr, depth))
             }
         }
     }
 
-    fn primary(&mut self) -> Result<Expr, Refusal> {
+    fn primary(&mut self) -> Result<(Expr, usize), Refusal> {
         self.space();
         match self.peek().ok_or(Refusal::Syntax)? {
             // The implicit-intersection marker Excel writes in front of a reference in a
@@ -300,15 +333,15 @@ impl<'a> Parser<'a> {
             // non-array evaluator does anyway, so it is dropped rather than carried.
             '@' => {
                 self.at += 1;
-                self.primary()
+                self.nested(Self::primary)
             }
             '{' => Err(Refusal::InlineArray),
             '[' => Err(Refusal::ExternalLink),
-            '"' => self.string(),
-            '#' => self.error_literal(),
+            '"' => Ok((self.string()?, 1)),
+            '#' => Ok((self.error_literal()?, 1)),
             '(' => {
                 self.at += 1;
-                let inner = self.expr(0)?;
+                let (inner, depth) = self.nested(|p| p.expr(0))?;
                 self.space();
                 // `(A1:A2,C1:C2)` — a comma here is not an argument separator, so it is the
                 // union operator wearing the only disguise it has.
@@ -316,7 +349,7 @@ impl<'a> Parser<'a> {
                     return Err(Refusal::Union);
                 }
                 match self.eat(')') {
-                    true => Ok(Expr::Paren(Box::new(inner))),
+                    true => Ok((Expr::Paren(Box::new(inner)), depth + 1)),
                     false => Err(Refusal::Syntax),
                 }
             }
@@ -335,7 +368,7 @@ impl<'a> Parser<'a> {
 
     /// A number, a reference, a function call or a name — the four things that start with a
     /// letter, a digit, a `$` or a quote, told apart by what follows rather than by a table.
-    fn operand(&mut self) -> Result<Expr, Refusal> {
+    fn operand(&mut self) -> Result<(Expr, usize), Refusal> {
         // A digit can only begin a number or a whole-row reference (`1:1`), never a name, so
         // the word branch below is never reached for one.
         let numeric = matches!(self.peek(), Some(c) if c.is_ascii_digit() || c == '.');
@@ -344,21 +377,21 @@ impl<'a> Parser<'a> {
         let save = self.at;
         if let Some(word) = self.word() {
             match self.peek() {
-                Some('(') => return self.call(&word),
+                Some('(') => return self.nested(|p| p.call(&word)),
                 // `Sales[Amount]` — the word names a table.
                 Some('[') => return Err(Refusal::StructuredReference),
                 _ => self.at = save,
             }
         }
         if let Some(reference) = self.reference()? {
-            return Ok(Expr::Ref(reference));
+            return Ok((Expr::Ref(reference), 1));
         }
         if numeric {
-            return self.number();
+            return Ok((self.number()?, 1));
         }
         if let Some(word) = self.word() {
             // §6.15: Excel writes the two booleans as bare words, OpenFormula as calls.
-            return Ok(match word.to_ascii_uppercase().as_str() {
+            let leaf = match word.to_ascii_uppercase().as_str() {
                 "TRUE" => Expr::Call {
                     name: "TRUE".into(),
                     args: Vec::new(),
@@ -368,15 +401,17 @@ impl<'a> Parser<'a> {
                     args: Vec::new(),
                 },
                 _ => Expr::Name(word),
-            });
+            };
+            return Ok((leaf, 1));
         }
         Err(Refusal::Syntax)
     }
 
-    fn call(&mut self, word: &str) -> Result<Expr, Refusal> {
+    fn call(&mut self, word: &str) -> Result<(Expr, usize), Refusal> {
         self.at += 1; // the `(`
         let name = function_name(word);
         let mut args = Vec::new();
+        let mut deepest = 0;
         self.space();
         if !self.eat(')') {
             loop {
@@ -384,7 +419,11 @@ impl<'a> Parser<'a> {
                 // An omitted parameter is present and empty: `OFFSET(A1,1,,2)`.
                 args.push(match matches!(self.peek(), Some(',') | Some(')')) {
                     true => Expr::Empty,
-                    false => self.expr(0)?,
+                    false => {
+                        let (arg, depth) = self.expr(0)?;
+                        deepest = deepest.max(depth);
+                        arg
+                    }
                 });
                 self.space();
                 if self.eat(',') {
@@ -401,9 +440,9 @@ impl<'a> Parser<'a> {
         // a macro function called `SINGLE`, and unwrapping *that* would silently change what
         // the cell says.
         if name == "SINGLE" && args.len() == 1 && word != name {
-            return Ok(args.remove(0));
+            return Ok((args.remove(0), deepest));
         }
-        Ok(Expr::Call { name, args })
+        Ok((Expr::Call { name, args }, deepest + 1))
     }
 
     fn string(&mut self) -> Result<Expr, Refusal> {
@@ -858,6 +897,32 @@ mod tests {
     }
 
     /// Only two classes are a `Dropped` kind: the rest are expressions ODF could hold.
+    #[test]
+    fn a_formula_too_deep_to_walk_is_refused_rather_than_a_crash() {
+        // On the stack a shell's main thread has, as the core's own test runs.
+        std::thread::Builder::new()
+            .stack_size(8 << 20)
+            .spawn(|| {
+                let n = 100_000;
+                for deep in [
+                    format!("{}1{}", "(".repeat(n), ")".repeat(n)),
+                    format!("{}1{}", "ABS(".repeat(n), ")".repeat(n)),
+                    format!("{}1", "-".repeat(n)),
+                    format!("{}A1", "@".repeat(n)),
+                    vec!["1"; n].join("+"),
+                    format!("1{}", "%".repeat(n)),
+                ] {
+                    assert_eq!(translate(&deep).err(), Some(Refusal::Syntax));
+                }
+                let at_the_limit =
+                    format!("{}1{}", "ABS(".repeat(MAX_NESTING), ")".repeat(MAX_NESTING));
+                assert!(translate(&at_the_limit).is_ok());
+            })
+            .unwrap()
+            .join()
+            .expect("did not crash");
+    }
+
     #[test]
     fn a_refusal_counts_as_a_dropped_construct_only_where_one_applies() {
         assert_eq!(
