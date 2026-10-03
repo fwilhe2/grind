@@ -1902,46 +1902,56 @@ impl Ui {
         let _ = self.dom.surface.focus();
     }
 
+    /// Every motion is `grind_sheet::nav`'s — the rule the GNOME, Windows and Mac grids share —
+    /// and the cursor then steps over what is not drawn: a hidden row or column, or a row a filter
+    /// folds away, takes no room, and a cursor parked on one is invisible (`nav::onto_visible`).
     fn move_to(&self, motion: Motion, extend: bool) {
+        use grind_sheet::nav;
         let sheet = self.sheet.get();
-        let extent = self.app.used_extent(sheet).unwrap_or((0, 0));
+        let (rows, cols) = self.app.used_extent(sheet).unwrap_or((0, 0));
         let selection = self.selection.get();
-        let page = self.visible().0.saturating_sub(1);
-        let active = match motion {
-            // The next edge of the data is a question for the document: `grind_sheet::nav`'s
-            // rule, over the occupied cells, the same one every other window asks.
-            Motion::Edge(dir) => {
-                use grind_sheet::nav;
-                let dir = match dir {
-                    keymap::Dir::Left => nav::Dir::Left,
-                    keymap::Dir::Right => nav::Dir::Right,
-                    keymap::Dir::Up => nav::Dir::Up,
-                    keymap::Dir::Down => nav::Dir::Down,
-                };
-                nav::moved(
-                    nav::Selection {
-                        anchor: selection.anchor,
-                        active: selection.active,
-                    },
-                    nav::Motion::Edge(dir),
-                    false,
-                    nav::Extent {
-                        rows: extent.0,
-                        cols: extent.1,
-                        page: page.max(1),
-                    },
-                    &nav::occupied(&self.app, sheet),
-                )
-                .active
-            }
-            _ => keymap::moved(selection.active, motion, extent, page),
+        let page = self.visible().0.saturating_sub(1).max(1);
+        let dir = |dir| match dir {
+            keymap::Dir::Left => nav::Dir::Left,
+            keymap::Dir::Right => nav::Dir::Right,
+            keymap::Dir::Up => nav::Dir::Up,
+            keymap::Dir::Down => nav::Dir::Down,
         };
-        self.set_selection(match extend {
-            true => Selection {
+        let motion = match motion {
+            Motion::By(d) => nav::Motion::By(dir(d)),
+            Motion::Page(d) => nav::Motion::Page(dir(d)),
+            Motion::Edge(d) => nav::Motion::Edge(dir(d)),
+            Motion::RowStart => nav::Motion::RowStart,
+            Motion::RowEnd => nav::Motion::RowEnd,
+            Motion::SheetStart => nav::Motion::SheetStart,
+            Motion::SheetEnd => nav::Motion::SheetEnd,
+        };
+        let moved = nav::moved(
+            nav::Selection {
                 anchor: selection.anchor,
-                active,
+                active: selection.active,
             },
-            false => Selection::at(active),
+            motion,
+            extend,
+            nav::Extent { rows, cols, page },
+            &nav::occupied(&self.app, sheet),
+        );
+        let mut hidden_rows = self.app.manually_hidden_rows(sheet).unwrap_or_default();
+        hidden_rows.extend(self.app.hidden_rows(sheet).unwrap_or_default());
+        let hidden_cols = self.app.hidden_cols(sheet).unwrap_or_default();
+        let none: Vec<(u32, String)> = Vec::new();
+        let steps = |count, hidden: &[u32]| {
+            grind_sheet::tracks::Sizes::from_lengths(1.0, count, &none, hidden, |mm| mm)
+        };
+        let moved = nav::onto_visible(
+            moved,
+            motion,
+            &steps(MAX_ROWS, &hidden_rows),
+            &steps(MAX_COLS, &hidden_cols),
+        );
+        self.set_selection(Selection {
+            anchor: moved.anchor,
+            active: moved.active,
         });
     }
 
