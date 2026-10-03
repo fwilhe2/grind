@@ -207,6 +207,12 @@ impl Builder {
         }
     }
 
+    /// Drop every automatic style read so far — called after `styles.xml`, whose automatic
+    /// styles only that part can refer to.
+    pub fn forget_automatic_styles(&mut self) {
+        self.styles.retain(|_, style| !style.automatic);
+    }
+
     /// Hand the automatic character styles to the source, so that a formatting edit can splice
     /// by reusing a name the file already spells (`super::source::TextStyle`).
     ///

@@ -36,12 +36,15 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
     if package::is_package(bytes) {
         builder.set_package(bytes.to_vec());
     }
-    // R6: the flat form only, and installed *before* parsing, because the cell contexts
-    // record their spans into it as they go. A package is a zip and has no diff to preserve,
-    // so it is read without one and always regenerates — see `odf::source`.
-    if !package::is_package(bytes) {
-        builder.doc.source = Some(Box::new(source::Source::new(Form::Flat, content.clone())));
+    // R6, and the rule above it: saving never makes an existing file worse. The source is
+    // installed *before* parsing, because the cell contexts record their spans into it as they
+    // go. For a package its bytes are `content.xml` — the part a splice edits — and the whole
+    // archive rides along, so a save keeps every other entry (`envelope::repackage`).
+    let mut source = source::Source::new(form_of(bytes), content.clone());
+    if package::is_package(bytes) {
+        source.package = Some(bytes.to_vec());
     }
+    builder.doc.source = Some(Box::new(source));
     // `styles.xml` first, so a named style defined there is already known when a cell in
     // `content.xml` references it (doc/ods-format.md §5.1). It holds no cells, so nothing
     // else about the document depends on the order. A part that will not parse costs the
@@ -58,10 +61,23 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
         Box::new(read::Root),
         &mut builder,
     )?;
+    let locale = builder.doc.locale.clone();
+    let chart_parts = std::mem::take(&mut builder.chart_parts);
+    if let Some(source) = builder.doc.source.as_deref_mut() {
+        source.locale = locale;
+        source.chart_parts = chart_parts;
+    }
     Ok(builder.doc)
 }
 
 /// Serialise a document in the requested physical form.
+fn form_of(bytes: &[u8]) -> Form {
+    match package::is_package(bytes) {
+        true => Form::Package,
+        false => Form::Flat,
+    }
+}
+
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     write::write(doc, form)
 }

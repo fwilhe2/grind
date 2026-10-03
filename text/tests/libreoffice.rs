@@ -118,39 +118,103 @@ fn an_untouched_flat_save_returns_the_bytes_exactly() {
     assert!(checked > 0, "no flat document is vendored");
 }
 
-/// **What saving a package costs today**, asserted rather than discovered.
+/// **A package keeps every entry.** An untouched save of a `.odt` Writer wrote comes back with
+/// the same entries holding the same bytes — `styles.xml`, `settings.xml`, `meta.xml`,
+/// `manifest.rdf` and the thumbnail included — because the writer keeps the original archive
+/// and replaces only `content.xml` (`grind_core::odf::envelope::repackage`).
 ///
-/// `text/src/odf/source.rs` states the boundary — *only the flat form; a `.odt` is a zip, and
-/// a zip has no diff to preserve* — and this is that sentence with a number against it. A
-/// document Writer saved as 9 entries comes back as 3: `content.xml`, the manifest and the
-/// mimetype. `styles.xml`, `settings.xml`, `meta.xml`, `manifest.rdf` and the thumbnail are
-/// **gone**, on a plain open-and-save with no edit at all.
-///
-/// That is a real cost and it is bigger than the diff it was justified by: the flat form loses
-/// nothing here, so the same document is lossless in one container and lossy in the other. The
-/// fix is not a bigger model — it is keeping the original archive and replacing one entry in
-/// it, which is the same retain-and-splice trick one level up. Until then this test is where
-/// the price is written down, and the day the writer learns it, this goes red and gets
-/// replaced by the byte-exact assertion above.
+/// This test used to assert the opposite: a 9-entry Writer package came back as 3 entries on a
+/// plain open-and-save. Saving never makes an existing file worse, and this is that rule with
+/// the original's own bytes as the measure.
 #[test]
-fn saving_a_package_regenerates_it_and_keeps_only_the_content() {
-    let path = data().join(format!("{EDITED_DEFAULT}.odt"));
-    let app = open(&path);
-    let before = std::fs::read(&path).expect("reads");
-    let after = app.save_bytes(Form::Package).expect("writes");
-    assert!(
-        after.len() < before.len() / 4,
-        "the package no longer regenerates — {} bytes in, {} out, and this test owes an update",
-        before.len(),
-        after.len()
-    );
+fn an_untouched_package_save_keeps_every_entry_byte_for_byte() {
+    let mut checked = 0;
+    for path in documents() {
+        if Form::from_path(&path) != Form::Package {
+            continue;
+        }
+        let before = std::fs::read(&path).expect("reads");
+        let after = open(&path).save_bytes(Form::Package).expect("writes");
+        let names = |bytes: &[u8]| {
+            let mut names = grind_core::odf::package::entry_names(bytes);
+            names.sort();
+            names
+        };
+        assert_eq!(names(&before), names(&after), "{}", path.display());
+        for name in names(&before) {
+            let part = |bytes: &[u8]| grind_core::odf::package::part(bytes, &name);
+            assert!(
+                part(&before) == part(&after),
+                "{}: {name} changed on an untouched save",
+                path.display()
+            );
+        }
+        checked += 1;
+    }
+    assert!(checked > 0, "no package is vendored");
+}
 
-    // What survives is what the model carries: every block, its kind and its style *name*.
-    // What does not is everything the model never had — which is why this is worth a test
-    // rather than a comment.
-    let again = App::new();
-    again.open_bytes("again.odt", &after).expect("reads back");
-    assert_eq!(blocks(&app), blocks(&again), "the content itself survives");
+/// **A structural edit changes the body and nothing else.** Pressing Enter regenerates the
+/// body — a new block is a change to the sequence, which no splice describes — and before
+/// `envelope::merge` it regenerated the *document*: one Enter in a Writer file dropped its
+/// styles, its page layout, its master pages, its font declarations, its metadata and its
+/// settings. Now every byte outside `office:body` is the original's, in both forms, and a
+/// package keeps every entry but the thumbnail (a picture of text that is no longer there).
+#[test]
+fn a_structural_edit_keeps_every_byte_outside_the_body() {
+    fn outside_body(xml: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let text = String::from_utf8_lossy(xml);
+        let start = text.find("<office:body").expect("a body");
+        let end = text.rfind("</office:body>").expect("a body") + "</office:body>".len();
+        (
+            text[..start].as_bytes().to_vec(),
+            text[end..].as_bytes().to_vec(),
+        )
+    }
+    for path in documents() {
+        let form = Form::from_path(&path);
+        let before = std::fs::read(&path).expect("reads");
+        let app = open(&path);
+        let count = app.block_count();
+        let front = app
+            .resolve_caret(&grind_text::loc::parse("p1+0").expect("parses"))
+            .expect("resolves");
+        app.split_block(front).expect("splits");
+        let after = app.save_bytes(form).expect("writes");
+
+        let (old_content, new_content) = match form {
+            Form::Package => {
+                for name in grind_core::odf::package::entry_names(&before) {
+                    if name == "content.xml" || name.starts_with("Thumbnails/") {
+                        continue;
+                    }
+                    let part = |bytes: &[u8]| grind_core::odf::package::part(bytes, &name);
+                    if name == "META-INF/manifest.xml" {
+                        continue;
+                    }
+                    assert!(
+                        part(&before) == part(&after),
+                        "{}: {name} did not survive a structural edit",
+                        path.display()
+                    );
+                }
+                (
+                    grind_core::odf::package::content_xml(&before).unwrap(),
+                    grind_core::odf::package::content_xml(&after).unwrap(),
+                )
+            }
+            _ => (before.clone(), after.clone()),
+        };
+        assert_eq!(
+            outside_body(&old_content),
+            outside_body(&new_content),
+            "{}: something outside the body changed",
+            path.display()
+        );
+        let again = App::new();
+        again.open_bytes("again", &after).expect("reads back");
+        assert_eq!(again.block_count(), count + 1, "{}", path.display());
+    }
 }
 
 /// The package reader and the flat reader must agree about the same document.

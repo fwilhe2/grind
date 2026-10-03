@@ -14,6 +14,7 @@
 //! §10 is the note that said this would happen.
 
 pub mod context;
+pub mod envelope;
 pub mod names;
 pub mod package;
 pub mod xml;

@@ -114,11 +114,12 @@ character offset. The last two keep meaning the same place after you edit somewh
 document.
 
 Page size, margins, headers, footers and page breaks are read and kept — they are simply never
-*drawn* as pages. They survive an edit that changes a paragraph's text or style in place; an edit
-that changes the block sequence (splitting or joining a paragraph, inserting or deleting a block)
-or a save to a package regenerates the document, and **today that drops what the model does not
-carry — page layout and master styles included**. Carrying those through is the next fix, and until
-it lands, keep a copy of a document LibreOffice wrote before editing it here.
+*drawn* as pages — and so is everything else outside the document's body: its styles, master
+pages, fonts, metadata and settings, and in a `.odt` every other part of the zip. An edit this
+build cannot write in place (a new paragraph, say) regenerates only the **body** and merges it
+back into the file it came from. Inside the body the model still drops what it does not carry —
+a list's own numbering style, a footnote in a paragraph you edit, a section — so until that is
+closed, keep a copy of a document LibreOffice wrote before editing its structure here.
 
 **Line** layout, though, lives in the shared core, so `j`, `k`, Home and End mean exactly the same
 thing in every front end and the command line can answer them too; each front end supplies only

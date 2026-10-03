@@ -124,6 +124,36 @@ pub struct SubDocument {
     pub content: String,
 }
 
+/// The path of every entry in a package — empty for the flat form or an unreadable zip.
+pub fn entry_names(bytes: &[u8]) -> Vec<String> {
+    if !is_package(bytes) {
+        return Vec::new();
+    }
+    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
+        return Vec::new();
+    };
+    (0..archive.len())
+        .filter_map(|i| archive.by_index_raw(i).ok().map(|f| f.name().to_owned()))
+        .collect()
+}
+
+/// The two manifest entries a [`SubDocument`] needs: its directory, carrying its media type,
+/// and the `content.xml` inside it.
+pub fn subdocument_entries(sub: &SubDocument) -> [String; 2] {
+    let dir = crate::odf::xml::esc(&sub.directory);
+    [
+        format!(
+            "<manifest:file-entry manifest:full-path=\"{dir}/\" manifest:version=\"{VERSION}\" \
+             manifest:media-type=\"{}\"/>",
+            sub.mimetype
+        ),
+        format!(
+            "<manifest:file-entry manifest:full-path=\"{dir}/content.xml\" \
+             manifest:media-type=\"text/xml\"/>"
+        ),
+    ]
+}
+
 /// `META-INF/manifest.xml` for a minimal package: the document itself and `content.xml`.
 ///
 /// Minimal by intent (§1.4) — a manifest lists what the package *holds*, and this writer holds
@@ -143,14 +173,9 @@ fn manifest_with(mimetype: &str, styles: bool, subdocuments: &[SubDocument]) -> 
         );
     }
     for sub in subdocuments {
-        entries.push_str(&format!(
-            "\x20<manifest:file-entry manifest:full-path=\"{dir}/\" manifest:version=\"{VERSION}\" \
-             manifest:media-type=\"{mimetype}\"/>\n\
-             \x20<manifest:file-entry manifest:full-path=\"{dir}/content.xml\" \
-             manifest:media-type=\"text/xml\"/>\n",
-            dir = crate::odf::xml::esc(&sub.directory),
-            mimetype = sub.mimetype,
-        ));
+        for entry in subdocument_entries(sub) {
+            entries.push_str(&format!("\x20{entry}\n"));
+        }
     }
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\

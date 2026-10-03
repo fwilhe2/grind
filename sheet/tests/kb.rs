@@ -593,7 +593,17 @@ fn what_cannot_be_spliced_regenerates() {
         edit(&app);
         String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap()
     };
-    let regenerated = |xml: &str| !xml.contains("office:settings");
+    // A regenerated body is written by this build's own writer, which never spells LibreOffice's
+    // `calcext:` mirror of a value type (R4); a spliced one keeps the file's cells as they were.
+    // What a regenerate no longer does is drop the rest of the file — `office:settings` stays,
+    // and so does every other part outside the body (`envelope::merge`).
+    let regenerated = |xml: &str| {
+        assert!(
+            xml.contains("office:settings") && xml.contains("office:master-styles"),
+            "a save dropped what the model does not own"
+        );
+        !xml.contains("calcext:value-type")
+    };
 
     // A cell in a row the file does not spell at all.
     assert!(regenerated(&doc(&|app| {

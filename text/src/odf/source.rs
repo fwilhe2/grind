@@ -29,16 +29,15 @@
 //!   indentation, for a diff that is no longer obviously smaller. The document regenerates,
 //!   loudly and by one named rule. `grind_sheet` draws its line in the same place: a cell that
 //!   did not exist regenerates too.
-//! * **Only the flat form.** A `.odt` is a zip, and a zip has no diff to preserve. What that
-//!   costs is measured rather than assumed, in `text/tests/libreoffice.rs`: a real Writer
-//!   package comes back as three entries instead of nine, so `styles.xml`, `settings.xml`,
-//!   `meta.xml` and the thumbnail are lost on a plain open-and-save. The same document loses
-//!   nothing in the flat form, which makes this the *container's* limitation and not the
-//!   model's — and the fix is this same trick one level up: keep the archive, replace one
-//!   entry in it.
+//! * **A package splices its `content.xml`.** A `.odt` is a zip, so [`Source::bytes`] is the
+//!   `content.xml` inside it and [`Source::package`] the archive around it; a save splices the
+//!   one and rebuilds the other from its own entries (`grind_core::odf::envelope::repackage`),
+//!   so `styles.xml`, `meta.xml`, `settings.xml` and the pictures come back byte for byte.
 //!
-//! Both fall back to regenerating the whole document, which is always correct — it is what the
-//! writer did before any of this existed.
+//! Both fall back to regenerating the **body**, which is merged back into the original
+//! (`grind_core::odf::envelope::merge`): every part outside `office:body` — styles, master
+//! pages, metadata, settings — is the file's own. Saving never makes an existing file worse
+//! there; what a regenerated body can still drop is listed in `doc/not-doing.md` §2.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -82,6 +81,11 @@ pub struct Source {
     /// The automatic character styles the file declares, in the order it declares them. See
     /// [`TextStyle`] for why a splice needs them.
     pub styles: Vec<TextStyle>,
+    /// The whole archive, when the document came from a package — [`Source::bytes`] is then
+    /// its `content.xml`. Every other entry is written back from here on save
+    /// (`grind_core::odf::envelope::repackage`), so `styles.xml`, `meta.xml`, `settings.xml`
+    /// and the pictures survive.
+    pub package: Option<Vec<u8>>,
 }
 
 impl Source {
@@ -166,6 +170,7 @@ impl Source {
             bytes,
             blocks: HashMap::new(),
             styles: Vec::new(),
+            package: None,
         }
     }
 }

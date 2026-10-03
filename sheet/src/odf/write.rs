@@ -15,7 +15,7 @@
 //! exactly the formats in use: §5.3's pooling rule is not an optimisation here, it is the
 //! only construct ODF has for saying a cell looks a certain way.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
@@ -29,7 +29,8 @@ use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
-use grind_core::odf::package::{SubDocument, VERSION, write_package_with};
+use grind_core::odf::envelope;
+use grind_core::odf::package::{self, SubDocument, VERSION, write_package_with};
 use grind_core::odf::xml::esc;
 
 /// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
@@ -41,30 +42,175 @@ pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.spreadsheet";
 pub use grind_core::Form;
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
-    // R6 first: a document that came from a file and has only had cells edited goes back as
-    // that file with those cells replaced. Everything else regenerates, which is always
-    // correct and is what this did before splicing existed.
-    if let Some(spliced) = splice(doc, form) {
-        return Ok(spliced);
+    // The third form is not XML at all, so it leaves before any of this file runs
+    // (`doc/dsl.md` §9). It is here rather than one layer up because `write_bytes` is the
+    // one door out of the crate, and a form that only *some* callers knew to handle would
+    // be a form that escapes through the others.
+    if form == Form::Projection {
+        return Ok(crate::projection::save(doc));
     }
-    match form {
-        Form::Flat => Ok(content(doc, form).0.into_bytes()),
-        Form::Package => {
-            let (content, objects) = content(doc, Form::Package);
+    // The file this document came from, when it is being saved in the same form. A save into
+    // the other form is a conversion and starts from nothing.
+    let source = doc.source.as_deref().filter(|source| source.form == form);
+
+    // R6 first: a document that came from a file and has only had cells edited goes back as
+    // that file with those cells replaced. Otherwise the content regenerates — and is **merged
+    // into the original** (`envelope::merge`), so the styles, master pages, metadata and
+    // settings the model does not own are carried rather than dropped. Saving never makes an
+    // existing file worse.
+    if let Some(spliced) = splice(doc, form) {
+        // Whatever touched somebody's file is checked before it can replace it: a save that
+        // fails leaves the original on disk, and one that writes something unreadable does not.
+        if let Some(source) = source {
+            envelope::check_against(&source.bytes, &spliced)?;
+        }
+        return match source.and_then(|source| source.package.as_deref()) {
+            Some(original) => Ok(envelope::repackage(original, &spliced, &[], &[], &[])?),
+            None => Ok(spliced),
+        };
+    }
+
+    // Directories a regenerated chart must not take: everything already in the package except
+    // the charts this build read, which the regenerated ones replace.
+    let original = source.and_then(|source| source.package.as_deref());
+    let taken: HashSet<String> = match (original, source) {
+        (Some(original), Some(source)) => package::entry_names(original)
+            .into_iter()
+            .filter_map(|name| name.split_once('/').map(|(dir, _)| dir.to_owned()))
+            .filter(|dir| !source.chart_parts.contains(dir))
+            .collect(),
+        _ => HashSet::new(),
+    };
+    let (generated, objects) = content(doc, form, &taken);
+    let content =
+        match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
+            Some(merged) if original.is_none() => patch_locale(merged, doc, source),
+            Some(merged) => merged,
+            None => generated.into_bytes(),
+        };
+
+    if let Some(source) = source {
+        envelope::check_against(&source.bytes, &content)?;
+    }
+    match (form, original, source) {
+        (Form::Package, Some(original), Some(source)) => {
+            // `styles.xml`: the file's own, with the locale patched in where it changed, or the
+            // generated one merged into it where the file has no default cell style of its own.
+            let mut replace: Vec<(String, Vec<u8>)> = Vec::new();
+            let original_styles = package::styles_xml(original);
+            let generated_styles = common_styles_part(doc);
+            match (&original_styles, &generated_styles) {
+                (Some(own), Some(ours)) => {
+                    let merged =
+                        envelope::merge(own, ours.as_bytes()).unwrap_or_else(|| own.clone());
+                    let patched = patch_locale(merged, doc, Some(source));
+                    if patched != *own {
+                        replace.push(("styles.xml".to_owned(), patched));
+                    }
+                }
+                (Some(own), None) => {
+                    let patched = patch_locale(own.clone(), doc, Some(source));
+                    if patched != *own {
+                        replace.push(("styles.xml".to_owned(), patched));
+                    }
+                }
+                (None, Some(ours)) => {
+                    replace.push(("styles.xml".to_owned(), ours.clone().into_bytes()))
+                }
+                (None, None) => {}
+            }
+            let mut added = Vec::new();
+            if original_styles.is_none() && generated_styles.is_some() {
+                added.push(
+                    "<manifest:file-entry manifest:full-path=\"styles.xml\" \
+                     manifest:media-type=\"text/xml\"/>"
+                        .to_owned(),
+                );
+            }
+            for sub in &objects {
+                replace.push((
+                    format!("{}/content.xml", sub.directory),
+                    sub.content.clone().into_bytes(),
+                ));
+                added.extend(package::subdocument_entries(sub));
+            }
+            Ok(envelope::repackage(
+                original,
+                &content,
+                &replace,
+                &source.chart_parts,
+                &added,
+            )?)
+        }
+        (Form::Package, _, _) => {
             let styles = common_styles_part(doc);
             Ok(write_package_with(
                 MIMETYPE,
-                &content,
+                &String::from_utf8_lossy(&content),
                 styles.as_deref(),
                 &objects,
             )?)
         }
-        // The third form is not XML at all, so it leaves before any of this file runs
-        // (`doc/dsl.md` §9). It is here rather than one layer up because `write_bytes` is the
-        // one door out of the crate, and a form that only *some* callers knew to handle would
-        // be a form that escapes through the others.
-        Form::Projection => Ok(crate::projection::save(doc)),
+        _ => Ok(content),
     }
+}
+
+/// The document's locale written into the default cell style a file *already has*, where it
+/// differs from what the file said (`Source::locale`). Only `fo:language` and `fo:country`
+/// change; every other property of that style is the file's own. A file with no default cell
+/// style gets the generated one through [`envelope::merge`] instead, so there is nothing here
+/// for it to do.
+fn patch_locale(bytes: Vec<u8>, doc: &Document, source: Option<&super::source::Source>) -> Vec<u8> {
+    let Some(source) = source else { return bytes };
+    if source.locale == doc.locale {
+        return bytes;
+    }
+    let Some(range) = envelope::default_style_range(&bytes, "table-cell") else {
+        return bytes;
+    };
+    let Some(fo) = envelope::prefix_for(&bytes, FO) else {
+        return bytes;
+    };
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return bytes;
+    };
+    let style = &text[range.clone()];
+    let language = format!("{fo}:language");
+    let country = format!("{fo}:country");
+    let (lang, ctry) = match &doc.locale {
+        Some(locale) => (
+            Some(locale.language.as_str()),
+            (!locale.country.is_empty()).then_some(locale.country.as_str()),
+        ),
+        None => (None, None),
+    };
+    let changes = [(language.as_str(), lang), (country.as_str(), ctry)];
+    let patched = match style.find(":text-properties") {
+        Some(at) => {
+            let tag_start = style[..at].rfind('<').unwrap_or(at);
+            format!(
+                "{}{}",
+                &style[..tag_start],
+                envelope::set_attributes(&style[tag_start..], &changes)
+            )
+        }
+        // A default style with no text properties of its own: they go in before its end tag.
+        None => match style.rfind("</") {
+            Some(close) => {
+                let prefix = envelope::prefix_for(&bytes, STYLE).unwrap_or_else(|| "style".into());
+                format!(
+                    "{}{}{}",
+                    &style[..close],
+                    envelope::set_attributes(&format!("<{prefix}:text-properties/>"), &changes),
+                    &style[close..]
+                )
+            }
+            None => return bytes,
+        },
+    };
+    [&text[..range.start], patched.as_str(), &text[range.end..]]
+        .concat()
+        .into_bytes()
 }
 
 /// The file this document was read from, with the edited cells put back in place.
@@ -171,7 +317,7 @@ fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) ->
 /// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3) — and,
 /// in the package form, the charts' own documents, which live beside it there
 /// ([`Objects`]).
-fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
+fn content(doc: &Document, form: Form, taken: &HashSet<String>) -> (String, Vec<SubDocument>) {
     let root = match form {
         Form::Package => "office:document-content",
         // The flat form is one XML document; the projection never reaches here, because
@@ -239,7 +385,7 @@ fn content(doc: &Document, form: Form) -> (String, Vec<SubDocument>) {
             date::format_date(0.0, doc.null_date)
         );
     }
-    let mut objects = Objects::new(form);
+    let mut objects = Objects::new(form, taken.clone());
     for sheet in &doc.sheets {
         table(
             &mut out,
@@ -755,14 +901,28 @@ fn write_shapes(out: &mut String, sheet: &Sheet, objects: &mut Objects) {
 struct Objects {
     form: Form,
     documents: Vec<SubDocument>,
+    /// Directories the package already holds and this save keeps — an embedded object this
+    /// build did not read — which a chart's own directory must never take.
+    taken: HashSet<String>,
 }
 
 impl Objects {
-    fn new(form: Form) -> Self {
+    fn new(form: Form, taken: HashSet<String>) -> Self {
         Objects {
             form,
             documents: Vec::new(),
+            taken,
         }
+    }
+
+    /// `Object 1`, `Object 2`, … skipping every name already taken.
+    fn next_directory(&self) -> String {
+        (1..)
+            .map(|n| format!("Object {n}"))
+            .find(|dir| {
+                !self.taken.contains(dir) && !self.documents.iter().any(|d| d.directory == *dir)
+            })
+            .expect("an unbounded range has a free name")
     }
 }
 
@@ -953,7 +1113,7 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
     let out = whole;
     match objects.form {
         Form::Package => {
-            let directory = format!("Object {}", objects.documents.len() + 1);
+            let directory = objects.next_directory();
             let _ = writeln!(
                 out,
                 "      <draw:object xlink:href=\"./{}\" xlink:type=\"simple\" \
@@ -1451,7 +1611,7 @@ mod tests {
     use super::*;
 
     fn flat(doc: &Document) -> String {
-        content(doc, Form::Flat).0
+        content(doc, Form::Flat, &HashSet::new()).0
     }
 
     #[test]
@@ -1689,7 +1849,7 @@ mod tests {
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
         let bytes = write_package_with(
             MIMETYPE,
-            &content(&Document::default(), Form::Package).0,
+            &content(&Document::default(), Form::Package, &HashSet::new()).0,
             None,
             &[],
         )

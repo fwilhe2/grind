@@ -28,6 +28,7 @@
 use std::fmt::Write as _;
 
 use grind_core::Result;
+use grind_core::odf::envelope;
 use grind_core::odf::names::{DRAW, FO, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
 use grind_core::odf::package::{VERSION, write_package};
 use grind_core::odf::xml::esc;
@@ -42,20 +43,46 @@ pub use grind_core::Form;
 pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.text";
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
-    // R6 first: a document that came from a file and has only had block *contents* edited goes
-    // back as that file with those elements replaced. Everything else regenerates, which is
-    // always correct and is what this did before splicing existed.
-    if let Some(spliced) = splice(doc, form) {
-        return Ok(spliced);
+    // The third form is not XML at all, so it leaves before any of this file runs
+    // (`doc/dsl.md` §9, D2). It is here rather than one layer up because `write_bytes` is
+    // the one door out of the crate, and a form that only *some* callers knew to handle
+    // would be a form that escapes through the others.
+    if form == Form::Projection {
+        return Ok(crate::projection::save(doc));
     }
-    match form {
-        Form::Flat => Ok(content(doc, form).into_bytes()),
-        Form::Package => write_package(MIMETYPE, &content(doc, Form::Package)),
-        // The third form is not XML at all, so it leaves before any of this file runs
-        // (`doc/dsl.md` §9, D2). It is here rather than one layer up because `write_bytes` is
-        // the one door out of the crate, and a form that only *some* callers knew to handle
-        // would be a form that escapes through the others.
-        Form::Projection => Ok(crate::projection::save(doc)),
+    // The file this document came from, when it is being saved in the same form. A save into
+    // the other form is a conversion and starts from nothing.
+    let source = doc.source.as_deref().filter(|source| source.form == form);
+
+    // R6 first: a document that came from a file and has only had block *contents* edited goes
+    // back as that file with those elements replaced. Otherwise the body regenerates — and is
+    // **merged into the original** (`envelope::merge`), so the styles, master pages, metadata
+    // and settings the model does not own are carried rather than dropped. Saving never makes
+    // an existing file worse.
+    let content = match splice(doc, form) {
+        Some(spliced) => spliced,
+        None => {
+            let reserved = source
+                .map(|source| envelope::automatic_style_names(&source.bytes))
+                .unwrap_or_default();
+            let generated = content(doc, form, source, &reserved);
+            match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
+                Some(merged) => merged,
+                // An original too broken to merge into: write a whole document of our own,
+                // every style declared, rather than one leaning on declarations it lost.
+                None => content(doc, form, None, &reserved).into_bytes(),
+            }
+        }
+    };
+    // Whatever touched somebody's file is checked before it can replace it: a save that fails
+    // leaves the original on disk, and one that writes something unreadable does not.
+    if let Some(source) = source {
+        envelope::check_against(&source.bytes, &content)?;
+    }
+    match (form, source.and_then(|source| source.package.as_deref())) {
+        (Form::Package, Some(original)) => envelope::repackage(original, &content, &[], &[], &[]),
+        (Form::Package, None) => write_package(MIMETYPE, &String::from_utf8_lossy(&content)),
+        _ => Ok(content),
     }
 }
 
@@ -187,18 +214,49 @@ impl Used {
 struct Pool {
     /// Formatting to the name it is written under, in the order names were handed out.
     entries: Vec<(CharStyle, String)>,
+    /// Names taken from the file this document was read from, whose declaration is already
+    /// there and is left exactly as the file spells it rather than re-declared.
+    declared: std::collections::HashSet<String>,
 }
 
 impl Pool {
     /// Every distinct formatting in the document, named `T1`, `T2`, … in the order it first
     /// appears — so that saving one document twice produces the same bytes.
-    fn of(doc: &Document) -> Self {
+    ///
+    /// Regenerating a document read from a file, a formatting the file already declares keeps
+    /// the file's name for it, and a new one never takes a name in `reserved` — the file's own
+    /// automatic styles, which survive the save beside these (`envelope::merge`) and may be
+    /// named from outside the body.
+    fn of(
+        doc: &Document,
+        source: Option<&super::source::Source>,
+        reserved: &std::collections::HashSet<String>,
+    ) -> Self {
         let mut pool = Pool::default();
+        let mut next = 1;
         for props in props_of(doc) {
-            if pool.name(props).is_none() {
-                let name = format!("T{}", pool.entries.len() + 1);
-                pool.entries.push((props.clone(), name));
+            if pool.name(props).is_some() {
+                continue;
             }
+            let reused = source
+                .and_then(|source| source.style_named(props))
+                .filter(|name| !pool.entries.iter().any(|(_, taken)| taken == name));
+            let name = match reused {
+                Some(name) => {
+                    pool.declared.insert(name.to_owned());
+                    name.to_owned()
+                }
+                None => loop {
+                    let name = format!("T{next}");
+                    next += 1;
+                    if !reserved.contains(&name)
+                        && !pool.entries.iter().any(|(_, taken)| *taken == name)
+                    {
+                        break name;
+                    }
+                },
+            };
+            pool.entries.push((props.clone(), name));
         }
         pool
     }
@@ -245,13 +303,18 @@ fn props_of(doc: &Document) -> impl Iterator<Item = &CharStyle> {
 }
 
 /// The `content.xml` payload, which in the flat form is the whole document.
-fn content(doc: &Document, form: Form) -> String {
+fn content(
+    doc: &Document,
+    form: Form,
+    source: Option<&super::source::Source>,
+    reserved: &std::collections::HashSet<String>,
+) -> String {
     let root = match form {
         Form::Package => "office:document-content",
         // The projection never reaches here — `write` refuses it before there is any XML.
         Form::Flat | Form::Projection => "office:document",
     };
-    let pool = Pool::of(doc);
+    let pool = Pool::of(doc, source, reserved);
     let used = Used::of(doc, &pool);
 
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -293,11 +356,18 @@ fn content(doc: &Document, form: Form) -> String {
 /// Ahead of `office:body`, which the schema requires and a single-pass reader depends on: a
 /// span refers to a name, and the name has to be declared by the time it does.
 fn automatic_styles(out: &mut String, pool: &Pool) {
-    if pool.is_empty() {
+    if pool
+        .entries
+        .iter()
+        .all(|(_, name)| pool.declared.contains(name))
+    {
         return;
     }
     out.push_str(" <office:automatic-styles>\n");
     for (props, name) in &pool.entries {
+        if pool.declared.contains(name) {
+            continue;
+        }
         let _ = writeln!(
             out,
             "  <style:style style:name=\"{}\" style:family=\"text\">",

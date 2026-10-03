@@ -6,9 +6,8 @@
 //!
 //! This is R6 (doc/plan.md): *writing must change as little of the XML as possible*.
 //! Regenerating from the model is right for a document this program authored and wrong for
-//! one it opened — everything the model does not carry (`office:meta`, `office:settings`,
-//! styles nothing references, a chart, another vendor's namespace) goes, and the diff is the
-//! whole file. Editing one number should be one line of `git diff`, the way it is in the
+//! one it opened — the diff is the whole file, and what the model does not carry in the body
+//! goes with it. Editing one number should be one line of `git diff`, the way it is in the
 //! `.fods` repositories this format is good for.
 //!
 //! **Retain and splice, not a fuller model.** Carrying every unknown element as a shadow
@@ -36,10 +35,13 @@
 //!   `style:style` in `office:automatic-styles`, which is a second splice site and a pool to
 //!   merge with the document's own; [`crate::model::Edits::only_values`] goes false and the
 //!   writer regenerates.
-//! * **Only the flat form.** A `.ods` is a zip, and a zip has no diff to preserve.
+//! * **A package splices its `content.xml`.** [`Source::bytes`] is that part and
+//!   [`Source::package`] the archive around it, rebuilt from its own entries on save.
 //!
-//! Every one of those falls back to regenerating the whole document, which is always
-//! correct — it is what the writer did before any of this existed.
+//! Every one of those falls back to regenerating the **body**, merged back into the original
+//! (`grind_core::odf::envelope::merge`) so that every part outside `office:body` is the file's
+//! own — saving never makes an existing file worse there. What a regenerated body can still
+//! drop is `doc/not-doing.md` §2's list.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -64,6 +66,16 @@ pub struct Source {
     /// row of some. A row's elements are few, so finding the one covering a column is a scan
     /// over a short list.
     pub rows: HashMap<(usize, u32), Vec<Cell>>,
+    /// The whole archive, when the document came from a package — [`Source::bytes`] is then
+    /// its `content.xml`. Every other entry is written back from here on save
+    /// (`grind_core::odf::envelope::repackage`).
+    pub package: Option<Vec<u8>>,
+    /// The document's locale as the file stated it, so a save knows whether the default cell
+    /// style the file already has needs its language changed — and leaves it alone otherwise.
+    pub locale: Option<crate::locale::Locale>,
+    /// The package directories holding the charts the model read (`Object 1`, …): what a
+    /// regenerating save replaces, every other directory being kept.
+    pub chart_parts: Vec<String>,
 }
 
 /// One cell element of the source file.
@@ -154,6 +166,9 @@ impl Source {
             form,
             bytes,
             rows: HashMap::new(),
+            package: None,
+            locale: None,
+            chart_parts: Vec::new(),
         }
     }
 

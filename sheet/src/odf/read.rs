@@ -115,6 +115,10 @@ pub struct Builder {
     /// a separate part (`Object 1/content.xml`) an `xlink:href` points at rather than embedded
     /// inline, and resolving one means going back to the archive it came from.
     package: Option<Vec<u8>>,
+    /// The package directories of the charts read into the model (`Object 1`, …). A save that
+    /// regenerates writes those charts again under names of its own, so these are what it
+    /// replaces — and every other directory in the package is left alone.
+    pub chart_parts: Vec<String>,
 }
 
 /// One chart (`draw:frame`/`draw:object`) being read, gathered as its pieces arrive: position
@@ -153,6 +157,8 @@ struct PendingChart {
     /// `chart:chart`'s own title and legend (rng:466, rng:475).
     title: Option<String>,
     legend: Option<crate::chart::Legend>,
+    /// The package directory the chart's document was read from, when it was a separate part.
+    part: Option<String>,
 }
 
 impl Default for PendingChart {
@@ -176,6 +182,7 @@ impl Default for PendingChart {
             y_reversed: None,
             title: None,
             legend: None,
+            part: None,
         }
     }
 }
@@ -230,6 +237,7 @@ impl Builder {
             filter_values: Default::default(),
             pending_chart: None,
             package: None,
+            chart_parts: Vec::new(),
         }
     }
 
@@ -555,10 +563,11 @@ impl Context<Builder> for Frame {
         // only points at.
         match attrs.get(Ns::Xlink, "href") {
             Some(href) => {
-                let path = format!(
-                    "{}/content.xml",
-                    href.trim_start_matches("./").trim_end_matches('/')
-                );
+                let directory = href.trim_start_matches("./").trim_end_matches('/');
+                let path = format!("{directory}/content.xml");
+                if let Some(main) = &mut b.pending_chart {
+                    main.part = Some(directory.to_owned());
+                }
                 if let Some(bytes) = b.resolve_part(&path) {
                     let mut sub = Builder::new();
                     sub.pending_chart = Some(PendingChart::default());
@@ -620,6 +629,9 @@ impl Context<Builder> for Frame {
             title: pending.title,
             legend: pending.legend,
         };
+        if let Some(part) = pending.part {
+            b.chart_parts.push(part);
+        }
         let sheet = &mut b.doc.sheets[b.sheet];
         let index = sheet.charts().len();
         sheet.insert_chart(index, chart);

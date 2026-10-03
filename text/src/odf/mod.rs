@@ -32,12 +32,15 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
     if package::is_package(bytes) {
         builder.set_package(bytes.to_vec());
     }
-    // R6: the flat form only, and installed *before* parsing, because the block contexts
-    // record their spans into it as they go. A package is a zip and has no diff to preserve,
-    // so it is read without one and always regenerates — see `odf::source`.
-    if !package::is_package(bytes) {
-        builder.doc.source = Some(Box::new(source::Source::new(Form::Flat, content.clone())));
+    // R6, and the rule above it: saving never makes an existing file worse. The source is
+    // installed *before* parsing, because the block contexts record their spans into it as
+    // they go. For a package its bytes are `content.xml` — the part a splice edits — and the
+    // whole archive rides along, so a save keeps every other entry (`envelope::repackage`).
+    let mut source = source::Source::new(form_of(bytes), content.clone());
+    if package::is_package(bytes) {
+        source.package = Some(bytes.to_vec());
     }
+    builder.doc.source = Some(Box::new(source));
     // `styles.xml` first, so a named style defined there is already known when a paragraph in
     // `content.xml` references it. A part that will not parse costs the styles it carried and
     // not the document — §9 tolerance, one level up.
@@ -47,6 +50,10 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
             Box::new(read::Root),
             &mut builder,
         );
+        // An automatic style belongs to the part that declares it (rng's `office:automatic-
+        // styles` is per part), so nothing in `content.xml` can name one of `styles.xml`'s —
+        // and a writer reusing one of those names for a run would point at nothing.
+        builder.forget_automatic_styles();
     }
     context::parse(
         std::io::Cursor::new(content),
@@ -61,6 +68,13 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
 }
 
 /// Serialise a document in the requested physical form.
+fn form_of(bytes: &[u8]) -> Form {
+    match package::is_package(bytes) {
+        true => Form::Package,
+        false => Form::Flat,
+    }
+}
+
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     write::write(doc, form)
 }
