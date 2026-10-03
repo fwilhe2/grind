@@ -425,7 +425,10 @@ impl Shell {
         entries.extend(command::filter(table, query));
         // The cells holding the query, *after* the verbs (`sheet::Ui::found` says why).
         match self.mode.get() {
-            Mode::Sheet => entries.extend(self.sheet.found(query)),
+            Mode::Sheet => {
+                entries.extend(self.sheet.found(query));
+                entries.extend(self.sheet.functions(query));
+            }
             Mode::Text => entries.extend(self.text.found(query)),
             Mode::Welcome => {}
         }

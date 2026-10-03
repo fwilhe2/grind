@@ -804,9 +804,18 @@ impl Ui {
             "sheet.rename" => self.rename_sheet(),
             "sheet.delete" => self.delete_sheet(),
 
-            id => match (id.strip_prefix("goto:"), id.strip_prefix("find:")) {
-                (Some(where_), _) => self.go_to(where_),
-                (_, Some(found)) => self.pick_found(found),
+            id => match (
+                id.strip_prefix("goto:"),
+                id.strip_prefix("find:"),
+                id.strip_prefix("fn:"),
+            ) {
+                (Some(where_), _, _) => self.go_to(where_),
+                (_, Some(found), _) => self.pick_found(found),
+                (_, _, Some(name)) => {
+                    if let Err(error) = self.begin_with(&format!("={name}(")) {
+                        web_sys::console::error_1(&error);
+                    }
+                }
                 _ => self.set_message(format!("No such command: {id}")),
             },
         }
@@ -858,6 +867,38 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- the function list ---
+
+    /// What the palette offers for a query that names a function: its name or its plain-English
+    /// name contains the query (`grind sheet functions --long`'s four columns, from the same
+    /// catalog), five rows at most. Picking one starts an edit seeded `=NAME(` with the caret
+    /// where the first argument goes — the Windows window's *Function List* in the box that was
+    /// already here.
+    pub fn functions(&self, query: &str) -> Vec<Entry> {
+        let query = query.trim().to_uppercase();
+        if query.chars().count() < 2 {
+            return Vec::new();
+        }
+        grind_sheet::formula::funcs::catalog()
+            .iter()
+            .filter_map(|info| {
+                let friendly = grind_sheet::formula::friendly::signature(info.name)
+                    .map(|(head, _)| head)
+                    .unwrap_or_else(|| info.name.to_owned());
+                (info.name.to_uppercase().contains(&query)
+                    || friendly.to_uppercase().contains(&query))
+                .then(|| {
+                    Entry::target(
+                        format!("fn:{}", info.name),
+                        format!("{friendly} — {}", info.brief),
+                        grind_sheet::formula::funcs::category(info),
+                    )
+                })
+            })
+            .take(5)
+            .collect()
     }
 
     // --- find and replace (`grind_sheet::find`) ---
@@ -1925,13 +1966,18 @@ impl Ui {
                 .input_text(self.sheet.get(), self.selection.get().active)
                 .unwrap_or_default(),
         };
+        self.begin_with(&text)
+    }
+
+    /// Start editing with `text` already in the bar and the caret after it.
+    fn begin_with(&self, text: &str) -> Result<(), JsValue> {
         self.editing.set(true);
-        self.dom.formula.set_value(&text);
+        self.dom.formula.set_value(text);
         self.dom.formula.focus()?;
         // Focusing an `<input>` selects it in some browsers, and the caret belongs
         // after what is there or the next keystroke deletes the seed — the same trap
         // `ui_sheet_gtk`'s `Grid::begin` documents, in a different toolkit.
-        let end = utf16::units_before(&text, text.len()) as u32;
+        let end = utf16::units_before(text, text.len()) as u32;
         self.dom.formula.set_selection_range(end, end)?;
         self.set_message(String::new());
         self.refresh_assist()
