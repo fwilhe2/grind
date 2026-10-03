@@ -507,7 +507,8 @@ for cell in "A1 1" "A2 2" "A3 3" "B1 =[.A1]*2"; do
     set -- $cell
     "$grind" sheet set "$out/filled.fods" "$1" "$2" > /dev/null
 done
-printf 'key cmd+l\ntype B1:B3\nkey return\nmenu Edit/Fill/Across Selection\nkey cmd+s\nwait 2\n' \
+# Grown from B1 with Shift+Down, so the anchor is B1: a go-to range puts the anchor at its far end.
+printf 'key cmd+l\ntype B1\nkey return\nkey shift+down\nkey shift+down\nmenu Edit/Fill/Across Selection\nkey cmd+s\nwait 2\n' \
     > "$out/fill.drive"
 bounded 120 "$mac" "$out/filled.fods" --drive "$out/fill.drive" --out "$out/filled" \
     > "$out/fill.txt" || fail "the fill drive failed: $(cat "$out/fill.txt")"
