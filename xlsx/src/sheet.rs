@@ -86,6 +86,10 @@ pub struct Context<'a> {
     pub names: &'a crate::workbook::Names,
     /// Sheets renamed on the way in, `(from, to)`; every formula follows them.
     pub renames: &'a [(String, String)],
+    /// Every table in the workbook, so a structured reference becomes the range it names.
+    pub tables: &'a crate::tables::Tables,
+    /// Every sheet's name, by index, as the workbook spelled it.
+    pub sheet_names: &'a [String],
 }
 
 /// Read one worksheet part into `sheet`.
@@ -651,7 +655,13 @@ fn take_formula(
     }
     // `dataTable` has no expression at all — it is a what-if table described by attributes —
     // so it lands here with empty text and is refused as syntax, which is the truth.
-    match formula::translate(&f.text) {
+    let scope = crate::tables::Scope {
+        tables: context.tables,
+        sheet: index,
+        sheet_names: context.sheet_names,
+        row: at.row,
+    };
+    match formula::translate_in(&f.text, Some(&scope)) {
         Ok(expr) => {
             if f.t == "shared"
                 && let Some(si) = f.si
@@ -852,6 +862,8 @@ mod tests {
             null_date: date::DEFAULT_NULL_DATE,
             names: &Default::default(),
             renames: &[],
+            tables: &Default::default(),
+            sheet_names: &[],
         };
         let mut sheet = Sheet::new("S");
         let mut report = Report::default();
@@ -1181,6 +1193,8 @@ mod tests {
             null_date: date::DEFAULT_NULL_DATE,
             names: &Default::default(),
             renames: &[],
+            tables: &Default::default(),
+            sheet_names: &[],
         };
         let mut sheet = Sheet::new("S");
         let mut report = Report::default();

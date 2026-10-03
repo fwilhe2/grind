@@ -110,6 +110,55 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
          makes none.",
     ),
     (
+        "document/tables.xlsx",
+        "formula:Sales!C2",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `[.$B2]*0.2`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
+        "document/tables.xlsx",
+        "formula:Sales!C3",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `[.$B3]*0.2`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
+        "document/tables.xlsx",
+        "formula:Sales!C4",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `[.$B4]*0.2`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
+        "document/tables.xlsx",
+        "formula:Sales!C5",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `[.$B5]*0.2`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
+        "document/tables.xlsx",
+        "formula:Sales!E1",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `SUM([.$B$2:.$B$5])`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
+        "document/tables.xlsx",
+        "formula:Sales!E2",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `COUNTA([.$A$1:.$C$1])`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
+        "document/tables.xlsx",
+        "formula:Sales!E3",
+        "The manifest states no translation, from when a structured reference was refused \
+         whole; this build writes `ROWS([.$A$1:.$C$5])`, which is the range the file's own table part \
+         says the reference names (`tables.rs`).",
+    ),
+    (
         "hostile/no-workbook-part.xlsx",
         "error",
         "The manifest wants `Error::Package`; this build returns `Error::NotSpreadsheet`, \
@@ -135,13 +184,11 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     (
         "document/tables.xlsx",
         "dropped:StructuredReference",
-        "The manifest expects four; the fixture holds seven. `xl/worksheets/sheet1.xml` has \
-         seven `<f>` elements naming the table — C2:C5's `Sales[[#This Row],[Amount]]` and \
-         E1:E3's `SUM(Sales[Amount])`, `COUNTA(Sales[#Headers])` and `ROWS(Sales[#All])`, read \
-         on 2026-09-20. Four is the number of *distinct* forms among them. Every other kind in \
-         this report is counted once per cell that lost something — `RichText` and \
-         `ExternalLink` both are — and a person reading `structured reference ×4` over seven \
-         emptied cells would be owed three more.",
+        "The manifest expects four; this build counts none, because it resolves all seven. \
+         The workbook has a real table part (`xl/tables/table1.xml`, `ref=\"A1:C5\"`, three \
+         named columns), and a structured reference is a range with a name for its spelling \
+         (`tables.rs`). Only a reference to a table, column or row item the file does not \
+         have is still counted, and `sheet.rs`'s own test holds that.",
     ),
     (
         "formulas/semantics-differ.xlsx",

@@ -35,6 +35,7 @@
 //! and never a silent pass-through. The cell keeps Excel's cached value and loses its formula,
 //! which is counted.
 
+use crate::tables::Scope;
 use grind_sheet::formula::lex::{Axis, CellRef, Op, Reference};
 use grind_sheet::formula::parse::Expr;
 use grind_sheet::formula::value::FormulaError;
@@ -121,6 +122,12 @@ impl Refusal {
 ///
 /// The leading `=` a hand-written formula may carry is accepted; `<f>` itself never has one.
 pub fn translate(src: &str) -> Result<Expr, Refusal> {
+    translate_in(src, None)
+}
+
+/// [`translate`], with the workbook's tables to hand: a structured reference then becomes the
+/// range it names, where without a scope it is refused.
+pub fn translate_in(src: &str, scope: Option<&Scope<'_>>) -> Result<Expr, Refusal> {
     let chars: Vec<char> = src
         .trim()
         .strip_prefix('=')
@@ -134,6 +141,7 @@ pub fn translate(src: &str) -> Result<Expr, Refusal> {
         src: &chars,
         at: 0,
         nesting: 0,
+        scope,
     };
     let (expr, _) = p.expr(0)?;
     p.space();
@@ -169,6 +177,7 @@ struct Parser<'a> {
     /// Parentheses, calls, signs and `@` markers open around the cursor — held to the core
     /// parser's own [`MAX_NESTING`], since what this produces is walked by the same code.
     nesting: usize,
+    scope: Option<&'a Scope<'a>>,
 }
 
 /// One end of a reference, before it is known whether there is a second.
@@ -379,7 +388,7 @@ impl<'a> Parser<'a> {
             match self.peek() {
                 Some('(') => return self.nested(|p| p.call(&word)),
                 // `Sales[Amount]` — the word names a table.
-                Some('[') => return Err(Refusal::StructuredReference),
+                Some('[') => return self.structured(&word),
                 _ => self.at = save,
             }
         }
@@ -405,6 +414,38 @@ impl<'a> Parser<'a> {
             return Ok((leaf, 1));
         }
         Err(Refusal::Syntax)
+    }
+
+    /// `Sales[…]`, the cursor on the `[`: the range the table says it is, or the refusal.
+    fn structured(&mut self, table: &str) -> Result<(Expr, usize), Refusal> {
+        // Brackets nest (`[[#This Row],[Amount]]`) and `'` escapes the next character.
+        let open = self.at;
+        let mut depth = 0usize;
+        loop {
+            match self.peek().ok_or(Refusal::Syntax)? {
+                '\'' => self.at += 2,
+                '[' => {
+                    depth += 1;
+                    self.at += 1;
+                }
+                ']' => {
+                    depth -= 1;
+                    self.at += 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => self.at += 1,
+            }
+            if self.at > self.src.len() {
+                return Err(Refusal::Syntax);
+            }
+        }
+        let body: String = self.src[open + 1..self.at - 1].iter().collect();
+        match self.scope.and_then(|scope| scope.resolve(table, &body)) {
+            Some(reference) => Ok((Expr::Ref(reference), 1)),
+            None => Err(Refusal::StructuredReference),
+        }
     }
 
     fn call(&mut self, word: &str) -> Result<(Expr, usize), Refusal> {

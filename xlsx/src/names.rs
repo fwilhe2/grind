@@ -152,6 +152,9 @@ pub enum RelType {
     Comments,
     /// A worksheet's pivot table definition (X5).
     PivotTable,
+    /// A worksheet's table definition (`xl/tables/tableN.xml`) — read, because a structured
+    /// reference is only a range once the table says which.
+    Table,
     /// Recognised so it can be *ignored* cheaply: a calculation chain is Excel's evaluation
     /// order cache and says nothing this filter wants.
     CalcChain,
@@ -180,6 +183,7 @@ impl RelType {
             Some("chart") => RelType::Chart,
             Some("comments") => RelType::Comments,
             Some("pivotTable") => RelType::PivotTable,
+            Some("table") => RelType::Table,
             Some("calcChain") => RelType::CalcChain,
             _ => RelType::Other,
         }

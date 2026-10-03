@@ -60,6 +60,7 @@ pub mod report;
 pub mod sheet;
 pub mod strings;
 pub mod styles;
+pub mod tables;
 pub mod theme;
 pub mod workbook;
 pub mod xml;
@@ -182,6 +183,24 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         .map(|bytes| strings::read(&bytes))
         .unwrap_or_default();
     let renames = report.renamed.clone();
+    let sheet_names: Vec<String> = book.sheets.iter().map(|s| s.name.clone()).collect();
+    let mut tables = tables::Tables::default();
+    for (index, entry) in book.sheets.iter().enumerate() {
+        let Some(part) = entry.part.as_deref() else {
+            continue;
+        };
+        for rel in package.rels(part, &mut seen) {
+            if rel.kind != names::RelType::Table || rel.external {
+                continue;
+            }
+            if let Some(table) = package
+                .part(&rel.target)
+                .and_then(|bytes| tables::read(&bytes, index))
+            {
+                tables.list.push(table);
+            }
+        }
+    }
     let context = sheet::Context {
         strings: &strings,
         styles: &styles,
@@ -189,6 +208,8 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         null_date: document.null_date,
         names: &names,
         renames: &renames,
+        tables: &tables,
+        sheet_names: &sheet_names,
     };
     // `document` has exactly one sheet per entry — or one invented `Sheet1` for a workbook
     // with none, which has no part — so the indices agree.

@@ -505,7 +505,7 @@ translated formula is one our own parser could have produced, or it is not trans
 | `@A1`, `_xlfn.SINGLE(A1)` | `[.A1]` | the implicit-intersection marker, dropped |
 | `-2^2` | `-2^2` | both bind prefix `-` above `^`; §5.5's surprise is Excel's too |
 | `{1,2;3,4}` | — | inline array (§5.13, excluded by §2.3.2) → `Dropped::ArrayFormula` |
-| `Table1[Column]` | — | structured reference → `Dropped::StructuredReference` |
+| `Table1[Column]`, `Table1[[#This Row],[Col]]`, `[#Headers]`/`[#Data]`/`[#Totals]`/`[#All]`, `[Col1]:[Col2]` | the A1 range the table part (`xl/tables/tableN.xml`, found by relationship from the sheet) says it is — column and row item resolved, absolute except `[#This Row]`'s row (`tables.rs`) | a table, column or row item the file does not have, `[#This Row]` from outside the table's data rows, and non-contiguous row items stay `Dropped::StructuredReference`. The table is not kept: the range is as true as the file's geometry was when read |
 | `[1]Sheet1!A1` | — | external workbook → `Dropped::ExternalLink` |
 | ` ` (space) intersection, `,` union | `!`, `~` | out of the Small Group → dropped |
 
