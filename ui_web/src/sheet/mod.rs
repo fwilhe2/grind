@@ -611,9 +611,19 @@ impl Ui {
             .set_text_content(Some(&self.message.borrow()));
 
         let (start, end) = selection.rect();
-        self.dom
-            .summary
-            .set_text_content(Some(&summary(&self.app, sheet, start, end)));
+        let mut summary = summary(&self.app, sheet, start, end);
+        // With the Names overlay on, a formula that uses a defined name is also *read* through
+        // it, beside the arithmetic — the bar itself keeps the text that would be stored, since
+        // it is an input a person may type in (`grind_sheet::place::named_reading`).
+        if self.overlays.get().names {
+            let shown = self.app.input_text(sheet, active).unwrap_or_default();
+            if let Some(reading) =
+                grind_sheet::place::named_reading(&self.app, sheet, active, &shown)
+            {
+                summary = format!("{reading}  \u{b7}  {summary}");
+            }
+        }
+        self.dom.summary.set_text_content(Some(&summary));
 
         Ok(())
     }

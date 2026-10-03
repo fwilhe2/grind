@@ -44,6 +44,19 @@ fn name_of(app: &App, sheet: usize, selection: Selection) -> Option<String> {
     })
 }
 
+/// The formula bar's reading of the active cell through the names it uses — `=tax_rate*subtotal`
+/// where `shown` (what the bar would show otherwise) is `=B2*B7` — or `None` when there is no
+/// reading worth swapping in: no formula, or one identical to `shown` (no name in it).
+///
+/// `App::named_formula` plus the comparison every shell would otherwise write for itself.
+/// Presentation only: a shell that lets the cell be edited edits `shown`.
+pub fn named_reading(app: &App, sheet: usize, at: crate::Pos, shown: &str) -> Option<String> {
+    app.named_formula(sheet, at)
+        .ok()
+        .flatten()
+        .filter(|reading| reading != shown)
+}
+
 /// Where a typed address or name points, as a selection — the other half of the name box.
 ///
 /// `None` means "this is not a place on this sheet", and a shell's answer to that is to put the
@@ -199,6 +212,25 @@ mod tests {
             locate(&app, 0, "B:B").unwrap().rect(),
             (Pos::new(0, 1), Pos::new(3, 1)),
             "a column, clamped to the used extent"
+        );
+    }
+
+    #[test]
+    fn a_formula_is_read_through_its_names_only_when_it_uses_one() {
+        let app = book();
+        let recalc = crate::RecalcMode::Document;
+        app.enter(0, Pos::new(5, 1), "=[.B2]*2", recalc).unwrap();
+        let shown = app.input_text(0, Pos::new(5, 1)).unwrap();
+        assert_eq!(named_reading(&app, 0, Pos::new(5, 1), &shown), None);
+        name(&app, "tax_rate", "B2");
+        assert_eq!(
+            named_reading(&app, 0, Pos::new(5, 1), &shown).as_deref(),
+            Some("=tax_rate*2")
+        );
+        assert_eq!(
+            named_reading(&app, 0, Pos::new(1, 1), "10"),
+            None,
+            "a value"
         );
     }
 

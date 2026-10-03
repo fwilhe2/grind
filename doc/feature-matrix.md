@@ -602,8 +602,13 @@ the Mac, and none drawn by the terminal; the terminal's zoom and drag (a termina
 its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal
 and the browser's auto-height; the seven CSV import options in any window; a welcome screen and a
 second document kind in the two GNOME shells (by decision); recent files in the terminal and the
-browser; the number-format sample outside GNOME and the Mac; and the browser's and the Windows
-pane's reading of a formula through its names.
+browser; and the number-format sample in the terminal.
+
+**Closed on 2026-10-03** (build- and lint-checked, jsdom smoke for the browser; not seen drawn): the
+Windows Number Format chooser and the browser's `format.*` palette rows now show what the active
+cell would display under each (`App::shown_as`), and both read a formula through its names with the
+Names overlay on — the Windows bar in its reading slot after the friendly one, the browser beside
+the arithmetic — over the new `grind_sheet::place::named_reading`.
 
 **Amended on 2026-10-01** for the Mac column (`doc/macos-shell.md`'s M11), read out of `ui_mac`
 through M10 by the same three steps — every row judged against the code, its notes numbered so

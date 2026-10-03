@@ -5787,6 +5787,21 @@ fn draw_frame(dc: HDC, state: &Sheet) {
     let friendly = (state.friendly && !editing)
         .then(|| assist::friendly_line(&formula))
         .flatten();
+    // With the Names overlay on, a formula that uses a defined name reads through it
+    // (`=tax_rate*subtotal`) in the bar's reading slot where the friendly one did not claim it —
+    // the GNOME window's order, friendly first. Never while editing, for the reason above.
+    let friendly = friendly.or_else(|| {
+        (state.overlays.names && !editing)
+            .then(|| {
+                grind_sheet::place::named_reading(
+                    &state.app,
+                    state.sheet,
+                    state.selection.active,
+                    &formula,
+                )
+            })
+            .flatten()
+    });
     // The format strip reads the **active** cell, which is what every spreadsheet's toolbar shows
     // and what makes a toggle over a mixed selection predictable (`sheet/format.rs`).
     let active = state.selection.active;
