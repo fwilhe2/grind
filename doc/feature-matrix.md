@@ -290,7 +290,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Add, edit, remove, move or restyle a chart | ● | ● | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ᶜʰ | ◐ ⁵ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | A chart's own title and legend | ● | ● | ● ᵗᶜ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
-| A **preview** of a chart before it is inserted | — | ● ᵒ | ● ᵗᵖ | ● ʷᵖ | ● ʷᵛ | ○ |
+| A **preview** of a chart before it is inserted | — | ● ᵒ | ● ᵗᵖ | ● ʷᵖ | ● ʷᵛ | ● ᵐᵖ |
 | **Draws** a chart | — | ● | ◐ ᵗᶜ | ● | ● ᶜʰ | ● |
 | **Draws** its title and legend | — | ● | ◐ ᵗᶜ | ● | ● ᶜʰ | ● |
 | Import CSV / TSV | ● | ● ʰ | ● | ● ʰ | ● ʰ | ● ² |
@@ -313,6 +313,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵗᵖ `:chart preview` draws the chart `:chart` would insert for the selection into the same pane (`verbs::preview_insert_chart`, which `insert_chart` shares its spec with) and writes nothing — 2026-10-03.
 ʷᵖ Ctrl+K ▸ *Preview the chart for the selection…* — a dialog drawing it with the sheet's own `chart::svg`, **Insert** and **Cancel** (Esc); checked in `smoke.js` — 2026-10-03.
 ʷᵛ Data ▸ Chart Preview… — a modal (`dialog::chart_preview`) drawing the chart through `sheet/chart.rs`'s `paint_in` (the grid's own marks), **Insert** or Cancel. Type-checked, clipped and unit-tested from Linux but **not yet seen running** — no Xvfb here — 2026-10-03.
+ᵐᵖ Insert ▸ Chart Preview… — an `NSAlert` whose accessory view is an `NSImageView` of the chart rendered headless from `sheet/chart.rs`'s own `Op`s (`chart_preview.rs`), Insert / Cancel. Type-checked and linted for both Apple targets; **not yet run on a Mac** — 2026-10-03.
 ᵗˢ While `:format …` is typed the status bar appends `→ <what the active cell would show>` (`App::shown_as`, nothing written); the browser's palette rows and Win32's chooser show the same beside each row — 2026-10-03.
 ᵗʷ `grind-tui` with no file and neither `--sheet` nor `--text` opens `welcome.rs` — s, t, o, the arrows and Enter, with a path prompt for Open — and `:welcome` goes back from either pane (refused over unsaved work; `:welcome!` discards) — 2026-10-03.
 ʷᶠ Ctrl+K ▸ *Fit column width to text* — widest text in cells × an estimated 7.4px plus padding (`layout::fit_px`), estimated rather than measured because the grid's size is declared (`CELL`) — 2026-10-03.

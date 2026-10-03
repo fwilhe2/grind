@@ -81,6 +81,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSGraphicsContext",
     "NSImage",
     "NSImageRep",
+    "NSImageView",
     "NSLayoutConstraint",
     "NSMenu",
     "NSMenuItem",

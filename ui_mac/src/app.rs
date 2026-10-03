@@ -248,6 +248,7 @@ impl Delegate {
             | Command::Columns(_)
             | Command::DefineName
             | Command::InsertChart
+            | Command::PreviewChart
             | Command::Filter
             | Command::CopyValue
             | Command::FormulaToValue

@@ -132,6 +132,9 @@ pub enum Command {
     Filter,
     /// A chart of the table the selection is in, beside it — Insert ▸ Chart.
     InsertChart,
+    /// The chart Insert ▸ Chart would make, drawn in an alert with Insert and Cancel — nothing
+    /// is written unless Insert is chosen (`verbs::preview_insert_chart`).
+    PreviewChart,
     /// The selected paragraphs past their neighbour, up (`true`) or down — Format ▸ Paragraph ▸
     /// Move Up and Move Down.
     MoveParagraph(bool),
@@ -250,6 +253,7 @@ impl Command {
             Command::ImportCsvWith,
             Command::About,
             Command::InsertChart,
+            Command::PreviewChart,
             Command::Filter,
             Command::CopyValue,
             Command::FormulaToValue,
@@ -290,6 +294,7 @@ impl Command {
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
+                | Command::PreviewChart
                 | Command::Evaluate
                 | Command::DocumentLocale
                 | Command::Calculations
@@ -353,6 +358,7 @@ impl Command {
             | Command::Columns(_)
             | Command::DefineName
             | Command::InsertChart
+            | Command::PreviewChart
             | Command::Filter
             | Command::CopyValue
             | Command::FormulaToValue
@@ -843,6 +849,7 @@ pub static MENUS: &[Menu] = &[
             command("Function…", None, Command::InsertFunction),
             command("Name…", None, Command::DefineName),
             command("Chart", None, Command::InsertChart),
+            command("Chart Preview…", None, Command::PreviewChart),
             Item::Separator,
             command("Table…", None, Command::InsertTable),
             command("Bookmark…", None, Command::InsertBookmark),

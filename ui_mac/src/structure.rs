@@ -110,6 +110,16 @@ impl Pane {
                 return;
             }
             Command::InsertChart => self.insert_chart(),
+            Command::PreviewChart => {
+                let (start, end) = selection.rect();
+                match verbs::preview_insert_chart(&self.app, sheet, start, end) {
+                    Ok((chart, data)) if crate::chart_preview::confirm(mtm, &chart, &data) => {
+                        self.insert_chart()
+                    }
+                    Ok(_) => Ok(()),
+                    Err(error) => Err(error),
+                }
+            }
             Command::Evaluate => {
                 let at = selection.active;
                 let Some(typed) = prompt::ask(

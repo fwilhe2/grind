@@ -733,7 +733,7 @@ pub(crate) fn rgb(color: &NSColor) -> Rgb {
 /// `drawRect:` runs with the view's own `effectiveAppearance` current, so dark mode, high contrast,
 /// the user's accent and a window forced into one appearance all follow with nothing here knowing
 /// (decision 8).
-fn palette() -> Palette {
+pub(crate) fn palette() -> Palette {
     let page = rgb(&NSColor::textBackgroundColor());
     Palette {
         page,
