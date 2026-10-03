@@ -117,13 +117,13 @@ ad-hoc-signed `Grind.app` in a DMG instead (M10).
 | Select the whole sheet | ● ᵃ | ● | ● ᵉᵈ | ● | ● | ● |
 | Name box / address field | ● | ● | ● | ● | ● | ● |
 | Go to a defined name | ● | ● | ● | ● | ● | ● |
-| Skip a hidden or filtered row while moving | — | ○ ᵇ | ● ᶜ | ● ʷᵉ | ● | ● |
+| Skip a hidden or filtered row while moving | — | ● ʷᵉ | ● ᶜ | ● ʷᵉ | ● | ● |
 | Sheet switching | address | tab strip | `:sheet` | tab strip | tab strip + Ctrl+PgUp/PgDn | sidebar |
 | Zoom | — | ● | ○ | ○ | ○ | ● |
 
 ᵉᵈ Closed 2026-10-02 over `grind_sheet::nav`'s edge rule: the browser's Ctrl+arrow (Shift extends); the terminal's `w b } {` and Ctrl+arrows, with `V` (row), Ctrl+V (column) and Ctrl+A (sheet) as visual selections of the used part — no header to click in a terminal.
 ᵃ A range is an argument, not a gesture: `A1:C9`, `A:A`, a sheet-qualified form.
-ʷᵉ The browser's motions are `grind_sheet::nav::moved` now, then `nav::onto_visible` over the hidden and filtered tracks — the rule the Windows and Mac grids use (2026-10-02). It replaces the browser's own `keymap::moved`, so selection and Shift-extend behave as they do there.
+ʷᵉ The GNOME grid applies `nav::onto_visible` after its move (closing the gap `doc/sheet-shell.md` named; lint-checked only). The browser's motions are `grind_sheet::nav::moved` now, then `nav::onto_visible` over the hidden and filtered tracks — the rule the Windows and Mac grids use (2026-10-02). It replaces the browser's own `keymap::moved`, so selection and Shift-extend behave as they do there.
 ᵇ **Named** in `doc/sheet-shell.md`: `keymap.rs` is pure and knows nothing about the document,
 so skipping means handing it the hidden set.
 ᶜ Every motion counts in tracks that are **drawn** (`ui_tui/src/sheet/keymap.rs`'s `walk`), on

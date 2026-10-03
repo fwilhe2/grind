@@ -2017,13 +2017,17 @@ mod imp {
                         return glib::Propagation::Stop;
                     };
                     let occupied = grind_sheet::nav::occupied(&app, self.sheet.get());
-                    keymap::moved(
+                    let moved = keymap::moved(
                         self.selection.get(),
                         motion,
                         extend,
                         self.extent(),
                         &occupied,
-                    )
+                    );
+                    // A hidden or filtered track is drawn as gone, so a cursor may not stop on
+                    // one — `nav::onto_visible`, the rule the Windows and Mac grids apply.
+                    let geom = self.geom();
+                    grind_sheet::nav::onto_visible(moved, motion, &geom.rows, &geom.cols)
                 }
                 Action::SelectAll => {
                     let Some(app) = self.app.borrow().clone() else {
