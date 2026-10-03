@@ -241,6 +241,24 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    // Charts: authored beside the table the selection means (`verbs::insert_chart`) and changed in
+    // words (`verbs::restyle_chart`); drawn already.
+    cmd(
+        "chart.insert",
+        "Insert a chart from the selection",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.restyle",
+        "Change the last chart…",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd("chart.delete", "Delete the last chart", "Charts", "", false),
+    cmd("doc.locale", "Document locale…", "Document", "", false),
     cmd(
         "edit.fill-across",
         "Fill the selection from its first cell",

@@ -84,6 +84,8 @@ pub enum Command {
     /// insert_chart`), and the last chart taken away again. Drawn by `sheet/chart.rs`.
     InsertChart,
     DeleteChart,
+    /// The last chart's kind, title and legend, asked for in words (`verbs::restyle_chart`).
+    RestyleChart,
     /// A hairline round every selected cell, or every edge taken away — `grind_sheet::format::
     /// bordered`, the call every other shell's Borders control makes. The grid draws them
     /// (`look::border_strokes`).
@@ -322,6 +324,7 @@ impl Command {
         Command::FillAcross,
         Command::InsertChart,
         Command::DeleteChart,
+        Command::RestyleChart,
         Command::WrapText,
         Command::BordersAll,
         Command::BordersNone,
@@ -677,6 +680,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::InsertChart,
                 label: "Insert &Chart",
+            },
+            Item::Verb {
+                command: Command::RestyleChart,
+                label: "Change Last C&hart…",
             },
             Item::Verb {
                 command: Command::DeleteChart,
@@ -1092,6 +1099,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FillAcross
         | Command::InsertChart
         | Command::DeleteChart
+        | Command::RestyleChart
         | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
@@ -1479,6 +1487,7 @@ mod tests {
             Command::FillAcross,
             Command::InsertChart,
             Command::DeleteChart,
+            Command::RestyleChart,
             Command::BordersAll,
             Command::BordersNone,
             Command::HideRows,

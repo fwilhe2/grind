@@ -1081,6 +1081,7 @@ impl App {
             _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
             "chart" => self.cmd_chart(),
             "chart!" => self.cmd_unchart(),
+            _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
             "hide" => self.cmd_hide(true, false),
@@ -1203,6 +1204,22 @@ impl App {
             Err(e) => e.to_string(),
         };
         self.leave_visual();
+    }
+
+    /// `:chart <words>` — the sheet's last chart changed: `line`, `bar` or `pie`, `title=…` or
+    /// `no-title`, `legend=top|bottom|start|end|none` (`grind_sheet::verbs::restyle_chart`).
+    fn cmd_restyle_chart(&mut self, words: &str) {
+        let count = self
+            .core
+            .charts(self.sheet)
+            .map_or(0, |charts| charts.len());
+        self.status = match count {
+            0 => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
+            n => match grind_sheet::verbs::restyle_chart(&self.core, self.sheet, n - 1, words) {
+                Ok(said) => format!("{said} u takes it back"),
+                Err(why) => why,
+            },
+        };
     }
 
     /// `:chart!` — the sheet's last chart removed.

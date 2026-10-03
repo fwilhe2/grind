@@ -807,6 +807,7 @@ impl Ui {
             "doc.locale" => self.document_locale(),
             "chart.insert" => self.insert_chart(),
             "chart.delete" => self.delete_chart(),
+            "chart.restyle" => self.restyle_chart(),
             "edit.fill-across" => self.fill_across(),
             "edit.formula-to-value" => self.formula_to_value(),
             "sheet.filter" => self.toggle_filter(),
@@ -1632,6 +1633,27 @@ impl Ui {
             Ok(_) => self.set_message("A chart beside the table — Ctrl+Z takes it back".to_owned()),
             Err(error) => self.set_message(error.to_string()),
         }
+    }
+
+    /// *Change the last chart…* — its kind, title and legend, in words (`verbs::restyle_chart`).
+    fn restyle_chart(&self) {
+        let sheet = self.sheet.get();
+        let count = self.app.charts(sheet).map_or(0, |charts| charts.len());
+        if count == 0 {
+            return self.set_message("This sheet has no chart".to_owned());
+        }
+        let Some(words) = self.ask(
+            "Change the last chart — line, bar or pie; title=…; no-title; legend=top|bottom|start|end|none",
+            "",
+        ) else {
+            return;
+        };
+        self.set_message(
+            match grind_sheet::verbs::restyle_chart(&self.app, sheet, count - 1, &words) {
+                Ok(said) => format!("{said} Ctrl+Z takes it back"),
+                Err(why) => why,
+            },
+        );
     }
 
     /// *Delete the last chart* — a chart is picked by clicking it in the GNOME window; here there is no pick.

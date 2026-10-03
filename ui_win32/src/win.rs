@@ -3538,6 +3538,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillAcross => fill_across(hwnd),
         Command::InsertChart => insert_chart(hwnd),
         Command::DeleteChart => delete_chart(hwnd),
+        Command::RestyleChart => restyle_chart(hwnd),
         Command::WrapText => wrap_text(hwnd),
         Command::BordersAll => borders(hwnd, true),
         Command::BordersNone => borders(hwnd, false),
@@ -3781,6 +3782,38 @@ fn insert_chart(hwnd: HWND) {
             state.say(Some(match result {
                 Ok(_) => "A chart beside the table. Ctrl+Z takes it back.".to_owned(),
                 Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Change Last Chart… — its kind, title and legend in words (`verbs::restyle_chart`).
+fn restyle_chart(hwnd: HWND) {
+    let Some(words) = dialog::prompt(
+        hwnd,
+        "Change Chart",
+        "line, bar or pie; title=…; no-title; legend=top|bottom|start|end|none:",
+        "",
+    ) else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let count = state
+                .app
+                .charts(state.sheet)
+                .map_or(0, |charts| charts.len());
+            state.say(Some(match count {
+                0 => "This sheet has no chart.".to_owned(),
+                n => {
+                    match grind_sheet::verbs::restyle_chart(&state.app, state.sheet, n - 1, &words)
+                    {
+                        Ok(said) => format!("{said} Ctrl+Z takes it back."),
+                        Err(why) => why,
+                    }
+                }
             }));
         });
     }
@@ -5483,6 +5516,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FillAcross
         | Command::InsertChart
         | Command::DeleteChart
+        | Command::RestyleChart
         | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
@@ -6588,6 +6622,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FillAcross
         | Command::InsertChart
         | Command::DeleteChart
+        | Command::RestyleChart
         | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
