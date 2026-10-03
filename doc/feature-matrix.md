@@ -149,7 +149,7 @@ than as a cursor on a hidden row.
 | Selection arithmetic — Sum, Count, Average | ● ᵉ | ● | ● ᵉ | ● | ● | ● |
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ○ | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ○ | ● | ● |
-| Point mode — arrow keys build a reference | — | ● | ○ | ○ | ○ | ● |
+| Point mode — arrow keys build a reference | — | ● | ● ᵖᵐ | ○ | ○ | ● |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
 | The 110 functions as a browsable list | ● | ○ | ○ | ○ | ● | ● |
@@ -158,6 +158,7 @@ than as a cursor on a hidden row.
 | Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 | Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 
+ᵖᵐ Where `ref_eligible` says a reference could go, the four arrows point (one cell, no range extension) and write the address into the edit line; the pointed cell is drawn in magenta. Closed 2026-10-02.
 ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
 only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the

@@ -58,6 +58,14 @@ enum Mode {
     },
 }
 
+/// A reference written by pointing: where its text is in the edit buffer (as characters) and the
+/// cell it names. The arrows move it, anything typed ends it.
+#[derive(Clone, Debug)]
+struct Pointing {
+    span: std::ops::Range<usize>,
+    cell: Pos,
+}
+
 /// Where the last `:find` matched, and which of those matches the cursor is on.
 ///
 /// Held rather than re-derived per frame, for the reason [`crate::problems`] holds its report:
@@ -129,6 +137,8 @@ pub struct App {
     find: Find,
     /// The completion band, while a formula is being typed (`super::assist`).
     assist: Assist,
+    /// The reference being pointed at while a formula is typed (point mode), if one is.
+    point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
     /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
@@ -174,6 +184,7 @@ impl App {
             overlays: grind_sheet::view::Overlays::NONE,
             find: Find::default(),
             assist: Assist::default(),
+            point: None,
             help: crate::help::Help::default(),
             code: crate::code::Code::default(),
             source: None,
@@ -688,6 +699,20 @@ impl App {
                 _ => {}
             }
         }
+        // Point mode: where a reference could go, an arrow points at a cell instead of moving the
+        // caret — `grind_sheet::formula::assist::ref_eligible` decides, as in the GNOME and Mac
+        // windows. While one is being pointed at the arrows keep moving it; anything else ends it.
+        if matches!(
+            code,
+            KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down
+        ) && self.point_at(code)
+        {
+            self.refresh_assist();
+            return;
+        }
+        if !matches!(code, KeyCode::Enter) {
+            self.point = None;
+        }
         let Mode::Insert { buf, cursor } = &mut self.mode else {
             return;
         };
@@ -712,11 +737,53 @@ impl App {
             KeyCode::Esc => {
                 self.status.clear();
                 self.mode = Mode::Normal;
+                self.point = None;
             }
-            KeyCode::Enter => self.commit_edit(),
+            KeyCode::Enter => {
+                self.point = None;
+                self.commit_edit()
+            }
             _ => {}
         }
         self.refresh_assist();
+    }
+
+    /// An arrow in Insert mode as point mode: start a reference one cell off the edited cell, or
+    /// move the one being pointed at. `false` when a reference could not go here, and the arrow
+    /// is the caret's.
+    fn point_at(&mut self, code: KeyCode) -> bool {
+        let Mode::Insert { buf, cursor } = &mut self.mode else {
+            return false;
+        };
+        let text: String = buf.iter().collect();
+        let caret = text
+            .char_indices()
+            .nth(*cursor)
+            .map_or(text.len(), |(at, _)| at);
+        let eligible = grind_sheet::formula::assist::ref_eligible(&text, caret);
+        if self.point.is_none() && !eligible {
+            return false;
+        }
+        let from = self.point.as_ref().map_or(self.active, |p| p.cell);
+        let cell = match code {
+            KeyCode::Up => Pos::new(from.row.saturating_sub(1), from.col),
+            KeyCode::Down => Pos::new((from.row + 1).min(super::MAX_ROWS - 1), from.col),
+            KeyCode::Left => Pos::new(from.row, from.col.saturating_sub(1)),
+            _ => Pos::new(from.row, (from.col + 1).min(super::MAX_COLS - 1)),
+        };
+        let reference: Vec<char> = grind_sheet::a1::format(None, cell).chars().collect();
+        let span = match &self.point {
+            Some(p) => p.span.clone(),
+            None => *cursor..*cursor,
+        };
+        let end = span.start + reference.len();
+        buf.splice(span.clone(), reference);
+        *cursor = end;
+        self.point = Some(Pointing {
+            span: span.start..end,
+            cell,
+        });
+        true
     }
 
     /// Ask [`Assist`] what to offer for the buffer as it now stands.
@@ -1681,9 +1748,11 @@ impl App {
     /// the same width any more, and a hidden row is not a row, so neither question is "how many
     /// fit" times "how big is one".
     fn follow_cursor(&mut self, tracks: &Tracks, hidden: &HashSet<u32>, rows: u32, room: u16) {
-        self.top.row =
-            geom::follow_row(hidden, self.top.row, self.active.row, rows, super::MAX_ROWS);
-        self.top.col = geom::follow(tracks, self.top.col, self.active.col, room, super::MAX_COLS);
+        // The cell being pointed at is brought into sight, or pointing below the fold is typing
+        // blind; otherwise it is the active one.
+        let at = self.point.as_ref().map_or(self.active, |p| p.cell);
+        self.top.row = geom::follow_row(hidden, self.top.row, at.row, rows, super::MAX_ROWS);
+        self.top.col = geom::follow(tracks, self.top.col, at.col, room, super::MAX_COLS);
     }
 
     /// What the title bar calls this document.
@@ -1894,6 +1963,11 @@ impl App {
                 if self.find.matched(self.sheet, pos) {
                     style = MATCH;
                 }
+                // The cell a formula being typed points at (point mode), in a colour of its own
+                // so it is never mistaken for the selection.
+                if self.point.as_ref().is_some_and(|p| p.cell == pos) {
+                    style = POINTED;
+                }
                 if pos == self.active || self.selected(pos) {
                     style = style.add_modifier(Modifier::REVERSED);
                 }
@@ -2060,6 +2134,7 @@ const NAME_BOX: Style = Style::new()
     .bg(Color::Gray)
     .fg(Color::Black)
     .add_modifier(Modifier::BOLD);
+const POINTED: Style = Style::new().bg(Color::LightMagenta).fg(Color::Black);
 const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 
 /// A number as a status bar says it: at most four decimals, since a terminal is short of width,
@@ -2888,6 +2963,38 @@ mod tests {
         assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
         assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
         assert!(app.status.starts_with("filled"), "{}", app.status);
+    }
+
+    /// Point mode: in a formula where a reference could go, the arrows point at a cell and write
+    /// its address; they keep moving it, and typing anything ends it.
+    #[test]
+    fn arrows_point_at_cells_inside_a_formula() {
+        let mut app = app();
+        app.active = Pos::new(0, 0);
+        press(&mut app, KeyCode::Char('c'));
+        press(&mut app, KeyCode::Char('='));
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Right);
+        match &app.mode {
+            Mode::Insert { buf, .. } => assert_eq!(buf.iter().collect::<String>(), "=B2"),
+            _ => panic!("still editing"),
+        }
+        press(&mut app, KeyCode::Char('+'));
+        press(&mut app, KeyCode::Down);
+        match &app.mode {
+            Mode::Insert { buf, .. } => assert_eq!(buf.iter().collect::<String>(), "=B2+A2"),
+            _ => panic!("still editing"),
+        }
+        // After a reference an arrow is the caret's again, not a second pointing.
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Left);
+        match &app.mode {
+            Mode::Insert { buf, cursor } => {
+                assert_eq!(buf.iter().collect::<String>(), "=B2+A21");
+                assert_eq!(*cursor, 6);
+            }
+            _ => panic!("still editing"),
+        }
     }
 
     /// `:across` fills the whole selection from the active cell, `:value` freezes formulas into
