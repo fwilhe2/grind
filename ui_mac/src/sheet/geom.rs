@@ -15,9 +15,9 @@
 
 use std::ops::Range;
 
-use grind_core::layout::{Fragment, Metrics, wrap};
+use grind_core::layout::Metrics;
 use grind_sheet::tracks::Sizes;
-use grind_sheet::{App, MAX_COLS, MAX_ROWS, look};
+use grind_sheet::{App, MAX_COLS, MAX_ROWS};
 
 /// A column nobody sized: **one inch**, the suite's own default column (`ui_web`'s 96 CSS pixels,
 /// `ui_tui`'s ten cells), in points.
@@ -199,57 +199,18 @@ impl Grid {
 /// Space above and below a cell's text — `paint::PAD_Y` either side.
 const ROW_PAD: f64 = 2.0 * super::paint::PAD_Y;
 
-/// How much sheet is measured for natural row heights. A row above the view still displaces
-/// the ones below it, so the pass cannot be limited to what is on screen — past this much
-/// document every row keeps its height, the GNOME window's bound.
-const AUTO_HEIGHT_CELLS: u64 = 200_000;
-
-/// The rows `grid` should grow, and to what: for each, the tallest of its cells that wraps or
-/// names a font size, when that is taller than the row. A cell with no style is never laid out,
-/// which is what keeps this a cheap pass over a sheet where nine cells in ten are plain.
+/// The rows `grid` should grow, and to what — `grind_sheet::autoheight`, the pass the Windows
+/// grid runs too, over this grid's column widths.
 fn auto_heights(app: &App, sheet: usize, grid: &Grid, metrics: &dyn Metrics) -> Vec<(u32, f64)> {
-    let Ok((rows, cols)) = app.used_extent(sheet) else {
-        return Vec::new();
-    };
-    if rows == 0 || cols == 0 || u64::from(rows) * u64::from(cols) > AUTO_HEIGHT_CELLS {
-        return Vec::new();
-    }
-    let Ok(viewport) = app.get_viewport(sheet, 0..rows, 0..cols) else {
-        return Vec::new();
-    };
-    let mut grown = Vec::new();
-    for row in 0..rows {
-        let mut tallest: f64 = 0.0;
-        for col in 0..cols {
-            let Some(style) = viewport.style(row, col) else {
-                continue;
-            };
-            let wrapping = look::wraps(Some(style));
-            if !wrapping && style.font_size.is_none() {
-                continue;
-            }
-            let Some(text) = viewport.text(row, col).filter(|text| !text.is_empty()) else {
-                continue;
-            };
-            let text_style = look::text_style(Some(style));
-            // A width of zero is `wrap`'s own "do not wrap": one line per hard break, which is
-            // what a cell here only for its larger face wants.
-            let width = match wrapping {
-                true => (grid.cols.size_of(col) - 2.0 * super::paint::PAD_X).max(1.0) as f32,
-                false => 0.0,
-            };
-            let fragment = Fragment {
-                text,
-                style: &text_style,
-            };
-            let laid = wrap(std::slice::from_ref(&fragment), width, metrics);
-            tallest = tallest.max(f64::from(laid.height()));
-        }
-        if tallest + ROW_PAD > ROW_H {
-            grown.push((row, (tallest + ROW_PAD).ceil()));
-        }
-    }
-    grown
+    grind_sheet::autoheight::grown_rows(
+        app,
+        sheet,
+        &|col| grid.cols.size_of(col),
+        super::paint::PAD_X,
+        ROW_PAD,
+        ROW_H,
+        metrics,
+    )
 }
 
 /// The tracks of `sizes` meeting `start..start + len`, clamped to the first `shown`.

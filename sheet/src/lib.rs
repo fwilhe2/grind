@@ -21,6 +21,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod a1;
 pub mod action;
+pub mod autoheight;
 pub mod chart;
 pub mod chart_paint;
 pub mod clip;
